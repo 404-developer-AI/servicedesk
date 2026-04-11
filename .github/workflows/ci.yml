@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: backend (dotnet)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # MinVer needs full git history for tag-based versioning
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        run: dotnet restore Servicedesk.slnx
+
+      - name: Build
+        run: dotnet build Servicedesk.slnx --configuration Release --no-restore
+
+  frontend:
+    name: frontend (vite)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/Servicedesk.Web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: src/Servicedesk.Web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build

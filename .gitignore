@@ -1,0 +1,134 @@
+# ==============================================================
+# SECURITY — never commit secrets
+# ==============================================================
+# Environment / secret files
+.env
+.env.*
+!.env.example
+*.env
+secrets.*
+*secret*
+*secrets*
+appsettings.*.json
+!appsettings.json
+!appsettings.Example.json
+
+# Certificates and keys
+*.pem
+*.key
+*.pfx
+*.p12
+*.crt
+*.cer
+*.der
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+
+# Cloud / service credentials
+*credentials*
+*.credentials
+.azure/
+.aws/
+gcp-*.json
+service-account*.json
+
+# ==============================================================
+# .NET
+# ==============================================================
+bin/
+obj/
+*.user
+*.suo
+*.userprefs
+*.userosscache
+*.sln.docstates
+.vs/
+.vscode/
+*.pdb
+*.log
+TestResults/
+publish/
+PublishProfiles/
+*.nupkg
+*.snupkg
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# ==============================================================
+# Node / React / Vite
+# ==============================================================
+node_modules/
+dist/
+build/
+.vite/
+.cache/
+coverage/
+*.tsbuildinfo
+.eslintcache
+.parcel-cache/
+.next/
+.nuxt/
+.turbo/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ==============================================================
+# Databases / dumps
+# ==============================================================
+*.sqlite
+*.sqlite3
+*.db
+*.mdf
+*.ldf
+*.bak
+*.dump
+*.sql.gz
+dumps/
+backups/
+
+# ==============================================================
+# OS
+# ==============================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+
+# ==============================================================
+# Editors / IDEs
+# ==============================================================
+.idea/
+*.swp
+*.swo
+*~
+
+# ==============================================================
+# Docker
+# ==============================================================
+docker-compose.override.yml
+.docker/
+
+# ==============================================================
+# Local tooling / logs
+# ==============================================================
+logs/
+*.log
+tmp/
+temp/
+
+# ==============================================================
+# Internal project docs — local only, never push
+# ==============================================================
+CLAUDE.md
+ARCHITECTURE.md
+ROADMAP.md
+CHANGELOG.md
+NOTFORCLAUDE.md
+NOTFORCLAUDE.MD
