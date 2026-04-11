@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Servicedesk.Infrastructure.Audit;
+using Servicedesk.Infrastructure.DataProtection;
 using Servicedesk.Infrastructure.Persistence;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
@@ -16,6 +17,15 @@ public static class DependencyInjection
     {
         services.AddSingleton<ISecretProvider, ConfigurationSecretProvider>();
 
+        // StartupSecretValidator must run before DataProtectionHostedService
+        // (registered by AddServicedeskDataProtection below) so a missing
+        // master key produces the clean aggregated validator error instead of
+        // an InvalidOperationException from mid-key-ring warmup. Hosted
+        // services run in registration order.
+        services.AddHostedService<StartupSecretValidator>();
+
+        services.AddServicedeskDataProtection(configuration);
+
         services.AddSingleton<NpgsqlDataSource>(sp =>
         {
             var connectionString = configuration.GetConnectionString("Postgres")
@@ -28,7 +38,6 @@ public static class DependencyInjection
         services.AddSingleton<IAuditQuery, AuditQueryService>();
         services.AddSingleton<ISettingsService, SettingsService>();
 
-        services.AddHostedService<StartupSecretValidator>();
         services.AddHostedService<DatabaseBootstrapper>();
         services.AddHostedService<SettingsSeeder>();
 

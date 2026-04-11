@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Reflection;
 using System.Threading.RateLimiting;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.OpenApi.Models;
 using Serilog;
@@ -42,10 +41,8 @@ builder.Services.Configure<ForwardedHeadersOptions>(o =>
     o.KnownProxies.Clear();
 });
 
-builder.Services.AddDataProtection()
-    .PersistKeysToFileSystem(new DirectoryInfo(
-        builder.Configuration["DataProtection:KeyRingPath"] ?? Path.Combine(AppContext.BaseDirectory, "keys")));
-
+// Data Protection keyring lives in Postgres, AES-GCM encrypted with a master
+// key from DataProtection:MasterKey. Wired inside AddServicedeskInfrastructure.
 builder.Services.AddServicedeskInfrastructure(builder.Configuration);
 
 builder.Services.AddRateLimiter(options =>

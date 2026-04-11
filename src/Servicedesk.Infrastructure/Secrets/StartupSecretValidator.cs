@@ -11,6 +11,7 @@ public sealed class StartupSecretValidator : IHostedService
     {
         "ConnectionStrings:Postgres",
         "Audit:HashKey",
+        "DataProtection:MasterKey",
     };
 
     private readonly ISecretProvider _secrets;

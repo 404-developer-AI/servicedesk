@@ -27,6 +27,7 @@ public sealed class StartupSecretValidatorTests
         {
             ["ConnectionStrings:Postgres"] = "Host=x;Database=x;Username=x;Password=x",
             ["Audit:HashKey"] = "dGVzdA==",
+            ["DataProtection:MasterKey"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
         });
         var validator = new StartupSecretValidator(secrets, NullLogger<StartupSecretValidator>.Instance);
 

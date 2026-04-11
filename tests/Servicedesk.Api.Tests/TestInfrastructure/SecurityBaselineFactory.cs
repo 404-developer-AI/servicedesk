@@ -1,11 +1,16 @@
+using System.Xml.Linq;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
+using Microsoft.AspNetCore.DataProtection.Repositories;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using Servicedesk.Infrastructure.Audit;
+using Servicedesk.Infrastructure.DataProtection;
 using Servicedesk.Infrastructure.Persistence;
 using Servicedesk.Infrastructure.Settings;
 
@@ -23,6 +28,9 @@ public sealed class SecurityBaselineFactory : WebApplicationFactory<Program>
     {
         ["ConnectionStrings:Postgres"] = "Host=localhost;Database=servicedesk_test_stub;Username=stub;Password=stub",
         ["Audit:HashKey"] = "dGVzdC1rZXktZm9yLWNpLW9ubHktbm90LXNlY3JldA==",
+        // 32 zero bytes, base64. Real key lives in env; tests never touch the DB
+        // keyring — we swap PostgresXmlRepository out for an in-memory one below.
+        ["DataProtection:MasterKey"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
         ["Security:RateLimit:Global:PermitPerWindow"] = "1000",
         ["Security:RateLimit:Global:WindowSeconds"] = "60",
     };
@@ -61,7 +69,30 @@ public sealed class SecurityBaselineFactory : WebApplicationFactory<Program>
 
             services.RemoveAll<ISettingsService>();
             services.AddSingleton<ISettingsService, FakeSettingsService>();
+
+            // Swap the Postgres-backed Data Protection keyring for an in-memory
+            // one so tests never reach (and never need) the stubbed datasource.
+            services.RemoveAll<PostgresXmlRepository>();
+            services.RemoveAll<IConfigureOptions<KeyManagementOptions>>();
+            var inMemoryRepo = new InMemoryXmlRepository();
+            services.Configure<KeyManagementOptions>(o => o.XmlRepository = inMemoryRepo);
         });
+    }
+}
+
+internal sealed class InMemoryXmlRepository : IXmlRepository
+{
+    private readonly List<XElement> _elements = new();
+    private readonly object _lock = new();
+
+    public IReadOnlyCollection<XElement> GetAllElements()
+    {
+        lock (_lock) { return _elements.ToArray(); }
+    }
+
+    public void StoreElement(XElement element, string friendlyName)
+    {
+        lock (_lock) { _elements.Add(element); }
     }
 }
 

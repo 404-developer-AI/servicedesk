@@ -42,6 +42,15 @@ public sealed class DatabaseBootstrapper : IHostedService
             default_value   TEXT        NOT NULL,
             updated_utc     TIMESTAMPTZ NOT NULL DEFAULT now()
         );
+
+        CREATE TABLE IF NOT EXISTS data_protection_keys (
+            id              BIGSERIAL   PRIMARY KEY,
+            friendly_name   TEXT        NOT NULL,
+            nonce           BYTEA       NOT NULL,
+            ciphertext      BYTEA       NOT NULL,
+            tag             BYTEA       NOT NULL,
+            created_utc     TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
         """;
 
     private readonly NpgsqlDataSource _dataSource;
@@ -59,7 +68,7 @@ public sealed class DatabaseBootstrapper : IHostedService
         await using var command = connection.CreateCommand();
         command.CommandText = Sql;
         await command.ExecuteNonQueryAsync(cancellationToken);
-        _logger.LogInformation("Database bootstrap complete (audit_log, settings).");
+        _logger.LogInformation("Database bootstrap complete (audit_log, settings, data_protection_keys).");
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
