@@ -127,6 +127,136 @@ export const auditApi = {
   get: (id: number) => request<AuditEntry>("GET", `/api/audit/${id}`),
 };
 
+// ---- Taxonomy ----
+
+export type Queue = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  color: string;
+  icon: string;
+  sortOrder: number;
+  isActive: boolean;
+  isSystem: boolean;
+  createdUtc: string;
+  updatedUtc: string;
+};
+
+export type Priority = {
+  id: string;
+  name: string;
+  slug: string;
+  level: number;
+  color: string;
+  icon: string;
+  sortOrder: number;
+  isActive: boolean;
+  isSystem: boolean;
+  createdUtc: string;
+  updatedUtc: string;
+};
+
+export type StatusStateCategory =
+  | "New"
+  | "Open"
+  | "Pending"
+  | "Resolved"
+  | "Closed";
+
+export type Status = {
+  id: string;
+  name: string;
+  slug: string;
+  stateCategory: StatusStateCategory;
+  color: string;
+  icon: string;
+  sortOrder: number;
+  isActive: boolean;
+  isSystem: boolean;
+  isDefault: boolean;
+  createdUtc: string;
+  updatedUtc: string;
+};
+
+export type Category = {
+  id: string;
+  parentId: string | null;
+  name: string;
+  slug: string;
+  description: string;
+  sortOrder: number;
+  isActive: boolean;
+  isSystem: boolean;
+  createdUtc: string;
+  updatedUtc: string;
+};
+
+export type QueueInput = {
+  name: string;
+  slug: string;
+  description?: string;
+  color?: string;
+  icon?: string;
+  sortOrder: number;
+  isActive: boolean;
+};
+
+export type PriorityInput = {
+  name: string;
+  slug: string;
+  level: number;
+  color?: string;
+  icon?: string;
+  sortOrder: number;
+  isActive: boolean;
+};
+
+export type StatusInput = {
+  name: string;
+  slug: string;
+  stateCategory: StatusStateCategory;
+  color?: string;
+  icon?: string;
+  sortOrder: number;
+  isActive: boolean;
+  isDefault: boolean;
+};
+
+export type CategoryInput = {
+  name: string;
+  slug: string;
+  parentId?: string | null;
+  description?: string;
+  sortOrder: number;
+  isActive: boolean;
+};
+
+function crud<T, TInput>(base: string) {
+  return {
+    list: () => request<T[]>("GET", base),
+    get: (id: string) => request<T>("GET", `${base}/${id}`),
+    create: (input: TInput) => request<T>("POST", base, input),
+    update: (id: string, input: TInput) => request<T>("PUT", `${base}/${id}`, input),
+    remove: (id: string) => request<void>("DELETE", `${base}/${id}`),
+  };
+}
+
+export const taxonomyApi = {
+  queues: crud<Queue, QueueInput>("/api/taxonomy/queues"),
+  priorities: crud<Priority, PriorityInput>("/api/taxonomy/priorities"),
+  statuses: crud<Status, StatusInput>("/api/taxonomy/statuses"),
+  categories: crud<Category, CategoryInput>("/api/taxonomy/categories"),
+};
+
+export const STATE_CATEGORIES: StatusStateCategory[] = [
+  "New",
+  "Open",
+  "Pending",
+  "Resolved",
+  "Closed",
+];
+
 export const authApi = {
   setupStatus: () => request<SetupStatus>("GET", "/api/auth/setup/status"),
   createAdmin: (email: string, password: string) =>

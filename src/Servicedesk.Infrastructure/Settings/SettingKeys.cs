@@ -31,6 +31,18 @@ public static class SettingKeys
         public const string TwoFactorTotpWindow = "Security.TwoFactor.TotpWindow";
         public const string TwoFactorRecoveryCodeCount = "Security.TwoFactor.RecoveryCodeCount";
     }
+
+    public static class Tickets
+    {
+        public const string DefaultQueueSlug = "Tickets.DefaultQueueSlug";
+        public const string DefaultPrioritySlug = "Tickets.DefaultPrioritySlug";
+        public const string ListPageSize = "Tickets.ListPageSize";
+
+        // Hook settings for v0.0.6+ portal/mail features. Rows exist now so
+        // the knob is visible in Settings even though no code consumes them.
+        public const string NewUserCreatesNotificationTicket = "Tickets.NewUserCreatesNotificationTicket";
+        public const string SystemTicketsQueueSlug = "Tickets.SystemTicketsQueueSlug";
+    }
 }
 
 public sealed record SettingDefault(
@@ -88,5 +100,16 @@ public static class SettingDefaults
             "Accepted TOTP skew on either side of the current step (0 = strict, 1 = ±30s)."),
         new SettingDefault(SettingKeys.Security.TwoFactorRecoveryCodeCount, "10", "int", "Security",
             "Number of single-use recovery codes generated at TOTP enrollment."),
+
+        new SettingDefault(SettingKeys.Tickets.DefaultQueueSlug, "default", "string", "Tickets",
+            "Slug of the queue new tickets land in when no explicit routing matched."),
+        new SettingDefault(SettingKeys.Tickets.DefaultPrioritySlug, "normal", "string", "Tickets",
+            "Slug of the priority assigned to new tickets when none is specified."),
+        new SettingDefault(SettingKeys.Tickets.ListPageSize, "50", "int", "Tickets",
+            "Default number of rows returned per ticket list page (keyset paginated)."),
+        new SettingDefault(SettingKeys.Tickets.NewUserCreatesNotificationTicket, "false", "bool", "Tickets",
+            "When true, a system ticket is auto-created whenever a new user registers on the portal."),
+        new SettingDefault(SettingKeys.Tickets.SystemTicketsQueueSlug, "default", "string", "Tickets",
+            "Slug of the queue that receives auto-generated system tickets."),
     };
 }

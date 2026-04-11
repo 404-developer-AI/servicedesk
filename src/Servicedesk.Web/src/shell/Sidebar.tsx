@@ -1,10 +1,17 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, Settings as SettingsIcon, Sparkles } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  Settings as SettingsIcon,
+  Sparkles,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCurrentRole } from "@/hooks/useCurrentRole";
 import { useSidebarStore } from "@/stores/useSidebarStore";
 import { visibleNavItems } from "@/shell/navItems";
+import { NewTicketDrawer } from "@/shell/NewTicketDrawer";
 import { useSystemVersion } from "@/hooks/useSystemVersion";
 import {
   useServerTime,
@@ -83,25 +90,39 @@ export function Sidebar() {
       </nav>
 
       {/*
-        When the sidebar is collapsed, Settings lives above the collapse button
-        as its own icon-only tile, with extra bottom margin so it reads as a
-        distinct section rather than a sibling of the toggle. In the expanded
-        layout Settings moves into the status block (see below) so the chrome
-        stays compact.
+        When the sidebar is collapsed, Settings + New ticket live above the
+        collapse button as their own icon-only tiles, with extra bottom margin
+        so they read as a distinct section rather than siblings of the toggle.
+        In the expanded layout both move into the status block (see below) so
+        the chrome stays compact.
       */}
-      {collapsed && canSeeSettings && (
-        <Link
-          to="/settings"
-          title="Settings"
-          className={cn(
-            "mx-3 mb-3 flex h-9 items-center justify-center rounded-lg text-sm transition-all",
-            settingsActive
-              ? "bg-white/[0.07] text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
-              : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
+      {collapsed && (
+        <div className="mx-3 mb-3 flex flex-col gap-1">
+          {canSeeSettings && (
+            <Link
+              to="/settings"
+              title="Settings"
+              className={cn(
+                "flex h-9 items-center justify-center rounded-lg text-sm transition-all",
+                settingsActive
+                  ? "bg-white/[0.07] text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+                  : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
+              )}
+            >
+              <SettingsIcon className="h-4 w-4" />
+            </Link>
           )}
-        >
-          <SettingsIcon className="h-4 w-4" />
-        </Link>
+          <NewTicketDrawer>
+            <button
+              type="button"
+              title="New ticket"
+              aria-label="New ticket"
+              className="flex h-9 items-center justify-center rounded-lg bg-gradient-to-br from-accent-purple to-accent-blue text-white shadow-[0_6px_20px_-8px_hsl(var(--primary)/0.55)] transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </NewTicketDrawer>
+        </div>
       )}
 
       <button
@@ -153,6 +174,16 @@ export function Sidebar() {
                 <SettingsIcon className="h-4 w-4" />
               </Link>
             )}
+            <NewTicketDrawer>
+              <button
+                type="button"
+                title="New ticket"
+                aria-label="New ticket"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-accent-purple to-accent-blue text-white shadow-[0_6px_18px_-8px_hsl(var(--primary)/0.55)] transition-transform hover:scale-[1.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </NewTicketDrawer>
           </div>
         ) : (
           <div className="space-y-1">

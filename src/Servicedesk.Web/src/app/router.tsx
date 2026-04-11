@@ -12,7 +12,10 @@ import { findNavItem } from "@/shell/navItems";
 import type { Role } from "@/lib/roles";
 import { authStore } from "@/auth/authStore";
 import { AuditLogPage } from "@/pages/settings/AuditLogPage";
-import { SettingsIndexPage } from "@/pages/settings/SettingsIndexPage";
+import { SettingsSectionStub } from "@/pages/settings/SettingsSectionStub";
+import { TicketsSettingsPage } from "@/pages/settings/TicketsSettingsPage";
+import { SettingsLayout } from "@/shell/SettingsLayout";
+import { findSettingsSection } from "@/shell/settingsSections";
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { SetupWizardPage } from "@/pages/auth/SetupWizardPage";
 import { ProfilePage } from "@/pages/profile/ProfilePage";
@@ -145,18 +148,73 @@ const profileRoute = createRoute({
   component: ProfilePage,
 });
 
+// Parent route renders the master-detail layout (secondary nav rail + Outlet).
+// Each section is a child route so every category has its own URL and the
+// back-button / deep-linking work naturally.
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
   beforeLoad: authGate(["Admin"]),
-  component: SettingsIndexPage,
+  component: SettingsLayout,
+});
+
+// Bare /settings bounces to the first section so the content area is never
+// empty when the user clicks "Settings" in the main sidebar.
+const settingsIndexRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/",
+  beforeLoad: () => {
+    throw redirect({ to: "/settings/general" });
+  },
+  component: () => null,
+});
+
+function settingsSectionStubComponent(slug: string) {
+  return function SettingsSectionStubRoute() {
+    const section = findSettingsSection(slug);
+    if (!section) return null;
+    return <SettingsSectionStub section={section} />;
+  };
+}
+
+// Stub sections are declared statically (rather than via a dynamic map over
+// SETTINGS_SECTIONS) so TanStack Router can infer each literal path into the
+// typed route union. Without this, `redirect({ to: "/settings/general" })`
+// fails to type-check.
+const settingsGeneralRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "general",
+  component: settingsSectionStubComponent("general"),
+});
+
+const settingsMailRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "mail",
+  component: settingsSectionStubComponent("mail"),
+});
+
+const settingsSlaRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "sla",
+  component: settingsSectionStubComponent("sla"),
+});
+
+const settingsIntegrationsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "integrations",
+  component: settingsSectionStubComponent("integrations"),
 });
 
 const settingsAuditRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/settings/audit",
-  beforeLoad: authGate(["Admin"]),
+  getParentRoute: () => settingsRoute,
+  path: "audit",
   component: AuditLogPage,
+});
+
+const settingsTicketsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "tickets",
+  component: TicketsSettingsPage,
 });
 
 const routeTree = rootRoute.addChildren([
@@ -167,8 +225,15 @@ const routeTree = rootRoute.addChildren([
   ticketsRoute,
   kbRoute,
   profileRoute,
-  settingsRoute,
-  settingsAuditRoute,
+  settingsRoute.addChildren([
+    settingsIndexRoute,
+    settingsGeneralRoute,
+    settingsMailRoute,
+    settingsSlaRoute,
+    settingsIntegrationsRoute,
+    settingsTicketsRoute,
+    settingsAuditRoute,
+  ]),
 ]);
 
 export const router = createRouter({

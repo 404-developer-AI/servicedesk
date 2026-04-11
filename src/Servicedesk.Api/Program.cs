@@ -7,8 +7,11 @@ using Microsoft.OpenApi.Models;
 using Serilog;
 using Servicedesk.Api.Audit;
 using Servicedesk.Api.Auth;
+using Servicedesk.Api.Companies;
 using Servicedesk.Api.Security;
 using Servicedesk.Api.System;
+using Servicedesk.Api.Taxonomy;
+using Servicedesk.Api.Tickets;
 using Servicedesk.Infrastructure;
 using Servicedesk.Infrastructure.Settings;
 
@@ -155,6 +158,10 @@ app.MapGet("/api/system/time", () =>
 app.MapCspReportEndpoint();
 app.MapAuditEndpoints();
 app.MapAuthEndpoints();
+app.MapTaxonomyEndpoints();
+app.MapCompanyEndpoints();
+app.MapTicketEndpoints();
+app.MapDevBenchmarkEndpoints(app.Environment);
 
 app.Run();
 

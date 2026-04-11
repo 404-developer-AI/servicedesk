@@ -7,6 +7,9 @@ using Servicedesk.Infrastructure.Auth.Sessions;
 using Servicedesk.Infrastructure.Auth.Totp;
 using Servicedesk.Infrastructure.DataProtection;
 using Servicedesk.Infrastructure.Persistence;
+using Servicedesk.Infrastructure.Persistence.Companies;
+using Servicedesk.Infrastructure.Persistence.Taxonomy;
+using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
 
@@ -46,8 +49,13 @@ public static class DependencyInjection
         services.AddSingleton<ISessionService, SessionService>();
         services.AddSingleton<ITotpService, TotpService>();
 
+        services.AddSingleton<ITaxonomyRepository, TaxonomyRepository>();
+        services.AddSingleton<ICompanyRepository, CompanyRepository>();
+        services.AddSingleton<ITicketRepository, TicketRepository>();
+
         services.AddHostedService<DatabaseBootstrapper>();
         services.AddHostedService<SettingsSeeder>();
+        services.AddHostedService<TaxonomySeeder>();
 
         return services;
     }

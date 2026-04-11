@@ -1,24 +1,17 @@
-import { useState } from "react";
-import { Plus } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { Drawer } from "vaul";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-export function NewTicketFab() {
+// Drawer + stub content for "new ticket". The trigger is passed as `children`
+// so the same drawer can be mounted from anywhere in the shell (currently the
+// Sidebar's status block). The real ticket form lands in v0.0.5.
+export function NewTicketDrawer({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
 
   return (
     <Drawer.Root open={open} onOpenChange={setOpen}>
-      <Drawer.Trigger asChild>
-        <button
-          type="button"
-          aria-label="New ticket"
-          className="group fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-accent-purple to-accent-blue text-white shadow-[0_10px_30px_-8px_hsl(var(--primary)/0.55)] transition-transform hover:scale-[1.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          data-testid="new-ticket-fab"
-        >
-          <Plus className="h-6 w-6" />
-        </button>
-      </Drawer.Trigger>
+      <Drawer.Trigger asChild>{children}</Drawer.Trigger>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
         <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[85vh] max-w-2xl flex-col rounded-t-[var(--radius)] border border-white/10 bg-background/90 backdrop-blur-xl">
@@ -32,7 +25,10 @@ export function NewTicketFab() {
             <p className="text-sm text-muted-foreground">
               The ticket form, categories and SLA picker arrive in v0.0.5.
             </p>
-            <Badge variant="secondary" className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+            <Badge
+              variant="secondary"
+              className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground"
+            >
               Coming in v0.0.5
             </Badge>
           </div>

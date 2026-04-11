@@ -52,9 +52,12 @@ export function AuditLogPage() {
   const { time: serverTime } = useServerTime();
   const offsetMinutes = serverTime?.offsetMinutes ?? 0;
 
+  // Layout: page header + filter bar + pagination footer stay pinned; only
+  // the table body scrolls. We bound the outer flex-col to the visible
+  // content area (viewport - Header - main pb-6 - SettingsLayout py-4 ≈ 8rem)
+  // so the middle section can take flex-1 and scroll its overflow.
   return (
-    <div className="app-background min-h-[calc(100vh-8rem)] p-8">
-      <div className="mx-auto w-full max-w-6xl space-y-6">
+    <div className="flex h-[calc(100vh-8rem)] w-full flex-col gap-6">
         <header className="flex items-start justify-between gap-4">
           <div className="space-y-1">
             <h1 className="text-display-md font-semibold text-foreground">Audit log</h1>
@@ -113,7 +116,7 @@ export function AuditLogPage() {
           </div>
         </section>
 
-        <section className="glass-card overflow-hidden">
+        <section className="glass-card min-h-0 flex-1 overflow-y-auto">
           {isLoading ? (
             <div className="space-y-2 p-4">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -126,7 +129,7 @@ export function AuditLogPage() {
             </div>
           ) : data && data.items.length > 0 ? (
             <table data-testid="audit-table" className="w-full text-left text-sm">
-              <thead className="border-b border-white/10 text-xs uppercase tracking-wide text-muted-foreground">
+              <thead className="sticky top-0 z-10 bg-[hsl(245_14%_12%)] text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-white/10">
                 <tr>
                   <th className="px-4 py-3 font-medium">Time</th>
                   <th className="px-4 py-3 font-medium">Event</th>
@@ -192,7 +195,6 @@ export function AuditLogPage() {
             </Button>
           </div>
         </footer>
-      </div>
 
       <Dialog open={selected !== null} onOpenChange={(o) => !o && setSelected(null)}>
         <DialogContent className="max-w-2xl">

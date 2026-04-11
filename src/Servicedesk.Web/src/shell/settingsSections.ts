@@ -1,0 +1,72 @@
+import {
+  Mail,
+  Plug,
+  ScrollText,
+  SlidersHorizontal,
+  Ticket,
+  Timer,
+  type LucideIcon,
+} from "lucide-react";
+
+export type SettingsSection = {
+  /** URL segment under /settings (e.g. "general" → /settings/general). */
+  slug: string;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+  /** When set, the section renders a "coming soon" stub instead of real content. */
+  comingIn?: string;
+};
+
+export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
+  {
+    slug: "general",
+    label: "General",
+    description:
+      "Branding, localization, default timezones and other app-wide knobs.",
+    icon: SlidersHorizontal,
+    comingIn: "v0.0.7",
+  },
+  {
+    slug: "tickets",
+    label: "Tickets",
+    description:
+      "Queues, statuses, priorities and categories — the taxonomies every ticket hangs off.",
+    icon: Ticket,
+  },
+  {
+    slug: "mail",
+    label: "Mail",
+    description:
+      "Mailbox connections, polling cadence, reply parsing and auto-responders.",
+    icon: Mail,
+    comingIn: "v0.0.7",
+  },
+  {
+    slug: "sla",
+    label: "SLA",
+    description: "Response and resolution targets, business hours, escalation policies.",
+    icon: Timer,
+    comingIn: "v0.0.7",
+  },
+  {
+    slug: "integrations",
+    label: "Integrations",
+    description: "Microsoft 365, webhooks, outbound connectors and API tokens.",
+    icon: Plug,
+    comingIn: "v0.0.7",
+  },
+  {
+    slug: "audit",
+    label: "Audit log",
+    description:
+      "Append-only HMAC-chained record of security events — rate limits, CSP violations, setting changes.",
+    icon: ScrollText,
+  },
+];
+
+export const DEFAULT_SETTINGS_SECTION = SETTINGS_SECTIONS[0]!.slug;
+
+export function findSettingsSection(slug: string): SettingsSection | undefined {
+  return SETTINGS_SECTIONS.find((s) => s.slug === slug);
+}
