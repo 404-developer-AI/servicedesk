@@ -2,7 +2,7 @@
 
 A self-hosted servicedesk app. Built because the existing options were either ugly, slow, expensive, or all three.
 
-> **Status:** v0.0.1 — foundations. Nothing useful yet.
+> **Status:** v0.0.4 — authenticated admin access. Still early, but you can actually sign in now.
 
 ## What this is
 

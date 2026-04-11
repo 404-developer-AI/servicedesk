@@ -1,12 +1,10 @@
-import { useDevRole } from "@/stores/useDevRoleStore";
+import { useAuth } from "@/auth/authStore";
 import type { Role } from "@/lib/roles";
 
-// Until real auth lands in v0.0.4, the current role comes from the dev
-// role switcher in the header (localStorage-backed). In a production build
-// the switcher is not mounted, but the store still returns `Admin` so the
-// shell remains usable by whoever is running the build.
-//
-// TODO(v0.0.4): replace with a role pulled from the authenticated session.
+/// Returns the role of the authenticated user, or `Customer` when no session
+/// is active. Routes and navigation are role-gated on top of this value; the
+/// server-side authorization policies remain the actual source of truth.
 export function useCurrentRole(): Role {
-  return useDevRole();
+  const { user } = useAuth();
+  return user?.role ?? "Customer";
 }

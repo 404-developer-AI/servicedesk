@@ -79,7 +79,7 @@ public sealed class SettingsService : ISettingsService
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await connection.ExecuteAsync(new CommandDefinition(sql, new { key, value = newValue }, cancellationToken: cancellationToken));
 
-        _cache[key] = new SettingEntry(key, newValue, def.ValueType, def.Category, def.Description, def.Value, DateTimeOffset.UtcNow);
+        _cache[key] = new SettingEntry(key, newValue, def.ValueType, def.Category, def.Description, def.Value, DateTime.UtcNow);
 
         await _audit.LogAsync(new AuditEvent(
             EventType: "setting_changed",

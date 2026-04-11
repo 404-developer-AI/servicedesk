@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Command } from "cmdk";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { visibleNavItems } from "@/shell/navItems";
+import { allVisibleNavItems } from "@/shell/navItems";
 import { useCurrentRole } from "@/hooks/useCurrentRole";
 
 type CommandPaletteProps = {
@@ -13,7 +13,7 @@ type CommandPaletteProps = {
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const navigate = useNavigate();
   const role = useCurrentRole();
-  const items = visibleNavItems(role);
+  const items = allVisibleNavItems(role);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

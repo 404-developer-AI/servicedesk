@@ -1,10 +1,12 @@
 using System.Globalization;
 using System.Reflection;
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.OpenApi.Models;
 using Serilog;
 using Servicedesk.Api.Audit;
+using Servicedesk.Api.Auth;
 using Servicedesk.Api.Security;
 using Servicedesk.Api.System;
 using Servicedesk.Infrastructure;
@@ -44,6 +46,15 @@ builder.Services.Configure<ForwardedHeadersOptions>(o =>
 // Data Protection keyring lives in Postgres, AES-GCM encrypted with a master
 // key from DataProtection:MasterKey. Wired inside AddServicedeskInfrastructure.
 builder.Services.AddServicedeskInfrastructure(builder.Configuration);
+
+// Cookie-backed session auth. The handler reads an opaque session id from the
+// cookie, validates it against the Postgres session store, and hydrates
+// ClaimsPrincipal for downstream authorization policies.
+builder.Services.AddAuthentication(SessionAuthenticationHandler.SchemeName)
+    .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(
+        SessionAuthenticationHandler.SchemeName, _ => { });
+
+builder.Services.AddAuthorization(options => options.AddServicedeskPolicies());
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -107,6 +118,9 @@ app.UseHttpsRedirection();
 app.UseServicedeskSecurityHeaders();
 app.UseServicedeskContentSecurityPolicy();
 app.UseRateLimiter();
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseMiddleware<DoubleSubmitCsrfMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
@@ -140,6 +154,7 @@ app.MapGet("/api/system/time", () =>
 
 app.MapCspReportEndpoint();
 app.MapAuditEndpoints();
+app.MapAuthEndpoints();
 
 app.Run();
 

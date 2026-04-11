@@ -2,6 +2,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Servicedesk.Infrastructure.Audit;
+using Servicedesk.Infrastructure.Auth;
+using Servicedesk.Infrastructure.Auth.Sessions;
+using Servicedesk.Infrastructure.Auth.Totp;
 using Servicedesk.Infrastructure.DataProtection;
 using Servicedesk.Infrastructure.Persistence;
 using Servicedesk.Infrastructure.Secrets;
@@ -37,6 +40,11 @@ public static class DependencyInjection
         services.AddSingleton<IAuditLogger, AuditLogger>();
         services.AddSingleton<IAuditQuery, AuditQueryService>();
         services.AddSingleton<ISettingsService, SettingsService>();
+
+        services.AddSingleton<IPasswordHasher, Argon2idPasswordHasher>();
+        services.AddSingleton<IUserService, UserService>();
+        services.AddSingleton<ISessionService, SessionService>();
+        services.AddSingleton<ITotpService, TotpService>();
 
         services.AddHostedService<DatabaseBootstrapper>();
         services.AddHostedService<SettingsSeeder>();

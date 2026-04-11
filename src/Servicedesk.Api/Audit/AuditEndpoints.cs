@@ -9,10 +9,11 @@ public static class AuditEndpoints
 {
     public static IEndpointRouteBuilder MapAuditEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/audit").WithTags("Audit");
+        var group = app.MapGroup("/api/audit")
+            .WithTags("Audit")
+            .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapGet("/", async (
-            HttpContext ctx,
             IAuditQuery query,
             string? eventType,
             string? actor,
@@ -22,9 +23,6 @@ public static class AuditEndpoints
             int? limit,
             CancellationToken ct) =>
         {
-            var forbidden = DevRoleGate.RequireAdmin(ctx);
-            if (forbidden is not null) return forbidden;
-
             var q = new InfraAuditQuery(
                 EventType: eventType,
                 Actor: actor,
@@ -43,11 +41,8 @@ public static class AuditEndpoints
         .WithName("ListAuditEntries")
         .WithOpenApi();
 
-        group.MapGet("/{id:long}", async (HttpContext ctx, long id, IAuditQuery query, CancellationToken ct) =>
+        group.MapGet("/{id:long}", async (long id, IAuditQuery query, CancellationToken ct) =>
         {
-            var forbidden = DevRoleGate.RequireAdmin(ctx);
-            if (forbidden is not null) return forbidden;
-
             var entry = await query.GetAsync(id, ct);
             return entry is null ? Results.NotFound() : Results.Ok(Project(entry));
         })

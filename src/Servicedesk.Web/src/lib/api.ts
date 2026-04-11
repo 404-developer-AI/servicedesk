@@ -1,4 +1,5 @@
-import { devRoleStore } from "@/stores/useDevRoleStore";
+import { csrfHeader } from "@/lib/csrf";
+import type { Role } from "@/lib/roles";
 
 export type SystemVersion = {
   version: string;
@@ -40,30 +41,76 @@ export type AuditListQuery = {
   limit?: number;
 };
 
-async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      Accept: "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`${url} → ${res.status} ${res.statusText}`);
+export type AuthUserPayload = {
+  id: string;
+  email: string;
+  role: Role;
+  amr: string;
+  twoFactorEnabled: boolean;
+};
+
+export type MeResponse = {
+  user: AuthUserPayload | null;
+  serverTimeUtc: string;
+};
+
+export type SetupStatus = { available: boolean };
+
+export type LoginResponse = {
+  email: string;
+  role: Role;
+  twoFactorRequired: boolean;
+};
+
+export type TotpEnrollment = {
+  secret: string;
+  otpauthUri: string;
+};
+
+export type RecoveryCodesResponse = { recoveryCodes: string[] };
+
+export class ApiError extends Error {
+  readonly status: number;
+  readonly url: string;
+  constructor(status: number, url: string, message: string) {
+    super(message);
+    this.status = status;
+    this.url = url;
   }
-  return (await res.json()) as T;
 }
 
-// The dev role header is read fresh on every call so toggling the role in
-// the header switcher propagates without a page reload. In v0.0.4 this is
-// replaced by the authenticated session header / cookie.
-function devRoleHeaders(): Record<string, string> {
-  return { "X-Dev-Role": devRoleStore.get() };
+async function request<T>(
+  method: string,
+  url: string,
+  body?: unknown,
+  init?: RequestInit,
+): Promise<T> {
+  const isSafe = method === "GET" || method === "HEAD";
+  const res = await fetch(url, {
+    method,
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(isSafe ? {} : csrfHeader()),
+      ...(init?.headers ?? {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    ...init,
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, url, `${url} → ${res.status} ${res.statusText}`);
+  }
+  if (res.status === 204) {
+    return undefined as T;
+  }
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export const systemApi = {
-  version: () => getJson<SystemVersion>("/api/system/version"),
-  time: () => getJson<SystemTime>("/api/system/time"),
+  version: () => request<SystemVersion>("GET", "/api/system/version"),
+  time: () => request<SystemTime>("GET", "/api/system/time"),
 };
 
 export const auditApi = {
@@ -75,9 +122,23 @@ export const auditApi = {
     if (query.toUtc) params.set("toUtc", query.toUtc);
     if (query.cursor !== undefined) params.set("cursor", String(query.cursor));
     params.set("limit", String(query.limit ?? 50));
-    const qs = params.toString();
-    return getJson<AuditPage>(`/api/audit?${qs}`, { headers: devRoleHeaders() });
+    return request<AuditPage>("GET", `/api/audit?${params.toString()}`);
   },
-  get: (id: number) =>
-    getJson<AuditEntry>(`/api/audit/${id}`, { headers: devRoleHeaders() }),
+  get: (id: number) => request<AuditEntry>("GET", `/api/audit/${id}`),
+};
+
+export const authApi = {
+  setupStatus: () => request<SetupStatus>("GET", "/api/auth/setup/status"),
+  createAdmin: (email: string, password: string) =>
+    request<{ email: string; role: Role }>("POST", "/api/auth/setup/create-admin", { email, password }),
+  login: (email: string, password: string) =>
+    request<LoginResponse>("POST", "/api/auth/login", { email, password }),
+  verifyTwoFactor: (code: string) =>
+    request<void>("POST", "/api/auth/2fa/verify", { code }),
+  logout: () => request<void>("POST", "/api/auth/logout"),
+  me: () => request<MeResponse>("GET", "/api/auth/me"),
+  beginTotpEnroll: () => request<TotpEnrollment>("POST", "/api/auth/2fa/enroll/begin"),
+  confirmTotpEnroll: (code: string) =>
+    request<RecoveryCodesResponse>("POST", "/api/auth/2fa/enroll/confirm", { code }),
+  disableTotp: () => request<void>("POST", "/api/auth/2fa/disable"),
 };

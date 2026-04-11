@@ -142,8 +142,12 @@ CLAUDE.md
 ARCHITECTURE.md
 ROADMAP.md
 CHANGELOG.md
+CHANGELOG-archive.md
 NOTFORCLAUDE.md
 NOTFORCLAUDE.MD
 
 # Claude Code local settings
 .claude/
+
+# Local-only logs from manual smoke tests
+manual-logs/

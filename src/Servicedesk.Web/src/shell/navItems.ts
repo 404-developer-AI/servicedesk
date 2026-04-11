@@ -3,11 +3,12 @@ import {
   ListChecks,
   Inbox,
   BookOpen,
-  User,
   Settings,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "@/lib/roles";
+
+export type NavSection = "main" | "footer";
 
 export type NavItem = {
   label: string;
@@ -16,6 +17,7 @@ export type NavItem = {
   roles: readonly Role[];
   comingIn: string;
   description: string;
+  section: NavSection;
 };
 
 export const NAV_ITEMS: readonly NavItem[] = [
@@ -26,6 +28,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     roles: ["Customer", "Agent", "Admin"],
     comingIn: "v0.0.13",
     description: "Live metrics, SLA health, ticket volume and team load at a glance.",
+    section: "main",
   },
   {
     label: "Views",
@@ -34,6 +37,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     roles: ["Agent", "Admin"],
     comingIn: "v0.0.5",
     description: "User-defined saved ticket views with filters, sorting and shared queries.",
+    section: "main",
   },
   {
     label: "Open Tickets",
@@ -42,6 +46,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     roles: ["Agent", "Admin"],
     comingIn: "v0.0.5",
     description: "The ticket queue — fast list, virtualized, search and bulk actions.",
+    section: "main",
   },
   {
     label: "Knowledge Base",
@@ -50,15 +55,11 @@ export const NAV_ITEMS: readonly NavItem[] = [
     roles: ["Customer", "Agent", "Admin"],
     comingIn: "v0.0.11",
     description: "Articles and runbooks with full-text search and inline suggestions.",
+    section: "main",
   },
-  {
-    label: "Profile",
-    to: "/profile",
-    icon: User,
-    roles: ["Customer", "Agent", "Admin"],
-    comingIn: "v0.0.4",
-    description: "Your account, password, 2FA and personal preferences.",
-  },
+  // Profile is reachable from the header avatar dropdown (top-right) and via
+  // direct URL. Intentionally not in NAV_ITEMS so the primary nav and command
+  // palette stay focused on workflow pages.
   {
     label: "Settings",
     to: "/settings",
@@ -66,10 +67,17 @@ export const NAV_ITEMS: readonly NavItem[] = [
     roles: ["Admin"],
     comingIn: "v0.0.3",
     description: "App-wide configuration — grouped, searchable, audit-logged.",
+    section: "footer",
   },
 ] as const;
 
-export function visibleNavItems(role: Role): readonly NavItem[] {
+export function visibleNavItems(role: Role, section: NavSection = "main"): readonly NavItem[] {
+  return NAV_ITEMS.filter((item) => item.section === section && item.roles.includes(role));
+}
+
+/// All sections combined, for surfaces like the command palette that want
+/// every jump target regardless of where it's pinned in the sidebar.
+export function allVisibleNavItems(role: Role): readonly NavItem[] {
   return NAV_ITEMS.filter((item) => item.roles.includes(role));
 }
 

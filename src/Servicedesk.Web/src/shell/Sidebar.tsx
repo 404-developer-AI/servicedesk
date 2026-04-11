@@ -1,6 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, Settings as SettingsIcon, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCurrentRole } from "@/hooks/useCurrentRole";
 import { useSidebarStore } from "@/stores/useSidebarStore";
@@ -19,27 +19,32 @@ import {
 
 export function Sidebar() {
   const role = useCurrentRole();
-  const items = visibleNavItems(role);
+  const items = visibleNavItems(role, "main");
   const collapsed = useSidebarStore((s) => s.collapsed);
   const toggle = useSidebarStore((s) => s.toggle);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const version = useSystemVersion();
   const { time, error: timeError } = useServerTime();
 
+  // Strip any MinVer pre-release suffix (e.g. "0.0.4-alpha.0.5" → "0.0.4") so
+  // the UI shows a clean `vX.X.X`. Once a v0.0.4 tag is pushed there is no
+  // suffix anyway; this just keeps untagged dev builds from looking noisy.
   const versionLabel = version.data
-    ? `v${version.data.version}`
+    ? `v${version.data.version.split("-")[0]}`
     : version.isError
       ? "version unavailable"
       : "…";
-  const commitLabel = version.data?.commit ?? "";
   const clock = time ? formatServerLocalClock(time) : "…";
   const date = time ? formatServerLocalDate(time) : "";
+
+  const canSeeSettings = role === "Admin";
+  const settingsActive = pathname === "/settings" || pathname.startsWith("/settings/");
 
   return (
     <motion.aside
       animate={{ width: collapsed ? 76 : 260 }}
       transition={{ type: "spring", stiffness: 220, damping: 26 }}
-      className="glass-panel relative m-3 mr-0 flex flex-col overflow-hidden"
+      className="glass-panel sticky top-3 z-20 m-3 mr-0 flex h-[calc(100vh-1.5rem)] flex-col self-start overflow-hidden"
       data-testid="app-sidebar"
     >
       <div className="flex items-center gap-3 px-4 pt-5 pb-4">
@@ -77,6 +82,28 @@ export function Sidebar() {
         })}
       </nav>
 
+      {/*
+        When the sidebar is collapsed, Settings lives above the collapse button
+        as its own icon-only tile, with extra bottom margin so it reads as a
+        distinct section rather than a sibling of the toggle. In the expanded
+        layout Settings moves into the status block (see below) so the chrome
+        stays compact.
+      */}
+      {collapsed && canSeeSettings && (
+        <Link
+          to="/settings"
+          title="Settings"
+          className={cn(
+            "mx-3 mb-3 flex h-9 items-center justify-center rounded-lg text-sm transition-all",
+            settingsActive
+              ? "bg-white/[0.07] text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+              : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
+          )}
+        >
+          <SettingsIcon className="h-4 w-4" />
+        </Link>
+      )}
+
       <button
         type="button"
         onClick={toggle}
@@ -89,45 +116,61 @@ export function Sidebar() {
 
       <div
         className={cn(
-          "mx-3 mb-3 mt-2 space-y-1 border-t border-white/5 pt-2 font-mono text-[10px] text-muted-foreground",
+          "mx-3 mb-3 mt-2 border-t border-white/5 pt-2 font-mono text-[10px] text-muted-foreground",
           collapsed ? "text-center" : "",
         )}
         data-testid="sidebar-status"
       >
-        <div
-          className={cn(
-            "flex items-center gap-1.5",
-            collapsed && "justify-center",
-          )}
-          data-testid="sidebar-version"
-        >
-          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-primary/80 shadow-[0_0_8px_hsl(var(--primary))]" />
-          {!collapsed && (
-            <span className="truncate">
-              {versionLabel}
-              {commitLabel && <span className="text-muted-foreground/60"> · {commitLabel}</span>}
-            </span>
-          )}
-        </div>
         {!collapsed ? (
-          <div
-            data-testid="sidebar-server-time"
-            className={cn(
-              "truncate",
-              timeError ? "text-destructive/80" : "text-foreground/80",
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1 space-y-1">
+              <div className="flex items-center gap-1.5" data-testid="sidebar-version">
+                <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-primary/80 shadow-[0_0_8px_hsl(var(--primary))]" />
+                <span className="truncate">{versionLabel}</span>
+              </div>
+              <div
+                data-testid="sidebar-server-time"
+                className={cn(
+                  "truncate",
+                  timeError ? "text-destructive/80" : "text-foreground/80",
+                )}
+              >
+                {timeError ? "time unavailable" : `${date} ${clock}`}
+              </div>
+            </div>
+            {canSeeSettings && (
+              <Link
+                to="/settings"
+                title="Settings"
+                aria-label="Settings"
+                className={cn(
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors",
+                  settingsActive
+                    ? "bg-white/[0.07] text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+                    : "text-muted-foreground hover:bg-white/[0.06] hover:text-foreground",
+                )}
+              >
+                <SettingsIcon className="h-4 w-4" />
+              </Link>
             )}
-          >
-            {timeError ? "time unavailable" : `${date} ${clock}`}
           </div>
         ) : (
-          time && (
+          <div className="space-y-1">
             <div
-              data-testid="sidebar-server-time"
-              className="truncate text-foreground/80"
+              className="flex items-center justify-center gap-1.5"
+              data-testid="sidebar-version"
             >
-              {clock.slice(0, 5)}
+              <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-primary/80 shadow-[0_0_8px_hsl(var(--primary))]" />
             </div>
-          )
+            {time && (
+              <div
+                data-testid="sidebar-server-time"
+                className="truncate text-foreground/80"
+              >
+                {clock.slice(0, 5)}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </motion.aside>
