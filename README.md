@@ -1,35 +1,18 @@
 # Servicedesk
 
-A premium, self-hosted servicedesk for teams who actually like opening their ticket queue.
+A self-hosted servicedesk app. Built because the existing options were either ugly, slow, expensive, or all three.
 
-Built for speed, designed in glass, and shipped as a single install on your own box.
-
-> **Status:** v0.0.1 — foundations only. Not production-ready. Not even pretty yet.
-
----
+> **Status:** v0.0.1 — foundations. Nothing useful yet.
 
 ## What this is
 
-A modern internal servicedesk app:
-
-- **Fast** at 10K and at 1M tickets.
-- **Premium** dark glassmorphism UI, not the usual bootstrap-and-spinning-wheel energy.
-- **Self-hosted**, one install per customer, on a single Ubuntu box.
-- **Secure** by default — production app, exposed to the internet, sensitive data.
+A small project to build a servicedesk that's actually nice to use. Dark mode, glass, no clutter. Runs on your own box. That's the whole pitch.
 
 ## Stack
 
 - ASP.NET Core 8 · React 18 · TypeScript · Vite · Tailwind CSS
 - PostgreSQL · EF Core · Dapper for hot paths
-- Hosted with Docker Compose behind Nginx, TLS via Let's Encrypt
-
-## Roadmap (very) short version
-
-- ✅ **v0.0.1** — repo foundations, version & time endpoints, dev DB
-- 🟦 **v0.0.2** — design system + glass app shell
-- 🟦 **v0.0.4** — auth (local + Microsoft 365)
-- 🟦 **v0.0.5** — tickets
-- 🟦 **v0.1.0** — first real install on a real customer
+- Docker Compose behind Nginx, TLS via Let's Encrypt
 
 ## Local development
 

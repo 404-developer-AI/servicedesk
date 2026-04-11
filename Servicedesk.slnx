@@ -4,4 +4,7 @@
     <Project Path="src/Servicedesk.Domain/Servicedesk.Domain.csproj" />
     <Project Path="src/Servicedesk.Infrastructure/Servicedesk.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Servicedesk.Api.Tests/Servicedesk.Api.Tests.csproj" />
+  </Folder>
 </Solution>

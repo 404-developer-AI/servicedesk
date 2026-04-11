@@ -60,3 +60,6 @@ app.MapGet("/api/system/time", () =>
 .WithOpenApi();
 
 app.Run();
+
+public partial class Program { }
+

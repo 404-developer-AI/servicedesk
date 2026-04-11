@@ -25,6 +25,9 @@ jobs:
       - name: Build
         run: dotnet build Servicedesk.slnx --configuration Release --no-restore
 
+      - name: Test
+        run: dotnet test Servicedesk.slnx --configuration Release --no-build --verbosity normal
+
   frontend:
     name: frontend (vite)
     runs-on: ubuntu-latest
@@ -45,3 +48,6 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Test
+        run: npm test

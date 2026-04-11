@@ -5,21 +5,87 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --background: 240 12% 4%;
+    --foreground: 0 0% 98%;
+
+    --card: 240 10% 8%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 240 12% 6%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 265 89% 70%;
+    --primary-foreground: 240 10% 4%;
+
+    --secondary: 240 6% 14%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 240 5% 14%;
+    --muted-foreground: 240 5% 65%;
+
+    --accent: 265 50% 22%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 6% 20%;
+    --input: 240 6% 18%;
+    --ring: 265 89% 70%;
+
+    --radius: 0.85rem;
+
+    color-scheme: dark;
+  }
+
   html {
     color-scheme: dark;
   }
+
   body {
     @apply min-h-screen bg-background font-sans text-foreground antialiased;
     font-optical-sizing: auto;
     font-feature-settings: "cv11", "ss01", "ss03";
-    background-image:
-      radial-gradient(at 20% 0%, hsl(265 89% 30% / 0.35) 0, transparent 50%),
-      radial-gradient(at 80% 100%, hsl(220 89% 35% / 0.35) 0, transparent 50%);
   }
+
   h1, h2, h3, .font-display {
     font-family: "Inter", system-ui, sans-serif;
     font-optical-sizing: auto;
     font-variation-settings: "opsz" 32;
     letter-spacing: -0.025em;
+  }
+}
+
+@layer components {
+  /* Static app background — used inside the working app (cheap, no WebGL). */
+  .app-background {
+    background-color: hsl(var(--background));
+    background-image:
+      radial-gradient(at 18% 0%, hsl(265 89% 30% / 0.35) 0, transparent 55%),
+      radial-gradient(at 82% 100%, hsl(220 89% 35% / 0.30) 0, transparent 55%);
+  }
+
+  /* Glass primitives — use directly or compose via className. */
+  .glass-card {
+    @apply rounded-[var(--radius)] border border-white/10 bg-white/[0.04] backdrop-blur-xl shadow-[0_8px_30px_-12px_rgba(0,0,0,0.6)];
+  }
+  .glass-panel {
+    @apply rounded-[var(--radius)] border border-white/[0.08] bg-white/[0.025] backdrop-blur-md;
+  }
+  .glass-hover {
+    @apply transition-colors hover:bg-white/[0.07] hover:border-white/15;
+  }
+  .glass-border {
+    @apply border border-white/10;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }
