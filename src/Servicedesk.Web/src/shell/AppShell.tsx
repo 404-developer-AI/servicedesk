@@ -3,7 +3,6 @@ import { Outlet } from "@tanstack/react-router";
 import { Toaster } from "sonner";
 import { Sidebar } from "@/shell/Sidebar";
 import { Header } from "@/shell/Header";
-import { Footer } from "@/shell/Footer";
 import { NewTicketFab } from "@/shell/NewTicketFab";
 import { CommandPalette } from "@/shell/CommandPalette";
 
@@ -18,7 +17,6 @@ export function AppShell() {
         <main className="flex-1 px-6 pb-6">
           <Outlet />
         </main>
-        <Footer />
       </div>
       <NewTicketFab />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />

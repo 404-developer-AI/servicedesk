@@ -1,15 +1,15 @@
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.AspNetCore.Mvc.Testing;
+using Servicedesk.Api.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Servicedesk.Api.Tests;
 
-public sealed class SystemEndpointsTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class SystemEndpointsTests : IClassFixture<SecurityBaselineFactory>
 {
-    private readonly WebApplicationFactory<Program> _factory;
+    private readonly SecurityBaselineFactory _factory;
 
-    public SystemEndpointsTests(WebApplicationFactory<Program> factory)
+    public SystemEndpointsTests(SecurityBaselineFactory factory)
     {
         _factory = factory;
     }
@@ -42,7 +42,6 @@ public sealed class SystemEndpointsTests : IClassFixture<WebApplicationFactory<P
         Assert.NotNull(payload);
         Assert.False(string.IsNullOrWhiteSpace(payload!.Timezone));
         Assert.True(payload.Utc != default);
-        // Offset is bounded by real world values.
         Assert.InRange(payload.OffsetMinutes, -14 * 60, 14 * 60);
     }
 

@@ -9,6 +9,8 @@ import { StubPage } from "@/shell/StubPage";
 import { findNavItem } from "@/shell/navItems";
 import type { Role } from "@/lib/roles";
 import { devRoleStore } from "@/stores/useDevRoleStore";
+import { AuditLogPage } from "@/pages/settings/AuditLogPage";
+import { SettingsIndexPage } from "@/pages/settings/SettingsIndexPage";
 
 // The router reads the "current role" outside of React here (for the
 // beforeLoad gate). In v0.0.4 this becomes an auth-context lookup.
@@ -92,7 +94,14 @@ const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
   beforeLoad: roleGate(["Admin"]),
-  component: () => stubForPath("/settings"),
+  component: SettingsIndexPage,
+});
+
+const settingsAuditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings/audit",
+  beforeLoad: roleGate(["Admin"]),
+  component: AuditLogPage,
 });
 
 const routeTree = rootRoute.addChildren([
@@ -102,6 +111,7 @@ const routeTree = rootRoute.addChildren([
   kbRoute,
   profileRoute,
   settingsRoute,
+  settingsAuditRoute,
 ]);
 
 export const router = createRouter({

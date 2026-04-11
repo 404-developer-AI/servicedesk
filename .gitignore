@@ -9,6 +9,14 @@
 secrets.*
 *secret*
 *secrets*
+# Source code whose name legitimately contains "secret" is NOT a secret file.
+# These negations must come AFTER the *secret*/*secrets* rules above.
+!src/**/Secrets/
+!src/**/Secrets/**
+!tests/**/*Secret*.cs
+!src/**/*Secret*.cs
+!src/**/*Secret*.ts
+!src/**/*Secret*.tsx
 appsettings.*.json
 !appsettings.json
 !appsettings.Example.json
@@ -25,6 +33,10 @@ appsettings.*.json
 *.keystore
 id_rsa*
 id_ed25519*
+
+# ASP.NET DataProtection keyring — contains active cookie/token signing keys.
+# Dev keys under src/Servicedesk.Api/keys; prod mounts /var/lib/servicedesk/keys.
+keys/
 
 # Cloud / service credentials
 *credentials*

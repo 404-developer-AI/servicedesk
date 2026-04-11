@@ -13,6 +13,12 @@ type HeaderProps = {
 export function Header({ onOpenCommandPalette }: HeaderProps) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const current = findNavItem(pathname);
+  // Fall back to the nearest parent nav item for nested routes (e.g.
+  // /settings/audit resolves to the Settings item in the sidebar).
+  const parent = !current
+    ? findNavItem("/" + pathname.split("/").filter(Boolean)[0])
+    : undefined;
+  const title = current?.label ?? parent?.label ?? "Servicedesk";
   const role = useCurrentRole();
 
   return (
@@ -20,7 +26,7 @@ export function Header({ onOpenCommandPalette }: HeaderProps) {
       <div className="min-w-0">
         <div className="truncate text-[11px] uppercase tracking-[0.22em] text-muted-foreground">Servicedesk</div>
         <h1 className="truncate font-display text-display-sm font-semibold">
-          {current?.label ?? "Not found"}
+          {title}
         </h1>
       </div>
 

@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Servicedesk.Api\Servicedesk.Api.csproj" />
+    <ProjectReference Include="..\..\src\Servicedesk.Infrastructure\Servicedesk.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

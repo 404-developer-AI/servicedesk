@@ -5,6 +5,17 @@ import { cn } from "@/lib/utils";
 import { useCurrentRole } from "@/hooks/useCurrentRole";
 import { useSidebarStore } from "@/stores/useSidebarStore";
 import { visibleNavItems } from "@/shell/navItems";
+import { useSystemVersion } from "@/hooks/useSystemVersion";
+import {
+  useServerTime,
+  formatServerLocalClock,
+  formatServerLocalDate,
+} from "@/hooks/useServerTime";
+
+// Timezone is intentionally not displayed — on Windows dev boxes
+// `TimeZoneInfo.Local.Id` returns "Romance Standard Time" etc., which is ugly
+// and inconsistent with the IANA names on the Linux host. The absolute server
+// time (UTC offset already applied) is what the user actually wants to see.
 
 export function Sidebar() {
   const role = useCurrentRole();
@@ -12,6 +23,17 @@ export function Sidebar() {
   const collapsed = useSidebarStore((s) => s.collapsed);
   const toggle = useSidebarStore((s) => s.toggle);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const version = useSystemVersion();
+  const { time, error: timeError } = useServerTime();
+
+  const versionLabel = version.data
+    ? `v${version.data.version}`
+    : version.isError
+      ? "version unavailable"
+      : "…";
+  const commitLabel = version.data?.commit ?? "";
+  const clock = time ? formatServerLocalClock(time) : "…";
+  const date = time ? formatServerLocalDate(time) : "";
 
   return (
     <motion.aside
@@ -59,11 +81,55 @@ export function Sidebar() {
         type="button"
         onClick={toggle}
         aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        className="m-3 flex h-8 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] text-xs text-muted-foreground transition-colors hover:bg-white/[0.07] hover:text-foreground"
+        className="mx-3 mt-3 flex h-8 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] text-xs text-muted-foreground transition-colors hover:bg-white/[0.07] hover:text-foreground"
       >
         {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
         {!collapsed && <span>Collapse</span>}
       </button>
+
+      <div
+        className={cn(
+          "mx-3 mb-3 mt-2 space-y-1 border-t border-white/5 pt-2 font-mono text-[10px] text-muted-foreground",
+          collapsed ? "text-center" : "",
+        )}
+        data-testid="sidebar-status"
+      >
+        <div
+          className={cn(
+            "flex items-center gap-1.5",
+            collapsed && "justify-center",
+          )}
+          data-testid="sidebar-version"
+        >
+          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-primary/80 shadow-[0_0_8px_hsl(var(--primary))]" />
+          {!collapsed && (
+            <span className="truncate">
+              {versionLabel}
+              {commitLabel && <span className="text-muted-foreground/60"> · {commitLabel}</span>}
+            </span>
+          )}
+        </div>
+        {!collapsed ? (
+          <div
+            data-testid="sidebar-server-time"
+            className={cn(
+              "truncate",
+              timeError ? "text-destructive/80" : "text-foreground/80",
+            )}
+          >
+            {timeError ? "time unavailable" : `${date} ${clock}`}
+          </div>
+        ) : (
+          time && (
+            <div
+              data-testid="sidebar-server-time"
+              className="truncate text-foreground/80"
+            >
+              {clock.slice(0, 5)}
+            </div>
+          )
+        )}
+      </div>
     </motion.aside>
   );
 }
