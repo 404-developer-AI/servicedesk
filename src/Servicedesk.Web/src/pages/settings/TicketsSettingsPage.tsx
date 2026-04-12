@@ -136,7 +136,10 @@ function useDeleteHandler(
   const qc = useQueryClient();
   return useMutation({
     mutationFn: remove,
-    onSuccess: () => {
+    onSuccess: (_result, deletedId) => {
+      qc.setQueryData<Array<{ id: string }>>(invalidateKey, (old) =>
+        old?.filter((item) => item.id !== deletedId),
+      );
       qc.invalidateQueries({ queryKey: invalidateKey });
       toast.success(`${label} deleted`);
     },
@@ -424,6 +427,7 @@ function PrioritiesTab() {
               <th className="px-4 py-3 font-medium">Slug</th>
               <th className="px-4 py-3 font-medium">Level</th>
               <th className="px-4 py-3 font-medium">Color</th>
+              <th className="px-4 py-3 font-medium">Default</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3" />
             </tr>
@@ -431,16 +435,7 @@ function PrioritiesTab() {
           <tbody>
             {data?.map((p) => (
               <tr key={p.id} className="border-b border-white/5 hover:bg-white/[0.03]">
-                <td className="px-4 py-3 text-foreground">
-                  <div className="flex items-center gap-2">
-                    {p.name}
-                    {p.isSystem && (
-                      <Badge className="border border-white/10 bg-white/[0.05] text-[10px] font-normal text-muted-foreground">
-                        system
-                      </Badge>
-                    )}
-                  </div>
-                </td>
+                <td className="px-4 py-3 text-foreground">{p.name}</td>
                 <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{p.slug}</td>
                 <td className="px-4 py-3 text-muted-foreground">{p.level}</td>
                 <td className="px-4 py-3">
@@ -448,6 +443,9 @@ function PrioritiesTab() {
                     <ColorSwatch color={p.color} />
                     <span className="font-mono text-[11px] text-muted-foreground">{p.color}</span>
                   </div>
+                </td>
+                <td className="px-4 py-3 text-xs text-muted-foreground">
+                  {p.isDefault ? "yes" : "—"}
                 </td>
                 <td className="px-4 py-3">
                   {p.isActive ? (
@@ -467,7 +465,7 @@ function PrioritiesTab() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    disabled={p.isSystem || del.isPending}
+                    disabled={p.isDefault || del.isPending}
                     onClick={() => {
                       if (confirm(`Delete priority "${p.name}"?`)) del.mutate(p.id);
                     }}
@@ -479,7 +477,7 @@ function PrioritiesTab() {
             ))}
             {data && data.length === 0 && (
               <tr>
-                <td colSpan={6} className="p-8 text-center text-sm text-muted-foreground">
+                <td colSpan={7} className="p-8 text-center text-sm text-muted-foreground">
                   No priorities yet.
                 </td>
               </tr>
@@ -519,6 +517,7 @@ function PriorityDialog({
     icon: priority?.icon ?? "flag",
     sortOrder: priority?.sortOrder ?? 0,
     isActive: priority?.isActive ?? true,
+    isDefault: priority?.isDefault ?? false,
   }));
 
   const save = useMutation({
@@ -582,14 +581,24 @@ function PriorityDialog({
               />
             </Field>
           </div>
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={form.isActive}
-              onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
-            />
-            Active
-          </label>
+          <div className="flex items-center gap-6">
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={form.isActive}
+                onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
+              />
+              Active
+            </label>
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={form.isDefault}
+                onChange={(e) => setForm((f) => ({ ...f, isDefault: e.target.checked }))}
+              />
+              Default priority (pre-selected for new tickets, no row highlight)
+            </label>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>

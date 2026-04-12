@@ -118,13 +118,7 @@ const ALL_COLUMNS = [
     header: "Priority",
     cell: (info) => {
       const row = info.row.original;
-      const levelColors: Record<number, string> = {
-        1: "#ef4444",
-        2: "#f97316",
-        3: "#eab308",
-        4: "#6b7280",
-      };
-      const color = levelColors[row.priorityLevel] ?? "#6b7280";
+      const color = row.priorityColor || "#6b7280";
       return <ColoredBadge label={row.priorityName} color={color} />;
     },
   }),
@@ -212,19 +206,30 @@ export function TicketTable({ data, onRowClick }: TicketTableProps) {
             ))}
           </thead>
           <tbody>
-            {table.getRowModel().rows.map((row) => (
-              <tr
-                key={row.id}
-                className="border-b border-white/5 hover:bg-white/[0.04] cursor-pointer transition-colors"
-                onClick={() => onRowClick(row.original.id)}
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="px-4 py-3 text-sm">
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {table.getRowModel().rows.map((row) => {
+              const orig = row.original;
+              const showOverlay = !orig.priorityIsDefault && orig.priorityColor;
+              const rowStyle = showOverlay
+                ? {
+                    backgroundImage: `linear-gradient(to right, ${orig.priorityColor}15 0%, ${orig.priorityColor}08 40%, transparent 80%)`,
+                  }
+                : undefined;
+
+              return (
+                <tr
+                  key={row.id}
+                  className="border-b border-white/5 hover:bg-white/[0.04] cursor-pointer transition-colors"
+                  style={rowStyle}
+                  onClick={() => onRowClick(orig.id)}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <td key={cell.id} className="px-4 py-3 text-sm">
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

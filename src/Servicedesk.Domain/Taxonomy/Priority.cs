@@ -10,5 +10,6 @@ public sealed record Priority(
     int SortOrder,
     bool IsActive,
     bool IsSystem,
+    bool IsDefault,
     DateTime CreatedUtc,
     DateTime UpdatedUtc);

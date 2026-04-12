@@ -153,6 +153,7 @@ export type Priority = {
   sortOrder: number;
   isActive: boolean;
   isSystem: boolean;
+  isDefault: boolean;
   createdUtc: string;
   updatedUtc: string;
 };
@@ -210,6 +211,7 @@ export type PriorityInput = {
   icon?: string;
   sortOrder: number;
   isActive: boolean;
+  isDefault: boolean;
 };
 
 export type StatusInput = {
@@ -282,6 +284,128 @@ export const settingsApi = {
     request<void>("PUT", `/api/settings/${encodeURIComponent(key)}`, { value }),
   navigation: () =>
     request<NavigationSettings>("GET", "/api/settings/navigation"),
+};
+
+// ---- Agent-Facing Queue List (scoped to accessible queues) ----
+
+export const agentQueueApi = {
+  list: () => request<Queue[]>("GET", "/api/queues"),
+};
+
+// ---- Queue Access Admin ----
+
+export const queueAccessApi = {
+  getForUser: (userId: string) =>
+    request<{ queueIds: string[] }>("GET", `/api/admin/queue-access/${userId}`),
+  setForUser: (userId: string, queueIds: string[]) =>
+    request<void>("PUT", `/api/admin/queue-access/${userId}`, { queueIds }),
+  getByQueue: (queueId: string) =>
+    request<{ userIds: string[] }>("GET", `/api/admin/queue-access/by-queue/${queueId}`),
+};
+
+// ---- View Groups Admin ----
+
+export type ViewGroupSummary = {
+  id: string;
+  name: string;
+  description: string;
+  sortOrder: number;
+  memberCount: number;
+  viewCount: number;
+  createdUtc: string;
+  updatedUtc: string;
+};
+
+export type ViewGroupMember = {
+  userId: string;
+  email: string;
+};
+
+export type ViewGroupView = {
+  viewId: string;
+  viewName: string;
+  sortOrder: number;
+};
+
+export type ViewGroupDetail = {
+  group: ViewGroupSummary;
+  members: ViewGroupMember[];
+  views: ViewGroupView[];
+};
+
+export type ViewGroupInput = {
+  name: string;
+  description?: string;
+  sortOrder?: number;
+};
+
+export const viewGroupApi = {
+  list: () => request<ViewGroupSummary[]>("GET", "/api/admin/view-groups"),
+  get: (id: string) => request<ViewGroupDetail>("GET", `/api/admin/view-groups/${id}`),
+  create: (input: ViewGroupInput) =>
+    request<ViewGroupSummary>("POST", "/api/admin/view-groups", input),
+  update: (id: string, input: ViewGroupInput) =>
+    request<ViewGroupSummary>("PUT", `/api/admin/view-groups/${id}`, input),
+  remove: (id: string) => request<void>("DELETE", `/api/admin/view-groups/${id}`),
+  setMembers: (id: string, userIds: string[]) =>
+    request<void>("PUT", `/api/admin/view-groups/${id}/members`, { userIds }),
+  setViews: (id: string, viewIds: string[]) =>
+    request<void>("PUT", `/api/admin/view-groups/${id}/views`, { viewIds }),
+};
+
+// ---- View Access Admin (direct assignment) ----
+
+export const viewAccessApi = {
+  getForUser: (userId: string) =>
+    request<{ viewIds: string[] }>("GET", `/api/admin/view-access/${userId}`),
+  setForUser: (userId: string, viewIds: string[]) =>
+    request<void>("PUT", `/api/admin/view-access/${userId}`, { viewIds }),
+};
+
+// ---- User Preferences ----
+
+export type ColumnPreference = {
+  columns: string;
+  source: "user-view" | "view" | "user" | "default";
+};
+
+export type WorkspaceEntryDto = { key: string; value: string };
+
+export const preferencesApi = {
+  getColumns: (viewId?: string) => {
+    const qs = viewId ? `?viewId=${viewId}` : "";
+    return request<ColumnPreference>("GET", `/api/preferences/columns${qs}`);
+  },
+  saveColumns: (columns: string, viewId?: string) => {
+    const qs = viewId ? `?viewId=${viewId}` : "";
+    return request<void>("PUT", `/api/preferences/columns${qs}`, { columns });
+  },
+  resetColumns: (viewId?: string) => {
+    const qs = viewId ? `?viewId=${viewId}` : "";
+    return request<void>("DELETE", `/api/preferences/columns${qs}`);
+  },
+  getWorkspace: () =>
+    request<Record<string, string>>("GET", "/api/preferences/workspace"),
+  saveWorkspace: (entries: WorkspaceEntryDto[]) =>
+    request<void>("PUT", "/api/preferences/workspace", { entries }),
+  deleteWorkspaceKey: (key: string) =>
+    request<void>(
+      "DELETE",
+      `/api/preferences/workspace/${encodeURIComponent(key)}`,
+    ),
+  /** Fire-and-forget save using keepalive — survives page unload. */
+  fireAndForgetWorkspaceSave: (entries: WorkspaceEntryDto[]) => {
+    fetch("/api/preferences/workspace", {
+      method: "PUT",
+      credentials: "include",
+      keepalive: true,
+      headers: {
+        "Content-Type": "application/json",
+        ...csrfHeader(),
+      },
+      body: JSON.stringify({ entries }),
+    });
+  },
 };
 
 export const authApi = {

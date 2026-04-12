@@ -6,7 +6,9 @@ import { ticketApi, type TicketFieldUpdate } from "@/lib/ticket-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { useRecentTicketsStore } from "@/stores/useRecentTicketsStore";
+import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
 import { useViewingTicket } from "@/hooks/usePresence";
+import { useTicketRealtime } from "@/hooks/useTicketRealtime";
 import { TicketSidePanel } from "./components/TicketSidePanel";
 import { TicketTimeline } from "./components/TicketTimeline";
 import { AddNoteForm } from "./components/AddNoteForm";
@@ -260,6 +262,7 @@ export function TicketDetailPage({ ticketId }: TicketDetailPageProps) {
   const queryClient = useQueryClient();
   const addTicket = useRecentTicketsStore((s) => s.addTicket);
   useViewingTicket(ticketId);
+  useTicketRealtime(ticketId);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["ticket", ticketId],
@@ -273,6 +276,7 @@ export function TicketDetailPage({ ticketId }: TicketDetailPageProps) {
         number: data.ticket.number,
         subject: data.ticket.subject,
       });
+      useWorkspaceStore.getState().setLastTicket(data.ticket.id);
     }
   }, [data?.ticket, addTicket]);
 
@@ -280,6 +284,7 @@ export function TicketDetailPage({ ticketId }: TicketDetailPageProps) {
     mutationFn: (fields: TicketFieldUpdate) => ticketApi.update(ticketId, fields),
     onSuccess: (updated) => {
       queryClient.setQueryData(["ticket", ticketId], updated);
+      queryClient.invalidateQueries({ queryKey: ["tickets"] });
       toast.success("Ticket updated");
     },
     onError: () => toast.error("Failed to update ticket"),
@@ -357,6 +362,7 @@ export function TicketDetailPage({ ticketId }: TicketDetailPageProps) {
         {/* Static: reply form */}
         <div className="shrink-0 pt-3">
           <AddNoteForm
+            key={ticketId}
             ticketId={ticketId}
             onSubmitted={() => {
               queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });

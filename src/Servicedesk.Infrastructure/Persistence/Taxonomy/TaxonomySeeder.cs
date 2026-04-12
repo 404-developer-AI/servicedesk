@@ -6,11 +6,11 @@ using Npgsql;
 namespace Servicedesk.Infrastructure.Persistence.Taxonomy;
 
 /// Seeds a minimal default taxonomy on startup so a fresh install has a
-/// working queue, set of priorities and statuses out of the box. Every row
-/// is marked <c>is_system = TRUE</c>: admins can rename and re-color them
-/// but not delete them, so the app never lands in a state where no default
-/// exists. Seeding is idempotent — <c>ON CONFLICT (slug) DO NOTHING</c>
-/// ensures replays are safe.
+/// working queue and set of statuses out of the box. Priorities are fully
+/// user-defined — admins create them in Settings. Every seeded row is
+/// marked <c>is_system = TRUE</c>: admins can rename and re-color them
+/// but not delete them. Seeding is idempotent — <c>ON CONFLICT (slug)
+/// DO NOTHING</c> ensures replays are safe.
 public sealed class TaxonomySeeder : IHostedService
 {
     private const string Sql = """
@@ -19,13 +19,7 @@ public sealed class TaxonomySeeder : IHostedService
         VALUES ('Default', 'default', 'Unassigned inbox for new tickets.', '#7c7cff', 'inbox', 0, TRUE, TRUE)
         ON CONFLICT (slug) DO NOTHING;
 
-        -- Default priorities
-        INSERT INTO priorities (name, slug, level, color, icon, sort_order, is_active, is_system) VALUES
-            ('Low',    'low',    10, '#60a5fa', 'flag', 10, TRUE, TRUE),
-            ('Normal', 'normal', 20, '#7c7cff', 'flag', 20, TRUE, TRUE),
-            ('High',   'high',   30, '#f59e0b', 'flag', 30, TRUE, TRUE),
-            ('Urgent', 'urgent', 40, '#ef4444', 'flag', 40, TRUE, TRUE)
-        ON CONFLICT (slug) DO NOTHING;
+        -- Priorities are fully user-defined — no system defaults seeded.
 
         -- Default statuses — each pinned to a state_category so SLA and
         -- "open" filters keep working when admins rename the display labels.
@@ -51,7 +45,7 @@ public sealed class TaxonomySeeder : IHostedService
     {
         await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
         await conn.ExecuteAsync(new CommandDefinition(Sql, cancellationToken: cancellationToken));
-        _logger.LogInformation("Taxonomy seed complete (queues, priorities, statuses).");
+        _logger.LogInformation("Taxonomy seed complete (queues, statuses).");
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

@@ -26,7 +26,8 @@ public sealed record TicketQuery(
     bool OpenOnly = false,
     DateTime? CursorUpdatedUtc = null,
     Guid? CursorId = null,
-    int Limit = 50);
+    int Limit = 50,
+    IReadOnlyList<Guid>? AccessibleQueueIds = null);
 
 public sealed record TicketListItem(
     Guid Id,
@@ -40,6 +41,8 @@ public sealed record TicketListItem(
     Guid PriorityId,
     string PriorityName,
     int PriorityLevel,
+    string PriorityColor,
+    bool PriorityIsDefault,
     Guid RequesterContactId,
     string RequesterEmail,
     string RequesterFirstName,

@@ -24,6 +24,8 @@ public sealed class TicketRepository : ITicketRepository
             t.priority_id                   AS PriorityId,
             p.name                          AS PriorityName,
             p.level                         AS PriorityLevel,
+            p.color                         AS PriorityColor,
+            p.is_default                    AS PriorityIsDefault,
             t.requester_contact_id          AS RequesterContactId,
             c.email                         AS RequesterEmail,
             c.first_name                    AS RequesterFirstName,
@@ -63,6 +65,11 @@ public sealed class TicketRepository : ITicketRepository
         if (query.AssigneeUserId.HasValue) sql.Append(" AND t.assignee_user_id = @AssigneeUserId");
         if (query.RequesterContactId.HasValue) sql.Append(" AND t.requester_contact_id = @RequesterContactId");
         if (query.OpenOnly) sql.Append(" AND s.state_category NOT IN ('Resolved','Closed')");
+
+        // Queue-access enforcement: restrict to only the queues the caller
+        // is allowed to see. When null (admin), no filter is applied.
+        if (query.AccessibleQueueIds is not null)
+            sql.Append(" AND t.queue_id = ANY(@AccessibleQueueIds)");
 
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
@@ -110,6 +117,7 @@ public sealed class TicketRepository : ITicketRepository
             query.CursorUpdatedUtc,
             query.CursorId,
             Limit = Math.Clamp(query.Limit, 1, 500),
+            AccessibleQueueIds = query.AccessibleQueueIds as IEnumerable<Guid>,
         };
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -145,13 +153,17 @@ public sealed class TicketRepository : ITicketRepository
             FROM ticket_bodies WHERE ticket_id = @id
             """;
         const string eventsSql = """
-            SELECT id AS Id, ticket_id AS TicketId, event_type AS EventType,
-                   author_user_id AS AuthorUserId, author_contact_id AS AuthorContactId,
-                   body_text AS BodyText, body_html AS BodyHtml,
-                   metadata::text AS MetadataJson, is_internal AS IsInternal,
-                   created_utc AS CreatedUtc,
-                   edited_utc AS EditedUtc, edited_by_user_id AS EditedByUserId
-            FROM ticket_events WHERE ticket_id = @id ORDER BY created_utc, id
+            SELECT e.id AS Id, e.ticket_id AS TicketId, e.event_type AS EventType,
+                   e.author_user_id AS AuthorUserId, e.author_contact_id AS AuthorContactId,
+                   COALESCE(au.email, CONCAT_WS(' ', ac.first_name, ac.last_name)) AS AuthorName,
+                   e.body_text AS BodyText, e.body_html AS BodyHtml,
+                   e.metadata::text AS MetadataJson, e.is_internal AS IsInternal,
+                   e.created_utc AS CreatedUtc,
+                   e.edited_utc AS EditedUtc, e.edited_by_user_id AS EditedByUserId
+            FROM ticket_events e
+            LEFT JOIN users    au ON au.id = e.author_user_id
+            LEFT JOIN contacts ac ON ac.id = e.author_contact_id
+            WHERE e.ticket_id = @id ORDER BY e.created_utc, e.id
             """;
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -366,6 +378,7 @@ public sealed class TicketRepository : ITicketRepository
             VALUES (@TicketId, @EventType, @AuthorUserId, @BodyText, @BodyHtml, @IsInternal)
             RETURNING id AS Id, ticket_id AS TicketId, event_type AS EventType,
                       author_user_id AS AuthorUserId, author_contact_id AS AuthorContactId,
+                      (SELECT email FROM users WHERE id = author_user_id) AS AuthorName,
                       body_text AS BodyText, body_html AS BodyHtml,
                       metadata::text AS MetadataJson, is_internal AS IsInternal,
                       created_utc AS CreatedUtc,
@@ -450,6 +463,10 @@ public sealed class TicketRepository : ITicketRepository
             WHERE id = @eventId AND ticket_id = @ticketId
             RETURNING id AS Id, ticket_id AS TicketId, event_type AS EventType,
                       author_user_id AS AuthorUserId, author_contact_id AS AuthorContactId,
+                      COALESCE(
+                          (SELECT email FROM users WHERE id = author_user_id),
+                          (SELECT CONCAT_WS(' ', first_name, last_name) FROM contacts WHERE id = author_contact_id)
+                      ) AS AuthorName,
                       body_text AS BodyText, body_html AS BodyHtml,
                       metadata::text AS MetadataJson, is_internal AS IsInternal,
                       created_utc AS CreatedUtc,

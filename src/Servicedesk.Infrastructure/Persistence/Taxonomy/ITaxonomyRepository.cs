@@ -21,7 +21,7 @@ public interface ITaxonomyRepository
     Task<IReadOnlyList<Priority>> ListPrioritiesAsync(CancellationToken ct);
     Task<Priority?> GetPriorityAsync(Guid id, CancellationToken ct);
     Task<Priority> CreatePriorityAsync(Priority p, CancellationToken ct);
-    Task<Priority?> UpdatePriorityAsync(Guid id, string name, string slug, int level, string color, string icon, int sortOrder, bool isActive, CancellationToken ct);
+    Task<Priority?> UpdatePriorityAsync(Guid id, string name, string slug, int level, string color, string icon, int sortOrder, bool isActive, bool isDefault, CancellationToken ct);
     Task<DeleteResult> DeletePriorityAsync(Guid id, CancellationToken ct);
 
     Task<IReadOnlyList<Status>> ListStatusesAsync(CancellationToken ct);

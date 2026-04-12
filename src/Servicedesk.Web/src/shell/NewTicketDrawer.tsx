@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { ContactPicker } from "@/components/ContactPicker";
 import { AgentPicker } from "@/components/AgentPicker";
-import { taxonomyApi } from "@/lib/api";
+import { agentQueueApi, taxonomyApi } from "@/lib/api";
 import { ticketApi } from "@/lib/ticket-api";
 import { cn } from "@/lib/utils";
 
@@ -131,9 +131,9 @@ export function NewTicketDrawer({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
 
   const { data: queues } = useQuery({
-    queryKey: ["taxonomy", "queues"],
-    queryFn: taxonomyApi.queues.list,
-    staleTime: STALE_TIME,
+    queryKey: ["accessible-queues"],
+    queryFn: agentQueueApi.list,
+    staleTime: 60_000,
   });
 
   const { data: priorities } = useQuery({
@@ -160,12 +160,9 @@ export function NewTicketDrawer({ children }: { children: ReactNode }) {
     "";
 
   const defaultPriorityId =
-    priorities?.find((p) => p.slug === "normal")?.id ??
-    (() => {
-      if (!priorities?.length) return "";
-      const sorted = [...priorities].sort((a, b) => a.level - b.level);
-      return sorted[Math.floor(sorted.length / 2)]?.id ?? "";
-    })();
+    priorities?.find((p) => p.isDefault && p.isActive)?.id ??
+    priorities?.find((p) => p.isActive)?.id ??
+    "";
 
   const defaultStatusId =
     statuses?.find((s) => s.isDefault && s.stateCategory === "New")?.id ??

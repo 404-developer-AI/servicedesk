@@ -52,6 +52,8 @@ export type TicketListItem = {
   priorityId: string;
   priorityName: string;
   priorityLevel: number;
+  priorityColor: string;
+  priorityIsDefault: boolean;
   requesterContactId: string;
   requesterEmail: string;
   requesterFirstName: string;
@@ -103,6 +105,7 @@ export type TicketEvent = {
   eventType: string;
   authorUserId: string | null;
   authorContactId: string | null;
+  authorName: string | null;
   bodyText: string | null;
   bodyHtml: string | null;
   metadataJson: string;
@@ -187,6 +190,7 @@ export type View = {
   userId: string;
   name: string;
   filtersJson: string;
+  columns: string | null;
   sortOrder: number;
   isShared: boolean;
   createdUtc: string;
@@ -196,6 +200,7 @@ export type View = {
 export type ViewInput = {
   name: string;
   filtersJson?: string;
+  columns?: string | null;
   sortOrder?: number;
   isShared?: boolean;
 };

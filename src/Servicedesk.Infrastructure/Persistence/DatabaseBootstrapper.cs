@@ -8,11 +8,14 @@ namespace Servicedesk.Infrastructure.Persistence;
 /// not already present, so a fresh dev database or a brand-new install is
 /// immediately usable. Tables tracked here: <c>audit_log</c>, <c>settings</c>,
 /// <c>data_protection_keys</c>, the auth tables (<c>roles</c>, <c>users</c>,
-/// <c>user_totp</c>, <c>user_recovery_codes</c>, <c>user_sessions</c>), and
-/// the v0.0.5 ticket domain (<c>queues</c>, <c>priorities</c>, <c>statuses</c>,
+/// <c>user_totp</c>, <c>user_recovery_codes</c>, <c>user_sessions</c>), the
+/// v0.0.5 ticket domain (<c>queues</c>, <c>priorities</c>, <c>statuses</c>,
 /// <c>categories</c>, <c>companies</c>, <c>company_domains</c>, <c>contacts</c>,
-/// <c>tickets</c>, <c>ticket_bodies</c>, <c>ticket_events</c>), and the v0.0.6
-/// saved views (<c>views</c>).
+/// <c>tickets</c>, <c>ticket_bodies</c>, <c>ticket_events</c>), the v0.0.6
+/// saved views (<c>views</c>), and the v0.0.7 access control tables
+/// (<c>user_queue_access</c>, <c>view_groups</c>, <c>view_group_members</c>,
+/// <c>view_group_views</c>, <c>user_view_access</c>), and the per-user
+/// preference store (<c>user_preferences</c>).
 /// <para>
 /// This is intentionally not EF Core Migrations: single-tenant installs with
 /// per-customer databases are better served by idempotent raw SQL than by a
@@ -345,6 +348,84 @@ public sealed class DatabaseBootstrapper : IHostedService
         );
 
         CREATE INDEX IF NOT EXISTS ix_views_user ON views (user_id, sort_order);
+
+        ALTER TABLE views ADD COLUMN IF NOT EXISTS columns TEXT NULL;
+
+        -- ===================================================================
+        -- v0.0.7 access control: queue access + view groups
+        -- ===================================================================
+
+        -- Many-to-many: which users (agents) can access which queues.
+        -- Admins bypass this table entirely (god-mode in service layer).
+        CREATE TABLE IF NOT EXISTS user_queue_access (
+            user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            queue_id    UUID        NOT NULL REFERENCES queues(id) ON DELETE CASCADE,
+            created_utc TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (user_id, queue_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_user_queue_access_queue
+            ON user_queue_access (queue_id);
+
+        -- Admin-managed groupings that bundle views + agents together.
+        CREATE TABLE IF NOT EXISTS view_groups (
+            id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            name        TEXT        NOT NULL,
+            description TEXT        NOT NULL DEFAULT '',
+            sort_order  INTEGER     NOT NULL DEFAULT 0,
+            created_utc TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        -- Agents assigned to a view group.
+        CREATE TABLE IF NOT EXISTS view_group_members (
+            view_group_id UUID NOT NULL REFERENCES view_groups(id) ON DELETE CASCADE,
+            user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_utc   TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (view_group_id, user_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_view_group_members_user
+            ON view_group_members (user_id);
+
+        -- Views assigned to a view group.
+        CREATE TABLE IF NOT EXISTS view_group_views (
+            view_group_id UUID NOT NULL REFERENCES view_groups(id) ON DELETE CASCADE,
+            view_id       UUID NOT NULL REFERENCES views(id) ON DELETE CASCADE,
+            sort_order    INTEGER NOT NULL DEFAULT 0,
+            created_utc   TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (view_group_id, view_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_view_group_views_view
+            ON view_group_views (view_id);
+
+        -- Direct view-to-agent assignment (bypass groups).
+        CREATE TABLE IF NOT EXISTS user_view_access (
+            user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            view_id     UUID NOT NULL REFERENCES views(id) ON DELETE CASCADE,
+            created_utc TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (user_id, view_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_user_view_access_view
+            ON user_view_access (view_id);
+
+        -- ===================================================================
+        -- User preferences (per-user key-value store)
+        -- ===================================================================
+
+        CREATE TABLE IF NOT EXISTS user_preferences (
+            user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            pref_key    TEXT        NOT NULL,
+            pref_value  TEXT        NOT NULL,
+            updated_utc TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (user_id, pref_key)
+        );
+
+        -- v0.0.8: user-defined priorities with default flag
+        ALTER TABLE priorities
+            ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE;
         """;
 
     private readonly NpgsqlDataSource _dataSource;
