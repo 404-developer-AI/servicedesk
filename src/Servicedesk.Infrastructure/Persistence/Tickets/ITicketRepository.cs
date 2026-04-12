@@ -9,6 +9,8 @@ public interface ITicketRepository
     Task<Ticket> CreateAsync(NewTicket input, CancellationToken ct);
     Task<TicketDetail?> UpdateFieldsAsync(Guid ticketId, TicketFieldUpdate update, Guid actorUserId, CancellationToken ct);
     Task<TicketEvent?> AddEventAsync(Guid ticketId, NewTicketEvent input, CancellationToken ct);
+    Task<TicketEvent?> UpdateEventAsync(Guid ticketId, long eventId, UpdateTicketEvent input, CancellationToken ct);
+    Task<IReadOnlyList<TicketEventRevision>> GetEventRevisionsAsync(Guid ticketId, long eventId, CancellationToken ct);
     Task<IReadOnlyDictionary<Guid, int>> GetOpenCountsByQueueAsync(CancellationToken ct);
     Task<int> InsertFakeBatchAsync(int count, CancellationToken ct);
 }
@@ -46,3 +48,9 @@ public sealed record NewTicketEvent(
     string? BodyHtml,
     bool IsInternal,
     Guid? AuthorUserId);
+
+public sealed record UpdateTicketEvent(
+    string? BodyText,
+    string? BodyHtml,
+    bool? IsInternal,
+    Guid EditorUserId);

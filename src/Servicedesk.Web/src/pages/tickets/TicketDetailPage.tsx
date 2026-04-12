@@ -322,8 +322,13 @@ export function TicketDetailPage({ ticketId }: TicketDetailPageProps) {
 
         {/* Static: description */}
         <div className="shrink-0 pb-4">
-          <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
-            Description
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs uppercase tracking-wider text-muted-foreground">
+              Description
+            </span>
+            <span className="rounded px-1.5 py-0.5 text-[10px] font-medium border border-white/10 bg-white/[0.04] text-muted-foreground/60">
+              Internal
+            </span>
           </div>
           <EditableDescription
             html={body.bodyHtml}
@@ -347,7 +352,7 @@ export function TicketDetailPage({ ticketId }: TicketDetailPageProps) {
 
         {/* Scrollable: activity timeline */}
         <div className="flex-1 min-h-0 overflow-y-auto pr-1">
-          <TicketTimeline events={events} />
+          <TicketTimeline ticketId={ticketId} events={events} />
         </div>
 
         {/* Static: reply form */}

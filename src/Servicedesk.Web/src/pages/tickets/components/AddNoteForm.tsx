@@ -15,7 +15,7 @@ type TabType = "reply" | "note";
 
 export function AddNoteForm({ ticketId, onSubmitted }: AddNoteFormProps) {
   const [expanded, setExpanded] = React.useState(false);
-  const [tab, setTab] = React.useState<TabType>("reply");
+  const [tab, setTab] = React.useState<TabType>("note");
   const [bodyHtml, setBodyHtml] = React.useState("");
   const [editorKey, setEditorKey] = React.useState(0);
   const queryClient = useQueryClient();
@@ -59,7 +59,7 @@ export function AddNoteForm({ ticketId, onSubmitted }: AddNoteFormProps) {
         className="w-full flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border border-white/10 bg-white/[0.03] text-muted-foreground/60 hover:bg-white/[0.06] hover:text-muted-foreground hover:border-white/15 transition-colors text-sm"
       >
         <MessageCircle className="h-4 w-4 shrink-0" />
-        Write a reply...
+        Write an internal note...
       </button>
     );
   }
@@ -69,33 +69,33 @@ export function AddNoteForm({ ticketId, onSubmitted }: AddNoteFormProps) {
       onSubmit={handleSubmit}
       className={cn(
         "glass-card p-4",
-        isInternal && "ring-1 ring-amber-500/30"
+        !isInternal && "ring-1 ring-amber-500/30"
       )}
     >
       <div className="flex gap-1 mb-3">
-        <button
-          type="button"
-          onClick={() => setTab("reply")}
-          className={cn(
-            "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-            tab === "reply"
-              ? "bg-white/10 text-foreground"
-              : "text-muted-foreground hover:text-foreground hover:bg-white/[0.05]"
-          )}
-        >
-          Reply
-        </button>
         <button
           type="button"
           onClick={() => setTab("note")}
           className={cn(
             "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
             tab === "note"
-              ? "bg-amber-500/15 text-amber-300 border border-amber-500/30"
+              ? "bg-white/10 text-foreground"
               : "text-muted-foreground hover:text-foreground hover:bg-white/[0.05]"
           )}
         >
           Internal note
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("reply")}
+          className={cn(
+            "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+            tab === "reply"
+              ? "bg-amber-500/15 text-amber-300 border border-amber-500/30"
+              : "text-muted-foreground hover:text-foreground hover:bg-white/[0.05]"
+          )}
+        >
+          Reply
         </button>
       </div>
 
@@ -127,7 +127,7 @@ export function AddNoteForm({ ticketId, onSubmitted }: AddNoteFormProps) {
           disabled={mutation.isPending}
           className={cn(
             "px-4 py-2 rounded-md text-sm font-medium transition-colors",
-            isInternal
+            !isInternal
               ? "bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30"
               : "bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30",
             mutation.isPending && "opacity-50 cursor-not-allowed"

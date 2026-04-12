@@ -307,6 +307,28 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_ticket_events_ticket_created
             ON ticket_events (ticket_id, created_utc DESC, id DESC);
 
+        -- Columns added post-v0.0.6: track whether an event has been edited.
+        ALTER TABLE ticket_events
+            ADD COLUMN IF NOT EXISTS edited_utc          TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS edited_by_user_id   UUID        NULL REFERENCES users(id) ON DELETE SET NULL;
+
+        -- Revision history for edited events.
+        -- Stores the OLD values before each edit; current values live on the event row.
+        CREATE TABLE IF NOT EXISTS ticket_event_revisions (
+            id                  BIGSERIAL       PRIMARY KEY,
+            event_id            BIGINT          NOT NULL REFERENCES ticket_events(id) ON DELETE CASCADE,
+            revision_number     INT             NOT NULL,
+            body_text_before    TEXT            NULL,
+            body_html_before    TEXT            NULL,
+            is_internal_before  BOOLEAN         NOT NULL,
+            edited_by_user_id   UUID            NOT NULL REFERENCES users(id),
+            edited_utc          TIMESTAMPTZ     NOT NULL DEFAULT now(),
+            CONSTRAINT uq_event_revision UNIQUE (event_id, revision_number)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_event_revisions_event_id
+            ON ticket_event_revisions (event_id, revision_number);
+
         -- ===================================================================
         -- v0.0.6 saved views
         -- ===================================================================

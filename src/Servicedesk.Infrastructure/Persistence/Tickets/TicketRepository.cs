@@ -149,7 +149,8 @@ public sealed class TicketRepository : ITicketRepository
                    author_user_id AS AuthorUserId, author_contact_id AS AuthorContactId,
                    body_text AS BodyText, body_html AS BodyHtml,
                    metadata::text AS MetadataJson, is_internal AS IsInternal,
-                   created_utc AS CreatedUtc
+                   created_utc AS CreatedUtc,
+                   edited_utc AS EditedUtc, edited_by_user_id AS EditedByUserId
             FROM ticket_events WHERE ticket_id = @id ORDER BY created_utc, id
             """;
 
@@ -367,7 +368,8 @@ public sealed class TicketRepository : ITicketRepository
                       author_user_id AS AuthorUserId, author_contact_id AS AuthorContactId,
                       body_text AS BodyText, body_html AS BodyHtml,
                       metadata::text AS MetadataJson, is_internal AS IsInternal,
-                      created_utc AS CreatedUtc
+                      created_utc AS CreatedUtc,
+                      edited_utc AS EditedUtc, edited_by_user_id AS EditedByUserId
             """;
         var evt = await conn.QuerySingleAsync<TicketEvent>(new CommandDefinition(insertSql, new
         {
@@ -392,6 +394,105 @@ public sealed class TicketRepository : ITicketRepository
 
         await tx.CommitAsync(ct);
         return evt;
+    }
+
+    public async Task<TicketEvent?> UpdateEventAsync(Guid ticketId, long eventId, UpdateTicketEvent input, CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        // Fetch existing event and verify it belongs to this ticket + is editable
+        const string selectSql = """
+            SELECT event_type, body_text, body_html, is_internal
+            FROM ticket_events
+            WHERE id = @eventId AND ticket_id = @ticketId
+            """;
+        var current = await conn.QueryFirstOrDefaultAsync<(string EventType, string? BodyText, string? BodyHtml, bool IsInternal)>(
+            new CommandDefinition(selectSql, new { eventId, ticketId }, tx, cancellationToken: ct));
+        if (current.EventType is null) { await tx.RollbackAsync(ct); return null; }
+
+        // Only Comment, Note, and Mail events can be edited
+        if (current.EventType != "Comment" && current.EventType != "Note" && current.EventType != "Mail")
+        {
+            await tx.RollbackAsync(ct);
+            return null;
+        }
+
+        // Determine next revision number
+        var maxRevision = await conn.ExecuteScalarAsync<int?>(
+            new CommandDefinition(
+                "SELECT MAX(revision_number) FROM ticket_event_revisions WHERE event_id = @eventId",
+                new { eventId }, tx, cancellationToken: ct)) ?? 0;
+
+        // Store old values as a revision
+        const string insertRevisionSql = """
+            INSERT INTO ticket_event_revisions (event_id, revision_number, body_text_before, body_html_before, is_internal_before, edited_by_user_id)
+            VALUES (@eventId, @revisionNumber, @bodyTextBefore, @bodyHtmlBefore, @isInternalBefore, @editorUserId)
+            """;
+        await conn.ExecuteAsync(new CommandDefinition(insertRevisionSql, new
+        {
+            eventId,
+            revisionNumber = maxRevision + 1,
+            bodyTextBefore = current.BodyText,
+            bodyHtmlBefore = current.BodyHtml,
+            isInternalBefore = current.IsInternal,
+            editorUserId = input.EditorUserId,
+        }, tx, cancellationToken: ct));
+
+        // Update the event with new values
+        const string updateSql = """
+            UPDATE ticket_events
+            SET body_text = @bodyText,
+                body_html = @bodyHtml,
+                is_internal = @isInternal,
+                edited_utc = now(),
+                edited_by_user_id = @editorUserId
+            WHERE id = @eventId AND ticket_id = @ticketId
+            RETURNING id AS Id, ticket_id AS TicketId, event_type AS EventType,
+                      author_user_id AS AuthorUserId, author_contact_id AS AuthorContactId,
+                      body_text AS BodyText, body_html AS BodyHtml,
+                      metadata::text AS MetadataJson, is_internal AS IsInternal,
+                      created_utc AS CreatedUtc,
+                      edited_utc AS EditedUtc, edited_by_user_id AS EditedByUserId
+            """;
+        var updated = await conn.QuerySingleAsync<TicketEvent>(new CommandDefinition(updateSql, new
+        {
+            bodyText = input.BodyText ?? current.BodyText,
+            bodyHtml = input.BodyHtml ?? current.BodyHtml,
+            isInternal = input.IsInternal ?? current.IsInternal,
+            editorUserId = input.EditorUserId,
+            eventId,
+            ticketId,
+        }, tx, cancellationToken: ct));
+
+        await conn.ExecuteAsync(new CommandDefinition(
+            "UPDATE tickets SET updated_utc = now() WHERE id = @ticketId",
+            new { ticketId }, tx, cancellationToken: ct));
+
+        await tx.CommitAsync(ct);
+        return updated;
+    }
+
+    public async Task<IReadOnlyList<TicketEventRevision>> GetEventRevisionsAsync(Guid ticketId, long eventId, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT r.id AS Id, r.event_id AS EventId, r.revision_number AS RevisionNumber,
+                   r.body_text_before AS BodyTextBefore, r.body_html_before AS BodyHtmlBefore,
+                   r.is_internal_before AS IsInternalBefore,
+                   r.edited_by_user_id AS EditedByUserId,
+                   u.email AS EditedByName,
+                   r.edited_utc AS EditedUtc
+            FROM ticket_event_revisions r
+            JOIN users u ON u.id = r.edited_by_user_id
+            WHERE r.event_id = @eventId
+              AND EXISTS (SELECT 1 FROM ticket_events WHERE id = @eventId AND ticket_id = @ticketId)
+            ORDER BY r.revision_number DESC
+            """;
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var revisions = await conn.QueryAsync<TicketEventRevision>(
+            new CommandDefinition(sql, new { eventId, ticketId }, cancellationToken: ct));
+        return revisions.ToList();
     }
 
     private sealed record TicketFieldSnapshot(

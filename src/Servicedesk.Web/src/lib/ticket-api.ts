@@ -108,6 +108,26 @@ export type TicketEvent = {
   metadataJson: string;
   isInternal: boolean;
   createdUtc: string;
+  editedUtc: string | null;
+  editedByUserId: string | null;
+};
+
+export type TicketEventRevision = {
+  id: number;
+  eventId: number;
+  revisionNumber: number;
+  bodyTextBefore: string | null;
+  bodyHtmlBefore: string | null;
+  isInternalBefore: boolean;
+  editedByUserId: string;
+  editedByName: string | null;
+  editedUtc: string;
+};
+
+export type UpdateTicketEventRequest = {
+  bodyText?: string;
+  bodyHtml?: string;
+  isInternal?: boolean;
 };
 
 export type TicketDetail = {
@@ -271,6 +291,10 @@ export const ticketApi = {
     request<TicketDetail>("PATCH", `/api/tickets/${id}`, fields),
   addEvent: (id: string, event: NewTicketEvent) =>
     request<TicketEvent>("POST", `/api/tickets/${id}/events`, event),
+  updateEvent: (id: string, eventId: number, body: UpdateTicketEventRequest) =>
+    request<TicketEvent>("PUT", `/api/tickets/${id}/events/${eventId}`, body),
+  getEventRevisions: (id: string, eventId: number) =>
+    request<TicketEventRevision[]>("GET", `/api/tickets/${id}/events/${eventId}/revisions`),
 };
 
 export const viewApi = {

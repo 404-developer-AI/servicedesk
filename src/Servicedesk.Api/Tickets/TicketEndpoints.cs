@@ -153,6 +153,40 @@ public static class TicketEndpoints
             return Results.Created($"/api/tickets/{id}/events/{evt.Id}", evt);
         }).WithName("AddTicketEvent").WithOpenApi();
 
+        group.MapPut("/{id:guid}/events/{eventId:long}", async (
+            Guid id, long eventId, [FromBody] UpdateEventRequest req, HttpContext http,
+            ITicketRepository tickets, IAuditLogger audit, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var input = new UpdateTicketEvent(
+                BodyText: req.BodyText,
+                BodyHtml: req.BodyHtml,
+                IsInternal: req.IsInternal,
+                EditorUserId: userId);
+            var updated = await tickets.UpdateEventAsync(id, eventId, input, ct);
+            if (updated is null) return Results.NotFound();
+
+            var (actor, role) = ActorContext.Resolve(http);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "ticket.event.edited",
+                Actor: actor,
+                ActorRole: role,
+                Target: $"{id}/events/{eventId}",
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: new { updated.EventType, updated.IsInternal }));
+
+            return Results.Ok(updated);
+        }).WithName("UpdateTicketEvent").WithOpenApi();
+
+        group.MapGet("/{id:guid}/events/{eventId:long}/revisions", async (
+            Guid id, long eventId,
+            ITicketRepository tickets, CancellationToken ct) =>
+        {
+            var revisions = await tickets.GetEventRevisionsAsync(id, eventId, ct);
+            return Results.Ok(revisions);
+        }).WithName("GetEventRevisions").WithOpenApi();
+
         return app;
     }
 
@@ -266,6 +300,11 @@ public static class TicketEndpoints
 
     public sealed record AddEventRequest(
         string? EventType,
+        string? BodyText,
+        string? BodyHtml,
+        bool? IsInternal);
+
+    public sealed record UpdateEventRequest(
         string? BodyText,
         string? BodyHtml,
         bool? IsInternal);

@@ -35,4 +35,17 @@ public sealed record TicketEvent(
     string? BodyHtml,
     string MetadataJson,
     bool IsInternal,
-    DateTime CreatedUtc);
+    DateTime CreatedUtc,
+    DateTime? EditedUtc,
+    Guid? EditedByUserId);
+
+public sealed record TicketEventRevision(
+    long Id,
+    long EventId,
+    int RevisionNumber,
+    string? BodyTextBefore,
+    string? BodyHtmlBefore,
+    bool IsInternalBefore,
+    Guid EditedByUserId,
+    string? EditedByName,
+    DateTime EditedUtc);
