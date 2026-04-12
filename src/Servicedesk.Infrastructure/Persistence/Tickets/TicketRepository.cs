@@ -28,14 +28,20 @@ public sealed class TicketRepository : ITicketRepository
             c.email                         AS RequesterEmail,
             c.first_name                    AS RequesterFirstName,
             c.last_name                     AS RequesterLastName,
+            c.company_id                    AS RequesterCompanyId,
+            co.name                         AS CompanyName,
             t.assignee_user_id              AS AssigneeUserId,
+            u.email                         AS AssigneeEmail,
             t.created_utc                   AS CreatedUtc,
-            t.updated_utc                   AS UpdatedUtc
+            t.updated_utc                   AS UpdatedUtc,
+            t.due_utc                       AS DueUtc
         FROM tickets t
         JOIN queues     q ON q.id = t.queue_id
         JOIN statuses   s ON s.id = t.status_id
         JOIN priorities p ON p.id = t.priority_id
         JOIN contacts   c ON c.id = t.requester_contact_id
+        LEFT JOIN companies co ON co.id = c.company_id
+        LEFT JOIN users     u  ON u.id  = t.assignee_user_id
         """;
 
     private readonly NpgsqlDataSource _dataSource;
@@ -199,6 +205,136 @@ public sealed class TicketRepository : ITicketRepository
         await tx.CommitAsync(ct);
         return ticket;
     }
+
+    public async Task<TicketDetail?> UpdateFieldsAsync(Guid ticketId, TicketFieldUpdate update, Guid actorUserId, CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        const string readSql = """
+            SELECT queue_id AS QueueId, status_id AS StatusId, priority_id AS PriorityId,
+                   category_id AS CategoryId, assignee_user_id AS AssigneeUserId
+            FROM tickets WHERE id = @ticketId AND is_deleted = FALSE
+            FOR UPDATE
+            """;
+        var current = await conn.QueryFirstOrDefaultAsync<TicketFieldSnapshot>(
+            new CommandDefinition(readSql, new { ticketId }, tx, cancellationToken: ct));
+        if (current is null) { await tx.RollbackAsync(ct); return null; }
+
+        var sets = new List<string>();
+        var events = new List<(string EventType, string MetadataJson)>();
+
+        if (update.QueueId.HasValue && update.QueueId != current.QueueId)
+        {
+            sets.Add("queue_id = @NewQueueId");
+            events.Add(("QueueChange", System.Text.Json.JsonSerializer.Serialize(new { from = current.QueueId, to = update.QueueId })));
+        }
+        if (update.StatusId.HasValue && update.StatusId != current.StatusId)
+        {
+            sets.Add("status_id = @NewStatusId");
+            events.Add(("StatusChange", System.Text.Json.JsonSerializer.Serialize(new { from = current.StatusId, to = update.StatusId })));
+        }
+        if (update.PriorityId.HasValue && update.PriorityId != current.PriorityId)
+        {
+            sets.Add("priority_id = @NewPriorityId");
+            events.Add(("PriorityChange", System.Text.Json.JsonSerializer.Serialize(new { from = current.PriorityId, to = update.PriorityId })));
+        }
+        if (update.CategoryId.HasValue && update.CategoryId != current.CategoryId)
+        {
+            sets.Add("category_id = @NewCategoryId");
+            events.Add(("CategoryChange", System.Text.Json.JsonSerializer.Serialize(new { from = current.CategoryId, to = update.CategoryId })));
+        }
+        if (update.AssigneeUserId.HasValue && update.AssigneeUserId != current.AssigneeUserId)
+        {
+            sets.Add("assignee_user_id = @NewAssigneeUserId");
+            events.Add(("AssignmentChange", System.Text.Json.JsonSerializer.Serialize(new { from = current.AssigneeUserId, to = update.AssigneeUserId })));
+        }
+
+        if (sets.Count == 0) { await tx.RollbackAsync(ct); return await GetByIdAsync(ticketId, ct); }
+
+        sets.Add("updated_utc = now()");
+
+        if (update.StatusId.HasValue && update.StatusId != current.StatusId)
+        {
+            var stateCategory = await conn.ExecuteScalarAsync<string>(
+                new CommandDefinition("SELECT state_category FROM statuses WHERE id = @id",
+                    new { id = update.StatusId }, tx, cancellationToken: ct));
+            if (stateCategory == "Resolved") sets.Add("resolved_utc = COALESCE(resolved_utc, now())");
+            if (stateCategory == "Closed") sets.Add("closed_utc = COALESCE(closed_utc, now())");
+        }
+
+        var updateSql = $"UPDATE tickets SET {string.Join(", ", sets)} WHERE id = @ticketId";
+        await conn.ExecuteAsync(new CommandDefinition(updateSql, new
+        {
+            ticketId,
+            NewQueueId = update.QueueId,
+            NewStatusId = update.StatusId,
+            NewPriorityId = update.PriorityId,
+            NewCategoryId = update.CategoryId,
+            NewAssigneeUserId = update.AssigneeUserId,
+        }, tx, cancellationToken: ct));
+
+        foreach (var (eventType, metadata) in events)
+        {
+            await conn.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO ticket_events (ticket_id, event_type, author_user_id, metadata, is_internal)
+                VALUES (@ticketId, @eventType, @actorUserId, @metadata::jsonb, FALSE)
+                """,
+                new { ticketId, eventType, actorUserId, metadata },
+                tx, cancellationToken: ct));
+        }
+
+        await tx.CommitAsync(ct);
+        return await GetByIdAsync(ticketId, ct);
+    }
+
+    public async Task<TicketEvent?> AddEventAsync(Guid ticketId, NewTicketEvent input, CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        var exists = await conn.ExecuteScalarAsync<bool>(
+            new CommandDefinition("SELECT EXISTS(SELECT 1 FROM tickets WHERE id = @ticketId AND is_deleted = FALSE)",
+                new { ticketId }, tx, cancellationToken: ct));
+        if (!exists) { await tx.RollbackAsync(ct); return null; }
+
+        const string insertSql = """
+            INSERT INTO ticket_events (ticket_id, event_type, author_user_id, body_text, body_html, is_internal)
+            VALUES (@TicketId, @EventType, @AuthorUserId, @BodyText, @BodyHtml, @IsInternal)
+            RETURNING id AS Id, ticket_id AS TicketId, event_type AS EventType,
+                      author_user_id AS AuthorUserId, author_contact_id AS AuthorContactId,
+                      body_text AS BodyText, body_html AS BodyHtml,
+                      metadata::text AS MetadataJson, is_internal AS IsInternal,
+                      created_utc AS CreatedUtc
+            """;
+        var evt = await conn.QuerySingleAsync<TicketEvent>(new CommandDefinition(insertSql, new
+        {
+            TicketId = ticketId,
+            input.EventType,
+            input.AuthorUserId,
+            input.BodyText,
+            input.BodyHtml,
+            input.IsInternal,
+        }, tx, cancellationToken: ct));
+
+        await conn.ExecuteAsync(new CommandDefinition(
+            "UPDATE tickets SET updated_utc = now() WHERE id = @ticketId",
+            new { ticketId }, tx, cancellationToken: ct));
+
+        if (input.EventType == "Comment" && !input.IsInternal)
+        {
+            await conn.ExecuteAsync(new CommandDefinition(
+                "UPDATE tickets SET first_response_utc = now() WHERE id = @ticketId AND first_response_utc IS NULL",
+                new { ticketId }, tx, cancellationToken: ct));
+        }
+
+        await tx.CommitAsync(ct);
+        return evt;
+    }
+
+    private sealed record TicketFieldSnapshot(
+        Guid QueueId, Guid StatusId, Guid PriorityId, Guid? CategoryId, Guid? AssigneeUserId);
 
     public async Task<IReadOnlyDictionary<Guid, int>> GetOpenCountsByQueueAsync(CancellationToken ct)
     {

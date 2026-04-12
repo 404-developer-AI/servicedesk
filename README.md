@@ -2,7 +2,7 @@
 
 A self-hosted servicedesk app. Built because the existing options were either ugly, slow, expensive, or all three.
 
-> **Status:** v0.0.4 — authenticated admin access. Still early, but you can actually sign in now.
+> **Status:** v0.0.6 — ticket list, detail, create, saved views. You can manage tickets now.
 
 ## What this is
 

@@ -11,7 +11,8 @@ namespace Servicedesk.Infrastructure.Persistence;
 /// <c>user_totp</c>, <c>user_recovery_codes</c>, <c>user_sessions</c>), and
 /// the v0.0.5 ticket domain (<c>queues</c>, <c>priorities</c>, <c>statuses</c>,
 /// <c>categories</c>, <c>companies</c>, <c>company_domains</c>, <c>contacts</c>,
-/// <c>tickets</c>, <c>ticket_bodies</c>, <c>ticket_events</c>).
+/// <c>tickets</c>, <c>ticket_bodies</c>, <c>ticket_events</c>), and the v0.0.6
+/// saved views (<c>views</c>).
 /// <para>
 /// This is intentionally not EF Core Migrations: single-tenant installs with
 /// per-customer databases are better served by idempotent raw SQL than by a
@@ -305,6 +306,23 @@ public sealed class DatabaseBootstrapper : IHostedService
 
         CREATE INDEX IF NOT EXISTS ix_ticket_events_ticket_created
             ON ticket_events (ticket_id, created_utc DESC, id DESC);
+
+        -- ===================================================================
+        -- v0.0.6 saved views
+        -- ===================================================================
+
+        CREATE TABLE IF NOT EXISTS views (
+            id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id         UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name            TEXT        NOT NULL,
+            filters         JSONB       NOT NULL DEFAULT '{}'::jsonb,
+            sort_order      INTEGER     NOT NULL DEFAULT 0,
+            is_shared       BOOLEAN     NOT NULL DEFAULT FALSE,
+            created_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc     TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_views_user ON views (user_id, sort_order);
         """;
 
     private readonly NpgsqlDataSource _dataSource;

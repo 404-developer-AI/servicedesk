@@ -223,6 +223,15 @@ public sealed class FakeUserService : IUserService
         _byId[userId] = u with { FailedAttempts = attempts, LockoutUntilUtc = lockoutUntil };
         return Task.FromResult(lockoutUntil.HasValue);
     }
+
+    public Task<IReadOnlyList<AgentUser>> ListAgentsAsync(CancellationToken ct = default)
+    {
+        var agents = _byId.Values
+            .Where(u => u.RoleName is "Agent" or "Admin")
+            .Select(u => new AgentUser(u.Id, u.Email, u.RoleName))
+            .ToList();
+        return Task.FromResult<IReadOnlyList<AgentUser>>(agents);
+    }
 }
 
 public sealed class FakeSessionService : ISessionService

@@ -44,9 +44,13 @@ public sealed record TicketListItem(
     string RequesterEmail,
     string RequesterFirstName,
     string RequesterLastName,
+    Guid? RequesterCompanyId,
+    string? CompanyName,
     Guid? AssigneeUserId,
+    string? AssigneeEmail,
     DateTime CreatedUtc,
-    DateTime UpdatedUtc);
+    DateTime UpdatedUtc,
+    DateTime? DueUtc);
 
 public sealed record TicketPage(
     IReadOnlyList<TicketListItem> Items,

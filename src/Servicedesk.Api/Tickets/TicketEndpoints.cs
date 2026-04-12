@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Audit;
@@ -89,6 +90,65 @@ public static class TicketEndpoints
             return Results.Created($"/api/tickets/{created.Id}", created);
         }).WithName("CreateTicket").WithOpenApi();
 
+        group.MapPatch("/{id:guid}", async (
+            Guid id, [FromBody] UpdateTicketRequest req, HttpContext http,
+            ITicketRepository tickets, IAuditLogger audit, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var update = new TicketFieldUpdate(
+                QueueId: req.QueueId,
+                StatusId: req.StatusId,
+                PriorityId: req.PriorityId,
+                CategoryId: req.CategoryId,
+                AssigneeUserId: req.AssigneeUserId);
+            var detail = await tickets.UpdateFieldsAsync(id, update, userId, ct);
+            if (detail is null) return Results.NotFound();
+
+            var (actor, role) = ActorContext.Resolve(http);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "ticket.updated",
+                Actor: actor,
+                ActorRole: role,
+                Target: id.ToString(),
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: req));
+
+            return Results.Ok(detail);
+        }).WithName("UpdateTicket").WithOpenApi();
+
+        group.MapPost("/{id:guid}/events", async (
+            Guid id, [FromBody] AddEventRequest req, HttpContext http,
+            ITicketRepository tickets, IAuditLogger audit, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(req.EventType))
+                return Results.BadRequest(new { error = "eventType is required." });
+            if (req.EventType != "Comment" && req.EventType != "Note")
+                return Results.BadRequest(new { error = "eventType must be 'Comment' or 'Note'." });
+
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var input = new NewTicketEvent(
+                EventType: req.EventType,
+                BodyText: req.BodyText,
+                BodyHtml: req.BodyHtml,
+                IsInternal: req.IsInternal ?? (req.EventType == "Note"),
+                AuthorUserId: userId);
+            var evt = await tickets.AddEventAsync(id, input, ct);
+            if (evt is null) return Results.NotFound();
+
+            var (actor, role) = ActorContext.Resolve(http);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "ticket.event.added",
+                Actor: actor,
+                ActorRole: role,
+                Target: id.ToString(),
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: new { evt.EventType, evt.IsInternal }));
+
+            return Results.Created($"/api/tickets/{id}/events/{evt.Id}", evt);
+        }).WithName("AddTicketEvent").WithOpenApi();
+
         return app;
     }
 
@@ -167,4 +227,17 @@ public static class TicketEndpoints
         Guid? CategoryId,
         Guid? AssigneeUserId,
         string? Source);
+
+    public sealed record UpdateTicketRequest(
+        Guid? QueueId,
+        Guid? StatusId,
+        Guid? PriorityId,
+        Guid? CategoryId,
+        Guid? AssigneeUserId);
+
+    public sealed record AddEventRequest(
+        string? EventType,
+        string? BodyText,
+        string? BodyHtml,
+        bool? IsInternal);
 }

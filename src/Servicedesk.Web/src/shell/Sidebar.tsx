@@ -3,10 +3,12 @@ import { motion } from "framer-motion";
 import {
   ChevronLeft,
   ChevronRight,
+  Eye,
   Plus,
   Settings as SettingsIcon,
   Sparkles,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useCurrentRole } from "@/hooks/useCurrentRole";
 import { useSidebarStore } from "@/stores/useSidebarStore";
@@ -18,6 +20,7 @@ import {
   formatServerLocalClock,
   formatServerLocalDate,
 } from "@/hooks/useServerTime";
+import { viewApi } from "@/lib/ticket-api";
 
 // Timezone is intentionally not displayed — on Windows dev boxes
 // `TimeZoneInfo.Local.Id` returns "Romance Standard Time" etc., which is ugly
@@ -32,6 +35,12 @@ export function Sidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const version = useSystemVersion();
   const { time, error: timeError } = useServerTime();
+  const { data: views } = useQuery({
+    queryKey: ["views"],
+    queryFn: viewApi.list,
+    staleTime: 60000,
+    enabled: role === "Agent" || role === "Admin",
+  });
 
   // Strip any MinVer pre-release suffix (e.g. "0.0.4-alpha.0.5" → "0.0.4") so
   // the UI shows a clean `vX.X.X`. Once a v0.0.4 tag is pushed there is no
@@ -88,6 +97,29 @@ export function Sidebar() {
           );
         })}
       </nav>
+
+      {!collapsed && views && views.length > 0 && (
+        <div className="mx-3 mt-2 border-t border-white/5 pt-2">
+          <div className="px-3 pb-1 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">
+            Views
+          </div>
+          <div className="space-y-0.5">
+            {views.slice(0, 8).map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => {
+                  window.location.href = `/tickets?viewId=${v.id}`;
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-muted-foreground hover:bg-white/[0.04] hover:text-foreground transition-colors"
+              >
+                <Eye className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{v.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/*
         When the sidebar is collapsed, Settings + New ticket live above the

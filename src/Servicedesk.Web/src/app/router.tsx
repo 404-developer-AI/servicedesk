@@ -19,6 +19,9 @@ import { findSettingsSection } from "@/shell/settingsSections";
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { SetupWizardPage } from "@/pages/auth/SetupWizardPage";
 import { ProfilePage } from "@/pages/profile/ProfilePage";
+import { ViewsPage } from "@/pages/views/ViewsPage";
+import { TicketListPage } from "@/pages/tickets/TicketListPage";
+import { TicketDetailPage } from "@/pages/tickets/TicketDetailPage";
 
 // The router reads the "current role" outside of React here (for the
 // beforeLoad gate). The auth store is populated by bootstrapAuth() in
@@ -76,7 +79,7 @@ const rootRoute = createRootRoute({
     <StubPage
       title="Not found"
       description="This page does not exist (or you do not have access)."
-      comingIn="v0.0.5"
+      comingIn=""
     />
   ),
 });
@@ -88,7 +91,7 @@ function stubForPath(path: string) {
       <StubPage
         title="Not found"
         description="This page does not exist."
-        comingIn="v0.0.5"
+        comingIn=""
       />
     );
   }
@@ -124,14 +127,24 @@ const viewsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/views",
   beforeLoad: authGate(["Agent", "Admin"]),
-  component: () => stubForPath("/views"),
+  component: ViewsPage,
 });
 
 const ticketsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tickets",
   beforeLoad: authGate(["Agent", "Admin"]),
-  component: () => stubForPath("/tickets"),
+  component: TicketListPage,
+});
+
+const ticketDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tickets/$ticketId",
+  beforeLoad: authGate(["Agent", "Admin"]),
+  component: function TicketDetailRoute() {
+    const { ticketId } = ticketDetailRoute.useParams();
+    return <TicketDetailPage ticketId={ticketId} />;
+  },
 });
 
 const kbRoute = createRoute({
@@ -223,6 +236,7 @@ const routeTree = rootRoute.addChildren([
   dashboardRoute,
   viewsRoute,
   ticketsRoute,
+  ticketDetailRoute,
   kbRoute,
   profileRoute,
   settingsRoute.addChildren([

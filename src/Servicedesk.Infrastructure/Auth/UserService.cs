@@ -14,6 +14,7 @@ public interface IUserService
 
     Task<ApplicationUser?> FindByEmailAsync(string email, CancellationToken ct = default);
     Task<ApplicationUser?> FindByIdAsync(Guid id, CancellationToken ct = default);
+    Task<IReadOnlyList<AgentUser>> ListAgentsAsync(CancellationToken ct = default);
 
     Task UpdatePasswordHashAsync(Guid userId, string newHash, CancellationToken ct = default);
     Task RecordSuccessfulLoginAsync(Guid userId, CancellationToken ct = default);
@@ -174,4 +175,19 @@ public sealed class UserService : IUserService
         return lockoutUntil.HasValue;
     }
 
+    public async Task<IReadOnlyList<AgentUser>> ListAgentsAsync(CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT id AS Id, email AS Email, role_name AS RoleName
+            FROM users WHERE role_name IN ('Agent', 'Admin')
+            ORDER BY email
+            """;
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await connection.QueryAsync<AgentUser>(
+            new CommandDefinition(sql, cancellationToken: ct));
+        return rows.ToList();
+    }
+
 }
+
+public sealed record AgentUser(Guid Id, string Email, string RoleName);

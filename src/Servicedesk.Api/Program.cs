@@ -12,6 +12,8 @@ using Servicedesk.Api.Security;
 using Servicedesk.Api.System;
 using Servicedesk.Api.Taxonomy;
 using Servicedesk.Api.Tickets;
+using Servicedesk.Api.Views;
+using Servicedesk.Api.Users;
 using Servicedesk.Infrastructure;
 using Servicedesk.Infrastructure.Settings;
 
@@ -161,6 +163,8 @@ app.MapAuthEndpoints();
 app.MapTaxonomyEndpoints();
 app.MapCompanyEndpoints();
 app.MapTicketEndpoints();
+app.MapViewEndpoints();
+app.MapUserEndpoints();
 app.MapDevBenchmarkEndpoints(app.Environment);
 
 app.Run();

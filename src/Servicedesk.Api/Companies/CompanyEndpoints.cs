@@ -114,7 +114,7 @@ public static class CompanyEndpoints
         // ---- Contacts ----
         var contactGroup = app.MapGroup("/api/contacts")
             .WithTags("Contacts")
-            .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
         contactGroup.MapGet("/", async (Guid? companyId, string? search,
             ICompanyRepository repo, CancellationToken ct) =>
