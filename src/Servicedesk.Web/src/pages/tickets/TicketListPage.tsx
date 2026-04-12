@@ -6,8 +6,13 @@ import { Button } from "@/components/ui/button";
 import { ColumnSelector } from "@/components/ColumnSelector";
 import { TicketFilters } from "./components/TicketFilters";
 import { TicketTable, TicketTableSkeleton } from "./components/TicketTable";
-import { ticketApi } from "@/lib/ticket-api";
+import { ticketApi, viewApi } from "@/lib/ticket-api";
 import type { TicketListQuery } from "@/lib/ticket-api";
+
+function getViewIdFromSearch(): string | null {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get("viewId");
+}
 
 function readFiltersFromSearch(): TicketListQuery {
   if (typeof window === "undefined") return {};
@@ -51,12 +56,42 @@ type CursorEntry = { updatedUtc: string; id: string };
 
 export function TicketListPage() {
   const navigate = useNavigate();
+  const [viewId] = React.useState(getViewIdFromSearch);
+  const [viewApplied, setViewApplied] = React.useState(!viewId);
   const [filters, setFilters] = React.useState<TicketListQuery>(() =>
     readFiltersFromSearch(),
   );
   const [cursorStack, setCursorStack] = React.useState<CursorEntry[]>([]);
 
-  const { data, isLoading, isError } = useQuery({
+  // When navigating via a saved view (?viewId=...), fetch the view and apply
+  // its stored filters so the ticket list shows the correct subset.
+  const { data: viewData } = useQuery({
+    queryKey: ["views", viewId],
+    queryFn: () => viewApi.get(viewId!),
+    enabled: !!viewId && !viewApplied,
+    staleTime: Infinity,
+  });
+
+  React.useEffect(() => {
+    if (!viewData || viewApplied) return;
+    try {
+      const vf = JSON.parse(viewData.filtersJson) as Record<string, unknown>;
+      const applied: TicketListQuery = {};
+      if (typeof vf.queueId === "string") applied.queueId = vf.queueId;
+      if (typeof vf.statusId === "string") applied.statusId = vf.statusId;
+      if (typeof vf.priorityId === "string") applied.priorityId = vf.priorityId;
+      if (typeof vf.assigneeUserId === "string") applied.assigneeUserId = vf.assigneeUserId;
+      if (typeof vf.search === "string") applied.search = vf.search;
+      if (vf.openOnly === true) applied.openOnly = true;
+      setFilters(applied);
+      writeFiltersToSearch(applied);
+    } catch {
+      // bad JSON — ignore, show unfiltered
+    }
+    setViewApplied(true);
+  }, [viewData, viewApplied]);
+
+  const { data, isLoading: ticketsLoading, isError } = useQuery({
     queryKey: ["tickets", filters],
     queryFn: () => ticketApi.list(filters),
     staleTime: 30_000,
@@ -96,6 +131,7 @@ export function TicketListPage() {
     navigate({ to: "/tickets/$id" as never, params: { id } as never });
   }
 
+  const isLoading = ticketsLoading || (!!viewId && !viewApplied);
   const isOnFirstPage = !filters.cursorUpdatedUtc && !filters.cursorId;
   const ticketCount = data?.items.length ?? 0;
 

@@ -1,4 +1,5 @@
 import {
+  Eye,
   Mail,
   Plug,
   ScrollText,
@@ -33,6 +34,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       "Queues, statuses, priorities and categories — the taxonomies every ticket hangs off.",
     icon: Ticket,
+  },
+  {
+    slug: "views",
+    label: "Views",
+    description:
+      "Saved ticket filters — create, edit and delete named views for quick access.",
+    icon: Eye,
   },
   {
     slug: "mail",

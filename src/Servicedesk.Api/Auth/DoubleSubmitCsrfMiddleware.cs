@@ -31,6 +31,7 @@ public sealed class DoubleSubmitCsrfMiddleware
         "/api/auth/login",
         "/api/auth/setup",
         "/api/security/csp-report",
+        "/hubs/",
     };
 
     private readonly RequestDelegate _next;

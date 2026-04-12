@@ -4,6 +4,14 @@ import { taxonomyApi } from "@/lib/api";
 import { AgentPicker } from "@/components/AgentPicker";
 import { cn } from "@/lib/utils";
 import type { Ticket, TicketFieldUpdate } from "@/lib/ticket-api";
+import { usePresenceStore, type PresenceUser } from "@/stores/usePresenceStore";
+import { useAuth } from "@/auth/authStore";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+} from "@/components/ui/tooltip";
 
 type TicketSidePanelProps = {
   ticket: Ticket;
@@ -80,7 +88,7 @@ export function TicketSidePanel({ ticket, onUpdate }: TicketSidePanelProps) {
   const currentQueue = queues?.find((q) => q.id === ticket.queueId);
 
   return (
-    <div className="glass-card p-4 space-y-4 w-[320px] shrink-0">
+    <div className="glass-card p-4 space-y-4 w-[320px] shrink-0 sticky top-6 self-start max-h-[calc(100vh-6rem)] overflow-y-auto">
       <div>
         <FieldLabel>Status</FieldLabel>
         <div className="relative">
@@ -203,6 +211,75 @@ export function TicketSidePanel({ ticket, onUpdate }: TicketSidePanelProps) {
         <FieldLabel>Source</FieldLabel>
         <SourceBadge source={ticket.source} />
       </div>
+
+      <TicketPresence ticketId={ticket.id} />
     </div>
+  );
+}
+
+function TicketPresence({ ticketId }: { ticketId: string }) {
+  const presence = usePresenceStore((s) => s.byTicket[ticketId] ?? []);
+  const { user: currentUser } = useAuth();
+  const others = presence.filter((u) => u.userId !== currentUser?.id);
+
+  if (others.length === 0) return null;
+
+  return (
+    <TooltipProvider delayDuration={200}>
+      <>
+        <div className="border-t border-white/10" />
+        <div>
+          <FieldLabel>Also viewing</FieldLabel>
+          <div className="flex flex-wrap gap-2">
+            {others.map((u) => (
+              <PresenceChip key={u.userId} user={u} />
+            ))}
+          </div>
+        </div>
+      </>
+    </TooltipProvider>
+  );
+}
+
+function PresenceChip({ user }: { user: PresenceUser }) {
+  const initial = user.email.slice(0, 1).toUpperCase();
+  const isViewing = user.status === "viewing";
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div
+          className={cn(
+            "flex items-center gap-1.5 rounded-full px-2 py-1 text-xs border transition-colors",
+            isViewing
+              ? "bg-primary/20 border-primary/40 text-foreground"
+              : "bg-white/[0.04] border-white/10 text-muted-foreground/60",
+          )}
+        >
+          <span
+            className={cn(
+              "inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-medium",
+              isViewing
+                ? "bg-primary/40 text-white"
+                : "bg-white/[0.08] text-muted-foreground/50",
+            )}
+          >
+            {initial}
+          </span>
+          <span className="truncate max-w-[120px]">
+            {user.email.split("@")[0]}
+          </span>
+          <span
+            className={cn(
+              "h-1.5 w-1.5 rounded-full shrink-0",
+              isViewing ? "bg-green-400" : "bg-white/20",
+            )}
+          />
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="text-xs">
+        {user.email} — {isViewing ? "viewing now" : "opened recently"}
+      </TooltipContent>
+    </Tooltip>
   );
 }

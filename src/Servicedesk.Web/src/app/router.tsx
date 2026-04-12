@@ -19,7 +19,7 @@ import { findSettingsSection } from "@/shell/settingsSections";
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { SetupWizardPage } from "@/pages/auth/SetupWizardPage";
 import { ProfilePage } from "@/pages/profile/ProfilePage";
-import { ViewsPage } from "@/pages/views/ViewsPage";
+import { ViewsSettingsPage } from "@/pages/settings/ViewsSettingsPage";
 import { TicketListPage } from "@/pages/tickets/TicketListPage";
 import { TicketDetailPage } from "@/pages/tickets/TicketDetailPage";
 
@@ -123,13 +123,6 @@ const dashboardRoute = createRoute({
   component: () => stubForPath("/"),
 });
 
-const viewsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/views",
-  beforeLoad: authGate(["Agent", "Admin"]),
-  component: ViewsPage,
-});
-
 const ticketsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tickets",
@@ -230,11 +223,16 @@ const settingsTicketsRoute = createRoute({
   component: TicketsSettingsPage,
 });
 
+const settingsViewsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "views",
+  component: ViewsSettingsPage,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   setupRoute,
   dashboardRoute,
-  viewsRoute,
   ticketsRoute,
   ticketDetailRoute,
   kbRoute,
@@ -246,6 +244,7 @@ const routeTree = rootRoute.addChildren([
     settingsSlaRoute,
     settingsIntegrationsRoute,
     settingsTicketsRoute,
+    settingsViewsRoute,
     settingsAuditRoute,
   ]),
 ]);

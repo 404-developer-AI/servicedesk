@@ -4,6 +4,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Audit;
+using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Persistence.Companies;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 
@@ -212,6 +213,28 @@ public static class TicketEndpoints
 
             return Results.Ok(new { benchmarks = results });
         }).WithName("DevBenchmarks").WithOpenApi();
+
+        group.MapPost("/seed-agent", async (
+            [FromQuery] string email,
+            [FromQuery] string password,
+            IPasswordHasher hasher,
+            Npgsql.NpgsqlDataSource dataSource,
+            CancellationToken ct) =>
+        {
+            var hash = hasher.Hash(password);
+            await using var conn = await dataSource.OpenConnectionAsync(ct);
+            var id = await Dapper.SqlMapper.ExecuteScalarAsync<Guid>(conn, new Dapper.CommandDefinition(
+                """
+                INSERT INTO users (email, password_hash, role_name)
+                VALUES (@email, @hash, 'Agent')
+                ON CONFLICT (email) DO NOTHING
+                RETURNING id
+                """,
+                new { email, hash }, cancellationToken: ct));
+            return id != Guid.Empty
+                ? Results.Ok(new { id, email, role = "Agent" })
+                : Results.Conflict(new { error = "User already exists" });
+        }).WithName("DevSeedAgent").WithOpenApi();
 
         return app;
     }

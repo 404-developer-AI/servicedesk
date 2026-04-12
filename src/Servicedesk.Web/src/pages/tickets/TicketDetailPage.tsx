@@ -6,6 +6,7 @@ import DOMPurify from "dompurify";
 import { ticketApi, type TicketFieldUpdate } from "@/lib/ticket-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRecentTicketsStore } from "@/stores/useRecentTicketsStore";
+import { useViewingTicket } from "@/hooks/usePresence";
 import { TicketSidePanel } from "./components/TicketSidePanel";
 import { TicketTimeline } from "./components/TicketTimeline";
 import { AddNoteForm } from "./components/AddNoteForm";
@@ -52,6 +53,7 @@ function LoadingSkeleton() {
 export function TicketDetailPage({ ticketId }: TicketDetailPageProps) {
   const queryClient = useQueryClient();
   const addTicket = useRecentTicketsStore((s) => s.addTicket);
+  useViewingTicket(ticketId);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["ticket", ticketId],
@@ -108,8 +110,8 @@ export function TicketDetailPage({ ticketId }: TicketDetailPageProps) {
         </a>
       </div>
 
-      <div className="flex gap-6 items-start">
-        <div className="flex-1 min-w-0 space-y-6">
+      <div className="flex gap-6 items-start relative">
+        <div className="flex-1 min-w-0 space-y-6 overflow-y-auto">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs font-mono font-medium px-2 py-0.5 rounded border border-white/10 bg-white/[0.05] text-muted-foreground">

@@ -14,8 +14,6 @@ import {
 import { findNavItem } from "@/shell/navItems";
 import { useAuth, authStore } from "@/auth/authStore";
 import { authApi } from "@/lib/api";
-import { RecentTickets } from "@/shell/RecentTickets";
-
 type HeaderProps = {
   onOpenCommandPalette: () => void;
 };
@@ -51,8 +49,6 @@ export function Header({ onOpenCommandPalette }: HeaderProps) {
           {title}
         </h1>
       </div>
-
-      <RecentTickets />
 
       <div className="flex items-center gap-2">
         <Button

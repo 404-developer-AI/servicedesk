@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ListChecks, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Eye, Pencil, Plus, Trash2 } from "lucide-react";
 import { viewApi, type View, type ViewInput } from "@/lib/ticket-api";
 import { taxonomyApi, type Queue, type Priority, type Status } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -296,80 +296,110 @@ function DeleteDialog({
   );
 }
 
-// ---- View card ----
+// ---- View row (expandable bar) ----
 
-function ViewCard({
+function ViewRow({
   view,
   queues,
   statuses,
   priorities,
+  expanded,
+  onToggle,
   onEdit,
   onDelete,
-  onClick,
+  onNavigate,
 }: {
   view: View;
   queues: Queue[];
   statuses: Status[];
   priorities: Priority[];
+  expanded: boolean;
+  onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
-  onClick: () => void;
+  onNavigate: () => void;
 }) {
   const summaryParts = formatFilters(view.filtersJson, queues, statuses, priorities);
 
   return (
-    <div
-      className="glass-card glass-hover group relative flex flex-col gap-3 p-5 cursor-pointer"
-      onClick={onClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onClick();
-        }
-      }}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <p className="font-semibold text-foreground leading-snug pr-2">{view.name}</p>
-        <div
-          className="flex shrink-0 gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={(e) => e.stopPropagation()}
+    <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] transition-colors hover:bg-white/[0.04]">
+      {/* Main bar */}
+      <div className="flex items-center gap-3 px-4 py-2.5">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+          aria-label={expanded ? "Collapse" : "Expand"}
         >
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            aria-label="Edit view"
-            onClick={onEdit}
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-destructive hover:text-destructive"
-            aria-label="Delete view"
-            onClick={onDelete}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        </div>
+          <ChevronDown
+            className={cn(
+              "h-3.5 w-3.5 transition-transform duration-150",
+              expanded && "rotate-180",
+            )}
+          />
+        </button>
+
+        <button
+          type="button"
+          onClick={onNavigate}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        >
+          <Eye className="h-3.5 w-3.5 shrink-0 text-primary/60" />
+          <span className="truncate text-sm font-medium text-foreground">
+            {view.name}
+          </span>
+
+          {summaryParts.length > 0 && (
+            <span className="hidden sm:flex items-center gap-1.5 ml-1">
+              {summaryParts.map((part) => (
+                <span
+                  key={part}
+                  className="rounded-full border border-white/8 bg-white/[0.04] px-2 py-0.5 text-[10px] text-muted-foreground whitespace-nowrap"
+                >
+                  {part}
+                </span>
+              ))}
+            </span>
+          )}
+        </button>
       </div>
 
-      {summaryParts.length > 0 ? (
-        <ul className="flex flex-wrap gap-1.5">
-          {summaryParts.map((part) => (
-            <li
-              key={part}
-              className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-[11px] text-muted-foreground"
-            >
-              {part}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-xs text-muted-foreground/60 italic">No filters — shows all tickets</p>
+      {/* Expanded actions */}
+      {expanded && (
+        <div className="flex items-center gap-2 border-t border-white/[0.04] px-4 py-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 text-xs text-muted-foreground"
+            onClick={onEdit}
+          >
+            <Pencil className="h-3 w-3" />
+            Edit
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 text-xs text-destructive hover:text-destructive"
+            onClick={onDelete}
+          >
+            <Trash2 className="h-3 w-3" />
+            Delete
+          </Button>
+
+          {/* Filter summary on mobile (hidden on desktop where it's inline) */}
+          {summaryParts.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 ml-auto sm:hidden">
+              {summaryParts.map((part) => (
+                <span
+                  key={part}
+                  className="rounded-full border border-white/8 bg-white/[0.04] px-2 py-0.5 text-[10px] text-muted-foreground"
+                >
+                  {part}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -377,14 +407,12 @@ function ViewCard({
 
 // ---- Loading skeleton ----
 
-function ViewCardSkeleton() {
+function ViewRowSkeleton() {
   return (
-    <div className="glass-card p-5 space-y-3 animate-pulse">
-      <Skeleton className="h-5 w-2/3" />
-      <div className="flex gap-1.5">
-        <Skeleton className="h-5 w-20 rounded-full" />
-        <Skeleton className="h-5 w-24 rounded-full" />
-      </div>
+    <div className="flex items-center gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
+      <Skeleton className="h-4 w-4 rounded" />
+      <Skeleton className="h-4 w-48" />
+      <Skeleton className="ml-auto h-4 w-20 rounded-full" />
     </div>
   );
 }
@@ -395,6 +423,7 @@ export function ViewsPage() {
   const qc = useQueryClient();
   const [editingView, setEditingView] = React.useState<View | null | "new">(null);
   const [deletingView, setDeletingView] = React.useState<View | null>(null);
+  const [expandedId, setExpandedId] = React.useState<string | null>(null);
 
   const { data: views, isLoading: viewsLoading } = useQuery({
     queryKey: ["views"],
@@ -435,7 +464,7 @@ export function ViewsPage() {
       <header className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/20 border border-primary/30">
-            <ListChecks className="h-4 w-4 text-primary" />
+            <Eye className="h-4 w-4 text-primary" />
           </div>
           <div>
             <h1 className="text-display-md font-semibold text-foreground leading-tight">
@@ -459,30 +488,34 @@ export function ViewsPage() {
       </header>
 
       {viewsLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="space-y-2">
           {Array.from({ length: 3 }).map((_, i) => (
-            <ViewCardSkeleton key={i} />
+            <ViewRowSkeleton key={i} />
           ))}
         </div>
       ) : views && views.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="space-y-1.5">
           {views.map((view) => (
-            <ViewCard
+            <ViewRow
               key={view.id}
               view={view}
               queues={queues}
               statuses={statuses}
               priorities={priorities}
+              expanded={expandedId === view.id}
+              onToggle={() =>
+                setExpandedId((prev) => (prev === view.id ? null : view.id))
+              }
               onEdit={() => setEditingView(view)}
               onDelete={() => setDeletingView(view)}
-              onClick={() => navigateToView(view.id)}
+              onNavigate={() => navigateToView(view.id)}
             />
           ))}
         </div>
       ) : (
-        <div className="glass-card p-12 flex flex-col items-center justify-center gap-4 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 border border-primary/20">
-            <ListChecks className="h-6 w-6 text-primary/60" />
+        <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-6 py-10 flex flex-col items-center justify-center gap-4 text-center">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 border border-primary/20">
+            <Eye className="h-5 w-5 text-primary/60" />
           </div>
           <div>
             <p className="text-sm font-medium text-foreground">No views yet</p>

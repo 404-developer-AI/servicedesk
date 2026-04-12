@@ -224,30 +224,56 @@ public sealed class TicketRepository : ITicketRepository
         var sets = new List<string>();
         var events = new List<(string EventType, string MetadataJson)>();
 
+        // Helper: look up a human-readable name for a taxonomy entity or user
+        // so change events store "New → In Progress" rather than raw UUIDs.
+        async Task<string?> LookupNameAsync(string table, Guid? id)
+        {
+            if (!id.HasValue) return null;
+            var col = table == "users" ? "email" : "name";
+            return await conn.ExecuteScalarAsync<string>(
+                new CommandDefinition($"SELECT {col} FROM {table} WHERE id = @id",
+                    new { id = id.Value }, tx, cancellationToken: ct));
+        }
+
         if (update.QueueId.HasValue && update.QueueId != current.QueueId)
         {
             sets.Add("queue_id = @NewQueueId");
-            events.Add(("QueueChange", System.Text.Json.JsonSerializer.Serialize(new { from = current.QueueId, to = update.QueueId })));
+            var fromName = await LookupNameAsync("queues", current.QueueId);
+            var toName = await LookupNameAsync("queues", update.QueueId);
+            events.Add(("QueueChange", System.Text.Json.JsonSerializer.Serialize(
+                new { from = current.QueueId, to = update.QueueId, fromName, toName })));
         }
         if (update.StatusId.HasValue && update.StatusId != current.StatusId)
         {
             sets.Add("status_id = @NewStatusId");
-            events.Add(("StatusChange", System.Text.Json.JsonSerializer.Serialize(new { from = current.StatusId, to = update.StatusId })));
+            var fromName = await LookupNameAsync("statuses", current.StatusId);
+            var toName = await LookupNameAsync("statuses", update.StatusId);
+            events.Add(("StatusChange", System.Text.Json.JsonSerializer.Serialize(
+                new { from = current.StatusId, to = update.StatusId, fromName, toName })));
         }
         if (update.PriorityId.HasValue && update.PriorityId != current.PriorityId)
         {
             sets.Add("priority_id = @NewPriorityId");
-            events.Add(("PriorityChange", System.Text.Json.JsonSerializer.Serialize(new { from = current.PriorityId, to = update.PriorityId })));
+            var fromName = await LookupNameAsync("priorities", current.PriorityId);
+            var toName = await LookupNameAsync("priorities", update.PriorityId);
+            events.Add(("PriorityChange", System.Text.Json.JsonSerializer.Serialize(
+                new { from = current.PriorityId, to = update.PriorityId, fromName, toName })));
         }
         if (update.CategoryId.HasValue && update.CategoryId != current.CategoryId)
         {
             sets.Add("category_id = @NewCategoryId");
-            events.Add(("CategoryChange", System.Text.Json.JsonSerializer.Serialize(new { from = current.CategoryId, to = update.CategoryId })));
+            var fromName = await LookupNameAsync("categories", current.CategoryId);
+            var toName = await LookupNameAsync("categories", update.CategoryId);
+            events.Add(("CategoryChange", System.Text.Json.JsonSerializer.Serialize(
+                new { from = current.CategoryId, to = update.CategoryId, fromName, toName })));
         }
         if (update.AssigneeUserId.HasValue && update.AssigneeUserId != current.AssigneeUserId)
         {
             sets.Add("assignee_user_id = @NewAssigneeUserId");
-            events.Add(("AssignmentChange", System.Text.Json.JsonSerializer.Serialize(new { from = current.AssigneeUserId, to = update.AssigneeUserId })));
+            var fromName = await LookupNameAsync("users", current.AssigneeUserId);
+            var toName = await LookupNameAsync("users", update.AssigneeUserId);
+            events.Add(("AssignmentChange", System.Text.Json.JsonSerializer.Serialize(
+                new { from = current.AssigneeUserId, to = update.AssigneeUserId, fromName, toName })));
         }
 
         if (sets.Count == 0) { await tx.RollbackAsync(ct); return await GetByIdAsync(ticketId, ct); }

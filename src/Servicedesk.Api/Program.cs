@@ -14,6 +14,7 @@ using Servicedesk.Api.Taxonomy;
 using Servicedesk.Api.Tickets;
 using Servicedesk.Api.Views;
 using Servicedesk.Api.Users;
+using Servicedesk.Api.Presence;
 using Servicedesk.Infrastructure;
 using Servicedesk.Infrastructure.Settings;
 
@@ -60,6 +61,7 @@ builder.Services.AddAuthentication(SessionAuthenticationHandler.SchemeName)
         SessionAuthenticationHandler.SchemeName, _ => { });
 
 builder.Services.AddAuthorization(options => options.AddServicedeskPolicies());
+builder.Services.AddSignalR();
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -166,6 +168,7 @@ app.MapTicketEndpoints();
 app.MapViewEndpoints();
 app.MapUserEndpoints();
 app.MapDevBenchmarkEndpoints(app.Environment);
+app.MapHub<TicketPresenceHub>("/hubs/presence");
 
 app.Run();
 

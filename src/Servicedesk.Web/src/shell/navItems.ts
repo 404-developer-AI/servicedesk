@@ -1,6 +1,5 @@
 import {
   LayoutDashboard,
-  ListChecks,
   Inbox,
   BookOpen,
   Settings,
@@ -30,16 +29,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     description: "Live metrics, SLA health, ticket volume and team load at a glance.",
     section: "main",
   },
-  {
-    label: "Views",
-    to: "/views",
-    icon: ListChecks,
-    roles: ["Agent", "Admin"],
-    comingIn: "",
-    description: "User-defined saved ticket views with filters, sorting and shared queries.",
-    section: "main",
-  },
-  {
+{
     label: "Open Tickets",
     to: "/tickets",
     icon: Inbox,

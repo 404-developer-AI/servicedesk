@@ -5,8 +5,10 @@ import { Sidebar } from "@/shell/Sidebar";
 import { Header } from "@/shell/Header";
 import { CommandPalette } from "@/shell/CommandPalette";
 import { useSecondarySidebarStore } from "@/stores/useSecondarySidebarStore";
+import { usePresenceConnection } from "@/hooks/usePresence";
 
 export function AppShell() {
+  usePresenceConnection();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const secondarySidebar = useSecondarySidebarStore((s) => s.content);
 
