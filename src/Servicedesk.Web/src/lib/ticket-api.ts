@@ -148,6 +148,9 @@ export type TicketFieldUpdate = {
   priorityId?: string;
   categoryId?: string;
   assigneeUserId?: string;
+  subject?: string;
+  bodyText?: string;
+  bodyHtml?: string;
 };
 
 export type NewTicketEvent = {
@@ -218,7 +221,26 @@ export type Company = {
   description: string;
   website: string;
   phone: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  postalCode: string;
+  country: string;
   isActive: boolean;
+  createdUtc: string;
+  updatedUtc: string;
+};
+
+export type CompanyDomain = {
+  id: string;
+  companyId: string;
+  domain: string;
+  createdUtc: string;
+};
+
+export type CompanyDetail = {
+  company: Company;
+  domains: CompanyDomain[];
 };
 
 // ---- API functions ----
@@ -286,4 +308,5 @@ export const companyApi = {
     const qs = params.toString();
     return request<Company[]>("GET", `/api/companies${qs ? `?${qs}` : ""}`);
   },
+  get: (id: string) => request<CompanyDetail>("GET", `/api/companies/${id}`),
 };

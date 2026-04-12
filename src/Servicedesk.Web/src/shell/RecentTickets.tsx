@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { GripVertical, Ticket, X } from "lucide-react";
 import { useRecentTicketsStore } from "@/stores/useRecentTicketsStore";
 import { cn } from "@/lib/utils";
@@ -9,6 +9,7 @@ export function RecentTickets({ collapsed }: { collapsed: boolean }) {
   const removeTicket = useRecentTicketsStore((s) => s.removeTicket);
   const moveTicket = useRecentTicketsStore((s) => s.moveTicket);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const navigate = useNavigate();
   const [dragIndex, setDragIndex] = React.useState<number | null>(null);
   const [overIndex, setOverIndex] = React.useState<number | null>(null);
 
@@ -105,6 +106,9 @@ export function RecentTickets({ collapsed }: { collapsed: boolean }) {
                   onClick={(e) => {
                     e.stopPropagation();
                     removeTicket(t.id);
+                    if (pathname === `/tickets/${t.id}`) {
+                      navigate({ to: "/tickets" });
+                    }
                   }}
                   className="hidden shrink-0 rounded p-0.5 hover:bg-white/10 group-hover:inline-flex"
                   aria-label={`Remove #${t.number} from recent`}

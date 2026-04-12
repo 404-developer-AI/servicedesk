@@ -35,7 +35,10 @@ public sealed record TicketFieldUpdate(
     Guid? StatusId = null,
     Guid? PriorityId = null,
     Guid? CategoryId = null,
-    Guid? AssigneeUserId = null);
+    Guid? AssigneeUserId = null,
+    string? Subject = null,
+    string? BodyText = null,
+    string? BodyHtml = null);
 
 public sealed record NewTicketEvent(
     string EventType,

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
@@ -80,6 +81,18 @@ export function RichTextEditor({
     },
   });
 
+  // Sync content prop into the editor when it changes externally
+  // (e.g. after a save updates the query cache). Only for read-only editors
+  // to avoid fighting with the user's cursor in editable mode.
+  useEffect(() => {
+    if (!editor || editable) return;
+    const current = editor.getHTML();
+    const incoming = content ?? "";
+    if (current !== incoming) {
+      editor.commands.setContent(incoming);
+    }
+  }, [editor, content, editable]);
+
   const setLink = () => {
     if (!editor) return;
     const prev = editor.getAttributes("link").href as string | undefined;
@@ -107,9 +120,13 @@ export function RichTextEditor({
         .rte-content .ProseMirror p:last-child {
           margin-bottom: 0;
         }
-        .rte-content .ProseMirror ul,
+        .rte-content .ProseMirror ul {
+          padding-left: 1.5em;
+          list-style: disc;
+        }
         .rte-content .ProseMirror ol {
           padding-left: 1.5em;
+          list-style: decimal;
         }
         .rte-content .ProseMirror a {
           color: hsl(265 89% 70%);

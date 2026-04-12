@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { taxonomyApi } from "@/lib/api";
 import { AgentPicker } from "@/components/AgentPicker";
 import { cn } from "@/lib/utils";
-import type { Ticket, TicketFieldUpdate } from "@/lib/ticket-api";
+import type { Ticket, TicketFieldUpdate, Contact, CompanyDetail } from "@/lib/ticket-api";
+import { contactApi, companyApi } from "@/lib/ticket-api";
 import { usePresenceStore, type PresenceUser } from "@/stores/usePresenceStore";
 import { useAuth } from "@/auth/authStore";
 import {
@@ -12,11 +13,22 @@ import {
   TooltipTrigger,
   TooltipProvider,
 } from "@/components/ui/tooltip";
+import {
+  Building2,
+  Globe,
+  Mail,
+  Phone,
+  MapPin,
+  Briefcase,
+  User,
+} from "lucide-react";
 
 type TicketSidePanelProps = {
   ticket: Ticket;
   onUpdate: (fields: TicketFieldUpdate) => Promise<void>;
 };
+
+type TabId = "status" | "contact" | "company";
 
 const SELECT_CLASS =
   "w-full h-9 px-2 text-sm rounded-md border border-white/10 bg-white/[0.04] text-foreground outline-none focus:border-primary/60 cursor-pointer";
@@ -25,6 +37,26 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
     <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">
       {children}
+    </div>
+  );
+}
+
+function FieldRow({
+  icon: Icon,
+  label,
+  children,
+}: {
+  icon?: React.ElementType;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground mb-1">
+        {Icon && <Icon className="h-3 w-3" />}
+        {label}
+      </div>
+      <div className="text-sm text-foreground/80">{children}</div>
     </div>
   );
 }
@@ -58,7 +90,93 @@ function SourceBadge({ source }: { source: string }) {
   );
 }
 
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="text-sm text-muted-foreground/60 italic py-4 text-center">
+      {text}
+    </div>
+  );
+}
+
 export function TicketSidePanel({ ticket, onUpdate }: TicketSidePanelProps) {
+  const [activeTab, setActiveTab] = React.useState<TabId>("status");
+
+  const { data: contact } = useQuery({
+    queryKey: ["contact", ticket.requesterContactId],
+    queryFn: () => contactApi.get(ticket.requesterContactId),
+    staleTime: 60_000,
+  });
+
+  const { data: companyDetail } = useQuery({
+    queryKey: ["company", contact?.companyId],
+    queryFn: () => companyApi.get(contact!.companyId!),
+    staleTime: 60_000,
+    enabled: !!contact?.companyId,
+  });
+
+  const contactLabel = contact
+    ? contact.firstName || contact.lastName
+      ? `${contact.firstName} ${contact.lastName}`.trim()
+      : contact.email
+    : "Contact";
+
+  const companyLabel = companyDetail?.company.name ?? "Company";
+
+  const tabs: { id: TabId; label: string }[] = [
+    { id: "status", label: "Status" },
+    { id: "contact", label: contactLabel },
+    { id: "company", label: companyLabel },
+  ];
+
+  return (
+    <div className="glass-card w-[320px] shrink-0 sticky top-6 self-start max-h-[calc(100vh-6rem)] overflow-y-auto flex flex-col">
+      {/* Tab bar */}
+      <div className="flex border-b border-white/10 shrink-0">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            className={cn(
+              "flex-1 px-2 py-2.5 text-xs font-medium truncate transition-colors relative",
+              activeTab === tab.id
+                ? "text-foreground"
+                : "text-muted-foreground hover:text-foreground/80",
+            )}
+          >
+            <span className="truncate">{tab.label}</span>
+            {activeTab === tab.id && (
+              <span className="absolute bottom-0 inset-x-2 h-0.5 rounded-full bg-primary" />
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab content */}
+      <div className="p-4 space-y-4 flex-1 overflow-y-auto">
+        {activeTab === "status" && (
+          <StatusTab ticket={ticket} onUpdate={onUpdate} />
+        )}
+        {activeTab === "contact" && (
+          <ContactTab contact={contact ?? null} />
+        )}
+        {activeTab === "company" && (
+          <CompanyTab companyDetail={companyDetail ?? null} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Status Tab ─── */
+
+function StatusTab({
+  ticket,
+  onUpdate,
+}: {
+  ticket: Ticket;
+  onUpdate: (fields: TicketFieldUpdate) => Promise<void>;
+}) {
   const { data: queues } = useQuery({
     queryKey: ["queues"],
     queryFn: taxonomyApi.queues.list,
@@ -88,7 +206,7 @@ export function TicketSidePanel({ ticket, onUpdate }: TicketSidePanelProps) {
   const currentQueue = queues?.find((q) => q.id === ticket.queueId);
 
   return (
-    <div className="glass-card p-4 space-y-4 w-[320px] shrink-0 sticky top-6 self-start max-h-[calc(100vh-6rem)] overflow-y-auto">
+    <>
       <div>
         <FieldLabel>Status</FieldLabel>
         <div className="relative">
@@ -183,13 +301,6 @@ export function TicketSidePanel({ ticket, onUpdate }: TicketSidePanelProps) {
         />
       </div>
 
-      <div>
-        <FieldLabel>Requester</FieldLabel>
-        <div className="text-sm text-muted-foreground truncate">
-          {ticket.requesterContactId}
-        </div>
-      </div>
-
       <div className="border-t border-white/10" />
 
       <div>
@@ -213,9 +324,184 @@ export function TicketSidePanel({ ticket, onUpdate }: TicketSidePanelProps) {
       </div>
 
       <TicketPresence ticketId={ticket.id} />
-    </div>
+    </>
   );
 }
+
+/* ─── Contact Tab ─── */
+
+function ContactTab({ contact }: { contact: Contact | null }) {
+  if (!contact) return <EmptyState text="Loading contact..." />;
+
+  const fullName =
+    contact.firstName || contact.lastName
+      ? `${contact.firstName} ${contact.lastName}`.trim()
+      : null;
+
+  return (
+    <>
+      {fullName && (
+        <FieldRow icon={User} label="Name">
+          {fullName}
+        </FieldRow>
+      )}
+
+      <FieldRow icon={Mail} label="Email">
+        <a
+          href={`mailto:${contact.email}`}
+          className="text-primary hover:underline break-all"
+        >
+          {contact.email}
+        </a>
+      </FieldRow>
+
+      {contact.phone && (
+        <FieldRow icon={Phone} label="Phone">
+          <a
+            href={`tel:${contact.phone}`}
+            className="text-primary hover:underline"
+          >
+            {contact.phone}
+          </a>
+        </FieldRow>
+      )}
+
+      {contact.jobTitle && (
+        <FieldRow icon={Briefcase} label="Job title">
+          {contact.jobTitle}
+        </FieldRow>
+      )}
+
+      {contact.companyRole && contact.companyRole !== "Member" && (
+        <FieldRow icon={Building2} label="Role">
+          {contact.companyRole}
+        </FieldRow>
+      )}
+
+      <div className="border-t border-white/10" />
+
+      <div>
+        <FieldLabel>Status</FieldLabel>
+        <span
+          className={cn(
+            "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border",
+            contact.isActive
+              ? "border-green-500/30 bg-green-500/10 text-green-400"
+              : "border-white/10 bg-white/[0.05] text-muted-foreground",
+          )}
+        >
+          {contact.isActive ? "Active" : "Inactive"}
+        </span>
+      </div>
+
+      <div>
+        <FieldLabel>Created</FieldLabel>
+        <div className="text-sm text-foreground/80">{formatDate(contact.createdUtc)}</div>
+      </div>
+    </>
+  );
+}
+
+/* ─── Company Tab ─── */
+
+function CompanyTab({ companyDetail }: { companyDetail: CompanyDetail | null }) {
+  if (!companyDetail) return <EmptyState text="No company linked" />;
+
+  const { company, domains } = companyDetail;
+
+  const addressParts = [
+    company.addressLine1,
+    company.addressLine2,
+    [company.postalCode, company.city].filter(Boolean).join(" "),
+    company.country,
+  ].filter(Boolean);
+
+  return (
+    <>
+      <FieldRow icon={Building2} label="Name">
+        {company.name}
+      </FieldRow>
+
+      {company.description && (
+        <FieldRow label="Description">
+          <span className="text-muted-foreground">{company.description}</span>
+        </FieldRow>
+      )}
+
+      {company.website && (
+        <FieldRow icon={Globe} label="Website">
+          <a
+            href={company.website.startsWith("http") ? company.website : `https://${company.website}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary hover:underline break-all"
+          >
+            {company.website}
+          </a>
+        </FieldRow>
+      )}
+
+      {company.phone && (
+        <FieldRow icon={Phone} label="Phone">
+          <a
+            href={`tel:${company.phone}`}
+            className="text-primary hover:underline"
+          >
+            {company.phone}
+          </a>
+        </FieldRow>
+      )}
+
+      {addressParts.length > 0 && (
+        <FieldRow icon={MapPin} label="Address">
+          <div className="space-y-0.5">
+            {addressParts.map((line, i) => (
+              <div key={i}>{line}</div>
+            ))}
+          </div>
+        </FieldRow>
+      )}
+
+      {domains.length > 0 && (
+        <>
+          <div className="border-t border-white/10" />
+          <div>
+            <FieldLabel>Domains</FieldLabel>
+            <div className="flex flex-wrap gap-1.5">
+              {domains.map((d) => (
+                <span
+                  key={d.id}
+                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs border border-white/10 bg-white/[0.05] text-muted-foreground"
+                >
+                  <Globe className="h-3 w-3" />
+                  {d.domain}
+                </span>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      <div className="border-t border-white/10" />
+
+      <div>
+        <FieldLabel>Status</FieldLabel>
+        <span
+          className={cn(
+            "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border",
+            company.isActive
+              ? "border-green-500/30 bg-green-500/10 text-green-400"
+              : "border-white/10 bg-white/[0.05] text-muted-foreground",
+          )}
+        >
+          {company.isActive ? "Active" : "Inactive"}
+        </span>
+      </div>
+    </>
+  );
+}
+
+/* ─── Presence ─── */
 
 function TicketPresence({ ticketId }: { ticketId: string }) {
   const presence = usePresenceStore((s) => s.byTicket[ticketId] ?? []);

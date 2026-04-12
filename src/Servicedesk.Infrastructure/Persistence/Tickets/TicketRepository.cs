@@ -276,7 +276,17 @@ public sealed class TicketRepository : ITicketRepository
                 new { from = current.AssigneeUserId, to = update.AssigneeUserId, fromName, toName })));
         }
 
-        if (sets.Count == 0) { await tx.RollbackAsync(ct); return await GetByIdAsync(ticketId, ct); }
+        bool bodyChanged = false;
+        if (update.Subject is not null)
+        {
+            sets.Add("subject = @NewSubject");
+        }
+        if (update.BodyText is not null || update.BodyHtml is not null)
+        {
+            bodyChanged = true;
+        }
+
+        if (sets.Count == 0 && !bodyChanged) { await tx.RollbackAsync(ct); return await GetByIdAsync(ticketId, ct); }
 
         sets.Add("updated_utc = now()");
 
@@ -289,16 +299,41 @@ public sealed class TicketRepository : ITicketRepository
             if (stateCategory == "Closed") sets.Add("closed_utc = COALESCE(closed_utc, now())");
         }
 
-        var updateSql = $"UPDATE tickets SET {string.Join(", ", sets)} WHERE id = @ticketId";
-        await conn.ExecuteAsync(new CommandDefinition(updateSql, new
+        if (sets.Count > 1) // more than just updated_utc
         {
-            ticketId,
-            NewQueueId = update.QueueId,
-            NewStatusId = update.StatusId,
-            NewPriorityId = update.PriorityId,
-            NewCategoryId = update.CategoryId,
-            NewAssigneeUserId = update.AssigneeUserId,
-        }, tx, cancellationToken: ct));
+            var updateSql = $"UPDATE tickets SET {string.Join(", ", sets)} WHERE id = @ticketId";
+            await conn.ExecuteAsync(new CommandDefinition(updateSql, new
+            {
+                ticketId,
+                NewQueueId = update.QueueId,
+                NewStatusId = update.StatusId,
+                NewPriorityId = update.PriorityId,
+                NewCategoryId = update.CategoryId,
+                NewAssigneeUserId = update.AssigneeUserId,
+                NewSubject = update.Subject,
+            }, tx, cancellationToken: ct));
+        }
+
+        if (bodyChanged)
+        {
+            await conn.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO ticket_bodies (ticket_id, body_text, body_html)
+                VALUES (@ticketId, COALESCE(@bodyText, ''), @bodyHtml)
+                ON CONFLICT (ticket_id) DO UPDATE
+                    SET body_text = COALESCE(@bodyText, ticket_bodies.body_text),
+                        body_html = COALESCE(@bodyHtml, ticket_bodies.body_html)
+                """,
+                new { ticketId, bodyText = update.BodyText, bodyHtml = update.BodyHtml },
+                tx, cancellationToken: ct));
+            // Also bump updated_utc on ticket if only body changed
+            if (sets.Count <= 1)
+            {
+                await conn.ExecuteAsync(new CommandDefinition(
+                    "UPDATE tickets SET updated_utc = now() WHERE id = @ticketId",
+                    new { ticketId }, tx, cancellationToken: ct));
+            }
+        }
 
         foreach (var (eventType, metadata) in events)
         {

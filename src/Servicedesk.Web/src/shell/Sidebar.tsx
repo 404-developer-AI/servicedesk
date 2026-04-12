@@ -1,14 +1,17 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import {
   ChevronLeft,
   ChevronRight,
   Eye,
+  LogOut,
   Plus,
   Settings as SettingsIcon,
   Sparkles,
+  UserCircle2,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useCurrentRole } from "@/hooks/useCurrentRole";
 import { useSidebarStore } from "@/stores/useSidebarStore";
@@ -22,6 +25,16 @@ import {
 } from "@/hooks/useServerTime";
 import { viewApi } from "@/lib/ticket-api";
 import { RecentTickets } from "@/shell/RecentTickets";
+import { useAuth, authStore } from "@/auth/authStore";
+import { authApi } from "@/lib/api";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 // Timezone is intentionally not displayed — on Windows dev boxes
 // `TimeZoneInfo.Local.Id` returns "Romance Standard Time" etc., which is ugly
@@ -54,8 +67,23 @@ export function Sidebar() {
   const clock = time ? formatServerLocalClock(time) : "…";
   const date = time ? formatServerLocalDate(time) : "";
 
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    try {
+      await authApi.logout();
+    } catch {
+      // logout is idempotent locally even if the server call fails
+    }
+    authStore.patch({ user: null });
+    toast.success("Signed out");
+    navigate({ to: "/login" });
+  };
+
   const canSeeSettings = role === "Admin";
   const settingsActive = pathname === "/settings" || pathname.startsWith("/settings/");
+  const profileActive = pathname === "/profile";
 
   return (
     <motion.aside
@@ -137,21 +165,55 @@ export function Sidebar() {
               to="/settings"
               title="Settings"
               className={cn(
-                "flex h-9 items-center justify-center rounded-lg text-sm transition-all",
+                "flex h-9 w-9 items-center justify-center rounded-lg border transition-colors",
                 settingsActive
-                  ? "bg-white/[0.07] text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
-                  : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
+                  ? "border-white/15 bg-white/[0.07] text-foreground"
+                  : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06] hover:text-foreground",
               )}
             >
               <SettingsIcon className="h-4 w-4" />
             </Link>
+          )}
+          {user && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  title={user.email}
+                  className={cn(
+                    "flex h-9 w-9 items-center justify-center rounded-lg border transition-colors",
+                    profileActive
+                      ? "border-white/15 bg-white/[0.07] text-foreground"
+                      : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06] hover:text-foreground",
+                  )}
+                  data-testid="profile-menu-trigger"
+                >
+                  <UserCircle2 className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="right" align="end" className="w-56">
+                <DropdownMenuLabel className="text-xs">
+                  <div className="truncate font-medium">{user.email}</div>
+                  <div className="truncate text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                    {user.role}
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate({ to: "/profile" })}>
+                  <UserCircle2 className="mr-2 h-4 w-4" /> Profile
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleLogout}>
+                  <LogOut className="mr-2 h-4 w-4" /> Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
           <NewTicketDrawer>
             <button
               type="button"
               title="New ticket"
               aria-label="New ticket"
-              className="flex h-9 items-center justify-center rounded-lg bg-gradient-to-br from-accent-purple to-accent-blue text-white shadow-[0_6px_20px_-8px_hsl(var(--primary)/0.55)] transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-gradient-to-br from-accent-purple to-accent-blue text-white shadow-[0_6px_20px_-8px_hsl(var(--primary)/0.55)] transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Plus className="h-4 w-4" />
             </button>
@@ -199,21 +261,55 @@ export function Sidebar() {
                 title="Settings"
                 aria-label="Settings"
                 className={cn(
-                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors",
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors",
                   settingsActive
-                    ? "bg-white/[0.07] text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
-                    : "text-muted-foreground hover:bg-white/[0.06] hover:text-foreground",
+                    ? "border-white/15 bg-white/[0.07] text-foreground"
+                    : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06] hover:text-foreground",
                 )}
               >
                 <SettingsIcon className="h-4 w-4" />
               </Link>
+            )}
+            {user && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    title={user.email}
+                    className={cn(
+                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors",
+                      profileActive
+                        ? "border-white/15 bg-white/[0.07] text-foreground"
+                        : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06] hover:text-foreground",
+                    )}
+                    data-testid="profile-menu-trigger"
+                  >
+                    <UserCircle2 className="h-4 w-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent side="top" align="end" className="w-56">
+                  <DropdownMenuLabel className="text-xs">
+                    <div className="truncate font-medium">{user.email}</div>
+                    <div className="truncate text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                      {user.role}
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => navigate({ to: "/profile" })}>
+                    <UserCircle2 className="mr-2 h-4 w-4" /> Profile
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleLogout}>
+                    <LogOut className="mr-2 h-4 w-4" /> Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
             <NewTicketDrawer>
               <button
                 type="button"
                 title="New ticket"
                 aria-label="New ticket"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-accent-purple to-accent-blue text-white shadow-[0_6px_18px_-8px_hsl(var(--primary)/0.55)] transition-transform hover:scale-[1.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-gradient-to-br from-accent-purple to-accent-blue text-white shadow-[0_6px_18px_-8px_hsl(var(--primary)/0.55)] transition-transform hover:scale-[1.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <Plus className="h-4 w-4" />
               </button>

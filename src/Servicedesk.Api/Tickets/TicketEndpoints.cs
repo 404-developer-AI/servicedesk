@@ -101,7 +101,10 @@ public static class TicketEndpoints
                 StatusId: req.StatusId,
                 PriorityId: req.PriorityId,
                 CategoryId: req.CategoryId,
-                AssigneeUserId: req.AssigneeUserId);
+                AssigneeUserId: req.AssigneeUserId,
+                Subject: req.Subject?.Trim(),
+                BodyText: req.BodyText,
+                BodyHtml: req.BodyHtml);
             var detail = await tickets.UpdateFieldsAsync(id, update, userId, ct);
             if (detail is null) return Results.NotFound();
 
@@ -256,7 +259,10 @@ public static class TicketEndpoints
         Guid? StatusId,
         Guid? PriorityId,
         Guid? CategoryId,
-        Guid? AssigneeUserId);
+        Guid? AssigneeUserId,
+        string? Subject,
+        string? BodyText,
+        string? BodyHtml);
 
     public sealed record AddEventRequest(
         string? EventType,
