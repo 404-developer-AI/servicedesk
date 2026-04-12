@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { MessageCircle } from "lucide-react";
 import { ticketApi } from "@/lib/ticket-api";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { cn } from "@/lib/utils";
@@ -13,6 +14,7 @@ type AddNoteFormProps = {
 type TabType = "reply" | "note";
 
 export function AddNoteForm({ ticketId, onSubmitted }: AddNoteFormProps) {
+  const [expanded, setExpanded] = React.useState(false);
   const [tab, setTab] = React.useState<TabType>("reply");
   const [bodyHtml, setBodyHtml] = React.useState("");
   const [editorKey, setEditorKey] = React.useState(0);
@@ -31,6 +33,7 @@ export function AddNoteForm({ ticketId, onSubmitted }: AddNoteFormProps) {
       toast.success(isInternal ? "Note added" : "Reply sent");
       setBodyHtml("");
       setEditorKey((k) => k + 1);
+      setExpanded(false);
       queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
       onSubmitted();
     },
@@ -46,6 +49,19 @@ export function AddNoteForm({ ticketId, onSubmitted }: AddNoteFormProps) {
       return;
     }
     mutation.mutate();
+  }
+
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        className="w-full flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border border-white/10 bg-white/[0.03] text-muted-foreground/60 hover:bg-white/[0.06] hover:text-muted-foreground hover:border-white/15 transition-colors text-sm"
+      >
+        <MessageCircle className="h-4 w-4 shrink-0" />
+        Write a reply...
+      </button>
+    );
   }
 
   return (
@@ -88,13 +104,24 @@ export function AddNoteForm({ ticketId, onSubmitted }: AddNoteFormProps) {
         onChange={setBodyHtml}
         placeholder={
           isInternal
-            ? "Add an internal note (not visible to customers)…"
-            : "Write a reply to the customer…"
+            ? "Add an internal note (not visible to customers)..."
+            : "Write a reply to the customer..."
         }
         minHeight="120px"
       />
 
-      <div className="mt-3 flex justify-end">
+      <div className="mt-3 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => {
+            setExpanded(false);
+            setBodyHtml("");
+            setEditorKey((k) => k + 1);
+          }}
+          className="px-3 py-1.5 text-xs rounded-md text-muted-foreground hover:bg-white/[0.06] transition-colors"
+        >
+          Cancel
+        </button>
         <button
           type="submit"
           disabled={mutation.isPending}
@@ -107,7 +134,7 @@ export function AddNoteForm({ ticketId, onSubmitted }: AddNoteFormProps) {
           )}
         >
           {mutation.isPending
-            ? "Submitting…"
+            ? "Submitting..."
             : isInternal
             ? "Add note"
             : "Add reply"}

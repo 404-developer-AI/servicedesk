@@ -129,7 +129,7 @@ export function TicketSidePanel({ ticket, onUpdate }: TicketSidePanelProps) {
   ];
 
   return (
-    <div className="glass-card w-[320px] shrink-0 sticky top-6 self-start max-h-[calc(100vh-6rem)] overflow-y-auto flex flex-col">
+    <div className="glass-card w-[320px] shrink-0 flex flex-col min-h-0">
       {/* Tab bar */}
       <div className="flex border-b border-white/10 shrink-0">
         {tabs.map((tab) => (
@@ -503,8 +503,10 @@ function CompanyTab({ companyDetail }: { companyDetail: CompanyDetail | null }) 
 
 /* ─── Presence ─── */
 
+const EMPTY_PRESENCE: PresenceUser[] = [];
+
 function TicketPresence({ ticketId }: { ticketId: string }) {
-  const presence = usePresenceStore((s) => s.byTicket[ticketId] ?? []);
+  const presence = usePresenceStore((s) => s.byTicket[ticketId] ?? EMPTY_PRESENCE);
   const { user: currentUser } = useAuth();
   const others = presence.filter((u) => u.userId !== currentUser?.id);
 

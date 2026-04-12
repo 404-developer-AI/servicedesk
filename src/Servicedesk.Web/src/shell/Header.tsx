@@ -3,6 +3,11 @@ import { findNavItem } from "@/shell/navItems";
 
 export function Header() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  // Hide header on ticket detail pages — the ticket itself is the header
+  const isTicketDetail = /^\/tickets\/[^/]+$/.test(pathname);
+  if (isTicketDetail) return null;
+
   const current = findNavItem(pathname);
   const parent = !current
     ? findNavItem("/" + pathname.split("/").filter(Boolean)[0])

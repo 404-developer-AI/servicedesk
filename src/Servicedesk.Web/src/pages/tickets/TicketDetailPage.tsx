@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Check, Copy, Pencil, X } from "lucide-react";
+import { Check, Copy, Pencil, X } from "lucide-react";
 import { ticketApi, type TicketFieldUpdate } from "@/lib/ticket-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RichTextEditor } from "@/components/RichTextEditor";
@@ -18,7 +18,7 @@ type TicketDetailPageProps = {
 
 function LoadingSkeleton() {
   return (
-    <div className="flex gap-6 animate-pulse">
+    <div className="flex gap-6 pt-3 h-[calc(100vh-0.75rem)] overflow-hidden">
       <div className="flex-1 space-y-4">
         <Skeleton className="h-8 w-2/3" />
         <Skeleton className="h-4 w-1/4" />
@@ -69,9 +69,11 @@ function TicketNumber({ number }: { number: number }) {
 /* ─── Editable subject ─── */
 
 function EditableSubject({
+  number,
   value,
   onSave,
 }: {
+  number: number;
   value: string;
   onSave: (subject: string) => Promise<void>;
 }) {
@@ -105,14 +107,15 @@ function EditableSubject({
 
   if (!editing) {
     return (
-      <div className="group flex items-start gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground leading-tight flex-1 min-w-0">
+      <div className="group flex items-center gap-3">
+        <TicketNumber number={number} />
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground leading-tight flex-1 min-w-0 truncate">
           {value}
         </h1>
         <button
           type="button"
           onClick={() => setEditing(true)}
-          className="shrink-0 mt-1 p-1 rounded-md text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-white/[0.06] transition-all"
+          className="shrink-0 p-1 rounded-md text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-white/[0.06] transition-all"
           title="Edit subject"
         >
           <Pencil className="h-3.5 w-3.5" />
@@ -122,7 +125,8 @@ function EditableSubject({
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-3">
+      <TicketNumber number={number} />
       <input
         ref={inputRef}
         type="text"
@@ -173,7 +177,6 @@ function EditableDescription({
   }, [html, text]);
 
   const save = async () => {
-    // Strip tags for plain text fallback
     const div = document.createElement("div");
     div.innerHTML = draftHtml;
     const plainText = div.textContent ?? "";
@@ -186,23 +189,38 @@ function EditableDescription({
     setEditing(false);
   };
 
+  const isEmpty = !html && !text.trim();
+
   if (!editing) {
+    if (isEmpty) {
+      return (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border border-white/10 bg-white/[0.03] text-muted-foreground/60 hover:bg-white/[0.06] hover:text-muted-foreground hover:border-white/15 transition-colors text-sm"
+        >
+          <Pencil className="h-4 w-4 shrink-0" />
+          Add a description...
+        </button>
+      );
+    }
+
     return (
       <div
-        className="group relative glass-card p-6 cursor-pointer hover:border-white/15 transition-colors"
+        className="group relative rounded-[var(--radius)] border border-white/10 bg-white/[0.03] px-4 py-3 cursor-pointer hover:bg-white/[0.06] hover:border-white/15 transition-colors max-h-32 overflow-y-auto"
         onClick={() => setEditing(true)}
         title="Click to edit description"
       >
         <button
           type="button"
-          className="absolute top-3 right-3 p-1 rounded-md text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-white/[0.06] transition-all"
+          className="absolute top-2 right-2 p-1 rounded-md text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-white/[0.06] transition-all z-10"
         >
           <Pencil className="h-3.5 w-3.5" />
         </button>
         <RichTextEditor
           content={html ?? text}
           editable={false}
-          minHeight="60px"
+          minHeight="0px"
           className="border-none bg-transparent !rounded-none"
         />
       </div>
@@ -210,14 +228,14 @@ function EditableDescription({
   }
 
   return (
-    <div className="glass-card p-4 space-y-3">
+    <div className="rounded-[var(--radius)] border border-white/10 bg-white/[0.04] p-4 space-y-3">
       <RichTextEditor
         content={draftHtml}
         onChange={setDraftHtml}
         placeholder="Describe the issue..."
         minHeight="100px"
       />
-      <div className="flex items-center gap-2 justify-end">
+      <div className="flex items-center justify-between">
         <button
           type="button"
           onClick={cancel}
@@ -288,59 +306,52 @@ export function TicketDetailPage({ ticketId }: TicketDetailPageProps) {
   const { ticket, body, events } = data;
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-2">
-        <a
-          href="/tickets"
-          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Back to tickets
-        </a>
-      </div>
+    <div className="flex gap-6 pt-3 h-[calc(100vh-0.75rem)] overflow-hidden">
+      {/* Left column — header + description static, activity scrolls, reply pinned bottom */}
+      <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
+        {/* Static: ticket number + subject on one line */}
+        <div className="shrink-0 pb-4">
+          <EditableSubject
+            number={ticket.number}
+            value={ticket.subject}
+            onSave={async (subject) => {
+              await updateMutation.mutateAsync({ subject });
+            }}
+          />
+        </div>
 
-      <div className="flex gap-6 items-start relative">
-        <div className="flex-1 min-w-0 space-y-6 overflow-y-auto">
-          {/* Ticket number + subject */}
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <TicketNumber number={ticket.number} />
-            </div>
-            <EditableSubject
-              value={ticket.subject}
-              onSave={async (subject) => {
-                await updateMutation.mutateAsync({ subject });
-              }}
-            />
+        {/* Static: description */}
+        <div className="shrink-0 pb-4">
+          <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
+            Description
           </div>
+          <EditableDescription
+            html={body.bodyHtml}
+            text={body.bodyText}
+            onSave={async (bodyHtml, bodyText) => {
+              await updateMutation.mutateAsync({ bodyHtml, bodyText });
+            }}
+          />
+        </div>
 
-          {/* Description */}
-          <div>
-            <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
-              Description
-            </div>
-            <EditableDescription
-              html={body.bodyHtml}
-              text={body.bodyText}
-              onSave={async (bodyHtml, bodyText) => {
-                await updateMutation.mutateAsync({ bodyHtml, bodyText });
-              }}
-            />
+        {/* Static: activity divider */}
+        <div className="shrink-0 pb-3">
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-white/10" />
+            <span className="text-xs uppercase tracking-wider text-muted-foreground">
+              Activity
+            </span>
+            <div className="h-px flex-1 bg-white/10" />
           </div>
+        </div>
 
-          {/* Activity */}
-          <div>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="h-px flex-1 bg-white/10" />
-              <span className="text-xs uppercase tracking-wider text-muted-foreground">
-                Activity
-              </span>
-              <div className="h-px flex-1 bg-white/10" />
-            </div>
+        {/* Scrollable: activity timeline */}
+        <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+          <TicketTimeline events={events} />
+        </div>
 
-            <TicketTimeline events={events} />
-          </div>
-
+        {/* Static: reply form */}
+        <div className="shrink-0 pt-3">
           <AddNoteForm
             ticketId={ticketId}
             onSubmitted={() => {
@@ -348,12 +359,13 @@ export function TicketDetailPage({ ticketId }: TicketDetailPageProps) {
             }}
           />
         </div>
-
-        <TicketSidePanel
-          ticket={ticket}
-          onUpdate={async (fields) => { await updateMutation.mutateAsync(fields); }}
-        />
       </div>
+
+      {/* Right column — side panel, full height */}
+      <TicketSidePanel
+        ticket={ticket}
+        onUpdate={async (fields) => { await updateMutation.mutateAsync(fields); }}
+      />
     </div>
   );
 }
