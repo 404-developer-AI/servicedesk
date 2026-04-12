@@ -14,8 +14,6 @@ import {
   Info,
   Mail,
   Pencil,
-  Check,
-  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ticketApi, type TicketEvent } from "@/lib/ticket-api";

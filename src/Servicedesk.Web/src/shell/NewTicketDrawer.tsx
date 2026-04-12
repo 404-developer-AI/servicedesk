@@ -8,7 +8,7 @@ import { Drawer } from "vaul";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { ContactPicker } from "@/components/ContactPicker";
 import { AgentPicker } from "@/components/AgentPicker";

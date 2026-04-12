@@ -10,7 +10,6 @@ import { useViewingTicket } from "@/hooks/usePresence";
 import { TicketSidePanel } from "./components/TicketSidePanel";
 import { TicketTimeline } from "./components/TicketTimeline";
 import { AddNoteForm } from "./components/AddNoteForm";
-import { cn } from "@/lib/utils";
 
 type TicketDetailPageProps = {
   ticketId: string;
