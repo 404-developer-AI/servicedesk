@@ -257,6 +257,33 @@ export const STATE_CATEGORIES: StatusStateCategory[] = [
   "Closed",
 ];
 
+// ---- Settings ----
+
+export type SettingEntry = {
+  key: string;
+  value: string;
+  valueType: string;
+  category: string;
+  description: string;
+  defaultValue: string;
+  updatedUtc: string;
+};
+
+export type NavigationSettings = {
+  showOpenTickets: boolean;
+};
+
+export const settingsApi = {
+  list: (category?: string) => {
+    const params = category ? `?category=${encodeURIComponent(category)}` : "";
+    return request<SettingEntry[]>("GET", `/api/settings${params}`);
+  },
+  update: (key: string, value: string) =>
+    request<void>("PUT", `/api/settings/${encodeURIComponent(key)}`, { value }),
+  navigation: () =>
+    request<NavigationSettings>("GET", "/api/settings/navigation"),
+};
+
 export const authApi = {
   setupStatus: () => request<SetupStatus>("GET", "/api/auth/setup/status"),
   createAdmin: (email: string, password: string) =>

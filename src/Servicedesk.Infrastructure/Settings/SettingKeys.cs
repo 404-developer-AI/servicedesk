@@ -32,6 +32,11 @@ public static class SettingKeys
         public const string TwoFactorRecoveryCodeCount = "Security.TwoFactor.RecoveryCodeCount";
     }
 
+    public static class Navigation
+    {
+        public const string ShowOpenTickets = "Navigation.ShowOpenTickets";
+    }
+
     public static class Tickets
     {
         public const string DefaultQueueSlug = "Tickets.DefaultQueueSlug";
@@ -100,6 +105,9 @@ public static class SettingDefaults
             "Accepted TOTP skew on either side of the current step (0 = strict, 1 = ±30s)."),
         new SettingDefault(SettingKeys.Security.TwoFactorRecoveryCodeCount, "10", "int", "Security",
             "Number of single-use recovery codes generated at TOTP enrollment."),
+
+        new SettingDefault(SettingKeys.Navigation.ShowOpenTickets, "true", "bool", "Navigation",
+            "Show the 'Open Tickets' link in the sidebar navigation."),
 
         new SettingDefault(SettingKeys.Tickets.DefaultQueueSlug, "default", "string", "Tickets",
             "Slug of the queue new tickets land in when no explicit routing matched."),

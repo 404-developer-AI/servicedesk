@@ -1,3 +1,4 @@
+import * as React from "react";
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import {
@@ -24,6 +25,7 @@ import {
   formatServerLocalDate,
 } from "@/hooks/useServerTime";
 import { viewApi } from "@/lib/ticket-api";
+import { settingsApi } from "@/lib/api";
 import { RecentTickets } from "@/shell/RecentTickets";
 import { useAuth, authStore } from "@/auth/authStore";
 import { authApi } from "@/lib/api";
@@ -43,7 +45,7 @@ import {
 
 export function Sidebar() {
   const role = useCurrentRole();
-  const items = visibleNavItems(role, "main");
+  const allItems = visibleNavItems(role, "main");
   const collapsed = useSidebarStore((s) => s.collapsed);
   const toggle = useSidebarStore((s) => s.toggle);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -54,6 +56,25 @@ export function Sidebar() {
     queryFn: viewApi.list,
     staleTime: 60000,
     enabled: role === "Agent" || role === "Admin",
+  });
+  const { data: navSettings } = useQuery({
+    queryKey: ["settings", "navigation"],
+    queryFn: settingsApi.navigation,
+    staleTime: 60000,
+    enabled: role === "Agent" || role === "Admin",
+  });
+
+  const activeViewId = React.useMemo(() => {
+    if (pathname !== "/tickets") return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get("viewId");
+  }, [pathname]);
+
+  const inView = !!activeViewId;
+
+  const items = allItems.filter((item) => {
+    if (item.to === "/tickets" && (inView || (navSettings && !navSettings.showOpenTickets))) return false;
+    return true;
   });
 
   // Strip any MinVer pre-release suffix (e.g. "0.0.4-alpha.0.5" → "0.0.4") so
@@ -96,7 +117,7 @@ export function Sidebar() {
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[calc(var(--radius)-4px)] bg-gradient-to-br from-accent-purple to-accent-blue shadow-[0_0_20px_-4px_hsl(var(--primary)/0.7)]">
           <Sparkles className="h-5 w-5 text-white" />
         </div>
-        {!collapsed && (
+        {!collapsed && !inView && (
           <div className="min-w-0">
             <div className="truncate font-display text-base font-semibold tracking-tight">Servicedesk</div>
             <div className="truncate text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{role}</div>
@@ -131,19 +152,27 @@ export function Sidebar() {
               Views
             </div>
             <div className="space-y-0.5">
-              {views.slice(0, 8).map((v) => (
-                <button
-                  key={v.id}
-                  type="button"
-                  onClick={() => {
-                    window.location.href = `/tickets?viewId=${v.id}`;
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-muted-foreground hover:bg-white/[0.04] hover:text-foreground transition-colors"
-                >
-                  <Eye className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">{v.name}</span>
-                </button>
-              ))}
+              {views.slice(0, 8).map((v) => {
+                const isActive = v.id === activeViewId;
+                return (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => {
+                      window.location.href = `/tickets?viewId=${v.id}`;
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors",
+                      isActive
+                        ? "bg-white/[0.07] text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+                        : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
+                    )}
+                  >
+                    <Eye className={cn("h-3.5 w-3.5 shrink-0", isActive && "text-primary")} />
+                    <span className="truncate">{v.name}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}

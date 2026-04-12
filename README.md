@@ -2,7 +2,7 @@
 
 A self-hosted servicedesk app. Built because the existing options were either ugly, slow, expensive, or all three.
 
-> **Status:** v0.0.6 — ticket list, detail (editable subject + description), create, saved views, live agent presence. You can manage tickets now.
+> **Status:** v0.0.6 — ticket list with infinite scroll, detail (editable subject + description), create, saved views with admin-controlled filtering, live agent presence. You can manage tickets now.
 
 ## What this is
 
