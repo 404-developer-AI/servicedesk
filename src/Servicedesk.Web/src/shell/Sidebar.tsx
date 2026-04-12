@@ -49,6 +49,7 @@ export function Sidebar() {
   const collapsed = useSidebarStore((s) => s.collapsed);
   const toggle = useSidebarStore((s) => s.toggle);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const searchStr = useRouterState({ select: (s) => s.location.searchStr });
   const version = useSystemVersion();
   const { time, error: timeError } = useServerTime();
   const { data: views } = useQuery({
@@ -66,9 +67,9 @@ export function Sidebar() {
 
   const activeViewId = React.useMemo(() => {
     if (pathname !== "/tickets") return null;
-    const params = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams(searchStr);
     return params.get("viewId");
-  }, [pathname]);
+  }, [pathname, searchStr]);
 
   const inView = !!activeViewId;
 
@@ -159,7 +160,7 @@ export function Sidebar() {
                     key={v.id}
                     type="button"
                     onClick={() => {
-                      window.location.href = `/tickets?viewId=${v.id}`;
+                      navigate({ to: "/tickets", search: { viewId: v.id } });
                     }}
                     className={cn(
                       "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors",

@@ -104,13 +104,13 @@ export function TicketSidePanel({ ticket, onUpdate }: TicketSidePanelProps) {
   const { data: contact } = useQuery({
     queryKey: ["contact", ticket.requesterContactId],
     queryFn: () => contactApi.get(ticket.requesterContactId),
-    staleTime: 60_000,
+    staleTime: 300_000,
   });
 
   const { data: companyDetail } = useQuery({
     queryKey: ["company", contact?.companyId],
     queryFn: () => companyApi.get(contact!.companyId!),
-    staleTime: 60_000,
+    staleTime: 300_000,
     enabled: !!contact?.companyId,
   });
 
@@ -180,25 +180,25 @@ function StatusTab({
   const { data: queues } = useQuery({
     queryKey: ["queues"],
     queryFn: taxonomyApi.queues.list,
-    staleTime: 60_000,
+    staleTime: 300_000,
   });
 
   const { data: priorities } = useQuery({
     queryKey: ["priorities"],
     queryFn: taxonomyApi.priorities.list,
-    staleTime: 60_000,
+    staleTime: 300_000,
   });
 
   const { data: statuses } = useQuery({
     queryKey: ["statuses"],
     queryFn: taxonomyApi.statuses.list,
-    staleTime: 60_000,
+    staleTime: 300_000,
   });
 
   const { data: categories } = useQuery({
     queryKey: ["categories"],
     queryFn: taxonomyApi.categories.list,
-    staleTime: 60_000,
+    staleTime: 300_000,
   });
 
   const currentStatus = statuses?.find((s) => s.id === ticket.statusId);

@@ -1,20 +1,14 @@
 import * as React from "react";
 import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { Eye, Loader2, Ticket } from "lucide-react";
 import { ColumnSelector } from "@/components/ColumnSelector";
 import { TicketTable, TicketTableSkeleton } from "./components/TicketTable";
 import { ticketApi, viewApi } from "@/lib/ticket-api";
 import type { TicketListQuery, TicketListItem } from "@/lib/ticket-api";
 
-function getViewIdFromSearch(): string | null {
-  if (typeof window === "undefined") return null;
-  return new URLSearchParams(window.location.search).get("viewId");
-}
-
-function readFiltersFromSearch(): TicketListQuery {
-  if (typeof window === "undefined") return {};
-  const params = new URLSearchParams(window.location.search);
+function readFiltersFromSearch(searchStr: string): TicketListQuery {
+  const params = new URLSearchParams(searchStr);
   const filters: TicketListQuery = {};
   const queueId = params.get("queueId");
   const statusId = params.get("statusId");
@@ -33,11 +27,27 @@ function readFiltersFromSearch(): TicketListQuery {
 
 export function TicketListPage() {
   const navigate = useNavigate();
-  const [viewId] = React.useState(getViewIdFromSearch);
-  const [viewApplied, setViewApplied] = React.useState(!viewId);
-  const [filters, setFilters] = React.useState<TicketListQuery>(() =>
-    readFiltersFromSearch(),
+  const searchStr = useRouterState({ select: (s) => s.location.searchStr });
+  const viewId = React.useMemo(
+    () => new URLSearchParams(searchStr).get("viewId"),
+    [searchStr],
   );
+  const [viewApplied, setViewApplied] = React.useState(!viewId);
+  const [appliedViewId, setAppliedViewId] = React.useState(viewId);
+  const [filters, setFilters] = React.useState<TicketListQuery>(() =>
+    readFiltersFromSearch(searchStr),
+  );
+
+  // Reset state when the viewId in the URL changes (client-side navigation).
+  React.useEffect(() => {
+    if (viewId !== appliedViewId) {
+      setAppliedViewId(viewId);
+      setViewApplied(!viewId);
+      if (!viewId) {
+        setFilters(readFiltersFromSearch(searchStr));
+      }
+    }
+  }, [viewId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // When navigating via a saved view (?viewId=...), fetch the view and apply
   // its stored filters so the ticket list shows the correct subset.

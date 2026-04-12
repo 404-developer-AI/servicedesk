@@ -8,7 +8,7 @@ import { systemApi, type SystemTime } from "@/lib/api";
 //
 // TODO(settings): move to Ui.ServerTimeSync.IntervalSeconds once there is a
 // UI to edit settings (backend store already exists — v0.0.7).
-const RESYNC_INTERVAL_MS = 30_000;
+const RESYNC_INTERVAL_MS = 120_000;
 const TICK_INTERVAL_MS = 1_000;
 
 export type ServerTime = SystemTime & {

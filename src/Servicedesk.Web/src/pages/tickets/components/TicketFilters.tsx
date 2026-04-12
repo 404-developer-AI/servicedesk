@@ -20,19 +20,19 @@ export function TicketFilters({ filters, onChange }: TicketFiltersProps) {
   const { data: queues } = useQuery({
     queryKey: ["queues"],
     queryFn: taxonomyApi.queues.list,
-    staleTime: 60_000,
+    staleTime: 300_000,
   });
 
   const { data: statuses } = useQuery({
     queryKey: ["statuses"],
     queryFn: taxonomyApi.statuses.list,
-    staleTime: 60_000,
+    staleTime: 300_000,
   });
 
   const { data: priorities } = useQuery({
     queryKey: ["priorities"],
     queryFn: taxonomyApi.priorities.list,
-    staleTime: 60_000,
+    staleTime: 300_000,
   });
 
   React.useEffect(() => {

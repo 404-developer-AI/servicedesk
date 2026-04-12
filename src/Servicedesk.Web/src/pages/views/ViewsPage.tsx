@@ -1,5 +1,6 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { ChevronDown, Eye, Pencil, Plus, Trash2 } from "lucide-react";
 import { viewApi, type View, type ViewInput } from "@/lib/ticket-api";
@@ -420,6 +421,7 @@ function ViewRowSkeleton() {
 // ---- ViewsPage ----
 
 export function ViewsPage() {
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const [editingView, setEditingView] = React.useState<View | null | "new">(null);
   const [deletingView, setDeletingView] = React.useState<View | null>(null);
@@ -456,7 +458,7 @@ export function ViewsPage() {
   }
 
   function navigateToView(id: string) {
-    window.location.href = `/tickets?viewId=${id}`;
+    navigate({ to: "/tickets", search: { viewId: id } });
   }
 
   return (

@@ -57,6 +57,7 @@ builder.Services.AddServicedeskInfrastructure(builder.Configuration);
 // Cookie-backed session auth. The handler reads an opaque session id from the
 // cookie, validates it against the Postgres session store, and hydrates
 // ClaimsPrincipal for downstream authorization policies.
+builder.Services.AddMemoryCache();
 builder.Services.AddAuthentication(SessionAuthenticationHandler.SchemeName)
     .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(
         SessionAuthenticationHandler.SchemeName, _ => { });
