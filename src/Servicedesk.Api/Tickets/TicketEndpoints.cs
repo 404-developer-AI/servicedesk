@@ -2,7 +2,10 @@ using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Servicedesk.Api.Auth;
+using Servicedesk.Api.Presence;
+using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Persistence.Companies;
@@ -27,17 +30,33 @@ public static class TicketEndpoints
         group.MapGet("/", async (
             Guid? queueId, Guid? statusId, Guid? priorityId, Guid? assigneeUserId,
             Guid? requesterContactId, string? search, bool? openOnly,
+            string? sortField, string? sortDirection, bool? priorityFloat, int? offset,
             DateTime? cursorUpdatedUtc, Guid? cursorId, int? limit,
-            ITicketRepository repo, CancellationToken ct) =>
+            HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess, CancellationToken ct) =>
         {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            // Queue-access enforcement: admins get null (no filter), agents
+            // get their assigned queue list. An agent with zero queues gets
+            // an empty page immediately.
+            IReadOnlyList<Guid>? accessibleQueueIds = null;
+            if (!string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
+            {
+                accessibleQueueIds = await queueAccess.GetAccessibleQueueIdsAsync(userId, role, ct);
+                if (accessibleQueueIds.Count == 0)
+                    return Results.Ok(new { items = Array.Empty<object>(), nextCursor = (object?)null, nextOffset = (int?)null });
+            }
+
             var q = new TicketQuery(
                 QueueId: queueId, StatusId: statusId, PriorityId: priorityId,
                 AssigneeUserId: assigneeUserId, RequesterContactId: requesterContactId,
                 Search: search, OpenOnly: openOnly ?? false,
+                SortField: sortField, SortDirection: sortDirection,
+                PriorityFloat: priorityFloat ?? false, Offset: offset,
                 CursorUpdatedUtc: cursorUpdatedUtc, CursorId: cursorId,
-                Limit: limit ?? 50);
-            // v0.0.5: operators always get full visibility. Scope switches
-            // to Company/Own once the customer portal ships.
+                Limit: limit ?? 50,
+                AccessibleQueueIds: accessibleQueueIds);
             var page = await repo.SearchAsync(q, VisibilityScope.All, null, null, ct);
             return Results.Ok(new
             {
@@ -45,23 +64,38 @@ public static class TicketEndpoints
                 nextCursor = page.NextCursorUpdatedUtc.HasValue && page.NextCursorId.HasValue
                     ? new { updatedUtc = page.NextCursorUpdatedUtc, id = page.NextCursorId }
                     : null,
+                nextOffset = page.NextOffset,
             });
         }).WithName("ListTickets").WithOpenApi();
 
-        group.MapGet("/{id:guid}", async (Guid id, ITicketRepository repo, CancellationToken ct) =>
+        group.MapGet("/{id:guid}", async (
+            Guid id, HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess, CancellationToken ct) =>
         {
             var detail = await repo.GetByIdAsync(id, ct);
-            return detail is null ? Results.NotFound() : Results.Ok(detail);
+            if (detail is null) return Results.NotFound();
+
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            if (!await queueAccess.HasQueueAccessAsync(userId, role, detail.Ticket.QueueId, ct))
+                return Results.NotFound(); // 404 to prevent existence leaking
+
+            return Results.Ok(detail);
         }).WithName("GetTicket").WithOpenApi();
 
         group.MapPost("/", async (
             [FromBody] CreateTicketRequest req, HttpContext http,
-            ITicketRepository tickets, ICompanyRepository companies, IAuditLogger audit, CancellationToken ct) =>
+            ITicketRepository tickets, ICompanyRepository companies, IQueueAccessService queueAccess,
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(req.Subject))
                 return Results.BadRequest(new { error = "Subject is required." });
             if (req.RequesterContactId == Guid.Empty)
                 return Results.BadRequest(new { error = "requesterContactId is required." });
+
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, req.QueueId, ct))
+                return Results.Json(new { error = "You do not have access to this queue." }, statusCode: 403);
 
             var requester = await companies.GetContactAsync(req.RequesterContactId, ct);
             if (requester is null) return Results.BadRequest(new { error = "Unknown requester contact." });
@@ -88,14 +122,33 @@ public static class TicketEndpoints
                 UserAgent: http.Request.Headers.UserAgent.ToString(),
                 Payload: new { created.Number, created.Subject }));
 
+            // Notify ticket list viewers that a new ticket was created
+            await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", created.Id.ToString(), ct);
+
             return Results.Created($"/api/tickets/{created.Id}", created);
         }).WithName("CreateTicket").WithOpenApi();
 
         group.MapPatch("/{id:guid}", async (
             Guid id, [FromBody] UpdateTicketRequest req, HttpContext http,
-            ITicketRepository tickets, IAuditLogger audit, CancellationToken ct) =>
+            ITicketRepository tickets, IQueueAccessService queueAccess,
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            // Verify the agent can access the ticket's current queue
+            var current = await tickets.GetByIdAsync(id, ct);
+            if (current is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, current.Ticket.QueueId, ct))
+                return Results.NotFound();
+
+            // If moving to a different queue, verify access to the target queue too
+            if (req.QueueId.HasValue && req.QueueId != current.Ticket.QueueId)
+            {
+                if (!await queueAccess.HasQueueAccessAsync(userId, userRole, req.QueueId.Value, ct))
+                    return Results.Json(new { error = "You do not have access to the target queue." }, statusCode: 403);
+            }
+
             var update = new TicketFieldUpdate(
                 QueueId: req.QueueId,
                 StatusId: req.StatusId,
@@ -118,12 +171,18 @@ public static class TicketEndpoints
                 UserAgent: http.Request.Headers.UserAgent.ToString(),
                 Payload: req));
 
+            // Notify viewers of this ticket + the ticket list
+            var ticketIdStr = id.ToString();
+            await hub.Clients.Group($"ticket:{ticketIdStr}").SendAsync("TicketUpdated", ticketIdStr, ct);
+            await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", ticketIdStr, ct);
+
             return Results.Ok(detail);
         }).WithName("UpdateTicket").WithOpenApi();
 
         group.MapPost("/{id:guid}/events", async (
             Guid id, [FromBody] AddEventRequest req, HttpContext http,
-            ITicketRepository tickets, IAuditLogger audit, CancellationToken ct) =>
+            ITicketRepository tickets, IQueueAccessService queueAccess,
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(req.EventType))
                 return Results.BadRequest(new { error = "eventType is required." });
@@ -131,6 +190,13 @@ public static class TicketEndpoints
                 return Results.BadRequest(new { error = "eventType must be 'Comment' or 'Note'." });
 
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            // Queue-access check via parent ticket
+            var ticket = await tickets.GetByIdAsync(id, ct);
+            if (ticket is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.Ticket.QueueId, ct))
+                return Results.NotFound();
             var input = new NewTicketEvent(
                 EventType: req.EventType,
                 BodyText: req.BodyText,
@@ -150,14 +216,27 @@ public static class TicketEndpoints
                 UserAgent: http.Request.Headers.UserAgent.ToString(),
                 Payload: new { evt.EventType, evt.IsInternal }));
 
+            // Notify viewers of this ticket + the ticket list
+            var ticketIdStr = id.ToString();
+            await hub.Clients.Group($"ticket:{ticketIdStr}").SendAsync("TicketUpdated", ticketIdStr, ct);
+            await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", ticketIdStr, ct);
+
             return Results.Created($"/api/tickets/{id}/events/{evt.Id}", evt);
         }).WithName("AddTicketEvent").WithOpenApi();
 
         group.MapPut("/{id:guid}/events/{eventId:long}", async (
             Guid id, long eventId, [FromBody] UpdateEventRequest req, HttpContext http,
-            ITicketRepository tickets, IAuditLogger audit, CancellationToken ct) =>
+            ITicketRepository tickets, IQueueAccessService queueAccess,
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            // Queue-access check via parent ticket
+            var ticket = await tickets.GetByIdAsync(id, ct);
+            if (ticket is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.Ticket.QueueId, ct))
+                return Results.NotFound();
             var input = new UpdateTicketEvent(
                 BodyText: req.BodyText,
                 BodyHtml: req.BodyHtml,
@@ -176,16 +255,120 @@ public static class TicketEndpoints
                 UserAgent: http.Request.Headers.UserAgent.ToString(),
                 Payload: new { updated.EventType, updated.IsInternal }));
 
+            // Notify viewers of this ticket
+            await hub.Clients.Group($"ticket:{id}").SendAsync("TicketUpdated", id.ToString(), ct);
+
             return Results.Ok(updated);
         }).WithName("UpdateTicketEvent").WithOpenApi();
 
         group.MapGet("/{id:guid}/events/{eventId:long}/revisions", async (
-            Guid id, long eventId,
-            ITicketRepository tickets, CancellationToken ct) =>
+            Guid id, long eventId, HttpContext http,
+            ITicketRepository tickets, IQueueAccessService queueAccess, CancellationToken ct) =>
         {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            // Queue-access check via parent ticket
+            var ticket = await tickets.GetByIdAsync(id, ct);
+            if (ticket is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.Ticket.QueueId, ct))
+                return Results.NotFound();
+
             var revisions = await tickets.GetEventRevisionsAsync(id, eventId, ct);
             return Results.Ok(revisions);
         }).WithName("GetEventRevisions").WithOpenApi();
+
+        // ── Pin / Unpin events ──
+
+        group.MapPost("/{id:guid}/events/{eventId:long}/pin", async (
+            Guid id, long eventId, [FromBody] PinEventRequest req, HttpContext http,
+            ITicketRepository tickets, IQueueAccessService queueAccess,
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            var ticket = await tickets.GetByIdAsync(id, ct);
+            if (ticket is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.Ticket.QueueId, ct))
+                return Results.NotFound();
+
+            var pin = await tickets.PinEventAsync(id, eventId, userId, req.Remark ?? "", ct);
+            if (pin is null) return Results.NotFound();
+
+            var (actor, role) = ActorContext.Resolve(http);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "ticket.event.pinned",
+                Actor: actor,
+                ActorRole: role,
+                Target: $"{id}/events/{eventId}",
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: new { eventId, pin.Remark }));
+
+            await hub.Clients.Group($"ticket:{id}").SendAsync("TicketUpdated", id.ToString(), ct);
+            return Results.Ok(pin);
+        }).WithName("PinTicketEvent").WithOpenApi();
+
+        group.MapDelete("/{id:guid}/events/{eventId:long}/pin", async (
+            Guid id, long eventId, HttpContext http,
+            ITicketRepository tickets, IQueueAccessService queueAccess,
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            var ticket = await tickets.GetByIdAsync(id, ct);
+            if (ticket is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.Ticket.QueueId, ct))
+                return Results.NotFound();
+
+            var deleted = await tickets.UnpinEventAsync(id, eventId, ct);
+            if (!deleted) return Results.NotFound();
+
+            var (actor, role) = ActorContext.Resolve(http);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "ticket.event.unpinned",
+                Actor: actor,
+                ActorRole: role,
+                Target: $"{id}/events/{eventId}",
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: new { eventId }));
+
+            await hub.Clients.Group($"ticket:{id}").SendAsync("TicketUpdated", id.ToString(), ct);
+            return Results.NoContent();
+        }).WithName("UnpinTicketEvent").WithOpenApi();
+
+        group.MapPatch("/{id:guid}/events/{eventId:long}/pin", async (
+            Guid id, long eventId, [FromBody] UpdatePinRemarkRequest req, HttpContext http,
+            ITicketRepository tickets, IQueueAccessService queueAccess,
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            var ticket = await tickets.GetByIdAsync(id, ct);
+            if (ticket is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.Ticket.QueueId, ct))
+                return Results.NotFound();
+
+            var pin = await tickets.UpdatePinRemarkAsync(id, eventId, req.Remark, ct);
+            if (pin is null) return Results.NotFound();
+
+            var (actor, role) = ActorContext.Resolve(http);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "ticket.event.pin_updated",
+                Actor: actor,
+                ActorRole: role,
+                Target: $"{id}/events/{eventId}",
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: new { eventId, pin.Remark }));
+
+            await hub.Clients.Group($"ticket:{id}").SendAsync("TicketUpdated", id.ToString(), ct);
+            return Results.Ok(pin);
+        }).WithName("UpdatePinRemark").WithOpenApi();
 
         return app;
     }
@@ -268,9 +451,10 @@ public static class TicketEndpoints
                 RETURNING id
                 """,
                 new { email, hash }, cancellationToken: ct));
-            return id != Guid.Empty
-                ? Results.Ok(new { id, email, role = "Agent" })
-                : Results.Conflict(new { error = "User already exists" });
+            if (id == Guid.Empty)
+                return Results.Conflict(new { error = "User already exists" });
+
+            return Results.Ok(new { id, email, role = "Agent" });
         }).WithName("DevSeedAgent").WithOpenApi();
 
         return app;
@@ -308,4 +492,8 @@ public static class TicketEndpoints
         string? BodyText,
         string? BodyHtml,
         bool? IsInternal);
+
+    public sealed record PinEventRequest(string? Remark);
+
+    public sealed record UpdatePinRemarkRequest(string Remark);
 }

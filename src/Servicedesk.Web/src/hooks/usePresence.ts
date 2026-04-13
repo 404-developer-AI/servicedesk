@@ -10,7 +10,16 @@ import { useRecentTicketsStore } from "@/stores/useRecentTicketsStore";
 
 let connection: HubConnection | null = null;
 
-function getConnection(): HubConnection {
+// Module-level pending ticket id so StartViewing fires immediately
+// after connection, before SyncRecent — prevents the brief "recent"
+// flash that other agents see on page refresh.
+let pendingViewTicketId: string | null = null;
+
+export function setPendingView(ticketId: string | null) {
+  pendingViewTicketId = ticketId;
+}
+
+export function getConnection(): HubConnection {
   if (!connection) {
     connection = new HubConnectionBuilder()
       .withUrl("/hubs/presence")
@@ -47,7 +56,11 @@ export function usePresenceConnection() {
     });
 
     hub.onreconnected(async () => {
-      // Re-sync recent tickets and request full state after reconnect
+      // Re-announce viewing BEFORE syncing recent so the first
+      // broadcast already shows "viewing", not "recent".
+      if (pendingViewTicketId) {
+        await hub.invoke("StartViewing", pendingViewTicketId).catch(() => {});
+      }
       const ids = recentRef.current.map((t) => t.id);
       await hub.invoke("SyncRecent", ids);
       await hub.invoke("RequestFullSync");
@@ -57,7 +70,11 @@ export function usePresenceConnection() {
       if (hub.state === HubConnectionState.Disconnected) {
         try {
           await hub.start();
-          // Initial sync
+          // Announce viewing first so other agents never see a
+          // "recent" flash for someone who is actively viewing.
+          if (pendingViewTicketId) {
+            await hub.invoke("StartViewing", pendingViewTicketId).catch(() => {});
+          }
           const ids = recentRef.current.map((t) => t.id);
           await hub.invoke("SyncRecent", ids);
           await hub.invoke("RequestFullSync");
@@ -89,28 +106,31 @@ export function usePresenceConnection() {
 
 /**
  * Call from TicketDetailPage to signal "I'm viewing this ticket".
- * Automatically stops viewing on unmount.
+ * Automatically stops viewing on unmount. Sets a module-level pending
+ * view so that on page refresh the initial connection sends
+ * StartViewing before SyncRecent — preventing the "recently opened"
+ * flash for other agents.
  */
 export function useViewingTicket(ticketId: string) {
   React.useEffect(() => {
     const hub = getConnection();
 
+    // Register the pending view so the connection start/reconnect
+    // sequence fires StartViewing first.
+    setPendingView(ticketId);
+
     async function startViewing() {
       if (hub.state === HubConnectionState.Connected) {
         await hub.invoke("StartViewing", ticketId).catch(() => {});
       }
+      // If not yet connected, usePresenceConnection's start() will
+      // pick up pendingViewTicketId and send StartViewing for us.
     }
 
-    // If connected, start immediately. Otherwise wait for connection.
     startViewing();
 
-    // Also handle reconnects — re-announce viewing
-    const onReconnected = async () => {
-      await hub.invoke("StartViewing", ticketId).catch(() => {});
-    };
-    hub.onreconnected(onReconnected);
-
     return () => {
+      setPendingView(null);
       if (hub.state === HubConnectionState.Connected) {
         hub.invoke("StopViewing").catch(() => {});
       }

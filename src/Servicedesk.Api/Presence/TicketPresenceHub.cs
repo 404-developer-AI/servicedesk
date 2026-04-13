@@ -25,6 +25,11 @@ public sealed class TicketPresenceHub : Hub
             Email = Context.User?.FindFirstValue(ClaimTypes.Email) ?? "",
         };
         Connections[Context.ConnectionId] = state;
+
+        // Every connected client joins the ticket-list group so they
+        // receive lightweight "something changed" pings for the list view.
+        await Groups.AddToGroupAsync(Context.ConnectionId, "ticket-list");
+
         await base.OnConnectedAsync();
     }
 
@@ -77,7 +82,16 @@ public sealed class TicketPresenceHub : Hub
         var previousTicketId = state.ViewingTicketId;
         state.ViewingTicketId = ticketId;
 
-        // Broadcast update for the newly viewed ticket
+        // Join the SignalR group for this ticket so we receive live updates
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"ticket:{ticketId}");
+
+        // Leave the previous ticket's group if switching
+        if (previousTicketId is not null && previousTicketId != ticketId)
+        {
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"ticket:{previousTicketId}");
+        }
+
+        // Broadcast presence update for the newly viewed ticket
         await BroadcastTicketPresence(ticketId);
 
         // If they were viewing a different ticket before, update that one too
@@ -99,6 +113,7 @@ public sealed class TicketPresenceHub : Hub
 
         if (previousTicketId is not null)
         {
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"ticket:{previousTicketId}");
             await BroadcastTicketPresence(previousTicketId);
         }
     }

@@ -3,9 +3,11 @@ import { Toaster } from "sonner";
 import { Sidebar } from "@/shell/Sidebar";
 import { useSecondarySidebarStore } from "@/stores/useSecondarySidebarStore";
 import { usePresenceConnection } from "@/hooks/usePresence";
+import { useWorkspaceAutoSave } from "@/hooks/useWorkspaceAutoSave";
 
 export function AppShell() {
   usePresenceConnection();
+  useWorkspaceAutoSave();
   const secondarySidebar = useSecondarySidebarStore((s) => s.content);
 
   return (

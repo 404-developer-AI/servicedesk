@@ -20,6 +20,8 @@ import { LoginPage } from "@/pages/auth/LoginPage";
 import { SetupWizardPage } from "@/pages/auth/SetupWizardPage";
 import { ProfilePage } from "@/pages/profile/ProfilePage";
 import { ViewsSettingsPage } from "@/pages/settings/ViewsSettingsPage";
+import { QueueAccessSettingsPage } from "@/pages/settings/QueueAccessSettingsPage";
+import { ViewGroupsSettingsPage } from "@/pages/settings/ViewGroupsSettingsPage";
 import { TicketListPage } from "@/pages/tickets/TicketListPage";
 import { TicketDetailPage } from "@/pages/tickets/TicketDetailPage";
 
@@ -119,7 +121,9 @@ const setupRoute = createRoute({
 const dashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  beforeLoad: anyAuthenticatedGate(),
+  beforeLoad: (ctx) => {
+    anyAuthenticatedGate()(ctx);
+  },
   component: () => stubForPath("/"),
 });
 
@@ -229,6 +233,18 @@ const settingsViewsRoute = createRoute({
   component: ViewsSettingsPage,
 });
 
+const settingsQueueAccessRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "queue-access",
+  component: QueueAccessSettingsPage,
+});
+
+const settingsViewGroupsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "view-groups",
+  component: ViewGroupsSettingsPage,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   setupRoute,
@@ -245,6 +261,8 @@ const routeTree = rootRoute.addChildren([
     settingsIntegrationsRoute,
     settingsTicketsRoute,
     settingsViewsRoute,
+    settingsQueueAccessRoute,
+    settingsViewGroupsRoute,
     settingsAuditRoute,
   ]),
 ]);

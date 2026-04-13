@@ -7,10 +7,28 @@ namespace Servicedesk.Infrastructure.Persistence.Tickets;
 
 /// Hand-written Dapper queries for the ticket list/detail hot paths. Keyset
 /// pagination on <c>(updated_utc DESC, id DESC)</c> lets us walk 1M rows
-/// without the offset penalty. All filters are parameterized — no string
-/// concatenation of user input reaches the SQL.
+/// without the offset penalty. When dynamic sorting or priority float is
+/// enabled, falls back to offset pagination. All filters are parameterized
+/// — no string concatenation of user input reaches the SQL.
 public sealed class TicketRepository : ITicketRepository
 {
+    /// Whitelist mapping frontend field names to SQL column expressions.
+    /// Prevents SQL injection via dynamic ORDER BY.
+    private static readonly Dictionary<string, string> SortFieldMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["updatedUtc"]     = "t.updated_utc",
+        ["createdUtc"]     = "t.created_utc",
+        ["dueUtc"]         = "COALESCE(t.due_utc, '9999-12-31'::timestamptz)",
+        ["priorityLevel"]  = "p.level",
+        ["number"]         = "t.number",
+        ["subject"]        = "t.subject",
+        ["statusName"]     = "s.name",
+        ["queueName"]      = "q.name",
+        ["assigneeEmail"]  = "COALESCE(u.email, '')",
+        ["requesterEmail"] = "c.email",
+        ["companyName"]    = "COALESCE(co.name, '')",
+        ["categoryName"]   = "COALESCE(cat.name, '')",
+    };
     private const string ListSelect = """
         SELECT
             t.id                            AS Id,
@@ -20,6 +38,7 @@ public sealed class TicketRepository : ITicketRepository
             q.name                          AS QueueName,
             t.status_id                     AS StatusId,
             s.name                          AS StatusName,
+            s.color                         AS StatusColor,
             s.state_category                AS StatusStateCategory,
             t.priority_id                   AS PriorityId,
             p.name                          AS PriorityName,
@@ -34,6 +53,8 @@ public sealed class TicketRepository : ITicketRepository
             co.name                         AS CompanyName,
             t.assignee_user_id              AS AssigneeUserId,
             u.email                         AS AssigneeEmail,
+            t.category_id                   AS CategoryId,
+            cat.name                        AS CategoryName,
             t.created_utc                   AS CreatedUtc,
             t.updated_utc                   AS UpdatedUtc,
             t.due_utc                       AS DueUtc
@@ -42,8 +63,9 @@ public sealed class TicketRepository : ITicketRepository
         JOIN statuses   s ON s.id = t.status_id
         JOIN priorities p ON p.id = t.priority_id
         JOIN contacts   c ON c.id = t.requester_contact_id
-        LEFT JOIN companies co ON co.id = c.company_id
-        LEFT JOIN users     u  ON u.id  = t.assignee_user_id
+        LEFT JOIN companies  co  ON co.id  = c.company_id
+        LEFT JOIN users      u   ON u.id   = t.assignee_user_id
+        LEFT JOIN categories cat ON cat.id = t.category_id
         """;
 
     private readonly NpgsqlDataSource _dataSource;
@@ -94,14 +116,55 @@ public sealed class TicketRepository : ITicketRepository
                 break;
         }
 
-        // Keyset cursor: rows strictly older than the cursor tuple.
-        if (query.CursorUpdatedUtc.HasValue && query.CursorId.HasValue)
+        // Determine if we need offset-based pagination (dynamic sort or priority float).
+        var hasDynamicSort = query.SortField is not null
+            && !string.Equals(query.SortField, "updatedUtc", StringComparison.OrdinalIgnoreCase);
+        var useOffset = hasDynamicSort || query.PriorityFloat;
+
+        if (useOffset)
         {
-            sql.Append(" AND (t.updated_utc, t.id) < (@CursorUpdatedUtc, @CursorId)");
+            // Offset pagination: no keyset cursor needed.
+        }
+        else
+        {
+            // Keyset cursor: rows strictly older than the cursor tuple.
+            if (query.CursorUpdatedUtc.HasValue && query.CursorId.HasValue)
+            {
+                sql.Append(" AND (t.updated_utc, t.id) < (@CursorUpdatedUtc, @CursorId)");
+            }
         }
 
-        sql.Append(" ORDER BY t.updated_utc DESC, t.id DESC");
+        // Build ORDER BY
+        if (query.PriorityFloat)
+        {
+            sql.Append(" ORDER BY (CASE WHEN p.is_default THEN 1 ELSE 0 END)");
+            sql.Append(", CASE WHEN NOT p.is_default THEN p.level END ASC");
+        }
+        else
+        {
+            sql.Append(" ORDER BY");
+        }
+
+        if (query.SortField is not null && SortFieldMap.TryGetValue(query.SortField, out var sortColumn))
+        {
+            var dir = string.Equals(query.SortDirection, "asc", StringComparison.OrdinalIgnoreCase) ? "ASC" : "DESC";
+            sql.Append(query.PriorityFloat ? $", {sortColumn} {dir}" : $" {sortColumn} {dir}");
+        }
+        else if (!query.PriorityFloat)
+        {
+            sql.Append(" t.updated_utc DESC");
+        }
+        else
+        {
+            sql.Append(", t.updated_utc DESC");
+        }
+
+        sql.Append(", t.id DESC");
+
+        var limit = Math.Clamp(query.Limit, 1, 500);
         sql.Append(" LIMIT @Limit");
+        if (useOffset)
+            sql.Append(" OFFSET @Offset");
 
         var parameters = new
         {
@@ -116,7 +179,8 @@ public sealed class TicketRepository : ITicketRepository
             ViewerCompanyId = viewerCompanyId ?? Guid.Empty,
             query.CursorUpdatedUtc,
             query.CursorId,
-            Limit = Math.Clamp(query.Limit, 1, 500),
+            Limit = limit,
+            Offset = query.Offset ?? 0,
             AccessibleQueueIds = query.AccessibleQueueIds as IEnumerable<Guid>,
         };
 
@@ -124,16 +188,25 @@ public sealed class TicketRepository : ITicketRepository
         var rows = (await conn.QueryAsync<TicketListItem>(
             new CommandDefinition(sql.ToString(), parameters, cancellationToken: ct))).ToList();
 
-        DateTime? nextUpdated = null;
-        Guid? nextId = null;
-        if (rows.Count == parameters.Limit && rows.Count > 0)
+        if (useOffset)
         {
-            var last = rows[^1];
-            nextUpdated = last.UpdatedUtc;
-            nextId = last.Id;
+            int? nextOffset = rows.Count == limit
+                ? (query.Offset ?? 0) + rows.Count
+                : null;
+            return new TicketPage(rows, null, null, nextOffset);
         }
-
-        return new TicketPage(rows, nextUpdated, nextId);
+        else
+        {
+            DateTime? nextUpdated = null;
+            Guid? nextId = null;
+            if (rows.Count == limit && rows.Count > 0)
+            {
+                var last = rows[^1];
+                nextUpdated = last.UpdatedUtc;
+                nextId = last.Id;
+            }
+            return new TicketPage(rows, nextUpdated, nextId);
+        }
     }
 
     public async Task<TicketDetail?> GetByIdAsync(Guid id, CancellationToken ct)
@@ -178,7 +251,21 @@ public sealed class TicketRepository : ITicketRepository
         var events = (await conn.QueryAsync<TicketEvent>(
             new CommandDefinition(eventsSql, new { id }, cancellationToken: ct))).ToList();
 
-        return new TicketDetail(ticket, body, events);
+        const string pinsSql = """
+            SELECT p.id AS Id, p.event_id AS EventId, p.ticket_id AS TicketId,
+                   p.pinned_by_user_id AS PinnedByUserId,
+                   u.email AS PinnedByName,
+                   p.remark AS Remark,
+                   p.created_utc AS CreatedUtc
+            FROM ticket_event_pins p
+            JOIN users u ON u.id = p.pinned_by_user_id
+            WHERE p.ticket_id = @id
+            ORDER BY p.created_utc
+            """;
+        var pins = (await conn.QueryAsync<TicketEventPin>(
+            new CommandDefinition(pinsSql, new { id }, cancellationToken: ct))).ToList();
+
+        return new TicketDetail(ticket, body, events, pins);
     }
 
     public async Task<Ticket> CreateAsync(NewTicket input, CancellationToken ct)
@@ -510,6 +597,69 @@ public sealed class TicketRepository : ITicketRepository
         var revisions = await conn.QueryAsync<TicketEventRevision>(
             new CommandDefinition(sql, new { eventId, ticketId }, cancellationToken: ct));
         return revisions.ToList();
+    }
+
+    public async Task<TicketEventPin?> PinEventAsync(Guid ticketId, long eventId, Guid userId, string remark, CancellationToken ct)
+    {
+        const string sql = """
+            INSERT INTO ticket_event_pins (event_id, ticket_id, pinned_by_user_id, remark)
+            SELECT @eventId, @ticketId, @userId, @remark
+            WHERE EXISTS (
+                SELECT 1 FROM ticket_events
+                WHERE id = @eventId AND ticket_id = @ticketId
+                  AND event_type IN ('Comment','Note','Mail')
+            )
+            ON CONFLICT (event_id) DO NOTHING
+            RETURNING id AS Id, event_id AS EventId, ticket_id AS TicketId,
+                      pinned_by_user_id AS PinnedByUserId,
+                      (SELECT email FROM users WHERE id = pinned_by_user_id) AS PinnedByName,
+                      remark AS Remark, created_utc AS CreatedUtc
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var pin = await conn.QueryFirstOrDefaultAsync<TicketEventPin>(
+            new CommandDefinition(sql, new { eventId, ticketId, userId, remark = remark ?? "" }, cancellationToken: ct));
+
+        // If ON CONFLICT hit (already pinned), return the existing pin
+        if (pin is null)
+        {
+            const string existingSql = """
+                SELECT p.id AS Id, p.event_id AS EventId, p.ticket_id AS TicketId,
+                       p.pinned_by_user_id AS PinnedByUserId,
+                       u.email AS PinnedByName,
+                       p.remark AS Remark, p.created_utc AS CreatedUtc
+                FROM ticket_event_pins p
+                JOIN users u ON u.id = p.pinned_by_user_id
+                WHERE p.event_id = @eventId AND p.ticket_id = @ticketId
+                """;
+            pin = await conn.QueryFirstOrDefaultAsync<TicketEventPin>(
+                new CommandDefinition(existingSql, new { eventId, ticketId }, cancellationToken: ct));
+        }
+
+        return pin;
+    }
+
+    public async Task<bool> UnpinEventAsync(Guid ticketId, long eventId, CancellationToken ct)
+    {
+        const string sql = "DELETE FROM ticket_event_pins WHERE event_id = @eventId AND ticket_id = @ticketId";
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.ExecuteAsync(
+            new CommandDefinition(sql, new { eventId, ticketId }, cancellationToken: ct));
+        return rows > 0;
+    }
+
+    public async Task<TicketEventPin?> UpdatePinRemarkAsync(Guid ticketId, long eventId, string remark, CancellationToken ct)
+    {
+        const string sql = """
+            UPDATE ticket_event_pins SET remark = @remark
+            WHERE event_id = @eventId AND ticket_id = @ticketId
+            RETURNING id AS Id, event_id AS EventId, ticket_id AS TicketId,
+                      pinned_by_user_id AS PinnedByUserId,
+                      (SELECT email FROM users WHERE id = pinned_by_user_id) AS PinnedByName,
+                      remark AS Remark, created_utc AS CreatedUtc
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.QueryFirstOrDefaultAsync<TicketEventPin>(
+            new CommandDefinition(sql, new { eventId, ticketId, remark = remark ?? "" }, cancellationToken: ct));
     }
 
     private sealed record TicketFieldSnapshot(

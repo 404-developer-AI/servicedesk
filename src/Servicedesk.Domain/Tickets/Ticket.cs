@@ -31,6 +31,7 @@ public sealed record TicketEvent(
     string EventType,
     Guid? AuthorUserId,
     Guid? AuthorContactId,
+    string? AuthorName,
     string? BodyText,
     string? BodyHtml,
     string MetadataJson,
@@ -49,3 +50,12 @@ public sealed record TicketEventRevision(
     Guid EditedByUserId,
     string? EditedByName,
     DateTime EditedUtc);
+
+public sealed record TicketEventPin(
+    long Id,
+    long EventId,
+    Guid TicketId,
+    Guid PinnedByUserId,
+    string? PinnedByName,
+    string Remark,
+    DateTime CreatedUtc);

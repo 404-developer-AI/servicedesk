@@ -1,11 +1,15 @@
 import * as React from "react";
 import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { Eye, Loader2, Ticket } from "lucide-react";
+import { Eye, Loader2, ShieldAlert, Ticket } from "lucide-react";
 import { ColumnSelector } from "@/components/ColumnSelector";
 import { TicketTable, TicketTableSkeleton } from "./components/TicketTable";
+import { GroupedTicketList } from "./components/GroupedTicketList";
 import { ticketApi, viewApi } from "@/lib/ticket-api";
-import type { TicketListQuery, TicketListItem } from "@/lib/ticket-api";
+import { agentQueueApi, settingsApi } from "@/lib/api";
+import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
+import { useTicketListRealtime } from "@/hooks/useTicketRealtime";
+import type { TicketListQuery, TicketListItem, DisplayConfig } from "@/lib/ticket-api";
 
 function readFiltersFromSearch(searchStr: string): TicketListQuery {
   const params = new URLSearchParams(searchStr);
@@ -26,17 +30,51 @@ function readFiltersFromSearch(searchStr: string): TicketListQuery {
 }
 
 export function TicketListPage() {
+  useTicketListRealtime();
   const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const searchStr = useRouterState({ select: (s) => s.location.searchStr });
   const viewId = React.useMemo(
     () => new URLSearchParams(searchStr).get("viewId"),
     [searchStr],
   );
+  const setActiveView = useColumnPrefsStore((s) => s.setActiveView);
+
+  React.useEffect(() => {
+    setActiveView(viewId);
+  }, [viewId, setActiveView]);
+
+  // Check accessible queues — if the agent has none, show a "no access" message
+  const { data: accessibleQueues } = useQuery({
+    queryKey: ["accessible-queues"],
+    queryFn: agentQueueApi.list,
+    staleTime: 60_000,
+  });
+
+  // Redirect away when Open Tickets is toggled off and no saved view is active
+  const { data: navSettings } = useQuery({
+    queryKey: ["settings", "navigation"],
+    queryFn: settingsApi.navigation,
+    staleTime: 60_000,
+  });
+
+  React.useEffect(() => {
+    // Guard: only redirect while this component actually owns the /tickets path.
+    // During a route transition (e.g. clicking a ticket row) the router state
+    // updates before unmount, making viewId briefly null — without this check
+    // the redirect would hijack the pending navigation.
+    if (pathname !== "/tickets") return;
+    if (navSettings && !navSettings.showOpenTickets && !viewId) {
+      navigate({ to: "/" });
+    }
+  }, [navSettings, viewId, navigate, pathname]);
+
   const [viewApplied, setViewApplied] = React.useState(!viewId);
   const [appliedViewId, setAppliedViewId] = React.useState(viewId);
   const [filters, setFilters] = React.useState<TicketListQuery>(() =>
     readFiltersFromSearch(searchStr),
   );
+  const [displayConfig, setDisplayConfig] = React.useState<DisplayConfig>({});
 
   // Reset state when the viewId in the URL changes (client-side navigation).
   React.useEffect(() => {
@@ -45,6 +83,7 @@ export function TicketListPage() {
       setViewApplied(!viewId);
       if (!viewId) {
         setFilters(readFiltersFromSearch(searchStr));
+        setDisplayConfig({});
       }
     }
   }, [viewId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -73,8 +112,22 @@ export function TicketListPage() {
     } catch {
       // bad JSON — ignore, show unfiltered
     }
+    // Parse display config (sorting, grouping, priority float)
+    try {
+      const dc: DisplayConfig = viewData.displayConfigJson
+        ? JSON.parse(viewData.displayConfigJson)
+        : {};
+      setDisplayConfig(dc);
+    } catch {
+      setDisplayConfig({});
+    }
     setViewApplied(true);
   }, [viewData, viewApplied]);
+
+  type PageParam =
+    | { type: "cursor"; updatedUtc: string; id: string }
+    | { type: "offset"; offset: number }
+    | null;
 
   const {
     data,
@@ -84,17 +137,30 @@ export function TicketListPage() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ["tickets", filters],
-    queryFn: ({ pageParam }) => {
-      const query: TicketListQuery = { ...filters };
-      if (pageParam) {
+    queryKey: ["tickets", filters, displayConfig],
+    queryFn: ({ pageParam }: { pageParam: PageParam }) => {
+      const query: TicketListQuery = {
+        ...filters,
+        sortField: displayConfig.sort?.field,
+        sortDirection: displayConfig.sort?.direction,
+        priorityFloat: displayConfig.priorityFloat,
+      };
+      if (pageParam?.type === "cursor") {
         query.cursorUpdatedUtc = pageParam.updatedUtc;
         query.cursorId = pageParam.id;
+      } else if (pageParam?.type === "offset") {
+        query.offset = pageParam.offset;
       }
       return ticketApi.list(query);
     },
-    initialPageParam: null as { updatedUtc: string; id: string } | null,
-    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    initialPageParam: null as PageParam,
+    getNextPageParam: (lastPage): PageParam | undefined => {
+      if (lastPage.nextCursor)
+        return { type: "cursor", ...lastPage.nextCursor };
+      if (lastPage.nextOffset != null)
+        return { type: "offset", offset: lastPage.nextOffset };
+      return undefined;
+    },
     staleTime: 30_000,
     enabled: viewApplied,
   });
@@ -125,6 +191,24 @@ export function TicketListPage() {
 
   const pageTitle = viewData?.name ?? "Tickets";
   const PageIcon = viewId ? Eye : Ticket;
+
+  const hasNoQueueAccess = accessibleQueues !== undefined && accessibleQueues.length === 0;
+
+  if (hasNoQueueAccess) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[calc(100vh-6rem)] gap-4">
+        <div className="glass-card p-12 flex flex-col items-center gap-4 text-center max-w-md">
+          <ShieldAlert className="h-12 w-12 text-muted-foreground/40" />
+          <div>
+            <p className="text-lg font-semibold text-foreground">No queue access</p>
+            <p className="text-sm text-muted-foreground mt-2">
+              You have not been assigned to any queues yet. Contact your administrator to get access.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-3rem)]">
@@ -157,7 +241,11 @@ export function TicketListPage() {
           </div>
         ) : allItems.length > 0 ? (
           <>
-            <TicketTable data={allItems} onRowClick={handleRowClick} />
+            <GroupedTicketList
+              items={allItems}
+              displayConfig={displayConfig}
+              onRowClick={handleRowClick}
+            />
             <div ref={sentinelRef} className="h-1" />
             {isFetchingNextPage && (
               <div className="flex items-center justify-center py-4">

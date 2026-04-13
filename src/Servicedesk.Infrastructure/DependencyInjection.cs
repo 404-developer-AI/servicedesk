@@ -10,6 +10,8 @@ using Servicedesk.Infrastructure.Persistence;
 using Servicedesk.Infrastructure.Persistence.Companies;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
+using Servicedesk.Infrastructure.Access;
+using Servicedesk.Infrastructure.Persistence.ViewGroups;
 using Servicedesk.Infrastructure.Persistence.Views;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
@@ -54,6 +56,9 @@ public static class DependencyInjection
         services.AddSingleton<ICompanyRepository, CompanyRepository>();
         services.AddSingleton<ITicketRepository, TicketRepository>();
         services.AddSingleton<IViewRepository, ViewRepository>();
+        services.AddSingleton<IViewGroupRepository, ViewGroupRepository>();
+        services.AddSingleton<IQueueAccessService, QueueAccessService>();
+        services.AddSingleton<IViewAccessService, ViewAccessService>();
 
         services.AddHostedService<DatabaseBootstrapper>();
         services.AddHostedService<SettingsSeeder>();

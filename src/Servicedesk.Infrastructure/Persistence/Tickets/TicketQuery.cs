@@ -24,6 +24,10 @@ public sealed record TicketQuery(
     Guid? RequesterContactId = null,
     string? Search = null,
     bool OpenOnly = false,
+    string? SortField = null,
+    string? SortDirection = null,
+    bool PriorityFloat = false,
+    int? Offset = null,
     DateTime? CursorUpdatedUtc = null,
     Guid? CursorId = null,
     int Limit = 50,
@@ -37,6 +41,7 @@ public sealed record TicketListItem(
     string QueueName,
     Guid StatusId,
     string StatusName,
+    string StatusColor,
     string StatusStateCategory,
     Guid PriorityId,
     string PriorityName,
@@ -51,6 +56,8 @@ public sealed record TicketListItem(
     string? CompanyName,
     Guid? AssigneeUserId,
     string? AssigneeEmail,
+    Guid? CategoryId,
+    string? CategoryName,
     DateTime CreatedUtc,
     DateTime UpdatedUtc,
     DateTime? DueUtc);
@@ -58,4 +65,5 @@ public sealed record TicketListItem(
 public sealed record TicketPage(
     IReadOnlyList<TicketListItem> Items,
     DateTime? NextCursorUpdatedUtc,
-    Guid? NextCursorId);
+    Guid? NextCursorId,
+    int? NextOffset = null);

@@ -1,7 +1,7 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { preferencesApi } from "@/lib/api";
 
-const DEFAULT_COLUMNS = [
+const FALLBACK_COLUMNS = [
   "number",
   "subject",
   "requester",
@@ -15,26 +15,78 @@ const DEFAULT_COLUMNS = [
 
 type ColumnPrefsState = {
   visibleColumns: string[];
+  source: "user-view" | "view" | "user" | "default" | "fallback";
+  activeViewId: string | null;
+  loaded: boolean;
   setVisibleColumns: (columns: string[]) => void;
   toggleColumn: (column: string) => void;
   resetToDefaults: () => void;
+  loadFromServer: (viewId?: string) => Promise<void>;
+  setActiveView: (viewId: string | null) => void;
 };
 
-export const useColumnPrefsStore = create<ColumnPrefsState>()(
-  persist(
-    (set) => ({
-      visibleColumns: [...DEFAULT_COLUMNS],
-      setVisibleColumns: (columns) => set({ visibleColumns: columns }),
-      toggleColumn: (column) =>
-        set((s) => ({
-          visibleColumns: s.visibleColumns.includes(column)
-            ? s.visibleColumns.filter((c) => c !== column)
-            : [...s.visibleColumns, column],
-        })),
-      resetToDefaults: () => set({ visibleColumns: [...DEFAULT_COLUMNS] }),
-    }),
-    { name: "sd-column-prefs" },
-  ),
-);
+function saveToServer(columns: string[], viewId: string | null) {
+  preferencesApi.saveColumns(columns.join(","), viewId ?? undefined).catch(() => {});
+}
 
-export { DEFAULT_COLUMNS };
+export const useColumnPrefsStore = create<ColumnPrefsState>()((set, get) => ({
+  visibleColumns: [...FALLBACK_COLUMNS],
+  source: "fallback",
+  activeViewId: null,
+  loaded: false,
+
+  setVisibleColumns: (columns) => {
+    const viewId = get().activeViewId;
+    set({ visibleColumns: columns, source: viewId ? "user-view" : "user" });
+    saveToServer(columns, viewId);
+  },
+
+  toggleColumn: (column) => {
+    const { visibleColumns, activeViewId } = get();
+    const next = visibleColumns.includes(column)
+      ? visibleColumns.filter((c) => c !== column)
+      : [...visibleColumns, column];
+    set({ visibleColumns: next, source: activeViewId ? "user-view" : "user" });
+    saveToServer(next, activeViewId);
+  },
+
+  resetToDefaults: () => {
+    const viewId = get().activeViewId;
+    preferencesApi.resetColumns(viewId ?? undefined).then(async () => {
+      try {
+        const pref = await preferencesApi.getColumns(viewId ?? undefined);
+        const cols = pref.columns.split(",").map((c) => c.trim()).filter(Boolean);
+        set({
+          visibleColumns: cols.length > 0 ? cols : [...FALLBACK_COLUMNS],
+          source: pref.source,
+        });
+      } catch {
+        set({ visibleColumns: [...FALLBACK_COLUMNS], source: "fallback" });
+      }
+    }).catch(() => {});
+  },
+
+  loadFromServer: async (viewId?: string) => {
+    try {
+      const pref = await preferencesApi.getColumns(viewId);
+      const cols = pref.columns.split(",").map((c) => c.trim()).filter(Boolean);
+      set({
+        visibleColumns: cols.length > 0 ? cols : [...FALLBACK_COLUMNS],
+        source: pref.source,
+        activeViewId: viewId ?? null,
+        loaded: true,
+      });
+    } catch {
+      set({ loaded: true });
+    }
+  },
+
+  setActiveView: (viewId: string | null) => {
+    const current = get().activeViewId;
+    if (current === viewId) return;
+    set({ activeViewId: viewId, loaded: false });
+    get().loadFromServer(viewId ?? undefined);
+  },
+}));
+
+export { FALLBACK_COLUMNS as DEFAULT_COLUMNS };

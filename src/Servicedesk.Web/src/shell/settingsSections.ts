@@ -3,9 +3,11 @@ import {
   Mail,
   Plug,
   ScrollText,
+  Shield,
   SlidersHorizontal,
   Ticket,
   Timer,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 
@@ -41,6 +43,18 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       "Saved ticket filters — create, edit and delete named views for quick access.",
     icon: Eye,
+  },
+  {
+    slug: "queue-access",
+    label: "Queue Access",
+    description: "Control which agents can access which queues.",
+    icon: Shield,
+  },
+  {
+    slug: "view-groups",
+    label: "View Groups",
+    description: "Bundle views and assign them to agents as a group.",
+    icon: Users,
   },
   {
     slug: "mail",

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
 using Servicedesk.Domain.Taxonomy;
@@ -35,7 +36,6 @@ public static class TaxonomyEndpoints
 
     public sealed record QueueRequest(
         [property: Required] string Name,
-        [property: Required] string Slug,
         string? Description,
         string? Color,
         string? Icon,
@@ -57,10 +57,10 @@ public static class TaxonomyEndpoints
         group.MapPost("/queues", async (
             [FromBody] QueueRequest req, HttpContext http, ITaxonomyRepository repo, IAuditLogger audit, CancellationToken ct) =>
         {
-            if (ValidateTaxonomyName(req.Name, req.Slug) is { } err) return err;
+            if (ValidateTaxonomyName(req.Name) is { } err) return err;
             var now = DateTime.UtcNow;
             var created = await repo.CreateQueueAsync(new Queue(
-                Guid.Empty, req.Name.Trim(), req.Slug.Trim(), req.Description ?? "",
+                Guid.Empty, req.Name.Trim(), Slugify(req.Name), req.Description ?? "",
                 Normalize(req.Color, "#7c7cff"), Normalize(req.Icon, "inbox"),
                 req.SortOrder, req.IsActive, IsSystem: false, now, now), ct);
             await AuditWrite(audit, http, "taxonomy.queue.created", created.Id.ToString(), created);
@@ -72,8 +72,8 @@ public static class TaxonomyEndpoints
             Guid id, [FromBody] QueueRequest req, HttpContext http,
             ITaxonomyRepository repo, IAuditLogger audit, CancellationToken ct) =>
         {
-            if (ValidateTaxonomyName(req.Name, req.Slug) is { } err) return err;
-            var updated = await repo.UpdateQueueAsync(id, req.Name.Trim(), req.Slug.Trim(),
+            if (ValidateTaxonomyName(req.Name) is { } err) return err;
+            var updated = await repo.UpdateQueueAsync(id, req.Name.Trim(), Slugify(req.Name),
                 req.Description ?? "", Normalize(req.Color, "#7c7cff"), Normalize(req.Icon, "inbox"),
                 req.SortOrder, req.IsActive, ct);
             if (updated is null) return Results.NotFound();
@@ -95,7 +95,6 @@ public static class TaxonomyEndpoints
 
     public sealed record PriorityRequest(
         [property: Required] string Name,
-        [property: Required] string Slug,
         int Level,
         string? Color,
         string? Icon,
@@ -119,10 +118,10 @@ public static class TaxonomyEndpoints
             [FromBody] PriorityRequest req, HttpContext http,
             ITaxonomyRepository repo, IAuditLogger audit, CancellationToken ct) =>
         {
-            if (ValidateTaxonomyName(req.Name, req.Slug) is { } err) return err;
+            if (ValidateTaxonomyName(req.Name) is { } err) return err;
             var now = DateTime.UtcNow;
             var created = await repo.CreatePriorityAsync(new Priority(
-                Guid.Empty, req.Name.Trim(), req.Slug.Trim(), req.Level,
+                Guid.Empty, req.Name.Trim(), Slugify(req.Name), req.Level,
                 Normalize(req.Color, "#7c7cff"), Normalize(req.Icon, "flag"),
                 req.SortOrder, req.IsActive, IsSystem: false, req.IsDefault, now, now), ct);
             await AuditWrite(audit, http, "taxonomy.priority.created", created.Id.ToString(), created);
@@ -134,8 +133,8 @@ public static class TaxonomyEndpoints
             Guid id, [FromBody] PriorityRequest req, HttpContext http,
             ITaxonomyRepository repo, IAuditLogger audit, CancellationToken ct) =>
         {
-            if (ValidateTaxonomyName(req.Name, req.Slug) is { } err) return err;
-            var updated = await repo.UpdatePriorityAsync(id, req.Name.Trim(), req.Slug.Trim(), req.Level,
+            if (ValidateTaxonomyName(req.Name) is { } err) return err;
+            var updated = await repo.UpdatePriorityAsync(id, req.Name.Trim(), Slugify(req.Name), req.Level,
                 Normalize(req.Color, "#7c7cff"), Normalize(req.Icon, "flag"),
                 req.SortOrder, req.IsActive, req.IsDefault, ct);
             if (updated is null) return Results.NotFound();
@@ -157,7 +156,6 @@ public static class TaxonomyEndpoints
 
     public sealed record StatusRequest(
         [property: Required] string Name,
-        [property: Required] string Slug,
         [property: Required] string StateCategory,
         string? Color,
         string? Icon,
@@ -184,12 +182,12 @@ public static class TaxonomyEndpoints
             [FromBody] StatusRequest req, HttpContext http,
             ITaxonomyRepository repo, IAuditLogger audit, CancellationToken ct) =>
         {
-            if (ValidateTaxonomyName(req.Name, req.Slug) is { } err) return err;
+            if (ValidateTaxonomyName(req.Name) is { } err) return err;
             if (!AllowedStateCategories.Contains(req.StateCategory))
                 return Results.BadRequest(new { error = "Invalid stateCategory. Allowed: New, Open, Pending, Resolved, Closed." });
             var now = DateTime.UtcNow;
             var created = await repo.CreateStatusAsync(new Status(
-                Guid.Empty, req.Name.Trim(), req.Slug.Trim(), req.StateCategory,
+                Guid.Empty, req.Name.Trim(), Slugify(req.Name), req.StateCategory,
                 Normalize(req.Color, "#7c7cff"), Normalize(req.Icon, "circle"),
                 req.SortOrder, req.IsActive, IsSystem: false, req.IsDefault, now, now), ct);
             await AuditWrite(audit, http, "taxonomy.status.created", created.Id.ToString(), created);
@@ -201,10 +199,10 @@ public static class TaxonomyEndpoints
             Guid id, [FromBody] StatusRequest req, HttpContext http,
             ITaxonomyRepository repo, IAuditLogger audit, CancellationToken ct) =>
         {
-            if (ValidateTaxonomyName(req.Name, req.Slug) is { } err) return err;
+            if (ValidateTaxonomyName(req.Name) is { } err) return err;
             if (!AllowedStateCategories.Contains(req.StateCategory))
                 return Results.BadRequest(new { error = "Invalid stateCategory. Allowed: New, Open, Pending, Resolved, Closed." });
-            var updated = await repo.UpdateStatusAsync(id, req.Name.Trim(), req.Slug.Trim(), req.StateCategory,
+            var updated = await repo.UpdateStatusAsync(id, req.Name.Trim(), Slugify(req.Name), req.StateCategory,
                 Normalize(req.Color, "#7c7cff"), Normalize(req.Icon, "circle"),
                 req.SortOrder, req.IsActive, req.IsDefault, ct);
             if (updated is null) return Results.NotFound();
@@ -226,7 +224,6 @@ public static class TaxonomyEndpoints
 
     public sealed record CategoryRequest(
         [property: Required] string Name,
-        [property: Required] string Slug,
         Guid? ParentId,
         string? Description,
         int SortOrder,
@@ -248,10 +245,10 @@ public static class TaxonomyEndpoints
             [FromBody] CategoryRequest req, HttpContext http,
             ITaxonomyRepository repo, IAuditLogger audit, CancellationToken ct) =>
         {
-            if (ValidateTaxonomyName(req.Name, req.Slug) is { } err) return err;
+            if (ValidateTaxonomyName(req.Name) is { } err) return err;
             var now = DateTime.UtcNow;
             var created = await repo.CreateCategoryAsync(new Category(
-                Guid.Empty, req.ParentId, req.Name.Trim(), req.Slug.Trim(),
+                Guid.Empty, req.ParentId, req.Name.Trim(), Slugify(req.Name),
                 req.Description ?? "", req.SortOrder, req.IsActive, IsSystem: false, now, now), ct);
             await AuditWrite(audit, http, "taxonomy.category.created", created.Id.ToString(), created);
             return Results.Created($"/api/taxonomy/categories/{created.Id}", created);
@@ -262,10 +259,10 @@ public static class TaxonomyEndpoints
             Guid id, [FromBody] CategoryRequest req, HttpContext http,
             ITaxonomyRepository repo, IAuditLogger audit, CancellationToken ct) =>
         {
-            if (ValidateTaxonomyName(req.Name, req.Slug) is { } err) return err;
+            if (ValidateTaxonomyName(req.Name) is { } err) return err;
             if (req.ParentId == id)
                 return Results.BadRequest(new { error = "A category cannot be its own parent." });
-            var updated = await repo.UpdateCategoryAsync(id, req.ParentId, req.Name.Trim(), req.Slug.Trim(),
+            var updated = await repo.UpdateCategoryAsync(id, req.ParentId, req.Name.Trim(), Slugify(req.Name),
                 req.Description ?? "", req.SortOrder, req.IsActive, ct);
             if (updated is null) return Results.NotFound();
             await AuditWrite(audit, http, "taxonomy.category.updated", id.ToString(), updated);
@@ -284,20 +281,20 @@ public static class TaxonomyEndpoints
 
     // ---------- Shared helpers ----------
 
-    private static IResult? ValidateTaxonomyName(string? name, string? slug)
+    private static IResult? ValidateTaxonomyName(string? name)
     {
         if (string.IsNullOrWhiteSpace(name) || name.Trim().Length > 80)
             return Results.BadRequest(new { error = "Name is required and must be 80 characters or fewer." });
-        if (string.IsNullOrWhiteSpace(slug) || slug.Trim().Length > 80)
-            return Results.BadRequest(new { error = "Slug is required and must be 80 characters or fewer." });
-        foreach (var ch in slug.Trim())
-        {
-            // Slugs are used in URLs, settings lookups and search filters —
-            // keep them to ASCII word characters + dash.
-            if (!(char.IsLetterOrDigit(ch) || ch == '-' || ch == '_'))
-                return Results.BadRequest(new { error = "Slug may only contain letters, digits, dashes and underscores." });
-        }
         return null;
+    }
+
+    private static string Slugify(string name)
+    {
+        var slug = name.Trim().ToLowerInvariant();
+        slug = Regex.Replace(slug, @"[^a-z0-9\s-]", "");
+        slug = Regex.Replace(slug, @"[\s]+", "-");
+        slug = slug.Trim('-');
+        return string.IsNullOrEmpty(slug) ? "item" : slug;
     }
 
     private static string Normalize(string? value, string fallback) =>

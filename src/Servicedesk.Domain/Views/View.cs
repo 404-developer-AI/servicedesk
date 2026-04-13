@@ -5,7 +5,9 @@ public sealed record View(
     Guid UserId,
     string Name,
     string FiltersJson,
+    string? Columns,
     int SortOrder,
     bool IsShared,
+    string DisplayConfigJson,
     DateTime CreatedUtc,
     DateTime UpdatedUtc);

@@ -167,6 +167,10 @@ export function RichTextEditor({
           float: left;
           height: 0;
         }
+        .rte-content .ProseMirror {
+          min-height: var(--rte-min-height, 120px);
+          cursor: text;
+        }
       `}</style>
 
       <div
@@ -241,7 +245,7 @@ export function RichTextEditor({
         <EditorContent
           editor={editor}
           className="rte-content px-4 py-3 text-sm"
-          style={{ minHeight }}
+          style={{ "--rte-min-height": minHeight } as React.CSSProperties}
         />
       </div>
     </>

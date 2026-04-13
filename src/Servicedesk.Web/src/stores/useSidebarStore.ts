@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
 
 type SidebarState = {
   collapsed: boolean;
@@ -6,10 +7,16 @@ type SidebarState = {
   setCollapsed: (value: boolean) => void;
 };
 
-// Session-only: no persist. The plan decided to wait for a user-settings
-// table (post-v0.0.4) before remembering UI preferences across refreshes.
 export const useSidebarStore = create<SidebarState>((set) => ({
   collapsed: false,
-  toggle: () => set((s) => ({ collapsed: !s.collapsed })),
-  setCollapsed: (value) => set({ collapsed: value }),
+  toggle: () =>
+    set((s) => {
+      const next = !s.collapsed;
+      useWorkspaceStore.getState().setSidebarCollapsed(next);
+      return { collapsed: next };
+    }),
+  setCollapsed: (value) => {
+    useWorkspaceStore.getState().setSidebarCollapsed(value);
+    set({ collapsed: value });
+  },
 }));

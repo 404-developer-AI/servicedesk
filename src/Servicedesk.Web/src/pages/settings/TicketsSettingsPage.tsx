@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -193,7 +193,6 @@ function QueuesTab() {
           <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-white/10">
             <tr>
               <th className="px-4 py-3 font-medium">Name</th>
-              <th className="px-4 py-3 font-medium">Slug</th>
               <th className="px-4 py-3 font-medium">Color</th>
               <th className="px-4 py-3 font-medium">Order</th>
               <th className="px-4 py-3 font-medium">Status</th>
@@ -206,17 +205,11 @@ function QueuesTab() {
                 <td className="px-4 py-3 text-foreground">
                   <div className="flex items-center gap-2">
                     {q.name}
-                    {q.isSystem && (
-                      <Badge className="border border-white/10 bg-white/[0.05] text-[10px] font-normal text-muted-foreground">
-                        system
-                      </Badge>
-                    )}
                   </div>
                   {q.description && (
                     <div className="text-xs text-muted-foreground">{q.description}</div>
                   )}
                 </td>
-                <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{q.slug}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <ColorSwatch color={q.color} />
@@ -242,7 +235,7 @@ function QueuesTab() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    disabled={q.isSystem || del.isPending}
+                    disabled={del.isPending}
                     onClick={() => {
                       if (confirm(`Delete queue "${q.name}"?`)) del.mutate(q.id);
                     }}
@@ -288,7 +281,6 @@ function QueueDialog({
 }) {
   const [form, setForm] = useState<QueueInput>(() => ({
     name: queue?.name ?? "",
-    slug: queue?.slug ?? "",
     description: queue?.description ?? "",
     color: queue?.color ?? "#7c7cff",
     icon: queue?.icon ?? "inbox",
@@ -312,8 +304,6 @@ function QueueDialog({
     },
   });
 
-  const autoSlug = useMemo(() => slugify(form.name), [form.name]);
-
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg">
@@ -328,13 +318,6 @@ function QueueDialog({
             <Input
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            />
-          </Field>
-          <Field label="Slug" hint="URL-safe identifier. Auto-suggested from name.">
-            <Input
-              value={form.slug}
-              onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
-              placeholder={autoSlug}
             />
           </Field>
           <Field label="Description">
@@ -381,10 +364,7 @@ function QueueDialog({
             Cancel
           </Button>
           <Button
-            onClick={() => {
-              if (!form.slug) setForm((f) => ({ ...f, slug: autoSlug }));
-              save.mutate();
-            }}
+            onClick={() => save.mutate()}
             disabled={save.isPending || !form.name}
           >
             {save.isPending ? "Saving..." : "Save"}
@@ -424,7 +404,6 @@ function PrioritiesTab() {
           <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-white/10">
             <tr>
               <th className="px-4 py-3 font-medium">Name</th>
-              <th className="px-4 py-3 font-medium">Slug</th>
               <th className="px-4 py-3 font-medium">Level</th>
               <th className="px-4 py-3 font-medium">Color</th>
               <th className="px-4 py-3 font-medium">Default</th>
@@ -436,7 +415,6 @@ function PrioritiesTab() {
             {data?.map((p) => (
               <tr key={p.id} className="border-b border-white/5 hover:bg-white/[0.03]">
                 <td className="px-4 py-3 text-foreground">{p.name}</td>
-                <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{p.slug}</td>
                 <td className="px-4 py-3 text-muted-foreground">{p.level}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
@@ -511,7 +489,6 @@ function PriorityDialog({
 }) {
   const [form, setForm] = useState<PriorityInput>(() => ({
     name: priority?.name ?? "",
-    slug: priority?.slug ?? "",
     level: priority?.level ?? 20,
     color: priority?.color ?? "#7c7cff",
     icon: priority?.icon ?? "flag",
@@ -532,8 +509,6 @@ function PriorityDialog({
     onError: () => toast.error("Save failed"),
   });
 
-  const autoSlug = useMemo(() => slugify(form.name), [form.name]);
-
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg">
@@ -548,13 +523,6 @@ function PriorityDialog({
             <Input
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            />
-          </Field>
-          <Field label="Slug">
-            <Input
-              value={form.slug}
-              onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
-              placeholder={autoSlug}
             />
           </Field>
           <div className="grid grid-cols-3 gap-3">
@@ -605,10 +573,7 @@ function PriorityDialog({
             Cancel
           </Button>
           <Button
-            onClick={() => {
-              if (!form.slug) setForm((f) => ({ ...f, slug: autoSlug }));
-              save.mutate();
-            }}
+            onClick={() => save.mutate()}
             disabled={save.isPending || !form.name}
           >
             {save.isPending ? "Saving..." : "Save"}
@@ -656,7 +621,6 @@ function StatusesTab() {
           <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-white/10">
             <tr>
               <th className="px-4 py-3 font-medium">Name</th>
-              <th className="px-4 py-3 font-medium">Slug</th>
               <th className="px-4 py-3 font-medium">Semantic</th>
               <th className="px-4 py-3 font-medium">Color</th>
               <th className="px-4 py-3 font-medium">Default</th>
@@ -676,7 +640,6 @@ function StatusesTab() {
                     )}
                   </div>
                 </td>
-                <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{s.slug}</td>
                 <td className="px-4 py-3">
                   <Badge
                     className={cn(
@@ -749,7 +712,6 @@ function StatusDialog({
 }) {
   const [form, setForm] = useState<StatusInput>(() => ({
     name: status?.name ?? "",
-    slug: status?.slug ?? "",
     stateCategory: status?.stateCategory ?? "Open",
     color: status?.color ?? "#7c7cff",
     icon: status?.icon ?? "circle",
@@ -770,8 +732,6 @@ function StatusDialog({
     onError: () => toast.error("Save failed"),
   });
 
-  const autoSlug = useMemo(() => slugify(form.name), [form.name]);
-
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg">
@@ -787,13 +747,6 @@ function StatusDialog({
             <Input
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            />
-          </Field>
-          <Field label="Slug">
-            <Input
-              value={form.slug}
-              onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
-              placeholder={autoSlug}
             />
           </Field>
           <Field label="Semantic category">
@@ -852,10 +805,7 @@ function StatusDialog({
             Cancel
           </Button>
           <Button
-            onClick={() => {
-              if (!form.slug) setForm((f) => ({ ...f, slug: autoSlug }));
-              save.mutate();
-            }}
+            onClick={() => save.mutate()}
             disabled={save.isPending || !form.name}
           >
             {save.isPending ? "Saving..." : "Save"}
@@ -895,7 +845,6 @@ function CategoriesTab() {
           <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-white/10">
             <tr>
               <th className="px-4 py-3 font-medium">Name</th>
-              <th className="px-4 py-3 font-medium">Slug</th>
               <th className="px-4 py-3 font-medium">Parent</th>
               <th className="px-4 py-3 font-medium">Order</th>
               <th className="px-4 py-3 font-medium">Status</th>
@@ -920,7 +869,6 @@ function CategoriesTab() {
                       <div className="text-xs text-muted-foreground">{c.description}</div>
                     )}
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{c.slug}</td>
                   <td className="px-4 py-3 text-xs text-muted-foreground">
                     {parent?.name ?? "—"}
                   </td>
@@ -993,7 +941,6 @@ function CategoryDialog({
 }) {
   const [form, setForm] = useState<CategoryInput>(() => ({
     name: category?.name ?? "",
-    slug: category?.slug ?? "",
     parentId: category?.parentId ?? null,
     description: category?.description ?? "",
     sortOrder: category?.sortOrder ?? 0,
@@ -1011,8 +958,6 @@ function CategoryDialog({
     },
     onError: () => toast.error("Save failed"),
   });
-
-  const autoSlug = useMemo(() => slugify(form.name), [form.name]);
 
   // Exclude self (so a category can't be its own parent). Cycle prevention
   // for deeper chains is enforced server-side.
@@ -1033,13 +978,6 @@ function CategoryDialog({
             <Input
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            />
-          </Field>
-          <Field label="Slug">
-            <Input
-              value={form.slug}
-              onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
-              placeholder={autoSlug}
             />
           </Field>
           <Field label="Parent category">
@@ -1087,10 +1025,7 @@ function CategoryDialog({
             Cancel
           </Button>
           <Button
-            onClick={() => {
-              if (!form.slug) setForm((f) => ({ ...f, slug: autoSlug }));
-              save.mutate();
-            }}
+            onClick={() => save.mutate()}
             disabled={save.isPending || !form.name}
           >
             {save.isPending ? "Saving..." : "Save"}

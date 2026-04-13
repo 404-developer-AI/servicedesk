@@ -426,6 +426,29 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- v0.0.8: user-defined priorities with default flag
         ALTER TABLE priorities
             ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE;
+
+        -- v0.0.9: pinned events
+        CREATE TABLE IF NOT EXISTS ticket_event_pins (
+            id                  BIGSERIAL       PRIMARY KEY,
+            event_id            BIGINT          NOT NULL REFERENCES ticket_events(id) ON DELETE CASCADE,
+            ticket_id           UUID            NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            pinned_by_user_id   UUID            NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            remark              TEXT            NOT NULL DEFAULT '',
+            created_utc         TIMESTAMPTZ     NOT NULL DEFAULT now(),
+            CONSTRAINT uq_event_pin UNIQUE (event_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_ticket_event_pins_ticket
+            ON ticket_event_pins (ticket_id, created_utc);
+
+        -- v0.1.0: view display config (sorting, grouping, priority float)
+        ALTER TABLE views ADD COLUMN IF NOT EXISTS display_config JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+        -- v0.1.0: indexes for dynamic sort patterns
+        CREATE INDEX IF NOT EXISTS ix_tickets_created_id
+            ON tickets (created_utc DESC, id DESC) WHERE is_deleted = FALSE;
+        CREATE INDEX IF NOT EXISTS ix_tickets_due_id
+            ON tickets (due_utc DESC NULLS LAST, id DESC) WHERE is_deleted = FALSE;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

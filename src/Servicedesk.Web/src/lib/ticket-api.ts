@@ -48,6 +48,7 @@ export type TicketListItem = {
   queueName: string;
   statusId: string;
   statusName: string;
+  statusColor: string;
   statusStateCategory: string;
   priorityId: string;
   priorityName: string;
@@ -62,6 +63,8 @@ export type TicketListItem = {
   companyName: string | null;
   assigneeUserId: string | null;
   assigneeEmail: string | null;
+  categoryId: string | null;
+  categoryName: string | null;
   createdUtc: string;
   updatedUtc: string;
   dueUtc: string | null;
@@ -70,6 +73,7 @@ export type TicketListItem = {
 export type TicketPage = {
   items: TicketListItem[];
   nextCursor: { updatedUtc: string; id: string } | null;
+  nextOffset: number | null;
 };
 
 export type Ticket = {
@@ -133,10 +137,21 @@ export type UpdateTicketEventRequest = {
   isInternal?: boolean;
 };
 
+export type TicketEventPin = {
+  id: number;
+  eventId: number;
+  ticketId: string;
+  pinnedByUserId: string;
+  pinnedByName: string | null;
+  remark: string;
+  createdUtc: string;
+};
+
 export type TicketDetail = {
   ticket: Ticket;
   body: TicketBody;
   events: TicketEvent[];
+  pinnedEvents: TicketEventPin[];
 };
 
 export type TicketListQuery = {
@@ -147,6 +162,10 @@ export type TicketListQuery = {
   requesterContactId?: string;
   search?: string;
   openOnly?: boolean;
+  sortField?: string;
+  sortDirection?: string;
+  priorityFloat?: boolean;
+  offset?: number;
   cursorUpdatedUtc?: string;
   cursorId?: string;
   limit?: number;
@@ -185,6 +204,13 @@ export type NewTicketEvent = {
 
 // ---- Views ----
 
+export type DisplayConfig = {
+  priorityFloat?: boolean;
+  groupBy?: string | null;
+  groupOrder?: string[] | null;
+  sort?: { field: string; direction: "asc" | "desc" } | null;
+};
+
 export type View = {
   id: string;
   userId: string;
@@ -193,6 +219,7 @@ export type View = {
   columns: string | null;
   sortOrder: number;
   isShared: boolean;
+  displayConfigJson: string;
   createdUtc: string;
   updatedUtc: string;
 };
@@ -203,6 +230,7 @@ export type ViewInput = {
   columns?: string | null;
   sortOrder?: number;
   isShared?: boolean;
+  displayConfigJson?: string;
 };
 
 // ---- Users ----
@@ -282,6 +310,10 @@ export const ticketApi = {
       params.set("requesterContactId", query.requesterContactId);
     if (query.search) params.set("search", query.search);
     if (query.openOnly) params.set("openOnly", "true");
+    if (query.sortField) params.set("sortField", query.sortField);
+    if (query.sortDirection) params.set("sortDirection", query.sortDirection);
+    if (query.priorityFloat) params.set("priorityFloat", "true");
+    if (query.offset != null) params.set("offset", String(query.offset));
     if (query.cursorUpdatedUtc)
       params.set("cursorUpdatedUtc", query.cursorUpdatedUtc);
     if (query.cursorId) params.set("cursorId", query.cursorId);
@@ -300,6 +332,12 @@ export const ticketApi = {
     request<TicketEvent>("PUT", `/api/tickets/${id}/events/${eventId}`, body),
   getEventRevisions: (id: string, eventId: number) =>
     request<TicketEventRevision[]>("GET", `/api/tickets/${id}/events/${eventId}/revisions`),
+  pinEvent: (id: string, eventId: number, remark?: string) =>
+    request<TicketEventPin>("POST", `/api/tickets/${id}/events/${eventId}/pin`, { remark }),
+  unpinEvent: (id: string, eventId: number) =>
+    request<void>("DELETE", `/api/tickets/${id}/events/${eventId}/pin`),
+  updatePinRemark: (id: string, eventId: number, remark: string) =>
+    request<TicketEventPin>("PATCH", `/api/tickets/${id}/events/${eventId}/pin`, { remark }),
 };
 
 export const viewApi = {

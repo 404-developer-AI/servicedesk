@@ -14,15 +14,23 @@ import {
   Info,
   Mail,
   Pencil,
+  Pin,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ticketApi, type TicketEvent } from "@/lib/ticket-api";
 import { RichTextEditor } from "@/components/RichTextEditor";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { EventRevisionDialog } from "./EventRevisionDialog";
 
 type TicketTimelineProps = {
   ticketId: string;
   events: TicketEvent[];
+  pinnedEventIds: Set<number>;
 };
 
 function SafeHtml({ html }: { html: string }) {
@@ -205,9 +213,11 @@ const EDITABLE_TYPES = new Set(["Comment", "Note", "Mail"]);
 function TimelineEvent({
   event,
   ticketId,
+  isPinned,
 }: {
   event: TicketEvent;
   ticketId: string;
+  isPinned: boolean;
 }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = React.useState(false);
@@ -217,6 +227,8 @@ function TimelineEvent({
   const [draftInternal, setDraftInternal] = React.useState(event.isInternal);
   const [editorKey, setEditorKey] = React.useState(0);
   const [revisionOpen, setRevisionOpen] = React.useState(false);
+  const [pinDialogOpen, setPinDialogOpen] = React.useState(false);
+  const [pinRemark, setPinRemark] = React.useState("");
 
   const config = EVENT_CONFIG[event.eventType] ?? {
     icon: Info,
@@ -253,6 +265,27 @@ function TimelineEvent({
     onError: () => toast.error("Failed to update event"),
   });
 
+  const pinMutation = useMutation({
+    mutationFn: (remark: string) =>
+      ticketApi.pinEvent(ticketId, event.id, remark),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
+      toast.success("Event pinned");
+      setPinDialogOpen(false);
+      setPinRemark("");
+    },
+    onError: () => toast.error("Failed to pin event"),
+  });
+
+  const unpinMutation = useMutation({
+    mutationFn: () => ticketApi.unpinEvent(ticketId, event.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
+      toast.success("Event unpinned");
+    },
+    onError: () => toast.error("Failed to unpin event"),
+  });
+
   const startEdit = () => {
     setDraftHtml(event.bodyHtml ?? event.bodyText ?? "");
     setDraftInternal(event.isInternal);
@@ -267,7 +300,7 @@ function TimelineEvent({
   };
 
   return (
-    <div className="relative pl-6">
+    <div id={`event-${event.id}`} className="relative pl-6">
       <span
         className={cn(
           "absolute -left-[9px] top-3 w-4 h-4 rounded-full border-2 border-background flex items-center justify-center",
@@ -278,9 +311,14 @@ function TimelineEvent({
       </span>
 
       {isSystemLike ? (
-        <div className="flex items-center gap-2 py-1 text-sm text-muted-foreground">
-          <EventBody event={event} />
-          <span className="text-xs text-muted-foreground/50">
+        <div className="flex flex-col gap-0.5 py-1">
+          <div className="text-sm text-muted-foreground">
+            <EventBody event={event} />
+          </div>
+          <span className="text-[11px] text-muted-foreground/40">
+            {event.authorName && (
+              <>{event.authorName} · </>
+            )}
             {formatDate(event.createdUtc)}
           </span>
         </div>
@@ -296,6 +334,11 @@ function TimelineEvent({
               <span className="text-xs font-medium text-foreground/80">
                 {config.label}
               </span>
+              {event.authorName && (
+                <span className="text-xs text-muted-foreground/60">
+                  by {event.authorName}
+                </span>
+              )}
               {isPublicComment && (
                 <span className="rounded px-1.5 py-0.5 text-[10px] font-medium border border-amber-500/30 bg-amber-500/10 text-amber-300">
                   Public
@@ -316,14 +359,33 @@ function TimelineEvent({
                 {formatDate(event.createdUtc)}
               </span>
               {isEditable && !editing && (
-                <button
-                  type="button"
-                  onClick={startEdit}
-                  className="shrink-0 p-1 rounded-md text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-white/[0.06] transition-all"
-                  title="Edit"
-                >
-                  <Pencil className="h-3 w-3" />
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      isPinned
+                        ? unpinMutation.mutate()
+                        : setPinDialogOpen(true)
+                    }
+                    className={cn(
+                      "shrink-0 p-1 rounded-md transition-all",
+                      isPinned
+                        ? "text-amber-400 opacity-100 hover:text-amber-300 hover:bg-amber-500/10"
+                        : "text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-white/[0.06]"
+                    )}
+                    title={isPinned ? "Unpin" : "Pin"}
+                  >
+                    <Pin className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startEdit}
+                    className="shrink-0 p-1 rounded-md text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-white/[0.06] transition-all"
+                    title="Edit"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -401,11 +463,56 @@ function TimelineEvent({
           onOpenChange={setRevisionOpen}
         />
       )}
+
+      <Dialog open={pinDialogOpen} onOpenChange={setPinDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Pin event</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">
+                Remark (optional)
+              </label>
+              <input
+                type="text"
+                value={pinRemark}
+                onChange={(e) => setPinRemark(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") pinMutation.mutate(pinRemark);
+                }}
+                placeholder="Why is this important?"
+                className="w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/50"
+                autoFocus
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPinDialogOpen(false)}
+                className="px-3 py-1.5 text-xs rounded-md text-muted-foreground hover:bg-white/[0.06] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => pinMutation.mutate(pinRemark)}
+                disabled={pinMutation.isPending}
+                className="px-3 py-1.5 text-xs rounded-md bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30 font-medium transition-colors"
+              >
+                {pinMutation.isPending ? "Pinning..." : "Pin"}
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-export function TicketTimeline({ ticketId, events }: TicketTimelineProps) {
+export { EVENT_CONFIG };
+
+export function TicketTimeline({ ticketId, events, pinnedEventIds }: TicketTimelineProps) {
   if (events.length === 0) {
     return (
       <div className="text-sm text-muted-foreground py-4">
@@ -417,7 +524,12 @@ export function TicketTimeline({ ticketId, events }: TicketTimelineProps) {
   return (
     <div className="relative border-l-2 border-white/10 space-y-4 ml-[9px]">
       {events.map((event) => (
-        <TimelineEvent key={event.id} event={event} ticketId={ticketId} />
+        <TimelineEvent
+          key={event.id}
+          event={event}
+          ticketId={ticketId}
+          isPinned={pinnedEventIds.has(event.id)}
+        />
       ))}
     </div>
   );

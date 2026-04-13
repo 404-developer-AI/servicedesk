@@ -3,8 +3,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { MessageCircle } from "lucide-react";
 import { ticketApi } from "@/lib/ticket-api";
+import { preferencesApi } from "@/lib/api";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { cn } from "@/lib/utils";
+import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
 
 type AddNoteFormProps = {
   ticketId: string;
@@ -14,13 +16,37 @@ type AddNoteFormProps = {
 type TabType = "reply" | "note";
 
 export function AddNoteForm({ ticketId, onSubmitted }: AddNoteFormProps) {
-  const [expanded, setExpanded] = React.useState(false);
-  const [tab, setTab] = React.useState<TabType>("note");
-  const [bodyHtml, setBodyHtml] = React.useState("");
+  const savedDraft = useWorkspaceStore.getState().getDraft(ticketId);
+  const [expanded, setExpanded] = React.useState(!!savedDraft);
+  const [tab, setTab] = React.useState<TabType>(savedDraft?.tab ?? "note");
+  const [bodyHtml, setBodyHtml] = React.useState(savedDraft?.bodyHtml ?? "");
+  const [initialContent] = React.useState(savedDraft?.bodyHtml ?? "");
   const [editorKey, setEditorKey] = React.useState(0);
   const queryClient = useQueryClient();
 
   const isInternal = tab === "note";
+
+  // Sync draft to workspace store on editor changes
+  const updateDraft = React.useCallback(
+    (html: string, currentTab: TabType) => {
+      const internal = currentTab === "note";
+      if (html.trim() && html !== "<p></p>") {
+        useWorkspaceStore
+          .getState()
+          .setDraft(ticketId, { bodyHtml: html, isInternal: internal, tab: currentTab });
+      } else {
+        useWorkspaceStore.getState().removeDraft(ticketId);
+      }
+    },
+    [ticketId],
+  );
+
+  const clearDraft = React.useCallback(() => {
+    useWorkspaceStore.getState().removeDraft(ticketId);
+    preferencesApi
+      .deleteWorkspaceKey(`workspace:draft:${ticketId}`)
+      .catch(() => {});
+  }, [ticketId]);
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -31,6 +57,7 @@ export function AddNoteForm({ ticketId, onSubmitted }: AddNoteFormProps) {
       }),
     onSuccess: () => {
       toast.success(isInternal ? "Note added" : "Reply sent");
+      clearDraft();
       setBodyHtml("");
       setEditorKey((k) => k + 1);
       setExpanded(false);
@@ -75,7 +102,10 @@ export function AddNoteForm({ ticketId, onSubmitted }: AddNoteFormProps) {
       <div className="flex gap-1 mb-3">
         <button
           type="button"
-          onClick={() => setTab("note")}
+          onClick={() => {
+            setTab("note");
+            updateDraft(bodyHtml, "note");
+          }}
           className={cn(
             "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
             tab === "note"
@@ -87,7 +117,10 @@ export function AddNoteForm({ ticketId, onSubmitted }: AddNoteFormProps) {
         </button>
         <button
           type="button"
-          onClick={() => setTab("reply")}
+          onClick={() => {
+            setTab("reply");
+            updateDraft(bodyHtml, "reply");
+          }}
           className={cn(
             "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
             tab === "reply"
@@ -101,7 +134,11 @@ export function AddNoteForm({ ticketId, onSubmitted }: AddNoteFormProps) {
 
       <RichTextEditor
         key={editorKey}
-        onChange={setBodyHtml}
+        content={initialContent || undefined}
+        onChange={(html) => {
+          setBodyHtml(html);
+          updateDraft(html, tab);
+        }}
         placeholder={
           isInternal
             ? "Add an internal note (not visible to customers)..."
@@ -114,6 +151,7 @@ export function AddNoteForm({ ticketId, onSubmitted }: AddNoteFormProps) {
         <button
           type="button"
           onClick={() => {
+            clearDraft();
             setExpanded(false);
             setBodyHtml("");
             setEditorKey((k) => k + 1);

@@ -1,5 +1,8 @@
 import { authApi } from "@/lib/api";
 import { authStore, type AuthUser } from "@/auth/authStore";
+import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
+import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
+import { useSidebarStore } from "@/stores/useSidebarStore";
 
 /// Fetches `/api/auth/setup/status` + `/api/auth/me` before the router takes
 /// over, so route gates can trust `authStore.get()` from their very first call.
@@ -16,6 +19,15 @@ export async function bootstrapAuth(): Promise<void> {
       user: me.user as AuthUser | null,
       setupAvailable: setup.available,
     });
+    // Load user preferences from backend
+    if (me.user) {
+      useColumnPrefsStore.getState().loadFromServer();
+      await useWorkspaceStore.getState().loadFromServer();
+      const ws = useWorkspaceStore.getState();
+      if (ws.loaded) {
+        useSidebarStore.getState().setCollapsed(ws.sidebarCollapsed);
+      }
+    }
   } catch {
     authStore.set({ status: "ready", user: null, setupAvailable: false });
   }

@@ -195,7 +195,6 @@ export type Category = {
 
 export type QueueInput = {
   name: string;
-  slug: string;
   description?: string;
   color?: string;
   icon?: string;
@@ -205,7 +204,6 @@ export type QueueInput = {
 
 export type PriorityInput = {
   name: string;
-  slug: string;
   level: number;
   color?: string;
   icon?: string;
@@ -216,7 +214,6 @@ export type PriorityInput = {
 
 export type StatusInput = {
   name: string;
-  slug: string;
   stateCategory: StatusStateCategory;
   color?: string;
   icon?: string;
@@ -227,7 +224,6 @@ export type StatusInput = {
 
 export type CategoryInput = {
   name: string;
-  slug: string;
   parentId?: string | null;
   description?: string;
   sortOrder: number;

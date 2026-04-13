@@ -11,6 +11,9 @@ public interface ITicketRepository
     Task<TicketEvent?> AddEventAsync(Guid ticketId, NewTicketEvent input, CancellationToken ct);
     Task<TicketEvent?> UpdateEventAsync(Guid ticketId, long eventId, UpdateTicketEvent input, CancellationToken ct);
     Task<IReadOnlyList<TicketEventRevision>> GetEventRevisionsAsync(Guid ticketId, long eventId, CancellationToken ct);
+    Task<TicketEventPin?> PinEventAsync(Guid ticketId, long eventId, Guid userId, string remark, CancellationToken ct);
+    Task<bool> UnpinEventAsync(Guid ticketId, long eventId, CancellationToken ct);
+    Task<TicketEventPin?> UpdatePinRemarkAsync(Guid ticketId, long eventId, string remark, CancellationToken ct);
     Task<IReadOnlyDictionary<Guid, int>> GetOpenCountsByQueueAsync(CancellationToken ct);
     Task<int> InsertFakeBatchAsync(int count, CancellationToken ct);
 }
@@ -18,7 +21,8 @@ public interface ITicketRepository
 public sealed record TicketDetail(
     Ticket Ticket,
     TicketBody Body,
-    IReadOnlyList<TicketEvent> Events);
+    IReadOnlyList<TicketEvent> Events,
+    IReadOnlyList<TicketEventPin> PinnedEvents);
 
 public sealed record NewTicket(
     string Subject,

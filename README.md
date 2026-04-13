@@ -2,7 +2,7 @@
 
 A self-hosted servicedesk app. Built because the existing options were either ugly, slow, expensive, or all three.
 
-> **Status:** v0.0.7 (unreleased) — settings API, admin-toggleable sidebar nav, session auth caching, client-side view navigation. Getting ready for scale.
+> **Status:** v0.0.7 (unreleased) — view sorting/grouping/priority float, pinned events, workspace snapshots, queue access control, view groups, auto-slugs. Getting ready for scale.
 
 ## What this is
 

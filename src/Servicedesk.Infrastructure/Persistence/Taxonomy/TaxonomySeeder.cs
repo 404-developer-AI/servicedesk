@@ -6,7 +6,7 @@ using Npgsql;
 namespace Servicedesk.Infrastructure.Persistence.Taxonomy;
 
 /// Seeds a minimal default taxonomy on startup so a fresh install has a
-/// working queue and set of statuses out of the box. Priorities are fully
+/// working set of statuses out of the box. Queues and priorities are fully
 /// user-defined — admins create them in Settings. Every seeded row is
 /// marked <c>is_system = TRUE</c>: admins can rename and re-color them
 /// but not delete them. Seeding is idempotent — <c>ON CONFLICT (slug)
@@ -14,10 +14,8 @@ namespace Servicedesk.Infrastructure.Persistence.Taxonomy;
 public sealed class TaxonomySeeder : IHostedService
 {
     private const string Sql = """
-        -- Default queue
-        INSERT INTO queues (name, slug, description, color, icon, sort_order, is_active, is_system)
-        VALUES ('Default', 'default', 'Unassigned inbox for new tickets.', '#7c7cff', 'inbox', 0, TRUE, TRUE)
-        ON CONFLICT (slug) DO NOTHING;
+        -- Queues are fully user-defined — clear any legacy system flag.
+        UPDATE queues SET is_system = FALSE WHERE is_system = TRUE;
 
         -- Priorities are fully user-defined — no system defaults seeded.
 
@@ -45,7 +43,7 @@ public sealed class TaxonomySeeder : IHostedService
     {
         await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken);
         await conn.ExecuteAsync(new CommandDefinition(Sql, cancellationToken: cancellationToken));
-        _logger.LogInformation("Taxonomy seed complete (queues, statuses).");
+        _logger.LogInformation("Taxonomy seed complete (statuses).");
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

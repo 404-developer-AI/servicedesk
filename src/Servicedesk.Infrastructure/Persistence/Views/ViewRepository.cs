@@ -10,15 +10,16 @@ public sealed class ViewRepository : IViewRepository
 
     public ViewRepository(NpgsqlDataSource dataSource) => _dataSource = dataSource;
 
+    private const string SelectColumns = """
+        id AS Id, user_id AS UserId, name AS Name, filters::text AS FiltersJson,
+        columns AS Columns, sort_order AS SortOrder, is_shared AS IsShared,
+        display_config::text AS DisplayConfigJson,
+        created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
+        """;
+
     public async Task<IReadOnlyList<View>> ListAsync(Guid userId, CancellationToken ct)
     {
-        const string sql = """
-            SELECT id AS Id, user_id AS UserId, name AS Name, filters::text AS FiltersJson,
-                   sort_order AS SortOrder, is_shared AS IsShared,
-                   created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
-            FROM views WHERE user_id = @userId OR is_shared = TRUE
-            ORDER BY sort_order, name
-            """;
+        var sql = $"SELECT {SelectColumns} FROM views WHERE user_id = @userId OR is_shared = TRUE ORDER BY sort_order, name";
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var rows = await conn.QueryAsync<View>(new CommandDefinition(sql, new { userId }, cancellationToken: ct));
         return rows.ToList();
@@ -26,43 +27,35 @@ public sealed class ViewRepository : IViewRepository
 
     public async Task<View?> GetAsync(Guid id, CancellationToken ct)
     {
-        const string sql = """
-            SELECT id AS Id, user_id AS UserId, name AS Name, filters::text AS FiltersJson,
-                   sort_order AS SortOrder, is_shared AS IsShared,
-                   created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
-            FROM views WHERE id = @id
-            """;
+        var sql = $"SELECT {SelectColumns} FROM views WHERE id = @id";
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.QueryFirstOrDefaultAsync<View>(new CommandDefinition(sql, new { id }, cancellationToken: ct));
     }
 
-    public async Task<View> CreateAsync(Guid userId, string name, string filtersJson, int sortOrder, bool isShared, CancellationToken ct)
+    public async Task<View> CreateAsync(Guid userId, string name, string filtersJson, string? columns, int sortOrder, bool isShared, string displayConfigJson, CancellationToken ct)
     {
-        const string sql = """
-            INSERT INTO views (user_id, name, filters, sort_order, is_shared)
-            VALUES (@userId, @name, @filtersJson::jsonb, @sortOrder, @isShared)
-            RETURNING id AS Id, user_id AS UserId, name AS Name, filters::text AS FiltersJson,
-                      sort_order AS SortOrder, is_shared AS IsShared,
-                      created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
+        var sql = $"""
+            INSERT INTO views (user_id, name, filters, columns, sort_order, is_shared, display_config)
+            VALUES (@userId, @name, @filtersJson::jsonb, @columns, @sortOrder, @isShared, @displayConfigJson::jsonb)
+            RETURNING {SelectColumns}
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.QuerySingleAsync<View>(new CommandDefinition(sql,
-            new { userId, name, filtersJson, sortOrder, isShared }, cancellationToken: ct));
+            new { userId, name, filtersJson, columns, sortOrder, isShared, displayConfigJson }, cancellationToken: ct));
     }
 
-    public async Task<View?> UpdateAsync(Guid id, string name, string filtersJson, int sortOrder, bool isShared, CancellationToken ct)
+    public async Task<View?> UpdateAsync(Guid id, string name, string filtersJson, string? columns, int sortOrder, bool isShared, string displayConfigJson, CancellationToken ct)
     {
-        const string sql = """
+        var sql = $"""
             UPDATE views SET name = @name, filters = @filtersJson::jsonb,
-                             sort_order = @sortOrder, is_shared = @isShared, updated_utc = now()
+                             columns = @columns, sort_order = @sortOrder, is_shared = @isShared,
+                             display_config = @displayConfigJson::jsonb, updated_utc = now()
             WHERE id = @id
-            RETURNING id AS Id, user_id AS UserId, name AS Name, filters::text AS FiltersJson,
-                      sort_order AS SortOrder, is_shared AS IsShared,
-                      created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
+            RETURNING {SelectColumns}
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.QueryFirstOrDefaultAsync<View>(new CommandDefinition(sql,
-            new { id, name, filtersJson, sortOrder, isShared }, cancellationToken: ct));
+            new { id, name, filtersJson, columns, sortOrder, isShared, displayConfigJson }, cancellationToken: ct));
     }
 
     public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)

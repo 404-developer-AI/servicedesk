@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -102,14 +103,7 @@ const ALL_COLUMNS = [
     header: "Status",
     cell: (info) => {
       const row = info.row.original;
-      const catColors: Record<string, string> = {
-        New: "#a78bfa",
-        Open: "#60a5fa",
-        Pending: "#fbbf24",
-        Resolved: "#34d399",
-        Closed: "#6b7280",
-      };
-      const color = catColors[row.statusStateCategory] ?? "#6b7280";
+      const color = row.statusColor || "#6b7280";
       return <ColoredBadge label={row.statusName} color={color} />;
     },
   }),
@@ -122,10 +116,12 @@ const ALL_COLUMNS = [
       return <ColoredBadge label={row.priorityName} color={color} />;
     },
   }),
-  columnHelper.display({
+  columnHelper.accessor("categoryName", {
     id: "categoryName",
     header: "Category",
-    cell: () => <span className="text-muted-foreground">—</span>,
+    cell: (info) => (
+      <span className="text-muted-foreground">{info.getValue() ?? "—"}</span>
+    ),
   }),
   columnHelper.accessor("assigneeEmail", {
     id: "assigneeEmail",
@@ -208,12 +204,16 @@ export function TicketTable({ data, onRowClick }: TicketTableProps) {
           <tbody>
             {table.getRowModel().rows.map((row) => {
               const orig = row.original;
-              const showOverlay = !orig.priorityIsDefault && orig.priorityColor;
-              const rowStyle = showOverlay
-                ? {
-                    backgroundImage: `linear-gradient(to right, ${orig.priorityColor}15 0%, ${orig.priorityColor}08 40%, transparent 80%)`,
-                  }
-                : undefined;
+              const color = orig.priorityColor || "#6b7280";
+              const accent = !orig.priorityIsDefault && orig.priorityColor;
+              const rowStyle: CSSProperties = {
+                boxShadow: `inset 3px 0 0 0 ${color}`,
+                ...(accent
+                  ? {
+                      backgroundImage: `linear-gradient(to right, ${color}12 0%, ${color}06 30%, transparent 60%)`,
+                    }
+                  : {}),
+              };
 
               return (
                 <tr

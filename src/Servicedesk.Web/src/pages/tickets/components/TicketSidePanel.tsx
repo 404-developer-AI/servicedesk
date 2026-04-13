@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { taxonomyApi } from "@/lib/api";
+import { agentQueueApi, taxonomyApi } from "@/lib/api";
 import { AgentPicker } from "@/components/AgentPicker";
 import { cn } from "@/lib/utils";
 import type { Ticket, TicketFieldUpdate, Contact, CompanyDetail } from "@/lib/ticket-api";
@@ -178,9 +178,9 @@ function StatusTab({
   onUpdate: (fields: TicketFieldUpdate) => Promise<void>;
 }) {
   const { data: queues } = useQuery({
-    queryKey: ["queues"],
-    queryFn: taxonomyApi.queues.list,
-    staleTime: 300_000,
+    queryKey: ["accessible-queues"],
+    queryFn: agentQueueApi.list,
+    staleTime: 60_000,
   });
 
   const { data: priorities } = useQuery({

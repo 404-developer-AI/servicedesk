@@ -2,12 +2,13 @@ import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { ChevronDown, Eye, Pencil, Plus, Trash2 } from "lucide-react";
-import { viewApi, type View, type ViewInput } from "@/lib/ticket-api";
-import { taxonomyApi, type Queue, type Priority, type Status } from "@/lib/api";
+import { ArrowDown, ArrowUp, ChevronDown, Eye, Pencil, Plus, Trash2 } from "lucide-react";
+import { viewApi, type View, type ViewInput, type DisplayConfig } from "@/lib/ticket-api";
+import { taxonomyApi, type Queue, type Priority, type Status, type Category } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +18,53 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+
+// ---- Column definitions ----
+
+const ALL_COLUMNS: { id: string; label: string }[] = [
+  { id: "number", label: "Number" },
+  { id: "subject", label: "Subject" },
+  { id: "requester", label: "Requester" },
+  { id: "companyName", label: "Company" },
+  { id: "queueName", label: "Queue" },
+  { id: "statusName", label: "Status" },
+  { id: "priorityName", label: "Priority" },
+  { id: "categoryName", label: "Category" },
+  { id: "assigneeEmail", label: "Assignee" },
+  { id: "createdUtc", label: "Created" },
+  { id: "updatedUtc", label: "Updated" },
+  { id: "dueUtc", label: "Due" },
+];
+
+// ---- Sort field options ----
+
+const SORT_FIELDS: { value: string; label: string }[] = [
+  { value: "updatedUtc", label: "Updated" },
+  { value: "createdUtc", label: "Created" },
+  { value: "dueUtc", label: "Due date" },
+  { value: "priorityLevel", label: "Priority" },
+  { value: "number", label: "Ticket #" },
+  { value: "subject", label: "Subject" },
+  { value: "statusName", label: "Status" },
+  { value: "queueName", label: "Queue" },
+  { value: "assigneeEmail", label: "Assignee" },
+  { value: "requesterEmail", label: "Requester" },
+  { value: "companyName", label: "Company" },
+  { value: "categoryName", label: "Category" },
+];
+
+// ---- Group-by options ----
+
+const GROUP_BY_OPTIONS: { value: string; label: string; hasTaxonomy: boolean }[] = [
+  { value: "", label: "None", hasTaxonomy: false },
+  { value: "statusId", label: "Status", hasTaxonomy: true },
+  { value: "priorityId", label: "Priority", hasTaxonomy: true },
+  { value: "queueId", label: "Queue", hasTaxonomy: true },
+  { value: "assigneeUserId", label: "Assignee", hasTaxonomy: false },
+  { value: "categoryId", label: "Category", hasTaxonomy: true },
+  { value: "companyName", label: "Company", hasTaxonomy: false },
+  { value: "requesterContactId", label: "Requester", hasTaxonomy: false },
+];
 
 // ---- Filter shape stored in filtersJson ----
 
@@ -55,6 +103,21 @@ function formatFilters(
   } catch {
     return [];
   }
+}
+
+function formatDisplayConfig(dc: DisplayConfig): string[] {
+  const parts: string[] = [];
+  if (dc.priorityFloat) parts.push("Priority float");
+  if (dc.groupBy) {
+    const opt = GROUP_BY_OPTIONS.find((o) => o.value === dc.groupBy);
+    if (opt) parts.push(`Group: ${opt.label}`);
+  }
+  if (dc.sort?.field) {
+    const sf = SORT_FIELDS.find((f) => f.value === dc.sort!.field);
+    const dir = dc.sort.direction === "asc" ? "\u2191" : "\u2193";
+    if (sf) parts.push(`Sort: ${sf.label} ${dir}`);
+  }
+  return parts;
 }
 
 // ---- Field helper ----
@@ -101,6 +164,105 @@ function NativeSelect({
   );
 }
 
+// ---- Group order editor ----
+
+function GroupOrderEditor({
+  groupBy,
+  groupOrder,
+  onChange,
+  statuses,
+  priorities,
+  queues,
+  categories,
+}: {
+  groupBy: string;
+  groupOrder: string[];
+  onChange: (order: string[]) => void;
+  statuses: Status[];
+  priorities: Priority[];
+  queues: Queue[];
+  categories: Category[];
+}) {
+  type TaxItem = { id: string; name: string; sortOrder: number };
+
+  const items = React.useMemo<TaxItem[]>(() => {
+    let source: TaxItem[] = [];
+    if (groupBy === "statusId") source = statuses.map((s) => ({ id: s.id, name: s.name, sortOrder: s.sortOrder }));
+    else if (groupBy === "priorityId") source = priorities.map((p) => ({ id: p.id, name: p.name, sortOrder: p.sortOrder }));
+    else if (groupBy === "queueId") source = queues.map((q) => ({ id: q.id, name: q.name, sortOrder: q.sortOrder }));
+    else if (groupBy === "categoryId") source = categories.map((c) => ({ id: c.id, name: c.name, sortOrder: c.sortOrder }));
+
+    // If groupOrder is set, use it; otherwise sort by taxonomy sort_order
+    if (groupOrder.length > 0) {
+      const orderIndex = new Map(groupOrder.map((id, i) => [id, i]));
+      return [...source].sort((a, b) => {
+        const ai = orderIndex.get(a.id) ?? 99999;
+        const bi = orderIndex.get(b.id) ?? 99999;
+        if (ai !== bi) return ai - bi;
+        return a.sortOrder - b.sortOrder;
+      });
+    }
+    return [...source].sort((a, b) => a.sortOrder - b.sortOrder);
+  }, [groupBy, groupOrder, statuses, priorities, queues, categories]);
+
+  function move(index: number, dir: -1 | 1) {
+    const ids = items.map((i) => i.id);
+    const target = index + dir;
+    if (target < 0 || target >= ids.length) return;
+    [ids[index], ids[target]] = [ids[target], ids[index]];
+    onChange(ids);
+  }
+
+  function reset() {
+    onChange([]);
+  }
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-baseline gap-2">
+        <span className="text-xs font-medium text-muted-foreground">Group order</span>
+        {groupOrder.length > 0 && (
+          <button
+            type="button"
+            onClick={reset}
+            className="text-[10px] text-primary/70 hover:text-primary transition-colors"
+          >
+            Reset to default
+          </button>
+        )}
+      </div>
+      <div className="space-y-0.5">
+        {items.map((item, i) => (
+          <div
+            key={item.id}
+            className="flex items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-1.5 text-sm"
+          >
+            <span className="flex-1 text-foreground/90">{item.name}</span>
+            <button
+              type="button"
+              onClick={() => move(i, -1)}
+              disabled={i === 0}
+              className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-white/[0.06] disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            >
+              <ArrowUp className="h-3 w-3" />
+            </button>
+            <button
+              type="button"
+              onClick={() => move(i, 1)}
+              disabled={i === items.length - 1}
+              className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-white/[0.06] disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            >
+              <ArrowDown className="h-3 w-3" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ---- View dialog (create + edit) ----
 
 type ViewDialogProps = {
@@ -108,6 +270,7 @@ type ViewDialogProps = {
   queues: Queue[];
   statuses: Status[];
   priorities: Priority[];
+  categories: Category[];
   onClose: () => void;
   onSaved: () => void;
 };
@@ -117,6 +280,7 @@ function ViewDialog({
   queues,
   statuses,
   priorities,
+  categories,
   onClose,
   onSaved,
 }: ViewDialogProps) {
@@ -129,16 +293,62 @@ function ViewDialog({
     }
   }
 
+  function parseDisplayConfig(json: string | undefined): DisplayConfig {
+    if (!json) return {};
+    try {
+      return JSON.parse(json);
+    } catch {
+      return {};
+    }
+  }
+
   const initial = parseFilters(view?.filtersJson);
+  const initialDc = parseDisplayConfig(view?.displayConfigJson);
+
+  function parseColumns(raw: string | null | undefined): string[] {
+    if (!raw) return [];
+    return raw.split(",").map((c) => c.trim()).filter(Boolean);
+  }
 
   const [name, setName] = React.useState(view?.name ?? "");
   const [filters, setFilters] = React.useState<ViewFilters>(initial);
+  const [selectedColumns, setSelectedColumns] = React.useState<string[]>(
+    parseColumns(view?.columns),
+  );
+
+  // Display config state
+  const [priorityFloat, setPriorityFloat] = React.useState(initialDc.priorityFloat ?? false);
+  const [groupBy, setGroupBy] = React.useState(initialDc.groupBy ?? "");
+  const [groupOrder, setGroupOrder] = React.useState<string[]>(initialDc.groupOrder ?? []);
+  const [sortField, setSortField] = React.useState(initialDc.sort?.field ?? "");
+  const [sortDirection, setSortDirection] = React.useState<"asc" | "desc">(
+    initialDc.sort?.direction ?? "desc",
+  );
+
+  // Reset group order when groupBy changes
+  React.useEffect(() => {
+    setGroupOrder([]);
+  }, [groupBy]);
+
+  function toggleColumnSelection(id: string) {
+    setSelectedColumns((prev) =>
+      prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id],
+    );
+  }
 
   const save = useMutation({
     mutationFn: async () => {
+      const dc: DisplayConfig = {};
+      if (priorityFloat) dc.priorityFloat = true;
+      if (groupBy) dc.groupBy = groupBy;
+      if (groupOrder.length > 0) dc.groupOrder = groupOrder;
+      if (sortField) dc.sort = { field: sortField, direction: sortDirection };
+
       const input: ViewInput = {
         name,
         filtersJson: JSON.stringify(filters),
+        columns: selectedColumns.length > 0 ? selectedColumns.join(",") : null,
+        displayConfigJson: JSON.stringify(dc),
       };
       if (view) {
         return viewApi.update(view.id, input);
@@ -158,9 +368,12 @@ function ViewDialog({
     setFilters((f) => ({ ...f, ...delta }));
   }
 
+  const groupByOption = GROUP_BY_OPTIONS.find((o) => o.value === groupBy);
+  const showGroupOrder = !!groupByOption?.hasTaxonomy;
+
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{view ? "Edit view" : "New view"}</DialogTitle>
           <DialogDescription>
@@ -178,6 +391,7 @@ function ViewDialog({
             />
           </Field>
 
+          {/* ---- Filters ---- */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field label="Queue">
               <NativeSelect
@@ -231,6 +445,97 @@ function ViewDialog({
             />
             Open only (hide resolved &amp; closed tickets)
           </label>
+
+          {/* ---- Columns ---- */}
+          <div className="space-y-2 pt-1">
+            <div className="flex items-baseline gap-2">
+              <span className="text-xs font-medium text-muted-foreground">Default columns</span>
+              <span className="text-[10px] text-muted-foreground/60">(leave empty to use global default)</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {ALL_COLUMNS.map((col) => {
+                const active = selectedColumns.includes(col.id);
+                return (
+                  <button
+                    key={col.id}
+                    type="button"
+                    onClick={() => toggleColumnSelection(col.id)}
+                    className={cn(
+                      "rounded-full border px-2.5 py-0.5 text-[11px] transition-colors select-none",
+                      active
+                        ? "border-primary/50 bg-primary/20 text-foreground"
+                        : "border-white/10 bg-white/[0.03] text-muted-foreground hover:border-white/20 hover:text-foreground",
+                    )}
+                  >
+                    {col.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ---- Display config: Sorting ---- */}
+          <div className="space-y-2 pt-2 border-t border-white/[0.06]">
+            <span className="text-xs font-medium text-muted-foreground">Sorting</span>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label="Sort by">
+                <NativeSelect value={sortField} onChange={setSortField}>
+                  <option value="">Default (Updated)</option>
+                  {SORT_FIELDS.map((f) => (
+                    <option key={f.value} value={f.value}>
+                      {f.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+              <Field label="Direction">
+                <NativeSelect
+                  value={sortDirection}
+                  onChange={(v) => setSortDirection(v as "asc" | "desc")}
+                >
+                  <option value="desc">Descending (newest/highest first)</option>
+                  <option value="asc">Ascending (oldest/lowest first)</option>
+                </NativeSelect>
+              </Field>
+            </div>
+          </div>
+
+          {/* ---- Display config: Grouping ---- */}
+          <div className="space-y-2 pt-2 border-t border-white/[0.06]">
+            <span className="text-xs font-medium text-muted-foreground">Grouping</span>
+            <Field label="Group by">
+              <NativeSelect value={groupBy} onChange={setGroupBy}>
+                {GROUP_BY_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+
+            {showGroupOrder && (
+              <GroupOrderEditor
+                groupBy={groupBy}
+                groupOrder={groupOrder}
+                onChange={setGroupOrder}
+                statuses={statuses}
+                priorities={priorities}
+                queues={queues}
+                categories={categories}
+              />
+            )}
+          </div>
+
+          {/* ---- Display config: Priority float ---- */}
+          <div className="flex items-center justify-between pt-2 border-t border-white/[0.06]">
+            <div className="space-y-0.5">
+              <span className="text-xs font-medium text-muted-foreground">Priority float</span>
+              <p className="text-[10px] text-muted-foreground/60 leading-tight">
+                Float non-default priority tickets to the top, sorted by priority level
+              </p>
+            </div>
+            <Switch checked={priorityFloat} onCheckedChange={setPriorityFloat} />
+          </div>
         </div>
 
         <DialogFooter>
@@ -320,7 +625,12 @@ function ViewRow({
   onDelete: () => void;
   onNavigate: () => void;
 }) {
-  const summaryParts = formatFilters(view.filtersJson, queues, statuses, priorities);
+  const filterParts = formatFilters(view.filtersJson, queues, statuses, priorities);
+  let dcParts: string[] = [];
+  try {
+    dcParts = formatDisplayConfig(JSON.parse(view.displayConfigJson || "{}"));
+  } catch { /* ignore */ }
+  const summaryParts = [...filterParts, ...dcParts];
 
   return (
     <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] transition-colors hover:bg-white/[0.04]">
@@ -447,6 +757,11 @@ export function ViewsPage() {
     queryFn: () => taxonomyApi.priorities.list(),
   });
 
+  const { data: categories = [] } = useQuery({
+    queryKey: ["taxonomy", "categories"],
+    queryFn: () => taxonomyApi.categories.list(),
+  });
+
   function handleSaved() {
     qc.invalidateQueries({ queryKey: ["views"] });
     setEditingView(null);
@@ -541,6 +856,7 @@ export function ViewsPage() {
           queues={queues}
           statuses={statuses}
           priorities={priorities}
+          categories={categories}
           onClose={() => setEditingView(null)}
           onSaved={handleSaved}
         />

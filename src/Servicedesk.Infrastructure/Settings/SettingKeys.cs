@@ -39,7 +39,6 @@ public static class SettingKeys
 
     public static class Tickets
     {
-        public const string DefaultQueueSlug = "Tickets.DefaultQueueSlug";
         public const string DefaultPrioritySlug = "Tickets.DefaultPrioritySlug";
         public const string ListPageSize = "Tickets.ListPageSize";
 
@@ -47,6 +46,8 @@ public static class SettingKeys
         // the knob is visible in Settings even though no code consumes them.
         public const string NewUserCreatesNotificationTicket = "Tickets.NewUserCreatesNotificationTicket";
         public const string SystemTicketsQueueSlug = "Tickets.SystemTicketsQueueSlug";
+
+        public const string DefaultColumnLayout = "Tickets.DefaultColumnLayout";
     }
 }
 
@@ -109,15 +110,17 @@ public static class SettingDefaults
         new SettingDefault(SettingKeys.Navigation.ShowOpenTickets, "true", "bool", "Navigation",
             "Show the 'Open Tickets' link in the sidebar navigation."),
 
-        new SettingDefault(SettingKeys.Tickets.DefaultQueueSlug, "default", "string", "Tickets",
-            "Slug of the queue new tickets land in when no explicit routing matched."),
         new SettingDefault(SettingKeys.Tickets.DefaultPrioritySlug, "normal", "string", "Tickets",
             "Slug of the priority assigned to new tickets when none is specified."),
         new SettingDefault(SettingKeys.Tickets.ListPageSize, "50", "int", "Tickets",
             "Default number of rows returned per ticket list page (keyset paginated)."),
         new SettingDefault(SettingKeys.Tickets.NewUserCreatesNotificationTicket, "false", "bool", "Tickets",
             "When true, a system ticket is auto-created whenever a new user registers on the portal."),
-        new SettingDefault(SettingKeys.Tickets.SystemTicketsQueueSlug, "default", "string", "Tickets",
+        new SettingDefault(SettingKeys.Tickets.SystemTicketsQueueSlug, "", "string", "Tickets",
             "Slug of the queue that receives auto-generated system tickets."),
+        new SettingDefault(SettingKeys.Tickets.DefaultColumnLayout,
+            "number,subject,requester,companyName,queueName,statusName,priorityName,assigneeEmail,updatedUtc",
+            "string", "Tickets",
+            "Comma-separated column IDs shown by default in the ticket list for new users."),
     };
 }

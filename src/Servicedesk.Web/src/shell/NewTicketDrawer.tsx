@@ -8,6 +8,13 @@ import { Drawer } from "vaul";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { ContactPicker } from "@/components/ContactPicker";
@@ -67,6 +74,8 @@ type TaxonomySelectProps = {
   options: Array<{ id: string; name: string; color: string; badge?: string }>;
   placeholder?: string;
   disabled?: boolean;
+  allowEmpty?: boolean;
+  emptyLabel?: string;
 };
 
 function TaxonomySelect({
@@ -75,54 +84,44 @@ function TaxonomySelect({
   options,
   placeholder,
   disabled,
+  allowEmpty,
+  emptyLabel = "None",
 }: TaxonomySelectProps) {
   const selected = options.find((o) => o.id === value);
 
   return (
-    <div className="relative">
-      <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center gap-1.5">
-        {selected ? (
-          <ColorDot color={selected.color} />
-        ) : (
-          <span className="inline-block h-2 w-2 rounded-full bg-white/20 shrink-0" />
-        )}
-      </div>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
+    <Select
+      value={value || undefined}
+      onValueChange={(v) => onChange(v === "__empty__" ? "" : v)}
+      disabled={disabled}
+    >
+      <SelectTrigger
         className={cn(
-          "h-9 w-full appearance-none rounded-[var(--radius)] border border-white/10",
-          "bg-white/[0.04] pl-7 pr-8 text-sm text-foreground",
-          "focus:outline-none focus:border-white/20 focus:bg-white/[0.06]",
-          "transition-colors disabled:opacity-50",
+          "h-9 border-white/10 bg-white/[0.04] focus:border-white/20 focus:bg-white/[0.06] transition-colors",
           !value && "text-muted-foreground",
         )}
       >
-        {placeholder && (
-          <option value="" disabled>
-            {placeholder}
-          </option>
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent className="border-white/10 bg-background/95 backdrop-blur-xl">
+        {allowEmpty && (
+          <SelectItem value="__empty__">{emptyLabel}</SelectItem>
         )}
         {options.map((opt) => (
-          <option key={opt.id} value={opt.id}>
-            {opt.name}
-            {opt.badge ? ` (${opt.badge})` : ""}
-          </option>
+          <SelectItem key={opt.id} value={opt.id}>
+            <div className="flex items-center gap-2">
+              <ColorDot color={opt.color} />
+              <span>{opt.name}</span>
+              {opt.badge && (
+                <span className="text-[10px] text-muted-foreground">
+                  ({opt.badge})
+                </span>
+              )}
+            </div>
+          </SelectItem>
         ))}
-      </select>
-      <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
-        <svg
-          className="h-3.5 w-3.5 text-muted-foreground"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2}
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
-      </div>
-    </div>
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -155,9 +154,7 @@ export function NewTicketDrawer({ children }: { children: ReactNode }) {
   });
 
   const defaultQueueId =
-    queues?.find((q) => q.isSystem && q.isActive)?.id ??
-    queues?.find((q) => q.isActive)?.id ??
-    "";
+    queues?.find((q) => q.isActive)?.id ?? "";
 
   const defaultPriorityId =
     priorities?.find((p) => p.isDefault && p.isActive)?.id ??
@@ -425,37 +422,15 @@ export function NewTicketDrawer({ children }: { children: ReactNode }) {
                       name="categoryId"
                       control={control}
                       render={({ field }) => (
-                        <div className="relative">
-                          <select
-                            value={field.value ?? ""}
-                            onChange={(e) => field.onChange(e.target.value)}
-                            disabled={!taxonomyReady}
-                            className={cn(
-                              "h-9 w-full appearance-none rounded-[var(--radius)] border border-white/10",
-                              "bg-white/[0.04] pl-3 pr-8 text-sm text-foreground",
-                              "focus:outline-none focus:border-white/20 focus:bg-white/[0.06]",
-                              "transition-colors disabled:opacity-50",
-                            )}
-                          >
-                            <option value="">None</option>
-                            {categoryOptions.map((opt) => (
-                              <option key={opt.id} value={opt.id}>
-                                {opt.name}
-                              </option>
-                            ))}
-                          </select>
-                          <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
-                            <svg
-                              className="h-3.5 w-3.5 text-muted-foreground"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                              strokeWidth={2}
-                            >
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </div>
-                        </div>
+                        <TaxonomySelect
+                          value={field.value ?? ""}
+                          onChange={field.onChange}
+                          options={categoryOptions}
+                          placeholder="Select category…"
+                          disabled={!taxonomyReady}
+                          allowEmpty
+                          emptyLabel="None"
+                        />
                       )}
                     />
                   </div>

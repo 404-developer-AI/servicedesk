@@ -11,6 +11,7 @@ import { useViewingTicket } from "@/hooks/usePresence";
 import { useTicketRealtime } from "@/hooks/useTicketRealtime";
 import { TicketSidePanel } from "./components/TicketSidePanel";
 import { TicketTimeline } from "./components/TicketTimeline";
+import { PinnedEventsSummary } from "./components/PinnedEventsSummary";
 import { AddNoteForm } from "./components/AddNoteForm";
 
 type TicketDetailPageProps = {
@@ -290,6 +291,11 @@ export function TicketDetailPage({ ticketId }: TicketDetailPageProps) {
     onError: () => toast.error("Failed to update ticket"),
   });
 
+  const pinnedEventIds = React.useMemo(
+    () => new Set(data?.pinnedEvents?.map((p) => p.eventId) ?? []),
+    [data?.pinnedEvents]
+  );
+
   if (isLoading) {
     return <LoadingSkeleton />;
   }
@@ -307,7 +313,7 @@ export function TicketDetailPage({ ticketId }: TicketDetailPageProps) {
     );
   }
 
-  const { ticket, body, events } = data;
+  const { ticket, body, events, pinnedEvents } = data;
 
   return (
     <div className="flex gap-6 pt-3 h-[calc(100vh-0.75rem)] overflow-hidden">
@@ -343,6 +349,17 @@ export function TicketDetailPage({ ticketId }: TicketDetailPageProps) {
           />
         </div>
 
+        {/* Pinned events summary */}
+        {pinnedEvents.length > 0 && (
+          <div className="shrink-0 pb-3">
+            <PinnedEventsSummary
+              ticketId={ticketId}
+              pinnedEvents={pinnedEvents}
+              events={events}
+            />
+          </div>
+        )}
+
         {/* Static: activity divider */}
         <div className="shrink-0 pb-3">
           <div className="flex items-center gap-3">
@@ -356,7 +373,7 @@ export function TicketDetailPage({ ticketId }: TicketDetailPageProps) {
 
         {/* Scrollable: activity timeline */}
         <div className="flex-1 min-h-0 overflow-y-auto pr-1">
-          <TicketTimeline ticketId={ticketId} events={events} />
+          <TicketTimeline ticketId={ticketId} events={events} pinnedEventIds={pinnedEventIds} />
         </div>
 
         {/* Static: reply form */}

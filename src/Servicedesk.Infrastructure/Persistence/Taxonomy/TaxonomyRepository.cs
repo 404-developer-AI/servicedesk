@@ -81,13 +81,12 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
     public async Task<DeleteResult> DeleteQueueAsync(Guid id, CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        var row = await conn.QueryFirstOrDefaultAsync<(Guid? Id, bool IsSystem, int TicketCount)>(new CommandDefinition("""
-            SELECT q.id AS Id, q.is_system AS IsSystem,
+        var row = await conn.QueryFirstOrDefaultAsync<(Guid? Id, int TicketCount)>(new CommandDefinition("""
+            SELECT q.id AS Id,
                    (SELECT count(*) FROM tickets t WHERE t.queue_id = q.id AND t.is_deleted = FALSE)::int AS TicketCount
             FROM queues q WHERE q.id = @id
             """, new { id }, cancellationToken: ct));
         if (row.Id is null) return DeleteResult.NotFound;
-        if (row.IsSystem) return DeleteResult.SystemProtected;
         if (row.TicketCount > 0) return DeleteResult.InUse;
         await conn.ExecuteAsync(new CommandDefinition("DELETE FROM queues WHERE id = @id", new { id }, cancellationToken: ct));
         return DeleteResult.Deleted;

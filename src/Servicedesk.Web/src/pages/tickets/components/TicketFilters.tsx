@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Search, X } from "lucide-react";
-import { taxonomyApi } from "@/lib/api";
+import { agentQueueApi, taxonomyApi } from "@/lib/api";
 import { AgentPicker } from "@/components/AgentPicker";
 import { cn } from "@/lib/utils";
 import type { TicketListQuery } from "@/lib/ticket-api";
@@ -18,9 +18,9 @@ export function TicketFilters({ filters, onChange }: TicketFiltersProps) {
   const [searchInput, setSearchInput] = React.useState(filters.search ?? "");
 
   const { data: queues } = useQuery({
-    queryKey: ["queues"],
-    queryFn: taxonomyApi.queues.list,
-    staleTime: 300_000,
+    queryKey: ["accessible-queues"],
+    queryFn: agentQueueApi.list,
+    staleTime: 60_000,
   });
 
   const { data: statuses } = useQuery({
