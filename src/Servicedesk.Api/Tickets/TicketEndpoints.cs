@@ -437,8 +437,8 @@ public static class TicketEndpoints
         group.MapPost("/seed-agent", async (
             [FromQuery] string email,
             [FromQuery] string password,
-            IPasswordHasher hasher,
-            Npgsql.NpgsqlDataSource dataSource,
+            [FromServices] IPasswordHasher hasher,
+            [FromServices] Npgsql.NpgsqlDataSource dataSource,
             CancellationToken ct) =>
         {
             var hash = hasher.Hash(password);

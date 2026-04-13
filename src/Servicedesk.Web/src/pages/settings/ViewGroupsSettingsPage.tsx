@@ -5,7 +5,6 @@ import { Plus, Trash2, Users } from "lucide-react";
 import {
   viewGroupApi,
   type ViewGroupSummary,
-  type ViewGroupDetail,
   type ViewGroupInput,
 } from "@/lib/api";
 import { userApi, viewApi, type AgentUser, type View } from "@/lib/ticket-api";

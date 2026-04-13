@@ -20,7 +20,7 @@ public static class UserPreferencesEndpoints
         // 4. admin global default.
         group.MapGet("/columns", async (
             Guid? viewId,
-            HttpContext http, NpgsqlDataSource dataSource, ISettingsService settings, CancellationToken ct) =>
+            HttpContext http, [FromServices] NpgsqlDataSource dataSource, [FromServices] ISettingsService settings, CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             await using var conn = await dataSource.OpenConnectionAsync(ct);
@@ -65,7 +65,7 @@ public static class UserPreferencesEndpoints
         group.MapPut("/columns", async (
             Guid? viewId,
             [FromBody] UpdateColumnPreferenceRequest req,
-            HttpContext http, NpgsqlDataSource dataSource, CancellationToken ct) =>
+            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var key = viewId.HasValue ? $"columns:view:{viewId}" : "columns";
@@ -87,7 +87,7 @@ public static class UserPreferencesEndpoints
         // If viewId is provided, removes only the per-view override; otherwise removes the general default.
         group.MapDelete("/columns", async (
             Guid? viewId,
-            HttpContext http, NpgsqlDataSource dataSource, CancellationToken ct) =>
+            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var key = viewId.HasValue ? $"columns:view:{viewId}" : "columns";
@@ -104,7 +104,7 @@ public static class UserPreferencesEndpoints
 
         // GET /api/preferences/workspace — all workspace keys for the current user.
         group.MapGet("/workspace", async (
-            HttpContext http, NpgsqlDataSource dataSource, CancellationToken ct) =>
+            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             await using var conn = await dataSource.OpenConnectionAsync(ct);
@@ -121,7 +121,7 @@ public static class UserPreferencesEndpoints
         // PUT /api/preferences/workspace — batch upsert workspace keys.
         group.MapPut("/workspace", async (
             [FromBody] SaveWorkspaceRequest req,
-            HttpContext http, NpgsqlDataSource dataSource, CancellationToken ct) =>
+            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
             if (req.Entries is not { Length: > 0 })
                 return Results.BadRequest("Entries must not be empty.");
@@ -153,7 +153,7 @@ public static class UserPreferencesEndpoints
         // DELETE /api/preferences/workspace/{key} — remove one workspace key.
         group.MapDelete("/workspace/{key}", async (
             string key,
-            HttpContext http, NpgsqlDataSource dataSource, CancellationToken ct) =>
+            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
             if (!key.StartsWith("workspace:"))
                 return Results.BadRequest("Key must start with 'workspace:'.");

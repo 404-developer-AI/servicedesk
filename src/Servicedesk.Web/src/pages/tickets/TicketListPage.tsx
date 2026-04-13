@@ -3,7 +3,7 @@ import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { Eye, Loader2, ShieldAlert, Ticket } from "lucide-react";
 import { ColumnSelector } from "@/components/ColumnSelector";
-import { TicketTable, TicketTableSkeleton } from "./components/TicketTable";
+import { TicketTableSkeleton } from "./components/TicketTable";
 import { GroupedTicketList } from "./components/GroupedTicketList";
 import { ticketApi, viewApi } from "@/lib/ticket-api";
 import { agentQueueApi, settingsApi } from "@/lib/api";

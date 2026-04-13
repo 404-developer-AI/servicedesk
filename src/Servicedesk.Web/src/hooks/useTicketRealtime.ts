@@ -1,5 +1,4 @@
 import * as React from "react";
-import { HubConnectionState } from "@microsoft/signalr";
 import { useQueryClient } from "@tanstack/react-query";
 import { getConnection } from "./usePresence";
 

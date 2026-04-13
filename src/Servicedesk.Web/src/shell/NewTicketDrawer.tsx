@@ -87,8 +87,6 @@ function TaxonomySelect({
   allowEmpty,
   emptyLabel = "None",
 }: TaxonomySelectProps) {
-  const selected = options.find((o) => o.id === value);
-
   return (
     <Select
       value={value || undefined}
