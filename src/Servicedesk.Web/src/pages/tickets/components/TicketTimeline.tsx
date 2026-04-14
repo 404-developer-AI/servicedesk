@@ -27,7 +27,24 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AttachmentPreviewDialog,
+  canPreview,
+  type AttachmentPreview,
+} from "@/components/attachments/AttachmentPreviewDialog";
 import { EventRevisionDialog } from "./EventRevisionDialog";
+
+type PreviewContextValue = {
+  open: (preview: AttachmentPreview) => void;
+};
+const PreviewContext = React.createContext<PreviewContextValue | null>(null);
+function usePreview() {
+  return React.useContext(PreviewContext);
+}
+
+function inlineUrl(url: string): string {
+  return url.includes("?") ? `${url}&inline=true` : `${url}?inline=true`;
+}
 
 type TicketTimelineProps = {
   ticketId: string;
@@ -44,11 +61,75 @@ function formatBytes(n: number): string {
 }
 
 function SafeHtml({ html }: { html: string }) {
+  const preview = usePreview();
+  const onClick = React.useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!preview) return;
+      const target = e.target as HTMLElement;
+      if (target.tagName !== "IMG") return;
+      const img = target as HTMLImageElement;
+      const src = img.currentSrc || img.src;
+      if (!src) return;
+      e.preventDefault();
+      // Inline images served by the mail-attachment endpoint will already
+      // accept the `inline=true` hint; external images pass through untouched.
+      const url = src.includes("/api/tickets/") ? inlineUrl(src) : src;
+      preview.open({
+        url,
+        mimeType: "image/*",
+        filename: img.alt || "Image",
+      });
+    },
+    [preview],
+  );
   return (
     <div
-      className="prose-sm text-foreground/90 [&_a]:text-primary [&_a]:underline [&_p]:my-1 [&_ul]:pl-5 [&_ol]:pl-5"
+      onClick={onClick}
+      className="prose-sm text-foreground/90 [&_a]:text-primary [&_a]:underline [&_p]:my-1 [&_ul]:pl-5 [&_ol]:pl-5 [&_img]:cursor-zoom-in"
       dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html) }}
     />
+  );
+}
+
+type MailAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  url: string;
+};
+
+function AttachmentChip({ attachment: a }: { attachment: MailAttachment }) {
+  const preview = usePreview();
+  const canPreviewFile = canPreview(a.mimeType);
+  const handleClick = (e: React.MouseEvent) => {
+    if (!canPreviewFile || !preview) return;
+    e.preventDefault();
+    preview.open({
+      url: inlineUrl(a.url),
+      mimeType: a.mimeType,
+      filename: a.name,
+      sizeLabel: formatBytes(a.size),
+      downloadUrl: a.url,
+    });
+  };
+  return (
+    <a
+      href={a.url}
+      target="_blank"
+      rel="noreferrer"
+      onClick={handleClick}
+      className="inline-flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-2.5 py-1.5 text-xs text-foreground/90 hover:border-primary/50 hover:bg-primary/10"
+      title={
+        canPreviewFile
+          ? `Preview · ${a.mimeType} · ${formatBytes(a.size)}`
+          : `${a.mimeType} · ${formatBytes(a.size)}`
+      }
+    >
+      <Download className="h-3.5 w-3.5 text-primary" />
+      <span className="max-w-[220px] truncate">{a.name}</span>
+      <span className="text-muted-foreground">{formatBytes(a.size)}</span>
+    </a>
   );
 }
 
@@ -260,18 +341,7 @@ function EventBody({ event }: { event: TicketEvent }) {
           {attachments.length > 0 ? (
             <div className="flex flex-wrap gap-2 pt-1">
               {attachments.map((a) => (
-                <a
-                  key={a.id}
-                  href={a.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-2.5 py-1.5 text-xs text-foreground/90 hover:border-primary/50 hover:bg-primary/10"
-                  title={`${a.mimeType} · ${formatBytes(a.size)}`}
-                >
-                  <Download className="h-3.5 w-3.5 text-primary" />
-                  <span className="max-w-[220px] truncate">{a.name}</span>
-                  <span className="text-muted-foreground">{formatBytes(a.size)}</span>
-                </a>
+                <AttachmentChip key={a.id} attachment={a} />
               ))}
             </div>
           ) : null}
@@ -615,6 +685,12 @@ function TimelineEvent({
 export { EVENT_CONFIG };
 
 export function TicketTimeline({ ticketId, events, pinnedEventIds }: TicketTimelineProps) {
+  const [preview, setPreview] = React.useState<AttachmentPreview | null>(null);
+  const previewApi = React.useMemo<PreviewContextValue>(
+    () => ({ open: setPreview }),
+    [],
+  );
+
   if (events.length === 0) {
     return (
       <div className="text-sm text-muted-foreground py-4">
@@ -624,15 +700,23 @@ export function TicketTimeline({ ticketId, events, pinnedEventIds }: TicketTimel
   }
 
   return (
-    <div className="relative border-l-2 border-white/10 space-y-4 ml-[9px]">
-      {events.map((event) => (
-        <TimelineEvent
-          key={event.id}
-          event={event}
-          ticketId={ticketId}
-          isPinned={pinnedEventIds.has(event.id)}
-        />
-      ))}
-    </div>
+    <PreviewContext.Provider value={previewApi}>
+      <div className="relative border-l-2 border-white/10 space-y-4 ml-[9px]">
+        {events.map((event) => (
+          <TimelineEvent
+            key={event.id}
+            event={event}
+            ticketId={ticketId}
+            isPinned={pinnedEventIds.has(event.id)}
+          />
+        ))}
+      </div>
+      <AttachmentPreviewDialog
+        preview={preview}
+        onOpenChange={(open) => {
+          if (!open) setPreview(null);
+        }}
+      />
+    </PreviewContext.Provider>
   );
 }

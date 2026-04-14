@@ -82,15 +82,15 @@ public sealed class IncidentLog : IIncidentLog
         return rows.Select(Map).ToList();
     }
 
-    public async Task<IReadOnlyList<IncidentRow>> ListRecentAsync(int take, CancellationToken ct)
+    public async Task<IReadOnlyList<IncidentRow>> ListOpenRecentAsync(int take, CancellationToken ct)
     {
         const string sql = """
             SELECT id, subsystem, severity, message, details, context::text AS context_json,
                    first_occurred_utc, last_occurred_utc, occurrence_count,
                    acknowledged_utc, acknowledged_by_user_id
               FROM incidents
-             ORDER BY acknowledged_utc IS NULL DESC,
-                      last_occurred_utc DESC
+             WHERE acknowledged_utc IS NULL
+             ORDER BY last_occurred_utc DESC
              LIMIT @take
             """;
 
@@ -99,18 +99,36 @@ public sealed class IncidentLog : IIncidentLog
         return rows.Select(Map).ToList();
     }
 
-    public async Task<bool> AcknowledgeAsync(long id, Guid userId, CancellationToken ct)
+    public async Task<IReadOnlyList<IncidentRow>> ListArchiveAsync(string? subsystem, int take, int skip, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT id, subsystem, severity, message, details, context::text AS context_json,
+                   first_occurred_utc, last_occurred_utc, occurrence_count,
+                   acknowledged_utc, acknowledged_by_user_id
+              FROM incidents
+             WHERE acknowledged_utc IS NOT NULL
+               AND (@subsystem IS NULL OR subsystem = @subsystem)
+             ORDER BY acknowledged_utc DESC
+             LIMIT @take OFFSET @skip
+            """;
+
+        await using var conn = await _ds.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync(new CommandDefinition(sql, new { subsystem, take, skip }, cancellationToken: ct));
+        return rows.Select(Map).ToList();
+    }
+
+    public async Task<string?> AcknowledgeAsync(long id, Guid userId, CancellationToken ct)
     {
         const string sql = """
             UPDATE incidents
                SET acknowledged_utc = now(),
                    acknowledged_by_user_id = @userId
              WHERE id = @id AND acknowledged_utc IS NULL
+             RETURNING subsystem
             """;
 
         await using var conn = await _ds.OpenConnectionAsync(ct);
-        var affected = await conn.ExecuteAsync(new CommandDefinition(sql, new { id, userId }, cancellationToken: ct));
-        return affected > 0;
+        return await conn.QueryFirstOrDefaultAsync<string?>(new CommandDefinition(sql, new { id, userId }, cancellationToken: ct));
     }
 
     public async Task<int> AcknowledgeSubsystemAsync(string subsystem, Guid userId, CancellationToken ct)

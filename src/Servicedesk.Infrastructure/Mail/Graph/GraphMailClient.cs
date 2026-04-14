@@ -87,9 +87,10 @@ public sealed class GraphMailClient : IGraphMailClient
         var bodyHtml = msg.Body?.ContentType == BodyType.Html ? bodyContent : null;
         var bodyText = msg.Body?.ContentType == BodyType.Text ? bodyContent : null;
 
-        var attachments = msg.HasAttachments == true
-            ? await FetchAttachmentMetadataAsync(graph, mailbox, graphMessageId, ct)
-            : Array.Empty<GraphAttachmentInfo>();
+        // Always fetch the attachments list: Graph reports HasAttachments = false
+        // for mails with only inline images, which would otherwise skip cid rewriting
+        // and leave broken <img src="cid:..."> tags in the ticket body.
+        var attachments = await FetchAttachmentMetadataAsync(graph, mailbox, graphMessageId, ct);
 
         return new GraphFullMessage(
             Id: msg.Id ?? graphMessageId,

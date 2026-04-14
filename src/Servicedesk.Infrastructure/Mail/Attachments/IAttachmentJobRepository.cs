@@ -35,6 +35,10 @@ public interface IAttachmentJobRepository
     /// number of rows requeued. Admin-initiated health action.
     Task<int> RequeueDeadLetteredAsync(DateTime nowUtc, CancellationToken ct);
 
+    /// Flips every dead-lettered job to <c>Cancelled</c> and marks the linked
+    /// attachment rows as <c>Failed</c>. Drops them out of the aggregator's
+    /// dead-letter count so health returns to green; attempt history is kept.
+    Task<int> CancelDeadLetteredAsync(CancellationToken ct);
 }
 
 /// A claimed job in flight. <see cref="PayloadJson"/> holds the JSON blob the

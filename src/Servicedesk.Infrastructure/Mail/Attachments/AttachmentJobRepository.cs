@@ -132,4 +132,32 @@ public sealed class AttachmentJobRepository : IAttachmentJobRepository
         return await conn.ExecuteAsync(new CommandDefinition(sql,
             new { nowUtc }, cancellationToken: ct));
     }
+
+    public async Task<int> CancelDeadLetteredAsync(CancellationToken ct)
+    {
+        // Flip dead-letter jobs to 'Cancelled' and propagate to the linked
+        // attachments (payload JSON carries the attachment uuid). One
+        // statement via data-modifying CTEs so both tables move atomically
+        // and the returned count reflects what was cancelled.
+        const string sql = """
+            WITH cancelled AS (
+                UPDATE attachment_jobs
+                   SET state       = 'Cancelled',
+                       updated_utc = now()
+                 WHERE state = 'DeadLettered'
+                 RETURNING id, (payload->>'attachment_id')::uuid AS attachment_id
+            ),
+            att_updated AS (
+                UPDATE attachments a
+                   SET processing_state = 'Failed'
+                  FROM cancelled c
+                 WHERE a.id = c.attachment_id
+                   AND a.processing_state NOT IN ('Ready','Failed')
+                 RETURNING a.id
+            )
+            SELECT COUNT(*) FROM cancelled
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.ExecuteScalarAsync<int>(new CommandDefinition(sql, cancellationToken: ct));
+    }
 }

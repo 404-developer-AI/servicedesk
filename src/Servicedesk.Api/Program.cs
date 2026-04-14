@@ -68,6 +68,10 @@ builder.Services.AddAuthentication(SessionAuthenticationHandler.SchemeName)
 
 builder.Services.AddAuthorization(options => options.AddServicedeskPolicies());
 builder.Services.AddSignalR();
+// Override the Infrastructure-layer default (no-op) with the SignalR-backed
+// ticket-list notifier so background services (mail ingest) can push updates.
+builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.ITicketListNotifier,
+    Servicedesk.Api.Presence.SignalRTicketListNotifier>();
 
 builder.Services.AddRateLimiter(options =>
 {

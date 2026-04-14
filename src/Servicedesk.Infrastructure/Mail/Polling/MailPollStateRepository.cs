@@ -71,10 +71,15 @@ public sealed class MailPollStateRepository : IMailPollStateRepository
 
     public async Task ResetFailuresAsync(Guid queueId, CancellationToken ct)
     {
+        // Clears both the delta-polling failure counter and the post-ingest
+        // mailbox-action error so that acknowledging a mail-polling incident
+        // drives the aggregator back to Ok in one shot.
         const string sql = """
             UPDATE mail_poll_state
                SET last_error = NULL,
                    consecutive_failures = 0,
+                   last_mailbox_action_error = NULL,
+                   last_mailbox_action_error_utc = NULL,
                    updated_utc = now()
              WHERE queue_id = @queueId
             """;

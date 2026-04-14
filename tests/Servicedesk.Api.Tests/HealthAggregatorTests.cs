@@ -107,8 +107,9 @@ public sealed class HealthAggregatorTests
         Assert.Equal(HealthStatus.Critical, report.Status);
         var sub = report.Subsystems.Single(s => s.Key == "attachment-jobs");
         Assert.Equal(HealthStatus.Critical, sub.Status);
-        var action = Assert.Single(sub.Actions);
-        Assert.Contains("requeue", action.Endpoint, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, sub.Actions.Count);
+        Assert.Contains(sub.Actions, a => a.Endpoint.Contains("requeue", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(sub.Actions, a => a.Endpoint.Contains("cancel", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -216,8 +217,9 @@ public sealed class HealthAggregatorTests
         public StubIncidentLog(IReadOnlyDictionary<string, IncidentSeverity> open) => _open = open;
         public Task ReportAsync(string subsystem, IncidentSeverity severity, string message, string? details, string? contextJson, CancellationToken ct) => Task.CompletedTask;
         public Task<IReadOnlyList<IncidentRow>> ListOpenAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<IncidentRow>>(Array.Empty<IncidentRow>());
-        public Task<IReadOnlyList<IncidentRow>> ListRecentAsync(int take, CancellationToken ct) => Task.FromResult<IReadOnlyList<IncidentRow>>(Array.Empty<IncidentRow>());
-        public Task<bool> AcknowledgeAsync(long id, Guid userId, CancellationToken ct) => Task.FromResult(false);
+        public Task<IReadOnlyList<IncidentRow>> ListOpenRecentAsync(int take, CancellationToken ct) => Task.FromResult<IReadOnlyList<IncidentRow>>(Array.Empty<IncidentRow>());
+        public Task<IReadOnlyList<IncidentRow>> ListArchiveAsync(string? subsystem, int take, int skip, CancellationToken ct) => Task.FromResult<IReadOnlyList<IncidentRow>>(Array.Empty<IncidentRow>());
+        public Task<string?> AcknowledgeAsync(long id, Guid userId, CancellationToken ct) => Task.FromResult<string?>(null);
         public Task<int> AcknowledgeSubsystemAsync(string subsystem, Guid userId, CancellationToken ct) => Task.FromResult(0);
         public Task<IReadOnlyDictionary<string, IncidentSeverity>> GetOpenBySubsystemAsync(CancellationToken ct) => Task.FromResult(_open);
     }
@@ -263,6 +265,7 @@ public sealed class HealthAggregatorTests
         public Task ScheduleRetryAsync(long jobId, DateTime nextAttemptUtc, string error, TimeSpan duration, CancellationToken ct) => Task.CompletedTask;
         public Task DeadLetterAsync(long jobId, string error, TimeSpan duration, CancellationToken ct) => Task.CompletedTask;
         public Task<int> RequeueDeadLetteredAsync(DateTime nowUtc, CancellationToken ct) => Task.FromResult(_deadLetters);
+        public Task<int> CancelDeadLetteredAsync(CancellationToken ct) => Task.FromResult(_deadLetters);
     }
 
     private sealed class StubSecretStore : IProtectedSecretStore

@@ -21,13 +21,17 @@ public interface IIncidentLog
     /// Open incidents grouped by subsystem for the Health aggregator rollup.
     Task<IReadOnlyList<IncidentRow>> ListOpenAsync(CancellationToken ct);
 
-    /// All incidents (open + recently acknowledged) for the admin UI. Capped
-    /// so the payload stays small — old acked rows are kept in the table for
-    /// audit but not surfaced past the retention window.
-    Task<IReadOnlyList<IncidentRow>> ListRecentAsync(int take, CancellationToken ct);
+    /// Open (unacknowledged) incidents for the admin UI, capped.
+    Task<IReadOnlyList<IncidentRow>> ListOpenRecentAsync(int take, CancellationToken ct);
 
-    /// Acknowledge a single incident. No-op if already acknowledged.
-    Task<bool> AcknowledgeAsync(long id, Guid userId, CancellationToken ct);
+    /// Archived (acknowledged) incidents for the admin UI. Optional subsystem
+    /// filter; ordered by acknowledged_utc desc; capped.
+    Task<IReadOnlyList<IncidentRow>> ListArchiveAsync(string? subsystem, int take, int skip, CancellationToken ct);
+
+    /// Acknowledge a single incident. Returns the subsystem key on success
+    /// (so the caller can clear subsystem-specific source state), or null if
+    /// the row was already acknowledged / not found.
+    Task<string?> AcknowledgeAsync(long id, Guid userId, CancellationToken ct);
 
     /// Bulk-acknowledge every open incident for a subsystem. Returns count.
     Task<int> AcknowledgeSubsystemAsync(string subsystem, Guid userId, CancellationToken ct);

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Mail.Ingest;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
+using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Mail.Polling;
@@ -59,6 +60,7 @@ public sealed class MailPollingService : BackgroundService
         var stateRepo = scope.ServiceProvider.GetRequiredService<IMailPollStateRepository>();
         var graph = scope.ServiceProvider.GetRequiredService<IGraphMailClient>();
         var ingest = scope.ServiceProvider.GetRequiredService<IMailIngestService>();
+        var notifier = scope.ServiceProvider.GetRequiredService<ITicketListNotifier>();
 
         var intervalSeconds = await settings.GetAsync<int>(SettingKeys.Mail.PollingIntervalSeconds, ct);
         var batchSize = await settings.GetAsync<int>(SettingKeys.Mail.MaxBatchSize, ct);
@@ -76,7 +78,7 @@ public sealed class MailPollingService : BackgroundService
             await PollQueueCoreAsync(
                 q.Id, q.Slug, q.InboundMailboxAddress!, batchSize,
                 stateRepo, graph, _logger, ct,
-                ingest, markRead);
+                ingest, markRead, notifier);
         }
 
         return TimeSpan.FromSeconds(intervalSeconds);
@@ -93,7 +95,7 @@ public sealed class MailPollingService : BackgroundService
         ILogger logger,
         CancellationToken ct)
         => PollQueueCoreAsync(queueId, queueSlug, mailbox, batchSize, stateRepo, graph, logger, ct,
-            ingest: null, markRead: false);
+            ingest: null, markRead: false, notifier: null);
 
     internal static async Task PollQueueCoreAsync(
         Guid queueId,
@@ -105,7 +107,8 @@ public sealed class MailPollingService : BackgroundService
         ILogger logger,
         CancellationToken ct,
         IMailIngestService? ingest,
-        bool markRead)
+        bool markRead,
+        ITicketListNotifier? notifier)
     {
         var state = await stateRepo.GetAsync(queueId, ct);
         if (state?.ConsecutiveFailures >= MaxConsecutiveFailuresBeforeSkip)
@@ -145,6 +148,19 @@ public sealed class MailPollingService : BackgroundService
                         await HandleMailboxActionsAsync(
                             mailbox, m.Id, queueId, graph, stateRepo,
                             markRead, logger, ct);
+
+                        // Push to any connected clients so the list refreshes
+                        // without a manual reload. Best-effort — a failing hub
+                        // must never break ingest.
+                        if (notifier is not null && result.TicketId is { } tid)
+                        {
+                            try { await notifier.NotifyUpdatedAsync(tid, ct); }
+                            catch (Exception hubEx)
+                            {
+                                logger.LogWarning(hubEx,
+                                    "[MailPolling] ticket-list notify failed for ticketId={TicketId}", tid);
+                            }
+                        }
                     }
                 }
                 catch (OperationCanceledException) { throw; }

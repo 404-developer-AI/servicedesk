@@ -218,6 +218,11 @@ public sealed class HealthAggregator : IHealthAggregator
                 Label: "Requeue dead-lettered jobs",
                 Endpoint: "/api/admin/health/attachment-jobs/requeue-dead-lettered",
                 ConfirmMessage: $"Requeue all {deadLetters} dead-lettered attachment job(s) for another try?"));
+            actions.Add(new HealthAction(
+                Key: "cancel-attachment-dead-letters",
+                Label: "Cancel dead-lettered jobs",
+                Endpoint: "/api/admin/health/attachment-jobs/cancel-dead-lettered",
+                ConfirmMessage: $"Cancel all {deadLetters} dead-lettered attachment job(s)? Their attachments will be marked Failed and the health card will flip back to green. Attempt history is kept for forensics."));
         }
 
         if (backlog > 0)

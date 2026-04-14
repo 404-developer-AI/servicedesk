@@ -95,6 +95,26 @@ public static class HealthEndpoints
         })
         .WithName("RequeueDeadLetteredAttachmentJobs").WithOpenApi();
 
+        admin.MapPost("/attachment-jobs/cancel-dead-lettered", async (
+            HttpContext http,
+            IAttachmentJobRepository jobs,
+            IAuditLogger audit,
+            CancellationToken ct) =>
+        {
+            var cancelled = await jobs.CancelDeadLetteredAsync(ct);
+            var (actor, role) = ActorContext.Resolve(http);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "health.attachment-jobs.cancel",
+                Actor: actor,
+                ActorRole: role,
+                Target: "dead-lettered",
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: new { cancelled }));
+            return Results.Ok(new { cancelled });
+        })
+        .WithName("CancelDeadLetteredAttachmentJobs").WithOpenApi();
+
         admin.MapPost("/blob-store/clear", async (
             HttpContext http,
             IBlobStoreHealth blobHealth,
@@ -120,36 +140,39 @@ public static class HealthEndpoints
             int? take,
             CancellationToken ct) =>
         {
-            var rows = await incidents.ListRecentAsync(take ?? 200, ct);
-            return Results.Ok(new
-            {
-                items = rows.Select(r => new
-                {
-                    id = r.Id,
-                    subsystem = r.Subsystem,
-                    severity = r.Severity.ToString(),
-                    message = r.Message,
-                    details = r.Details,
-                    firstOccurredUtc = r.FirstOccurredUtc,
-                    lastOccurredUtc = r.LastOccurredUtc,
-                    occurrenceCount = r.OccurrenceCount,
-                    acknowledgedUtc = r.AcknowledgedUtc,
-                    acknowledgedByUserId = r.AcknowledgedByUserId,
-                }),
-            });
+            var rows = await incidents.ListOpenRecentAsync(take ?? 200, ct);
+            return Results.Ok(new { items = rows.Select(ToDto) });
         })
         .WithName("ListIncidents").WithOpenApi();
+
+        admin.MapGet("/incidents/archive", async (
+            IIncidentLog incidents,
+            string? subsystem,
+            int? take,
+            int? skip,
+            CancellationToken ct) =>
+        {
+            var rows = await incidents.ListArchiveAsync(subsystem, take ?? 100, skip ?? 0, ct);
+            return Results.Ok(new { items = rows.Select(ToDto) });
+        })
+        .WithName("ListIncidentArchive").WithOpenApi();
 
         admin.MapPost("/incidents/{id:long}/ack", async (
             long id,
             HttpContext http,
             IIncidentLog incidents,
+            IHealthSubsystemReset reset,
             IAuditLogger audit,
             CancellationToken ct) =>
         {
             var (actor, role) = ActorContext.Resolve(http);
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-            var ok = await incidents.AcknowledgeAsync(id, userId, ct);
+            var subsystem = await incidents.AcknowledgeAsync(id, userId, ct);
+            IReadOnlyList<string> cleared = Array.Empty<string>();
+            if (subsystem is not null)
+            {
+                cleared = await reset.ResetAsync(subsystem, ct);
+            }
             await audit.LogAsync(new AuditEvent(
                 EventType: "health.incidents.ack",
                 Actor: actor,
@@ -157,8 +180,8 @@ public static class HealthEndpoints
                 Target: id.ToString(),
                 ClientIp: http.Connection.RemoteIpAddress?.ToString(),
                 UserAgent: http.Request.Headers.UserAgent.ToString(),
-                Payload: new { id, acknowledged = ok }));
-            return ok ? Results.NoContent() : Results.NotFound();
+                Payload: new { id, subsystem, clearedState = cleared }));
+            return subsystem is not null ? Results.NoContent() : Results.NotFound();
         })
         .WithName("AcknowledgeIncident").WithOpenApi();
 
@@ -166,12 +189,14 @@ public static class HealthEndpoints
             string subsystem,
             HttpContext http,
             IIncidentLog incidents,
+            IHealthSubsystemReset reset,
             IAuditLogger audit,
             CancellationToken ct) =>
         {
             var (actor, role) = ActorContext.Resolve(http);
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var count = await incidents.AcknowledgeSubsystemAsync(subsystem, userId, ct);
+            var cleared = await reset.ResetAsync(subsystem, ct);
             await audit.LogAsync(new AuditEvent(
                 EventType: "health.incidents.ack-subsystem",
                 Actor: actor,
@@ -179,11 +204,25 @@ public static class HealthEndpoints
                 Target: subsystem,
                 ClientIp: http.Connection.RemoteIpAddress?.ToString(),
                 UserAgent: http.Request.Headers.UserAgent.ToString(),
-                Payload: new { subsystem, count }));
+                Payload: new { subsystem, count, clearedState = cleared }));
             return Results.Ok(new { acknowledged = count });
         })
         .WithName("AcknowledgeIncidentsBySubsystem").WithOpenApi();
 
         return app;
     }
+
+    private static object ToDto(IncidentRow r) => new
+    {
+        id = r.Id,
+        subsystem = r.Subsystem,
+        severity = r.Severity.ToString(),
+        message = r.Message,
+        details = r.Details,
+        firstOccurredUtc = r.FirstOccurredUtc,
+        lastOccurredUtc = r.LastOccurredUtc,
+        occurrenceCount = r.OccurrenceCount,
+        acknowledgedUtc = r.AcknowledgedUtc,
+        acknowledgedByUserId = r.AcknowledgedByUserId,
+    };
 }

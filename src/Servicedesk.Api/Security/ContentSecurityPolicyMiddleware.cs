@@ -34,7 +34,10 @@ public sealed class ContentSecurityPolicyMiddleware
         var nonce = GenerateNonce();
         context.Items[NonceItemKey] = nonce;
 
-        var policy = BuildPolicy(nonce, _isDevelopment, _reportUri);
+        // Attachment downloads are framed by our own origin for the PDF
+        // preview lightbox; everything else keeps the stricter 'none'.
+        var allowSameOriginFrame = IsAttachmentDownload(context.Request.Path);
+        var policy = BuildPolicy(nonce, _isDevelopment, _reportUri, allowSameOriginFrame);
         context.Response.OnStarting(state =>
         {
             var ctx = (HttpContext)state!;
@@ -45,6 +48,15 @@ public sealed class ContentSecurityPolicyMiddleware
         return _next(context);
     }
 
+    private static bool IsAttachmentDownload(PathString path)
+    {
+        if (!path.HasValue) return false;
+        var v = path.Value!;
+        return v.StartsWith("/api/tickets/", StringComparison.OrdinalIgnoreCase)
+            && v.Contains("/mail/", StringComparison.OrdinalIgnoreCase)
+            && v.Contains("/attachments/", StringComparison.OrdinalIgnoreCase);
+    }
+
     internal static string GenerateNonce()
     {
         Span<byte> bytes = stackalloc byte[16];
@@ -53,6 +65,9 @@ public sealed class ContentSecurityPolicyMiddleware
     }
 
     internal static string BuildPolicy(string nonce, bool development, string reportUri)
+        => BuildPolicy(nonce, development, reportUri, allowSameOriginFrame: false);
+
+    internal static string BuildPolicy(string nonce, bool development, string reportUri, bool allowSameOriginFrame)
     {
         var scriptSrc = development
             ? $"'self' 'nonce-{nonce}' 'unsafe-eval'"
@@ -76,7 +91,7 @@ public sealed class ContentSecurityPolicyMiddleware
             "img-src 'self' data: blob:",
             "font-src 'self' data:",
             $"connect-src {connectSrc}",
-            "frame-ancestors 'none'",
+            allowSameOriginFrame ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
             "base-uri 'self'",
             "form-action 'self'",
             "object-src 'none'",

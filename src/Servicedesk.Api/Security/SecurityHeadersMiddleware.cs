@@ -16,12 +16,17 @@ public sealed class SecurityHeadersMiddleware
 
     public Task InvokeAsync(HttpContext context)
     {
-        context.Response.OnStarting(static state =>
+        // Attachment responses must be framable by our own origin so the
+        // PDF/image preview lightbox can load them in an <iframe>. Anywhere
+        // else stays DENY to prevent clickjacking.
+        var allowSameOriginFrame = IsAttachmentDownload(context.Request.Path);
+
+        context.Response.OnStarting(state =>
         {
-            var ctx = (HttpContext)state;
+            var ctx = (HttpContext)state!;
             var headers = ctx.Response.Headers;
             headers["X-Content-Type-Options"] = "nosniff";
-            headers["X-Frame-Options"] = "DENY";
+            headers["X-Frame-Options"] = allowSameOriginFrame ? "SAMEORIGIN" : "DENY";
             headers["Referrer-Policy"] = "no-referrer";
             headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()";
             headers["Cross-Origin-Opener-Policy"] = "same-origin";
@@ -32,5 +37,15 @@ public sealed class SecurityHeadersMiddleware
         }, context);
 
         return _next(context);
+    }
+
+    private static bool IsAttachmentDownload(PathString path)
+    {
+        // Matches /api/tickets/{ticketId}/mail/{mailId}/attachments/{attachmentId}.
+        if (!path.HasValue) return false;
+        var v = path.Value!;
+        return v.StartsWith("/api/tickets/", StringComparison.OrdinalIgnoreCase)
+            && v.Contains("/mail/", StringComparison.OrdinalIgnoreCase)
+            && v.Contains("/attachments/", StringComparison.OrdinalIgnoreCase);
     }
 }

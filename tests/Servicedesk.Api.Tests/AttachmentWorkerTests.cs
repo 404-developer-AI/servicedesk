@@ -136,6 +136,7 @@ public sealed class AttachmentWorkerTests
         public Task<int> CountPendingOlderThanAsync(TimeSpan threshold, DateTime nowUtc, CancellationToken ct) => Task.FromResult(0);
         public Task<int> CountDeadLetteredAsync(CancellationToken ct) => Task.FromResult(DeadLettered.Count);
         public Task<int> RequeueDeadLetteredAsync(DateTime nowUtc, CancellationToken ct) => Task.FromResult(0);
+        public Task<int> CancelDeadLetteredAsync(CancellationToken ct) => Task.FromResult(0);
     }
 
     private sealed class StubAttachments : IAttachmentRepository

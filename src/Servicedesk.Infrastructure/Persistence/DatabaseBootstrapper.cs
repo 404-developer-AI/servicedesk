@@ -689,6 +689,13 @@ public sealed class DatabaseBootstrapper : IHostedService
             ON attachments (created_utc)
             WHERE processing_state = 'Pending';
 
+        -- Extend attachment_jobs state CHECK with 'Cancelled' so an admin can
+        -- dismiss dead-lettered jobs from the Health page without losing the
+        -- attempt history (attempts stay; the job row flips to terminal state).
+        ALTER TABLE attachment_jobs DROP CONSTRAINT IF EXISTS chk_attachment_jobs_state;
+        ALTER TABLE attachment_jobs ADD CONSTRAINT chk_attachment_jobs_state
+            CHECK (state IN ('Pending','Running','Succeeded','Failed','DeadLettered','Cancelled'));
+
         -- ===================================================================
         -- Observability — incident log (Warning/Critical events captured from
         -- Serilog sinks and surfaced on /settings/health until acknowledged).

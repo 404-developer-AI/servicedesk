@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Activity, AlertTriangle, CheckCircle2, ChevronDown, ChevronRight } from "lucide-react";
+import { Activity, AlertTriangle, Archive, CheckCircle2, ChevronDown, ChevronRight } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 const HEALTH_QUERY_KEY = ["admin", "health"] as const;
 const INCIDENTS_QUERY_KEY = ["admin", "health", "incidents"] as const;
+const ARCHIVE_QUERY_KEY = ["admin", "health", "incidents", "archive"] as const;
 // Re-using the dashboard pill's key so resetting refreshes both views.
 const PILL_QUERY_KEY = ["system", "health"] as const;
 
@@ -57,6 +58,7 @@ export function HealthSettingsPage() {
   const invalidateAll = () => {
     qc.invalidateQueries({ queryKey: HEALTH_QUERY_KEY });
     qc.invalidateQueries({ queryKey: INCIDENTS_QUERY_KEY });
+    qc.invalidateQueries({ queryKey: ARCHIVE_QUERY_KEY });
     qc.invalidateQueries({ queryKey: PILL_QUERY_KEY });
   };
 
@@ -168,6 +170,13 @@ function SubsystemCard({
   const badge = STATUS_BADGE[subsystem.status];
   const openIncidents = incidents.filter((i) => !i.acknowledgedUtc);
   const [expanded, setExpanded] = React.useState(openIncidents.length > 0);
+  const [archiveOpen, setArchiveOpen] = React.useState(false);
+  const archiveQuery = useQuery({
+    queryKey: [...ARCHIVE_QUERY_KEY, subsystem.key],
+    queryFn: () => healthApi.listArchive(subsystem.key, 100),
+    enabled: archiveOpen,
+  });
+  const archive = archiveQuery.data?.items ?? [];
 
   return (
     <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
@@ -210,7 +219,7 @@ function SubsystemCard({
         </div>
       ) : null}
 
-      {incidents.length > 0 ? (
+      {openIncidents.length > 0 ? (
         <div className="mt-4 rounded-md border border-white/[0.06] bg-black/20">
           <button
             type="button"
@@ -219,25 +228,23 @@ function SubsystemCard({
           >
             <span className="flex items-center gap-2">
               {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-              Incidents ({openIncidents.length} open · {incidents.length - openIncidents.length} acknowledged)
+              Open incidents ({openIncidents.length})
             </span>
-            {openIncidents.length > 0 ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={pending}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAckAll(subsystem.key);
-                }}
-              >
-                Acknowledge all
-              </Button>
-            ) : null}
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={pending}
+              onClick={(e) => {
+                e.stopPropagation();
+                onAckAll(subsystem.key);
+              }}
+            >
+              Acknowledge all
+            </Button>
           </button>
           {expanded ? (
             <ul className="divide-y divide-white/[0.04] border-t border-white/[0.04]">
-              {incidents.map((inc) => (
+              {openIncidents.map((inc) => (
                 <IncidentEntry
                   key={inc.id}
                   incident={inc}
@@ -249,6 +256,38 @@ function SubsystemCard({
           ) : null}
         </div>
       ) : null}
+
+      <div className="mt-3 rounded-md border border-white/[0.04] bg-black/10">
+        <button
+          type="button"
+          onClick={() => setArchiveOpen((v) => !v)}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted-foreground hover:text-foreground"
+        >
+          {archiveOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          <Archive className="h-3.5 w-3.5" />
+          Archive
+          {archiveOpen && archiveQuery.data ? (
+            <span className="ml-1">({archive.length})</span>
+          ) : null}
+        </button>
+        {archiveOpen ? (
+          archiveQuery.isLoading ? (
+            <div className="border-t border-white/[0.04] px-3 py-3">
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : archive.length === 0 ? (
+            <p className="border-t border-white/[0.04] px-3 py-3 text-xs text-muted-foreground">
+              No archived incidents.
+            </p>
+          ) : (
+            <ul className="divide-y divide-white/[0.04] border-t border-white/[0.04]">
+              {archive.map((inc) => (
+                <IncidentEntry key={inc.id} incident={inc} onAck={() => {}} pending={pending} />
+              ))}
+            </ul>
+          )
+        ) : null}
+      </div>
     </section>
   );
 }

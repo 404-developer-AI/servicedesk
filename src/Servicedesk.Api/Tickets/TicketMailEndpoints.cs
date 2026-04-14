@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Audit;
@@ -61,6 +62,7 @@ public static class TicketMailEndpoints
         // kind) returns 404 — never leaks whether a resource exists.
         group.MapGet("/{id:guid}/mail/{mailMessageId:guid}/attachments/{attachmentId:guid}", async (
             Guid id, Guid mailMessageId, Guid attachmentId, HttpContext http,
+            [FromQuery] bool? inline,
             ITicketRepository tickets, IMailMessageRepository mail,
             IAttachmentRepository attachments, IBlobStore blobs,
             IQueueAccessService queueAccess, IAuditLogger audit,
@@ -97,9 +99,14 @@ public static class TicketMailEndpoints
 
             var fileName = SanitizeFilename(att.OriginalFilename);
             if (string.IsNullOrWhiteSpace(fileName)) fileName = "attachment";
-            return Results.Stream(stream,
-                contentType: string.IsNullOrWhiteSpace(att.MimeType) ? "application/octet-stream" : att.MimeType,
-                fileDownloadName: fileName);
+            var contentType = string.IsNullOrWhiteSpace(att.MimeType) ? "application/octet-stream" : att.MimeType;
+            // inline=true serves the bytes with Content-Disposition: inline so
+            // browsers render the file directly in <img>/<iframe>/PDF viewer
+            // instead of forcing a download. Range processing stays on in
+            // either mode so large PDFs stream page-by-page.
+            return inline == true
+                ? Results.File(stream, contentType, fileDownloadName: null, enableRangeProcessing: true)
+                : Results.File(stream, contentType, fileDownloadName: fileName, enableRangeProcessing: true);
         }).WithName("GetTicketMailAttachment").WithOpenApi();
 
         return app;

@@ -77,6 +77,10 @@ public static class DependencyInjection
         services.AddSingleton<IMailPollStateRepository, MailPollStateRepository>();
         services.AddSingleton<IGraphMailClient, GraphMailClient>();
         services.AddSingleton<IHealthAggregator, HealthAggregator>();
+        services.AddSingleton<IHealthSubsystemReset, HealthSubsystemReset>();
+        // Default to the no-op notifier; the Api project overrides this
+        // with the SignalR-backed implementation.
+        services.AddSingleton<Realtime.ITicketListNotifier, Realtime.NullTicketListNotifier>();
 
         services.AddSingleton<IMailMessageRepository, MailMessageRepository>();
         services.AddSingleton<IAttachmentRepository, AttachmentRepository>();

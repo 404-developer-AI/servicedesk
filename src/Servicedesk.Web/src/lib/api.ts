@@ -159,6 +159,15 @@ export const healthApi = {
   runAction: (endpoint: string) => request<void>("POST", endpoint),
   listIncidents: (take = 200) =>
     request<{ items: IncidentRow[] }>("GET", `/api/admin/health/incidents?take=${take}`),
+  listArchive: (subsystem?: string, take = 100) => {
+    const params = new URLSearchParams();
+    params.set("take", String(take));
+    if (subsystem) params.set("subsystem", subsystem);
+    return request<{ items: IncidentRow[] }>(
+      "GET",
+      `/api/admin/health/incidents/archive?${params.toString()}`,
+    );
+  },
   acknowledge: (id: number) =>
     request<void>("POST", `/api/admin/health/incidents/${id}/ack`),
   acknowledgeSubsystem: (subsystem: string) =>
