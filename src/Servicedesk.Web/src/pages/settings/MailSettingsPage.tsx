@@ -27,6 +27,16 @@ const SECTIONS: Section[] = [
     ],
   },
   {
+    title: "Ingest behaviour",
+    description: "What happens to a message after it has been converted to a ticket. Mark-as-read and move-to-folder need Microsoft Graph Mail.ReadWrite (application) permission.",
+    keys: [
+      "Mail.PlusAddressToken",
+      "Mail.MarkAsReadOnIngest",
+      "Mail.MoveOnIngest",
+      "Mail.ProcessedFolderName",
+    ],
+  },
+  {
     title: "Attachment limits",
     description: "Hard ceilings on incoming attachment and inline-image sizes.",
     keys: [
@@ -42,6 +52,16 @@ const SECTIONS: Section[] = [
       "Storage.RawEmlRetentionDays",
       "Jobs.CompletedRetentionDays",
       "Jobs.DeadLetterAckedRetentionDays",
+    ],
+  },
+  {
+    title: "Attachment worker",
+    description: "How the background worker downloads Graph attachments. Defaults are safe; tune if you see backlog or Graph throttling.",
+    keys: [
+      "Jobs.AttachmentWorkerConcurrency",
+      "Jobs.AttachmentWorkerPollSeconds",
+      "Jobs.AttachmentMaxAttempts",
+      "Jobs.AttachmentRetryBaseSeconds",
     ],
   },
   {

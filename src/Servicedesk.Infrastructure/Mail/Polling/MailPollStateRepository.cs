@@ -12,17 +12,50 @@ public sealed class MailPollStateRepository : IMailPollStateRepository
         _dataSource = dataSource;
     }
 
-    public async Task<MailPollState?> GetAsync(Guid queueId, CancellationToken ct)
+    private const string SelectColumns = """
+        SELECT queue_id              AS QueueId,
+               delta_link             AS DeltaLink,
+               last_polled_utc        AS LastPolledUtc,
+               last_error             AS LastError,
+               consecutive_failures   AS ConsecutiveFailures,
+               updated_utc            AS UpdatedUtc,
+               processed_folder_id    AS ProcessedFolderId,
+               last_mailbox_action_error      AS LastMailboxActionError,
+               last_mailbox_action_error_utc  AS LastMailboxActionErrorUtc
+        """;
+
+    public async Task SaveMailboxActionErrorAsync(Guid queueId, string error, DateTime occurredUtc, CancellationToken ct)
     {
         const string sql = """
-            SELECT queue_id             AS QueueId,
-                   delta_link            AS DeltaLink,
-                   last_polled_utc       AS LastPolledUtc,
-                   last_error            AS LastError,
-                   consecutive_failures  AS ConsecutiveFailures,
-                   updated_utc           AS UpdatedUtc
-            FROM mail_poll_state WHERE queue_id = @queueId
+            INSERT INTO mail_poll_state (queue_id, last_mailbox_action_error, last_mailbox_action_error_utc, updated_utc)
+            VALUES (@queueId, @error, @occurredUtc, now())
+            ON CONFLICT (queue_id) DO UPDATE
+                SET last_mailbox_action_error = EXCLUDED.last_mailbox_action_error,
+                    last_mailbox_action_error_utc = EXCLUDED.last_mailbox_action_error_utc,
+                    updated_utc = now()
             """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql,
+            new { queueId, error, occurredUtc }, cancellationToken: ct));
+    }
+
+    public async Task ClearMailboxActionErrorAsync(Guid queueId, CancellationToken ct)
+    {
+        const string sql = """
+            UPDATE mail_poll_state
+               SET last_mailbox_action_error = NULL,
+                   last_mailbox_action_error_utc = NULL,
+                   updated_utc = now()
+             WHERE queue_id = @queueId
+               AND last_mailbox_action_error IS NOT NULL
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { queueId }, cancellationToken: ct));
+    }
+
+    public async Task<MailPollState?> GetAsync(Guid queueId, CancellationToken ct)
+    {
+        var sql = SelectColumns + " FROM mail_poll_state WHERE queue_id = @queueId";
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.QueryFirstOrDefaultAsync<MailPollState>(
             new CommandDefinition(sql, new { queueId }, cancellationToken: ct));
@@ -30,15 +63,7 @@ public sealed class MailPollStateRepository : IMailPollStateRepository
 
     public async Task<IReadOnlyList<MailPollState>> ListAllAsync(CancellationToken ct)
     {
-        const string sql = """
-            SELECT queue_id             AS QueueId,
-                   delta_link            AS DeltaLink,
-                   last_polled_utc       AS LastPolledUtc,
-                   last_error            AS LastError,
-                   consecutive_failures  AS ConsecutiveFailures,
-                   updated_utc           AS UpdatedUtc
-            FROM mail_poll_state
-            """;
+        var sql = SelectColumns + " FROM mail_poll_state";
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var rows = await conn.QueryAsync<MailPollState>(new CommandDefinition(sql, cancellationToken: ct));
         return rows.AsList();
@@ -88,5 +113,19 @@ public sealed class MailPollStateRepository : IMailPollStateRepository
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition(sql,
             new { queueId, polledUtc, error }, cancellationToken: ct));
+    }
+
+    public async Task SaveProcessedFolderIdAsync(Guid queueId, string folderId, CancellationToken ct)
+    {
+        const string sql = """
+            INSERT INTO mail_poll_state (queue_id, processed_folder_id, updated_utc)
+            VALUES (@queueId, @folderId, now())
+            ON CONFLICT (queue_id) DO UPDATE
+                SET processed_folder_id = EXCLUDED.processed_folder_id,
+                    updated_utc = now()
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql,
+            new { queueId, folderId }, cancellationToken: ct));
     }
 }

@@ -13,6 +13,8 @@ import {
   Tag,
   Info,
   Mail,
+  MailOpen,
+  Download,
   Pencil,
   Pin,
 } from "lucide-react";
@@ -32,6 +34,14 @@ type TicketTimelineProps = {
   events: TicketEvent[];
   pinnedEventIds: Set<number>;
 };
+
+function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
 
 function SafeHtml({ html }: { html: string }) {
   return (
@@ -74,6 +84,11 @@ const EVENT_CONFIG: Record<string, EventConfig> = {
     icon: Mail,
     dotColor: "bg-sky-500",
     label: "Email",
+  },
+  MailReceived: {
+    icon: MailOpen,
+    dotColor: "bg-sky-400",
+    label: "Mail received",
   },
   Note: {
     icon: StickyNote,
@@ -169,6 +184,19 @@ function EventBody({ event }: { event: TicketEvent }) {
   const meta = parseMetadata(event.metadataJson);
 
   switch (event.eventType) {
+    case "Created": {
+      const source = typeof meta.source === "string" ? meta.source : null;
+      const via =
+        source && source.toLowerCase() !== "web"
+          ? ` via ${source.toLowerCase()}`
+          : "";
+      return (
+        <span className="text-sm text-muted-foreground">
+          Ticket created{via}
+        </span>
+      );
+    }
+
     case "StatusChange":
       return <MetaChangeText meta={meta} fieldLabel="Status" />;
 
@@ -191,6 +219,77 @@ function EventBody({ event }: { event: TicketEvent }) {
         </span>
       );
 
+    case "MailReceived": {
+      const from =
+        (typeof meta.fromName === "string" && meta.fromName.length > 0
+          ? meta.fromName
+          : null) ?? (typeof meta.from === "string" ? meta.from : null);
+      const subject =
+        typeof meta.subject === "string" ? meta.subject : null;
+      const mailId =
+        typeof meta.mail_message_id === "string"
+          ? meta.mail_message_id
+          : null;
+      const attachments = Array.isArray(meta.attachments)
+        ? (meta.attachments as Array<{
+            id: string;
+            name: string;
+            mimeType: string;
+            size: number;
+            url: string;
+          }>)
+        : [];
+      return (
+        <div className="space-y-2">
+          <div className="text-xs text-muted-foreground">
+            {from ? <>From <span className="text-foreground/80">{from}</span></> : null}
+            {subject ? (
+              <>
+                {from ? " · " : ""}
+                <span className="text-foreground/80">{subject}</span>
+              </>
+            ) : null}
+          </div>
+          {event.bodyHtml ? (
+            <SafeHtml html={event.bodyHtml} />
+          ) : event.bodyText ? (
+            <p className="whitespace-pre-wrap text-sm text-foreground/90">
+              {event.bodyText}
+            </p>
+          ) : null}
+          {attachments.length > 0 ? (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {attachments.map((a) => (
+                <a
+                  key={a.id}
+                  href={a.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-2.5 py-1.5 text-xs text-foreground/90 hover:border-primary/50 hover:bg-primary/10"
+                  title={`${a.mimeType} · ${formatBytes(a.size)}`}
+                >
+                  <Download className="h-3.5 w-3.5 text-primary" />
+                  <span className="max-w-[220px] truncate">{a.name}</span>
+                  <span className="text-muted-foreground">{formatBytes(a.size)}</span>
+                </a>
+              ))}
+            </div>
+          ) : null}
+          {mailId ? (
+            <a
+              href={`/api/tickets/${event.ticketId}/mail/${mailId}/raw`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              <Download className="h-3 w-3" />
+              View raw (.eml)
+            </a>
+          ) : null}
+        </div>
+      );
+    }
+
     default:
       if (event.bodyHtml) {
         return <SafeHtml html={event.bodyHtml} />;
@@ -209,6 +308,7 @@ function EventBody({ event }: { event: TicketEvent }) {
 /* ─── Editable event card ─── */
 
 const EDITABLE_TYPES = new Set(["Comment", "Note", "Mail"]);
+const PINNABLE_TYPES = new Set(["Comment", "Note", "Mail", "MailReceived"]);
 
 function TimelineEvent({
   event,
@@ -237,6 +337,7 @@ function TimelineEvent({
   };
   const Icon = config.icon;
   const isEditable = EDITABLE_TYPES.has(event.eventType);
+  const isPinnable = PINNABLE_TYPES.has(event.eventType);
   const isPublicComment = !event.isInternal && event.eventType === "Comment";
   const isSystemLike =
     event.eventType === "SystemNote" ||
@@ -244,7 +345,8 @@ function TimelineEvent({
     event.eventType === "AssignmentChange" ||
     event.eventType === "PriorityChange" ||
     event.eventType === "QueueChange" ||
-    event.eventType === "CategoryChange";
+    event.eventType === "CategoryChange" ||
+    event.eventType === "Created";
 
   const updateMutation = useMutation({
     mutationFn: () => {
@@ -358,34 +460,34 @@ function TimelineEvent({
               <span className="text-xs text-muted-foreground shrink-0">
                 {formatDate(event.createdUtc)}
               </span>
+              {isPinnable && !editing && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    isPinned
+                      ? unpinMutation.mutate()
+                      : setPinDialogOpen(true)
+                  }
+                  className={cn(
+                    "shrink-0 p-1 rounded-md transition-all",
+                    isPinned
+                      ? "text-amber-400 opacity-100 hover:text-amber-300 hover:bg-amber-500/10"
+                      : "text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-white/[0.06]"
+                  )}
+                  title={isPinned ? "Unpin" : "Pin"}
+                >
+                  <Pin className="h-3 w-3" />
+                </button>
+              )}
               {isEditable && !editing && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      isPinned
-                        ? unpinMutation.mutate()
-                        : setPinDialogOpen(true)
-                    }
-                    className={cn(
-                      "shrink-0 p-1 rounded-md transition-all",
-                      isPinned
-                        ? "text-amber-400 opacity-100 hover:text-amber-300 hover:bg-amber-500/10"
-                        : "text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-white/[0.06]"
-                    )}
-                    title={isPinned ? "Unpin" : "Pin"}
-                  >
-                    <Pin className="h-3 w-3" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={startEdit}
-                    className="shrink-0 p-1 rounded-md text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-white/[0.06] transition-all"
-                    title="Edit"
-                  >
-                    <Pencil className="h-3 w-3" />
-                  </button>
-                </>
+                <button
+                  type="button"
+                  onClick={startEdit}
+                  className="shrink-0 p-1 rounded-md text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-white/[0.06] transition-all"
+                  title="Edit"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
               )}
             </div>
           </div>

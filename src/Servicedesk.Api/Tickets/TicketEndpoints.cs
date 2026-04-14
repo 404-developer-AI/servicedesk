@@ -8,6 +8,7 @@ using Servicedesk.Api.Presence;
 using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth;
+using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Persistence.Companies;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 
@@ -69,7 +70,8 @@ public static class TicketEndpoints
         }).WithName("ListTickets").WithOpenApi();
 
         group.MapGet("/{id:guid}", async (
-            Guid id, HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess, CancellationToken ct) =>
+            Guid id, HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess,
+            IMailTimelineEnricher mailEnricher, CancellationToken ct) =>
         {
             var detail = await repo.GetByIdAsync(id, ct);
             if (detail is null) return Results.NotFound();
@@ -79,6 +81,7 @@ public static class TicketEndpoints
             if (!await queueAccess.HasQueueAccessAsync(userId, role, detail.Ticket.QueueId, ct))
                 return Results.NotFound(); // 404 to prevent existence leaking
 
+            detail = await mailEnricher.EnrichAsync(detail, ct);
             return Results.Ok(detail);
         }).WithName("GetTicket").WithOpenApi();
 

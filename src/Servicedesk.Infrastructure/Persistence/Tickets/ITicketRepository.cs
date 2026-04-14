@@ -51,7 +51,9 @@ public sealed record NewTicketEvent(
     string? BodyText,
     string? BodyHtml,
     bool IsInternal,
-    Guid? AuthorUserId);
+    Guid? AuthorUserId,
+    Guid? AuthorContactId = null,
+    string? MetadataJson = null);
 
 public sealed record UpdateTicketEvent(
     string? BodyText,

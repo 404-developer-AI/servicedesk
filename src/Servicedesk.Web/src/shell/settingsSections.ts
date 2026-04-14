@@ -2,6 +2,7 @@ import {
   Activity,
   Eye,
   Mail,
+  Paperclip,
   Plug,
   ScrollText,
   Shield,
@@ -75,6 +76,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: "Integrations",
     description: "Microsoft 365, webhooks, outbound connectors and API tokens.",
     icon: Plug,
+  },
+  {
+    slug: "mail-diagnostics",
+    label: "Mail diagnostics",
+    description:
+      "Inspect attachment-pipeline state for an ingested mail — row state, worker-job state, blob presence.",
+    icon: Paperclip,
   },
   {
     slug: "health",

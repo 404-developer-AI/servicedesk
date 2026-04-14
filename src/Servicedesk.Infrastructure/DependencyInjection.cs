@@ -14,8 +14,11 @@ using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Persistence.ViewGroups;
 using Servicedesk.Infrastructure.Persistence.Views;
 using Servicedesk.Infrastructure.Health;
+using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Graph;
+using Servicedesk.Infrastructure.Mail.Ingest;
 using Servicedesk.Infrastructure.Mail.Polling;
+using Servicedesk.Infrastructure.Observability;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Storage;
@@ -64,17 +67,33 @@ public static class DependencyInjection
         services.AddSingleton<IQueueAccessService, QueueAccessService>();
         services.AddSingleton<IViewAccessService, ViewAccessService>();
 
+        services.AddSingleton<IBlobStoreHealth, BlobStoreHealth>();
         services.AddSingleton<IBlobStore, LocalFileBlobStore>();
+
+        services.AddSingleton<IIncidentLog, IncidentLog>();
+        services.AddHostedService<IncidentLogDrainService>();
 
         services.AddSingleton<IProtectedSecretStore, ProtectedSecretStore>();
         services.AddSingleton<IMailPollStateRepository, MailPollStateRepository>();
         services.AddSingleton<IGraphMailClient, GraphMailClient>();
         services.AddSingleton<IHealthAggregator, HealthAggregator>();
 
+        services.AddSingleton<IMailMessageRepository, MailMessageRepository>();
+        services.AddSingleton<IAttachmentRepository, AttachmentRepository>();
+        services.AddSingleton<IAttachmentJobRepository, AttachmentJobRepository>();
+        services.AddSingleton<IMailAttachmentDiagnostics, MailAttachmentDiagnostics>();
+        services.AddSingleton<IMailTimelineEnricher, MailTimelineEnricher>();
+        services.AddSingleton<IMailFinalizer, MailFinalizer>();
+        services.AddSingleton<IContactLookupService, ContactLookupService>();
+        services.AddSingleton<IMailIngestService, MailIngestService>();
+        services.AddSingleton<ITicketNumberLookup>(sp =>
+            (ITicketNumberLookup)sp.GetRequiredService<ITicketRepository>());
+
         services.AddHostedService<DatabaseBootstrapper>();
         services.AddHostedService<SettingsSeeder>();
         services.AddHostedService<TaxonomySeeder>();
         services.AddHostedService<MailPollingService>();
+        services.AddHostedService<AttachmentWorker>();
 
         return services;
     }

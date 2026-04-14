@@ -26,11 +26,18 @@ the mailboxes live in the same tenant the app is registered against.
 ## 2. Grant API permissions
 1. Go to **API permissions → Add a permission → Microsoft Graph → Application permissions**.
 2. Add:
-   - `Mail.Read` — required for the polling loop.
+   - `Mail.ReadWrite` — required. Covers the polling loop (read), the
+     post-ingest "mark as read", and the move into the processed folder.
+     `Mail.Read` alone is **not enough** — PATCH and Move both need write.
    - `Mail.Send` — reserved for per-queue send-as replies in a later release.
      Grant it now so you don't need a second round of admin consent later.
-3. Click **Grant admin consent for <your tenant>**. Both permissions must
+3. Click **Grant admin consent for <your tenant>**. All permissions must
    show a green checkmark.
+
+> If you previously granted only `Mail.Read`, symptoms are: delta polling
+> works (mails are ingested into tickets) but the server log shows
+> `Access is denied` for mark-as-read and folder-create, and the Health
+> page flips the `mail-polling` subsystem to **Warning**.
 
 > **Why application permissions (not delegated)?** The polling loop runs
 > as the app itself — there is no signed-in user at poll time. Application

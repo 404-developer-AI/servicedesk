@@ -18,19 +18,31 @@ public sealed class LocalFileBlobStore : IBlobStore
     private static readonly char[] HexChars = "0123456789abcdef".ToCharArray();
 
     private readonly ISettingsService _settings;
+    private readonly IBlobStoreHealth _health;
 
-    public LocalFileBlobStore(ISettingsService settings)
+    public LocalFileBlobStore(ISettingsService settings, IBlobStoreHealth health)
     {
         _settings = settings;
+        _health = health;
     }
 
     public async Task<BlobWriteResult> WriteAsync(Stream content, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(content);
 
-        var root = await GetRootAsync(cancellationToken).ConfigureAwait(false);
-        var tmpDir = Path.Combine(root, ".tmp");
-        Directory.CreateDirectory(tmpDir);
+        string root;
+        string tmpDir;
+        try
+        {
+            root = await GetRootAsync(cancellationToken).ConfigureAwait(false);
+            tmpDir = Path.Combine(root, ".tmp");
+            Directory.CreateDirectory(tmpDir);
+        }
+        catch (Exception ex)
+        {
+            _health.RecordFailure("write.prepare", ex);
+            throw;
+        }
 
         var tmpPath = Path.Combine(tmpDir, Guid.NewGuid().ToString("N"));
         long size;
@@ -66,6 +78,7 @@ public sealed class LocalFileBlobStore : IBlobStore
             {
                 // Dedup: identical content already on disk. Drop the temp.
                 File.Delete(tmpPath);
+                _health.RecordSuccess();
                 return new BlobWriteResult(hash, size);
             }
 
@@ -79,19 +92,22 @@ public sealed class LocalFileBlobStore : IBlobStore
                 if (File.Exists(finalPath))
                 {
                     if (File.Exists(tmpPath)) File.Delete(tmpPath);
+                    _health.RecordSuccess();
                     return new BlobWriteResult(hash, size);
                 }
                 throw;
             }
 
+            _health.RecordSuccess();
             return new BlobWriteResult(hash, size);
         }
-        catch
+        catch (Exception ex)
         {
             if (File.Exists(tmpPath))
             {
                 try { File.Delete(tmpPath); } catch { /* best-effort cleanup */ }
             }
+            _health.RecordFailure("write", ex);
             throw;
         }
     }

@@ -37,7 +37,8 @@ if (builder.Environment.IsDevelopment())
 builder.Host.UseSerilog((ctx, cfg) => cfg
     .ReadFrom.Configuration(ctx.Configuration)
     .Enrich.FromLogContext()
-    .WriteTo.Console());
+    .WriteTo.Console()
+    .WriteTo.Sink(new Servicedesk.Infrastructure.Observability.IncidentLogSink()));
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -170,8 +171,10 @@ app.MapAuthEndpoints();
 app.MapTaxonomyEndpoints();
 app.MapCompanyEndpoints();
 app.MapTicketEndpoints();
+app.MapTicketMailEndpoints();
 app.MapSettingEndpoints();
 app.MapGraphAdminEndpoints();
+app.MapAdminMailDiagnosticsEndpoints();
 app.MapHealthEndpoints();
 app.MapViewEndpoints();
 app.MapQueueAccessEndpoints();

@@ -15,7 +15,7 @@ public sealed class LocalFileBlobStoreTests : IDisposable
     {
         _root = Path.Combine(Path.GetTempPath(), "sd-blob-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_root);
-        _store = new LocalFileBlobStore(new StubSettings(_root));
+        _store = new LocalFileBlobStore(new StubSettings(_root), new BlobStoreHealth());
     }
 
     public void Dispose()

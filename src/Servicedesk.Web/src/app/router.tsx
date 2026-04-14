@@ -17,6 +17,7 @@ import { GeneralSettingsPage } from "@/pages/settings/GeneralSettingsPage";
 import { HealthSettingsPage } from "@/pages/settings/HealthSettingsPage";
 import { IntegrationsSettingsPage } from "@/pages/settings/IntegrationsSettingsPage";
 import { MailSettingsPage } from "@/pages/settings/MailSettingsPage";
+import { MailDiagnosticsPage } from "@/pages/settings/MailDiagnosticsPage";
 import { SlaSettingsPage } from "@/pages/settings/SlaSettingsPage";
 import { TicketsSettingsPage } from "@/pages/settings/TicketsSettingsPage";
 import { SettingsLayout } from "@/shell/SettingsLayout";
@@ -216,6 +217,12 @@ const settingsAuditRoute = createRoute({
   component: AuditLogPage,
 });
 
+const settingsMailDiagnosticsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "mail-diagnostics",
+  component: MailDiagnosticsPage,
+});
+
 const settingsHealthRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "health",
@@ -264,6 +271,7 @@ const routeTree = rootRoute.addChildren([
     settingsViewsRoute,
     settingsQueueAccessRoute,
     settingsViewGroupsRoute,
+    settingsMailDiagnosticsRoute,
     settingsHealthRoute,
     settingsAuditRoute,
   ]),

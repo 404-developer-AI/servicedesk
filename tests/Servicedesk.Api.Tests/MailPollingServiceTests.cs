@@ -107,6 +107,17 @@ public sealed class MailPollingServiceTests
 
         public Task<TimeSpan> PingAsync(string mailbox, CancellationToken ct)
             => Task.FromResult(TimeSpan.Zero);
+
+        public Task<GraphFullMessage> FetchMessageAsync(string mailbox, string id, CancellationToken ct)
+            => throw new NotImplementedException();
+        public Task<Stream> FetchRawMessageAsync(string mailbox, string id, CancellationToken ct)
+            => throw new NotImplementedException();
+        public Task MarkAsReadAsync(string mailbox, string id, CancellationToken ct) => Task.CompletedTask;
+        public Task MoveAsync(string mailbox, string id, string folderId, CancellationToken ct) => Task.CompletedTask;
+        public Task<string> EnsureFolderAsync(string mailbox, string folderName, CancellationToken ct)
+            => Task.FromResult("folder-id");
+        public Task<Stream> FetchAttachmentBytesAsync(string mailbox, string id, string attachmentId, CancellationToken ct)
+            => throw new NotImplementedException();
     }
 
     private sealed class InMemoryPollStateRepo : IMailPollStateRepository
@@ -139,6 +150,35 @@ public sealed class MailPollingServiceTests
             if (_map.TryGetValue(queueId, out var prev))
             {
                 _map[queueId] = prev with { LastError = null, ConsecutiveFailures = 0, UpdatedUtc = DateTime.UtcNow };
+            }
+            return Task.CompletedTask;
+        }
+
+        public Task SaveMailboxActionErrorAsync(Guid queueId, string error, DateTime occurredUtc, CancellationToken ct)
+        {
+            if (_map.TryGetValue(queueId, out var prev))
+                _map[queueId] = prev with { LastMailboxActionError = error, LastMailboxActionErrorUtc = occurredUtc, UpdatedUtc = DateTime.UtcNow };
+            else
+                _map[queueId] = new MailPollState(queueId, null, null, null, 0, DateTime.UtcNow, null, error, occurredUtc);
+            return Task.CompletedTask;
+        }
+
+        public Task ClearMailboxActionErrorAsync(Guid queueId, CancellationToken ct)
+        {
+            if (_map.TryGetValue(queueId, out var prev))
+                _map[queueId] = prev with { LastMailboxActionError = null, LastMailboxActionErrorUtc = null, UpdatedUtc = DateTime.UtcNow };
+            return Task.CompletedTask;
+        }
+
+        public Task SaveProcessedFolderIdAsync(Guid queueId, string folderId, CancellationToken ct)
+        {
+            if (_map.TryGetValue(queueId, out var prev))
+            {
+                _map[queueId] = prev with { ProcessedFolderId = folderId, UpdatedUtc = DateTime.UtcNow };
+            }
+            else
+            {
+                _map[queueId] = new MailPollState(queueId, null, null, null, 0, DateTime.UtcNow, folderId);
             }
             return Task.CompletedTask;
         }

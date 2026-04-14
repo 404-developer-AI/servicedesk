@@ -6,4 +6,7 @@ public sealed record MailPollState(
     DateTime? LastPolledUtc,
     string? LastError,
     int ConsecutiveFailures,
-    DateTime UpdatedUtc);
+    DateTime UpdatedUtc,
+    string? ProcessedFolderId = null,
+    string? LastMailboxActionError = null,
+    DateTime? LastMailboxActionErrorUtc = null);

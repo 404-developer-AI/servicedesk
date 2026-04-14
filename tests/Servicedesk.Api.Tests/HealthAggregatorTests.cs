@@ -1,8 +1,11 @@
 using Servicedesk.Domain.Taxonomy;
 using Servicedesk.Infrastructure.Health;
+using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Polling;
+using Servicedesk.Infrastructure.Observability;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Secrets;
+using Servicedesk.Infrastructure.Storage;
 using Xunit;
 
 namespace Servicedesk.Api.Tests;
@@ -56,6 +59,131 @@ public sealed class HealthAggregatorTests
     }
 
     [Fact]
+    public async Task Mailbox_action_error_reports_warning_without_pausing()
+    {
+        var queueId = Guid.NewGuid();
+        var state = new MailPollState(
+            queueId, DeltaLink: "x", LastPolledUtc: DateTime.UtcNow,
+            LastError: null, ConsecutiveFailures: 0, UpdatedUtc: DateTime.UtcNow,
+            ProcessedFolderId: null,
+            LastMailboxActionError: "mark-as-read: Access is denied",
+            LastMailboxActionErrorUtc: DateTime.UtcNow);
+        var agg = Build(
+            queues: new[] { MakeQueue(queueId, "desk", "inbox@test") },
+            states: new[] { state },
+            hasSecret: true);
+
+        var report = await agg.CollectAsync(CancellationToken.None);
+
+        Assert.Equal(HealthStatus.Warning, report.Status);
+        var mail = report.Subsystems.Single(s => s.Key == "mail-polling");
+        Assert.Equal(HealthStatus.Warning, mail.Status);
+        Assert.Empty(mail.Actions); // no reset needed — poller is still working
+        Assert.Contains(mail.Details, d => d.Value.Contains("Mail.ReadWrite"));
+    }
+
+    [Fact]
+    public async Task Attachment_backlog_reports_warning_without_action()
+    {
+        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+            backlog: 4, deadLetters: 0);
+
+        var report = await agg.CollectAsync(CancellationToken.None);
+
+        var sub = report.Subsystems.Single(s => s.Key == "attachment-jobs");
+        Assert.Equal(HealthStatus.Warning, sub.Status);
+        Assert.Empty(sub.Actions);
+        Assert.Contains(sub.Details, d => d.Value.Contains("4"));
+    }
+
+    [Fact]
+    public async Task Attachment_dead_letters_report_critical_with_requeue_action()
+    {
+        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+            backlog: 0, deadLetters: 2);
+
+        var report = await agg.CollectAsync(CancellationToken.None);
+
+        Assert.Equal(HealthStatus.Critical, report.Status);
+        var sub = report.Subsystems.Single(s => s.Key == "attachment-jobs");
+        Assert.Equal(HealthStatus.Critical, sub.Status);
+        var action = Assert.Single(sub.Actions);
+        Assert.Contains("requeue", action.Endpoint, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Blob_store_single_failure_reports_warning_with_clear_action()
+    {
+        var blob = new BlobStoreHealth();
+        blob.RecordFailure("write", new IOException("path syntax"));
+        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true, blobHealth: blob);
+
+        var report = await agg.CollectAsync(CancellationToken.None);
+
+        var sub = report.Subsystems.Single(s => s.Key == "blob-store");
+        Assert.Equal(HealthStatus.Warning, sub.Status);
+        var action = Assert.Single(sub.Actions);
+        Assert.Contains("clear", action.Endpoint, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Blob_store_three_consecutive_failures_reports_critical()
+    {
+        var blob = new BlobStoreHealth();
+        blob.RecordFailure("write", new IOException("disk full"));
+        blob.RecordFailure("write", new IOException("disk full"));
+        blob.RecordFailure("write", new IOException("disk full"));
+        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true, blobHealth: blob);
+
+        var report = await agg.CollectAsync(CancellationToken.None);
+
+        Assert.Equal(HealthStatus.Critical, report.Status);
+        var sub = report.Subsystems.Single(s => s.Key == "blob-store");
+        Assert.Equal(HealthStatus.Critical, sub.Status);
+    }
+
+    [Fact]
+    public async Task Blob_store_success_after_failure_returns_to_ok()
+    {
+        var blob = new BlobStoreHealth();
+        blob.RecordFailure("write", new IOException("x"));
+        blob.RecordSuccess();
+        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true, blobHealth: blob);
+
+        var report = await agg.CollectAsync(CancellationToken.None);
+
+        var sub = report.Subsystems.Single(s => s.Key == "blob-store");
+        Assert.Equal(HealthStatus.Ok, sub.Status);
+        Assert.Empty(sub.Actions);
+    }
+
+    [Fact]
+    public async Task Open_incident_warning_bumps_subsystem_to_warning()
+    {
+        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+            openIncidents: new Dictionary<string, IncidentSeverity> { ["mail-polling"] = IncidentSeverity.Warning });
+
+        var report = await agg.CollectAsync(CancellationToken.None);
+
+        var sub = report.Subsystems.Single(s => s.Key == "mail-polling");
+        Assert.Equal(HealthStatus.Warning, sub.Status);
+        Assert.Contains(sub.Details, d => d.Label == "Unacknowledged incidents");
+    }
+
+    [Fact]
+    public async Task Open_incident_critical_bumps_subsystem_to_critical()
+    {
+        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+            openIncidents: new Dictionary<string, IncidentSeverity> { ["attachment-jobs"] = IncidentSeverity.Critical });
+
+        var report = await agg.CollectAsync(CancellationToken.None);
+
+        Assert.Equal(HealthStatus.Critical, report.Status);
+        var sub = report.Subsystems.Single(s => s.Key == "attachment-jobs");
+        Assert.Equal(HealthStatus.Critical, sub.Status);
+    }
+
+    [Fact]
     public async Task Missing_graph_secret_reports_warning()
     {
         var agg = Build(queues: new List<Queue>(), states: new List<MailPollState>(), hasSecret: false);
@@ -69,8 +197,30 @@ public sealed class HealthAggregatorTests
     private static HealthAggregator Build(
         IReadOnlyList<Queue> queues,
         IReadOnlyList<MailPollState> states,
-        bool hasSecret)
-        => new(new StubPollStateRepo(states), new StubTaxonomyRepo(queues), new StubSecretStore(hasSecret));
+        bool hasSecret,
+        int backlog = 0,
+        int deadLetters = 0,
+        IBlobStoreHealth? blobHealth = null,
+        IReadOnlyDictionary<string, IncidentSeverity>? openIncidents = null)
+        => new(
+            new StubPollStateRepo(states),
+            new StubTaxonomyRepo(queues),
+            new StubSecretStore(hasSecret),
+            new StubAttachmentJobsRepo(backlog, deadLetters),
+            blobHealth ?? new BlobStoreHealth(),
+            new StubIncidentLog(openIncidents ?? new Dictionary<string, IncidentSeverity>()));
+
+    private sealed class StubIncidentLog : IIncidentLog
+    {
+        private readonly IReadOnlyDictionary<string, IncidentSeverity> _open;
+        public StubIncidentLog(IReadOnlyDictionary<string, IncidentSeverity> open) => _open = open;
+        public Task ReportAsync(string subsystem, IncidentSeverity severity, string message, string? details, string? contextJson, CancellationToken ct) => Task.CompletedTask;
+        public Task<IReadOnlyList<IncidentRow>> ListOpenAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<IncidentRow>>(Array.Empty<IncidentRow>());
+        public Task<IReadOnlyList<IncidentRow>> ListRecentAsync(int take, CancellationToken ct) => Task.FromResult<IReadOnlyList<IncidentRow>>(Array.Empty<IncidentRow>());
+        public Task<bool> AcknowledgeAsync(long id, Guid userId, CancellationToken ct) => Task.FromResult(false);
+        public Task<int> AcknowledgeSubsystemAsync(string subsystem, Guid userId, CancellationToken ct) => Task.FromResult(0);
+        public Task<IReadOnlyDictionary<string, IncidentSeverity>> GetOpenBySubsystemAsync(CancellationToken ct) => Task.FromResult(_open);
+    }
 
     private static Queue MakeQueue(Guid id, string name, string mailbox) => new(
         Id: id, Name: name, Slug: name, Description: "", Color: "#fff", Icon: "",
@@ -92,6 +242,27 @@ public sealed class HealthAggregatorTests
         public Task SaveSuccessAsync(Guid queueId, string? deltaLink, DateTime polledUtc, CancellationToken ct) => Task.CompletedTask;
         public Task SaveFailureAsync(Guid queueId, string error, DateTime polledUtc, CancellationToken ct) => Task.CompletedTask;
         public Task ResetFailuresAsync(Guid queueId, CancellationToken ct) => Task.CompletedTask;
+        public Task SaveProcessedFolderIdAsync(Guid queueId, string folderId, CancellationToken ct) => Task.CompletedTask;
+        public Task SaveMailboxActionErrorAsync(Guid queueId, string error, DateTime occurredUtc, CancellationToken ct) => Task.CompletedTask;
+        public Task ClearMailboxActionErrorAsync(Guid queueId, CancellationToken ct) => Task.CompletedTask;
+    }
+
+    private sealed class StubAttachmentJobsRepo : IAttachmentJobRepository
+    {
+        private readonly int _backlog;
+        private readonly int _deadLetters;
+        public StubAttachmentJobsRepo(int backlog, int deadLetters)
+        {
+            _backlog = backlog;
+            _deadLetters = deadLetters;
+        }
+        public Task<int> CountPendingOlderThanAsync(TimeSpan threshold, DateTime nowUtc, CancellationToken ct) => Task.FromResult(_backlog);
+        public Task<int> CountDeadLetteredAsync(CancellationToken ct) => Task.FromResult(_deadLetters);
+        public Task<AttachmentJobClaim?> ClaimNextAsync(DateTime nowUtc, CancellationToken ct) => Task.FromResult<AttachmentJobClaim?>(null);
+        public Task CompleteAsync(long jobId, TimeSpan duration, CancellationToken ct) => Task.CompletedTask;
+        public Task ScheduleRetryAsync(long jobId, DateTime nextAttemptUtc, string error, TimeSpan duration, CancellationToken ct) => Task.CompletedTask;
+        public Task DeadLetterAsync(long jobId, string error, TimeSpan duration, CancellationToken ct) => Task.CompletedTask;
+        public Task<int> RequeueDeadLetteredAsync(DateTime nowUtc, CancellationToken ct) => Task.FromResult(_deadLetters);
     }
 
     private sealed class StubSecretStore : IProtectedSecretStore

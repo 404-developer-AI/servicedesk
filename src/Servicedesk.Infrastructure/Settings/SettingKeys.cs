@@ -66,6 +66,10 @@ public static class SettingKeys
         public const string PollingIntervalSeconds = "Mail.PollingIntervalSeconds";
         public const string MaxBatchSize = "Mail.MaxBatchSize";
         public const string QuotedHistoryStripping = "Mail.QuotedHistoryStripping";
+        public const string PlusAddressToken = "Mail.PlusAddressToken";
+        public const string MarkAsReadOnIngest = "Mail.MarkAsReadOnIngest";
+        public const string MoveOnIngest = "Mail.MoveOnIngest";
+        public const string ProcessedFolderName = "Mail.ProcessedFolderName";
     }
 
     public static class Graph
@@ -78,6 +82,10 @@ public static class SettingKeys
     {
         public const string CompletedRetentionDays = "Jobs.CompletedRetentionDays";
         public const string DeadLetterAckedRetentionDays = "Jobs.DeadLetterAckedRetentionDays";
+        public const string AttachmentMaxAttempts = "Jobs.AttachmentMaxAttempts";
+        public const string AttachmentRetryBaseSeconds = "Jobs.AttachmentRetryBaseSeconds";
+        public const string AttachmentWorkerConcurrency = "Jobs.AttachmentWorkerConcurrency";
+        public const string AttachmentWorkerPollSeconds = "Jobs.AttachmentWorkerPollSeconds";
     }
 }
 
@@ -176,6 +184,14 @@ public static class SettingDefaults
             "Maximum messages pulled per polling cycle per mailbox."),
         new SettingDefault(SettingKeys.Mail.QuotedHistoryStripping, "true", "bool", "Mail",
             "Strip quoted reply history before indexing body text for search. Full HTML is retained for display."),
+        new SettingDefault(SettingKeys.Mail.PlusAddressToken, "TCK", "string", "Mail",
+            "Plus-address token used in outbound Reply-To (e.g. servicedesk+TCK-1234@domain) and parsed from inbound recipients for threading."),
+        new SettingDefault(SettingKeys.Mail.MarkAsReadOnIngest, "true", "bool", "Mail",
+            "After a successful ticket-commit, mark the source message as read in the mailbox."),
+        new SettingDefault(SettingKeys.Mail.MoveOnIngest, "true", "bool", "Mail",
+            "After a successful ticket-commit, move the source message out of the inbox into the processed folder."),
+        new SettingDefault(SettingKeys.Mail.ProcessedFolderName, "Servicedesk Verwerkt", "string", "Mail",
+            "Mailbox folder name where ingested messages are moved. Auto-created at first use if missing."),
 
         // Graph — tenant/client id only. Client secret lives in ISecretProvider, never here.
         new SettingDefault(SettingKeys.Graph.TenantId, "", "string", "Graph",
@@ -188,5 +204,13 @@ public static class SettingDefaults
             "Completed attachment jobs are hard-deleted after this many days."),
         new SettingDefault(SettingKeys.Jobs.DeadLetterAckedRetentionDays, "30", "int", "Jobs",
             "Dead-letter jobs acknowledged by an admin are retained this many days before deletion."),
+        new SettingDefault(SettingKeys.Jobs.AttachmentMaxAttempts, "7", "int", "Jobs",
+            "Max download tries before an attachment job is dead-lettered."),
+        new SettingDefault(SettingKeys.Jobs.AttachmentRetryBaseSeconds, "5", "int", "Jobs",
+            "Base for exponential backoff: delay = base * 2^(attempt-1) + jitter."),
+        new SettingDefault(SettingKeys.Jobs.AttachmentWorkerConcurrency, "2", "int", "Jobs",
+            "Number of parallel worker loops claiming attachment jobs."),
+        new SettingDefault(SettingKeys.Jobs.AttachmentWorkerPollSeconds, "5", "int", "Jobs",
+            "How often each worker loop polls for a new job when the queue is idle."),
     };
 }

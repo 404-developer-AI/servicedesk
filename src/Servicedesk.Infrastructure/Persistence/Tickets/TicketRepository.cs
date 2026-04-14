@@ -2,6 +2,7 @@ using System.Text;
 using Dapper;
 using Npgsql;
 using Servicedesk.Domain.Tickets;
+using Servicedesk.Infrastructure.Mail.Ingest;
 
 namespace Servicedesk.Infrastructure.Persistence.Tickets;
 
@@ -10,8 +11,16 @@ namespace Servicedesk.Infrastructure.Persistence.Tickets;
 /// without the offset penalty. When dynamic sorting or priority float is
 /// enabled, falls back to offset pagination. All filters are parameterized
 /// — no string concatenation of user input reaches the SQL.
-public sealed class TicketRepository : ITicketRepository
+public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
 {
+    public async Task<Guid?> GetIdByNumberAsync(long number, CancellationToken ct)
+    {
+        const string sql = "SELECT id FROM tickets WHERE number = @number AND is_deleted = FALSE";
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.ExecuteScalarAsync<Guid?>(
+            new CommandDefinition(sql, new { number }, cancellationToken: ct));
+    }
+
     /// Whitelist mapping frontend field names to SQL column expressions.
     /// Prevents SQL injection via dynamic ORDER BY.
     private static readonly Dictionary<string, string> SortFieldMap = new(StringComparer.OrdinalIgnoreCase)
@@ -288,8 +297,8 @@ public sealed class TicketRepository : ITicketRepository
             VALUES (@TicketId, @BodyText, @BodyHtml)
             """;
         const string insertEvent = """
-            INSERT INTO ticket_events (ticket_id, event_type, author_contact_id, body_text, body_html)
-            VALUES (@TicketId, 'Created', @AuthorContactId, @BodyText, @BodyHtml)
+            INSERT INTO ticket_events (ticket_id, event_type, author_contact_id, body_text, body_html, metadata)
+            VALUES (@TicketId, 'Created', @AuthorContactId, NULL, NULL, COALESCE(@MetadataJson::jsonb, '{}'::jsonb))
             """;
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -299,7 +308,12 @@ public sealed class TicketRepository : ITicketRepository
         await conn.ExecuteAsync(new CommandDefinition(insertBody,
             new { TicketId = ticket.Id, input.BodyText, input.BodyHtml }, tx, cancellationToken: ct));
         await conn.ExecuteAsync(new CommandDefinition(insertEvent,
-            new { TicketId = ticket.Id, AuthorContactId = input.RequesterContactId, input.BodyText, input.BodyHtml },
+            new
+            {
+                TicketId = ticket.Id,
+                AuthorContactId = input.RequesterContactId,
+                MetadataJson = System.Text.Json.JsonSerializer.Serialize(new { source = input.Source }),
+            },
             tx, cancellationToken: ct));
 
         await tx.CommitAsync(ct);
@@ -461,11 +475,16 @@ public sealed class TicketRepository : ITicketRepository
         if (!exists) { await tx.RollbackAsync(ct); return null; }
 
         const string insertSql = """
-            INSERT INTO ticket_events (ticket_id, event_type, author_user_id, body_text, body_html, is_internal)
-            VALUES (@TicketId, @EventType, @AuthorUserId, @BodyText, @BodyHtml, @IsInternal)
+            INSERT INTO ticket_events (ticket_id, event_type, author_user_id, author_contact_id,
+                                        body_text, body_html, is_internal, metadata)
+            VALUES (@TicketId, @EventType, @AuthorUserId, @AuthorContactId,
+                    @BodyText, @BodyHtml, @IsInternal, COALESCE(@MetadataJson::jsonb, '{}'::jsonb))
             RETURNING id AS Id, ticket_id AS TicketId, event_type AS EventType,
                       author_user_id AS AuthorUserId, author_contact_id AS AuthorContactId,
-                      (SELECT email FROM users WHERE id = author_user_id) AS AuthorName,
+                      COALESCE(
+                          (SELECT email FROM users WHERE id = author_user_id),
+                          (SELECT CONCAT_WS(' ', first_name, last_name) FROM contacts WHERE id = author_contact_id)
+                      ) AS AuthorName,
                       body_text AS BodyText, body_html AS BodyHtml,
                       metadata::text AS MetadataJson, is_internal AS IsInternal,
                       created_utc AS CreatedUtc,
@@ -476,9 +495,11 @@ public sealed class TicketRepository : ITicketRepository
             TicketId = ticketId,
             input.EventType,
             input.AuthorUserId,
+            input.AuthorContactId,
             input.BodyText,
             input.BodyHtml,
             input.IsInternal,
+            input.MetadataJson,
         }, tx, cancellationToken: ct));
 
         await conn.ExecuteAsync(new CommandDefinition(
@@ -607,7 +628,7 @@ public sealed class TicketRepository : ITicketRepository
             WHERE EXISTS (
                 SELECT 1 FROM ticket_events
                 WHERE id = @eventId AND ticket_id = @ticketId
-                  AND event_type IN ('Comment','Note','Mail')
+                  AND event_type IN ('Comment','Note','Mail','MailReceived')
             )
             ON CONFLICT (event_id) DO NOTHING
             RETURNING id AS Id, event_id AS EventId, ticket_id AS TicketId,

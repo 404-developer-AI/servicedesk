@@ -1,7 +1,11 @@
 using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Health;
+using System.Security.Claims;
+using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Polling;
+using Servicedesk.Infrastructure.Observability;
+using Servicedesk.Infrastructure.Storage;
 
 namespace Servicedesk.Api.Health;
 
@@ -70,6 +74,115 @@ public static class HealthEndpoints
             return Results.NoContent();
         })
         .WithName("ResetMailPollingFailures").WithOpenApi();
+
+        admin.MapPost("/attachment-jobs/requeue-dead-lettered", async (
+            HttpContext http,
+            IAttachmentJobRepository jobs,
+            IAuditLogger audit,
+            CancellationToken ct) =>
+        {
+            var requeued = await jobs.RequeueDeadLetteredAsync(DateTime.UtcNow, ct);
+            var (actor, role) = ActorContext.Resolve(http);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "health.attachment-jobs.requeue",
+                Actor: actor,
+                ActorRole: role,
+                Target: "dead-lettered",
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: new { requeued }));
+            return Results.Ok(new { requeued });
+        })
+        .WithName("RequeueDeadLetteredAttachmentJobs").WithOpenApi();
+
+        admin.MapPost("/blob-store/clear", async (
+            HttpContext http,
+            IBlobStoreHealth blobHealth,
+            IAuditLogger audit,
+            CancellationToken ct) =>
+        {
+            blobHealth.Clear();
+            var (actor, role) = ActorContext.Resolve(http);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "health.blob-store.clear",
+                Actor: actor,
+                ActorRole: role,
+                Target: "blob-store",
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: null));
+            return Results.NoContent();
+        })
+        .WithName("ClearBlobStoreHealth").WithOpenApi();
+
+        admin.MapGet("/incidents", async (
+            IIncidentLog incidents,
+            int? take,
+            CancellationToken ct) =>
+        {
+            var rows = await incidents.ListRecentAsync(take ?? 200, ct);
+            return Results.Ok(new
+            {
+                items = rows.Select(r => new
+                {
+                    id = r.Id,
+                    subsystem = r.Subsystem,
+                    severity = r.Severity.ToString(),
+                    message = r.Message,
+                    details = r.Details,
+                    firstOccurredUtc = r.FirstOccurredUtc,
+                    lastOccurredUtc = r.LastOccurredUtc,
+                    occurrenceCount = r.OccurrenceCount,
+                    acknowledgedUtc = r.AcknowledgedUtc,
+                    acknowledgedByUserId = r.AcknowledgedByUserId,
+                }),
+            });
+        })
+        .WithName("ListIncidents").WithOpenApi();
+
+        admin.MapPost("/incidents/{id:long}/ack", async (
+            long id,
+            HttpContext http,
+            IIncidentLog incidents,
+            IAuditLogger audit,
+            CancellationToken ct) =>
+        {
+            var (actor, role) = ActorContext.Resolve(http);
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var ok = await incidents.AcknowledgeAsync(id, userId, ct);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "health.incidents.ack",
+                Actor: actor,
+                ActorRole: role,
+                Target: id.ToString(),
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: new { id, acknowledged = ok }));
+            return ok ? Results.NoContent() : Results.NotFound();
+        })
+        .WithName("AcknowledgeIncident").WithOpenApi();
+
+        admin.MapPost("/incidents/ack-subsystem/{subsystem}", async (
+            string subsystem,
+            HttpContext http,
+            IIncidentLog incidents,
+            IAuditLogger audit,
+            CancellationToken ct) =>
+        {
+            var (actor, role) = ActorContext.Resolve(http);
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var count = await incidents.AcknowledgeSubsystemAsync(subsystem, userId, ct);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "health.incidents.ack-subsystem",
+                Actor: actor,
+                ActorRole: role,
+                Target: subsystem,
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: new { subsystem, count }));
+            return Results.Ok(new { acknowledged = count });
+        })
+        .WithName("AcknowledgeIncidentsBySubsystem").WithOpenApi();
 
         return app;
     }

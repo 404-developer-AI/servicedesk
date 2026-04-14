@@ -139,9 +139,33 @@ export const systemApi = {
   health: () => request<{ status: HealthStatus }>("GET", "/api/system/health"),
 };
 
+export type IncidentSeverity = "Warning" | "Critical";
+
+export type IncidentRow = {
+  id: number;
+  subsystem: string;
+  severity: IncidentSeverity;
+  message: string;
+  details: string | null;
+  firstOccurredUtc: string;
+  lastOccurredUtc: string;
+  occurrenceCount: number;
+  acknowledgedUtc: string | null;
+  acknowledgedByUserId: string | null;
+};
+
 export const healthApi = {
   get: () => request<HealthReport>("GET", "/api/admin/health"),
   runAction: (endpoint: string) => request<void>("POST", endpoint),
+  listIncidents: (take = 200) =>
+    request<{ items: IncidentRow[] }>("GET", `/api/admin/health/incidents?take=${take}`),
+  acknowledge: (id: number) =>
+    request<void>("POST", `/api/admin/health/incidents/${id}/ack`),
+  acknowledgeSubsystem: (subsystem: string) =>
+    request<{ acknowledged: number }>(
+      "POST",
+      `/api/admin/health/incidents/ack-subsystem/${encodeURIComponent(subsystem)}`,
+    ),
 };
 
 export const auditApi = {
@@ -331,6 +355,65 @@ export const graphAdminApi = {
     request<void>("DELETE", "/api/admin/settings/graph/secret"),
   test: (mailbox: string) =>
     request<GraphTestResult>("POST", "/api/admin/settings/graph/test", { mailbox }),
+};
+
+// ---- Mail attachment diagnostics ----
+
+export type MailAttachmentJobDiagnostic = {
+  jobId: number;
+  state: string;
+  attemptCount: number;
+  nextAttemptUtc: string;
+  lastError?: string | null;
+  updatedUtc: string;
+  attachmentId: string;
+};
+
+export type MailAttachmentDiagnosticItem = {
+  id: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  isInline: boolean;
+  contentId?: string | null;
+  contentHash?: string | null;
+  processingState: string;
+  createdUtc: string;
+  blobPresent: boolean;
+  job?: MailAttachmentJobDiagnostic | null;
+};
+
+export type MailAttachmentDiagnostic = {
+  mailMessageId: string;
+  ticketId?: string | null;
+  subject?: string | null;
+  fromAddress?: string | null;
+  receivedUtc: string;
+  bodyHtmlBlobHash?: string | null;
+  bodyHtmlBlobPresent: boolean;
+  attachments: MailAttachmentDiagnosticItem[];
+};
+
+export type MailAttachmentSummary = {
+  mailMessageId: string;
+  ticketId?: string | null;
+  subject?: string | null;
+  fromAddress?: string | null;
+  receivedUtc: string;
+  attachmentTotal: number;
+  readyCount: number;
+  pendingCount: number;
+  failedCount: number;
+};
+
+export const mailDiagnosticsApi = {
+  list: (onlyIssues: boolean, limit = 25) =>
+    request<MailAttachmentSummary[]>(
+      "GET",
+      `/api/admin/mail/diagnostics?limit=${limit}&onlyIssues=${onlyIssues ? "true" : "false"}`,
+    ),
+  get: (mailMessageId: string) =>
+    request<MailAttachmentDiagnostic>("GET", `/api/admin/mail/diagnostics/${mailMessageId}`),
 };
 
 // ---- Agent-Facing Queue List (scoped to accessible queues) ----

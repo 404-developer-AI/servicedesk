@@ -617,6 +617,105 @@ public sealed class DatabaseBootstrapper : IHostedService
             value_protected TEXT        NOT NULL,
             updated_utc     TIMESTAMPTZ NOT NULL DEFAULT now()
         );
+
+        -- ===================================================================
+        -- v0.0.8 step 6: mail → ticket ingest
+        -- ===================================================================
+
+        ALTER TABLE mail_messages
+            ADD COLUMN IF NOT EXISTS body_text           TEXT NOT NULL DEFAULT '',
+            ADD COLUMN IF NOT EXISTS body_html_blob_hash TEXT NULL,
+            ADD COLUMN IF NOT EXISTS graph_message_id    TEXT NULL,
+            ADD COLUMN IF NOT EXISTS mailbox_moved_utc   TIMESTAMPTZ NULL;
+
+        -- Partial index for the finalizer sweeper: find mails that have been
+        -- ingest-attached to a ticket but not yet moved out of the Inbox. We
+        -- intentionally do NOT index all rows — the vast majority will be
+        -- already-moved and irrelevant to this hot path.
+        CREATE INDEX IF NOT EXISTS ix_mail_messages_awaiting_move
+            ON mail_messages (received_utc)
+            WHERE mailbox_moved_utc IS NULL AND ticket_id IS NOT NULL;
+
+        ALTER TABLE mail_poll_state
+            ADD COLUMN IF NOT EXISTS processed_folder_id TEXT NULL,
+            ADD COLUMN IF NOT EXISTS last_mailbox_action_error TEXT NULL,
+            ADD COLUMN IF NOT EXISTS last_mailbox_action_error_utc TIMESTAMPTZ NULL;
+
+        CREATE TABLE IF NOT EXISTS mail_recipients (
+            id              BIGSERIAL   PRIMARY KEY,
+            mail_id         UUID        NOT NULL REFERENCES mail_messages(id) ON DELETE CASCADE,
+            kind            TEXT        NOT NULL,
+            address         CITEXT      NOT NULL,
+            display_name    TEXT        NOT NULL DEFAULT '',
+            CONSTRAINT chk_mail_recipients_kind CHECK (kind IN ('to','cc','bcc'))
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_mail_recipients_mail ON mail_recipients (mail_id);
+        CREATE INDEX IF NOT EXISTS ix_mail_recipients_address ON mail_recipients (address);
+
+        -- Extend ticket_events CHECK to allow MailReceived (distinct from the
+        -- legacy 'Mail' outbound/reply event type).
+        ALTER TABLE ticket_events DROP CONSTRAINT IF EXISTS chk_ticket_event_type;
+        ALTER TABLE ticket_events ADD CONSTRAINT chk_ticket_event_type
+            CHECK (event_type IN ('Created','Comment','Mail','Note','StatusChange',
+                                  'AssignmentChange','PriorityChange','QueueChange',
+                                  'CategoryChange','SystemNote','MailReceived'));
+
+        -- ===================================================================
+        -- v0.0.8 step 6b: attachments pipeline
+        -- ===================================================================
+
+        -- content_hash is populated async by the worker after the blob has been
+        -- stored; allow NULL during the Pending window.
+        ALTER TABLE attachments ALTER COLUMN content_hash DROP NOT NULL;
+
+        -- MIME Content-ID for inline images; populated for inline attachments so
+        -- the timeline renderer can rewrite `cid:<id>` references to download URLs.
+        ALTER TABLE attachments ADD COLUMN IF NOT EXISTS content_id TEXT NULL;
+
+        -- Per-attachment lifecycle, independent of the job row (jobs are pruned by
+        -- retention; attachments persist for the lifetime of the ticket).
+        -- Existing rows (none in practice pre-6b) default to 'Ready'; new rows
+        -- from the ingest path start at 'Pending' and are promoted by the worker.
+        ALTER TABLE attachments
+            ADD COLUMN IF NOT EXISTS processing_state TEXT NOT NULL DEFAULT 'Ready';
+
+        ALTER TABLE attachments DROP CONSTRAINT IF EXISTS chk_attachments_processing_state;
+        ALTER TABLE attachments ADD CONSTRAINT chk_attachments_processing_state
+            CHECK (processing_state IN ('Pending','Stored','Ready','Failed'));
+
+        -- Hot path for the worker: find pending attachments by age.
+        CREATE INDEX IF NOT EXISTS ix_attachments_pending
+            ON attachments (created_utc)
+            WHERE processing_state = 'Pending';
+
+        -- ===================================================================
+        -- Observability — incident log (Warning/Critical events captured from
+        -- Serilog sinks and surfaced on /settings/health until acknowledged).
+        -- Dedup: identical (subsystem, severity, message) within the last 60s
+        -- bumps occurrence_count on the existing open row instead of inserting
+        -- a new one, so retry storms do not flood the table.
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS incidents (
+            id                      BIGSERIAL      PRIMARY KEY,
+            subsystem               TEXT           NOT NULL,
+            severity                TEXT           NOT NULL,
+            message                 TEXT           NOT NULL,
+            details                 TEXT           NULL,
+            context                 JSONB          NOT NULL DEFAULT '{}'::jsonb,
+            first_occurred_utc      TIMESTAMPTZ    NOT NULL DEFAULT now(),
+            last_occurred_utc       TIMESTAMPTZ    NOT NULL DEFAULT now(),
+            occurrence_count        INTEGER        NOT NULL DEFAULT 1,
+            acknowledged_utc        TIMESTAMPTZ    NULL,
+            acknowledged_by_user_id UUID           NULL REFERENCES users(id) ON DELETE SET NULL,
+            CONSTRAINT chk_incidents_severity CHECK (severity IN ('Warning','Critical'))
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_incidents_open
+            ON incidents (subsystem, severity)
+            WHERE acknowledged_utc IS NULL;
+        CREATE INDEX IF NOT EXISTS ix_incidents_last_occurred
+            ON incidents (last_occurred_utc DESC);
         """;
 
     private readonly NpgsqlDataSource _dataSource;
