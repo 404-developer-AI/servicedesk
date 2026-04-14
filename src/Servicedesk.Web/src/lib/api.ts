@@ -108,9 +108,40 @@ async function request<T>(
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
+export type HealthStatus = "Ok" | "Warning" | "Critical";
+
+export type HealthDetail = { label: string; value: string | null };
+
+export type HealthAction = {
+  key: string;
+  label: string;
+  endpoint: string;
+  confirmMessage: string | null;
+};
+
+export type SubsystemHealth = {
+  key: string;
+  label: string;
+  status: HealthStatus;
+  summary: string;
+  details: HealthDetail[];
+  actions: HealthAction[];
+};
+
+export type HealthReport = {
+  status: HealthStatus;
+  subsystems: SubsystemHealth[];
+};
+
 export const systemApi = {
   version: () => request<SystemVersion>("GET", "/api/system/version"),
   time: () => request<SystemTime>("GET", "/api/system/time"),
+  health: () => request<{ status: HealthStatus }>("GET", "/api/system/health"),
+};
+
+export const healthApi = {
+  get: () => request<HealthReport>("GET", "/api/admin/health"),
+  runAction: (endpoint: string) => request<void>("POST", endpoint),
 };
 
 export const auditApi = {
@@ -141,6 +172,8 @@ export type Queue = {
   isSystem: boolean;
   createdUtc: string;
   updatedUtc: string;
+  inboundMailboxAddress?: string | null;
+  outboundMailboxAddress?: string | null;
 };
 
 export type Priority = {
@@ -200,6 +233,8 @@ export type QueueInput = {
   icon?: string;
   sortOrder: number;
   isActive: boolean;
+  inboundMailboxAddress?: string | null;
+  outboundMailboxAddress?: string | null;
 };
 
 export type PriorityInput = {
@@ -280,6 +315,22 @@ export const settingsApi = {
     request<void>("PUT", `/api/settings/${encodeURIComponent(key)}`, { value }),
   navigation: () =>
     request<NavigationSettings>("GET", "/api/settings/navigation"),
+};
+
+// ---- Microsoft Graph admin ----
+
+export type GraphSecretStatus = { configured: boolean };
+export type GraphTestResult = { ok: boolean; latencyMs?: number; error?: string };
+
+export const graphAdminApi = {
+  secretStatus: () =>
+    request<GraphSecretStatus>("GET", "/api/admin/settings/graph/secret"),
+  setSecret: (value: string) =>
+    request<void>("PUT", "/api/admin/settings/graph/secret", { value }),
+  deleteSecret: () =>
+    request<void>("DELETE", "/api/admin/settings/graph/secret"),
+  test: (mailbox: string) =>
+    request<GraphTestResult>("POST", "/api/admin/settings/graph/test", { mailbox }),
 };
 
 // ---- Agent-Facing Queue List (scoped to accessible queues) ----

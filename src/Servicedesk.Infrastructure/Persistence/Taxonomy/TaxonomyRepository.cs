@@ -25,7 +25,9 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
             SELECT id AS Id, name AS Name, slug AS Slug, description AS Description,
                    color AS Color, icon AS Icon, sort_order AS SortOrder,
                    is_active AS IsActive, is_system AS IsSystem,
-                   created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
+                   created_utc AS CreatedUtc, updated_utc AS UpdatedUtc,
+                   inbound_mailbox_address AS InboundMailboxAddress,
+                   outbound_mailbox_address AS OutboundMailboxAddress
             FROM queues
             ORDER BY sort_order, name
             """;
@@ -40,7 +42,9 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
             SELECT id AS Id, name AS Name, slug AS Slug, description AS Description,
                    color AS Color, icon AS Icon, sort_order AS SortOrder,
                    is_active AS IsActive, is_system AS IsSystem,
-                   created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
+                   created_utc AS CreatedUtc, updated_utc AS UpdatedUtc,
+                   inbound_mailbox_address AS InboundMailboxAddress,
+                   outbound_mailbox_address AS OutboundMailboxAddress
             FROM queues WHERE id = @id
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -50,32 +54,42 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
     public async Task<Queue> CreateQueueAsync(Queue q, CancellationToken ct)
     {
         const string sql = """
-            INSERT INTO queues (name, slug, description, color, icon, sort_order, is_active, is_system)
-            VALUES (@Name, @Slug, @Description, @Color, @Icon, @SortOrder, @IsActive, @IsSystem)
+            INSERT INTO queues (name, slug, description, color, icon, sort_order, is_active, is_system,
+                                inbound_mailbox_address, outbound_mailbox_address)
+            VALUES (@Name, @Slug, @Description, @Color, @Icon, @SortOrder, @IsActive, @IsSystem,
+                    @InboundMailboxAddress, @OutboundMailboxAddress)
             RETURNING id AS Id, name AS Name, slug AS Slug, description AS Description,
                       color AS Color, icon AS Icon, sort_order AS SortOrder,
                       is_active AS IsActive, is_system AS IsSystem,
-                      created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
+                      created_utc AS CreatedUtc, updated_utc AS UpdatedUtc,
+                      inbound_mailbox_address AS InboundMailboxAddress,
+                      outbound_mailbox_address AS OutboundMailboxAddress
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.QuerySingleAsync<Queue>(new CommandDefinition(sql, q, cancellationToken: ct));
     }
 
-    public async Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, CancellationToken ct)
+    public async Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, string? inboundMailboxAddress, string? outboundMailboxAddress, CancellationToken ct)
     {
         const string sql = """
             UPDATE queues SET name = @name, slug = @slug, description = @description,
                               color = @color, icon = @icon, sort_order = @sortOrder,
-                              is_active = @isActive, updated_utc = now()
+                              is_active = @isActive,
+                              inbound_mailbox_address = @inboundMailboxAddress,
+                              outbound_mailbox_address = @outboundMailboxAddress,
+                              updated_utc = now()
             WHERE id = @id
             RETURNING id AS Id, name AS Name, slug AS Slug, description AS Description,
                       color AS Color, icon AS Icon, sort_order AS SortOrder,
                       is_active AS IsActive, is_system AS IsSystem,
-                      created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
+                      created_utc AS CreatedUtc, updated_utc AS UpdatedUtc,
+                      inbound_mailbox_address AS InboundMailboxAddress,
+                      outbound_mailbox_address AS OutboundMailboxAddress
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.QueryFirstOrDefaultAsync<Queue>(new CommandDefinition(sql,
-            new { id, name, slug, description, color, icon, sortOrder, isActive }, cancellationToken: ct));
+            new { id, name, slug, description, color, icon, sortOrder, isActive,
+                  inboundMailboxAddress, outboundMailboxAddress }, cancellationToken: ct));
     }
 
     public async Task<DeleteResult> DeleteQueueAsync(Guid id, CancellationToken ct)

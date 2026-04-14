@@ -40,7 +40,9 @@ public static class TaxonomyEndpoints
         string? Color,
         string? Icon,
         int SortOrder,
-        bool IsActive);
+        bool IsActive,
+        string? InboundMailboxAddress,
+        string? OutboundMailboxAddress);
 
     private static void MapQueues(RouteGroupBuilder group)
     {
@@ -58,11 +60,15 @@ public static class TaxonomyEndpoints
             [FromBody] QueueRequest req, HttpContext http, ITaxonomyRepository repo, IAuditLogger audit, CancellationToken ct) =>
         {
             if (ValidateTaxonomyName(req.Name) is { } err) return err;
+            if (ValidateMailbox(req.InboundMailboxAddress, "inboundMailboxAddress") is { } mErr1) return mErr1;
+            if (ValidateMailbox(req.OutboundMailboxAddress, "outboundMailboxAddress") is { } mErr2) return mErr2;
             var now = DateTime.UtcNow;
             var created = await repo.CreateQueueAsync(new Queue(
                 Guid.Empty, req.Name.Trim(), Slugify(req.Name), req.Description ?? "",
                 Normalize(req.Color, "#7c7cff"), Normalize(req.Icon, "inbox"),
-                req.SortOrder, req.IsActive, IsSystem: false, now, now), ct);
+                req.SortOrder, req.IsActive, IsSystem: false, now, now,
+                NormalizeMailbox(req.InboundMailboxAddress),
+                NormalizeMailbox(req.OutboundMailboxAddress)), ct);
             await AuditWrite(audit, http, "taxonomy.queue.created", created.Id.ToString(), created);
             return Results.Created($"/api/taxonomy/queues/{created.Id}", created);
         }).WithName("CreateQueue").WithOpenApi()
@@ -73,9 +79,13 @@ public static class TaxonomyEndpoints
             ITaxonomyRepository repo, IAuditLogger audit, CancellationToken ct) =>
         {
             if (ValidateTaxonomyName(req.Name) is { } err) return err;
+            if (ValidateMailbox(req.InboundMailboxAddress, "inboundMailboxAddress") is { } mErr1) return mErr1;
+            if (ValidateMailbox(req.OutboundMailboxAddress, "outboundMailboxAddress") is { } mErr2) return mErr2;
             var updated = await repo.UpdateQueueAsync(id, req.Name.Trim(), Slugify(req.Name),
                 req.Description ?? "", Normalize(req.Color, "#7c7cff"), Normalize(req.Icon, "inbox"),
-                req.SortOrder, req.IsActive, ct);
+                req.SortOrder, req.IsActive,
+                NormalizeMailbox(req.InboundMailboxAddress),
+                NormalizeMailbox(req.OutboundMailboxAddress), ct);
             if (updated is null) return Results.NotFound();
             await AuditWrite(audit, http, "taxonomy.queue.updated", id.ToString(), updated);
             return Results.Ok(updated);
@@ -299,6 +309,18 @@ public static class TaxonomyEndpoints
 
     private static string Normalize(string? value, string fallback) =>
         string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+
+    private static string? NormalizeMailbox(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant();
+
+    private static IResult? ValidateMailbox(string? value, string field)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var trimmed = value.Trim();
+        if (trimmed.Length > 320 || !Regex.IsMatch(trimmed, @"^[^@\s]+@[^@\s]+\.[^@\s]+$"))
+            return Results.BadRequest(new { error = $"{field} must be a valid email address." });
+        return null;
+    }
 
     private static async Task AuditWrite(IAuditLogger audit, HttpContext http, string eventType, string target, object payload)
     {

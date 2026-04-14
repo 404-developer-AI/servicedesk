@@ -1,6 +1,7 @@
 import { Outlet } from "@tanstack/react-router";
 import { Toaster } from "sonner";
 import { Sidebar } from "@/shell/Sidebar";
+import { CriticalBanner } from "@/components/health/CriticalBanner";
 import { useSecondarySidebarStore } from "@/stores/useSecondarySidebarStore";
 import { usePresenceConnection } from "@/hooks/usePresence";
 import { useWorkspaceAutoSave } from "@/hooks/useWorkspaceAutoSave";
@@ -15,6 +16,7 @@ export function AppShell() {
       <Sidebar />
       {secondarySidebar}
       <div className="flex min-w-0 flex-1 flex-col">
+        <CriticalBanner />
         <main className="flex-1 min-h-0 px-6 pt-6 pb-3 overflow-y-auto flex flex-col">
           <Outlet />
         </main>

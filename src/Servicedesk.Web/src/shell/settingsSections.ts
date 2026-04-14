@@ -1,4 +1,5 @@
 import {
+  Activity,
   Eye,
   Mail,
   Plug,
@@ -28,7 +29,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       "Branding, localization, default timezones and other app-wide knobs.",
     icon: SlidersHorizontal,
-    comingIn: "v0.0.7",
   },
   {
     slug: "tickets",
@@ -62,21 +62,26 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       "Mailbox connections, polling cadence, reply parsing and auto-responders.",
     icon: Mail,
-    comingIn: "v0.0.7",
   },
   {
     slug: "sla",
     label: "SLA",
     description: "Response and resolution targets, business hours, escalation policies.",
     icon: Timer,
-    comingIn: "v0.0.7",
+    comingIn: "v0.0.8",
   },
   {
     slug: "integrations",
     label: "Integrations",
     description: "Microsoft 365, webhooks, outbound connectors and API tokens.",
     icon: Plug,
-    comingIn: "v0.0.7",
+  },
+  {
+    slug: "health",
+    label: "Health",
+    description:
+      "Live status of background subsystems — mail polling, Graph credentials, storage. Retry actions and troubleshooting.",
+    icon: Activity,
   },
   {
     slug: "audit",

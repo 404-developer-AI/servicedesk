@@ -13,8 +13,12 @@ using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Persistence.ViewGroups;
 using Servicedesk.Infrastructure.Persistence.Views;
+using Servicedesk.Infrastructure.Health;
+using Servicedesk.Infrastructure.Mail.Graph;
+using Servicedesk.Infrastructure.Mail.Polling;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Storage;
 
 namespace Servicedesk.Infrastructure;
 
@@ -60,9 +64,17 @@ public static class DependencyInjection
         services.AddSingleton<IQueueAccessService, QueueAccessService>();
         services.AddSingleton<IViewAccessService, ViewAccessService>();
 
+        services.AddSingleton<IBlobStore, LocalFileBlobStore>();
+
+        services.AddSingleton<IProtectedSecretStore, ProtectedSecretStore>();
+        services.AddSingleton<IMailPollStateRepository, MailPollStateRepository>();
+        services.AddSingleton<IGraphMailClient, GraphMailClient>();
+        services.AddSingleton<IHealthAggregator, HealthAggregator>();
+
         services.AddHostedService<DatabaseBootstrapper>();
         services.AddHostedService<SettingsSeeder>();
         services.AddHostedService<TaxonomySeeder>();
+        services.AddHostedService<MailPollingService>();
 
         return services;
     }

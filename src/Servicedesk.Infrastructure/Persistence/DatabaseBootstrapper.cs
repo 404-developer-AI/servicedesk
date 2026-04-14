@@ -449,6 +449,174 @@ public sealed class DatabaseBootstrapper : IHostedService
             ON tickets (created_utc DESC, id DESC) WHERE is_deleted = FALSE;
         CREATE INDEX IF NOT EXISTS ix_tickets_due_id
             ON tickets (due_utc DESC NULLS LAST, id DESC) WHERE is_deleted = FALSE;
+
+        -- ===================================================================
+        -- v0.0.8 mail intake — schema only. No consumers yet; foundation for
+        -- the Graph polling loop, mail→ticket conversion, attachment pipeline,
+        -- FTS search, and the disk-monitoring sampler that land in later steps.
+        -- See ADR-001 in plans/ for the design rationale.
+        -- ===================================================================
+
+        -- One row per unique inbound mail. Dedup on RFC-5322 Message-ID so
+        -- re-delivery (Graph webhooks + polling fallback) cannot duplicate.
+        CREATE TABLE IF NOT EXISTS mail_messages (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            message_id          TEXT        NOT NULL UNIQUE,
+            in_reply_to         TEXT        NULL,
+            references_header   TEXT        NULL,
+            from_address        CITEXT      NOT NULL,
+            from_name           TEXT        NOT NULL DEFAULT '',
+            to_addresses        JSONB       NOT NULL DEFAULT '[]'::jsonb,
+            cc_addresses        JSONB       NOT NULL DEFAULT '[]'::jsonb,
+            subject             TEXT        NOT NULL DEFAULT '',
+            mailbox_address     CITEXT      NOT NULL,
+            received_utc        TIMESTAMPTZ NOT NULL,
+            raw_eml_blob_hash   TEXT        NULL,
+            ticket_id           UUID        NULL REFERENCES tickets(id) ON DELETE SET NULL,
+            ticket_event_id     BIGINT      NULL REFERENCES ticket_events(id) ON DELETE SET NULL,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_mail_messages_received
+            ON mail_messages (received_utc DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS ix_mail_messages_ticket
+            ON mail_messages (ticket_id) WHERE ticket_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS ix_mail_messages_in_reply_to
+            ON mail_messages (in_reply_to) WHERE in_reply_to IS NOT NULL;
+
+        -- Content-addressed attachment metadata. The bytes live on disk via
+        -- IBlobStore, keyed by content_hash (SHA-256 hex). Dedup is
+        -- filesystem-driven: two rows can share the same content_hash.
+        CREATE TABLE IF NOT EXISTS attachments (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            content_hash        TEXT        NOT NULL,
+            size_bytes          BIGINT      NOT NULL,
+            mime_type           TEXT        NOT NULL DEFAULT 'application/octet-stream',
+            original_filename   TEXT        NOT NULL DEFAULT '',
+            owner_kind          TEXT        NOT NULL,
+            owner_id            UUID        NOT NULL,
+            is_inline           BOOLEAN     NOT NULL DEFAULT FALSE,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT chk_attachments_owner_kind
+                CHECK (owner_kind IN ('Mail','Ticket','User'))
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_attachments_content_hash
+            ON attachments (content_hash);
+        CREATE INDEX IF NOT EXISTS ix_attachments_owner
+            ON attachments (owner_kind, owner_id);
+
+        -- Attachment-pipeline state machine. Durable queue backed by Postgres
+        -- (no Redis). Workers claim rows via SKIP LOCKED in step 5.
+        CREATE TABLE IF NOT EXISTS attachment_jobs (
+            id                  BIGSERIAL   PRIMARY KEY,
+            kind                TEXT        NOT NULL,
+            state               TEXT        NOT NULL DEFAULT 'Pending',
+            payload             JSONB       NOT NULL DEFAULT '{}'::jsonb,
+            next_attempt_utc    TIMESTAMPTZ NOT NULL DEFAULT now(),
+            attempt_count       INTEGER     NOT NULL DEFAULT 0,
+            last_error          TEXT        NULL,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT chk_attachment_jobs_kind
+                CHECK (kind IN ('Ingest','ExtractText','Scan','Cleanup')),
+            CONSTRAINT chk_attachment_jobs_state
+                CHECK (state IN ('Pending','Running','Succeeded','Failed','DeadLettered'))
+        );
+
+        -- Hot path for the worker: next pending job by schedule.
+        CREATE INDEX IF NOT EXISTS ix_attachment_jobs_pending
+            ON attachment_jobs (next_attempt_utc, id)
+            WHERE state = 'Pending';
+        -- Cleanup path: find completed/dead-lettered rows past their retention.
+        CREATE INDEX IF NOT EXISTS ix_attachment_jobs_state_updated
+            ON attachment_jobs (state, updated_utc);
+
+        -- Append-only audit of every job attempt. One row per try, even on
+        -- success, so we can reconstruct retry history and measure durations.
+        CREATE TABLE IF NOT EXISTS attachment_job_attempts (
+            id              BIGSERIAL   PRIMARY KEY,
+            job_id          BIGINT      NOT NULL REFERENCES attachment_jobs(id) ON DELETE CASCADE,
+            started_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            finished_utc    TIMESTAMPTZ NULL,
+            outcome         TEXT        NULL,
+            error_message   TEXT        NULL,
+            error_class     TEXT        NULL,
+            duration_ms     INTEGER     NULL,
+            CONSTRAINT chk_attachment_job_attempts_outcome
+                CHECK (outcome IS NULL OR outcome IN ('Succeeded','Failed','Canceled'))
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_attachment_job_attempts_job
+            ON attachment_job_attempts (job_id, started_utc DESC);
+
+        -- FTS sidecar for ticket_events. normalized_text is the indexable
+        -- body (quoted reply history stripped, inline images removed). Kept
+        -- separate from ticket_events.body_text so the raw event is never
+        -- mutated just to tweak the search index.
+        CREATE TABLE IF NOT EXISTS ticket_event_search (
+            event_id        BIGINT      PRIMARY KEY REFERENCES ticket_events(id) ON DELETE CASCADE,
+            ticket_id       UUID        NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            normalized_text TEXT        NOT NULL DEFAULT '',
+            search_vector   TSVECTOR    GENERATED ALWAYS AS (to_tsvector('simple', normalized_text)) STORED
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_ticket_event_search_vector
+            ON ticket_event_search USING GIN (search_vector);
+        CREATE INDEX IF NOT EXISTS ix_ticket_event_search_ticket
+            ON ticket_event_search (ticket_id);
+
+        -- Periodic disk snapshots for the admin blob-usage graph and the
+        -- warn/critical thresholds (Storage.BlobDiskWarnPercent /
+        -- BlobDiskCriticalPercent). Sampler BackgroundService arrives later.
+        CREATE TABLE IF NOT EXISTS blob_disk_samples (
+            id              BIGSERIAL       PRIMARY KEY,
+            sampled_utc     TIMESTAMPTZ     NOT NULL DEFAULT now(),
+            root_path       TEXT            NOT NULL,
+            total_bytes     BIGINT          NOT NULL,
+            free_bytes      BIGINT          NOT NULL,
+            used_percent    NUMERIC(5,2)    NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_blob_disk_samples_sampled
+            ON blob_disk_samples (sampled_utc DESC);
+
+        -- ===================================================================
+        -- v0.0.8 step 4: per-queue mailboxes + polling state
+        -- ===================================================================
+
+        ALTER TABLE queues
+            ADD COLUMN IF NOT EXISTS inbound_mailbox_address  CITEXT NULL,
+            ADD COLUMN IF NOT EXISTS outbound_mailbox_address CITEXT NULL;
+
+        -- Each inbound mailbox routes to exactly one queue. Partial unique
+        -- index so multiple queues with NULL inbound don't collide.
+        CREATE UNIQUE INDEX IF NOT EXISTS ix_queues_inbound_mailbox
+            ON queues (inbound_mailbox_address)
+            WHERE inbound_mailbox_address IS NOT NULL;
+
+        -- Per-queue Graph delta cursor + health state for the polling loop.
+        CREATE TABLE IF NOT EXISTS mail_poll_state (
+            queue_id              UUID        PRIMARY KEY REFERENCES queues(id) ON DELETE CASCADE,
+            delta_link            TEXT        NULL,
+            last_polled_utc       TIMESTAMPTZ NULL,
+            last_error            TEXT        NULL,
+            consecutive_failures  INTEGER     NOT NULL DEFAULT 0,
+            updated_utc           TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_mail_poll_state_last_polled
+            ON mail_poll_state (last_polled_utc);
+
+        -- Encrypted key-value store for runtime-editable secrets (e.g. Graph
+        -- client secret). Values are protected with IDataProtectionProvider
+        -- under purpose "Servicedesk.ProtectedSecrets"; plaintext never hits
+        -- the DB or logs.
+        CREATE TABLE IF NOT EXISTS protected_secrets (
+            key             TEXT        PRIMARY KEY,
+            value_protected TEXT        NOT NULL,
+            updated_utc     TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
         """;
 
     private readonly NpgsqlDataSource _dataSource;

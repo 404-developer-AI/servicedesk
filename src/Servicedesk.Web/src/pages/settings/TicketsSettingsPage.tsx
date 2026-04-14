@@ -277,14 +277,21 @@ function QueueDialog({
     icon: queue?.icon ?? "inbox",
     sortOrder: queue?.sortOrder ?? 0,
     isActive: queue?.isActive ?? true,
+    inboundMailboxAddress: queue?.inboundMailboxAddress ?? "",
+    outboundMailboxAddress: queue?.outboundMailboxAddress ?? "",
   }));
 
   const save = useMutation({
     mutationFn: async () => {
+      const payload: QueueInput = {
+        ...form,
+        inboundMailboxAddress: form.inboundMailboxAddress?.trim() || null,
+        outboundMailboxAddress: form.outboundMailboxAddress?.trim() || null,
+      };
       if (queue) {
-        return taxonomyApi.queues.update(queue.id, form);
+        return taxonomyApi.queues.update(queue.id, payload);
       }
-      return taxonomyApi.queues.create(form);
+      return taxonomyApi.queues.create(payload);
     },
     onSuccess: () => {
       toast.success(queue ? "Queue updated" : "Queue created");
@@ -349,6 +356,36 @@ function QueueDialog({
             />
             Active (visible to agents when creating tickets)
           </label>
+
+          <div className="mt-2 space-y-3 rounded-md border border-white/[0.06] bg-white/[0.02] p-3">
+            <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+              Microsoft Graph mailbox
+            </div>
+            <Field label="Inbound mailbox address">
+              <Input
+                type="email"
+                placeholder="support@company.com"
+                value={form.inboundMailboxAddress ?? ""}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, inboundMailboxAddress: e.target.value }))
+                }
+              />
+            </Field>
+            <Field label="Outbound mailbox address (not used yet)">
+              <Input
+                type="email"
+                placeholder="support@company.com"
+                value={form.outboundMailboxAddress ?? ""}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, outboundMailboxAddress: e.target.value }))
+                }
+              />
+            </Field>
+            <p className="text-xs text-muted-foreground">
+              Mail sent to the inbound address is polled by Microsoft Graph and routed to this queue.
+              Outbound is reserved for per-queue send-as replies in a later release.
+            </p>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>

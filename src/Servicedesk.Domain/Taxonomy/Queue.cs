@@ -11,4 +11,6 @@ public sealed record Queue(
     bool IsActive,
     bool IsSystem,
     DateTime CreatedUtc,
-    DateTime UpdatedUtc);
+    DateTime UpdatedUtc,
+    string? InboundMailboxAddress = null,
+    string? OutboundMailboxAddress = null);

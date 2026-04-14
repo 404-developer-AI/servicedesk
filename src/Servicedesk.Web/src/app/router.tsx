@@ -11,11 +11,15 @@ import { StubPage } from "@/shell/StubPage";
 import { findNavItem } from "@/shell/navItems";
 import type { Role } from "@/lib/roles";
 import { authStore } from "@/auth/authStore";
+import { DashboardPage } from "@/pages/dashboard/DashboardPage";
 import { AuditLogPage } from "@/pages/settings/AuditLogPage";
-import { SettingsSectionStub } from "@/pages/settings/SettingsSectionStub";
+import { GeneralSettingsPage } from "@/pages/settings/GeneralSettingsPage";
+import { HealthSettingsPage } from "@/pages/settings/HealthSettingsPage";
+import { IntegrationsSettingsPage } from "@/pages/settings/IntegrationsSettingsPage";
+import { MailSettingsPage } from "@/pages/settings/MailSettingsPage";
+import { SlaSettingsPage } from "@/pages/settings/SlaSettingsPage";
 import { TicketsSettingsPage } from "@/pages/settings/TicketsSettingsPage";
 import { SettingsLayout } from "@/shell/SettingsLayout";
-import { findSettingsSection } from "@/shell/settingsSections";
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { SetupWizardPage } from "@/pages/auth/SetupWizardPage";
 import { ProfilePage } from "@/pages/profile/ProfilePage";
@@ -124,7 +128,7 @@ const dashboardRoute = createRoute({
   beforeLoad: (ctx) => {
     anyAuthenticatedGate()(ctx);
   },
-  component: () => stubForPath("/"),
+  component: DashboardPage,
 });
 
 const ticketsRoute = createRoute({
@@ -179,46 +183,43 @@ const settingsIndexRoute = createRoute({
   component: () => null,
 });
 
-function settingsSectionStubComponent(slug: string) {
-  return function SettingsSectionStubRoute() {
-    const section = findSettingsSection(slug);
-    if (!section) return null;
-    return <SettingsSectionStub section={section} />;
-  };
-}
-
-// Stub sections are declared statically (rather than via a dynamic map over
-// SETTINGS_SECTIONS) so TanStack Router can infer each literal path into the
-// typed route union. Without this, `redirect({ to: "/settings/general" })`
-// fails to type-check.
+// Sections are declared statically so TanStack Router can infer each literal
+// path into the typed route union — needed so `redirect({ to: "/settings/general" })`
+// type-checks.
 const settingsGeneralRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "general",
-  component: settingsSectionStubComponent("general"),
+  component: GeneralSettingsPage,
 });
 
 const settingsMailRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "mail",
-  component: settingsSectionStubComponent("mail"),
+  component: MailSettingsPage,
 });
 
 const settingsSlaRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "sla",
-  component: settingsSectionStubComponent("sla"),
+  component: SlaSettingsPage,
 });
 
 const settingsIntegrationsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "integrations",
-  component: settingsSectionStubComponent("integrations"),
+  component: IntegrationsSettingsPage,
 });
 
 const settingsAuditRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "audit",
   component: AuditLogPage,
+});
+
+const settingsHealthRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "health",
+  component: HealthSettingsPage,
 });
 
 const settingsTicketsRoute = createRoute({
@@ -263,6 +264,7 @@ const routeTree = rootRoute.addChildren([
     settingsViewsRoute,
     settingsQueueAccessRoute,
     settingsViewGroupsRoute,
+    settingsHealthRoute,
     settingsAuditRoute,
   ]),
 ]);

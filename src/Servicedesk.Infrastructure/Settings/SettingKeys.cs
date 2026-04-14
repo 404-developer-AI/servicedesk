@@ -49,6 +49,36 @@ public static class SettingKeys
 
         public const string DefaultColumnLayout = "Tickets.DefaultColumnLayout";
     }
+
+    public static class Storage
+    {
+        public const string BlobRoot = "Storage.BlobRoot";
+        public const string MaxAttachmentBytes = "Storage.MaxAttachmentBytes";
+        public const string RawEmlRetentionDays = "Storage.RawEmlRetentionDays";
+        public const string InlineImageMaxBytes = "Storage.InlineImageMaxBytes";
+        public const string BlobDiskWarnPercent = "Storage.BlobDiskWarnPercent";
+        public const string BlobDiskCriticalPercent = "Storage.BlobDiskCriticalPercent";
+        public const string PerMailboxMonthlyCapMB = "Storage.PerMailboxMonthlyCapMB";
+    }
+
+    public static class Mail
+    {
+        public const string PollingIntervalSeconds = "Mail.PollingIntervalSeconds";
+        public const string MaxBatchSize = "Mail.MaxBatchSize";
+        public const string QuotedHistoryStripping = "Mail.QuotedHistoryStripping";
+    }
+
+    public static class Graph
+    {
+        public const string TenantId = "Graph.TenantId";
+        public const string ClientId = "Graph.ClientId";
+    }
+
+    public static class Jobs
+    {
+        public const string CompletedRetentionDays = "Jobs.CompletedRetentionDays";
+        public const string DeadLetterAckedRetentionDays = "Jobs.DeadLetterAckedRetentionDays";
+    }
 }
 
 public sealed record SettingDefault(
@@ -122,5 +152,41 @@ public static class SettingDefaults
             "number,subject,requester,companyName,queueName,statusName,priorityName,assigneeEmail,updatedUtc",
             "string", "Tickets",
             "Comma-separated column IDs shown by default in the ticket list for new users."),
+
+        // Storage — ADR-001 (v0.0.8). Keys only; runtime consumers land in later steps.
+        new SettingDefault(SettingKeys.Storage.BlobRoot, "/var/lib/servicedesk/blobs", "string", "Storage",
+            "Host path for content-addressed blob storage. Bind-mounted into the container; read-only outside dev."),
+        new SettingDefault(SettingKeys.Storage.MaxAttachmentBytes, "26214400", "int", "Storage",
+            "Maximum size (bytes) for an individual attachment. Default 25 MB matches Exchange Online inbound."),
+        new SettingDefault(SettingKeys.Storage.RawEmlRetentionDays, "0", "int", "Storage",
+            "Retention window (days) for raw .eml copies. 0 = keep indefinitely."),
+        new SettingDefault(SettingKeys.Storage.InlineImageMaxBytes, "2097152", "int", "Storage",
+            "Maximum size (bytes) for inline images embedded in mail bodies. Default 2 MB."),
+        new SettingDefault(SettingKeys.Storage.BlobDiskWarnPercent, "80", "int", "Storage",
+            "Disk usage percentage that triggers a warning banner for admins."),
+        new SettingDefault(SettingKeys.Storage.BlobDiskCriticalPercent, "92", "int", "Storage",
+            "Disk usage percentage that pauses mail polling and raises a critical alert."),
+        new SettingDefault(SettingKeys.Storage.PerMailboxMonthlyCapMB, "0", "int", "Storage",
+            "Per-mailbox monthly ingestion cap in MB. 0 = no cap."),
+
+        // Mail — ADR-001 placeholders consumed from v0.0.8 step 4 onwards.
+        new SettingDefault(SettingKeys.Mail.PollingIntervalSeconds, "60", "int", "Mail",
+            "How often (seconds) the polling fallback checks each mailbox for new messages."),
+        new SettingDefault(SettingKeys.Mail.MaxBatchSize, "50", "int", "Mail",
+            "Maximum messages pulled per polling cycle per mailbox."),
+        new SettingDefault(SettingKeys.Mail.QuotedHistoryStripping, "true", "bool", "Mail",
+            "Strip quoted reply history before indexing body text for search. Full HTML is retained for display."),
+
+        // Graph — tenant/client id only. Client secret lives in ISecretProvider, never here.
+        new SettingDefault(SettingKeys.Graph.TenantId, "", "string", "Graph",
+            "Azure AD tenant ID used for Microsoft Graph mail access."),
+        new SettingDefault(SettingKeys.Graph.ClientId, "", "string", "Graph",
+            "Application (client) ID registered in Azure AD for this install."),
+
+        // Jobs — retention for the attachment job-queue and its history.
+        new SettingDefault(SettingKeys.Jobs.CompletedRetentionDays, "7", "int", "Jobs",
+            "Completed attachment jobs are hard-deleted after this many days."),
+        new SettingDefault(SettingKeys.Jobs.DeadLetterAckedRetentionDays, "30", "int", "Jobs",
+            "Dead-letter jobs acknowledged by an admin are retained this many days before deletion."),
     };
 }
