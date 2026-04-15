@@ -3,6 +3,7 @@ import {
   Inbox,
   BookOpen,
   Settings,
+  Timer,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "@/lib/roles";
@@ -36,6 +37,15 @@ export const NAV_ITEMS: readonly NavItem[] = [
     roles: ["Agent", "Admin"],
     comingIn: "",
     description: "The ticket queue — fast list, virtualized, search and bulk actions.",
+    section: "main",
+  },
+  {
+    label: "SLA log",
+    to: "/sla-log",
+    icon: Timer,
+    roles: ["Agent", "Admin"],
+    comingIn: "",
+    description: "Per-ticket timing — first-response and resolution with filters and date picker.",
     section: "main",
   },
   {

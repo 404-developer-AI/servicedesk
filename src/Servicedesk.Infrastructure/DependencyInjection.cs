@@ -21,6 +21,7 @@ using Servicedesk.Infrastructure.Mail.Polling;
 using Servicedesk.Infrastructure.Observability;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Storage;
 
 namespace Servicedesk.Infrastructure;
@@ -93,11 +94,21 @@ public static class DependencyInjection
         services.AddSingleton<ITicketNumberLookup>(sp =>
             (ITicketNumberLookup)sp.GetRequiredService<ITicketRepository>());
 
+        services.AddHttpClient();
+
+        services.AddSingleton<ISlaRepository, SlaRepository>();
+        services.AddSingleton<IBusinessHoursCalculator, BusinessHoursCalculator>();
+        services.AddSingleton<ISlaEngine, SlaEngine>();
+        services.AddSingleton<IHolidaySyncService, HolidaySyncService>();
+
         services.AddHostedService<DatabaseBootstrapper>();
         services.AddHostedService<SettingsSeeder>();
         services.AddHostedService<TaxonomySeeder>();
+        services.AddHostedService<SlaSeeder>();
         services.AddHostedService<MailPollingService>();
         services.AddHostedService<AttachmentWorker>();
+        services.AddHostedService<HolidaySyncWorker>();
+        services.AddHostedService<SlaRecalcWorker>();
 
         return services;
     }

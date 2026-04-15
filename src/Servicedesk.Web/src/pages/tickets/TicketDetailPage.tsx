@@ -9,6 +9,7 @@ import { useRecentTicketsStore } from "@/stores/useRecentTicketsStore";
 import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
 import { useViewingTicket } from "@/hooks/usePresence";
 import { useTicketRealtime } from "@/hooks/useTicketRealtime";
+import { SlaPill } from "@/components/sla/SlaPill";
 import { TicketSidePanel } from "./components/TicketSidePanel";
 import { TicketTimeline } from "./components/TicketTimeline";
 import { PinnedEventsSummary } from "./components/PinnedEventsSummary";
@@ -328,6 +329,7 @@ export function TicketDetailPage({ ticketId }: TicketDetailPageProps) {
               await updateMutation.mutateAsync({ subject });
             }}
           />
+          <SlaPill ticketId={ticket.id} className="mt-3" />
         </div>
 
         {/* Static: description */}

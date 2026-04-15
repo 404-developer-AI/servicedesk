@@ -6,6 +6,7 @@ using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Storage;
 
 namespace Servicedesk.Infrastructure.Mail.Ingest;
@@ -26,6 +27,7 @@ public sealed class MailIngestService : IMailIngestService
     private readonly IContactLookupService _contacts;
     private readonly IBlobStore _blobs;
     private readonly ISettingsService _settings;
+    private readonly ISlaEngine _sla;
     private readonly ILogger<MailIngestService> _logger;
 
     public MailIngestService(
@@ -36,6 +38,7 @@ public sealed class MailIngestService : IMailIngestService
         IContactLookupService contacts,
         IBlobStore blobs,
         ISettingsService settings,
+        ISlaEngine sla,
         ILogger<MailIngestService> logger)
     {
         _graph = graph;
@@ -45,6 +48,7 @@ public sealed class MailIngestService : IMailIngestService
         _contacts = contacts;
         _blobs = blobs;
         _settings = settings;
+        _sla = sla;
         _logger = logger;
     }
 
@@ -139,6 +143,7 @@ public sealed class MailIngestService : IMailIngestService
                 Source: "Mail");
             var ticket = await _tickets.CreateAsync(newTicket, ct);
             ticketId = ticket.Id;
+            await _sla.OnTicketCreatedAsync(ticketId, ct);
         }
         else
         {
@@ -214,6 +219,11 @@ public sealed class MailIngestService : IMailIngestService
         }
 
         await _mail.AttachToTicketAsync(mailId, ticketId, evt.Id, ct);
+
+        // Inbound mail is a customer touch — it neither counts as first response
+        // nor as a pause-exit, but may affect deadlines if any recalc logic lands
+        // later. Calling the engine keeps state fresh without special-casing.
+        await _sla.OnTicketEventAsync(ticketId, evt.EventType, ct);
 
         return new MailIngestResult(
             existingTicketId is null ? MailIngestOutcome.Created : MailIngestOutcome.Appended,

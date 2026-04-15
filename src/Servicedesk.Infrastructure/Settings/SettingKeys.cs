@@ -78,6 +78,16 @@ public static class SettingKeys
         public const string ClientId = "Graph.ClientId";
     }
 
+    public static class Sla
+    {
+        public const string FirstContactTriggers = "Sla.FirstContact.Triggers";
+        public const string PauseOnPending = "Sla.PauseOnPending";
+        public const string HolidaysCountryCode = "Sla.Holidays.CountryCode";
+        public const string HolidaysAutoSync = "Sla.Holidays.AutoSync";
+        public const string DashboardShowAvgPickup = "Sla.Dashboard.ShowAvgPickupTile";
+        public const string RecalcIntervalSeconds = "Sla.RecalcIntervalSeconds";
+    }
+
     public static class Jobs
     {
         public const string CompletedRetentionDays = "Jobs.CompletedRetentionDays";
@@ -212,5 +222,24 @@ public static class SettingDefaults
             "Number of parallel worker loops claiming attachment jobs."),
         new SettingDefault(SettingKeys.Jobs.AttachmentWorkerPollSeconds, "5", "int", "Jobs",
             "How often each worker loop polls for a new job when the queue is idle."),
+
+        // SLA — v0.1.1. First-contact triggers are a JSON array of event types from
+        // the ticket_events CHECK enum; any listed event marks the first-response
+        // timer as met. Holidays auto-sync fetches public holidays for the
+        // configured country from date.nager.at and refreshes yearly.
+        new SettingDefault(SettingKeys.Sla.FirstContactTriggers,
+            "[\"Mail\",\"Comment\"]",
+            "json", "Sla",
+            "Ticket event types that count as first contact and stop the first-response timer. Allowed: Mail, Comment, Note, StatusChange, AssignmentChange, QueueChange."),
+        new SettingDefault(SettingKeys.Sla.PauseOnPending, "true", "bool", "Sla",
+            "When the ticket enters status category 'Pending' (waiting on customer), pause the SLA timer."),
+        new SettingDefault(SettingKeys.Sla.HolidaysCountryCode, "BE", "string", "Sla",
+            "ISO-3166 alpha-2 country code used to auto-sync public holidays (BE, NL, DE, FR, ...). Empty disables auto-sync."),
+        new SettingDefault(SettingKeys.Sla.HolidaysAutoSync, "true", "bool", "Sla",
+            "When true, the holiday sync worker pulls this year + next from date.nager.at and refreshes daily."),
+        new SettingDefault(SettingKeys.Sla.DashboardShowAvgPickup, "true", "bool", "Sla",
+            "Show the 'Average first-response per queue' tile on the dashboard."),
+        new SettingDefault(SettingKeys.Sla.RecalcIntervalSeconds, "60", "int", "Sla",
+            "How often (seconds) the SLA recalc worker refreshes deadlines for open tickets."),
     };
 }

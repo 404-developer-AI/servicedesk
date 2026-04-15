@@ -11,6 +11,7 @@ using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Persistence.Companies;
 using Servicedesk.Infrastructure.Persistence.Tickets;
+using Servicedesk.Infrastructure.Sla;
 
 namespace Servicedesk.Api.Tickets;
 
@@ -88,7 +89,7 @@ public static class TicketEndpoints
         group.MapPost("/", async (
             [FromBody] CreateTicketRequest req, HttpContext http,
             ITicketRepository tickets, ICompanyRepository companies, IQueueAccessService queueAccess,
-            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(req.Subject))
                 return Results.BadRequest(new { error = "Subject is required." });
@@ -128,13 +129,15 @@ public static class TicketEndpoints
             // Notify ticket list viewers that a new ticket was created
             await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", created.Id.ToString(), ct);
 
+            await sla.OnTicketCreatedAsync(created.Id, ct);
+
             return Results.Created($"/api/tickets/{created.Id}", created);
         }).WithName("CreateTicket").WithOpenApi();
 
         group.MapPatch("/{id:guid}", async (
             Guid id, [FromBody] UpdateTicketRequest req, HttpContext http,
             ITicketRepository tickets, IQueueAccessService queueAccess,
-            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla, CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
@@ -179,13 +182,15 @@ public static class TicketEndpoints
             await hub.Clients.Group($"ticket:{ticketIdStr}").SendAsync("TicketUpdated", ticketIdStr, ct);
             await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", ticketIdStr, ct);
 
+            await sla.OnTicketFieldsChangedAsync(id, ct);
+
             return Results.Ok(detail);
         }).WithName("UpdateTicket").WithOpenApi();
 
         group.MapPost("/{id:guid}/events", async (
             Guid id, [FromBody] AddEventRequest req, HttpContext http,
             ITicketRepository tickets, IQueueAccessService queueAccess,
-            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(req.EventType))
                 return Results.BadRequest(new { error = "eventType is required." });
@@ -223,6 +228,8 @@ public static class TicketEndpoints
             var ticketIdStr = id.ToString();
             await hub.Clients.Group($"ticket:{ticketIdStr}").SendAsync("TicketUpdated", ticketIdStr, ct);
             await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", ticketIdStr, ct);
+
+            await sla.OnTicketEventAsync(id, evt.EventType, ct);
 
             return Results.Created($"/api/tickets/{id}/events/{evt.Id}", evt);
         }).WithName("AddTicketEvent").WithOpenApi();

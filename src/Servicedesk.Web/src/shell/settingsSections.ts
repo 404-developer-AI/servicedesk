@@ -67,9 +67,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   {
     slug: "sla",
     label: "SLA",
-    description: "Response and resolution targets, business hours, escalation policies.",
+    description: "Response and resolution targets, business hours, holidays, first-contact rules.",
     icon: Timer,
-    comingIn: "v0.0.8",
   },
   {
     slug: "integrations",

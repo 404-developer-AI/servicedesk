@@ -9,6 +9,7 @@ using Servicedesk.Infrastructure.Persistence.Companies;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Storage;
 using Xunit;
 
@@ -159,7 +160,7 @@ public sealed class MailIngestServiceTests
         var blobs = new StubBlobs();
         var settings = new StubSettings();
         var svc = new MailIngestService(graph, mail, tickets, taxonomy, contacts, blobs, settings,
-            NullLogger<MailIngestService>.Instance);
+            new NoopSlaEngine(), NullLogger<MailIngestService>.Instance);
         return (svc, graph, mail, tickets);
     }
 
@@ -332,5 +333,13 @@ public sealed class MailIngestServiceTests
         public Task SetAsync<T>(string key, T value, string actor, string actorRole, CancellationToken ct = default) => Task.CompletedTask;
         public Task<IReadOnlyList<SettingEntry>> ListAsync(string? category = null, CancellationToken ct = default) => throw new NotImplementedException();
         public Task EnsureDefaultsAsync(CancellationToken ct = default) => Task.CompletedTask;
+    }
+
+    private sealed class NoopSlaEngine : ISlaEngine
+    {
+        public Task OnTicketCreatedAsync(Guid ticketId, CancellationToken ct) => Task.CompletedTask;
+        public Task OnTicketEventAsync(Guid ticketId, string eventType, CancellationToken ct) => Task.CompletedTask;
+        public Task OnTicketFieldsChangedAsync(Guid ticketId, CancellationToken ct) => Task.CompletedTask;
+        public Task RecalcAsync(Guid ticketId, CancellationToken ct) => Task.CompletedTask;
     }
 }

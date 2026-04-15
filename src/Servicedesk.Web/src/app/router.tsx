@@ -29,6 +29,7 @@ import { QueueAccessSettingsPage } from "@/pages/settings/QueueAccessSettingsPag
 import { ViewGroupsSettingsPage } from "@/pages/settings/ViewGroupsSettingsPage";
 import { TicketListPage } from "@/pages/tickets/TicketListPage";
 import { TicketDetailPage } from "@/pages/tickets/TicketDetailPage";
+import { SlaLogPage } from "@/pages/sla/SlaLogPage";
 
 // The router reads the "current role" outside of React here (for the
 // beforeLoad gate). The auth store is populated by bootstrapAuth() in
@@ -149,6 +150,13 @@ const ticketDetailRoute = createRoute({
   },
 });
 
+const slaLogRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sla-log",
+  beforeLoad: authGate(["Agent", "Admin"]),
+  component: SlaLogPage,
+});
+
 const kbRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/kb",
@@ -259,6 +267,7 @@ const routeTree = rootRoute.addChildren([
   dashboardRoute,
   ticketsRoute,
   ticketDetailRoute,
+  slaLogRoute,
   kbRoute,
   profileRoute,
   settingsRoute.addChildren([

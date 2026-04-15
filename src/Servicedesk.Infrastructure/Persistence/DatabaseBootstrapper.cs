@@ -723,6 +723,91 @@ public sealed class DatabaseBootstrapper : IHostedService
             WHERE acknowledged_utc IS NULL;
         CREATE INDEX IF NOT EXISTS ix_incidents_last_occurred
             ON incidents (last_occurred_utc DESC);
+
+        -- ===================================================================
+        -- v0.1.1 SLA engine — business hours, holidays, policies, per-ticket state
+        -- ===================================================================
+
+        CREATE TABLE IF NOT EXISTS business_hours_schemas (
+            id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            name            TEXT        NOT NULL,
+            timezone        TEXT        NOT NULL DEFAULT 'Europe/Brussels',
+            country_code    TEXT        NOT NULL DEFAULT '',
+            is_default      BOOLEAN     NOT NULL DEFAULT FALSE,
+            created_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc     TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_business_hours_schemas_default
+            ON business_hours_schemas ((is_default))
+            WHERE is_default = TRUE;
+
+        CREATE TABLE IF NOT EXISTS business_hours_slots (
+            id              BIGSERIAL   PRIMARY KEY,
+            schema_id       UUID        NOT NULL REFERENCES business_hours_schemas(id) ON DELETE CASCADE,
+            day_of_week     INTEGER     NOT NULL,
+            start_minute    INTEGER     NOT NULL,
+            end_minute      INTEGER     NOT NULL,
+            CONSTRAINT chk_bh_slot_day CHECK (day_of_week BETWEEN 0 AND 6),
+            CONSTRAINT chk_bh_slot_range CHECK (start_minute BETWEEN 0 AND 1440
+                                            AND end_minute BETWEEN 0 AND 1440
+                                            AND end_minute > start_minute)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_business_hours_slots_schema
+            ON business_hours_slots (schema_id, day_of_week, start_minute);
+
+        CREATE TABLE IF NOT EXISTS holidays (
+            id              BIGSERIAL   PRIMARY KEY,
+            schema_id       UUID        NOT NULL REFERENCES business_hours_schemas(id) ON DELETE CASCADE,
+            holiday_date    DATE        NOT NULL,
+            name            TEXT        NOT NULL DEFAULT '',
+            source          TEXT        NOT NULL DEFAULT 'manual',
+            country_code    TEXT        NOT NULL DEFAULT '',
+            CONSTRAINT chk_holidays_source CHECK (source IN ('nager','manual')),
+            CONSTRAINT uq_holidays_schema_date UNIQUE (schema_id, holiday_date)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_holidays_schema_date
+            ON holidays (schema_id, holiday_date);
+
+        CREATE TABLE IF NOT EXISTS sla_policies (
+            id                          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            queue_id                    UUID        NULL REFERENCES queues(id) ON DELETE CASCADE,
+            priority_id                 UUID        NOT NULL REFERENCES priorities(id) ON DELETE CASCADE,
+            business_hours_schema_id    UUID        NOT NULL REFERENCES business_hours_schemas(id) ON DELETE RESTRICT,
+            first_response_minutes      INTEGER     NOT NULL,
+            resolution_minutes          INTEGER     NOT NULL,
+            pause_on_pending            BOOLEAN     NOT NULL DEFAULT TRUE,
+            created_utc                 TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc                 TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_sla_policies_queue_priority
+            ON sla_policies (COALESCE(queue_id, '00000000-0000-0000-0000-000000000000'::uuid), priority_id);
+
+        CREATE TABLE IF NOT EXISTS ticket_sla_state (
+            ticket_id                       UUID        PRIMARY KEY REFERENCES tickets(id) ON DELETE CASCADE,
+            policy_id                       UUID        NULL REFERENCES sla_policies(id) ON DELETE SET NULL,
+            first_response_deadline_utc     TIMESTAMPTZ NULL,
+            resolution_deadline_utc         TIMESTAMPTZ NULL,
+            first_response_met_utc          TIMESTAMPTZ NULL,
+            resolution_met_utc              TIMESTAMPTZ NULL,
+            first_response_business_minutes INTEGER     NULL,
+            resolution_business_minutes     INTEGER     NULL,
+            is_paused                       BOOLEAN     NOT NULL DEFAULT FALSE,
+            paused_since_utc                TIMESTAMPTZ NULL,
+            paused_accum_minutes            INTEGER     NOT NULL DEFAULT 0,
+            last_recalc_utc                 TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc                     TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_ticket_sla_state_pending_fr
+            ON ticket_sla_state (first_response_deadline_utc)
+            WHERE first_response_met_utc IS NULL;
+        CREATE INDEX IF NOT EXISTS ix_ticket_sla_state_pending_res
+            ON ticket_sla_state (resolution_deadline_utc)
+            WHERE resolution_met_utc IS NULL;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

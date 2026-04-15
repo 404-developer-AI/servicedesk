@@ -362,8 +362,14 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             sets.Add("status_id = @NewStatusId");
             var fromName = await LookupNameAsync("statuses", current.StatusId);
             var toName = await LookupNameAsync("statuses", update.StatusId);
+            var fromCategory = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
+                "SELECT state_category FROM statuses WHERE id = @id",
+                new { id = current.StatusId }, tx, cancellationToken: ct));
+            var toCategory = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
+                "SELECT state_category FROM statuses WHERE id = @id",
+                new { id = update.StatusId.Value }, tx, cancellationToken: ct));
             events.Add(("StatusChange", System.Text.Json.JsonSerializer.Serialize(
-                new { from = current.StatusId, to = update.StatusId, fromName, toName })));
+                new { from = current.StatusId, to = update.StatusId, fromName, toName, fromCategory, toCategory })));
         }
         if (update.PriorityId.HasValue && update.PriorityId != current.PriorityId)
         {
