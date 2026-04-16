@@ -29,8 +29,8 @@ public sealed record SlaPolicy(
     Guid? QueueId,
     Guid PriorityId,
     Guid BusinessHoursSchemaId,
-    int FirstResponseMinutes,
-    int ResolutionMinutes,
+    int? FirstResponseMinutes,
+    int? ResolutionMinutes,
     bool PauseOnPending);
 
 public sealed record TicketSlaState(

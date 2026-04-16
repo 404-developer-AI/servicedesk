@@ -27,7 +27,9 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
                    is_active AS IsActive, is_system AS IsSystem,
                    created_utc AS CreatedUtc, updated_utc AS UpdatedUtc,
                    inbound_mailbox_address AS InboundMailboxAddress,
-                   outbound_mailbox_address AS OutboundMailboxAddress
+                   outbound_mailbox_address AS OutboundMailboxAddress,
+                   inbound_folder_id AS InboundFolderId,
+                   inbound_folder_name AS InboundFolderName
             FROM queues
             ORDER BY sort_order, name
             """;
@@ -44,7 +46,9 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
                    is_active AS IsActive, is_system AS IsSystem,
                    created_utc AS CreatedUtc, updated_utc AS UpdatedUtc,
                    inbound_mailbox_address AS InboundMailboxAddress,
-                   outbound_mailbox_address AS OutboundMailboxAddress
+                   outbound_mailbox_address AS OutboundMailboxAddress,
+                   inbound_folder_id AS InboundFolderId,
+                   inbound_folder_name AS InboundFolderName
             FROM queues WHERE id = @id
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -55,21 +59,25 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
     {
         const string sql = """
             INSERT INTO queues (name, slug, description, color, icon, sort_order, is_active, is_system,
-                                inbound_mailbox_address, outbound_mailbox_address)
+                                inbound_mailbox_address, outbound_mailbox_address,
+                                inbound_folder_id, inbound_folder_name)
             VALUES (@Name, @Slug, @Description, @Color, @Icon, @SortOrder, @IsActive, @IsSystem,
-                    @InboundMailboxAddress, @OutboundMailboxAddress)
+                    @InboundMailboxAddress, @OutboundMailboxAddress,
+                    @InboundFolderId, @InboundFolderName)
             RETURNING id AS Id, name AS Name, slug AS Slug, description AS Description,
                       color AS Color, icon AS Icon, sort_order AS SortOrder,
                       is_active AS IsActive, is_system AS IsSystem,
                       created_utc AS CreatedUtc, updated_utc AS UpdatedUtc,
                       inbound_mailbox_address AS InboundMailboxAddress,
-                      outbound_mailbox_address AS OutboundMailboxAddress
+                      outbound_mailbox_address AS OutboundMailboxAddress,
+                      inbound_folder_id AS InboundFolderId,
+                      inbound_folder_name AS InboundFolderName
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.QuerySingleAsync<Queue>(new CommandDefinition(sql, q, cancellationToken: ct));
     }
 
-    public async Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, string? inboundMailboxAddress, string? outboundMailboxAddress, CancellationToken ct)
+    public async Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, string? inboundMailboxAddress, string? outboundMailboxAddress, string? inboundFolderId, string? inboundFolderName, CancellationToken ct)
     {
         const string sql = """
             UPDATE queues SET name = @name, slug = @slug, description = @description,
@@ -77,6 +85,8 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
                               is_active = @isActive,
                               inbound_mailbox_address = @inboundMailboxAddress,
                               outbound_mailbox_address = @outboundMailboxAddress,
+                              inbound_folder_id = @inboundFolderId,
+                              inbound_folder_name = @inboundFolderName,
                               updated_utc = now()
             WHERE id = @id
             RETURNING id AS Id, name AS Name, slug AS Slug, description AS Description,
@@ -84,12 +94,15 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
                       is_active AS IsActive, is_system AS IsSystem,
                       created_utc AS CreatedUtc, updated_utc AS UpdatedUtc,
                       inbound_mailbox_address AS InboundMailboxAddress,
-                      outbound_mailbox_address AS OutboundMailboxAddress
+                      outbound_mailbox_address AS OutboundMailboxAddress,
+                      inbound_folder_id AS InboundFolderId,
+                      inbound_folder_name AS InboundFolderName
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.QueryFirstOrDefaultAsync<Queue>(new CommandDefinition(sql,
             new { id, name, slug, description, color, icon, sortOrder, isActive,
-                  inboundMailboxAddress, outboundMailboxAddress }, cancellationToken: ct));
+                  inboundMailboxAddress, outboundMailboxAddress,
+                  inboundFolderId, inboundFolderName }, cancellationToken: ct));
     }
 
     public async Task<DeleteResult> DeleteQueueAsync(Guid id, CancellationToken ct)

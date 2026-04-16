@@ -127,9 +127,12 @@ public static class SlaEndpoints
             [FromBody] PolicyInput req, ISlaRepository repo, HttpContext http, IAuditLogger audit, CancellationToken ct) =>
         {
             if (req.PriorityId == Guid.Empty) return Results.BadRequest(new { error = "priorityId is required." });
-            if (req.FirstResponseMinutes < 1 || req.ResolutionMinutes < 1)
-                return Results.BadRequest(new { error = "Minutes must be >= 1." });
-            var id = await repo.UpsertPolicyAsync(req.QueueId, req.PriorityId, req.BusinessHoursSchemaId, req.FirstResponseMinutes, req.ResolutionMinutes, req.PauseOnPending, ct);
+            // Normalize 0 → null (means "not tracked").
+            var frMin = req.FirstResponseMinutes is > 0 ? req.FirstResponseMinutes : null;
+            var resMin = req.ResolutionMinutes is > 0 ? req.ResolutionMinutes : null;
+            if (frMin is null && resMin is null)
+                return Results.BadRequest(new { error = "At least one target (first response or resolution) is required." });
+            var id = await repo.UpsertPolicyAsync(req.QueueId, req.PriorityId, req.BusinessHoursSchemaId, frMin, resMin, req.PauseOnPending, ct);
             await LogAsync(audit, http, "sla.policy.upserted", id.ToString(), req);
             return Results.Ok(await repo.GetPolicyAsync(id, ct));
         });
@@ -200,7 +203,7 @@ public static class SlaEndpoints
         Guid? QueueId,
         [property: Required] Guid PriorityId,
         [property: Required] Guid BusinessHoursSchemaId,
-        [property: Range(1, int.MaxValue)] int FirstResponseMinutes,
-        [property: Range(1, int.MaxValue)] int ResolutionMinutes,
+        int? FirstResponseMinutes,
+        int? ResolutionMinutes,
         bool PauseOnPending);
 }

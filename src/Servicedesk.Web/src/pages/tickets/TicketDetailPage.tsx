@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check, Copy, Pencil, X } from "lucide-react";
+import { Check, Copy, FileDown, Pencil, X } from "lucide-react";
 import { ticketApi, type TicketFieldUpdate } from "@/lib/ticket-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RichTextEditor } from "@/components/RichTextEditor";
@@ -14,6 +14,7 @@ import { TicketSidePanel } from "./components/TicketSidePanel";
 import { TicketTimeline } from "./components/TicketTimeline";
 import { PinnedEventsSummary } from "./components/PinnedEventsSummary";
 import { AddNoteForm } from "./components/AddNoteForm";
+import { InTicketSearchProvider, useInTicketSearch } from "./components/InTicketSearch";
 
 type TicketDetailPageProps = {
   ticketId: string;
@@ -258,9 +259,75 @@ function EditableDescription({
   );
 }
 
+/* ─── Export PDF button ─── */
+
+function ExportPdfButton({ ticketId }: { ticketId: string }) {
+  const [open, setOpen] = React.useState(false);
+  const [includeInternal, setIncludeInternal] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const handleExport = () => {
+    const url = ticketApi.exportPdf(ticketId, !includeInternal);
+    window.open(url, "_blank");
+    setOpen(false);
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md border border-white/10 bg-white/[0.04] text-muted-foreground hover:bg-white/[0.08] hover:text-foreground transition-colors"
+        title="Export as PDF"
+      >
+        <FileDown className="h-3.5 w-3.5" />
+        PDF
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1.5 z-50 w-56 rounded-lg border border-white/10 bg-background/95 backdrop-blur-xl p-3 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.6)]">
+          <label className="flex items-center gap-2 text-xs text-foreground/80 cursor-pointer mb-3">
+            <input
+              type="checkbox"
+              checked={includeInternal}
+              onChange={(e) => setIncludeInternal(e.target.checked)}
+              className="rounded border-white/20 bg-white/[0.06] text-primary focus:ring-primary/50"
+            />
+            Include internal events
+          </label>
+          <button
+            type="button"
+            onClick={handleExport}
+            className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md bg-primary text-white hover:bg-primary/90 transition-colors"
+          >
+            <FileDown className="h-3.5 w-3.5" />
+            Export PDF
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Main page ─── */
 
-export function TicketDetailPage({ ticketId }: TicketDetailPageProps) {
+export function TicketDetailPage(props: TicketDetailPageProps) {
+  return (
+    <InTicketSearchProvider>
+      <TicketDetailPageInner {...props} />
+    </InTicketSearchProvider>
+  );
+}
+
+function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
   const queryClient = useQueryClient();
   const addTicket = useRecentTicketsStore((s) => s.addTicket);
   useViewingTicket(ticketId);
@@ -317,18 +384,55 @@ export function TicketDetailPage({ ticketId }: TicketDetailPageProps) {
   const { ticket, body, events, pinnedEvents } = data;
 
   return (
+    <TicketDetailBody
+      ticketId={ticketId}
+      ticket={ticket}
+      body={body}
+      events={events}
+      pinnedEvents={pinnedEvents}
+      pinnedEventIds={pinnedEventIds}
+      updateMutation={updateMutation}
+      queryClient={queryClient}
+    />
+  );
+}
+
+function TicketDetailBody({
+  ticketId, ticket, body, events, pinnedEvents, pinnedEventIds, updateMutation, queryClient,
+}: {
+  ticketId: string;
+  ticket: any;
+  body: any;
+  events: any[];
+  pinnedEvents: any[];
+  pinnedEventIds: Set<number>;
+  updateMutation: any;
+  queryClient: any;
+}) {
+  const { matchesEvent, mode, query, registerScope } = useInTicketSearch();
+  const visibleEvents = React.useMemo(() => {
+    if (mode !== "filter" || !query.trim()) return events;
+    return events.filter(matchesEvent);
+  }, [events, matchesEvent, mode, query]);
+
+  return (
     <div className="flex gap-6 pt-3 h-[calc(100vh-0.75rem)] overflow-hidden">
       {/* Left column — header + description static, activity scrolls, reply pinned bottom */}
       <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
         {/* Static: ticket number + subject on one line */}
         <div className="shrink-0 pb-4">
-          <EditableSubject
-            number={ticket.number}
-            value={ticket.subject}
-            onSave={async (subject) => {
-              await updateMutation.mutateAsync({ subject });
-            }}
-          />
+          <div className="flex items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <EditableSubject
+                number={ticket.number}
+                value={ticket.subject}
+                onSave={async (subject) => {
+                  await updateMutation.mutateAsync({ subject });
+                }}
+              />
+            </div>
+            <ExportPdfButton ticketId={ticketId} />
+          </div>
           <SlaPill ticketId={ticket.id} className="mt-3" />
         </div>
 
@@ -373,9 +477,16 @@ export function TicketDetailPage({ ticketId }: TicketDetailPageProps) {
           </div>
         </div>
 
-        {/* Scrollable: activity timeline */}
-        <div className="flex-1 min-h-0 overflow-y-auto pr-1">
-          <TicketTimeline ticketId={ticketId} events={events} pinnedEventIds={pinnedEventIds} />
+        {/* Scrollable: activity timeline. The ref is handed to the
+            in-ticket search highlighter so it knows which subtree to
+            walk — nothing outside this container gets mutated. */}
+        <div ref={registerScope} className="flex-1 min-h-0 overflow-y-auto pr-1">
+          <TicketTimeline ticketId={ticketId} events={visibleEvents} pinnedEventIds={pinnedEventIds} />
+          {mode === "filter" && query.trim() && visibleEvents.length === 0 && (
+            <div className="py-6 text-center text-sm text-muted-foreground">
+              Geen events matchen "{query}".
+            </div>
+          )}
         </div>
 
         {/* Static: reply form */}

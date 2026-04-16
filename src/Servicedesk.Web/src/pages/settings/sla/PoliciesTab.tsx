@@ -32,8 +32,8 @@ export function PoliciesTab() {
       queueId: string | null;
       priorityId: string;
       businessHoursSchemaId: string;
-      firstResponseMinutes: number;
-      resolutionMinutes: number;
+      firstResponseMinutes: number | null;
+      resolutionMinutes: number | null;
       pauseOnPending: boolean;
     }) => slaApi.upsertPolicy(body),
     onSuccess: () => {
@@ -134,28 +134,31 @@ function PolicyCell({
     queueId: string | null;
     priorityId: string;
     businessHoursSchemaId: string;
-    firstResponseMinutes: number;
-    resolutionMinutes: number;
+    firstResponseMinutes: number | null;
+    resolutionMinutes: number | null;
     pauseOnPending: boolean;
   }) => void;
   onDelete: (id: string) => void;
 }) {
-  const [fr, setFr] = useState(existing?.firstResponseMinutes ?? 60);
-  const [res, setRes] = useState(existing?.resolutionMinutes ?? 240);
+  const [fr, setFr] = useState(existing?.firstResponseMinutes?.toString() ?? "60");
+  const [res, setRes] = useState(existing?.resolutionMinutes?.toString() ?? "240");
   const [schemaId, setSchemaId] = useState(existing?.businessHoursSchemaId ?? defaultSchemaId);
   const [pause, setPause] = useState(existing?.pauseOnPending ?? true);
+
+  const parsedFr = fr.trim() === "" ? null : parseInt(fr, 10);
+  const parsedRes = res.trim() === "" ? null : parseInt(res, 10);
 
   return (
     <td className="px-3 py-2 align-top">
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-1 text-xs">
           <span className="text-muted-foreground/60">FR</span>
-          <Input type="number" value={fr} onChange={(e) => setFr(parseInt(e.target.value || "0", 10))} className="h-7 w-20" />
+          <Input type="number" value={fr} onChange={(e) => setFr(e.target.value)} className="h-7 w-20" placeholder="off" />
           <span className="text-muted-foreground/60">m</span>
         </div>
         <div className="flex items-center gap-1 text-xs">
           <span className="text-muted-foreground/60">Res</span>
-          <Input type="number" value={res} onChange={(e) => setRes(parseInt(e.target.value || "0", 10))} className="h-7 w-20" />
+          <Input type="number" value={res} onChange={(e) => setRes(e.target.value)} className="h-7 w-20" placeholder="off" />
           <span className="text-muted-foreground/60">m</span>
         </div>
         <select
@@ -174,7 +177,7 @@ function PolicyCell({
             variant="ghost"
             size="sm"
             className="h-7 px-2"
-            onClick={() => onSave({ queueId, priorityId, businessHoursSchemaId: schemaId, firstResponseMinutes: fr, resolutionMinutes: res, pauseOnPending: pause })}
+            onClick={() => onSave({ queueId, priorityId, businessHoursSchemaId: schemaId, firstResponseMinutes: parsedFr, resolutionMinutes: parsedRes, pauseOnPending: pause })}
           >
             <Save className="h-3 w-3" />
           </Button>

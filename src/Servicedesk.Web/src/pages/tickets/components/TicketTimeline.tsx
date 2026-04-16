@@ -1,5 +1,6 @@
 import * as React from "react";
 import DOMPurify from "dompurify";
+import { useServerTime, toServerLocal, formatUtcSuffix } from "@/hooks/useServerTime";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -133,16 +134,6 @@ function AttachmentChip({ attachment: a }: { attachment: MailAttachment }) {
   );
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
 
 type EventConfig = {
   icon: React.ComponentType<{ className?: string }>;
@@ -390,6 +381,10 @@ function TimelineEvent({
   isPinned: boolean;
 }) {
   const queryClient = useQueryClient();
+  const { time: serverTime } = useServerTime();
+  const offset = serverTime?.offsetMinutes ?? 0;
+  const fmtDate = (iso: string) => toServerLocal(iso, offset);
+  const fmtUtc = (iso: string) => formatUtcSuffix(iso);
   const [editing, setEditing] = React.useState(false);
   const [draftHtml, setDraftHtml] = React.useState(
     event.bodyHtml ?? event.bodyText ?? ""
@@ -491,7 +486,7 @@ function TimelineEvent({
             {event.authorName && (
               <>{event.authorName} · </>
             )}
-            {formatDate(event.createdUtc)}
+            {fmtDate(event.createdUtc)} <span className="text-muted-foreground/40">{fmtUtc(event.createdUtc)}</span>
           </span>
         </div>
       ) : (
@@ -528,7 +523,7 @@ function TimelineEvent({
             </div>
             <div className="flex items-center gap-1">
               <span className="text-xs text-muted-foreground shrink-0">
-                {formatDate(event.createdUtc)}
+                {fmtDate(event.createdUtc)} <span className="text-muted-foreground/40">{fmtUtc(event.createdUtc)}</span>
               </span>
               {isPinnable && !editing && (
                 <button

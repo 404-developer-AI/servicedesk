@@ -64,6 +64,24 @@ public static class GraphAdminEndpoints
             return Results.NoContent();
         }).WithName("DeleteGraphSecret").WithOpenApi();
 
+        group.MapGet("/folders", async (
+            [FromQuery] string mailbox,
+            IGraphMailClient graph,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(mailbox))
+                return Results.BadRequest(new { error = "Mailbox query parameter is required." });
+            try
+            {
+                var folders = await graph.ListMailFoldersAsync(mailbox.Trim(), ct);
+                return Results.Ok(folders);
+            }
+            catch (Exception ex)
+            {
+                return Results.Ok(new { error = ex.GetType().Name + ": " + ex.Message });
+            }
+        }).WithName("ListGraphFolders").WithOpenApi();
+
         group.MapPost("/test", async (
             [FromBody] TestConnectionRequest req,
             IGraphMailClient graph,

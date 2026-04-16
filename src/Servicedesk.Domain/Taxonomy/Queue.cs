@@ -13,4 +13,6 @@ public sealed record Queue(
     DateTime CreatedUtc,
     DateTime UpdatedUtc,
     string? InboundMailboxAddress = null,
-    string? OutboundMailboxAddress = null);
+    string? OutboundMailboxAddress = null,
+    string? InboundFolderId = null,
+    string? InboundFolderName = null);

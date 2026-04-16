@@ -223,7 +223,7 @@ public sealed class SlaRepository : ISlaRepository
         return await conn.QueryFirstOrDefaultAsync<SlaPolicy>(new CommandDefinition(sql, new { queueId, priorityId }, cancellationToken: ct));
     }
 
-    public async Task<Guid> UpsertPolicyAsync(Guid? queueId, Guid priorityId, Guid schemaId, int firstResponseMinutes, int resolutionMinutes, bool pauseOnPending, CancellationToken ct)
+    public async Task<Guid> UpsertPolicyAsync(Guid? queueId, Guid priorityId, Guid schemaId, int? firstResponseMinutes, int? resolutionMinutes, bool pauseOnPending, CancellationToken ct)
     {
         const string sql = """
             INSERT INTO sla_policies (queue_id, priority_id, business_hours_schema_id, first_response_minutes, resolution_minutes, pause_on_pending)
@@ -328,6 +328,8 @@ public sealed class SlaRepository : ISlaRepository
                    s.first_response_met_utc AS FirstResponseMetUtc,
                    s.resolution_deadline_utc AS ResolutionDeadlineUtc,
                    s.resolution_met_utc AS ResolutionMetUtc,
+                   pol.first_response_minutes AS FirstResponseTargetMinutes,
+                   pol.resolution_minutes AS ResolutionTargetMinutes,
                    s.first_response_business_minutes AS FirstResponseBusinessMinutes,
                    s.resolution_business_minutes AS ResolutionBusinessMinutes,
                    COALESCE(s.is_paused, FALSE) AS IsPaused,
@@ -340,6 +342,7 @@ public sealed class SlaRepository : ISlaRepository
             JOIN priorities p ON p.id = t.priority_id
             JOIN statuses st ON st.id = t.status_id
             LEFT JOIN ticket_sla_state s ON s.ticket_id = t.id
+            LEFT JOIN sla_policies pol ON pol.id = s.policy_id
             WHERE t.is_deleted = FALSE
             """;
         var parameters = new DynamicParameters();

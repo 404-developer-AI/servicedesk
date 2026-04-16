@@ -74,9 +74,10 @@ public sealed class MailPollingService : BackgroundService
             if (ct.IsCancellationRequested) break;
             if (!q.IsActive) continue;
             if (string.IsNullOrWhiteSpace(q.InboundMailboxAddress)) continue;
+            if (string.IsNullOrWhiteSpace(q.InboundFolderId)) continue;
 
             await PollQueueCoreAsync(
-                q.Id, q.Slug, q.InboundMailboxAddress!, batchSize,
+                q.Id, q.Slug, q.InboundMailboxAddress!, q.InboundFolderId!, batchSize,
                 stateRepo, graph, _logger, ct,
                 ingest, markRead, notifier);
         }
@@ -89,18 +90,20 @@ public sealed class MailPollingService : BackgroundService
         Guid queueId,
         string queueSlug,
         string mailbox,
+        string folderId,
         int batchSize,
         IMailPollStateRepository stateRepo,
         IGraphMailClient graph,
         ILogger logger,
         CancellationToken ct)
-        => PollQueueCoreAsync(queueId, queueSlug, mailbox, batchSize, stateRepo, graph, logger, ct,
+        => PollQueueCoreAsync(queueId, queueSlug, mailbox, folderId, batchSize, stateRepo, graph, logger, ct,
             ingest: null, markRead: false, notifier: null);
 
     internal static async Task PollQueueCoreAsync(
         Guid queueId,
         string queueSlug,
         string mailbox,
+        string folderId,
         int batchSize,
         IMailPollStateRepository stateRepo,
         IGraphMailClient graph,
@@ -122,7 +125,7 @@ public sealed class MailPollingService : BackgroundService
         var now = DateTime.UtcNow;
         try
         {
-            var page = await graph.ListInboxDeltaAsync(mailbox, state?.DeltaLink, batchSize, ct);
+            var page = await graph.ListInboxDeltaAsync(mailbox, folderId, state?.DeltaLink, batchSize, ct);
             logger.LogInformation(
                 "[MailPolling] queue={Queue} mailbox={Mailbox} received {Count} message(s)",
                 queueSlug, mailbox, page.Messages.Count);

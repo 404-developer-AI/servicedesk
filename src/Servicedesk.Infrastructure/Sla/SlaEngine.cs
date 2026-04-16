@@ -109,18 +109,25 @@ public sealed class SlaEngine : ISlaEngine
             }
 
             // Deadlines = created + target, plus accumulated pause time (shift deadline forward).
-            var frDeadline = _calculator.AddBusinessMinutes(ticket.CreatedUtc, policy.FirstResponseMinutes, schema);
-            var resDeadline = _calculator.AddBusinessMinutes(ticket.CreatedUtc, policy.ResolutionMinutes, schema);
+            // Either target may be null when the policy only tracks one SLA metric.
+            DateTime? frDeadline = policy.FirstResponseMinutes.HasValue
+                ? _calculator.AddBusinessMinutes(ticket.CreatedUtc, policy.FirstResponseMinutes.Value, schema)
+                : null;
+            DateTime? resDeadline = policy.ResolutionMinutes.HasValue
+                ? _calculator.AddBusinessMinutes(ticket.CreatedUtc, policy.ResolutionMinutes.Value, schema)
+                : null;
             if (pauseOnPending && pausedAccumMinutes > 0)
             {
-                frDeadline = _calculator.AddBusinessMinutes(frDeadline, pausedAccumMinutes, schema);
-                resDeadline = _calculator.AddBusinessMinutes(resDeadline, pausedAccumMinutes, schema);
+                if (frDeadline.HasValue)
+                    frDeadline = _calculator.AddBusinessMinutes(frDeadline.Value, pausedAccumMinutes, schema);
+                if (resDeadline.HasValue)
+                    resDeadline = _calculator.AddBusinessMinutes(resDeadline.Value, pausedAccumMinutes, schema);
             }
 
-            int? frMinutesConsumed = firstResponse.HasValue
+            int? frMinutesConsumed = firstResponse.HasValue && policy.FirstResponseMinutes.HasValue
                 ? Math.Max(0, _calculator.BusinessMinutesBetween(ticket.CreatedUtc, firstResponse.Value, schema) - (pauseOnPending ? pausedAccumMinutes : 0))
                 : null;
-            int? resMinutesConsumed = ticket.ResolvedUtc.HasValue
+            int? resMinutesConsumed = ticket.ResolvedUtc.HasValue && policy.ResolutionMinutes.HasValue
                 ? Math.Max(0, _calculator.BusinessMinutesBetween(ticket.CreatedUtc, ticket.ResolvedUtc.Value, schema) - (pauseOnPending ? pausedAccumMinutes : 0))
                 : null;
 

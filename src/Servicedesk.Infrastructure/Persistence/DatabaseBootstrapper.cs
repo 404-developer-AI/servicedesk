@@ -27,6 +27,8 @@ public sealed class DatabaseBootstrapper : IHostedService
     private const string Sql = """
         CREATE EXTENSION IF NOT EXISTS citext;
         CREATE EXTENSION IF NOT EXISTS pgcrypto;
+        CREATE EXTENSION IF NOT EXISTS pg_trgm;
+        CREATE EXTENSION IF NOT EXISTS unaccent;
 
         CREATE TABLE IF NOT EXISTS audit_log (
             id              BIGSERIAL PRIMARY KEY,
@@ -808,6 +810,99 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_ticket_sla_state_pending_res
             ON ticket_sla_state (resolution_deadline_utc)
             WHERE resolution_met_utc IS NULL;
+
+        -- ===================================================================
+        -- v0.0.8 step 8: global search (Postgres FTS + trigram fuzzy)
+        --
+        -- 1) ticket_event_search is auto-populated from ticket_events via a
+        --    trigger. normalized_text strips accents and lowercases so matches
+        --    are accent- and case-insensitive. body_html is stripped to text
+        --    so HTML mails remain searchable even when body_text is sparse.
+        -- 2) One-time backfill fills the sidecar for events that existed
+        --    before this migration ran (idempotent: ON CONFLICT DO UPDATE).
+        -- 3) mail_messages gets its own tsvector covering subject + body_text
+        --    + sender identity, for mail-scoped hits that resolve back to the
+        --    parent ticket.
+        -- 4) contacts uses pg_trgm GIN indexes for similarity lookup on
+        --    email + full name.
+        -- ===================================================================
+
+        -- Accent-insensitive search was an early ambition but unaccent()
+        -- is marked STABLE (dictionary lookup via search_path), which rules
+        -- it out of STORED generated columns and expression indexes. The
+        -- documented IMMUTABLE-wrapper workaround is fragile across
+        -- install layouts, so v1 ships case-insensitive only (lower()).
+        -- Revisit when we get a concrete "find café matches cafe" ask.
+
+        CREATE OR REPLACE FUNCTION ticket_event_search_fill() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        DECLARE
+            v_text TEXT;
+        BEGIN
+            v_text := lower(
+                coalesce(NEW.body_text, '') || ' ' ||
+                regexp_replace(coalesce(NEW.body_html, ''), '<[^>]*>', ' ', 'g')
+            );
+            INSERT INTO ticket_event_search (event_id, ticket_id, normalized_text)
+            VALUES (NEW.id, NEW.ticket_id, v_text)
+            ON CONFLICT (event_id) DO UPDATE
+                SET normalized_text = EXCLUDED.normalized_text,
+                    ticket_id = EXCLUDED.ticket_id;
+            RETURN NEW;
+        END;
+        $$;
+
+        DROP TRIGGER IF EXISTS trg_ticket_event_search_fill ON ticket_events;
+        CREATE TRIGGER trg_ticket_event_search_fill
+            AFTER INSERT OR UPDATE OF body_text, body_html ON ticket_events
+            FOR EACH ROW EXECUTE FUNCTION ticket_event_search_fill();
+
+        -- Backfill events that predate this trigger. Safe to re-run.
+        INSERT INTO ticket_event_search (event_id, ticket_id, normalized_text)
+        SELECT e.id, e.ticket_id,
+               lower(
+                   coalesce(e.body_text, '') || ' ' ||
+                   regexp_replace(coalesce(e.body_html, ''), '<[^>]*>', ' ', 'g')
+               )
+        FROM ticket_events e
+        LEFT JOIN ticket_event_search s ON s.event_id = e.id
+        WHERE s.event_id IS NULL;
+
+        -- Mail-scoped FTS: subject + body_text + sender identity.
+        ALTER TABLE mail_messages
+            ADD COLUMN IF NOT EXISTS search_vector TSVECTOR
+                GENERATED ALWAYS AS (
+                    to_tsvector('simple',
+                        lower(
+                            coalesce(subject, '') || ' ' ||
+                            coalesce(body_text, '') || ' ' ||
+                            coalesce(from_address::text, '') || ' ' ||
+                            coalesce(from_name, '')
+                        )
+                    )
+                ) STORED;
+
+        CREATE INDEX IF NOT EXISTS ix_mail_messages_search_vector
+            ON mail_messages USING GIN (search_vector);
+
+        -- SLA policy targets are optional (first-response-only or resolution-only).
+        ALTER TABLE sla_policies ALTER COLUMN first_response_minutes DROP NOT NULL;
+        ALTER TABLE sla_policies ALTER COLUMN resolution_minutes DROP NOT NULL;
+
+        -- Contacts: fuzzy similarity on email + full name for typeahead.
+        CREATE INDEX IF NOT EXISTS ix_contacts_email_trgm
+            ON contacts USING GIN ((lower(email::text)) gin_trgm_ops);
+        CREATE INDEX IF NOT EXISTS ix_contacts_name_trgm
+            ON contacts USING GIN (
+                (lower(coalesce(first_name, '') || ' ' || coalesce(last_name, ''))) gin_trgm_ops
+            );
+
+        -- ===================================================================
+        -- Per-queue inbound folder selection (Graph mail folder id + display name)
+        -- ===================================================================
+        ALTER TABLE queues
+            ADD COLUMN IF NOT EXISTS inbound_folder_id   TEXT NULL,
+            ADD COLUMN IF NOT EXISTS inbound_folder_name TEXT NULL;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

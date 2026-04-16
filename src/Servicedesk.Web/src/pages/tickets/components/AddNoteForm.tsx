@@ -135,6 +135,7 @@ export function AddNoteForm({ ticketId, onSubmitted }: AddNoteFormProps) {
       <RichTextEditor
         key={editorKey}
         content={initialContent || undefined}
+        autoFocus
         onChange={(html) => {
           setBodyHtml(html);
           updateDraft(html, tab);

@@ -42,7 +42,9 @@ public static class TaxonomyEndpoints
         int SortOrder,
         bool IsActive,
         string? InboundMailboxAddress,
-        string? OutboundMailboxAddress);
+        string? OutboundMailboxAddress,
+        string? InboundFolderId,
+        string? InboundFolderName);
 
     private static void MapQueues(RouteGroupBuilder group)
     {
@@ -62,13 +64,16 @@ public static class TaxonomyEndpoints
             if (ValidateTaxonomyName(req.Name) is { } err) return err;
             if (ValidateMailbox(req.InboundMailboxAddress, "inboundMailboxAddress") is { } mErr1) return mErr1;
             if (ValidateMailbox(req.OutboundMailboxAddress, "outboundMailboxAddress") is { } mErr2) return mErr2;
+            if (ValidateInboundFolder(req) is { } fErr) return fErr;
             var now = DateTime.UtcNow;
             var created = await repo.CreateQueueAsync(new Queue(
                 Guid.Empty, req.Name.Trim(), Slugify(req.Name), req.Description ?? "",
                 Normalize(req.Color, "#7c7cff"), Normalize(req.Icon, "inbox"),
                 req.SortOrder, req.IsActive, IsSystem: false, now, now,
                 NormalizeMailbox(req.InboundMailboxAddress),
-                NormalizeMailbox(req.OutboundMailboxAddress)), ct);
+                NormalizeMailbox(req.OutboundMailboxAddress),
+                req.InboundFolderId?.Trim(),
+                req.InboundFolderName?.Trim()), ct);
             await AuditWrite(audit, http, "taxonomy.queue.created", created.Id.ToString(), created);
             return Results.Created($"/api/taxonomy/queues/{created.Id}", created);
         }).WithName("CreateQueue").WithOpenApi()
@@ -81,11 +86,14 @@ public static class TaxonomyEndpoints
             if (ValidateTaxonomyName(req.Name) is { } err) return err;
             if (ValidateMailbox(req.InboundMailboxAddress, "inboundMailboxAddress") is { } mErr1) return mErr1;
             if (ValidateMailbox(req.OutboundMailboxAddress, "outboundMailboxAddress") is { } mErr2) return mErr2;
+            if (ValidateInboundFolder(req) is { } fErr) return fErr;
             var updated = await repo.UpdateQueueAsync(id, req.Name.Trim(), Slugify(req.Name),
                 req.Description ?? "", Normalize(req.Color, "#7c7cff"), Normalize(req.Icon, "inbox"),
                 req.SortOrder, req.IsActive,
                 NormalizeMailbox(req.InboundMailboxAddress),
-                NormalizeMailbox(req.OutboundMailboxAddress), ct);
+                NormalizeMailbox(req.OutboundMailboxAddress),
+                req.InboundFolderId?.Trim(),
+                req.InboundFolderName?.Trim(), ct);
             if (updated is null) return Results.NotFound();
             await AuditWrite(audit, http, "taxonomy.queue.updated", id.ToString(), updated);
             return Results.Ok(updated);
@@ -319,6 +327,19 @@ public static class TaxonomyEndpoints
         var trimmed = value.Trim();
         if (trimmed.Length > 320 || !Regex.IsMatch(trimmed, @"^[^@\s]+@[^@\s]+\.[^@\s]+$"))
             return Results.BadRequest(new { error = $"{field} must be a valid email address." });
+        return null;
+    }
+
+    private static IResult? ValidateInboundFolder(QueueRequest req)
+    {
+        var hasMailbox = !string.IsNullOrWhiteSpace(req.InboundMailboxAddress);
+        var hasFolderId = !string.IsNullOrWhiteSpace(req.InboundFolderId);
+        var hasFolderName = !string.IsNullOrWhiteSpace(req.InboundFolderName);
+
+        if (hasMailbox && (!hasFolderId || !hasFolderName))
+            return Results.BadRequest(new { error = "An inbound folder must be selected when an inbound mailbox address is configured." });
+        if (!hasMailbox && (hasFolderId || hasFolderName))
+            return Results.BadRequest(new { error = "Inbound folder cannot be set without an inbound mailbox address." });
         return null;
     }
 

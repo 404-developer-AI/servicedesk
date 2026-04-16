@@ -207,6 +207,8 @@ export type Queue = {
   updatedUtc: string;
   inboundMailboxAddress?: string | null;
   outboundMailboxAddress?: string | null;
+  inboundFolderId?: string | null;
+  inboundFolderName?: string | null;
 };
 
 export type Priority = {
@@ -268,6 +270,8 @@ export type QueueInput = {
   isActive: boolean;
   inboundMailboxAddress?: string | null;
   outboundMailboxAddress?: string | null;
+  inboundFolderId?: string | null;
+  inboundFolderName?: string | null;
 };
 
 export type PriorityInput = {
@@ -354,6 +358,7 @@ export const settingsApi = {
 
 export type GraphSecretStatus = { configured: boolean };
 export type GraphTestResult = { ok: boolean; latencyMs?: number; error?: string };
+export type GraphMailFolder = { id: string; displayName: string; totalItemCount: number };
 
 export const graphAdminApi = {
   secretStatus: () =>
@@ -364,6 +369,8 @@ export const graphAdminApi = {
     request<void>("DELETE", "/api/admin/settings/graph/secret"),
   test: (mailbox: string) =>
     request<GraphTestResult>("POST", "/api/admin/settings/graph/test", { mailbox }),
+  listFolders: (mailbox: string) =>
+    request<GraphMailFolder[]>("GET", `/api/admin/settings/graph/folders?mailbox=${encodeURIComponent(mailbox)}`),
 };
 
 // ---- Mail attachment diagnostics ----
@@ -581,8 +588,8 @@ export type SlaPolicy = {
   queueId: string | null;
   priorityId: string;
   businessHoursSchemaId: string;
-  firstResponseMinutes: number;
-  resolutionMinutes: number;
+  firstResponseMinutes: number | null;
+  resolutionMinutes: number | null;
   pauseOnPending: boolean;
 };
 
@@ -617,6 +624,8 @@ export type SlaLogItem = {
   firstResponseMetUtc: string | null;
   resolutionDeadlineUtc: string | null;
   resolutionMetUtc: string | null;
+  firstResponseTargetMinutes: number | null;
+  resolutionTargetMinutes: number | null;
   firstResponseBusinessMinutes: number | null;
   resolutionBusinessMinutes: number | null;
   isPaused: boolean;
@@ -690,6 +699,50 @@ export const slaApi = {
 
   ticketState: (ticketId: string) =>
     request<TicketSlaState | null>("GET", `/api/sla/tickets/${ticketId}`),
+};
+
+// ---- Global Search ----
+
+export type SearchHit = {
+  kind: string;
+  entityId: string;
+  title: string;
+  snippet: string | null;
+  rank: number;
+  meta: Record<string, string | null> | null;
+};
+
+export type SearchGroup = {
+  kind: string;
+  hits: SearchHit[];
+  totalInGroup: number;
+  hasMore: boolean;
+};
+
+export type SearchDropdownResponse = {
+  groups: SearchGroup[];
+  totalHits: number;
+  availableKinds: string[];
+  minQueryLength: number;
+};
+
+export type SearchFullResponse = {
+  group: SearchGroup;
+  availableKinds: string[];
+  minQueryLength: number;
+};
+
+export const searchApi = {
+  quick: (q: string, limit = 8) =>
+    request<SearchDropdownResponse>(
+      "GET",
+      `/api/search?q=${encodeURIComponent(q)}&limit=${limit}`,
+    ),
+  full: (q: string, type: string, limit = 25, offset = 0) =>
+    request<SearchFullResponse>(
+      "GET",
+      `/api/search/full?q=${encodeURIComponent(q)}&type=${encodeURIComponent(type)}&limit=${limit}&offset=${offset}`,
+    ),
 };
 
 export const authApi = {

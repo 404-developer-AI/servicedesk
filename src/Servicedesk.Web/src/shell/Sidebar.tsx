@@ -27,6 +27,7 @@ import {
 import { viewApi } from "@/lib/ticket-api";
 import { settingsApi } from "@/lib/api";
 import { RecentTickets } from "@/shell/RecentTickets";
+import { GlobalSearchBar } from "@/components/search/GlobalSearchBar";
 import { useAuth, authStore } from "@/auth/authStore";
 import { authApi } from "@/lib/api";
 import {
@@ -124,6 +125,10 @@ export function Sidebar() {
             <div className="truncate text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{role}</div>
           </div>
         )}
+      </div>
+
+      <div className="mx-3 mb-3 border-b border-white/5 pb-3">
+        <GlobalSearchBar collapsed={collapsed} />
       </div>
 
       <nav className="flex-1 space-y-1 px-3">

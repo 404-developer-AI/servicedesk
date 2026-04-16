@@ -19,7 +19,8 @@ function formatDuration(ms: number): string {
   return `${days}d ${hours % 24}h`;
 }
 
-function pillClasses(remainingMs: number | null, met: boolean, paused: boolean) {
+function pillClasses(remainingMs: number | null, met: boolean, metLate: boolean, paused: boolean) {
+  if (met && metLate) return "border-red-500/30 bg-red-500/10 text-red-200";
   if (met) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-200";
   if (paused) return "border-sky-500/30 bg-sky-500/10 text-sky-200";
   if (remainingMs === null) return "border-white/10 bg-white/[0.04] text-muted-foreground";
@@ -42,8 +43,8 @@ export function SlaPill({ ticketId, className }: Props) {
 
   return (
     <div className={cn("flex flex-wrap items-center gap-2 text-xs", className)}>
-      <Row label="First response" nowMs={nowMs} deadline={state.firstResponseDeadlineUtc} met={state.firstResponseMetUtc} paused={state.isPaused} />
-      <Row label="Resolution" nowMs={nowMs} deadline={state.resolutionDeadlineUtc} met={state.resolutionMetUtc} paused={state.isPaused} />
+      <Row label="First response" nowMs={nowMs} deadline={state.firstResponseDeadlineUtc} met={state.firstResponseMetUtc} businessMinutes={state.firstResponseBusinessMinutes} paused={state.isPaused} />
+      <Row label="Resolution" nowMs={nowMs} deadline={state.resolutionDeadlineUtc} met={state.resolutionMetUtc} businessMinutes={state.resolutionBusinessMinutes} paused={state.isPaused} />
       {state.isPaused && (
         <span className="flex items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-sky-200">
           <PauseCircle className="h-3 w-3" /> Paused (waiting)
@@ -53,33 +54,47 @@ export function SlaPill({ ticketId, className }: Props) {
   );
 }
 
+function formatBusinessMinutes(m: number): string {
+  if (m < 60) return `${m}m`;
+  const h = m / 60;
+  if (h < 24) return `${h.toFixed(1)}h`;
+  return `${(h / 24).toFixed(1)}d`;
+}
+
 function Row({
   label,
   nowMs,
   deadline,
   met,
+  businessMinutes,
   paused,
 }: {
   label: string;
   nowMs: number;
   deadline: string | null;
   met: string | null;
+  businessMinutes: number | null;
   paused: boolean;
 }) {
   if (!deadline) return null;
-  const remainingMs = new Date(deadline).getTime() - nowMs;
+  const deadlineMs = new Date(deadline).getTime();
+  const remainingMs = deadlineMs - nowMs;
   const isMet = met !== null;
+  const metLate = isMet && new Date(met).getTime() > deadlineMs;
+  const durationLabel = businessMinutes !== null ? formatBusinessMinutes(businessMinutes) : null;
   return (
     <span
       className={cn(
         "flex items-center gap-1 rounded-md border px-2 py-1",
-        pillClasses(isMet || paused ? null : remainingMs, isMet, paused),
+        pillClasses(isMet || paused ? null : remainingMs, isMet, metLate, paused),
       )}
     >
-      {isMet ? <CheckCircle2 className="h-3 w-3" /> : remainingMs < 0 ? <AlertTriangle className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
+      {isMet && metLate ? <AlertTriangle className="h-3 w-3" /> : isMet ? <CheckCircle2 className="h-3 w-3" /> : remainingMs < 0 ? <AlertTriangle className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
       <span className="font-medium">{label}:</span>
       {isMet
-        ? "met"
+        ? metLate
+          ? `NOK (${durationLabel ?? "late"})`
+          : `OK (${durationLabel ?? "met"})`
         : paused
           ? "paused"
           : remainingMs < 0

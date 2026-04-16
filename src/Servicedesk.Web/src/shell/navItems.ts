@@ -43,7 +43,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     label: "SLA log",
     to: "/sla-log",
     icon: Timer,
-    roles: ["Agent", "Admin"],
+    roles: ["Admin"],
     comingIn: "",
     description: "Per-ticket timing — first-response and resolution with filters and date picker.",
     section: "main",

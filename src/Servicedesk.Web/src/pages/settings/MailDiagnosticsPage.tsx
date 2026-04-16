@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Paperclip, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { useServerTime, toServerLocal, formatUtcSuffix } from "@/hooks/useServerTime";
 import {
   ApiError,
   mailDiagnosticsApi,
@@ -33,6 +34,10 @@ const JOB_BADGE: Record<string, string> = {
 };
 
 export function MailDiagnosticsPage() {
+  const { time: serverTime } = useServerTime();
+  const offset = serverTime?.offsetMinutes ?? 0;
+  const fmtDate = (iso: string) => toServerLocal(iso, offset, true);
+  const fmtUtcGray = (iso: string) => formatUtcSuffix(iso);
   const [input, setInput] = React.useState("");
   const [submitted, setSubmitted] = React.useState<string | null>(null);
   const [onlyIssues, setOnlyIssues] = React.useState(true);
@@ -138,7 +143,7 @@ export function MailDiagnosticsPage() {
                   <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
                     <span>{m.fromAddress || "—"}</span>
                     <span>
-                      {new Date(m.receivedUtc).toISOString().replace("T", " ").slice(0, 16)} UTC
+                      {fmtDate(m.receivedUtc)} <span className="text-muted-foreground/40">{fmtUtcGray(m.receivedUtc)}</span>
                     </span>
                     <span className="font-mono">{m.mailMessageId}</span>
                   </div>
@@ -226,8 +231,8 @@ function DiagnosticsView({ data }: { data: MailAttachmentDiagnostic }) {
             )}
           </Header>
           <Header label="From">{data.fromAddress || "—"}</Header>
-          <Header label="Received (UTC)">
-            {new Date(data.receivedUtc).toISOString().replace("T", " ").slice(0, 19)}
+          <Header label="Received">
+            {fmtDate(data.receivedUtc)} <span className="text-muted-foreground/40">{fmtUtcGray(data.receivedUtc)}</span>
           </Header>
         </div>
         <Header label="Subject">{data.subject || "(no subject)"}</Header>
@@ -312,11 +317,11 @@ function AttachmentRow({ attachment: a }: { attachment: MailAttachmentDiagnostic
         {a.job && (
           <>
             <Field label="Attempts">{a.job.attemptCount}</Field>
-            <Field label="Next attempt (UTC)">
-              {new Date(a.job.nextAttemptUtc).toISOString().replace("T", " ").slice(0, 19)}
+            <Field label="Next attempt">
+              {fmtDate(a.job.nextAttemptUtc)} <span className="text-muted-foreground/40">{fmtUtcGray(a.job.nextAttemptUtc)}</span>
             </Field>
-            <Field label="Updated (UTC)">
-              {new Date(a.job.updatedUtc).toISOString().replace("T", " ").slice(0, 19)}
+            <Field label="Updated">
+              {fmtDate(a.job.updatedUtc)} <span className="text-muted-foreground/40">{fmtUtcGray(a.job.updatedUtc)}</span>
             </Field>
             <Field label="Job id">{a.job.jobId}</Field>
           </>

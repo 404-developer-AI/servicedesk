@@ -21,6 +21,7 @@ type RichTextEditorProps = {
   editable?: boolean;
   minHeight?: string;
   className?: string;
+  autoFocus?: boolean;
 };
 
 type ToolbarButtonProps = {
@@ -62,8 +63,10 @@ export function RichTextEditor({
   editable = true,
   minHeight = "120px",
   className,
+  autoFocus = false,
 }: RichTextEditorProps) {
   const editor = useEditor({
+    autofocus: autoFocus ? "end" : false,
     extensions: [
       StarterKit,
       Link.configure({

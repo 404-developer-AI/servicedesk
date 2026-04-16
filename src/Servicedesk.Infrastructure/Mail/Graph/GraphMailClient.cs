@@ -28,7 +28,7 @@ public sealed class GraphMailClient : IGraphMailClient
     }
 
     public async Task<GraphDeltaPage> ListInboxDeltaAsync(
-        string mailbox, string? deltaLink, int maxPageSize, CancellationToken ct)
+        string mailbox, string folderId, string? deltaLink, int maxPageSize, CancellationToken ct)
     {
         var graph = await BuildClientAsync(ct);
 
@@ -36,14 +36,14 @@ public sealed class GraphMailClient : IGraphMailClient
         string? nextLink;
         string? finalDeltaLink;
 
-        var firstPage = await FetchPageAsync(graph, mailbox, deltaLink, maxPageSize, ct);
+        var firstPage = await FetchPageAsync(graph, mailbox, folderId, deltaLink, maxPageSize, ct);
         AppendPage(firstPage, messages);
         nextLink = firstPage?.OdataNextLink;
         finalDeltaLink = firstPage?.OdataDeltaLink;
 
         while (nextLink is not null)
         {
-            var page = await graph.Users[mailbox].MailFolders["inbox"].Messages.Delta
+            var page = await graph.Users[mailbox].MailFolders[folderId].Messages.Delta
                 .WithUrl(nextLink)
                 .GetAsDeltaGetResponseAsync(cancellationToken: ct);
             AppendPage(page, messages);
@@ -58,8 +58,9 @@ public sealed class GraphMailClient : IGraphMailClient
     {
         var sw = Stopwatch.StartNew();
         var graph = await BuildClientAsync(ct);
-        _ = await graph.Users[mailbox].MailFolders["inbox"].Messages.Delta
-            .GetAsDeltaGetResponseAsync(config =>
+        // Use the well-known "inbox" name for connectivity tests — no folder selection needed.
+        _ = await graph.Users[mailbox].MailFolders["inbox"].Messages
+            .GetAsync(config =>
             {
                 config.QueryParameters.Top = 1;
                 config.QueryParameters.Select = new[] { "id" };
@@ -209,6 +210,32 @@ public sealed class GraphMailClient : IGraphMailClient
         return created.Id;
     }
 
+    public async Task<IReadOnlyList<GraphMailFolderInfo>> ListMailFoldersAsync(string mailbox, CancellationToken ct)
+    {
+        var graph = await BuildClientAsync(ct);
+        var folders = new List<GraphMailFolderInfo>();
+
+        var page = await graph.Users[mailbox].MailFolders.GetAsync(cfg =>
+        {
+            cfg.QueryParameters.Top = 100;
+            cfg.QueryParameters.Select = new[] { "id", "displayName", "totalItemCount" };
+        }, ct);
+
+        while (page?.Value is not null)
+        {
+            foreach (var f in page.Value)
+            {
+                if (f.Id is null || f.DisplayName is null) continue;
+                folders.Add(new GraphMailFolderInfo(f.Id, f.DisplayName, f.TotalItemCount ?? 0));
+            }
+
+            if (page.OdataNextLink is null) break;
+            page = await graph.Users[mailbox].MailFolders.WithUrl(page.OdataNextLink).GetAsync(cancellationToken: ct);
+        }
+
+        return folders;
+    }
+
     private async Task<GraphServiceClient> BuildClientAsync(CancellationToken ct)
     {
         var tenantId = await _settings.GetAsync<string>(SettingKeys.Graph.TenantId, ct);
@@ -224,16 +251,16 @@ public sealed class GraphMailClient : IGraphMailClient
     }
 
     private static Task<Microsoft.Graph.Users.Item.MailFolders.Item.Messages.Delta.DeltaGetResponse?> FetchPageAsync(
-        GraphServiceClient graph, string mailbox, string? deltaLink, int maxPageSize, CancellationToken ct)
+        GraphServiceClient graph, string mailbox, string folderId, string? deltaLink, int maxPageSize, CancellationToken ct)
     {
         if (!string.IsNullOrWhiteSpace(deltaLink))
         {
-            return graph.Users[mailbox].MailFolders["inbox"].Messages.Delta
+            return graph.Users[mailbox].MailFolders[folderId].Messages.Delta
                 .WithUrl(deltaLink)
                 .GetAsDeltaGetResponseAsync(cancellationToken: ct);
         }
 
-        return graph.Users[mailbox].MailFolders["inbox"].Messages.Delta
+        return graph.Users[mailbox].MailFolders[folderId].Messages.Delta
             .GetAsDeltaGetResponseAsync(config =>
             {
                 config.QueryParameters.Top = maxPageSize;

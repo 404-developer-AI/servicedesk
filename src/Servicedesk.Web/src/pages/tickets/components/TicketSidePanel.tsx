@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { agentQueueApi, taxonomyApi } from "@/lib/api";
+import { useServerTime, toServerLocal, formatUtcSuffix } from "@/hooks/useServerTime";
 import { AgentPicker } from "@/components/AgentPicker";
 import { cn } from "@/lib/utils";
 import type { Ticket, TicketFieldUpdate, Contact, CompanyDetail } from "@/lib/ticket-api";
@@ -70,16 +71,17 @@ function ColorDot({ color }: { color: string }) {
   );
 }
 
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return "Not set";
-  return new Date(iso).toLocaleString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+
+function ServerDate({ iso }: { iso: string | null | undefined }) {
+  const { time } = useServerTime();
+  const offset = time?.offsetMinutes ?? 0;
+  if (!iso) return <span>Not set</span>;
+  return (
+    <span>
+      {toServerLocal(iso, offset)}{" "}
+      <span className="text-muted-foreground/40 text-xs">{formatUtcSuffix(iso)}</span>
+    </span>
+  );
 }
 
 function SourceBadge({ source }: { source: string }) {
@@ -305,17 +307,17 @@ function StatusTab({
 
       <div>
         <FieldLabel>Created</FieldLabel>
-        <div className="text-sm text-foreground/80">{formatDate(ticket.createdUtc)}</div>
+        <div className="text-sm text-foreground/80"><ServerDate iso={ticket.createdUtc} /></div>
       </div>
 
       <div>
         <FieldLabel>Updated</FieldLabel>
-        <div className="text-sm text-foreground/80">{formatDate(ticket.updatedUtc)}</div>
+        <div className="text-sm text-foreground/80"><ServerDate iso={ticket.updatedUtc} /></div>
       </div>
 
       <div>
         <FieldLabel>Due</FieldLabel>
-        <div className="text-sm text-foreground/80">{formatDate(ticket.dueUtc)}</div>
+        <div className="text-sm text-foreground/80"><ServerDate iso={ticket.dueUtc} /></div>
       </div>
 
       <div>
@@ -396,7 +398,7 @@ function ContactTab({ contact }: { contact: Contact | null }) {
 
       <div>
         <FieldLabel>Created</FieldLabel>
-        <div className="text-sm text-foreground/80">{formatDate(contact.createdUtc)}</div>
+        <div className="text-sm text-foreground/80"><ServerDate iso={contact.createdUtc} /></div>
       </div>
     </>
   );

@@ -12,19 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useServerTime } from "@/hooks/useServerTime";
-
-function formatUtc(iso: string): string {
-  // "2026-04-11T12:40:18.123Z" → "2026-04-11 12:40:18"
-  return new Date(iso).toISOString().replace("T", " ").slice(0, 19);
-}
-
-function formatServerLocal(iso: string, offsetMinutes: number): string {
-  const localMs = new Date(iso).getTime() + offsetMinutes * 60_000;
-  // Use toISOString on a UTC-shifted date so we sidestep the browser's
-  // own tz — the server's offset is the only authority here.
-  return new Date(localMs).toISOString().replace("T", " ").slice(0, 19);
-}
+import { useServerTime, toServerLocal, formatUtcSuffix } from "@/hooks/useServerTime";
 
 const EVENT_TYPES = ["", "rate_limited", "csp_violation", "setting_changed"] as const;
 
@@ -148,10 +136,10 @@ export function AuditLogPage() {
                   >
                     <td className="px-4 py-3 font-mono text-xs">
                       <div className="text-foreground/90">
-                        {formatServerLocal(entry.utc, offsetMinutes)}
+                        {toServerLocal(entry.utc, offsetMinutes, true)}
                       </div>
                       <div className="text-[10px] text-muted-foreground/60">
-                        {formatUtc(entry.utc)} UTC
+                        {formatUtcSuffix(entry.utc)}
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -206,8 +194,7 @@ export function AuditLogPage() {
           </DialogHeader>
           {selected && (
             <div className="space-y-3 text-xs">
-              <Row label="Time" value={formatServerLocal(selected.utc, offsetMinutes)} />
-              <Row label="Time (UTC)" value={formatUtc(selected.utc)} />
+              <Row label="Time" value={`${toServerLocal(selected.utc, offsetMinutes, true)}  ${formatUtcSuffix(selected.utc)}`} />
               <Row label="Target" value={selected.target ?? "—"} />
               <Row label="Client IP" value={selected.clientIp ?? "—"} />
               <Row label="User agent" value={selected.userAgent ?? "—"} />

@@ -232,7 +232,7 @@ export function TicketListPage() {
         <ColumnSelector />
       </header>
 
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="flex-1 min-h-0">
         {isLoading ? (
           <TicketTableSkeleton />
         ) : isError ? (
@@ -240,19 +240,21 @@ export function TicketListPage() {
             Failed to load tickets. Please try again.
           </div>
         ) : allItems.length > 0 ? (
-          <>
-            <GroupedTicketList
-              items={allItems}
-              displayConfig={displayConfig}
-              onRowClick={handleRowClick}
-            />
-            <div ref={sentinelRef} className="h-1" />
-            {isFetchingNextPage && (
-              <div className="flex items-center justify-center py-4">
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              </div>
-            )}
-          </>
+          <GroupedTicketList
+            items={allItems}
+            displayConfig={displayConfig}
+            onRowClick={handleRowClick}
+            footer={
+              <>
+                <div ref={sentinelRef} className="h-1" />
+                {isFetchingNextPage && (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  </div>
+                )}
+              </>
+            }
+          />
         ) : (
           <div className="glass-card p-12 flex flex-col items-center justify-center gap-3 text-center">
             <Ticket className="h-10 w-10 text-muted-foreground/40" />

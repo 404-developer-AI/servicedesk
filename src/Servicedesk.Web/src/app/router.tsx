@@ -30,6 +30,7 @@ import { ViewGroupsSettingsPage } from "@/pages/settings/ViewGroupsSettingsPage"
 import { TicketListPage } from "@/pages/tickets/TicketListPage";
 import { TicketDetailPage } from "@/pages/tickets/TicketDetailPage";
 import { SlaLogPage } from "@/pages/sla/SlaLogPage";
+import { SearchPage } from "@/pages/search/SearchPage";
 
 // The router reads the "current role" outside of React here (for the
 // beforeLoad gate). The auth store is populated by bootstrapAuth() in
@@ -150,10 +151,22 @@ const ticketDetailRoute = createRoute({
   },
 });
 
+const searchRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/search",
+  beforeLoad: authGate(["Agent", "Admin"]),
+  validateSearch: (raw: Record<string, unknown>) => ({
+    q: typeof raw.q === "string" ? raw.q : undefined,
+    type: typeof raw.type === "string" ? raw.type : undefined,
+    offset: typeof raw.offset === "string" ? Number(raw.offset) : (raw.offset as number | undefined),
+  }),
+  component: SearchPage,
+});
+
 const slaLogRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sla-log",
-  beforeLoad: authGate(["Agent", "Admin"]),
+  beforeLoad: authGate(["Admin"]),
   component: SlaLogPage,
 });
 
@@ -267,6 +280,7 @@ const routeTree = rootRoute.addChildren([
   dashboardRoute,
   ticketsRoute,
   ticketDetailRoute,
+  searchRoute,
   slaLogRoute,
   kbRoute,
   profileRoute,

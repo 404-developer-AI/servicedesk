@@ -1,10 +1,17 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
+import {
+  useReactTable,
+  getCoreRowModel,
+  flexRender,
+} from "@tanstack/react-table";
 import { ChevronDown } from "lucide-react";
-import { TicketTable } from "./TicketTable";
+import { ALL_COLUMNS } from "./TicketTable";
 import { taxonomyApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
 import type { TicketListItem, DisplayConfig } from "@/lib/ticket-api";
+import type { CSSProperties } from "react";
 
 // ---- Group key helpers ----
 
@@ -68,7 +75,6 @@ function orderGroups(
       const ai = orderIndex.get(a.key) ?? 99999;
       const bi = orderIndex.get(b.key) ?? 99999;
       if (ai !== bi) return ai - bi;
-      // Fall back to taxonomy sort for items not in the override
       const ta = taxonomySortMap?.get(a.key) ?? 99999;
       const tb = taxonomySortMap?.get(b.key) ?? 99999;
       return ta - tb;
@@ -129,56 +135,20 @@ function useTaxonomySortMap(groupBy: string | null | undefined): Map<string, num
   }, [isStatus, isPriority, isQueue, isCategory, statuses, priorities, queues, categories]);
 }
 
-// ---- Collapsible group header ----
-
-function GroupHeader({
-  group,
-  isCollapsed,
-  onToggle,
-}: {
-  group: TicketGroup;
-  isCollapsed: boolean;
-  onToggle: () => void;
-}) {
-  const color = group.color ?? "#6b7280";
-
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className="flex w-full items-center gap-3 px-4 py-2 rounded-t-lg bg-white/[0.03] border border-white/[0.06] border-b-0 transition-colors hover:bg-white/[0.05] group"
-    >
-      <ChevronDown
-        className={cn(
-          "h-3.5 w-3.5 text-muted-foreground transition-transform duration-150",
-          isCollapsed && "-rotate-90",
-        )}
-      />
-      <span
-        className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium"
-        style={{ backgroundColor: `${color}20`, color }}
-      >
-        {group.label}
-      </span>
-      <span className="text-[11px] text-muted-foreground/60">
-        {group.items.length} ticket{group.items.length !== 1 ? "s" : ""}
-      </span>
-    </button>
-  );
-}
-
 // ---- Main component ----
 
 type GroupedTicketListProps = {
   items: TicketListItem[];
   displayConfig: DisplayConfig;
   onRowClick: (id: string) => void;
+  footer?: React.ReactNode;
 };
 
 export function GroupedTicketList({
   items,
   displayConfig,
   onRowClick,
+  footer,
 }: GroupedTicketListProps) {
   const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(
     new Set(),
@@ -188,31 +158,61 @@ export function GroupedTicketList({
   const hasGrouping = !!groupBy && groupBy in GROUP_BY_FIELD_MAP;
   const hasPriorityFloat = !!displayConfig.priorityFloat;
   const taxonomySortMap = useTaxonomySortMap(groupBy);
+  const { visibleColumns } = useColumnPrefsStore();
 
-  // No grouping and no float — render flat table
-  if (!hasGrouping && !hasPriorityFloat) {
-    return <TicketTable data={items} onRowClick={onRowClick} />;
-  }
+  const columns = React.useMemo(
+    () => ALL_COLUMNS.filter((col) => visibleColumns.includes(col.id!)),
+    [visibleColumns],
+  );
 
-  // Split float vs normal
-  let floatItems: TicketListItem[] = [];
-  let normalItems: TicketListItem[] = items;
+  const table = useReactTable({
+    data: items,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+  });
 
-  if (hasPriorityFloat) {
-    floatItems = items.filter((t) => !t.priorityIsDefault);
-    normalItems = items.filter((t) => t.priorityIsDefault);
-  }
+  // Build ordered groups
+  const orderedGroups = React.useMemo(() => {
+    if (!hasGrouping && !hasPriorityFloat) {
+      return [{ key: "__all__", label: "", color: undefined, items }] as TicketGroup[];
+    }
 
-  // Group normal items
-  let normalGroups: TicketGroup[];
-  if (hasGrouping) {
-    const raw = groupTickets(normalItems, groupBy!);
-    normalGroups = orderGroups(raw, displayConfig.groupOrder, taxonomySortMap);
-  } else {
-    normalGroups = normalItems.length > 0
-      ? [{ key: "__all__", label: "All tickets", items: normalItems }]
-      : [];
-  }
+    let floatItems: TicketListItem[] = [];
+    let normalItems: TicketListItem[] = items;
+
+    if (hasPriorityFloat) {
+      floatItems = items.filter((t) => !t.priorityIsDefault);
+      normalItems = items.filter((t) => t.priorityIsDefault);
+    }
+
+    const result: TicketGroup[] = [];
+
+    if (floatItems.length > 0) {
+      result.push({ key: "__float__", label: "Priority", color: "#ef4444", items: floatItems });
+    }
+
+    if (hasGrouping) {
+      const raw = groupTickets(normalItems, groupBy!);
+      const ordered = orderGroups(raw, displayConfig.groupOrder, taxonomySortMap);
+      result.push(...ordered);
+    } else if (normalItems.length > 0) {
+      result.push({ key: "__all__", label: "All tickets", color: undefined, items: normalItems });
+    }
+
+    return result;
+  }, [items, hasGrouping, hasPriorityFloat, groupBy, displayConfig.groupOrder, taxonomySortMap]);
+
+  const showGroupHeaders = hasGrouping || hasPriorityFloat;
+  const colCount = columns.length;
+
+  // Build a lookup from item id to react-table row for rendering
+  const rowById = React.useMemo(() => {
+    const map = new Map<string, (typeof table extends { getRowModel: () => { rows: (infer R)[] } } ? R : never)>();
+    for (const row of table.getRowModel().rows) {
+      map.set(row.original.id, row);
+    }
+    return map;
+  }, [table.getRowModel().rows]);
 
   function toggleCollapse(key: string) {
     setCollapsedGroups((prev) => {
@@ -224,41 +224,94 @@ export function GroupedTicketList({
   }
 
   return (
-    <div className="space-y-3">
-      {/* Priority float section */}
-      {floatItems.length > 0 && (
-        <div>
-          <GroupHeader
-            group={{
-              key: "__float__",
-              label: "Priority",
-              color: "#ef4444",
-              items: floatItems,
-            }}
-            isCollapsed={collapsedGroups.has("__float__")}
-            onToggle={() => toggleCollapse("__float__")}
-          />
-          {!collapsedGroups.has("__float__") && (
-            <TicketTable data={floatItems} onRowClick={onRowClick} />
-          )}
-        </div>
-      )}
+    <div className="glass-card h-full overflow-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="sticky top-0 z-10 bg-[hsl(245_14%_12%)]">
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id}>
+                {headerGroup.headers.map((header) => (
+                  <th
+                    key={header.id}
+                    className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground border-b border-white/10"
+                  >
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(header.column.columnDef.header, header.getContext())}
+                  </th>
+                ))}
+              </tr>
+            ))}
+          </thead>
+          <tbody>
+            {orderedGroups.map((group) => {
+              const isCollapsed = collapsedGroups.has(group.key);
+              const color = group.color ?? "#6b7280";
 
-      {/* Grouped sections */}
-      {normalGroups.map((group) => (
-        <div key={group.key}>
-          {hasGrouping && (
-            <GroupHeader
-              group={group}
-              isCollapsed={collapsedGroups.has(group.key)}
-              onToggle={() => toggleCollapse(group.key)}
-            />
-          )}
-          {!collapsedGroups.has(group.key) && (
-            <TicketTable data={group.items} onRowClick={onRowClick} />
-          )}
-        </div>
-      ))}
+              return (
+                <React.Fragment key={group.key}>
+                  {showGroupHeaders && (
+                    <tr
+                      className="border-b border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] transition-colors cursor-pointer"
+                      onClick={() => toggleCollapse(group.key)}
+                    >
+                      <td colSpan={colCount} className="px-4 py-2">
+                        <div className="flex items-center gap-3">
+                          <ChevronDown
+                            className={cn(
+                              "h-3.5 w-3.5 text-muted-foreground transition-transform duration-150",
+                              isCollapsed && "-rotate-90",
+                            )}
+                          />
+                          <span
+                            className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium"
+                            style={{ backgroundColor: `${color}20`, color }}
+                          >
+                            {group.label}
+                          </span>
+                          <span className="text-[11px] text-muted-foreground/60">
+                            {group.items.length} ticket{group.items.length !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  {!isCollapsed &&
+                    group.items.map((item) => {
+                      const row = rowById.get(item.id);
+                      if (!row) return null;
+
+                      const pColor = item.priorityColor || "#6b7280";
+                      const accent = !item.priorityIsDefault && item.priorityColor;
+                      const rowStyle: CSSProperties = {
+                        boxShadow: `inset 3px 0 0 0 ${pColor}`,
+                        ...(accent
+                          ? {
+                              backgroundImage: `linear-gradient(to right, ${pColor}12 0%, ${pColor}06 30%, transparent 60%)`,
+                            }
+                          : {}),
+                      };
+
+                      return (
+                        <tr
+                          key={row.id}
+                          className="border-b border-white/5 hover:bg-white/[0.04] cursor-pointer transition-colors"
+                          style={rowStyle}
+                          onClick={() => onRowClick(item.id)}
+                        >
+                          {row.getVisibleCells().map((cell) => (
+                            <td key={cell.id} className="px-4 py-3 text-sm">
+                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+        {footer}
     </div>
   );
 }

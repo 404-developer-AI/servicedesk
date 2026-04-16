@@ -5,12 +5,14 @@ namespace Servicedesk.Infrastructure.Mail.Graph;
 /// types from the rest of the app.
 public interface IGraphMailClient
 {
-    /// Fetches the next page in a delta-query chain for a mailbox's Inbox.
+    /// Fetches the next page in a delta-query chain for a mailbox folder.
+    /// <paramref name="folderId"/> is the Graph folder ID selected per queue.
     /// When <paramref name="deltaLink"/> is null the client performs the
     /// initial delta query. The returned <see cref="GraphDeltaPage.DeltaLink"/>
     /// should be persisted and passed back on the next call.
     Task<GraphDeltaPage> ListInboxDeltaAsync(
         string mailbox,
+        string folderId,
         string? deltaLink,
         int maxPageSize,
         CancellationToken ct);
@@ -44,6 +46,10 @@ public interface IGraphMailClient
         string graphMessageId,
         string graphAttachmentId,
         CancellationToken ct);
+
+    /// Lists all top-level mail folders in the mailbox. Used by the admin UI
+    /// to populate the inbound-folder dropdown per queue.
+    Task<IReadOnlyList<GraphMailFolderInfo>> ListMailFoldersAsync(string mailbox, CancellationToken ct);
 }
 
 public sealed record GraphMailSummary(
@@ -86,3 +92,9 @@ public sealed record GraphAttachmentInfo(
     long Size,
     bool IsInline,
     string? ContentId);
+
+/// Metadata for a mailbox folder, returned by <see cref="IGraphMailClient.ListMailFoldersAsync"/>.
+public sealed record GraphMailFolderInfo(
+    string Id,
+    string DisplayName,
+    int TotalItemCount);

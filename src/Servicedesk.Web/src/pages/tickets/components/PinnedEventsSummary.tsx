@@ -13,7 +13,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { EVENT_CONFIG } from "./TicketTimeline";
 
 type PinnedEventsSummaryProps = {
@@ -232,7 +231,7 @@ export function PinnedEventsSummary({
           </span>
           <span className="text-[11px] text-muted-foreground/50">{count}</span>
         </div>
-        <ScrollArea className="max-h-[320px]">
+        <div className="max-h-[480px] overflow-y-auto">
           <div className="divide-y divide-white/[0.06]">
             {pinnedEvents.map((pin) => (
               <PinnedItem
@@ -244,7 +243,7 @@ export function PinnedEventsSummary({
               />
             ))}
           </div>
-        </ScrollArea>
+        </div>
       </PopoverContent>
     </Popover>
   );

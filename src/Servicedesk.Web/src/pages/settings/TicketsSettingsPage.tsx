@@ -3,10 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   ApiError,
+  graphAdminApi,
   taxonomyApi,
   STATE_CATEGORIES,
   type Category,
   type CategoryInput,
+  type GraphMailFolder,
   type Priority,
   type PriorityInput,
   type Queue,
@@ -18,6 +20,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
@@ -279,7 +288,35 @@ function QueueDialog({
     isActive: queue?.isActive ?? true,
     inboundMailboxAddress: queue?.inboundMailboxAddress ?? "",
     outboundMailboxAddress: queue?.outboundMailboxAddress ?? "",
+    inboundFolderId: queue?.inboundFolderId ?? "",
+    inboundFolderName: queue?.inboundFolderName ?? "",
   }));
+
+  const [folders, setFolders] = useState<GraphMailFolder[]>([]);
+  const [foldersLoading, setFoldersLoading] = useState(false);
+  const [foldersError, setFoldersError] = useState<string | null>(null);
+
+  const loadFolders = async () => {
+    const mailbox = form.inboundMailboxAddress?.trim();
+    if (!mailbox) return;
+    setFoldersLoading(true);
+    setFoldersError(null);
+    try {
+      const result = await graphAdminApi.listFolders(mailbox);
+      if (Array.isArray(result)) {
+        setFolders(result);
+      } else {
+        setFoldersError((result as { error?: string }).error ?? "Unknown error");
+      }
+    } catch (err) {
+      setFoldersError(err instanceof ApiError ? `Failed (${err.status})` : "Failed to load folders");
+    } finally {
+      setFoldersLoading(false);
+    }
+  };
+
+  const hasMailbox = !!form.inboundMailboxAddress?.trim();
+  const hasFolder = !!form.inboundFolderId?.trim();
 
   const save = useMutation({
     mutationFn: async () => {
@@ -287,6 +324,8 @@ function QueueDialog({
         ...form,
         inboundMailboxAddress: form.inboundMailboxAddress?.trim() || null,
         outboundMailboxAddress: form.outboundMailboxAddress?.trim() || null,
+        inboundFolderId: form.inboundFolderId?.trim() || null,
+        inboundFolderName: form.inboundFolderName?.trim() || null,
       };
       if (queue) {
         return taxonomyApi.queues.update(queue.id, payload);
@@ -381,8 +420,74 @@ function QueueDialog({
                 }
               />
             </Field>
+
+            <Field label="Inbound folder">
+              <div className="flex items-center gap-2">
+                <Select
+                  value={form.inboundFolderId || undefined}
+                  disabled={!hasMailbox}
+                  onValueChange={(v) => {
+                    const selected = folders.find((f) => f.id === v);
+                    setForm((f) => ({
+                      ...f,
+                      inboundFolderId: v,
+                      inboundFolderName: selected?.displayName ?? "",
+                    }));
+                  }}
+                >
+                  <SelectTrigger className="h-9 flex-1 border-white/10 bg-white/[0.04] focus:border-white/20 focus:bg-white/[0.06] transition-colors">
+                    <SelectValue
+                      placeholder="Select a folder…"
+                    >
+                      {form.inboundFolderName || form.inboundFolderId || "Select a folder…"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="border-white/10 bg-popover/80 backdrop-blur-xl">
+                    {folders.map((f) => (
+                      <SelectItem key={f.id} value={f.id}>
+                        <span className="flex items-center gap-2">
+                          {f.displayName}
+                          <span className="text-xs text-muted-foreground">
+                            ({f.totalItemCount})
+                          </span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                    {folders.length === 0 && form.inboundFolderId && (
+                      <SelectItem value={form.inboundFolderId}>
+                        {form.inboundFolderName || form.inboundFolderId}
+                      </SelectItem>
+                    )}
+                    {folders.length === 0 && !form.inboundFolderId && (
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                        Click "Load folders" to fetch available folders.
+                      </div>
+                    )}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0 border-white/10 bg-white/[0.04] hover:bg-white/[0.08]"
+                  disabled={!hasMailbox || foldersLoading}
+                  onClick={loadFolders}
+                >
+                  {foldersLoading ? "Loading…" : "Load folders"}
+                </Button>
+              </div>
+              {foldersError && (
+                <p className="mt-1 text-xs text-red-400">{foldersError}</p>
+              )}
+              {hasMailbox && !hasFolder && (
+                <p className="mt-1 text-xs text-amber-400">
+                  A folder must be selected when an inbound mailbox is configured.
+                </p>
+              )}
+            </Field>
+
             <p className="text-xs text-muted-foreground">
-              Mail sent to the inbound address is polled by Microsoft Graph and routed to this queue.
+              Mail sent to the inbound address is polled from the selected folder by Microsoft Graph and routed to this queue.
               Outbound is reserved for per-queue send-as replies in a later release.
             </p>
           </div>
@@ -393,7 +498,7 @@ function QueueDialog({
           </Button>
           <Button
             onClick={() => save.mutate()}
-            disabled={save.isPending || !form.name}
+            disabled={save.isPending || !form.name || (hasMailbox && !hasFolder)}
           >
             {save.isPending ? "Saving..." : "Save"}
           </Button>

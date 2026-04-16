@@ -5,6 +5,7 @@ import { slaApi } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const RANGES = [
+  { label: "1d", days: 1 },
   { label: "7d", days: 7 },
   { label: "30d", days: 30 },
 ];
@@ -18,7 +19,7 @@ function formatMinutes(m: number | null): string {
 }
 
 export function AvgPickupTile() {
-  const [days, setDays] = useState(7);
+  const [days, setDays] = useState(1);
   const q = useQuery({
     queryKey: ["sla", "avg-pickup", days],
     queryFn: () => slaApi.avgPickup(days),

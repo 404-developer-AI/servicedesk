@@ -338,6 +338,12 @@ export const ticketApi = {
     request<void>("DELETE", `/api/tickets/${id}/events/${eventId}/pin`),
   updatePinRemark: (id: string, eventId: number, remark: string) =>
     request<TicketEventPin>("PATCH", `/api/tickets/${id}/events/${eventId}/pin`, { remark }),
+  exportPdf: (id: string, excludeInternal = true) => {
+    const params = new URLSearchParams();
+    if (!excludeInternal) params.set("excludeInternal", "false");
+    const qs = params.toString();
+    return `/api/tickets/${id}/export/pdf${qs ? `?${qs}` : ""}`;
+  },
 };
 
 export const viewApi = {

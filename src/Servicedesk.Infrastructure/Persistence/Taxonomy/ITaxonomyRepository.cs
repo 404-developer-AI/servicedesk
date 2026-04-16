@@ -15,7 +15,7 @@ public interface ITaxonomyRepository
     Task<IReadOnlyList<Queue>> ListQueuesAsync(CancellationToken ct);
     Task<Queue?> GetQueueAsync(Guid id, CancellationToken ct);
     Task<Queue> CreateQueueAsync(Queue q, CancellationToken ct);
-    Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, string? inboundMailboxAddress, string? outboundMailboxAddress, CancellationToken ct);
+    Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, string? inboundMailboxAddress, string? outboundMailboxAddress, string? inboundFolderId, string? inboundFolderName, CancellationToken ct);
     Task<DeleteResult> DeleteQueueAsync(Guid id, CancellationToken ct);
 
     Task<IReadOnlyList<Priority>> ListPrioritiesAsync(CancellationToken ct);

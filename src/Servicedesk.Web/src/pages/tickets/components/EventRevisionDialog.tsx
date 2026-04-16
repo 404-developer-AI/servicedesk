@@ -2,6 +2,7 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import DOMPurify from "dompurify";
 import { History } from "lucide-react";
+import { useServerTime, toServerLocal, formatUtcSuffix } from "@/hooks/useServerTime";
 import {
   Dialog,
   DialogContent,
@@ -19,17 +20,6 @@ type EventRevisionDialogProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
-
 function RevisionEntry({
   revision,
   isFirst,
@@ -37,6 +27,8 @@ function RevisionEntry({
   revision: TicketEventRevision;
   isFirst: boolean;
 }) {
+  const { time: serverTime } = useServerTime();
+  const offset = serverTime?.offsetMinutes ?? 0;
   const [expanded, setExpanded] = React.useState(isFirst);
 
   return (
@@ -53,7 +45,7 @@ function RevisionEntry({
           )}
         </div>
         <span className="text-xs text-muted-foreground shrink-0">
-          {formatDate(revision.editedUtc)}
+          {toServerLocal(revision.editedUtc, offset)} <span className="text-muted-foreground/40">{formatUtcSuffix(revision.editedUtc)}</span>
         </span>
       </div>
 

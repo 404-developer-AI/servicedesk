@@ -58,6 +58,20 @@
 }
 
 @layer components {
+  /* In-ticket search highlights. The <mark> is inserted by the DOM walker
+     in InTicketSearch; the .itsearch-current class marks the hit currently
+     centered in the viewport (Enter / F3 step through). */
+  mark[data-itsearch-hit] {
+    background-color: hsl(48 95% 55% / 0.35);
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+  mark[data-itsearch-hit].itsearch-current {
+    background-color: hsl(28 95% 55% / 0.65);
+    outline: 2px solid hsl(28 95% 55% / 0.85);
+  }
+
   /* Static app background — used inside the working app (cheap, no WebGL). */
   .app-background {
     background-color: hsl(var(--background));

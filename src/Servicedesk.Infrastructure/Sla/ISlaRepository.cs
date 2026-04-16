@@ -24,7 +24,7 @@ public interface ISlaRepository
     Task<IReadOnlyList<SlaPolicy>> ListPoliciesAsync(CancellationToken ct);
     Task<SlaPolicy?> GetPolicyAsync(Guid id, CancellationToken ct);
     Task<SlaPolicy?> FindPolicyAsync(Guid? queueId, Guid priorityId, CancellationToken ct);
-    Task<Guid> UpsertPolicyAsync(Guid? queueId, Guid priorityId, Guid schemaId, int firstResponseMinutes, int resolutionMinutes, bool pauseOnPending, CancellationToken ct);
+    Task<Guid> UpsertPolicyAsync(Guid? queueId, Guid priorityId, Guid schemaId, int? firstResponseMinutes, int? resolutionMinutes, bool pauseOnPending, CancellationToken ct);
     Task DeletePolicyAsync(Guid id, CancellationToken ct);
 
     // ---- Ticket SLA state ----
@@ -63,6 +63,8 @@ public sealed record SlaLogRow(
     DateTime? FirstResponseMetUtc,
     DateTime? ResolutionDeadlineUtc,
     DateTime? ResolutionMetUtc,
+    int? FirstResponseTargetMinutes,
+    int? ResolutionTargetMinutes,
     int? FirstResponseBusinessMinutes,
     int? ResolutionBusinessMinutes,
     bool IsPaused,
@@ -72,5 +74,5 @@ public sealed record SlaLogRow(
 public sealed record QueueAvgPickup(
     Guid QueueId,
     string QueueName,
-    int TicketCount,
+    long TicketCount,
     double? AvgBusinessMinutes);

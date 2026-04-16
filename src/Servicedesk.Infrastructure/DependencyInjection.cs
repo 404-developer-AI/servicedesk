@@ -19,6 +19,8 @@ using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Mail.Ingest;
 using Servicedesk.Infrastructure.Mail.Polling;
 using Servicedesk.Infrastructure.Observability;
+using Servicedesk.Domain.Search;
+using Servicedesk.Infrastructure.Search;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Sla;
@@ -95,6 +97,19 @@ public static class DependencyInjection
             (ITicketNumberLookup)sp.GetRequiredService<ITicketRepository>());
 
         services.AddHttpClient();
+
+        // Global search. Every source is wrapped in ScopedSearchSource so
+        // the principal-availability check runs even if a source forgets it
+        // internally. Adding a new source (Companies, Kennisbank, …) means
+        // registering the concrete type here and wrapping it in the
+        // decorator — nothing else.
+        services.AddSingleton<TicketSearchSource>();
+        services.AddSingleton<ContactSearchSource>();
+        services.AddSingleton<SettingsSearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<TicketSearchSource>()));
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<ContactSearchSource>()));
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<SettingsSearchSource>()));
+        services.AddSingleton<ISearchService, SearchService>();
 
         services.AddSingleton<ISlaRepository, SlaRepository>();
         services.AddSingleton<IBusinessHoursCalculator, BusinessHoursCalculator>();

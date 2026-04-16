@@ -88,6 +88,13 @@ public static class SettingKeys
         public const string RecalcIntervalSeconds = "Sla.RecalcIntervalSeconds";
     }
 
+    public static class Search
+    {
+        public const string MinQueryLength = "Search.MinQueryLength";
+        public const string DropdownLimit = "Search.DropdownLimit";
+        public const string DebounceMs = "Search.DebounceMs";
+    }
+
     public static class Jobs
     {
         public const string CompletedRetentionDays = "Jobs.CompletedRetentionDays";
@@ -208,6 +215,17 @@ public static class SettingDefaults
             "Azure AD tenant ID used for Microsoft Graph mail access."),
         new SettingDefault(SettingKeys.Graph.ClientId, "", "string", "Graph",
             "Application (client) ID registered in Azure AD for this install."),
+
+        // Search — v0.0.8 step 8. Tunables for the global search dropdown
+        // and the full-page search. Exposed so installs can raise MinQueryLength
+        // on very active instances to cut noise, or tighten the debounce to
+        // make the dropdown feel snappier.
+        new SettingDefault(SettingKeys.Search.MinQueryLength, "3", "int", "Search",
+            "Minimum number of characters before the global search starts issuing queries."),
+        new SettingDefault(SettingKeys.Search.DropdownLimit, "8", "int", "Search",
+            "Maximum hits per source in the global-search dropdown."),
+        new SettingDefault(SettingKeys.Search.DebounceMs, "150", "int", "Search",
+            "Client-side debounce (milliseconds) between keystrokes and the dropdown query."),
 
         // Jobs — retention for the attachment job-queue and its history.
         new SettingDefault(SettingKeys.Jobs.CompletedRetentionDays, "7", "int", "Jobs",

@@ -8,6 +8,7 @@ import {
 import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { TicketListItem } from "@/lib/ticket-api";
+import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
 
 function relativeTime(utc: string): string {
   const diff = Date.now() - new Date(utc).getTime();
@@ -20,8 +21,16 @@ function relativeTime(utc: string): string {
   return `${days}d ago`;
 }
 
-function formatDate(utc: string): string {
-  return new Date(utc).toISOString().replace("T", " ").slice(0, 16);
+
+/** Renders a UTC ISO date as server-local time (no UTC suffix — too noisy for table cells). */
+function ServerDate({ iso, className }: { iso: string; className?: string }) {
+  const { time } = useServerTime();
+  const offset = time?.offsetMinutes ?? 0;
+  return (
+    <span className={className}>
+      {toServerLocal(iso, offset)}
+    </span>
+  );
 }
 
 type ColoredBadgeProps = {
@@ -42,7 +51,7 @@ function ColoredBadge({ label, color }: ColoredBadgeProps) {
 
 const columnHelper = createColumnHelper<TicketListItem>();
 
-const ALL_COLUMNS = [
+export const ALL_COLUMNS = [
   columnHelper.accessor("number", {
     id: "number",
     header: "#",
@@ -139,7 +148,7 @@ const ALL_COLUMNS = [
     id: "createdUtc",
     header: "Created",
     cell: (info) => (
-      <span className="text-muted-foreground text-xs">{formatDate(info.getValue())}</span>
+      <ServerDate iso={info.getValue()} className="text-muted-foreground text-xs" />
     ),
   }),
   columnHelper.accessor("updatedUtc", {
@@ -157,9 +166,7 @@ const ALL_COLUMNS = [
       if (!val) return <span className="text-muted-foreground/60">—</span>;
       const isPast = new Date(val).getTime() < Date.now();
       return (
-        <span className={isPast ? "text-red-400 text-xs" : "text-muted-foreground text-xs"}>
-          {formatDate(val)}
-        </span>
+        <ServerDate iso={val} className={isPast ? "text-red-400 text-xs" : "text-muted-foreground text-xs"} />
       );
     },
   }),
