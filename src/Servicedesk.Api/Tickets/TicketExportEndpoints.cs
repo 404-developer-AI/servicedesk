@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text.Json;
 using Dapper;
+using Microsoft.AspNetCore.Mvc;
 using Npgsql;
 using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Access;
@@ -25,7 +26,7 @@ public static class TicketExportEndpoints
             HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess,
             ISlaRepository slaRepo, IMailTimelineEnricher mailEnricher,
             IAttachmentRepository attachmentRepo, IBlobStore blobStore,
-            NpgsqlDataSource dataSource, CancellationToken ct) =>
+            [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
             var detail = await repo.GetByIdAsync(id, ct);
             if (detail is null) return Results.NotFound();

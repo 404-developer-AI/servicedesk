@@ -36,8 +36,6 @@ const JOB_BADGE: Record<string, string> = {
 export function MailDiagnosticsPage() {
   const { time: serverTime } = useServerTime();
   const offset = serverTime?.offsetMinutes ?? 0;
-  const fmtDate = (iso: string) => toServerLocal(iso, offset, true);
-  const fmtUtcGray = (iso: string) => formatUtcSuffix(iso);
   const [input, setInput] = React.useState("");
   const [submitted, setSubmitted] = React.useState<string | null>(null);
   const [onlyIssues, setOnlyIssues] = React.useState(true);
@@ -143,7 +141,8 @@ export function MailDiagnosticsPage() {
                   <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
                     <span>{m.fromAddress || "—"}</span>
                     <span>
-                      {fmtDate(m.receivedUtc)} <span className="text-muted-foreground/40">{fmtUtcGray(m.receivedUtc)}</span>
+                      {toServerLocal(m.receivedUtc, offset, true)}{" "}
+                      <span className="text-muted-foreground/40">{formatUtcSuffix(m.receivedUtc)}</span>
                     </span>
                     <span className="font-mono">{m.mailMessageId}</span>
                   </div>
@@ -191,7 +190,7 @@ export function MailDiagnosticsPage() {
         </div>
       )}
 
-      {query.data && <DiagnosticsView data={query.data} />}
+      {query.data && <DiagnosticsView data={query.data} offset={offset} />}
     </div>
   );
 }
@@ -218,7 +217,7 @@ function RecentBadges({ summary }: { summary: MailAttachmentSummary }) {
   );
 }
 
-function DiagnosticsView({ data }: { data: MailAttachmentDiagnostic }) {
+function DiagnosticsView({ data, offset }: { data: MailAttachmentDiagnostic; offset: number }) {
   return (
     <div className="flex flex-col gap-4">
       <section className="glass-panel flex flex-col gap-2 p-4 text-sm">
@@ -232,7 +231,8 @@ function DiagnosticsView({ data }: { data: MailAttachmentDiagnostic }) {
           </Header>
           <Header label="From">{data.fromAddress || "—"}</Header>
           <Header label="Received">
-            {fmtDate(data.receivedUtc)} <span className="text-muted-foreground/40">{fmtUtcGray(data.receivedUtc)}</span>
+            {toServerLocal(data.receivedUtc, offset, true)}{" "}
+            <span className="text-muted-foreground/40">{formatUtcSuffix(data.receivedUtc)}</span>
           </Header>
         </div>
         <Header label="Subject">{data.subject || "(no subject)"}</Header>
@@ -276,7 +276,7 @@ function DiagnosticsView({ data }: { data: MailAttachmentDiagnostic }) {
         ) : (
           <ul className="divide-y divide-white/5">
             {data.attachments.map((a) => (
-              <AttachmentRow key={a.id} attachment={a} />
+              <AttachmentRow key={a.id} attachment={a} offset={offset} />
             ))}
           </ul>
         )}
@@ -285,7 +285,13 @@ function DiagnosticsView({ data }: { data: MailAttachmentDiagnostic }) {
   );
 }
 
-function AttachmentRow({ attachment: a }: { attachment: MailAttachmentDiagnosticItem }) {
+function AttachmentRow({
+  attachment: a,
+  offset,
+}: {
+  attachment: MailAttachmentDiagnosticItem;
+  offset: number;
+}) {
   const stateClass = STATE_BADGE[a.processingState] ?? "border-white/10 bg-white/5 text-muted-foreground";
   const jobClass = a.job ? JOB_BADGE[a.job.state] ?? "border-white/10 bg-white/5" : "";
   return (
@@ -318,10 +324,12 @@ function AttachmentRow({ attachment: a }: { attachment: MailAttachmentDiagnostic
           <>
             <Field label="Attempts">{a.job.attemptCount}</Field>
             <Field label="Next attempt">
-              {fmtDate(a.job.nextAttemptUtc)} <span className="text-muted-foreground/40">{fmtUtcGray(a.job.nextAttemptUtc)}</span>
+              {toServerLocal(a.job.nextAttemptUtc, offset, true)}{" "}
+              <span className="text-muted-foreground/40">{formatUtcSuffix(a.job.nextAttemptUtc)}</span>
             </Field>
             <Field label="Updated">
-              {fmtDate(a.job.updatedUtc)} <span className="text-muted-foreground/40">{fmtUtcGray(a.job.updatedUtc)}</span>
+              {toServerLocal(a.job.updatedUtc, offset, true)}{" "}
+              <span className="text-muted-foreground/40">{formatUtcSuffix(a.job.updatedUtc)}</span>
             </Field>
             <Field label="Job id">{a.job.jobId}</Field>
           </>

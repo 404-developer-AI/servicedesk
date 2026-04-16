@@ -168,7 +168,8 @@ public sealed class AttachmentWorkerTests
             if (_throwOnFetch) throw new InvalidOperationException("boom");
             return Task.FromResult<Stream>(new MemoryStream(_bytes, writable: false));
         }
-        public Task<GraphDeltaPage> ListInboxDeltaAsync(string m, string? d, int b, CancellationToken ct) => throw new NotImplementedException();
+        public Task<GraphDeltaPage> ListInboxDeltaAsync(string m, string f, string? d, int b, CancellationToken ct) => throw new NotImplementedException();
+        public Task<IReadOnlyList<GraphMailFolderInfo>> ListMailFoldersAsync(string m, CancellationToken ct) => Task.FromResult<IReadOnlyList<GraphMailFolderInfo>>(Array.Empty<GraphMailFolderInfo>());
         public Task<TimeSpan> PingAsync(string mbx, CancellationToken ct) => Task.FromResult(TimeSpan.Zero);
         public Task<GraphFullMessage> FetchMessageAsync(string m, string id, CancellationToken ct) => throw new NotImplementedException();
         public Task<Stream> FetchRawMessageAsync(string m, string id, CancellationToken ct) => throw new NotImplementedException();

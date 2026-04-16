@@ -23,7 +23,7 @@ public sealed class MailPollingServiceTests
         };
 
         await MailPollingService.PollQueueCoreAsync(
-            queueId, "servicedesk", "mailbox@test", 50, repo, graph,
+            queueId, "servicedesk", "mailbox@test", "inbox", 50, repo, graph,
             NullLogger.Instance, CancellationToken.None);
 
         var state = await repo.GetAsync(queueId, CancellationToken.None);
@@ -41,7 +41,7 @@ public sealed class MailPollingServiceTests
         var graph = new StubGraphClient { Throw = new InvalidOperationException("no tenant") };
 
         await MailPollingService.PollQueueCoreAsync(
-            queueId, "servicedesk", "mailbox@test", 50, repo, graph,
+            queueId, "servicedesk", "mailbox@test", "inbox", 50, repo, graph,
             NullLogger.Instance, CancellationToken.None);
 
         var state = await repo.GetAsync(queueId, CancellationToken.None);
@@ -62,7 +62,7 @@ public sealed class MailPollingServiceTests
         };
 
         await MailPollingService.PollQueueCoreAsync(
-            queueId, "servicedesk", "mailbox@test", 25, repo, graph,
+            queueId, "servicedesk", "mailbox@test", "inbox", 25, repo, graph,
             NullLogger.Instance, CancellationToken.None);
 
         Assert.Equal("https://graph/delta?seed=1", graph.LastDeltaLink);
@@ -79,7 +79,7 @@ public sealed class MailPollingServiceTests
 
         var graph = new StubGraphClient();
         await MailPollingService.PollQueueCoreAsync(
-            queueId, "servicedesk", "mailbox@test", 25, repo, graph,
+            queueId, "servicedesk", "mailbox@test", "inbox", 25, repo, graph,
             NullLogger.Instance, CancellationToken.None);
 
         // Graph was never called because the service skipped.
@@ -96,7 +96,7 @@ public sealed class MailPollingServiceTests
         public int CallCount { get; private set; }
 
         public Task<GraphDeltaPage> ListInboxDeltaAsync(
-            string mailbox, string? deltaLink, int maxPageSize, CancellationToken ct)
+            string mailbox, string folderId, string? deltaLink, int maxPageSize, CancellationToken ct)
         {
             CallCount++;
             LastDeltaLink = deltaLink;
@@ -104,6 +104,9 @@ public sealed class MailPollingServiceTests
             if (Throw is not null) throw Throw;
             return Task.FromResult(Response);
         }
+
+        public Task<IReadOnlyList<GraphMailFolderInfo>> ListMailFoldersAsync(string mailbox, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<GraphMailFolderInfo>>(Array.Empty<GraphMailFolderInfo>());
 
         public Task<TimeSpan> PingAsync(string mailbox, CancellationToken ct)
             => Task.FromResult(TimeSpan.Zero);

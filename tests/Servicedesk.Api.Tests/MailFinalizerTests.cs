@@ -152,7 +152,8 @@ public class MailFinalizerTests
         public Task<string> EnsureFolderAsync(string mailbox, string folderName, CancellationToken ct)
             => Task.FromResult("folder-" + folderName);
 
-        public Task<GraphDeltaPage> ListInboxDeltaAsync(string m, string? d, int b, CancellationToken ct) => throw new NotImplementedException();
+        public Task<GraphDeltaPage> ListInboxDeltaAsync(string m, string f, string? d, int b, CancellationToken ct) => throw new NotImplementedException();
+        public Task<IReadOnlyList<GraphMailFolderInfo>> ListMailFoldersAsync(string m, CancellationToken ct) => Task.FromResult<IReadOnlyList<GraphMailFolderInfo>>(Array.Empty<GraphMailFolderInfo>());
         public Task<TimeSpan> PingAsync(string m, CancellationToken ct) => throw new NotImplementedException();
         public Task<GraphFullMessage> FetchMessageAsync(string m, string id, CancellationToken ct) => throw new NotImplementedException();
         public Task<Stream> FetchRawMessageAsync(string m, string id, CancellationToken ct) => throw new NotImplementedException();
@@ -190,7 +191,7 @@ public class MailFinalizerTests
 
         public Task<Queue?> GetQueueAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
         public Task<Queue> CreateQueueAsync(Queue q, CancellationToken ct) => throw new NotImplementedException();
-        public Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string desc, string color, string icon, int sortOrder, bool isActive, string? inbound, string? outbound, CancellationToken ct) => throw new NotImplementedException();
+        public Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string desc, string color, string icon, int sortOrder, bool isActive, string? inbound, string? outbound, string? inboundFolderId, string? inboundFolderName, CancellationToken ct) => throw new NotImplementedException();
         public Task<DeleteResult> DeleteQueueAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<Priority>> ListPrioritiesAsync(CancellationToken ct) => throw new NotImplementedException();
         public Task<Priority?> GetPriorityAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
