@@ -547,7 +547,7 @@ public static class TicketEndpoints
     private static async Task<TicketCompanyAlert?> BuildCompanyAlertAsync(
         ICompanyRepository companies, Guid requesterContactId, CancellationToken ct)
     {
-        var company = await companies.GetCompanyForContactAsync(requesterContactId, ct);
+        var company = await companies.GetPrimaryCompanyForContactAsync(requesterContactId, ct);
         if (company is null) return null;
         return new TicketCompanyAlert(
             CompanyId: company.Id,

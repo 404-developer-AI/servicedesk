@@ -97,7 +97,8 @@ public sealed class TicketSearchSource : ISearchSource
                    COALESCE(co.name, '')  AS "CompanyName"
             FROM ranked r
             LEFT JOIN contacts c  ON c.id = r.requester_contact_id
-            LEFT JOIN companies co ON co.id = c.company_id
+            LEFT JOIN contact_companies cc ON cc.contact_id = c.id AND cc.role = 'primary'
+            LEFT JOIN companies co ON co.id = cc.company_id
             ORDER BY r.rank DESC, r.updated_utc DESC, r.id DESC
             LIMIT @limit OFFSET @offset;
             """;

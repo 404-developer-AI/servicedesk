@@ -58,7 +58,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             c.email                         AS RequesterEmail,
             c.first_name                    AS RequesterFirstName,
             c.last_name                     AS RequesterLastName,
-            c.company_id                    AS RequesterCompanyId,
+            cc.company_id                   AS RequesterCompanyId,
             co.name                         AS CompanyName,
             t.assignee_user_id              AS AssigneeUserId,
             u.email                         AS AssigneeEmail,
@@ -72,7 +72,8 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         JOIN statuses   s ON s.id = t.status_id
         JOIN priorities p ON p.id = t.priority_id
         JOIN contacts   c ON c.id = t.requester_contact_id
-        LEFT JOIN companies  co  ON co.id  = c.company_id
+        LEFT JOIN contact_companies cc ON cc.contact_id = c.id AND cc.role = 'primary'
+        LEFT JOIN companies  co  ON co.id  = cc.company_id
         LEFT JOIN users      u   ON u.id   = t.assignee_user_id
         LEFT JOIN categories cat ON cat.id = t.category_id
         """;
@@ -118,7 +119,11 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                 // no natural match; it's reserved for the customer portal.
                 break;
             case VisibilityScope.Company:
-                sql.Append(" AND c.company_id = @ViewerCompanyId");
+                // Customer-portal visibility resolves via the primary link only:
+                // a member of company X sees tickets whose requester has X as
+                // their primary company. Secondary/supplier involvements never
+                // broaden portal visibility.
+                sql.Append(" AND cc.company_id = @ViewerCompanyId");
                 break;
             case VisibilityScope.All:
             default:

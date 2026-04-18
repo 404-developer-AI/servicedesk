@@ -305,7 +305,7 @@ public sealed class MailIngestServiceTests
     private sealed class StubContacts : IContactLookupService
     {
         public Task<Contact> EnsureByEmailAsync(string email, string displayName, CancellationToken ct)
-            => Task.FromResult(new Contact(Guid.NewGuid(), null, "Member", displayName, "", email, "", "", true, DateTime.UtcNow, DateTime.UtcNow));
+            => Task.FromResult(new Contact(Guid.NewGuid(), "Member", displayName, "", email, "", "", true, DateTime.UtcNow, DateTime.UtcNow));
     }
 
     private sealed class StubBlobs : IBlobStore

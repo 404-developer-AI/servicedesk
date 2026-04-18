@@ -30,20 +30,18 @@ public sealed class ContactLookupService : IContactLookupService
         var existing = await _companies.GetContactByEmailAsync(email, ct);
         if (existing is not null)
         {
-            // Existing contacts that already have a company keep it — we
-            // never overwrite a manual link. Only backfill when the slot is
-            // empty so returning customers don't drift across companies.
-            if (existing.CompanyId is null)
+            // Existing contacts that already have a primary link keep it — we
+            // never overwrite a manual link from the mail path. Only backfill
+            // when there's no primary yet, so returning customers don't drift
+            // across companies.
+            var primary = await _companies.GetPrimaryCompanyForContactAsync(existing.Id, ct);
+            if (primary is null)
             {
                 var matched = await TryAutoLinkAsync(email, ct);
                 if (matched is not null)
                 {
-                    var ok = await _companies.SetContactCompanyAsync(existing.Id, matched.Id, ct);
-                    if (ok)
-                    {
-                        await AuditAutoLinkAsync("contact.company.auto_linked", existing.Id, matched.Id, email, ct);
-                        return existing with { CompanyId = matched.Id };
-                    }
+                    await _companies.UpsertContactLinkAsync(existing.Id, matched.Id, "primary", ct);
+                    await AuditAutoLinkAsync("contact.company.auto_linked", existing.Id, matched.Id, email, ct);
                 }
             }
             return existing;
@@ -54,7 +52,6 @@ public sealed class ContactLookupService : IContactLookupService
         var now = DateTime.UtcNow;
         var stub = new Contact(
             Id: Guid.Empty,
-            CompanyId: autoLinked?.Id,
             CompanyRole: "Member",
             FirstName: first,
             LastName: last,
@@ -64,7 +61,7 @@ public sealed class ContactLookupService : IContactLookupService
             IsActive: true,
             CreatedUtc: now,
             UpdatedUtc: now);
-        var created = await _companies.CreateContactAsync(stub, ct);
+        var created = await _companies.CreateContactAsync(stub, autoLinked?.Id, ct);
         if (autoLinked is not null)
             await AuditAutoLinkAsync("contact.company.auto_linked", created.Id, autoLinked.Id, email, ct);
         return created;

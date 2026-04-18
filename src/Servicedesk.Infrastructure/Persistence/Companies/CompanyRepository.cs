@@ -18,11 +18,22 @@ public sealed class CompanyRepository : ICompanyRepository
         email AS Email
         """;
 
+    // Qualified with `contacts.` because ListContactsAsync joins onto
+    // contact_companies, and both tables carry id/created_utc/updated_utc.
+    // Unqualified references collide (Postgres 42702).
     private const string ContactCols = """
-        id AS Id, company_id AS CompanyId, company_role AS CompanyRole,
-        first_name AS FirstName, last_name AS LastName, email AS Email, phone AS Phone,
-        job_title AS JobTitle, is_active AS IsActive,
-        created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
+        contacts.id AS Id, contacts.company_role AS CompanyRole,
+        contacts.first_name AS FirstName, contacts.last_name AS LastName,
+        contacts.email AS Email, contacts.phone AS Phone,
+        contacts.job_title AS JobTitle, contacts.is_active AS IsActive,
+        contacts.created_utc AS CreatedUtc, contacts.updated_utc AS UpdatedUtc,
+        (SELECT ccp.company_id FROM contact_companies ccp
+          WHERE ccp.contact_id = contacts.id AND ccp.role = 'primary' LIMIT 1) AS PrimaryCompanyId
+        """;
+
+    private const string LinkCols = """
+        id AS Id, contact_id AS ContactId, company_id AS CompanyId,
+        role AS Role, created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
         """;
 
     private readonly NpgsqlDataSource _dataSource;
@@ -67,10 +78,11 @@ public sealed class CompanyRepository : ICompanyRepository
         return await conn.QueryFirstOrDefaultAsync<Company>(new CommandDefinition(sql, new { code }, cancellationToken: ct));
     }
 
-    public async Task<Company?> GetCompanyForContactAsync(Guid contactId, CancellationToken ct)
+    public async Task<Company?> GetPrimaryCompanyForContactAsync(Guid contactId, CancellationToken ct)
     {
-        // Column list is prefixed with c. so it doesn't collide with contacts.id
-        // when joined; unqualified "id" would throw 42702 column-is-ambiguous.
+        // Join via the contact_companies link table; only primary-role links
+        // count as "the" company for the contact. c.id is qualified to avoid
+        // the 42702 ambiguous-column error we used to hit pre-v0.0.9.
         const string sql = """
             SELECT c.id AS Id, c.name AS Name, c.description AS Description,
                    c.website AS Website, c.phone AS Phone,
@@ -83,8 +95,8 @@ public sealed class CompanyRepository : ICompanyRepository
                    c.alert_on_open AS AlertOnOpen, c.alert_on_open_mode AS AlertOnOpenMode,
                    c.email AS Email
             FROM companies c
-            JOIN contacts ct ON ct.company_id = c.id
-            WHERE ct.id = @contactId AND c.is_active = TRUE
+            JOIN contact_companies cc ON cc.company_id = c.id AND cc.role = 'primary'
+            WHERE cc.contact_id = @contactId AND c.is_active = TRUE
             LIMIT 1
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -173,8 +185,6 @@ public sealed class CompanyRepository : ICompanyRepository
 
     public async Task<Company?> FindCompanyByDomainAsync(string domain, CancellationToken ct)
     {
-        // Qualified columns — see GetCompanyForContactAsync for the "id is
-        // ambiguous" bug this avoids.
         const string sql = """
             SELECT c.id AS Id, c.name AS Name, c.description AS Description,
                    c.website AS Website, c.phone AS Phone,
@@ -197,8 +207,18 @@ public sealed class CompanyRepository : ICompanyRepository
 
     public async Task<IReadOnlyList<Contact>> ListContactsAsync(Guid? companyId, string? search, CancellationToken ct)
     {
-        var sql = $"SELECT {ContactCols} FROM contacts WHERE 1=1";
-        if (companyId.HasValue) sql += " AND company_id = @companyId";
+        // When a company filter is given we join through contact_companies so
+        // any role (primary/secondary/supplier) surfaces the contact. DISTINCT
+        // keeps the result set unique in the odd case a contact were somehow
+        // double-linked despite the pair-unique constraint.
+        var sql = companyId.HasValue
+            ? $"""
+                SELECT DISTINCT {ContactCols}
+                FROM contacts
+                JOIN contact_companies cc ON cc.contact_id = contacts.id
+                WHERE cc.company_id = @companyId
+                """
+            : $"SELECT {ContactCols} FROM contacts WHERE 1=1";
         if (!string.IsNullOrWhiteSpace(search))
         {
             sql += " AND (email ILIKE @search OR first_name ILIKE @search OR last_name ILIKE @search)";
@@ -223,21 +243,43 @@ public sealed class CompanyRepository : ICompanyRepository
         return await conn.QueryFirstOrDefaultAsync<Contact>(new CommandDefinition(sql, new { email }, cancellationToken: ct));
     }
 
-    public async Task<Contact> CreateContactAsync(Contact c, CancellationToken ct)
+    public async Task<Contact> CreateContactAsync(Contact c, Guid? primaryCompanyId, CancellationToken ct)
     {
-        var sql = $"""
-            INSERT INTO contacts (company_id, company_role, first_name, last_name, email, phone, job_title, is_active)
-            VALUES (@CompanyId, @CompanyRole, @FirstName, @LastName, @Email, @Phone, @JobTitle, @IsActive)
-            RETURNING {ContactCols}
+        // Single connection, explicit transaction: the contact row and its
+        // primary-link row must commit together so mail intake never leaves
+        // a dangling contact without the company association it thought it
+        // got.
+        const string insertContact = """
+            INSERT INTO contacts (company_role, first_name, last_name, email, phone, job_title, is_active)
+            VALUES (@CompanyRole, @FirstName, @LastName, @Email, @Phone, @JobTitle, @IsActive)
+            RETURNING id
             """;
+        const string insertPrimary = """
+            INSERT INTO contact_companies (contact_id, company_id, role)
+            VALUES (@contactId, @companyId, 'primary')
+            """;
+
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        return await conn.QuerySingleAsync<Contact>(new CommandDefinition(sql, c, cancellationToken: ct));
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        var newId = await conn.QuerySingleAsync<Guid>(new CommandDefinition(insertContact, c, tx, cancellationToken: ct));
+        if (primaryCompanyId.HasValue)
+        {
+            await conn.ExecuteAsync(new CommandDefinition(insertPrimary,
+                new { contactId = newId, companyId = primaryCompanyId.Value }, tx, cancellationToken: ct));
+        }
+        await tx.CommitAsync(ct);
+
+        // Re-select so PrimaryCompanyId is populated consistently with all
+        // other reads — the correlated subquery in ContactCols does the work.
+        var reread = await conn.QueryFirstOrDefaultAsync<Contact>(new CommandDefinition(
+            $"SELECT {ContactCols} FROM contacts WHERE id = @id", new { id = newId }, cancellationToken: ct));
+        return reread!;
     }
 
     public async Task<Contact?> UpdateContactAsync(Guid id, Contact p, CancellationToken ct)
     {
         var sql = $"""
-            UPDATE contacts SET company_id = @CompanyId, company_role = @CompanyRole,
+            UPDATE contacts SET company_role = @CompanyRole,
                                 first_name = @FirstName, last_name = @LastName, email = @Email,
                                 phone = @Phone, job_title = @JobTitle, is_active = @IsActive,
                                 updated_utc = now()
@@ -264,12 +306,89 @@ public sealed class CompanyRepository : ICompanyRepository
         return DeleteResult.Deleted;
     }
 
-    public async Task<bool> SetContactCompanyAsync(Guid contactId, Guid? companyId, CancellationToken ct)
+    public async Task<IReadOnlyList<ContactCompanyLink>> ListContactLinksAsync(Guid contactId, CancellationToken ct)
+    {
+        var sql = $"""
+            SELECT {LinkCols}
+            FROM contact_companies
+            WHERE contact_id = @contactId
+            ORDER BY CASE role WHEN 'primary' THEN 0 WHEN 'secondary' THEN 1 ELSE 2 END, created_utc
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return (await conn.QueryAsync<ContactCompanyLink>(new CommandDefinition(sql, new { contactId }, cancellationToken: ct))).ToList();
+    }
+
+    public async Task<IReadOnlyList<ContactCompanyLink>> ListCompanyLinksAsync(Guid companyId, CancellationToken ct)
+    {
+        var sql = $"""
+            SELECT {LinkCols}
+            FROM contact_companies
+            WHERE company_id = @companyId
+            ORDER BY CASE role WHEN 'primary' THEN 0 WHEN 'secondary' THEN 1 ELSE 2 END, created_utc
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return (await conn.QueryAsync<ContactCompanyLink>(new CommandDefinition(sql, new { companyId }, cancellationToken: ct))).ToList();
+    }
+
+    public async Task<ContactCompanyLink> UpsertContactLinkAsync(Guid contactId, Guid companyId, string role, CancellationToken ct)
+    {
+        if (role != "primary" && role != "secondary" && role != "supplier")
+            throw new ArgumentException($"Role '{role}' is not one of primary/secondary/supplier.", nameof(role));
+
+        // Atomic primary-move: demote any existing primary link for this
+        // contact to 'secondary' BEFORE upserting, so the partial unique index
+        // can never fire. Wrapping in a transaction keeps this step and the
+        // upsert either fully visible or fully rolled back.
+        const string demoteExistingPrimary = """
+            UPDATE contact_companies
+               SET role = 'secondary', updated_utc = now()
+             WHERE contact_id = @contactId
+               AND role = 'primary'
+               AND company_id <> @companyId
+            """;
+        const string upsert = """
+            INSERT INTO contact_companies (contact_id, company_id, role)
+            VALUES (@contactId, @companyId, @role)
+            ON CONFLICT (contact_id, company_id) DO UPDATE
+               SET role = EXCLUDED.role, updated_utc = now()
+            RETURNING id AS Id, contact_id AS ContactId, company_id AS CompanyId,
+                      role AS Role, created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
+            """;
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        if (role == "primary")
+        {
+            await conn.ExecuteAsync(new CommandDefinition(demoteExistingPrimary,
+                new { contactId, companyId }, tx, cancellationToken: ct));
+        }
+        var link = await conn.QuerySingleAsync<ContactCompanyLink>(new CommandDefinition(upsert,
+            new { contactId, companyId, role }, tx, cancellationToken: ct));
+        await tx.CommitAsync(ct);
+        return link;
+    }
+
+    public async Task<bool> RemoveContactLinkAsync(Guid contactId, Guid companyId, CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var rows = await conn.ExecuteAsync(new CommandDefinition(
-            "UPDATE contacts SET company_id = @companyId, updated_utc = now() WHERE id = @contactId",
-            new { companyId, contactId }, cancellationToken: ct));
+            "DELETE FROM contact_companies WHERE contact_id = @contactId AND company_id = @companyId",
+            new { contactId, companyId }, cancellationToken: ct));
         return rows > 0;
+    }
+
+    public async Task<bool> SetPrimaryCompanyAsync(Guid contactId, Guid? companyId, CancellationToken ct)
+    {
+        if (companyId is null)
+        {
+            await using var conn = await _dataSource.OpenConnectionAsync(ct);
+            var rows = await conn.ExecuteAsync(new CommandDefinition(
+                "DELETE FROM contact_companies WHERE contact_id = @contactId AND role = 'primary'",
+                new { contactId }, cancellationToken: ct));
+            return rows > 0;
+        }
+
+        await UpsertContactLinkAsync(contactId, companyId.Value, "primary", ct);
+        return true;
     }
 }

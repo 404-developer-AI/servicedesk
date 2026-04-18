@@ -210,7 +210,7 @@ export function ContactPicker({
                             {contact.email}
                           </div>
                         </div>
-                        {contact.companyId && (
+                        {contact.primaryCompanyId && (
                           <Badge
                             variant="outline"
                             className="shrink-0 border-white/10 text-xs text-muted-foreground"

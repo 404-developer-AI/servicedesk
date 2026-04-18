@@ -175,31 +175,47 @@ public static class CompanyEndpoints
             Results.Ok(await repo.ListContactsAsync(id, search, ct)))
             .WithName("ListCompanyContacts").WithOpenApi();
 
+        // Link a contact to a company with an explicit role. The body is
+        // optional; when omitted we default to 'primary' so existing flows
+        // (the pre-v0.0.9 "add contact to company" button) keep working
+        // unchanged. Upsert semantics: posting again with a different role
+        // for the same pair updates the role in place.
         agentGroup.MapPost("/{id:guid}/contacts/{contactId:guid}", async (
-            Guid id, Guid contactId, HttpContext http,
+            Guid id, Guid contactId, [FromBody] ContactLinkRequest? req, HttpContext http,
             ICompanyRepository repo, IAuditLogger audit, CancellationToken ct) =>
         {
             var company = await repo.GetCompanyAsync(id, ct);
             if (company is null) return Results.NotFound(new { error = "Company not found." });
             var contact = await repo.GetContactAsync(contactId, ct);
             if (contact is null) return Results.NotFound(new { error = "Contact not found." });
-            var ok = await repo.SetContactCompanyAsync(contactId, id, ct);
-            if (!ok) return Results.Problem("Failed to link contact.");
-            await AuditWrite(audit, http, "company.contact.linked", id.ToString(), new { contactId, previousCompanyId = contact.CompanyId });
-            return Results.NoContent();
+
+            var role = (req?.Role ?? "primary").Trim().ToLowerInvariant();
+            if (role != "primary" && role != "secondary" && role != "supplier")
+                return Results.BadRequest(new { error = "role must be 'primary', 'secondary' or 'supplier'." });
+
+            var link = await repo.UpsertContactLinkAsync(contactId, id, role, ct);
+            await AuditWrite(audit, http, "company.contact.linked", id.ToString(),
+                new { contactId, role, linkId = link.Id });
+            return Results.Ok(link);
         }).WithName("LinkCompanyContact").WithOpenApi();
 
         agentGroup.MapDelete("/{id:guid}/contacts/{contactId:guid}", async (
             Guid id, Guid contactId, HttpContext http,
             ICompanyRepository repo, IAuditLogger audit, CancellationToken ct) =>
         {
-            var contact = await repo.GetContactAsync(contactId, ct);
-            if (contact is null || contact.CompanyId != id) return Results.NotFound();
-            var ok = await repo.SetContactCompanyAsync(contactId, null, ct);
-            if (!ok) return Results.Problem("Failed to unlink contact.");
+            var removed = await repo.RemoveContactLinkAsync(contactId, id, ct);
+            if (!removed) return Results.NotFound();
             await AuditWrite(audit, http, "company.contact.unlinked", id.ToString(), new { contactId });
             return Results.NoContent();
         }).WithName("UnlinkCompanyContact").WithOpenApi();
+
+        // New in v0.0.9 step 2: inspect all role-tagged links for one contact.
+        // The Contacts tab and the ticket side-panel both use this to render
+        // role badges without hitting /api/companies for each hit.
+        agentGroup.MapGet("/{id:guid}/links", async (
+            Guid id, ICompanyRepository repo, CancellationToken ct) =>
+            Results.Ok(await repo.ListCompanyLinksAsync(id, ct)))
+            .WithName("ListCompanyLinks").WithOpenApi();
 
         // ---- Contacts (unchanged, top-level, agent+admin) ----
         var contactGroup = app.MapGroup("/api/contacts")
@@ -223,11 +239,13 @@ public static class CompanyEndpoints
         {
             if (ValidateContact(req) is { } err) return err;
             var now = DateTime.UtcNow;
+            // CompanyId on the request is shorthand for "also insert a primary
+            // link" — the repo does this atomically in one transaction.
             var created = await repo.CreateContactAsync(new Contact(
-                Guid.Empty, req.CompanyId, req.CompanyRole ?? "Member",
+                Guid.Empty, req.CompanyRole ?? "Member",
                 req.FirstName ?? "", req.LastName ?? "", req.Email!.Trim().ToLowerInvariant(),
-                req.Phone ?? "", req.JobTitle ?? "", IsActive: true, now, now), ct);
-            await AuditWrite(audit, http, "contact.created", created.Id.ToString(), new { created.Email });
+                req.Phone ?? "", req.JobTitle ?? "", IsActive: true, now, now), req.CompanyId, ct);
+            await AuditWrite(audit, http, "contact.created", created.Id.ToString(), new { created.Email, primaryCompanyId = req.CompanyId });
             return Results.Created($"/api/contacts/{created.Id}", created);
         }).WithName("CreateContact").WithOpenApi();
 
@@ -240,7 +258,6 @@ public static class CompanyEndpoints
             if (existing is null) return Results.NotFound();
             var patch = existing with
             {
-                CompanyId = req.CompanyId,
                 CompanyRole = req.CompanyRole ?? existing.CompanyRole,
                 FirstName = req.FirstName ?? existing.FirstName,
                 LastName = req.LastName ?? existing.LastName,
@@ -251,6 +268,11 @@ public static class CompanyEndpoints
             };
             var updated = await repo.UpdateContactAsync(id, patch, ct);
             if (updated is null) return Results.NotFound();
+            // CompanyId in the PUT body is a primary-link shortcut. Only act
+            // when explicitly supplied so callers that PATCH other fields
+            // don't accidentally nuke the contact's primary link.
+            if (req.CompanyId is not null)
+                await repo.SetPrimaryCompanyAsync(id, req.CompanyId, ct);
             await AuditWrite(audit, http, "contact.updated", id.ToString(), new { updated.Email });
             return Results.Ok(updated);
         }).WithName("UpdateContact").WithOpenApi();
@@ -291,6 +313,8 @@ public static class CompanyEndpoints
         string? AlertOnOpenMode);
 
     public sealed record DomainRequest([property: Required] string Domain);
+
+    public sealed record ContactLinkRequest(string? Role);
 
     public sealed record ContactRequest(
         [property: Required] string? Email,

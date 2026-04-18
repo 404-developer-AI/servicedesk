@@ -111,10 +111,10 @@ export function TicketSidePanel({ ticket, onUpdate }: TicketSidePanelProps) {
   });
 
   const { data: companyDetail } = useQuery({
-    queryKey: ["company", contact?.companyId],
-    queryFn: () => companyApi.get(contact!.companyId!),
+    queryKey: ["company", contact?.primaryCompanyId],
+    queryFn: () => companyApi.get(contact!.primaryCompanyId!),
     staleTime: 300_000,
-    enabled: !!contact?.companyId,
+    enabled: !!contact?.primaryCompanyId,
   });
 
   const contactLabel = contact

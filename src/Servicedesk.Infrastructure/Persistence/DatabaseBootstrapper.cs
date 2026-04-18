@@ -209,9 +209,10 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_company_domains_company ON company_domains (company_id);
 
         -- company_role: 'Member' or 'TicketManager' (portal visibility scope).
+        -- Contact↔Company relationships live in contact_companies (v0.0.9 step 2);
+        -- the historical direct company_id FK was dropped as part of that change.
         CREATE TABLE IF NOT EXISTS contacts (
             id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-            company_id      UUID        NULL REFERENCES companies(id) ON DELETE SET NULL,
             company_role    TEXT        NOT NULL DEFAULT 'Member',
             first_name      TEXT        NOT NULL DEFAULT '',
             last_name       TEXT        NOT NULL DEFAULT '',
@@ -224,8 +225,6 @@ public sealed class DatabaseBootstrapper : IHostedService
             CONSTRAINT chk_contacts_role
                 CHECK (company_role IN ('Member','TicketManager'))
         );
-
-        CREATE INDEX IF NOT EXISTS ix_contacts_company ON contacts (company_id);
 
         -- Monotonic human-readable ticket numbers, independent of uuid PKs.
         CREATE SEQUENCE IF NOT EXISTS ticket_number_seq START WITH 1000 INCREMENT BY 1;
@@ -943,6 +942,61 @@ public sealed class DatabaseBootstrapper : IHostedService
             ON companies USING GIN ((lower(code::text)) gin_trgm_ops);
         CREATE INDEX IF NOT EXISTS ix_companies_vat_trgm
             ON companies USING GIN ((lower(coalesce(vat_number, ''))) gin_trgm_ops);
+
+        -- ===================================================================
+        -- v0.0.9 Contact ↔ Company many-to-many with role
+        --
+        -- Replaces the old direct contacts.company_id FK. A contact can now
+        -- belong to multiple companies with a role per link: exactly one
+        -- 'primary' (the default work address), any number of 'secondary'
+        -- (other involvements) and 'supplier' (vendors). The primary link is
+        -- what the ticket list joins against to show the requester's company.
+        --
+        -- Safety invariants:
+        --   - CHECK on role keeps the enum honest.
+        --   - UNIQUE (contact_id, company_id) prevents duplicate rows
+        --     — the same contact can't appear twice in the same company even
+        --     in different roles; change the role in place instead.
+        --   - Partial UNIQUE on contact_id WHERE role='primary' enforces
+        --     at most one primary per contact.
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS contact_companies (
+            id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            contact_id      UUID        NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+            company_id      UUID        NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            role            TEXT        NOT NULL,
+            created_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT chk_contact_companies_role
+                CHECK (role IN ('primary','secondary','supplier')),
+            CONSTRAINT uq_contact_companies_pair UNIQUE (contact_id, company_id)
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_contact_companies_primary
+            ON contact_companies (contact_id) WHERE role = 'primary';
+        CREATE INDEX IF NOT EXISTS ix_contact_companies_company_role
+            ON contact_companies (company_id, role);
+        CREATE INDEX IF NOT EXISTS ix_contact_companies_contact_role
+            ON contact_companies (contact_id, role);
+
+        -- Idempotent backfill: every existing contacts.company_id becomes a
+        -- 'primary' link. Only runs on databases where the old column still
+        -- exists; silently skipped otherwise so re-boots are a no-op.
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'contacts' AND column_name = 'company_id'
+            ) THEN
+                INSERT INTO contact_companies (contact_id, company_id, role)
+                SELECT id, company_id, 'primary'
+                FROM contacts
+                WHERE company_id IS NOT NULL
+                ON CONFLICT (contact_id, company_id) DO NOTHING;
+            END IF;
+        END $$;
+
+        ALTER TABLE contacts DROP COLUMN IF EXISTS company_id;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

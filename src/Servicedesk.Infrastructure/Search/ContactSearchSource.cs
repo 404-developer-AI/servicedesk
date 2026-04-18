@@ -36,7 +36,8 @@ public sealed class ContactSearchSource : ISearchSource
                 SELECT lower(@query) AS norm
             ),
             hits AS (
-                SELECT c.id, c.first_name, c.last_name, c.email, c.company_id,
+                SELECT c.id, c.first_name, c.last_name, c.email,
+                       cc.company_id AS company_id,
                        GREATEST(
                            similarity(lower(c.email::text), (SELECT norm FROM q)),
                            similarity(lower(coalesce(c.first_name,'') || ' ' || coalesce(c.last_name,'')),
@@ -44,6 +45,7 @@ public sealed class ContactSearchSource : ISearchSource
                        ) AS rank,
                        COUNT(*) OVER () AS total_hits
                 FROM contacts c
+                LEFT JOIN contact_companies cc ON cc.contact_id = c.id AND cc.role = 'primary'
                 WHERE c.is_active = TRUE
                   AND (
                         lower(c.email::text) % (SELECT norm FROM q)

@@ -356,9 +356,9 @@ function ContactsTab({ companyId }: { companyId: string }) {
                   <span>
                     {c.firstName} {c.lastName}{" "}
                     <span className="text-xs text-muted-foreground">{c.email}</span>
-                    {c.companyId && c.companyId !== companyId && (
+                    {c.primaryCompanyId && c.primaryCompanyId !== companyId && (
                       <Badge className="ml-2 border border-amber-400/20 bg-amber-400/10 text-[10px] font-normal text-amber-200">
-                        other company
+                        primary elsewhere
                       </Badge>
                     )}
                   </span>

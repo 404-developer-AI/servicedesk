@@ -262,7 +262,11 @@ export type AgentUser = {
 
 export type Contact = {
   id: string;
-  companyId: string | null;
+  /// The id of the company the contact is linked to with role='primary'.
+  /// Read-only — server computes this from the contact_companies join table.
+  /// A contact may also have secondary/supplier links, but those live on
+  /// the contact-detail view, not here.
+  primaryCompanyId: string | null;
   companyRole: string;
   firstName: string;
   lastName: string;
@@ -276,6 +280,8 @@ export type Contact = {
 
 export type ContactInput = {
   email: string;
+  /// Shorthand on create/update: when set the server also upserts a
+  /// primary link to this company in the same transaction.
   companyId?: string | null;
   companyRole?: string;
   firstName?: string;
