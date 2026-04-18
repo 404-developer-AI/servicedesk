@@ -89,7 +89,7 @@ public sealed class ContactLookupService : IContactLookupService
             IsActive: true,
             CreatedUtc: now,
             UpdatedUtc: now);
-        var created = await _companies.CreateContactAsync(stub, autoLinked?.Id, ct);
+        var created = await _companies.CreateContactAsync(stub, autoLinked?.Id, "primary", ct);
         if (autoLinked is not null)
             await AuditAutoLinkAsync("contact.company.auto_linked", created.Id, autoLinked.Id, email, ct);
         return created;

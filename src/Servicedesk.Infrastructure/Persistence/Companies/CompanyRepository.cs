@@ -243,29 +243,31 @@ public sealed class CompanyRepository : ICompanyRepository
         return await conn.QueryFirstOrDefaultAsync<Contact>(new CommandDefinition(sql, new { email }, cancellationToken: ct));
     }
 
-    public async Task<Contact> CreateContactAsync(Contact c, Guid? primaryCompanyId, CancellationToken ct)
+    public async Task<Contact> CreateContactAsync(Contact c, Guid? companyId, string role, CancellationToken ct)
     {
+        if (companyId.HasValue && role != "primary" && role != "secondary" && role != "supplier")
+            throw new ArgumentException($"Role '{role}' is not one of primary/secondary/supplier.", nameof(role));
+
         // Single connection, explicit transaction: the contact row and its
-        // primary-link row must commit together so mail intake never leaves
-        // a dangling contact without the company association it thought it
-        // got.
+        // company-link row must commit together so mail intake never leaves
+        // a dangling contact without the association it thought it got.
         const string insertContact = """
             INSERT INTO contacts (company_role, first_name, last_name, email, phone, job_title, is_active)
             VALUES (@CompanyRole, @FirstName, @LastName, @Email, @Phone, @JobTitle, @IsActive)
             RETURNING id
             """;
-        const string insertPrimary = """
+        const string insertLink = """
             INSERT INTO contact_companies (contact_id, company_id, role)
-            VALUES (@contactId, @companyId, 'primary')
+            VALUES (@contactId, @companyId, @role)
             """;
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
         var newId = await conn.QuerySingleAsync<Guid>(new CommandDefinition(insertContact, c, tx, cancellationToken: ct));
-        if (primaryCompanyId.HasValue)
+        if (companyId.HasValue)
         {
-            await conn.ExecuteAsync(new CommandDefinition(insertPrimary,
-                new { contactId = newId, companyId = primaryCompanyId.Value }, tx, cancellationToken: ct));
+            await conn.ExecuteAsync(new CommandDefinition(insertLink,
+                new { contactId = newId, companyId = companyId.Value, role }, tx, cancellationToken: ct));
         }
         await tx.CommitAsync(ct);
 

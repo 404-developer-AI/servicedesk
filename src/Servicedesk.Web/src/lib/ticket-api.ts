@@ -294,9 +294,13 @@ export type Contact = {
 
 export type ContactInput = {
   email: string;
-  /// Shorthand on create/update: when set the server also upserts a
-  /// primary link to this company in the same transaction.
+  /// Shorthand on create/update: when set the server also inserts a
+  /// link to this company in the same transaction. On POST /api/contacts
+  /// the role below decides whether it's primary/secondary/supplier; on
+  /// PUT the link is always upserted as 'primary' (legacy behaviour).
   companyId?: string | null;
+  /// Only honoured on POST when companyId is set. Defaults to 'primary'.
+  role?: ContactCompanyRole;
   companyRole?: string;
   firstName?: string;
   lastName?: string;
@@ -363,6 +367,18 @@ export type CompanyDetail = {
 };
 
 export type ContactCompanyRole = "primary" | "secondary" | "supplier";
+
+/// One role-tagged link between a contact and a company. Returned by
+/// /api/companies/{id}/links for the Contacts-tab so each contact row can
+/// render with its role badge relative to *this* company.
+export type ContactCompanyLink = {
+  id: string;
+  contactId: string;
+  companyId: string;
+  role: ContactCompanyRole;
+  createdUtc: string;
+  updatedUtc: string;
+};
 
 /// One entry in the contact's role-annotated company list — used by the
 /// ticket company-assignment dialog and future contact-detail view.
@@ -497,8 +513,14 @@ export const companyApi = {
     const qs = params.toString();
     return request<Contact[]>("GET", `/api/companies/${id}/contacts${qs ? `?${qs}` : ""}`);
   },
-  linkContact: (companyId: string, contactId: string) =>
-    request<void>("POST", `/api/companies/${companyId}/contacts/${contactId}`),
+  links: (id: string) =>
+    request<ContactCompanyLink[]>("GET", `/api/companies/${id}/links`),
+  linkContact: (companyId: string, contactId: string, role?: ContactCompanyRole) =>
+    request<void>(
+      "POST",
+      `/api/companies/${companyId}/contacts/${contactId}`,
+      role ? { role } : undefined,
+    ),
   unlinkContact: (companyId: string, contactId: string) =>
     request<void>("DELETE", `/api/companies/${companyId}/contacts/${contactId}`),
   addDomain: (id: string, domain: string) =>

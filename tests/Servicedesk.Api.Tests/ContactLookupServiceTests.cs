@@ -301,14 +301,15 @@ public sealed class ContactLookupServiceTests
         public Task<Contact?> GetContactByEmailAsync(string email, CancellationToken ct)
             => Task.FromResult(ContactsByEmail.TryGetValue(email, out var c) ? c : null);
 
-        public Task<Contact> CreateContactAsync(Contact c, Guid? primaryCompanyId, CancellationToken ct)
+        public Task<Contact> CreateContactAsync(Contact c, Guid? companyId, string role, CancellationToken ct)
         {
             var withId = c with { Id = c.Id == Guid.Empty ? Guid.NewGuid() : c.Id };
             ContactsByEmail[withId.Email] = withId;
-            if (primaryCompanyId.HasValue)
+            if (companyId.HasValue)
             {
-                Links[(withId.Id, primaryCompanyId.Value)] = "primary";
-                CreatedWithPrimary[withId.Id] = primaryCompanyId.Value;
+                Links[(withId.Id, companyId.Value)] = role;
+                if (role == "primary")
+                    CreatedWithPrimary[withId.Id] = companyId.Value;
             }
             return Task.FromResult(withId);
         }

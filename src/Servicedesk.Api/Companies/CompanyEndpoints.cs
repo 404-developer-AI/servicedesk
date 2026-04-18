@@ -261,14 +261,22 @@ public static class CompanyEndpoints
             ICompanyRepository repo, IAuditLogger audit, CancellationToken ct) =>
         {
             if (ValidateContact(req) is { } err) return err;
+            // Role is validated only when CompanyId is supplied (the link is
+            // the part the role applies to). Defaulting to 'primary' keeps
+            // the pre-v0.0.9 behaviour intact for mail intake and the old
+            // contact-picker create path.
+            var role = (req.Role ?? "primary").Trim().ToLowerInvariant();
+            if (req.CompanyId is not null && role != "primary" && role != "secondary" && role != "supplier")
+                return Results.BadRequest(new { error = "role must be 'primary', 'secondary' or 'supplier'." });
             var now = DateTime.UtcNow;
-            // CompanyId on the request is shorthand for "also insert a primary
-            // link" — the repo does this atomically in one transaction.
+            // CompanyId on the request is shorthand for "also insert a link
+            // with the given role" — the repo does this atomically in one
+            // transaction.
             var created = await repo.CreateContactAsync(new Contact(
                 Guid.Empty, req.CompanyRole ?? "Member",
                 req.FirstName ?? "", req.LastName ?? "", req.Email!.Trim().ToLowerInvariant(),
-                req.Phone ?? "", req.JobTitle ?? "", IsActive: true, now, now), req.CompanyId, ct);
-            await AuditWrite(audit, http, "contact.created", created.Id.ToString(), new { created.Email, primaryCompanyId = req.CompanyId });
+                req.Phone ?? "", req.JobTitle ?? "", IsActive: true, now, now), req.CompanyId, role, ct);
+            await AuditWrite(audit, http, "contact.created", created.Id.ToString(), new { created.Email, companyId = req.CompanyId, role = req.CompanyId is null ? null : role });
             return Results.Created($"/api/contacts/{created.Id}", created);
         }).WithName("CreateContact").WithOpenApi();
 
@@ -342,6 +350,7 @@ public static class CompanyEndpoints
     public sealed record ContactRequest(
         [property: Required] string? Email,
         Guid? CompanyId,
+        string? Role,
         string? CompanyRole,
         string? FirstName,
         string? LastName,

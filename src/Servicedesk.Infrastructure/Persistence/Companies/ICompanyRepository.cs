@@ -25,10 +25,15 @@ public interface ICompanyRepository
     Task<IReadOnlyList<Contact>> ListContactsAsync(Guid? companyId, string? search, CancellationToken ct);
     Task<Contact?> GetContactAsync(Guid id, CancellationToken ct);
     Task<Contact?> GetContactByEmailAsync(string email, CancellationToken ct);
-    /// Creates a contact and optionally inserts its primary company link in one
-    /// call so mail intake and UI-create flows don't have to orchestrate two
-    /// round-trips.
-    Task<Contact> CreateContactAsync(Contact c, Guid? primaryCompanyId, CancellationToken ct);
+    /// Creates a contact and optionally inserts a role-tagged company link in
+    /// one call so mail intake and UI-create flows don't have to orchestrate
+    /// two round-trips. <paramref name="role"/> is ignored when
+    /// <paramref name="companyId"/> is null; otherwise it must be one of
+    /// 'primary' / 'secondary' / 'supplier'. When the role is 'primary' and
+    /// the contact already has a primary link elsewhere, the caller is
+    /// responsible for the demote — this path is only hit on brand-new
+    /// contact ids so there is no pre-existing link to demote.
+    Task<Contact> CreateContactAsync(Contact c, Guid? companyId, string role, CancellationToken ct);
     Task<Contact?> UpdateContactAsync(Guid id, Contact patch, CancellationToken ct);
     Task<DeleteResult> DeleteContactAsync(Guid id, CancellationToken ct);
 

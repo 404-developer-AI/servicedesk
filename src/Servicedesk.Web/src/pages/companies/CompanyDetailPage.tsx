@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { ArrowLeft, Bell, Building2, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Bell, Building2, Pencil, Plus, Trash2, UserPlus } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { authStore } from "@/auth/authStore";
 import {
@@ -12,13 +12,45 @@ import {
   type CompanyDomain,
   type CompanyInput,
   type Contact,
+  type ContactCompanyRole,
 } from "@/lib/ticket-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
+import { ContactFormDialog } from "@/components/ContactFormDialog";
+import { CompanyFormFields, companyToInput } from "@/components/CompanyFormFields";
 import { cn } from "@/lib/utils";
+
+const ROLE_BADGE: Record<ContactCompanyRole, { label: string; className: string }> = {
+  primary: {
+    label: "Primary",
+    className: "border-purple-400/50 bg-purple-500/20 text-purple-100",
+  },
+  secondary: {
+    label: "Secondary",
+    className: "border-sky-400/30 bg-sky-500/15 text-sky-200",
+  },
+  supplier: {
+    label: "Supplier",
+    className: "border-amber-400/30 bg-amber-500/15 text-amber-200",
+  },
+};
 
 type TabKey = "overview" | "contacts" | "domains";
 
@@ -139,31 +171,13 @@ function DetailSkeleton() {
 // ---- Overview tab (editable) ----
 function OverviewTab({ company }: { company: Company }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState<CompanyInput>(() => ({
-    name: company.name,
-    code: company.code,
-    shortName: company.shortName,
-    vatNumber: company.vatNumber,
-    email: company.email,
-    description: company.description,
-    website: company.website,
-    phone: company.phone,
-    addressLine1: company.addressLine1,
-    addressLine2: company.addressLine2,
-    city: company.city,
-    postalCode: company.postalCode,
-    country: company.country,
-    isActive: company.isActive,
-    alertText: company.alertText,
-    alertOnCreate: company.alertOnCreate,
-    alertOnOpen: company.alertOnOpen,
-    alertOnOpenMode: company.alertOnOpenMode,
-  }));
+  const [form, setForm] = useState<CompanyInput>(() => companyToInput(company));
 
   const save = useMutation({
     mutationFn: () => companyApi.update(company.id, form),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["companies"] });
+      qc.invalidateQueries({ queryKey: ["company", company.id] });
       toast.success("Changes saved");
     },
     onError: (err) => {
@@ -179,110 +193,7 @@ function OverviewTab({ company }: { company: Company }) {
 
   return (
     <section className="glass-card space-y-5 p-5">
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Customer code *" required>
-          <Input
-            value={form.code}
-            onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
-          />
-        </Field>
-        <Field label="Official name *" required>
-          <Input
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          />
-        </Field>
-        <Field label="Short name">
-          <Input
-            value={form.shortName ?? ""}
-            onChange={(e) => setForm((f) => ({ ...f, shortName: e.target.value }))}
-          />
-        </Field>
-        <Field label="VAT number">
-          <Input
-            value={form.vatNumber ?? ""}
-            onChange={(e) => setForm((f) => ({ ...f, vatNumber: e.target.value }))}
-          />
-        </Field>
-        <Field label="Website">
-          <Input
-            value={form.website ?? ""}
-            onChange={(e) => setForm((f) => ({ ...f, website: e.target.value }))}
-          />
-        </Field>
-        <Field label="Phone">
-          <Input
-            value={form.phone ?? ""}
-            onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-          />
-        </Field>
-        <Field label="Email">
-          <Input
-            type="email"
-            value={form.email ?? ""}
-            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-            placeholder="info@acme.be"
-          />
-        </Field>
-      </div>
-
-      <div className="rounded-md border border-amber-400/20 bg-amber-400/[0.03] p-4">
-        <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-amber-300">
-          <Bell className="h-3.5 w-3.5" /> Alert / note
-        </div>
-        <Field label="Alert text">
-          <textarea
-            value={form.alertText ?? ""}
-            onChange={(e) => setForm((f) => ({ ...f, alertText: e.target.value }))}
-            rows={3}
-            className="w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm outline-none focus:border-white/20"
-          />
-        </Field>
-        <div className="mt-3 space-y-2">
-          <label className="flex items-center justify-between gap-3 text-sm">
-            <span>Pop-up when a ticket is created</span>
-            <Switch
-              checked={!!form.alertOnCreate}
-              onCheckedChange={(v) => setForm((f) => ({ ...f, alertOnCreate: v }))}
-            />
-          </label>
-          <label className="flex items-center justify-between gap-3 text-sm">
-            <span>Pop-up when a ticket is opened</span>
-            <Switch
-              checked={!!form.alertOnOpen}
-              onCheckedChange={(v) => setForm((f) => ({ ...f, alertOnOpen: v }))}
-            />
-          </label>
-          {form.alertOnOpen && (
-            <div className="mt-2 flex items-center gap-3 text-sm">
-              <span className="text-muted-foreground">Frequency:</span>
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="alertMode"
-                  checked={form.alertOnOpenMode === "session"}
-                  onChange={() =>
-                    setForm((f) => ({ ...f, alertOnOpenMode: "session" }))
-                  }
-                />
-                Once per session
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="alertMode"
-                  checked={form.alertOnOpenMode === "every"}
-                  onChange={() =>
-                    setForm((f) => ({ ...f, alertOnOpenMode: "every" }))
-                  }
-                />
-                Every time
-              </label>
-            </div>
-          )}
-        </div>
-      </div>
-
+      <CompanyFormFields form={form} setForm={setForm} />
       <div className="flex justify-end">
         <Button onClick={() => save.mutate()} disabled={save.isPending}>
           {save.isPending ? "Saving…" : "Save changes"}
@@ -297,11 +208,29 @@ function ContactsTab({ companyId }: { companyId: string }) {
   const qc = useQueryClient();
   const [linking, setLinking] = useState(false);
   const [linkQuery, setLinkQuery] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<Contact | null>(null);
+  const [promoteCandidate, setPromoteCandidate] = useState<Contact | null>(null);
 
   const { data: contacts, isLoading } = useQuery({
     queryKey: ["companies", "contacts", companyId],
     queryFn: () => companyApi.listContacts(companyId),
   });
+
+  const { data: links } = useQuery({
+    queryKey: ["companies", "links", companyId],
+    queryFn: () => companyApi.links(companyId),
+  });
+
+  // Map contact-id → role for this company so each row can render a correct
+  // starting value in its role select. A contact may (rarely) not have a
+  // matching link yet if the API returns eventually-consistent pages — we
+  // default to 'secondary' in that case.
+  const roleByContact = useMemo(() => {
+    const m = new Map<string, ContactCompanyRole>();
+    for (const l of links ?? []) m.set(l.contactId, l.role);
+    return m;
+  }, [links]);
 
   const candidates = useQuery({
     queryKey: ["companies", "contacts-candidates", linkQuery],
@@ -309,34 +238,79 @@ function ContactsTab({ companyId }: { companyId: string }) {
     enabled: linking && linkQuery.length > 1,
   });
 
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["companies", "contacts", companyId] });
+    qc.invalidateQueries({ queryKey: ["companies", "links", companyId] });
+  };
+
   const unlink = useMutation({
     mutationFn: (contactId: string) => companyApi.unlinkContact(companyId, contactId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["companies", "contacts", companyId] });
+      invalidate();
       toast.success("Contact unlinked");
     },
     onError: () => toast.error("Unlink failed"),
   });
 
   const link = useMutation({
-    mutationFn: (contactId: string) => companyApi.linkContact(companyId, contactId),
+    mutationFn: (contactId: string) =>
+      companyApi.linkContact(companyId, contactId, "secondary"),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["companies", "contacts", companyId] });
+      invalidate();
       setLinking(false);
       setLinkQuery("");
-      toast.success("Contact linked");
+      toast.success("Contact linked as secondary");
     },
     onError: () => toast.error("Link failed"),
   });
+
+  const setRole = useMutation({
+    mutationFn: ({
+      contactId,
+      role,
+    }: {
+      contactId: string;
+      role: ContactCompanyRole;
+    }) => companyApi.linkContact(companyId, contactId, role),
+    onSuccess: (_, vars) => {
+      invalidate();
+      qc.invalidateQueries({ queryKey: ["contact-companies", vars.contactId] });
+      toast.success("Role updated");
+    },
+    onError: () => toast.error("Role change failed"),
+  });
+
+  const handleRoleChange = (contact: Contact, nextRole: ContactCompanyRole) => {
+    const currentRole = roleByContact.get(contact.id);
+    if (currentRole === nextRole) return;
+    // Promoting to primary while the contact is already primary elsewhere
+    // demotes that other link server-side. Surface this so agents can't
+    // "steal" a primary silently — explicit confirmation, then commit.
+    const hasPrimaryElsewhere =
+      nextRole === "primary" &&
+      contact.primaryCompanyId &&
+      contact.primaryCompanyId !== companyId;
+    if (hasPrimaryElsewhere) {
+      setPromoteCandidate(contact);
+      return;
+    }
+    setRole.mutate({ contactId: contact.id, role: nextRole });
+  };
 
   return (
     <section className="glass-card space-y-3 p-5">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium text-foreground">Linked contacts</h2>
-        <Button size="sm" variant="ghost" onClick={() => setLinking((v) => !v)}>
-          <Plus className="mr-1 h-3.5 w-3.5" />
-          Link contact
-        </Button>
+        <div className="flex gap-1">
+          <Button size="sm" variant="ghost" onClick={() => setLinking((v) => !v)}>
+            <Plus className="mr-1 h-3.5 w-3.5" />
+            Link contact
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setCreating(true)}>
+            <UserPlus className="mr-1 h-3.5 w-3.5" />
+            New contact
+          </Button>
+        </div>
       </div>
 
       {linking && (
@@ -346,6 +320,9 @@ function ContactsTab({ companyId }: { companyId: string }) {
             onChange={(e) => setLinkQuery(e.target.value)}
             placeholder="Search contacts by email or name…"
           />
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            Linked contacts start as <span className="text-sky-300">secondary</span>. Change the role inline after.
+          </p>
           {candidates.data && candidates.data.length > 0 && (
             <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto">
               {candidates.data.map((c: Contact) => (
@@ -381,33 +358,152 @@ function ContactsTab({ companyId }: { companyId: string }) {
         <Skeleton className="h-24 w-full" />
       ) : contacts && contacts.length > 0 ? (
         <ul className="divide-y divide-white/5">
-          {contacts.map((c) => (
-            <li key={c.id} className="flex items-center justify-between py-2 text-sm">
-              <div>
-                <div className="text-foreground">
-                  {c.firstName} {c.lastName}
-                </div>
-                <div className="text-xs text-muted-foreground">{c.email}</div>
-              </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  if (confirm(`Unlink ${c.email} from this company?`)) unlink.mutate(c.id);
-                }}
-                disabled={unlink.isPending}
+          {contacts.map((c) => {
+            const role = roleByContact.get(c.id) ?? "secondary";
+            return (
+              <li
+                key={c.id}
+                className="flex items-center justify-between gap-3 py-2 text-sm"
               >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </li>
-          ))}
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-foreground">
+                    {c.firstName} {c.lastName}
+                  </div>
+                  <div className="truncate text-xs text-muted-foreground">
+                    {c.email}
+                  </div>
+                </div>
+                <RoleSelect
+                  value={role}
+                  disabled={setRole.isPending}
+                  onChange={(r) => handleRoleChange(c, r)}
+                />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  title="Edit contact"
+                  onClick={() => setEditing(c)}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  title="Unlink from this company"
+                  onClick={() => {
+                    if (confirm(`Unlink ${c.email} from this company?`)) unlink.mutate(c.id);
+                  }}
+                  disabled={unlink.isPending}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <p className="py-4 text-center text-sm text-muted-foreground">
           No linked contacts yet.
         </p>
       )}
+
+      <ContactFormDialog
+        open={creating}
+        mode="create"
+        forCompanyId={companyId}
+        onClose={() => setCreating(false)}
+        onSaved={() => invalidate()}
+      />
+      <ContactFormDialog
+        open={!!editing}
+        mode="edit"
+        initial={editing}
+        onClose={() => setEditing(null)}
+        onSaved={() => invalidate()}
+      />
+
+      <PromotePrimaryDialog
+        contact={promoteCandidate}
+        onCancel={() => setPromoteCandidate(null)}
+        onConfirm={() => {
+          if (!promoteCandidate) return;
+          setRole.mutate({ contactId: promoteCandidate.id, role: "primary" });
+          setPromoteCandidate(null);
+        }}
+      />
     </section>
+  );
+}
+
+function RoleSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: ContactCompanyRole;
+  onChange: (r: ContactCompanyRole) => void;
+  disabled?: boolean;
+}) {
+  const badge = ROLE_BADGE[value];
+  return (
+    <Select
+      value={value}
+      onValueChange={(v) => onChange(v as ContactCompanyRole)}
+      disabled={disabled}
+    >
+      <SelectTrigger
+        className={cn(
+          "h-7 w-[110px] border px-2 py-0 text-[11px] font-medium",
+          badge.className,
+        )}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="primary">Primary</SelectItem>
+        <SelectItem value="secondary">Secondary</SelectItem>
+        <SelectItem value="supplier">Supplier</SelectItem>
+      </SelectContent>
+    </Select>
+  );
+}
+
+function PromotePrimaryDialog({
+  contact,
+  onCancel,
+  onConfirm,
+}: {
+  contact: Contact | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={!!contact} onOpenChange={(v) => (!v ? onCancel() : null)}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Promote to primary here?</DialogTitle>
+          <DialogDescription>
+            {contact ? (
+              <>
+                <span className="font-medium text-foreground">
+                  {contact.firstName} {contact.lastName}
+                </span>{" "}
+                is currently primary at another company. Making them primary
+                here will demote that other link to <em>secondary</em> in one
+                transaction. Historical tickets on the other company stay where
+                they are.
+              </>
+            ) : null}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button onClick={onConfirm}>Make primary here</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -497,22 +593,3 @@ function DomainsTab({
   );
 }
 
-function Field({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="flex flex-col gap-1">
-      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-        {required && <span className="ml-0.5 text-destructive">*</span>}
-      </span>
-      {children}
-    </label>
-  );
-}

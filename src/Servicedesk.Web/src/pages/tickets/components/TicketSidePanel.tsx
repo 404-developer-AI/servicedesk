@@ -1,9 +1,12 @@
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { agentQueueApi, taxonomyApi } from "@/lib/api";
 import { useServerTime, toServerLocal, formatUtcSuffix } from "@/hooks/useServerTime";
 import { AgentPicker } from "@/components/AgentPicker";
+import { ContactFormDialog } from "@/components/ContactFormDialog";
+import { CompanyEditDialog } from "@/components/CompanyEditDialog";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Ticket, TicketFieldUpdate, Contact, CompanyDetail } from "@/lib/ticket-api";
 import { contactApi, companyApi } from "@/lib/ticket-api";
@@ -22,6 +25,7 @@ import {
   Phone,
   MapPin,
   Briefcase,
+  Pencil,
   User,
 } from "lucide-react";
 
@@ -342,6 +346,9 @@ function StatusTab({
 /* ─── Contact Tab ─── */
 
 function ContactTab({ contact }: { contact: Contact | null }) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = React.useState(false);
+
   if (!contact) return <EmptyState text="Loading contact..." />;
 
   const fullName =
@@ -351,6 +358,31 @@ function ContactTab({ contact }: { contact: Contact | null }) {
 
   return (
     <>
+      <div className="flex items-center justify-between -mt-1 mb-1">
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
+          Requester
+        </div>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+          onClick={() => setEditing(true)}
+          title="Edit contact details"
+        >
+          <Pencil className="h-3 w-3 mr-1" /> Edit
+        </Button>
+      </div>
+
+      <ContactFormDialog
+        open={editing}
+        mode="edit"
+        initial={contact}
+        onClose={() => setEditing(false)}
+        onSaved={() => {
+          qc.invalidateQueries({ queryKey: ["contact", contact.id] });
+        }}
+      />
+
       {fullName && (
         <FieldRow icon={User} label="Name">
           {fullName}
@@ -469,6 +501,8 @@ function CompanyTab({
   companyDetail: CompanyDetail | null;
   onRequestCompanyAssign?: () => void;
 }) {
+  const [editing, setEditing] = React.useState(false);
+
   if (!companyDetail) {
     return (
       <>
@@ -491,6 +525,27 @@ function CompanyTab({
 
   return (
     <>
+      <div className="flex items-center justify-between -mt-1 mb-1">
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
+          Company
+        </div>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+          onClick={() => setEditing(true)}
+          title="Edit company details"
+        >
+          <Pencil className="h-3 w-3 mr-1" /> Edit
+        </Button>
+      </div>
+
+      <CompanyEditDialog
+        open={editing}
+        company={company}
+        onClose={() => setEditing(false)}
+      />
+
       <ResolutionBadge ticket={ticket} onRequestCompanyAssign={onRequestCompanyAssign} />
 
       <FieldRow icon={Building2} label="Name">
