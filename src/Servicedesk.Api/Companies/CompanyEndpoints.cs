@@ -1,10 +1,13 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Servicedesk.Api.Auth;
 using Servicedesk.Domain.Companies;
 using Servicedesk.Infrastructure.Audit;
+using Servicedesk.Infrastructure.Mail.Ingest;
 using Servicedesk.Infrastructure.Persistence.Companies;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
+using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Api.Companies;
 
@@ -58,7 +61,8 @@ public static class CompanyEndpoints
                 AlertText: req.AlertText ?? "",
                 AlertOnCreate: req.AlertOnCreate ?? false,
                 AlertOnOpen: req.AlertOnOpen ?? false,
-                AlertOnOpenMode: alertMode), ct);
+                AlertOnOpenMode: alertMode,
+                Email: NormalizeEmail(req.Email)), ct);
             await AuditWrite(audit, http, "company.created", created.Id.ToString(), new { created.Id, created.Code, created.Name });
             return Results.Created($"/api/companies/{created.Id}", created);
         }).WithName("CreateCompany").WithOpenApi();
@@ -75,13 +79,26 @@ public static class CompanyEndpoints
         }).WithName("DeleteCompany").WithOpenApi();
 
         // ---- Domains: admin-only (shaping portal visibility + mail auto-link) ----
+        //
+        // The blacklist check is enforced on add (freemail providers may never
+        // seed an auto-link rule — see Mail.AutoLinkDomainBlacklist), but not
+        // on delete: existing installs that stored a now-blacklisted value
+        // before this gate shipped must still be able to remove it.
         adminGroup.MapPost("/{id:guid}/domains", async (
             Guid id, [FromBody] DomainRequest req, HttpContext http,
-            ICompanyRepository repo, IAuditLogger audit, CancellationToken ct) =>
+            ICompanyRepository repo, IAuditLogger audit,
+            ISettingsService settings, ILoggerFactory loggers,
+            CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(req.Domain))
                 return Results.BadRequest(new { error = "Domain is required." });
             var domain = req.Domain.Trim().ToLowerInvariant();
+            var blacklist = await MailDomainBlacklist.LoadAsync(settings, loggers.CreateLogger(typeof(MailDomainBlacklist)), ct);
+            if (blacklist.Contains(domain))
+                return Results.BadRequest(new
+                {
+                    error = $"'{domain}' is a public mail domain and cannot be linked to a company. Adjust Mail.AutoLinkDomainBlacklist in Settings if this is intentional.",
+                });
             var added = await repo.AddDomainAsync(id, domain, ct);
             if (added is null) return Results.Conflict(new { error = "Domain already linked." });
             await AuditWrite(audit, http, "company.domain.added", id.ToString(), new { domain });
@@ -145,6 +162,7 @@ public static class CompanyEndpoints
                 AlertOnCreate = req.AlertOnCreate ?? existing.AlertOnCreate,
                 AlertOnOpen = alertOnOpen,
                 AlertOnOpenMode = NormalizeAlertMode(req.AlertOnOpenMode ?? existing.AlertOnOpenMode, alertOnOpen),
+                Email = req.Email is null ? existing.Email : NormalizeEmail(req.Email),
             };
             var updated = await repo.UpdateCompanyAsync(id, patch, ct);
             if (updated is null) return Results.NotFound();
@@ -257,6 +275,7 @@ public static class CompanyEndpoints
         [property: Required] string? Code,
         string? ShortName,
         string? VatNumber,
+        string? Email,
         string? Description,
         string? Website,
         string? Phone,
@@ -295,6 +314,20 @@ public static class CompanyEndpoints
             return Results.BadRequest(new { error = "Customer code may be at most 64 characters." });
         if (req.AlertOnOpenMode is { } mode && mode != "session" && mode != "every")
             return Results.BadRequest(new { error = "alertOnOpenMode must be 'session' or 'every'." });
+        if (!string.IsNullOrWhiteSpace(req.Email))
+        {
+            var trimmed = req.Email.Trim();
+            if (trimmed.Length > 200)
+                return Results.BadRequest(new { error = "Email may be at most 200 characters." });
+            // Single '@', non-empty local/domain, a dot in the domain. Matches
+            // the level of server-side checking we do for contact emails without
+            // dragging in a full RFC 5322 parser.
+            var at = trimmed.IndexOf('@');
+            if (at <= 0 || at == trimmed.Length - 1
+                || trimmed.IndexOf('@', at + 1) >= 0
+                || !trimmed[(at + 1)..].Contains('.'))
+                return Results.BadRequest(new { error = "Email must look like name@domain.tld." });
+        }
         return null;
     }
 
@@ -315,6 +348,9 @@ public static class CompanyEndpoints
 
     private static string NormalizeVat(string? value)
         => string.IsNullOrWhiteSpace(value) ? "" : value.Trim().ToUpperInvariant().Replace(" ", "");
+
+    private static string NormalizeEmail(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "" : value.Trim().ToLowerInvariant();
 
     private static async Task AuditWrite(IAuditLogger audit, HttpContext http, string eventType, string target, object payload)
     {

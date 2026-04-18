@@ -291,6 +291,7 @@ export type Company = {
   description: string;
   website: string;
   phone: string;
+  email: string;
   addressLine1: string;
   addressLine2: string;
   city: string;
@@ -313,6 +314,7 @@ export type CompanyInput = {
   code: string;
   shortName?: string;
   vatNumber?: string;
+  email?: string;
   description?: string;
   website?: string;
   phone?: string;

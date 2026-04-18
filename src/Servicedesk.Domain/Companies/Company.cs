@@ -20,7 +20,8 @@ public sealed record Company(
     string AlertText,
     bool AlertOnCreate,
     bool AlertOnOpen,
-    string AlertOnOpenMode);
+    string AlertOnOpenMode,
+    string Email);
 
 public sealed record CompanyDomain(
     Guid Id,

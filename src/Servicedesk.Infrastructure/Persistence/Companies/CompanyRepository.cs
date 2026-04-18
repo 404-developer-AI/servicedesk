@@ -14,7 +14,8 @@ public sealed class CompanyRepository : ICompanyRepository
         created_utc AS CreatedUtc, updated_utc AS UpdatedUtc,
         code AS Code, short_name AS ShortName, vat_number AS VatNumber,
         alert_text AS AlertText, alert_on_create AS AlertOnCreate,
-        alert_on_open AS AlertOnOpen, alert_on_open_mode AS AlertOnOpenMode
+        alert_on_open AS AlertOnOpen, alert_on_open_mode AS AlertOnOpenMode,
+        email AS Email
         """;
 
     private const string ContactCols = """
@@ -79,7 +80,8 @@ public sealed class CompanyRepository : ICompanyRepository
                    c.created_utc AS CreatedUtc, c.updated_utc AS UpdatedUtc,
                    c.code AS Code, c.short_name AS ShortName, c.vat_number AS VatNumber,
                    c.alert_text AS AlertText, c.alert_on_create AS AlertOnCreate,
-                   c.alert_on_open AS AlertOnOpen, c.alert_on_open_mode AS AlertOnOpenMode
+                   c.alert_on_open AS AlertOnOpen, c.alert_on_open_mode AS AlertOnOpenMode,
+                   c.email AS Email
             FROM companies c
             JOIN contacts ct ON ct.company_id = c.id
             WHERE ct.id = @contactId AND c.is_active = TRUE
@@ -95,11 +97,13 @@ public sealed class CompanyRepository : ICompanyRepository
             INSERT INTO companies (name, description, website, phone, address_line1, address_line2,
                                    city, postal_code, country, is_active,
                                    code, short_name, vat_number,
-                                   alert_text, alert_on_create, alert_on_open, alert_on_open_mode)
+                                   alert_text, alert_on_create, alert_on_open, alert_on_open_mode,
+                                   email)
             VALUES (@Name, @Description, @Website, @Phone, @AddressLine1, @AddressLine2,
                     @City, @PostalCode, @Country, @IsActive,
                     @Code, @ShortName, @VatNumber,
-                    @AlertText, @AlertOnCreate, @AlertOnOpen, @AlertOnOpenMode)
+                    @AlertText, @AlertOnCreate, @AlertOnOpen, @AlertOnOpenMode,
+                    @Email)
             RETURNING {CompanyCols}
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -115,6 +119,7 @@ public sealed class CompanyRepository : ICompanyRepository
                                  code = @Code, short_name = @ShortName, vat_number = @VatNumber,
                                  alert_text = @AlertText, alert_on_create = @AlertOnCreate,
                                  alert_on_open = @AlertOnOpen, alert_on_open_mode = @AlertOnOpenMode,
+                                 email = @Email,
                                  updated_utc = now()
             WHERE id = @Id
             RETURNING {CompanyCols}
@@ -179,7 +184,8 @@ public sealed class CompanyRepository : ICompanyRepository
                    c.created_utc AS CreatedUtc, c.updated_utc AS UpdatedUtc,
                    c.code AS Code, c.short_name AS ShortName, c.vat_number AS VatNumber,
                    c.alert_text AS AlertText, c.alert_on_create AS AlertOnCreate,
-                   c.alert_on_open AS AlertOnOpen, c.alert_on_open_mode AS AlertOnOpenMode
+                   c.alert_on_open AS AlertOnOpen, c.alert_on_open_mode AS AlertOnOpenMode,
+                   c.email AS Email
             FROM companies c
             JOIN company_domains d ON d.company_id = c.id
             WHERE d.domain = @domain AND c.is_active = TRUE

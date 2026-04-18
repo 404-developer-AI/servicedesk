@@ -456,6 +456,17 @@ function CompanyTab({ companyDetail }: { companyDetail: CompanyDetail | null }) 
         </FieldRow>
       )}
 
+      {company.email && (
+        <FieldRow icon={Mail} label="Email">
+          <a
+            href={`mailto:${company.email}`}
+            className="text-primary hover:underline break-all"
+          >
+            {company.email}
+          </a>
+        </FieldRow>
+      )}
+
       {company.description && (
         <FieldRow label="Description">
           <span className="text-muted-foreground">{company.description}</span>

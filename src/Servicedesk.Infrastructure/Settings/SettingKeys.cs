@@ -71,6 +71,7 @@ public static class SettingKeys
         public const string MoveOnIngest = "Mail.MoveOnIngest";
         public const string ProcessedFolderName = "Mail.ProcessedFolderName";
         public const string AutoLinkCompanyByDomain = "Mail.AutoLinkCompanyByDomain";
+        public const string AutoLinkDomainBlacklist = "Mail.AutoLinkDomainBlacklist";
     }
 
     public static class Companies
@@ -217,6 +218,10 @@ public static class SettingDefaults
             "Mailbox folder name where ingested messages are moved. Auto-created at first use if missing."),
         new SettingDefault(SettingKeys.Mail.AutoLinkCompanyByDomain, "true", "bool", "Mail",
             "When true, contacts created during mail intake are automatically linked to a company matched on the sender's email domain (via the Companies → Domains list)."),
+        new SettingDefault(SettingKeys.Mail.AutoLinkDomainBlacklist,
+            "[\"gmail.com\",\"outlook.com\",\"hotmail.com\",\"live.com\",\"yahoo.com\",\"icloud.com\",\"me.com\",\"msn.com\",\"aol.com\",\"proton.me\",\"protonmail.com\",\"pm.me\",\"mail.com\",\"gmx.com\",\"gmx.net\",\"yandex.com\",\"yandex.ru\",\"zoho.com\",\"fastmail.com\",\"tutanota.com\",\"web.de\",\"t-online.de\",\"orange.fr\",\"laposte.net\",\"free.fr\",\"telenet.be\",\"skynet.be\"]",
+            "json", "Mail",
+            "JSON array of freemail/public domains that must never auto-link to a company. The Companies → Domains endpoint also refuses to store any of these as a company domain. Manual contact↔company linking is unaffected."),
 
         // Companies — v0.0.9.
         new SettingDefault(SettingKeys.Companies.SearchLimit, "25", "int", "Companies",

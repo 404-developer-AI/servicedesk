@@ -917,7 +917,8 @@ public sealed class DatabaseBootstrapper : IHostedService
             ADD COLUMN IF NOT EXISTS alert_text          TEXT    NOT NULL DEFAULT '',
             ADD COLUMN IF NOT EXISTS alert_on_create     BOOLEAN NOT NULL DEFAULT FALSE,
             ADD COLUMN IF NOT EXISTS alert_on_open       BOOLEAN NOT NULL DEFAULT FALSE,
-            ADD COLUMN IF NOT EXISTS alert_on_open_mode  TEXT    NOT NULL DEFAULT 'session';
+            ADD COLUMN IF NOT EXISTS alert_on_open_mode  TEXT    NOT NULL DEFAULT 'session',
+            ADD COLUMN IF NOT EXISTS email               TEXT    NOT NULL DEFAULT '';
 
         -- Backfill any existing rows lacking a code so the NOT NULL + UNIQUE
         -- constraints below can be applied without failing.

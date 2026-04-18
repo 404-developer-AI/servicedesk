@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Servicedesk.Api.Tests.TestInfrastructure;
 using Servicedesk.Domain.Companies;
@@ -89,6 +90,27 @@ public sealed class ContactLookupServiceTests
         Assert.Empty(audit.Events);
     }
 
+    /// Freemail/public domains must never drive an auto-link: otherwise a single
+    /// admin misconfiguring one company's domains with `gmail.com` would bind
+    /// every gmail sender to that company. The blacklist short-circuits before
+    /// the repo is ever consulted — we assert that by wiring gmail.com to a
+    /// company yet still expecting zero link.
+    [Fact]
+    public async Task Blacklisted_sender_domain_skips_auto_link()
+    {
+        var acme = NewCompany(name: "Acme BV", code: "ACME001");
+        var repo = new FakeCompanies();
+        repo.DomainToCompany["gmail.com"] = acme; // intentionally polluted
+        var audit = new FakeAuditLogger();
+        var svc = Build(repo, audit, autoLinkEnabled: true, domainBlacklist: new[] { "gmail.com" });
+
+        var created = await svc.EnsureByEmailAsync("jan.klant@gmail.com", "Jan Klant", default);
+
+        Assert.Null(created.CompanyId);
+        Assert.Empty(repo.FindByDomainCalls);
+        Assert.DoesNotContain(audit.Events, e => e.EventType == "contact.company.auto_linked");
+    }
+
     private static Company NewCompany(string name, string code) => new(
         Id: Guid.NewGuid(),
         Name: name,
@@ -109,20 +131,32 @@ public sealed class ContactLookupServiceTests
         AlertText: "",
         AlertOnCreate: false,
         AlertOnOpen: false,
-        AlertOnOpenMode: "session");
+        AlertOnOpenMode: "session",
+        Email: "");
 
-    private static ContactLookupService Build(FakeCompanies repo, FakeAuditLogger audit, bool autoLinkEnabled)
-        => new(repo, new StubSettings(autoLinkEnabled), audit, NullLogger<ContactLookupService>.Instance);
+    private static ContactLookupService Build(
+        FakeCompanies repo, FakeAuditLogger audit, bool autoLinkEnabled, string[]? domainBlacklist = null)
+        => new(repo, new StubSettings(autoLinkEnabled, domainBlacklist), audit, NullLogger<ContactLookupService>.Instance);
 
     private sealed class StubSettings : ISettingsService
     {
         private readonly bool _autoLinkEnabled;
-        public StubSettings(bool autoLinkEnabled) => _autoLinkEnabled = autoLinkEnabled;
+        private readonly string _blacklistJson;
+
+        public StubSettings(bool autoLinkEnabled, string[]? domainBlacklist)
+        {
+            _autoLinkEnabled = autoLinkEnabled;
+            _blacklistJson = domainBlacklist is null || domainBlacklist.Length == 0
+                ? ""
+                : JsonSerializer.Serialize(domainBlacklist);
+        }
 
         public Task<T> GetAsync<T>(string key, CancellationToken ct = default)
         {
             if (key == SettingKeys.Mail.AutoLinkCompanyByDomain && typeof(T) == typeof(bool))
                 return Task.FromResult((T)(object)_autoLinkEnabled);
+            if (key == SettingKeys.Mail.AutoLinkDomainBlacklist && typeof(T) == typeof(string))
+                return Task.FromResult((T)(object)_blacklistJson);
             return Task.FromResult(default(T)!);
         }
         public Task SetAsync<T>(string key, T value, string actor, string actorRole, CancellationToken ct = default) => Task.CompletedTask;
@@ -135,9 +169,13 @@ public sealed class ContactLookupServiceTests
         public Dictionary<string, Company> DomainToCompany { get; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, Contact> ContactsByEmail { get; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<Guid, Guid?> SetCompanyCalls { get; } = new();
+        public List<string> FindByDomainCalls { get; } = new();
 
         public Task<Company?> FindCompanyByDomainAsync(string domain, CancellationToken ct)
-            => Task.FromResult(DomainToCompany.TryGetValue(domain, out var c) ? c : null);
+        {
+            FindByDomainCalls.Add(domain);
+            return Task.FromResult(DomainToCompany.TryGetValue(domain, out var c) ? c : null);
+        }
 
         public Task<Contact?> GetContactByEmailAsync(string email, CancellationToken ct)
             => Task.FromResult(ContactsByEmail.TryGetValue(email, out var c) ? c : null);

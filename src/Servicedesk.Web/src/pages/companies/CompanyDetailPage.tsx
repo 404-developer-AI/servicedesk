@@ -144,6 +144,7 @@ function OverviewTab({ company }: { company: Company }) {
     code: company.code,
     shortName: company.shortName,
     vatNumber: company.vatNumber,
+    email: company.email,
     description: company.description,
     website: company.website,
     phone: company.phone,
@@ -213,6 +214,14 @@ function OverviewTab({ company }: { company: Company }) {
           <Input
             value={form.phone ?? ""}
             onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+          />
+        </Field>
+        <Field label="Email">
+          <Input
+            type="email"
+            value={form.email ?? ""}
+            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            placeholder="info@acme.be"
           />
         </Field>
       </div>

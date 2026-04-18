@@ -86,6 +86,15 @@ public sealed class ContactLookupService : IContactLookupService
 
         var domain = ExtractDomain(email);
         if (domain is null) return null;
+
+        // Freemail/public domains must never drive an auto-link — otherwise a
+        // @gmail.com reply would bind half the internet to whichever company
+        // happened to list gmail.com as a domain. Manual linking (agent picks
+        // company on the contact) stays unaffected; that path doesn't touch
+        // this service.
+        var blacklist = await MailDomainBlacklist.LoadAsync(_settings, _logger, ct);
+        if (blacklist.Contains(domain)) return null;
+
         return await _companies.FindCompanyByDomainAsync(domain, ct);
     }
 
