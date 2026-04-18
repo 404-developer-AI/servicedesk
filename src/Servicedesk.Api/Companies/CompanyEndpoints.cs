@@ -193,9 +193,36 @@ public static class CompanyEndpoints
             if (role != "primary" && role != "secondary" && role != "supplier")
                 return Results.BadRequest(new { error = "role must be 'primary', 'secondary' or 'supplier'." });
 
+            // Capture the existing primary before the upsert so we can emit a
+            // dedicated `contact.primary.moved` event when a job-change
+            // actually happens — UpsertContactLinkAsync atomically demotes
+            // the old primary to 'secondary' inside the same transaction, so
+            // after the call the information is already lost.
+            var previousPrimary = role == "primary"
+                ? await repo.GetPrimaryCompanyForContactAsync(contactId, ct)
+                : null;
+
             var link = await repo.UpsertContactLinkAsync(contactId, id, role, ct);
             await AuditWrite(audit, http, "company.contact.linked", id.ToString(),
                 new { contactId, role, linkId = link.Id });
+
+            // A primary-move is worth its own event (reporting, job-history
+            // rendering) on top of company.contact.linked. We only log it when
+            // the primary actually shifts to a different company — a no-op
+            // re-primary (same company) is not a job change.
+            if (previousPrimary is not null && previousPrimary.Id != id)
+            {
+                await AuditWrite(audit, http, "contact.primary.moved", contactId.ToString(), new
+                {
+                    contactId,
+                    fromCompanyId = previousPrimary.Id,
+                    fromCompanyName = previousPrimary.Name,
+                    fromCompanyCode = previousPrimary.Code,
+                    toCompanyId = id,
+                    toCompanyName = company.Name,
+                    toCompanyCode = company.Code,
+                });
+            }
             return Results.Ok(link);
         }).WithName("LinkCompanyContact").WithOpenApi();
 
@@ -241,6 +268,30 @@ public static class CompanyEndpoints
             Results.Ok(await repo.ListContactsAsync(companyId, search, ct)))
             .WithName("ListContacts").WithOpenApi();
 
+        // Paginated + enriched overview for the dedicated `/contacts` page.
+        // Separate from `GET /api/contacts` so the existing picker/typeahead
+        // callers (ContactPicker, link-search, ticket company-assignment
+        // dialog) keep their flat Contact[] response shape.
+        contactGroup.MapGet("/browse", async (
+            string? search, Guid? companyId, string? role, bool? includeInactive,
+            string? sort, int? page, int? pageSize,
+            ICompanyRepository repo, ISettingsService settings, CancellationToken ct) =>
+        {
+            var defaultPageSize = await settings.GetAsync<int>(SettingKeys.Contacts.PageSize, ct);
+            if (defaultPageSize <= 0) defaultPageSize = 25;
+            var effectivePageSize = pageSize is > 0 ? pageSize.Value : defaultPageSize;
+            var result = await repo.ListContactsOverviewAsync(
+                search,
+                companyId,
+                role,
+                includeInactive ?? false,
+                sort,
+                page ?? 1,
+                effectivePageSize,
+                ct);
+            return Results.Ok(result);
+        }).WithName("BrowseContacts").WithOpenApi();
+
         contactGroup.MapGet("/{id:guid}", async (Guid id, ICompanyRepository repo, CancellationToken ct) =>
         {
             var c = await repo.GetContactAsync(id, ct);
@@ -255,6 +306,31 @@ public static class CompanyEndpoints
             Guid id, ICompanyRepository repo, CancellationToken ct) =>
             Results.Ok(await repo.ListContactCompanyOptionsAsync(id, ct)))
             .WithName("ListContactCompanies").WithOpenApi();
+
+        // v0.0.10: contact-scoped audit history for the detail page. Unions
+        // events targeted at the contact with events whose payload references
+        // the contact (company.contact.linked / company.contact.unlinked) so
+        // role-changes and primary-moves appear in a single timeline.
+        contactGroup.MapGet("/{id:guid}/audit", async (
+            Guid id, long? cursor, int? limit,
+            IAuditQuery audit, CancellationToken ct) =>
+        {
+            var page = await audit.ListForContactAsync(id, cursor, limit ?? 25, ct);
+            return Results.Ok(new
+            {
+                items = page.Items.Select(e => new
+                {
+                    id = e.Id,
+                    utc = e.Utc,
+                    actor = e.Actor,
+                    actorRole = e.ActorRole,
+                    eventType = e.EventType,
+                    target = e.Target,
+                    payloadJson = e.PayloadJson,
+                }),
+                nextCursor = page.NextCursor,
+            });
+        }).WithName("ListContactAudit").WithOpenApi();
 
         contactGroup.MapPost("/", async (
             [FromBody] ContactRequest req, HttpContext http,
@@ -303,7 +379,24 @@ public static class CompanyEndpoints
             // when explicitly supplied so callers that PATCH other fields
             // don't accidentally nuke the contact's primary link.
             if (req.CompanyId is not null)
+            {
+                var previousPrimary = await repo.GetPrimaryCompanyForContactAsync(id, ct);
                 await repo.SetPrimaryCompanyAsync(id, req.CompanyId, ct);
+                if (previousPrimary is not null && previousPrimary.Id != req.CompanyId.Value)
+                {
+                    var target = await repo.GetCompanyAsync(req.CompanyId.Value, ct);
+                    await AuditWrite(audit, http, "contact.primary.moved", id.ToString(), new
+                    {
+                        contactId = id,
+                        fromCompanyId = previousPrimary.Id,
+                        fromCompanyName = previousPrimary.Name,
+                        fromCompanyCode = previousPrimary.Code,
+                        toCompanyId = req.CompanyId.Value,
+                        toCompanyName = target?.Name,
+                        toCompanyCode = target?.Code,
+                    });
+                }
+            }
             await AuditWrite(audit, http, "contact.updated", id.ToString(), new { updated.Email });
             return Results.Ok(updated);
         }).WithName("UpdateContact").WithOpenApi();

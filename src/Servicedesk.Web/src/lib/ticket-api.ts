@@ -292,6 +292,62 @@ export type Contact = {
   updatedUtc: string;
 };
 
+/// Row shape returned by /api/contacts/browse — the paginated overview
+/// that backs the `/contacts` page. Flattens the primary-link metadata onto
+/// the contact row and adds `extraLinkCount` + `lastTicketUpdatedUtc` so
+/// the table can render without N+1 round-trips.
+export type ContactListItem = {
+  id: string;
+  companyRole: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  jobTitle: string;
+  isActive: boolean;
+  createdUtc: string;
+  updatedUtc: string;
+  primaryCompanyId: string | null;
+  primaryCompanyName: string | null;
+  primaryCompanyCode: string | null;
+  primaryCompanyShortName: string | null;
+  primaryCompanyIsActive: boolean;
+  extraLinkCount: number;
+  lastTicketUpdatedUtc: string | null;
+};
+
+export type ContactOverviewPage = {
+  items: ContactListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type ContactAuditEntry = {
+  id: number;
+  utc: string;
+  actor: string;
+  actorRole: string;
+  eventType: string;
+  target: string | null;
+  payloadJson: string;
+};
+
+export type ContactAuditPage = {
+  items: ContactAuditEntry[];
+  nextCursor: number | null;
+};
+
+export type ContactBrowseQuery = {
+  search?: string;
+  companyId?: string;
+  role?: ContactCompanyRole | "none";
+  includeInactive?: boolean;
+  sort?: "name_asc" | "email_asc" | "last_activity_desc";
+  page?: number;
+  pageSize?: number;
+};
+
 export type ContactInput = {
   email: string;
   /// Shorthand on create/update: when set the server also inserts a
@@ -478,6 +534,25 @@ export const contactApi = {
     if (companyId) params.set("companyId", companyId);
     const qs = params.toString();
     return request<Contact[]>("GET", `/api/contacts${qs ? `?${qs}` : ""}`);
+  },
+  browse: (query: ContactBrowseQuery = {}) => {
+    const params = new URLSearchParams();
+    if (query.search) params.set("search", query.search);
+    if (query.companyId) params.set("companyId", query.companyId);
+    if (query.role) params.set("role", query.role);
+    if (query.includeInactive) params.set("includeInactive", "true");
+    if (query.sort) params.set("sort", query.sort);
+    if (query.page) params.set("page", String(query.page));
+    if (query.pageSize) params.set("pageSize", String(query.pageSize));
+    const qs = params.toString();
+    return request<ContactOverviewPage>("GET", `/api/contacts/browse${qs ? `?${qs}` : ""}`);
+  },
+  audit: (id: string, cursor?: number, limit?: number) => {
+    const params = new URLSearchParams();
+    if (cursor) params.set("cursor", String(cursor));
+    if (limit) params.set("limit", String(limit));
+    const qs = params.toString();
+    return request<ContactAuditPage>("GET", `/api/contacts/${id}/audit${qs ? `?${qs}` : ""}`);
   },
   get: (id: string) => request<Contact>("GET", `/api/contacts/${id}`),
   listCompanies: (id: string) =>

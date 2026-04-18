@@ -79,6 +79,11 @@ public static class SettingKeys
         public const string SearchLimit = "Companies.SearchLimit";
     }
 
+    public static class Contacts
+    {
+        public const string PageSize = "Contacts.PageSize";
+    }
+
     public static class Graph
     {
         public const string TenantId = "Graph.TenantId";
@@ -226,6 +231,10 @@ public static class SettingDefaults
         // Companies — v0.0.9.
         new SettingDefault(SettingKeys.Companies.SearchLimit, "25", "int", "Companies",
             "Maximum number of results returned by the Companies global-search source."),
+
+        // Contacts — v0.0.10.
+        new SettingDefault(SettingKeys.Contacts.PageSize, "25", "int", "Contacts",
+            "Default page size for the Contacts overview page. Requests may override via query string up to a hard cap."),
 
         // Graph — tenant/client id only. Client secret lives in ISecretProvider, never here.
         new SettingDefault(SettingKeys.Graph.TenantId, "", "string", "Graph",

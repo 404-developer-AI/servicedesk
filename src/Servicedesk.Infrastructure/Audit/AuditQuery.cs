@@ -69,6 +69,41 @@ public sealed class AuditQueryService : IAuditQuery
         return new AuditPage(rows, nextCursor);
     }
 
+    public async Task<AuditPage> ListForContactAsync(
+        Guid contactId, long? cursorId, int limit, CancellationToken cancellationToken = default)
+    {
+        var clamped = Math.Clamp(limit, 1, 200);
+        const string baseSql = """
+            SELECT id, utc, actor, actor_role AS ActorRole, event_type AS EventType,
+                   target, client_ip AS ClientIp, user_agent AS UserAgent,
+                   payload::text AS PayloadJson, prev_hash AS PrevHash, entry_hash AS EntryHash
+            FROM audit_log
+            WHERE (target = @ContactText OR payload->>'contactId' = @ContactText)
+            """;
+        var sql = baseSql;
+        var parameters = new DynamicParameters();
+        parameters.Add("ContactText", contactId.ToString());
+        if (cursorId is not null)
+        {
+            sql += " AND id < @CursorId";
+            parameters.Add("CursorId", cursorId.Value);
+        }
+        sql += " ORDER BY id DESC LIMIT @Limit";
+        parameters.Add("Limit", clamped + 1);
+
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        var rows = (await connection.QueryAsync<AuditLogEntry>(
+            new CommandDefinition(sql, parameters, cancellationToken: cancellationToken))).ToList();
+
+        long? nextCursor = null;
+        if (rows.Count > clamped)
+        {
+            nextCursor = rows[clamped - 1].Id;
+            rows = rows.Take(clamped).ToList();
+        }
+        return new AuditPage(rows, nextCursor);
+    }
+
     public async Task<AuditLogEntry?> GetAsync(long id, CancellationToken cancellationToken = default)
     {
         const string sql = """

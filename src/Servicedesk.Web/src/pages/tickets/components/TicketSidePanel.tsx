@@ -5,10 +5,20 @@ import { agentQueueApi, taxonomyApi } from "@/lib/api";
 import { useServerTime, toServerLocal, formatUtcSuffix } from "@/hooks/useServerTime";
 import { AgentPicker } from "@/components/AgentPicker";
 import { ContactFormDialog } from "@/components/ContactFormDialog";
+import { AddContactLinkDialog } from "@/components/AddContactLinkDialog";
+import { AddCompanyContactDialog } from "@/components/AddCompanyContactDialog";
 import { CompanyEditDialog } from "@/components/CompanyEditDialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { Ticket, TicketFieldUpdate, Contact, CompanyDetail } from "@/lib/ticket-api";
+import type {
+  Ticket,
+  TicketFieldUpdate,
+  Contact,
+  CompanyDetail,
+  ContactCompanyLink,
+  ContactCompanyOption,
+  ContactCompanyRole,
+} from "@/lib/ticket-api";
 import { contactApi, companyApi } from "@/lib/ticket-api";
 import { usePresenceStore, type PresenceUser } from "@/stores/usePresenceStore";
 import { useAuth } from "@/auth/authStore";
@@ -26,6 +36,7 @@ import {
   MapPin,
   Briefcase,
   Pencil,
+  Plus,
   User,
 } from "lucide-react";
 
@@ -348,6 +359,14 @@ function StatusTab({
 function ContactTab({ contact }: { contact: Contact | null }) {
   const qc = useQueryClient();
   const [editing, setEditing] = React.useState(false);
+  const [linking, setLinking] = React.useState(false);
+
+  const { data: companyLinks } = useQuery({
+    queryKey: ["contact-companies", contact?.id],
+    queryFn: () => contactApi.listCompanies(contact!.id),
+    enabled: !!contact,
+    placeholderData: (prev) => prev,
+  });
 
   if (!contact) return <EmptyState text="Loading contact..." />;
 
@@ -355,6 +374,9 @@ function ContactTab({ contact }: { contact: Contact | null }) {
     contact.firstName || contact.lastName
       ? `${contact.firstName} ${contact.lastName}`.trim()
       : null;
+
+  const existingCompanyIds = new Set((companyLinks ?? []).map((l) => l.companyId));
+  const currentPrimary = (companyLinks ?? []).find((l) => l.role === "primary") ?? null;
 
   return (
     <>
@@ -382,6 +404,15 @@ function ContactTab({ contact }: { contact: Contact | null }) {
           qc.invalidateQueries({ queryKey: ["contact", contact.id] });
         }}
       />
+
+      {linking && (
+        <AddContactLinkDialog
+          contactId={contact.id}
+          existingCompanyIds={existingCompanyIds}
+          currentPrimary={currentPrimary}
+          onClose={() => setLinking(false)}
+        />
+      )}
 
       {fullName && (
         <FieldRow icon={User} label="Name">
@@ -441,7 +472,108 @@ function ContactTab({ contact }: { contact: Contact | null }) {
         <FieldLabel>Created</FieldLabel>
         <div className="text-sm text-foreground/80"><ServerDate iso={contact.createdUtc} /></div>
       </div>
+
+      <div className="border-t border-white/10" />
+
+      <ContactCompanyLinks
+        contactId={contact.id}
+        links={companyLinks ?? []}
+        onLink={() => setLinking(true)}
+      />
     </>
+  );
+}
+
+const LINK_ROLE_BADGE: Record<ContactCompanyRole, string> = {
+  primary: "border-purple-400/50 bg-purple-500/20 text-purple-100",
+  secondary: "border-sky-400/30 bg-sky-500/15 text-sky-200",
+  supplier: "border-amber-400/30 bg-amber-500/15 text-amber-200",
+};
+
+/// Compact role-grouped link list rendered inside the ticket side-panel's
+/// Contact tab. Mirrors the shape used on the full `/contacts/:id` page but
+/// tight enough for the 280px panel width. Each row links to the target
+/// company so agents can pivot from the ticket to the company's Contacts-tab
+/// without losing context.
+function ContactCompanyLinks({
+  contactId,
+  links,
+  onLink,
+}: {
+  contactId: string;
+  links: ContactCompanyOption[];
+  onLink: () => void;
+}) {
+  const ordered = [...links].sort((a, b) => {
+    const rank: Record<ContactCompanyRole, number> = { primary: 0, secondary: 1, supplier: 2 };
+    if (rank[a.role] !== rank[b.role]) return rank[a.role] - rank[b.role];
+    return a.companyName.localeCompare(b.companyName);
+  });
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <FieldLabel>
+          Company links{" "}
+          <span className="text-muted-foreground/70">({links.length})</span>
+        </FieldLabel>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+          onClick={onLink}
+          title="Link a company to this contact"
+        >
+          <Plus className="h-3 w-3 mr-1" /> Link
+        </Button>
+      </div>
+
+      {ordered.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground/70">
+          No links yet. Click{" "}
+          <span className="text-foreground">Link</span> to attach the first company.
+        </p>
+      ) : (
+        <ul className="space-y-1">
+          {ordered.map((l) => (
+            <li key={l.linkId}>
+              <Link
+                to="/companies/$companyId"
+                params={{ companyId: l.companyId }}
+                className="flex items-center gap-1.5 rounded-md border border-white/5 bg-white/[0.02] px-1.5 py-1 text-xs hover:border-white/10 hover:bg-white/[0.05]"
+              >
+                <span
+                  className={cn(
+                    "inline-flex items-center rounded-sm border px-1 py-0 text-[9px] font-medium uppercase tracking-wide",
+                    LINK_ROLE_BADGE[l.role],
+                  )}
+                >
+                  {l.role[0]}
+                </span>
+                <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
+                <span className="truncate text-foreground">
+                  {l.companyShortName || l.companyName}
+                </span>
+                <span className="font-mono text-[9px] text-muted-foreground ml-auto shrink-0">
+                  {l.companyCode}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-1.5 text-[10px] text-muted-foreground/70">
+        Ticket's company stays frozen at intake — linking here doesn't retroactively
+        move historic tickets.
+      </div>
+      <Link
+        to="/contacts/$contactId"
+        params={{ contactId }}
+        className="mt-1 inline-flex text-[10px] text-muted-foreground hover:text-foreground"
+      >
+        Open full contact page →
+      </Link>
+    </div>
   );
 }
 
@@ -502,6 +634,22 @@ function CompanyTab({
   onRequestCompanyAssign?: () => void;
 }) {
   const [editing, setEditing] = React.useState(false);
+  const [linkingContact, setLinkingContact] = React.useState(false);
+
+  const companyId = companyDetail?.company.id ?? null;
+
+  const { data: companyContacts } = useQuery({
+    queryKey: ["companies", "contacts", companyId],
+    queryFn: () => companyApi.listContacts(companyId!),
+    enabled: !!companyId,
+    placeholderData: (prev) => prev,
+  });
+  const { data: companyLinks } = useQuery({
+    queryKey: ["companies", "links", companyId],
+    queryFn: () => companyApi.links(companyId!),
+    enabled: !!companyId,
+    placeholderData: (prev) => prev,
+  });
 
   if (!companyDetail) {
     return (
@@ -667,7 +815,135 @@ function CompanyTab({
           {company.isActive ? "Active" : "Inactive"}
         </span>
       </div>
+
+      <div className="border-t border-white/10" />
+
+      <CompanyContactLinks
+        companyId={company.id}
+        contacts={companyContacts ?? []}
+        links={companyLinks ?? []}
+        onLink={() => setLinkingContact(true)}
+      />
+
+      {linkingContact && (
+        <AddCompanyContactDialog
+          companyId={company.id}
+          existingContactIds={new Set((companyContacts ?? []).map((c) => c.id))}
+          onClose={() => setLinkingContact(false)}
+        />
+      )}
     </>
+  );
+}
+
+/// Compact role-grouped contact list rendered inside the ticket side-panel's
+/// Company tab. Mirrors the shape of ContactCompanyLinks (the inverse on the
+/// Contact tab): single-letter role badge, name/email, click-through to the
+/// contact's detail page. Joins the flat contact list with the role-tagged
+/// links by contactId so each row shows its role relative to this company.
+function CompanyContactLinks({
+  companyId,
+  contacts,
+  links,
+  onLink,
+}: {
+  companyId: string;
+  contacts: Contact[];
+  links: ContactCompanyLink[];
+  onLink: () => void;
+}) {
+  const roleByContact = React.useMemo(() => {
+    const m = new Map<string, ContactCompanyRole>();
+    for (const l of links) m.set(l.contactId, l.role);
+    return m;
+  }, [links]);
+
+  const ordered = React.useMemo(() => {
+    const rank: Record<ContactCompanyRole, number> = {
+      primary: 0,
+      secondary: 1,
+      supplier: 2,
+    };
+    return [...contacts].sort((a, b) => {
+      const ra = roleByContact.get(a.id);
+      const rb = roleByContact.get(b.id);
+      const rankA = ra ? rank[ra] : 99;
+      const rankB = rb ? rank[rb] : 99;
+      if (rankA !== rankB) return rankA - rankB;
+      const na =
+        [a.firstName, a.lastName].filter(Boolean).join(" ").trim() || a.email;
+      const nb =
+        [b.firstName, b.lastName].filter(Boolean).join(" ").trim() || b.email;
+      return na.localeCompare(nb);
+    });
+  }, [contacts, roleByContact]);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <FieldLabel>
+          Contacts{" "}
+          <span className="text-muted-foreground/70">({contacts.length})</span>
+        </FieldLabel>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+          onClick={onLink}
+          title="Link a contact to this company"
+        >
+          <Plus className="h-3 w-3 mr-1" /> Link
+        </Button>
+      </div>
+
+      {ordered.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground/70">
+          No contacts linked yet. Click{" "}
+          <span className="text-foreground">Link</span> to attach one.
+        </p>
+      ) : (
+        <ul className="space-y-1">
+          {ordered.map((c) => {
+            const role = roleByContact.get(c.id);
+            const fullName =
+              [c.firstName, c.lastName].filter(Boolean).join(" ").trim() || c.email;
+            return (
+              <li key={c.id}>
+                <Link
+                  to="/contacts/$contactId"
+                  params={{ contactId: c.id }}
+                  className="flex items-center gap-1.5 rounded-md border border-white/5 bg-white/[0.02] px-1.5 py-1 text-xs hover:border-white/10 hover:bg-white/[0.05]"
+                >
+                  {role ? (
+                    <span
+                      className={cn(
+                        "inline-flex items-center rounded-sm border px-1 py-0 text-[9px] font-medium uppercase tracking-wide",
+                        LINK_ROLE_BADGE[role],
+                      )}
+                    >
+                      {role[0]}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center rounded-sm border border-white/10 bg-white/[0.04] px-1 py-0 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+                      ?
+                    </span>
+                  )}
+                  <User className="h-3 w-3 text-muted-foreground shrink-0" />
+                  <span className="truncate text-foreground">{fullName}</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <Link
+        to="/companies/$companyId"
+        params={{ companyId }}
+        className="mt-1 inline-flex text-[10px] text-muted-foreground hover:text-foreground"
+      >
+        Open full company page →
+      </Link>
+    </div>
   );
 }
 

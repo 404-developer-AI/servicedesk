@@ -23,6 +23,14 @@ public interface ICompanyRepository
     /// Lists distinct contacts that have at least one link (any role) to the
     /// given company, or — when companyId is null — every contact.
     Task<IReadOnlyList<Contact>> ListContactsAsync(Guid? companyId, string? search, CancellationToken ct);
+    /// Paginated + enriched overview for the dedicated `/contacts` page.
+    /// <paramref name="role"/> accepts "primary"/"secondary"/"supplier"/"none"
+    /// (the "none" branch filters contacts with zero links); null means any.
+    /// <paramref name="sort"/> accepts "name_asc", "email_asc",
+    /// "last_activity_desc"; any other value falls back to "name_asc".
+    Task<ContactOverviewPage> ListContactsOverviewAsync(
+        string? search, Guid? companyId, string? role, bool includeInactive,
+        string? sort, int page, int pageSize, CancellationToken ct);
     Task<Contact?> GetContactAsync(Guid id, CancellationToken ct);
     Task<Contact?> GetContactByEmailAsync(string email, CancellationToken ct);
     /// Creates a contact and optionally inserts a role-tagged company link in

@@ -35,3 +35,33 @@ public sealed record ContactCompanyOption(
     string CompanyShortName,
     bool CompanyIsActive,
     string Role);
+
+/// Row shape used by the dedicated `/contacts` overview page. Extends the
+/// base contact with denormalized primary-company metadata, a count of
+/// extra links (secondary + supplier), and the timestamp of the contact's
+/// most recent ticket activity so the overview can rank contacts without
+/// a per-row round-trip.
+public sealed record ContactListItem(
+    Guid Id,
+    string CompanyRole,
+    string FirstName,
+    string LastName,
+    string Email,
+    string Phone,
+    string JobTitle,
+    bool IsActive,
+    DateTime CreatedUtc,
+    DateTime UpdatedUtc,
+    Guid? PrimaryCompanyId,
+    string? PrimaryCompanyName,
+    string? PrimaryCompanyCode,
+    string? PrimaryCompanyShortName,
+    bool PrimaryCompanyIsActive,
+    int ExtraLinkCount,
+    DateTime? LastTicketUpdatedUtc);
+
+public sealed record ContactOverviewPage(
+    IReadOnlyList<ContactListItem> Items,
+    int Total,
+    int Page,
+    int PageSize);

@@ -29,6 +29,8 @@ import { QueueAccessSettingsPage } from "@/pages/settings/QueueAccessSettingsPag
 import { ViewGroupsSettingsPage } from "@/pages/settings/ViewGroupsSettingsPage";
 import { CompaniesSettingsPage } from "@/pages/settings/CompaniesSettingsPage";
 import { CompanyDetailPage } from "@/pages/companies/CompanyDetailPage";
+import { ContactsPage } from "@/pages/contacts/ContactsPage";
+import { ContactDetailPage } from "@/pages/contacts/ContactDetailPage";
 import { TicketListPage } from "@/pages/tickets/TicketListPage";
 import { TicketDetailPage } from "@/pages/tickets/TicketDetailPage";
 import { SlaLogPage } from "@/pages/sla/SlaLogPage";
@@ -292,6 +294,22 @@ const companyDetailRoute = createRoute({
   },
 });
 
+const settingsContactsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "contacts",
+  component: ContactsPage,
+});
+
+const contactDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/contacts/$contactId",
+  beforeLoad: authGate(["Agent", "Admin"]),
+  component: function ContactDetailRoute() {
+    const { contactId } = contactDetailRoute.useParams();
+    return <ContactDetailPage contactId={contactId} />;
+  },
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   setupRoute,
@@ -299,6 +317,7 @@ const routeTree = rootRoute.addChildren([
   ticketsRoute,
   ticketDetailRoute,
   companyDetailRoute,
+  contactDetailRoute,
   searchRoute,
   slaLogRoute,
   kbRoute,
@@ -311,6 +330,7 @@ const routeTree = rootRoute.addChildren([
     settingsIntegrationsRoute,
     settingsTicketsRoute,
     settingsCompaniesRoute,
+    settingsContactsRoute,
     settingsViewsRoute,
     settingsQueueAccessRoute,
     settingsViewGroupsRoute,

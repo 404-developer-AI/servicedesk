@@ -229,6 +229,130 @@ public sealed class CompanyRepository : ICompanyRepository
             new { companyId, search = $"%{search}%" }, cancellationToken: ct))).ToList();
     }
 
+    public async Task<ContactOverviewPage> ListContactsOverviewAsync(
+        string? search, Guid? companyId, string? role, bool includeInactive,
+        string? sort, int page, int pageSize, CancellationToken ct)
+    {
+        // Defense in depth — caller already clamps but we never want a
+        // user-driven value to stretch the query plan.
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 200);
+        var offset = (page - 1) * pageSize;
+
+        var normalizedRole = role?.Trim().ToLowerInvariant();
+        var roleFilter = normalizedRole switch
+        {
+            "primary" or "secondary" or "supplier" => normalizedRole,
+            "none" => "none",
+            _ => null,
+        };
+
+        var orderBy = sort switch
+        {
+            "email_asc" => "c.email, c.last_name, c.first_name",
+            "last_activity_desc" => "last_ticket_updated_utc DESC NULLS LAST, c.last_name, c.first_name",
+            _ => "c.last_name, c.first_name, c.email",
+        };
+
+        // Single query with correlated sub-queries for the primary-link
+        // metadata + extra-link count + last-ticket activity. COUNT(*) OVER ()
+        // gives us the total before pagination in one round-trip.
+        //
+        // Filter branches:
+        //   companyId — restrict to contacts linked to that company (any role)
+        //   role      — 'primary'/'secondary'/'supplier' restrict the base set
+        //                to contacts that have at least one link of that role;
+        //                'none' restricts to contacts with zero links.
+        //   search    — ILIKE on email, first/last/full name, phone.
+        //
+        // includeInactive=false filters out c.is_active=FALSE.
+        var where = new List<string>();
+        if (!includeInactive) where.Add("c.is_active = TRUE");
+        if (companyId.HasValue)
+            where.Add("EXISTS (SELECT 1 FROM contact_companies ccf WHERE ccf.contact_id = c.id AND ccf.company_id = @companyId)");
+        if (roleFilter == "none")
+            where.Add("NOT EXISTS (SELECT 1 FROM contact_companies ccf WHERE ccf.contact_id = c.id)");
+        else if (roleFilter is not null)
+            where.Add("EXISTS (SELECT 1 FROM contact_companies ccf WHERE ccf.contact_id = c.id AND ccf.role = @roleFilter)");
+        if (!string.IsNullOrWhiteSpace(search))
+            where.Add("""
+                (c.email ILIKE @search
+                 OR c.first_name ILIKE @search
+                 OR c.last_name ILIKE @search
+                 OR (coalesce(c.first_name,'') || ' ' || coalesce(c.last_name,'')) ILIKE @search
+                 OR c.phone ILIKE @search)
+                """);
+
+        var whereSql = where.Count == 0 ? "" : "WHERE " + string.Join(" AND ", where);
+
+        var sql = $"""
+            SELECT c.id AS Id, c.company_role AS CompanyRole,
+                   c.first_name AS FirstName, c.last_name AS LastName,
+                   c.email AS Email, c.phone AS Phone, c.job_title AS JobTitle,
+                   c.is_active AS IsActive,
+                   c.created_utc AS CreatedUtc, c.updated_utc AS UpdatedUtc,
+                   (SELECT cp.company_id FROM contact_companies cp
+                     WHERE cp.contact_id = c.id AND cp.role = 'primary' LIMIT 1) AS PrimaryCompanyId,
+                   pco.name         AS PrimaryCompanyName,
+                   pco.code         AS PrimaryCompanyCode,
+                   pco.short_name   AS PrimaryCompanyShortName,
+                   COALESCE(pco.is_active, FALSE) AS PrimaryCompanyIsActive,
+                   (SELECT count(*)::int FROM contact_companies cx
+                     WHERE cx.contact_id = c.id AND cx.role <> 'primary') AS ExtraLinkCount,
+                   (SELECT max(t.updated_utc) FROM tickets t
+                     WHERE t.requester_contact_id = c.id AND t.is_deleted = FALSE) AS LastTicketUpdatedUtc,
+                   COUNT(*) OVER () AS TotalHits
+            FROM contacts c
+            LEFT JOIN contact_companies cc_primary
+                   ON cc_primary.contact_id = c.id AND cc_primary.role = 'primary'
+            LEFT JOIN companies pco ON pco.id = cc_primary.company_id
+            {whereSql}
+            ORDER BY {orderBy}
+            LIMIT @pageSize OFFSET @offset
+            """;
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = (await conn.QueryAsync<ContactOverviewRow>(new CommandDefinition(sql,
+            new
+            {
+                companyId,
+                roleFilter,
+                search = $"%{search}%",
+                pageSize,
+                offset,
+            },
+            cancellationToken: ct))).ToList();
+
+        var total = rows.Count > 0 ? (int)rows[0].TotalHits : 0;
+        var items = rows.Select(r => new ContactListItem(
+            r.Id, r.CompanyRole, r.FirstName, r.LastName, r.Email, r.Phone,
+            r.JobTitle, r.IsActive, r.CreatedUtc, r.UpdatedUtc,
+            r.PrimaryCompanyId, r.PrimaryCompanyName, r.PrimaryCompanyCode,
+            r.PrimaryCompanyShortName, r.PrimaryCompanyIsActive,
+            r.ExtraLinkCount, r.LastTicketUpdatedUtc)).ToList();
+        return new ContactOverviewPage(items, total, page, pageSize);
+    }
+
+    private sealed record ContactOverviewRow(
+        Guid Id,
+        string CompanyRole,
+        string FirstName,
+        string LastName,
+        string Email,
+        string Phone,
+        string JobTitle,
+        bool IsActive,
+        DateTime CreatedUtc,
+        DateTime UpdatedUtc,
+        Guid? PrimaryCompanyId,
+        string? PrimaryCompanyName,
+        string? PrimaryCompanyCode,
+        string? PrimaryCompanyShortName,
+        bool PrimaryCompanyIsActive,
+        int ExtraLinkCount,
+        DateTime? LastTicketUpdatedUtc,
+        long TotalHits);
+
     public async Task<Contact?> GetContactAsync(Guid id, CancellationToken ct)
     {
         var sql = $"SELECT {ContactCols} FROM contacts WHERE id = @id";

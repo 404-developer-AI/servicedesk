@@ -25,6 +25,9 @@ public sealed class ContactSearchSource : ISearchSource
             return new SearchGroup(Kind, Array.Empty<SearchHit>(), 0, false);
 
         var normalized = request.Query.Trim().ToLowerInvariant();
+        if (normalized.Length == 0)
+            return new SearchGroup(Kind, Array.Empty<SearchHit>(), 0, false);
+
         var limit = Math.Clamp(request.Limit, 1, 100);
         var offset = Math.Max(0, request.Offset);
 

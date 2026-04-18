@@ -1,6 +1,7 @@
 import {
   Activity,
   Building2,
+  Contact,
   Eye,
   Mail,
   Paperclip,
@@ -45,6 +46,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       "Customer companies with their code, VAT number, contact details and per-company alert pop-ups on tickets.",
     icon: Building2,
+  },
+  {
+    slug: "contacts",
+    label: "Contacts",
+    description:
+      "Every contact across companies — primary/secondary/supplier links, inline details and a dedicated primary-move flow.",
+    icon: Contact,
   },
   {
     slug: "views",

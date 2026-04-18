@@ -61,4 +61,17 @@ public sealed class FakeAuditQuery : IAuditQuery
 
     public Task<AuditLogEntry?> GetAsync(long id, CancellationToken cancellationToken = default) =>
         Task.FromResult(_entries.FirstOrDefault(e => e.Id == id));
+
+    public Task<AuditPage> ListForContactAsync(
+        Guid contactId, long? cursorId, int limit, CancellationToken cancellationToken = default)
+    {
+        var contactText = contactId.ToString();
+        var items = _entries.Where(e =>
+            e.Target == contactText
+            || (e.PayloadJson.Contains($"\"contactId\":\"{contactText}\"", StringComparison.OrdinalIgnoreCase)));
+        if (cursorId is not null)
+            items = items.Where(e => e.Id < cursorId.Value);
+        var list = items.OrderByDescending(e => e.Id).Take(Math.Clamp(limit, 1, 200)).ToList();
+        return Task.FromResult(new AuditPage(list, null));
+    }
 }
