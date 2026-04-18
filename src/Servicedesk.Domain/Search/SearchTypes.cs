@@ -7,6 +7,7 @@ public static class SearchSourceKind
 {
     public const string Tickets = "tickets";
     public const string Contacts = "contacts";
+    public const string Companies = "companies";
     public const string Settings = "settings";
 }
 

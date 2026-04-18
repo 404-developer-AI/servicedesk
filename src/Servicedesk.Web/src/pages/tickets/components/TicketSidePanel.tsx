@@ -1,5 +1,6 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { agentQueueApi, taxonomyApi } from "@/lib/api";
 import { useServerTime, toServerLocal, formatUtcSuffix } from "@/hooks/useServerTime";
 import { AgentPicker } from "@/components/AgentPicker";
@@ -418,11 +419,42 @@ function CompanyTab({ companyDetail }: { companyDetail: CompanyDetail | null }) 
     company.country,
   ].filter(Boolean);
 
+  const hasActiveAlert = !!company.alertText && (company.alertOnCreate || company.alertOnOpen);
+
   return (
     <>
       <FieldRow icon={Building2} label="Name">
-        {company.name}
+        <Link
+          to="/companies/$companyId"
+          params={{ companyId: company.id }}
+          className="inline-flex items-center gap-1 text-primary hover:underline"
+        >
+          {company.name}
+          {hasActiveAlert && (
+            <span
+              className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400"
+              title="This company has an active alert"
+              aria-label="active alert"
+            />
+          )}
+        </Link>
       </FieldRow>
+
+      {company.code && (
+        <FieldRow label="Customer code">
+          <span className="font-mono text-xs text-muted-foreground">{company.code}</span>
+        </FieldRow>
+      )}
+
+      {company.shortName && (
+        <FieldRow label="Short name">{company.shortName}</FieldRow>
+      )}
+
+      {company.vatNumber && (
+        <FieldRow label="VAT number">
+          <span className="font-mono text-xs text-muted-foreground">{company.vatNumber}</span>
+        </FieldRow>
+      )}
 
       {company.description && (
         <FieldRow label="Description">

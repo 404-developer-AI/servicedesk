@@ -11,7 +11,10 @@ public sealed class CompanyRepository : ICompanyRepository
         id AS Id, name AS Name, description AS Description, website AS Website, phone AS Phone,
         address_line1 AS AddressLine1, address_line2 AS AddressLine2, city AS City,
         postal_code AS PostalCode, country AS Country, is_active AS IsActive,
-        created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
+        created_utc AS CreatedUtc, updated_utc AS UpdatedUtc,
+        code AS Code, short_name AS ShortName, vat_number AS VatNumber,
+        alert_text AS AlertText, alert_on_create AS AlertOnCreate,
+        alert_on_open AS AlertOnOpen, alert_on_open_mode AS AlertOnOpenMode
         """;
 
     private const string ContactCols = """
@@ -28,16 +31,25 @@ public sealed class CompanyRepository : ICompanyRepository
         _dataSource = dataSource;
     }
 
-    public async Task<IReadOnlyList<Company>> ListCompaniesAsync(string? search, CancellationToken ct)
+    public async Task<IReadOnlyList<Company>> ListCompaniesAsync(string? search, bool includeInactive, CancellationToken ct)
     {
-        var sql = $"SELECT {CompanyCols} FROM companies";
+        var sql = $"SELECT {CompanyCols} FROM companies WHERE 1=1";
+        if (!includeInactive) sql += " AND is_active = TRUE";
         if (!string.IsNullOrWhiteSpace(search))
         {
-            sql += " WHERE name ILIKE @search";
+            sql += """
+                 AND (
+                    name ILIKE @search
+                    OR short_name ILIKE @search
+                    OR code::text ILIKE @search
+                    OR vat_number ILIKE @search
+                 )
+                """;
         }
         sql += " ORDER BY name LIMIT 500";
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        return (await conn.QueryAsync<Company>(new CommandDefinition(sql, new { search = $"%{search}%" }, cancellationToken: ct))).ToList();
+        return (await conn.QueryAsync<Company>(new CommandDefinition(
+            sql, new { search = $"%{search}%" }, cancellationToken: ct))).ToList();
     }
 
     public async Task<Company?> GetCompanyAsync(Guid id, CancellationToken ct)
@@ -47,13 +59,47 @@ public sealed class CompanyRepository : ICompanyRepository
         return await conn.QueryFirstOrDefaultAsync<Company>(new CommandDefinition(sql, new { id }, cancellationToken: ct));
     }
 
+    public async Task<Company?> GetCompanyByCodeAsync(string code, CancellationToken ct)
+    {
+        var sql = $"SELECT {CompanyCols} FROM companies WHERE code = @code";
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.QueryFirstOrDefaultAsync<Company>(new CommandDefinition(sql, new { code }, cancellationToken: ct));
+    }
+
+    public async Task<Company?> GetCompanyForContactAsync(Guid contactId, CancellationToken ct)
+    {
+        // Column list is prefixed with c. so it doesn't collide with contacts.id
+        // when joined; unqualified "id" would throw 42702 column-is-ambiguous.
+        const string sql = """
+            SELECT c.id AS Id, c.name AS Name, c.description AS Description,
+                   c.website AS Website, c.phone AS Phone,
+                   c.address_line1 AS AddressLine1, c.address_line2 AS AddressLine2,
+                   c.city AS City, c.postal_code AS PostalCode, c.country AS Country,
+                   c.is_active AS IsActive,
+                   c.created_utc AS CreatedUtc, c.updated_utc AS UpdatedUtc,
+                   c.code AS Code, c.short_name AS ShortName, c.vat_number AS VatNumber,
+                   c.alert_text AS AlertText, c.alert_on_create AS AlertOnCreate,
+                   c.alert_on_open AS AlertOnOpen, c.alert_on_open_mode AS AlertOnOpenMode
+            FROM companies c
+            JOIN contacts ct ON ct.company_id = c.id
+            WHERE ct.id = @contactId AND c.is_active = TRUE
+            LIMIT 1
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.QueryFirstOrDefaultAsync<Company>(new CommandDefinition(sql, new { contactId }, cancellationToken: ct));
+    }
+
     public async Task<Company> CreateCompanyAsync(Company c, CancellationToken ct)
     {
         var sql = $"""
             INSERT INTO companies (name, description, website, phone, address_line1, address_line2,
-                                   city, postal_code, country, is_active)
+                                   city, postal_code, country, is_active,
+                                   code, short_name, vat_number,
+                                   alert_text, alert_on_create, alert_on_open, alert_on_open_mode)
             VALUES (@Name, @Description, @Website, @Phone, @AddressLine1, @AddressLine2,
-                    @City, @PostalCode, @Country, @IsActive)
+                    @City, @PostalCode, @Country, @IsActive,
+                    @Code, @ShortName, @VatNumber,
+                    @AlertText, @AlertOnCreate, @AlertOnOpen, @AlertOnOpenMode)
             RETURNING {CompanyCols}
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -66,6 +112,9 @@ public sealed class CompanyRepository : ICompanyRepository
             UPDATE companies SET name = @Name, description = @Description, website = @Website, phone = @Phone,
                                  address_line1 = @AddressLine1, address_line2 = @AddressLine2, city = @City,
                                  postal_code = @PostalCode, country = @Country, is_active = @IsActive,
+                                 code = @Code, short_name = @ShortName, vat_number = @VatNumber,
+                                 alert_text = @AlertText, alert_on_create = @AlertOnCreate,
+                                 alert_on_open = @AlertOnOpen, alert_on_open_mode = @AlertOnOpenMode,
                                  updated_utc = now()
             WHERE id = @Id
             RETURNING {CompanyCols}
@@ -74,22 +123,16 @@ public sealed class CompanyRepository : ICompanyRepository
         return await conn.QueryFirstOrDefaultAsync<Company>(new CommandDefinition(sql, p with { Id = id }, cancellationToken: ct));
     }
 
-    public async Task<DeleteResult> DeleteCompanyAsync(Guid id, CancellationToken ct)
+    public async Task<DeleteResult> SoftDeleteCompanyAsync(Guid id, CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var exists = await conn.QueryFirstOrDefaultAsync<int?>(new CommandDefinition(
             "SELECT 1 FROM companies WHERE id = @id", new { id }, cancellationToken: ct));
         if (exists is null) return DeleteResult.NotFound;
 
-        // Companies referenced by open tickets (via contact → requester) are locked.
-        var ticketCount = await conn.ExecuteScalarAsync<int>(new CommandDefinition("""
-            SELECT count(*)::int FROM tickets t
-            JOIN contacts c ON c.id = t.requester_contact_id
-            WHERE c.company_id = @id AND t.is_deleted = FALSE
-            """, new { id }, cancellationToken: ct));
-        if (ticketCount > 0) return DeleteResult.InUse;
-
-        await conn.ExecuteAsync(new CommandDefinition("DELETE FROM companies WHERE id = @id", new { id }, cancellationToken: ct));
+        await conn.ExecuteAsync(new CommandDefinition(
+            "UPDATE companies SET is_active = FALSE, updated_utc = now() WHERE id = @id",
+            new { id }, cancellationToken: ct));
         return DeleteResult.Deleted;
     }
 
@@ -125,10 +168,22 @@ public sealed class CompanyRepository : ICompanyRepository
 
     public async Task<Company?> FindCompanyByDomainAsync(string domain, CancellationToken ct)
     {
-        var sql = $"""
-            SELECT {CompanyCols} FROM companies c
+        // Qualified columns — see GetCompanyForContactAsync for the "id is
+        // ambiguous" bug this avoids.
+        const string sql = """
+            SELECT c.id AS Id, c.name AS Name, c.description AS Description,
+                   c.website AS Website, c.phone AS Phone,
+                   c.address_line1 AS AddressLine1, c.address_line2 AS AddressLine2,
+                   c.city AS City, c.postal_code AS PostalCode, c.country AS Country,
+                   c.is_active AS IsActive,
+                   c.created_utc AS CreatedUtc, c.updated_utc AS UpdatedUtc,
+                   c.code AS Code, c.short_name AS ShortName, c.vat_number AS VatNumber,
+                   c.alert_text AS AlertText, c.alert_on_create AS AlertOnCreate,
+                   c.alert_on_open AS AlertOnOpen, c.alert_on_open_mode AS AlertOnOpenMode
+            FROM companies c
             JOIN company_domains d ON d.company_id = c.id
-            WHERE d.domain = @domain LIMIT 1
+            WHERE d.domain = @domain AND c.is_active = TRUE
+            LIMIT 1
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.QueryFirstOrDefaultAsync<Company>(new CommandDefinition(sql, new { domain }, cancellationToken: ct));
@@ -201,5 +256,14 @@ public sealed class CompanyRepository : ICompanyRepository
 
         await conn.ExecuteAsync(new CommandDefinition("DELETE FROM contacts WHERE id = @id", new { id }, cancellationToken: ct));
         return DeleteResult.Deleted;
+    }
+
+    public async Task<bool> SetContactCompanyAsync(Guid contactId, Guid? companyId, CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.ExecuteAsync(new CommandDefinition(
+            "UPDATE contacts SET company_id = @companyId, updated_utc = now() WHERE id = @contactId",
+            new { companyId, contactId }, cancellationToken: ct));
+        return rows > 0;
     }
 }

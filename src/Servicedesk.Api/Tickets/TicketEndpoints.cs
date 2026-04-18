@@ -72,7 +72,7 @@ public static class TicketEndpoints
 
         group.MapGet("/{id:guid}", async (
             Guid id, HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess,
-            IMailTimelineEnricher mailEnricher, CancellationToken ct) =>
+            ICompanyRepository companies, IMailTimelineEnricher mailEnricher, CancellationToken ct) =>
         {
             var detail = await repo.GetByIdAsync(id, ct);
             if (detail is null) return Results.NotFound();
@@ -83,7 +83,15 @@ public static class TicketEndpoints
                 return Results.NotFound(); // 404 to prevent existence leaking
 
             detail = await mailEnricher.EnrichAsync(detail, ct);
-            return Results.Ok(detail);
+            var companyAlert = await BuildCompanyAlertAsync(companies, detail.Ticket.RequesterContactId, ct);
+            return Results.Ok(new
+            {
+                ticket = detail.Ticket,
+                body = detail.Body,
+                events = detail.Events,
+                pinnedEvents = detail.PinnedEvents,
+                companyAlert,
+            });
         }).WithName("GetTicket").WithOpenApi();
 
         group.MapPost("/", async (
@@ -131,12 +139,20 @@ public static class TicketEndpoints
 
             await sla.OnTicketCreatedAsync(created.Id, ct);
 
-            return Results.Created($"/api/tickets/{created.Id}", created);
+            var companyAlert = await BuildCompanyAlertAsync(companies, created.RequesterContactId, ct);
+            var showAlertOnCreate = companyAlert is not null && companyAlert.AlertOnCreate
+                && !string.IsNullOrWhiteSpace(companyAlert.AlertText);
+            return Results.Created($"/api/tickets/{created.Id}", new
+            {
+                ticket = created,
+                companyAlert,
+                showAlertOnCreate,
+            });
         }).WithName("CreateTicket").WithOpenApi();
 
         group.MapPatch("/{id:guid}", async (
             Guid id, [FromBody] UpdateTicketRequest req, HttpContext http,
-            ITicketRepository tickets, IQueueAccessService queueAccess,
+            ITicketRepository tickets, ICompanyRepository companies, IQueueAccessService queueAccess,
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla, CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
@@ -184,7 +200,15 @@ public static class TicketEndpoints
 
             await sla.OnTicketFieldsChangedAsync(id, ct);
 
-            return Results.Ok(detail);
+            var companyAlert = await BuildCompanyAlertAsync(companies, detail.Ticket.RequesterContactId, ct);
+            return Results.Ok(new
+            {
+                ticket = detail.Ticket,
+                body = detail.Body,
+                events = detail.Events,
+                pinnedEvents = detail.PinnedEvents,
+                companyAlert,
+            });
         }).WithName("UpdateTicket").WithOpenApi();
 
         group.MapPost("/{id:guid}/events", async (
@@ -506,4 +530,32 @@ public static class TicketEndpoints
     public sealed record PinEventRequest(string? Remark);
 
     public sealed record UpdatePinRemarkRequest(string Remark);
+
+    /// v0.0.9: per-company alert surfaced next to a ticket. Non-null only
+    /// when the requester's contact is linked to an active company. The
+    /// frontend decides whether to actually show a popup based on the
+    /// alert_on_create / alert_on_open flags.
+    public sealed record TicketCompanyAlert(
+        Guid CompanyId,
+        string CompanyName,
+        string Code,
+        string AlertText,
+        bool AlertOnCreate,
+        bool AlertOnOpen,
+        string AlertOnOpenMode);
+
+    private static async Task<TicketCompanyAlert?> BuildCompanyAlertAsync(
+        ICompanyRepository companies, Guid requesterContactId, CancellationToken ct)
+    {
+        var company = await companies.GetCompanyForContactAsync(requesterContactId, ct);
+        if (company is null) return null;
+        return new TicketCompanyAlert(
+            CompanyId: company.Id,
+            CompanyName: company.Name,
+            Code: company.Code,
+            AlertText: company.AlertText,
+            AlertOnCreate: company.AlertOnCreate,
+            AlertOnOpen: company.AlertOnOpen,
+            AlertOnOpenMode: company.AlertOnOpenMode);
+    }
 }

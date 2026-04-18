@@ -903,6 +903,45 @@ public sealed class DatabaseBootstrapper : IHostedService
         ALTER TABLE queues
             ADD COLUMN IF NOT EXISTS inbound_folder_id   TEXT NULL,
             ADD COLUMN IF NOT EXISTS inbound_folder_name TEXT NULL;
+
+        -- ===================================================================
+        -- v0.0.9 Companies: customer identification (code/short name/VAT),
+        -- alert/note that can pop up on ticket create and/or ticket open,
+        -- and trigram indexes to power the Companies global-search source.
+        -- ===================================================================
+
+        ALTER TABLE companies
+            ADD COLUMN IF NOT EXISTS code                CITEXT  NULL,
+            ADD COLUMN IF NOT EXISTS short_name          TEXT    NOT NULL DEFAULT '',
+            ADD COLUMN IF NOT EXISTS vat_number          TEXT    NOT NULL DEFAULT '',
+            ADD COLUMN IF NOT EXISTS alert_text          TEXT    NOT NULL DEFAULT '',
+            ADD COLUMN IF NOT EXISTS alert_on_create     BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS alert_on_open       BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS alert_on_open_mode  TEXT    NOT NULL DEFAULT 'session';
+
+        -- Backfill any existing rows lacking a code so the NOT NULL + UNIQUE
+        -- constraints below can be applied without failing.
+        UPDATE companies
+            SET code = 'LEGACY-' || substr(id::text, 1, 8)
+            WHERE code IS NULL;
+
+        ALTER TABLE companies ALTER COLUMN code SET NOT NULL;
+
+        ALTER TABLE companies DROP CONSTRAINT IF EXISTS chk_companies_alert_mode;
+        ALTER TABLE companies ADD CONSTRAINT chk_companies_alert_mode
+            CHECK (alert_on_open_mode IN ('session','every'));
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_companies_code ON companies (code);
+
+        -- Trigram indexes for fuzzy search across name/short_name/code/vat.
+        CREATE INDEX IF NOT EXISTS ix_companies_name_trgm
+            ON companies USING GIN ((lower(coalesce(name, ''))) gin_trgm_ops);
+        CREATE INDEX IF NOT EXISTS ix_companies_short_name_trgm
+            ON companies USING GIN ((lower(coalesce(short_name, ''))) gin_trgm_ops);
+        CREATE INDEX IF NOT EXISTS ix_companies_code_trgm
+            ON companies USING GIN ((lower(code::text)) gin_trgm_ops);
+        CREATE INDEX IF NOT EXISTS ix_companies_vat_trgm
+            ON companies USING GIN ((lower(coalesce(vat_number, ''))) gin_trgm_ops);
         """;
 
     private readonly NpgsqlDataSource _dataSource;

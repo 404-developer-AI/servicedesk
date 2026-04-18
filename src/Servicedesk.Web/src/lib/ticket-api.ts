@@ -147,11 +147,28 @@ export type TicketEventPin = {
   createdUtc: string;
 };
 
+export type CompanyAlert = {
+  companyId: string;
+  companyName: string;
+  code: string;
+  alertText: string;
+  alertOnCreate: boolean;
+  alertOnOpen: boolean;
+  alertOnOpenMode: "session" | "every";
+};
+
 export type TicketDetail = {
   ticket: Ticket;
   body: TicketBody;
   events: TicketEvent[];
   pinnedEvents: TicketEventPin[];
+  companyAlert: CompanyAlert | null;
+};
+
+export type CreateTicketResponse = {
+  ticket: Ticket;
+  companyAlert: CompanyAlert | null;
+  showAlertOnCreate: boolean;
 };
 
 export type TicketListQuery = {
@@ -282,6 +299,33 @@ export type Company = {
   isActive: boolean;
   createdUtc: string;
   updatedUtc: string;
+  code: string;
+  shortName: string;
+  vatNumber: string;
+  alertText: string;
+  alertOnCreate: boolean;
+  alertOnOpen: boolean;
+  alertOnOpenMode: "session" | "every";
+};
+
+export type CompanyInput = {
+  name: string;
+  code: string;
+  shortName?: string;
+  vatNumber?: string;
+  description?: string;
+  website?: string;
+  phone?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  postalCode?: string;
+  country?: string;
+  isActive?: boolean;
+  alertText?: string;
+  alertOnCreate?: boolean;
+  alertOnOpen?: boolean;
+  alertOnOpenMode?: "session" | "every";
 };
 
 export type CompanyDomain = {
@@ -323,7 +367,7 @@ export const ticketApi = {
   },
   get: (id: string) => request<TicketDetail>("GET", `/api/tickets/${id}`),
   create: (input: CreateTicketRequest) =>
-    request<Ticket>("POST", "/api/tickets", input),
+    request<CreateTicketResponse>("POST", "/api/tickets", input),
   update: (id: string, fields: TicketFieldUpdate) =>
     request<TicketDetail>("PATCH", `/api/tickets/${id}`, fields),
   addEvent: (id: string, event: NewTicketEvent) =>
@@ -375,11 +419,30 @@ export const contactApi = {
 };
 
 export const companyApi = {
-  list: (search?: string) => {
+  list: (search?: string, includeInactive = false) => {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
+    if (includeInactive) params.set("includeInactive", "true");
     const qs = params.toString();
     return request<Company[]>("GET", `/api/companies${qs ? `?${qs}` : ""}`);
   },
   get: (id: string) => request<CompanyDetail>("GET", `/api/companies/${id}`),
+  create: (input: CompanyInput) => request<Company>("POST", "/api/companies", input),
+  update: (id: string, input: CompanyInput) =>
+    request<Company>("PUT", `/api/companies/${id}`, input),
+  remove: (id: string) => request<void>("DELETE", `/api/companies/${id}`),
+  listContacts: (id: string, search?: string) => {
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    const qs = params.toString();
+    return request<Contact[]>("GET", `/api/companies/${id}/contacts${qs ? `?${qs}` : ""}`);
+  },
+  linkContact: (companyId: string, contactId: string) =>
+    request<void>("POST", `/api/companies/${companyId}/contacts/${contactId}`),
+  unlinkContact: (companyId: string, contactId: string) =>
+    request<void>("DELETE", `/api/companies/${companyId}/contacts/${contactId}`),
+  addDomain: (id: string, domain: string) =>
+    request<CompanyDomain>("POST", `/api/companies/${id}/domains`, { domain }),
+  removeDomain: (id: string, domainId: string) =>
+    request<void>("DELETE", `/api/companies/${id}/domains/${domainId}`),
 };

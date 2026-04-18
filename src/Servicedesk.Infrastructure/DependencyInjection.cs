@@ -105,9 +105,11 @@ public static class DependencyInjection
         // decorator — nothing else.
         services.AddSingleton<TicketSearchSource>();
         services.AddSingleton<ContactSearchSource>();
+        services.AddSingleton<CompanySearchSource>();
         services.AddSingleton<SettingsSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<TicketSearchSource>()));
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<ContactSearchSource>()));
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<CompanySearchSource>()));
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<SettingsSearchSource>()));
         services.AddSingleton<ISearchService, SearchService>();
 

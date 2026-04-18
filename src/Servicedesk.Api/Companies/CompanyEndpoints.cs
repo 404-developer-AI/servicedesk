@@ -8,87 +8,74 @@ using Servicedesk.Infrastructure.Persistence.Taxonomy;
 
 namespace Servicedesk.Api.Companies;
 
-/// Admin-only CRUD for customer companies, their email domains, and their
-/// contacts. The schema supports the multi-tenant portal (see
-/// project_tickets_future_vision memory), but in v0.0.5 these endpoints
-/// exist only for seeding and API-level management — no portal UI yet.
+/// v0.0.9: customer company management with code/short_name/VAT/alerts.
+/// Access is split: admins manage the full list and lifecycle; agents can
+/// read/update individual companies they reach via tickets or global search,
+/// but not the overview or delete. Customers have no access.
 public static class CompanyEndpoints
 {
     public static IEndpointRouteBuilder MapCompanyEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/companies")
+        // ---- Admin-only: full list + lifecycle + domains ----
+        var adminGroup = app.MapGroup("/api/companies")
             .WithTags("Companies")
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
-        group.MapGet("/", async (string? search, ICompanyRepository repo, CancellationToken ct) =>
-            Results.Ok(await repo.ListCompaniesAsync(search, ct)))
+        adminGroup.MapGet("/", async (
+            string? search, bool? includeInactive,
+            ICompanyRepository repo, CancellationToken ct) =>
+            Results.Ok(await repo.ListCompaniesAsync(search, includeInactive ?? false, ct)))
             .WithName("ListCompanies").WithOpenApi();
 
-        group.MapGet("/{id:guid}", async (Guid id, ICompanyRepository repo, CancellationToken ct) =>
-        {
-            var company = await repo.GetCompanyAsync(id, ct);
-            if (company is null) return Results.NotFound();
-            var domains = await repo.ListDomainsAsync(id, ct);
-            return Results.Ok(new { company, domains });
-        }).WithName("GetCompany").WithOpenApi();
-
-        group.MapPost("/", async (
+        adminGroup.MapPost("/", async (
             [FromBody] CompanyRequest req, HttpContext http,
             ICompanyRepository repo, IAuditLogger audit, CancellationToken ct) =>
         {
-            if (string.IsNullOrWhiteSpace(req.Name))
-                return Results.BadRequest(new { error = "Name is required." });
+            if (ValidateCompany(req) is { } err) return err;
+            var code = req.Code!.Trim();
+            if (await repo.GetCompanyByCodeAsync(code, ct) is not null)
+                return Results.Conflict(new { error = "A company with this code already exists." });
+
             var now = DateTime.UtcNow;
+            var alertMode = NormalizeAlertMode(req.AlertOnOpenMode, req.AlertOnOpen ?? false);
             var created = await repo.CreateCompanyAsync(new Company(
-                Guid.Empty, req.Name.Trim(), req.Description ?? "", req.Website ?? "", req.Phone ?? "",
-                req.AddressLine1 ?? "", req.AddressLine2 ?? "", req.City ?? "", req.PostalCode ?? "",
-                req.Country ?? "", IsActive: true, now, now), ct);
-            await AuditWrite(audit, http, "company.created", created.Id.ToString(), created);
+                Id: Guid.Empty,
+                Name: req.Name!.Trim(),
+                Description: req.Description ?? "",
+                Website: req.Website ?? "",
+                Phone: req.Phone ?? "",
+                AddressLine1: req.AddressLine1 ?? "",
+                AddressLine2: req.AddressLine2 ?? "",
+                City: req.City ?? "",
+                PostalCode: req.PostalCode ?? "",
+                Country: req.Country ?? "",
+                IsActive: req.IsActive ?? true,
+                CreatedUtc: now,
+                UpdatedUtc: now,
+                Code: code,
+                ShortName: (req.ShortName ?? "").Trim(),
+                VatNumber: NormalizeVat(req.VatNumber),
+                AlertText: req.AlertText ?? "",
+                AlertOnCreate: req.AlertOnCreate ?? false,
+                AlertOnOpen: req.AlertOnOpen ?? false,
+                AlertOnOpenMode: alertMode), ct);
+            await AuditWrite(audit, http, "company.created", created.Id.ToString(), new { created.Id, created.Code, created.Name });
             return Results.Created($"/api/companies/{created.Id}", created);
         }).WithName("CreateCompany").WithOpenApi();
 
-        group.MapPut("/{id:guid}", async (
-            Guid id, [FromBody] CompanyRequest req, HttpContext http,
-            ICompanyRepository repo, IAuditLogger audit, CancellationToken ct) =>
-        {
-            if (string.IsNullOrWhiteSpace(req.Name))
-                return Results.BadRequest(new { error = "Name is required." });
-            var existing = await repo.GetCompanyAsync(id, ct);
-            if (existing is null) return Results.NotFound();
-            var patch = existing with
-            {
-                Name = req.Name.Trim(),
-                Description = req.Description ?? existing.Description,
-                Website = req.Website ?? existing.Website,
-                Phone = req.Phone ?? existing.Phone,
-                AddressLine1 = req.AddressLine1 ?? existing.AddressLine1,
-                AddressLine2 = req.AddressLine2 ?? existing.AddressLine2,
-                City = req.City ?? existing.City,
-                PostalCode = req.PostalCode ?? existing.PostalCode,
-                Country = req.Country ?? existing.Country,
-                IsActive = req.IsActive ?? existing.IsActive,
-            };
-            var updated = await repo.UpdateCompanyAsync(id, patch, ct);
-            if (updated is null) return Results.NotFound();
-            await AuditWrite(audit, http, "company.updated", id.ToString(), updated);
-            return Results.Ok(updated);
-        }).WithName("UpdateCompany").WithOpenApi();
-
-        group.MapDelete("/{id:guid}", async (
+        adminGroup.MapDelete("/{id:guid}", async (
             Guid id, HttpContext http, ICompanyRepository repo, IAuditLogger audit, CancellationToken ct) =>
         {
-            var result = await repo.DeleteCompanyAsync(id, ct);
+            var result = await repo.SoftDeleteCompanyAsync(id, ct);
             return result switch
             {
                 DeleteResult.NotFound => Results.NotFound(),
-                DeleteResult.InUse => Results.Conflict(new { error = "Company still has open tickets via its contacts." }),
-                DeleteResult.SystemProtected => Results.Conflict(new { error = "Cannot delete a system company." }),
                 _ => await DeletedOk(http, audit, "company.deleted", id),
             };
         }).WithName("DeleteCompany").WithOpenApi();
 
-        // ---- Domains ----
-        group.MapPost("/{id:guid}/domains", async (
+        // ---- Domains: admin-only (shaping portal visibility + mail auto-link) ----
+        adminGroup.MapPost("/{id:guid}/domains", async (
             Guid id, [FromBody] DomainRequest req, HttpContext http,
             ICompanyRepository repo, IAuditLogger audit, CancellationToken ct) =>
         {
@@ -101,7 +88,7 @@ public static class CompanyEndpoints
             return Results.Created($"/api/companies/{id}/domains/{added.Id}", added);
         }).WithName("AddCompanyDomain").WithOpenApi();
 
-        group.MapDelete("/{id:guid}/domains/{domainId:guid}", async (
+        adminGroup.MapDelete("/{id:guid}/domains/{domainId:guid}", async (
             Guid id, Guid domainId, HttpContext http,
             ICompanyRepository repo, IAuditLogger audit, CancellationToken ct) =>
         {
@@ -111,7 +98,92 @@ public static class CompanyEndpoints
             return Results.NoContent();
         }).WithName("RemoveCompanyDomain").WithOpenApi();
 
-        // ---- Contacts ----
+        // ---- Agent+Admin: per-company read/update, contacts management ----
+        var agentGroup = app.MapGroup("/api/companies")
+            .WithTags("Companies")
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
+
+        agentGroup.MapGet("/{id:guid}", async (Guid id, ICompanyRepository repo, CancellationToken ct) =>
+        {
+            var company = await repo.GetCompanyAsync(id, ct);
+            if (company is null) return Results.NotFound();
+            var domains = await repo.ListDomainsAsync(id, ct);
+            return Results.Ok(new { company, domains });
+        }).WithName("GetCompany").WithOpenApi();
+
+        agentGroup.MapPut("/{id:guid}", async (
+            Guid id, [FromBody] CompanyRequest req, HttpContext http,
+            ICompanyRepository repo, IAuditLogger audit, CancellationToken ct) =>
+        {
+            if (ValidateCompany(req) is { } err) return err;
+            var existing = await repo.GetCompanyAsync(id, ct);
+            if (existing is null) return Results.NotFound();
+            var code = req.Code!.Trim();
+            if (!string.Equals(code, existing.Code, StringComparison.OrdinalIgnoreCase))
+            {
+                var clash = await repo.GetCompanyByCodeAsync(code, ct);
+                if (clash is not null && clash.Id != id)
+                    return Results.Conflict(new { error = "A company with this code already exists." });
+            }
+            var alertOnOpen = req.AlertOnOpen ?? existing.AlertOnOpen;
+            var patch = existing with
+            {
+                Name = req.Name!.Trim(),
+                Description = req.Description ?? existing.Description,
+                Website = req.Website ?? existing.Website,
+                Phone = req.Phone ?? existing.Phone,
+                AddressLine1 = req.AddressLine1 ?? existing.AddressLine1,
+                AddressLine2 = req.AddressLine2 ?? existing.AddressLine2,
+                City = req.City ?? existing.City,
+                PostalCode = req.PostalCode ?? existing.PostalCode,
+                Country = req.Country ?? existing.Country,
+                IsActive = req.IsActive ?? existing.IsActive,
+                Code = code,
+                ShortName = (req.ShortName ?? existing.ShortName).Trim(),
+                VatNumber = req.VatNumber is null ? existing.VatNumber : NormalizeVat(req.VatNumber),
+                AlertText = req.AlertText ?? existing.AlertText,
+                AlertOnCreate = req.AlertOnCreate ?? existing.AlertOnCreate,
+                AlertOnOpen = alertOnOpen,
+                AlertOnOpenMode = NormalizeAlertMode(req.AlertOnOpenMode ?? existing.AlertOnOpenMode, alertOnOpen),
+            };
+            var updated = await repo.UpdateCompanyAsync(id, patch, ct);
+            if (updated is null) return Results.NotFound();
+            await AuditWrite(audit, http, "company.updated", id.ToString(), new { updated.Id, updated.Code, updated.Name });
+            return Results.Ok(updated);
+        }).WithName("UpdateCompany").WithOpenApi();
+
+        agentGroup.MapGet("/{id:guid}/contacts", async (
+            Guid id, string? search, ICompanyRepository repo, CancellationToken ct) =>
+            Results.Ok(await repo.ListContactsAsync(id, search, ct)))
+            .WithName("ListCompanyContacts").WithOpenApi();
+
+        agentGroup.MapPost("/{id:guid}/contacts/{contactId:guid}", async (
+            Guid id, Guid contactId, HttpContext http,
+            ICompanyRepository repo, IAuditLogger audit, CancellationToken ct) =>
+        {
+            var company = await repo.GetCompanyAsync(id, ct);
+            if (company is null) return Results.NotFound(new { error = "Company not found." });
+            var contact = await repo.GetContactAsync(contactId, ct);
+            if (contact is null) return Results.NotFound(new { error = "Contact not found." });
+            var ok = await repo.SetContactCompanyAsync(contactId, id, ct);
+            if (!ok) return Results.Problem("Failed to link contact.");
+            await AuditWrite(audit, http, "company.contact.linked", id.ToString(), new { contactId, previousCompanyId = contact.CompanyId });
+            return Results.NoContent();
+        }).WithName("LinkCompanyContact").WithOpenApi();
+
+        agentGroup.MapDelete("/{id:guid}/contacts/{contactId:guid}", async (
+            Guid id, Guid contactId, HttpContext http,
+            ICompanyRepository repo, IAuditLogger audit, CancellationToken ct) =>
+        {
+            var contact = await repo.GetContactAsync(contactId, ct);
+            if (contact is null || contact.CompanyId != id) return Results.NotFound();
+            var ok = await repo.SetContactCompanyAsync(contactId, null, ct);
+            if (!ok) return Results.Problem("Failed to unlink contact.");
+            await AuditWrite(audit, http, "company.contact.unlinked", id.ToString(), new { contactId });
+            return Results.NoContent();
+        }).WithName("UnlinkCompanyContact").WithOpenApi();
+
+        // ---- Contacts (unchanged, top-level, agent+admin) ----
         var contactGroup = app.MapGroup("/api/contacts")
             .WithTags("Contacts")
             .RequireAuthorization(AuthorizationPolicies.RequireAgent);
@@ -181,7 +253,10 @@ public static class CompanyEndpoints
     }
 
     public sealed record CompanyRequest(
-        [property: Required] string Name,
+        [property: Required] string? Name,
+        [property: Required] string? Code,
+        string? ShortName,
+        string? VatNumber,
         string? Description,
         string? Website,
         string? Phone,
@@ -190,7 +265,11 @@ public static class CompanyEndpoints
         string? City,
         string? PostalCode,
         string? Country,
-        bool? IsActive);
+        bool? IsActive,
+        string? AlertText,
+        bool? AlertOnCreate,
+        bool? AlertOnOpen,
+        string? AlertOnOpenMode);
 
     public sealed record DomainRequest([property: Required] string Domain);
 
@@ -204,6 +283,21 @@ public static class CompanyEndpoints
         string? JobTitle,
         bool? IsActive);
 
+    private static IResult? ValidateCompany(CompanyRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Name))
+            return Results.BadRequest(new { error = "Name is required." });
+        if (req.Name.Length > 200)
+            return Results.BadRequest(new { error = "Name may be at most 200 characters." });
+        if (string.IsNullOrWhiteSpace(req.Code))
+            return Results.BadRequest(new { error = "Customer code is required." });
+        if (req.Code.Trim().Length > 64)
+            return Results.BadRequest(new { error = "Customer code may be at most 64 characters." });
+        if (req.AlertOnOpenMode is { } mode && mode != "session" && mode != "every")
+            return Results.BadRequest(new { error = "alertOnOpenMode must be 'session' or 'every'." });
+        return null;
+    }
+
     private static IResult? ValidateContact(ContactRequest req)
     {
         if (string.IsNullOrWhiteSpace(req.Email) || !req.Email.Contains('@'))
@@ -212,6 +306,15 @@ public static class CompanyEndpoints
             return Results.BadRequest(new { error = "companyRole must be 'Member' or 'TicketManager'." });
         return null;
     }
+
+    private static string NormalizeAlertMode(string? mode, bool alertOnOpen)
+    {
+        if (!alertOnOpen) return "session";
+        return mode == "every" ? "every" : "session";
+    }
+
+    private static string NormalizeVat(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "" : value.Trim().ToUpperInvariant().Replace(" ", "");
 
     private static async Task AuditWrite(IAuditLogger audit, HttpContext http, string eventType, string target, object payload)
     {

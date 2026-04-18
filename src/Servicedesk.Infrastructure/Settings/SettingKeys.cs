@@ -70,6 +70,12 @@ public static class SettingKeys
         public const string MarkAsReadOnIngest = "Mail.MarkAsReadOnIngest";
         public const string MoveOnIngest = "Mail.MoveOnIngest";
         public const string ProcessedFolderName = "Mail.ProcessedFolderName";
+        public const string AutoLinkCompanyByDomain = "Mail.AutoLinkCompanyByDomain";
+    }
+
+    public static class Companies
+    {
+        public const string SearchLimit = "Companies.SearchLimit";
     }
 
     public static class Graph
@@ -209,6 +215,12 @@ public static class SettingDefaults
             "After a successful ticket-commit, move the source message out of the inbox into the processed folder."),
         new SettingDefault(SettingKeys.Mail.ProcessedFolderName, "Servicedesk Verwerkt", "string", "Mail",
             "Mailbox folder name where ingested messages are moved. Auto-created at first use if missing."),
+        new SettingDefault(SettingKeys.Mail.AutoLinkCompanyByDomain, "true", "bool", "Mail",
+            "When true, contacts created during mail intake are automatically linked to a company matched on the sender's email domain (via the Companies → Domains list)."),
+
+        // Companies — v0.0.9.
+        new SettingDefault(SettingKeys.Companies.SearchLimit, "25", "int", "Companies",
+            "Maximum number of results returned by the Companies global-search source."),
 
         // Graph — tenant/client id only. Client secret lives in ISecretProvider, never here.
         new SettingDefault(SettingKeys.Graph.TenantId, "", "string", "Graph",

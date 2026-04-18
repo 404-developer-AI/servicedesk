@@ -1,5 +1,6 @@
 import {
   Activity,
+  Building2,
   Eye,
   Mail,
   Paperclip,
@@ -37,6 +38,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       "Queues, statuses, priorities and categories — the taxonomies every ticket hangs off.",
     icon: Ticket,
+  },
+  {
+    slug: "companies",
+    label: "Companies",
+    description:
+      "Customer companies with their code, VAT number, contact details and per-company alert pop-ups on tickets.",
+    icon: Building2,
   },
   {
     slug: "views",

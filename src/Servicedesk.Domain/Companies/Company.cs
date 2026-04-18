@@ -13,7 +13,14 @@ public sealed record Company(
     string Country,
     bool IsActive,
     DateTime CreatedUtc,
-    DateTime UpdatedUtc);
+    DateTime UpdatedUtc,
+    string Code,
+    string ShortName,
+    string VatNumber,
+    string AlertText,
+    bool AlertOnCreate,
+    bool AlertOnOpen,
+    string AlertOnOpenMode);
 
 public sealed record CompanyDomain(
     Guid Id,

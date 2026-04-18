@@ -3,6 +3,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Check, Copy, FileDown, Pencil, X } from "lucide-react";
 import { ticketApi, type TicketFieldUpdate } from "@/lib/ticket-api";
+import {
+  CompanyAlertDialog,
+  hasSeenAlertThisSession,
+  markAlertSeen,
+} from "@/components/CompanyAlertDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { useRecentTicketsStore } from "@/stores/useRecentTicketsStore";
@@ -364,6 +369,29 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
     [data?.pinnedEvents]
   );
 
+  // v0.0.9 — company alert on ticket-open. Fires when the requester's
+  // company has alert_on_open=true. Mode 'session' shows once per browser
+  // session per ticket (tracked in sessionStorage); mode 'every' shows on
+  // every mount/refresh of this page.
+  const [alertOpen, setAlertOpen] = React.useState(false);
+  const companyAlert = data?.companyAlert ?? null;
+  React.useEffect(() => {
+    if (!companyAlert || !companyAlert.alertOnOpen) return;
+    if (!companyAlert.alertText?.trim()) return;
+    if (
+      companyAlert.alertOnOpenMode === "session" &&
+      hasSeenAlertThisSession(ticketId)
+    ) {
+      return;
+    }
+    setAlertOpen(true);
+  }, [companyAlert, ticketId]);
+
+  const handleAlertClose = React.useCallback(() => {
+    markAlertSeen(ticketId);
+    setAlertOpen(false);
+  }, [ticketId]);
+
   if (isLoading) {
     return <LoadingSkeleton />;
   }
@@ -384,16 +412,25 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
   const { ticket, body, events, pinnedEvents } = data;
 
   return (
-    <TicketDetailBody
-      ticketId={ticketId}
-      ticket={ticket}
-      body={body}
-      events={events}
-      pinnedEvents={pinnedEvents}
-      pinnedEventIds={pinnedEventIds}
-      updateMutation={updateMutation}
-      queryClient={queryClient}
-    />
+    <>
+      <TicketDetailBody
+        ticketId={ticketId}
+        ticket={ticket}
+        body={body}
+        events={events}
+        pinnedEvents={pinnedEvents}
+        pinnedEventIds={pinnedEventIds}
+        updateMutation={updateMutation}
+        queryClient={queryClient}
+      />
+      {companyAlert && (
+        <CompanyAlertDialog
+          alert={companyAlert}
+          open={alertOpen}
+          onClose={handleAlertClose}
+        />
+      )}
+    </>
   );
 }
 

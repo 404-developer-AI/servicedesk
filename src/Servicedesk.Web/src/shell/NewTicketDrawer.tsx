@@ -19,8 +19,9 @@ import {
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { ContactPicker } from "@/components/ContactPicker";
 import { AgentPicker } from "@/components/AgentPicker";
+import { CompanyAlertDialog } from "@/components/CompanyAlertDialog";
 import { agentQueueApi, taxonomyApi } from "@/lib/api";
-import { ticketApi } from "@/lib/ticket-api";
+import { ticketApi, type CompanyAlert } from "@/lib/ticket-api";
 import { cn } from "@/lib/utils";
 
 const createTicketSchema = z.object({
@@ -198,13 +199,18 @@ export function NewTicketDrawer({ children }: { children: ReactNode }) {
     if (defaultStatusId) setValue("statusId", defaultStatusId);
   }, [defaultStatusId, setValue]);
 
+  const [postCreateAlert, setPostCreateAlert] = useState<CompanyAlert | null>(null);
+
   const { mutate: createTicket, isPending } = useMutation({
     mutationFn: ticketApi.create,
-    onSuccess: () => {
+    onSuccess: (response) => {
       toast.success("Ticket created");
       queryClient.invalidateQueries({ queryKey: ["tickets"] });
       setOpen(false);
       reset();
+      if (response.showAlertOnCreate && response.companyAlert) {
+        setPostCreateAlert(response.companyAlert);
+      }
     },
     onError: () => {
       toast.error("Failed to create ticket");
@@ -269,6 +275,14 @@ export function NewTicketDrawer({ children }: { children: ReactNode }) {
     categories !== undefined;
 
   return (
+    <>
+    {postCreateAlert && (
+      <CompanyAlertDialog
+        alert={postCreateAlert}
+        open={!!postCreateAlert}
+        onClose={() => setPostCreateAlert(null)}
+      />
+    )}
     <Drawer.Root open={open} onOpenChange={setOpen}>
       <Drawer.Trigger asChild>{children}</Drawer.Trigger>
       <Drawer.Portal>
@@ -489,5 +503,6 @@ export function NewTicketDrawer({ children }: { children: ReactNode }) {
         </Drawer.Content>
       </Drawer.Portal>
     </Drawer.Root>
+    </>
   );
 }

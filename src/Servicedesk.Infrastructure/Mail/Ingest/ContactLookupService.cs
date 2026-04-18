@@ -1,27 +1,60 @@
+using Microsoft.Extensions.Logging;
 using Servicedesk.Domain.Companies;
+using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Persistence.Companies;
+using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Mail.Ingest;
 
 public sealed class ContactLookupService : IContactLookupService
 {
     private readonly ICompanyRepository _companies;
+    private readonly ISettingsService _settings;
+    private readonly IAuditLogger _audit;
+    private readonly ILogger<ContactLookupService> _logger;
 
-    public ContactLookupService(ICompanyRepository companies)
+    public ContactLookupService(
+        ICompanyRepository companies,
+        ISettingsService settings,
+        IAuditLogger audit,
+        ILogger<ContactLookupService> logger)
     {
         _companies = companies;
+        _settings = settings;
+        _audit = audit;
+        _logger = logger;
     }
 
     public async Task<Contact> EnsureByEmailAsync(string email, string displayName, CancellationToken ct)
     {
         var existing = await _companies.GetContactByEmailAsync(email, ct);
-        if (existing is not null) return existing;
+        if (existing is not null)
+        {
+            // Existing contacts that already have a company keep it — we
+            // never overwrite a manual link. Only backfill when the slot is
+            // empty so returning customers don't drift across companies.
+            if (existing.CompanyId is null)
+            {
+                var matched = await TryAutoLinkAsync(email, ct);
+                if (matched is not null)
+                {
+                    var ok = await _companies.SetContactCompanyAsync(existing.Id, matched.Id, ct);
+                    if (ok)
+                    {
+                        await AuditAutoLinkAsync("contact.company.auto_linked", existing.Id, matched.Id, email, ct);
+                        return existing with { CompanyId = matched.Id };
+                    }
+                }
+            }
+            return existing;
+        }
 
+        var autoLinked = await TryAutoLinkAsync(email, ct);
         var (first, last) = SplitName(displayName, email);
         var now = DateTime.UtcNow;
         var stub = new Contact(
             Id: Guid.Empty,
-            CompanyId: null,
+            CompanyId: autoLinked?.Id,
             CompanyRole: "Member",
             FirstName: first,
             LastName: last,
@@ -31,7 +64,49 @@ public sealed class ContactLookupService : IContactLookupService
             IsActive: true,
             CreatedUtc: now,
             UpdatedUtc: now);
-        return await _companies.CreateContactAsync(stub, ct);
+        var created = await _companies.CreateContactAsync(stub, ct);
+        if (autoLinked is not null)
+            await AuditAutoLinkAsync("contact.company.auto_linked", created.Id, autoLinked.Id, email, ct);
+        return created;
+    }
+
+    private async Task<Company?> TryAutoLinkAsync(string email, CancellationToken ct)
+    {
+        bool enabled;
+        try
+        {
+            enabled = await _settings.GetAsync<bool>(SettingKeys.Mail.AutoLinkCompanyByDomain, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read AutoLinkCompanyByDomain setting; defaulting to enabled.");
+            enabled = true;
+        }
+        if (!enabled) return null;
+
+        var domain = ExtractDomain(email);
+        if (domain is null) return null;
+        return await _companies.FindCompanyByDomainAsync(domain, ct);
+    }
+
+    private async Task AuditAutoLinkAsync(string eventType, Guid contactId, Guid companyId, string email, CancellationToken ct)
+    {
+        await _audit.LogAsync(new AuditEvent(
+            EventType: eventType,
+            Actor: "mail-intake",
+            ActorRole: "System",
+            Target: contactId.ToString(),
+            ClientIp: null,
+            UserAgent: null,
+            Payload: new { contactId, companyId, email }));
+    }
+
+    private static string? ExtractDomain(string email)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return null;
+        var at = email.IndexOf('@');
+        if (at < 0 || at == email.Length - 1) return null;
+        return email[(at + 1)..].Trim().ToLowerInvariant();
     }
 
     private static (string First, string Last) SplitName(string displayName, string email)
@@ -39,8 +114,6 @@ public sealed class ContactLookupService : IContactLookupService
         var name = (displayName ?? string.Empty).Trim();
         if (name.Length == 0)
         {
-            // Fall back to the local-part of the email so the contact has
-            // *something* readable in the UI.
             var at = email.IndexOf('@');
             var local = at > 0 ? email[..at] : email;
             return (local, string.Empty);
