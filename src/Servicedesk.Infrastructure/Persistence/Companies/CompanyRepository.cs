@@ -318,6 +318,23 @@ public sealed class CompanyRepository : ICompanyRepository
         return (await conn.QueryAsync<ContactCompanyLink>(new CommandDefinition(sql, new { contactId }, cancellationToken: ct))).ToList();
     }
 
+    public async Task<IReadOnlyList<ContactCompanyOption>> ListContactCompanyOptionsAsync(Guid contactId, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT cc.id AS LinkId, co.id AS CompanyId,
+                   co.name AS CompanyName, co.code AS CompanyCode,
+                   co.short_name AS CompanyShortName, co.is_active AS CompanyIsActive,
+                   cc.role AS Role
+            FROM contact_companies cc
+            JOIN companies co ON co.id = cc.company_id
+            WHERE cc.contact_id = @contactId
+            ORDER BY CASE cc.role WHEN 'primary' THEN 0 WHEN 'secondary' THEN 1 ELSE 2 END, co.name
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return (await conn.QueryAsync<ContactCompanyOption>(
+            new CommandDefinition(sql, new { contactId }, cancellationToken: ct))).ToList();
+    }
+
     public async Task<IReadOnlyList<ContactCompanyLink>> ListCompanyLinksAsync(Guid companyId, CancellationToken ct)
     {
         var sql = $"""

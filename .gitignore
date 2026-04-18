@@ -149,6 +149,7 @@ rapport.md
 
 # Claude Code local settings
 .claude/
+.claude-scratch/
 
 # Local-only logs from manual smoke tests
 manual-logs/

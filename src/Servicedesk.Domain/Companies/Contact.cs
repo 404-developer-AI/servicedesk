@@ -26,3 +26,12 @@ public sealed record ContactCompanyLink(
     string Role,
     DateTime CreatedUtc,
     DateTime UpdatedUtc);
+
+public sealed record ContactCompanyOption(
+    Guid LinkId,
+    Guid CompanyId,
+    string CompanyName,
+    string CompanyCode,
+    string CompanyShortName,
+    bool CompanyIsActive,
+    string Role);

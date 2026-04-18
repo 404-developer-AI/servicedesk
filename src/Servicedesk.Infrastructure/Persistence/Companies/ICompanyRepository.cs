@@ -34,6 +34,10 @@ public interface ICompanyRepository
 
     /// All role-tagged company links for one contact (primary + secondary + supplier).
     Task<IReadOnlyList<ContactCompanyLink>> ListContactLinksAsync(Guid contactId, CancellationToken ct);
+    /// Joined projection used by the ticket company-assignment dialog: each of
+    /// the contact's links annotated with the target company's name/code so the
+    /// picker can render role-badge rows without an N+1 fan-out.
+    Task<IReadOnlyList<ContactCompanyOption>> ListContactCompanyOptionsAsync(Guid contactId, CancellationToken ct);
     /// All role-tagged contact links for one company (used by the Contacts tab).
     Task<IReadOnlyList<ContactCompanyLink>> ListCompanyLinksAsync(Guid companyId, CancellationToken ct);
     /// Upsert a single link. When <paramref name="role"/> is 'primary' and the

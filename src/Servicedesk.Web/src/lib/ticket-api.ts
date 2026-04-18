@@ -362,6 +362,34 @@ export type CompanyDetail = {
   domains: CompanyDomain[];
 };
 
+export type ContactCompanyRole = "primary" | "secondary" | "supplier";
+
+/// One entry in the contact's role-annotated company list — used by the
+/// ticket company-assignment dialog and future contact-detail view.
+export type ContactCompanyOption = {
+  linkId: string;
+  companyId: string;
+  companyName: string;
+  companyCode: string;
+  companyShortName: string;
+  companyIsActive: boolean;
+  role: ContactCompanyRole;
+};
+
+/// Minimal company row returned by the agent-readable picker endpoint.
+export type CompanyPickerItem = {
+  id: string;
+  name: string;
+  code: string;
+  shortName: string;
+  isActive: boolean;
+};
+
+export type AssignTicketCompanyRequest = {
+  companyId: string;
+  linkAsSupplier: boolean;
+};
+
 // ---- API functions ----
 
 export const ticketApi = {
@@ -404,6 +432,8 @@ export const ticketApi = {
     request<void>("DELETE", `/api/tickets/${id}/events/${eventId}/pin`),
   updatePinRemark: (id: string, eventId: number, remark: string) =>
     request<TicketEventPin>("PATCH", `/api/tickets/${id}/events/${eventId}/pin`, { remark }),
+  assignCompany: (id: string, body: AssignTicketCompanyRequest) =>
+    request<TicketDetail>("PATCH", `/api/tickets/${id}/company`, body),
   exportPdf: (id: string, excludeInternal = true) => {
     const params = new URLSearchParams();
     if (!excludeInternal) params.set("excludeInternal", "false");
@@ -434,6 +464,8 @@ export const contactApi = {
     return request<Contact[]>("GET", `/api/contacts${qs ? `?${qs}` : ""}`);
   },
   get: (id: string) => request<Contact>("GET", `/api/contacts/${id}`),
+  listCompanies: (id: string) =>
+    request<ContactCompanyOption[]>("GET", `/api/contacts/${id}/companies`),
   create: (input: ContactInput) =>
     request<Contact>("POST", "/api/contacts", input),
   update: (id: string, input: ContactInput) =>
@@ -449,6 +481,12 @@ export const companyApi = {
     return request<Company[]>("GET", `/api/companies${qs ? `?${qs}` : ""}`);
   },
   get: (id: string) => request<CompanyDetail>("GET", `/api/companies/${id}`),
+  picker: (search?: string) => {
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    const qs = params.toString();
+    return request<CompanyPickerItem[]>("GET", `/api/companies/picker${qs ? `?${qs}` : ""}`);
+  },
   create: (input: CompanyInput) => request<Company>("POST", "/api/companies", input),
   update: (id: string, input: CompanyInput) =>
     request<Company>("PUT", `/api/companies/${id}`, input),

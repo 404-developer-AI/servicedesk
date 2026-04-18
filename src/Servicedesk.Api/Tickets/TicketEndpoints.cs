@@ -222,6 +222,101 @@ public static class TicketEndpoints
             });
         }).WithName("UpdateTicket").WithOpenApi();
 
+        // Manual company assignment (v0.0.9 ToDo #4). Triggered when a ticket
+        // was created with awaiting_company_assignment=true because the contact
+        // had no primary link, multiple secondaries, or supplier-only links.
+        // The reason is computed server-side from the contact's current links
+        // so the audit payload can't be spoofed from the client.
+        group.MapPatch("/{id:guid}/company", async (
+            Guid id, [FromBody] AssignTicketCompanyRequest req, HttpContext http,
+            ITicketRepository tickets, ICompanyRepository companies, IQueueAccessService queueAccess,
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
+        {
+            if (req.CompanyId == Guid.Empty)
+                return Results.BadRequest(new { error = "companyId is required." });
+
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            var current = await tickets.GetByIdAsync(id, ct);
+            if (current is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, current.Ticket.QueueId, ct))
+                return Results.NotFound();
+
+            var targetCompany = await companies.GetCompanyAsync(req.CompanyId, ct);
+            if (targetCompany is null)
+                return Results.BadRequest(new { error = "Unknown company." });
+            if (!targetCompany.IsActive)
+                return Results.BadRequest(new { error = "Cannot assign an inactive company." });
+
+            // Infer the resolution reason from the contact's current link set.
+            // supplier_only → contact has links but none are primary/secondary.
+            // ambiguous_secondary → everything else that landed in awaiting
+            // (multiple secondaries, mixed, etc.). Agents overriding an already
+            // resolved ticket get reason='override'.
+            string reason;
+            if (current.Ticket.AwaitingCompanyAssignment)
+            {
+                var links = await companies.ListContactLinksAsync(current.Ticket.RequesterContactId, ct);
+                reason = links.All(l => l.Role == "supplier") && links.Count > 0
+                    ? "supplier_only"
+                    : "ambiguous_secondary";
+            }
+            else
+            {
+                reason = "override";
+            }
+
+            var detail = await tickets.AssignCompanyAsync(id, req.CompanyId, userId, ct);
+            if (detail is null) return Results.NotFound();
+
+            // Optional side-effect: link the requester contact to this company
+            // as 'supplier' so the learn-flow grows the contact's link set
+            // without stepping on an existing primary/secondary.
+            if (req.LinkAsSupplier)
+            {
+                var existingLinks = await companies.ListContactLinksAsync(current.Ticket.RequesterContactId, ct);
+                var alreadyLinked = existingLinks.Any(l => l.CompanyId == req.CompanyId);
+                if (!alreadyLinked)
+                {
+                    await companies.UpsertContactLinkAsync(
+                        current.Ticket.RequesterContactId, req.CompanyId, "supplier", ct);
+                }
+            }
+
+            var (actor, actorRole) = ActorContext.Resolve(http);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "ticket.company.manually_assigned",
+                Actor: actor,
+                ActorRole: actorRole,
+                Target: id.ToString(),
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: new
+                {
+                    companyId = req.CompanyId,
+                    companyName = targetCompany.Name,
+                    previousCompanyId = current.Ticket.CompanyId,
+                    reason,
+                    linkAsSupplier = req.LinkAsSupplier,
+                    contactId = current.Ticket.RequesterContactId,
+                }));
+
+            var ticketIdStr = id.ToString();
+            await hub.Clients.Group($"ticket:{ticketIdStr}").SendAsync("TicketUpdated", ticketIdStr, ct);
+            await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", ticketIdStr, ct);
+
+            var companyAlert = await BuildCompanyAlertAsync(companies, detail.Ticket.RequesterContactId, ct);
+            return Results.Ok(new
+            {
+                ticket = detail.Ticket,
+                body = detail.Body,
+                events = detail.Events,
+                pinnedEvents = detail.PinnedEvents,
+                companyAlert,
+            });
+        }).WithName("AssignTicketCompany").WithOpenApi();
+
         group.MapPost("/{id:guid}/events", async (
             Guid id, [FromBody] AddEventRequest req, HttpContext http,
             ITicketRepository tickets, IQueueAccessService queueAccess,
@@ -539,6 +634,13 @@ public static class TicketEndpoints
         bool? IsInternal);
 
     public sealed record PinEventRequest(string? Remark);
+
+    /// v0.0.9 ToDo #4: manual company-assignment payload. <c>LinkAsSupplier</c>
+    /// is the opt-in learn-flow that also adds the requester contact to the
+    /// target company as a supplier link in the same call.
+    public sealed record AssignTicketCompanyRequest(
+        Guid CompanyId,
+        bool LinkAsSupplier);
 
     public sealed record UpdatePinRemarkRequest(string Remark);
 

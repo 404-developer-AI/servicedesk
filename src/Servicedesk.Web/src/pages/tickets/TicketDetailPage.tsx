@@ -8,6 +8,7 @@ import {
   hasSeenAlertThisSession,
   markAlertSeen,
 } from "@/components/CompanyAlertDialog";
+import { TicketCompanyAssignmentDialog } from "@/components/TicketCompanyAssignmentDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { useRecentTicketsStore } from "@/stores/useRecentTicketsStore";
@@ -392,6 +393,36 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
     setAlertOpen(false);
   }, [ticketId]);
 
+  // v0.0.9 ToDo #4 — auto-open the company-assignment dialog when the ticket
+  // was created in the awaiting state (supplier-only or multi-secondary
+  // resolution). Agents can also reopen the dialog from the sidepanel banner.
+  const [assignOpen, setAssignOpen] = React.useState(false);
+  const awaiting = data?.ticket?.awaitingCompanyAssignment ?? false;
+  React.useEffect(() => {
+    if (awaiting) setAssignOpen(true);
+  }, [awaiting, ticketId]);
+
+  const assignMutation = useMutation({
+    mutationFn: (vars: { companyId: string; linkAsSupplier: boolean }) =>
+      ticketApi.assignCompany(ticketId, {
+        companyId: vars.companyId,
+        linkAsSupplier: vars.linkAsSupplier,
+      }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["ticket", ticketId], updated);
+      queryClient.invalidateQueries({ queryKey: ["tickets"] });
+      toast.success("Company toegewezen");
+    },
+    onError: () => toast.error("Kon company niet toewijzen"),
+  });
+
+  const submitAssignment = React.useCallback(
+    async (companyId: string, linkAsSupplier: boolean) => {
+      await assignMutation.mutateAsync({ companyId, linkAsSupplier });
+    },
+    [assignMutation],
+  );
+
   if (isLoading) {
     return <LoadingSkeleton />;
   }
@@ -422,6 +453,7 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         pinnedEventIds={pinnedEventIds}
         updateMutation={updateMutation}
         queryClient={queryClient}
+        onRequestCompanyAssign={() => setAssignOpen(true)}
       />
       {companyAlert && (
         <CompanyAlertDialog
@@ -430,12 +462,21 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
           onClose={handleAlertClose}
         />
       )}
+      <TicketCompanyAssignmentDialog
+        open={assignOpen}
+        ticketId={ticketId}
+        contactId={ticket.requesterContactId}
+        onClose={() => setAssignOpen(false)}
+        onAssigned={() => setAssignOpen(false)}
+        submit={submitAssignment}
+      />
     </>
   );
 }
 
 function TicketDetailBody({
   ticketId, ticket, body, events, pinnedEvents, pinnedEventIds, updateMutation, queryClient,
+  onRequestCompanyAssign,
 }: {
   ticketId: string;
   ticket: any;
@@ -445,6 +486,7 @@ function TicketDetailBody({
   pinnedEventIds: Set<number>;
   updateMutation: any;
   queryClient: any;
+  onRequestCompanyAssign: () => void;
 }) {
   const { matchesEvent, mode, query, registerScope } = useInTicketSearch();
   const visibleEvents = React.useMemo(() => {
@@ -542,6 +584,7 @@ function TicketDetailBody({
       <TicketSidePanel
         ticket={ticket}
         onUpdate={async (fields) => { await updateMutation.mutateAsync(fields); }}
+        onRequestCompanyAssign={onRequestCompanyAssign}
       />
     </div>
   );

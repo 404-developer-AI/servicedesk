@@ -28,6 +28,7 @@ import {
 type TicketSidePanelProps = {
   ticket: Ticket;
   onUpdate: (fields: TicketFieldUpdate) => Promise<void>;
+  onRequestCompanyAssign?: () => void;
 };
 
 type TabId = "status" | "contact" | "company";
@@ -101,7 +102,7 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
-export function TicketSidePanel({ ticket, onUpdate }: TicketSidePanelProps) {
+export function TicketSidePanel({ ticket, onUpdate, onRequestCompanyAssign }: TicketSidePanelProps) {
   const [activeTab, setActiveTab] = React.useState<TabId>("status");
 
   const { data: contact } = useQuery({
@@ -167,7 +168,11 @@ export function TicketSidePanel({ ticket, onUpdate }: TicketSidePanelProps) {
           <ContactTab contact={contact ?? null} />
         )}
         {activeTab === "company" && (
-          <CompanyTab ticket={ticket} companyDetail={companyDetail ?? null} />
+          <CompanyTab
+            ticket={ticket}
+            companyDetail={companyDetail ?? null}
+            onRequestCompanyAssign={onRequestCompanyAssign}
+          />
         )}
       </div>
     </div>
@@ -418,12 +423,33 @@ const RESOLVED_VIA_LABEL: Record<NonNullable<Ticket["companyResolvedVia"]>, stri
   unresolved: "niet eenduidig",
 };
 
-function ResolutionBadge({ ticket }: { ticket: Ticket }) {
+function ResolutionBadge({
+  ticket,
+  onRequestCompanyAssign,
+}: {
+  ticket: Ticket;
+  onRequestCompanyAssign?: () => void;
+}) {
   if (ticket.awaitingCompanyAssignment) {
-    return (
+    const banner = (
       <div className="rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-200 text-xs px-2 py-1.5">
         In afwachting van company-toewijzing
+        {onRequestCompanyAssign && (
+          <span className="block text-[10px] mt-0.5 text-amber-300/70">
+            Klik om toe te wijzen
+          </span>
+        )}
       </div>
+    );
+    if (!onRequestCompanyAssign) return banner;
+    return (
+      <button
+        type="button"
+        onClick={onRequestCompanyAssign}
+        className="block w-full text-left hover:brightness-110 transition"
+      >
+        {banner}
+      </button>
     );
   }
   if (!ticket.companyResolvedVia) return null;
@@ -434,11 +460,19 @@ function ResolutionBadge({ ticket }: { ticket: Ticket }) {
   );
 }
 
-function CompanyTab({ ticket, companyDetail }: { ticket: Ticket; companyDetail: CompanyDetail | null }) {
+function CompanyTab({
+  ticket,
+  companyDetail,
+  onRequestCompanyAssign,
+}: {
+  ticket: Ticket;
+  companyDetail: CompanyDetail | null;
+  onRequestCompanyAssign?: () => void;
+}) {
   if (!companyDetail) {
     return (
       <>
-        <ResolutionBadge ticket={ticket} />
+        <ResolutionBadge ticket={ticket} onRequestCompanyAssign={onRequestCompanyAssign} />
         <EmptyState text="No company linked" />
       </>
     );
@@ -457,7 +491,7 @@ function CompanyTab({ ticket, companyDetail }: { ticket: Ticket; companyDetail: 
 
   return (
     <>
-      <ResolutionBadge ticket={ticket} />
+      <ResolutionBadge ticket={ticket} onRequestCompanyAssign={onRequestCompanyAssign} />
 
       <FieldRow icon={Building2} label="Name">
         <Link

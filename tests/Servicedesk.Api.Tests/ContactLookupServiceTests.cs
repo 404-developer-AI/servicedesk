@@ -361,6 +361,7 @@ public sealed class ContactLookupServiceTests
         public Task<Contact?> UpdateContactAsync(Guid id, Contact patch, CancellationToken ct) => throw new NotImplementedException();
         public Task<DeleteResult> DeleteContactAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<ContactCompanyLink>> ListCompanyLinksAsync(Guid companyId, CancellationToken ct) => throw new NotImplementedException();
+        public Task<IReadOnlyList<ContactCompanyOption>> ListContactCompanyOptionsAsync(Guid contactId, CancellationToken ct) => throw new NotImplementedException();
         public Task<bool> RemoveContactLinkAsync(Guid contactId, Guid companyId, CancellationToken ct) => throw new NotImplementedException();
         public Task<bool> SetPrimaryCompanyAsync(Guid contactId, Guid? companyId, CancellationToken ct) => throw new NotImplementedException();
     }

@@ -15,6 +15,7 @@ import {
   Info,
   Mail,
   MailOpen,
+  Building2,
   Download,
   Pencil,
   Pin,
@@ -192,6 +193,11 @@ const EVENT_CONFIG: Record<string, EventConfig> = {
     dotColor: "bg-teal-500",
     label: "Category changed",
   },
+  CompanyAssignment: {
+    icon: Building2,
+    dotColor: "bg-purple-400",
+    label: "Company assigned",
+  },
   SystemNote: {
     icon: Info,
     dotColor: "bg-white/30",
@@ -283,6 +289,9 @@ function EventBody({ event }: { event: TicketEvent }) {
 
     case "CategoryChange":
       return <MetaChangeText meta={meta} fieldLabel="Category" />;
+
+    case "CompanyAssignment":
+      return <MetaChangeText meta={meta} fieldLabel="Company" />;
 
     case "SystemNote":
       return (
@@ -411,6 +420,7 @@ function TimelineEvent({
     event.eventType === "PriorityChange" ||
     event.eventType === "QueueChange" ||
     event.eventType === "CategoryChange" ||
+    event.eventType === "CompanyAssignment" ||
     event.eventType === "Created";
 
   const updateMutation = useMutation({

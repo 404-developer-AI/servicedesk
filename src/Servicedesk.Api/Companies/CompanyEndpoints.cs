@@ -217,6 +217,20 @@ public static class CompanyEndpoints
             Results.Ok(await repo.ListCompanyLinksAsync(id, ct)))
             .WithName("ListCompanyLinks").WithOpenApi();
 
+        // v0.0.9 ToDo #4: lightweight active-company picker for the ticket
+        // company-assignment dialog. Agents can already read any company they
+        // reach via a ticket, so surfacing a capped active-only picker is
+        // strictly narrower than the admin list endpoint. Limited to 20 hits
+        // per call — typeahead, not a report.
+        agentGroup.MapGet("/picker", async (
+            string? search, ICompanyRepository repo, CancellationToken ct) =>
+        {
+            var results = await repo.ListCompaniesAsync(search, includeInactive: false, ct);
+            return Results.Ok(results
+                .Take(20)
+                .Select(c => new { c.Id, c.Name, c.Code, c.ShortName, c.IsActive }));
+        }).WithName("CompanyPicker").WithOpenApi();
+
         // ---- Contacts (unchanged, top-level, agent+admin) ----
         var contactGroup = app.MapGroup("/api/contacts")
             .WithTags("Contacts")
@@ -232,6 +246,15 @@ public static class CompanyEndpoints
             var c = await repo.GetContactAsync(id, ct);
             return c is null ? Results.NotFound() : Results.Ok(c);
         }).WithName("GetContact").WithOpenApi();
+
+        // v0.0.9 ToDo #4: contact's role-annotated company links joined with
+        // the target company's name/code — feeds the default list of the
+        // ticket company-assignment dialog so role badges can render without
+        // an N+1 per link.
+        contactGroup.MapGet("/{id:guid}/companies", async (
+            Guid id, ICompanyRepository repo, CancellationToken ct) =>
+            Results.Ok(await repo.ListContactCompanyOptionsAsync(id, ct)))
+            .WithName("ListContactCompanies").WithOpenApi();
 
         contactGroup.MapPost("/", async (
             [FromBody] ContactRequest req, HttpContext http,

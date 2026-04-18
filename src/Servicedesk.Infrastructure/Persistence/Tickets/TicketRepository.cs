@@ -488,6 +488,62 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         return await GetByIdAsync(ticketId, ct);
     }
 
+    public async Task<TicketDetail?> AssignCompanyAsync(Guid ticketId, Guid companyId, Guid actorUserId, CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        // Lock the ticket row and grab the previous company_id so the
+        // timeline event can render "Acme → Widgets" rather than just "to Widgets".
+        const string readSql = """
+            SELECT id AS TicketId, company_id AS CompanyId
+            FROM tickets WHERE id = @ticketId AND is_deleted = FALSE
+            FOR UPDATE
+            """;
+        var current = await conn.QueryFirstOrDefaultAsync<TicketCompanySnapshot>(
+            new CommandDefinition(readSql, new { ticketId }, tx, cancellationToken: ct));
+        if (current is null) { await tx.RollbackAsync(ct); return null; }
+
+        const string nameSql = "SELECT name FROM companies WHERE id = @id";
+        var fromName = current.CompanyId.HasValue
+            ? await conn.ExecuteScalarAsync<string?>(new CommandDefinition(nameSql, new { id = current.CompanyId.Value }, tx, cancellationToken: ct))
+            : null;
+        var toName = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(nameSql, new { id = companyId }, tx, cancellationToken: ct));
+        if (toName is null) { await tx.RollbackAsync(ct); return null; }
+
+        const string updateSql = """
+            UPDATE tickets
+               SET company_id = @companyId,
+                   awaiting_company_assignment = FALSE,
+                   company_resolved_via = 'manual',
+                   updated_utc = now()
+             WHERE id = @ticketId AND is_deleted = FALSE
+            """;
+        var rows = await conn.ExecuteAsync(new CommandDefinition(updateSql,
+            new { ticketId, companyId }, tx, cancellationToken: ct));
+        if (rows == 0) { await tx.RollbackAsync(ct); return null; }
+
+        var metadata = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            from = current.CompanyId,
+            to = companyId,
+            fromName,
+            toName,
+            resolvedVia = "manual",
+        });
+        await conn.ExecuteAsync(new CommandDefinition(
+            """
+            INSERT INTO ticket_events (ticket_id, event_type, author_user_id, metadata, is_internal)
+            VALUES (@ticketId, 'CompanyAssignment', @actorUserId, @metadata::jsonb, FALSE)
+            """,
+            new { ticketId, actorUserId, metadata }, tx, cancellationToken: ct));
+
+        await tx.CommitAsync(ct);
+        return await GetByIdAsync(ticketId, ct);
+    }
+
+    private sealed record TicketCompanySnapshot(Guid TicketId, Guid? CompanyId);
+
     public async Task<TicketEvent?> AddEventAsync(Guid ticketId, NewTicketEvent input, CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);

@@ -696,12 +696,14 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_mail_recipients_address ON mail_recipients (address);
 
         -- Extend ticket_events CHECK to allow MailReceived (distinct from the
-        -- legacy 'Mail' outbound/reply event type).
+        -- legacy 'Mail' outbound/reply event type) and CompanyAssignment
+        -- (v0.0.9 ToDo #4 manual company-assignment timeline event).
         ALTER TABLE ticket_events DROP CONSTRAINT IF EXISTS chk_ticket_event_type;
         ALTER TABLE ticket_events ADD CONSTRAINT chk_ticket_event_type
             CHECK (event_type IN ('Created','Comment','Mail','Note','StatusChange',
                                   'AssignmentChange','PriorityChange','QueueChange',
-                                  'CategoryChange','SystemNote','MailReceived'));
+                                  'CategoryChange','SystemNote','MailReceived',
+                                  'CompanyAssignment'));
 
         -- ===================================================================
         -- v0.0.8 step 6b: attachments pipeline

@@ -8,6 +8,12 @@ public interface ITicketRepository
     Task<TicketDetail?> GetByIdAsync(Guid id, CancellationToken ct);
     Task<Ticket> CreateAsync(NewTicket input, CancellationToken ct);
     Task<TicketDetail?> UpdateFieldsAsync(Guid ticketId, TicketFieldUpdate update, Guid actorUserId, CancellationToken ct);
+    /// Manual company assignment (v0.0.9 ToDo #4). Sets company_id, clears
+    /// awaiting_company_assignment, stamps resolved_via='manual', bumps
+    /// updated_utc, and records a CompanyAssignment timeline event with
+    /// from/to metadata. Returns the refreshed detail, or null if the
+    /// ticket doesn't exist.
+    Task<TicketDetail?> AssignCompanyAsync(Guid ticketId, Guid companyId, Guid actorUserId, CancellationToken ct);
     Task<TicketEvent?> AddEventAsync(Guid ticketId, NewTicketEvent input, CancellationToken ct);
     Task<TicketEvent?> UpdateEventAsync(Guid ticketId, long eventId, UpdateTicketEvent input, CancellationToken ct);
     Task<IReadOnlyList<TicketEventRevision>> GetEventRevisionsAsync(Guid ticketId, long eventId, CancellationToken ct);
