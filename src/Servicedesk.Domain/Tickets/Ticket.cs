@@ -18,7 +18,10 @@ public sealed record Ticket(
     DateTime? FirstResponseUtc,
     DateTime? ResolvedUtc,
     DateTime? ClosedUtc,
-    bool IsDeleted);
+    bool IsDeleted,
+    Guid? CompanyId = null,
+    bool AwaitingCompanyAssignment = false,
+    string? CompanyResolvedVia = null);
 
 public sealed record TicketBody(
     Guid TicketId,

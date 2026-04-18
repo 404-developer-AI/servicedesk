@@ -9,6 +9,7 @@ using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Mail.Attachments;
+using Servicedesk.Infrastructure.Mail.Ingest;
 using Servicedesk.Infrastructure.Persistence.Companies;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Sla;
@@ -97,6 +98,7 @@ public static class TicketEndpoints
         group.MapPost("/", async (
             [FromBody] CreateTicketRequest req, HttpContext http,
             ITicketRepository tickets, ICompanyRepository companies, IQueueAccessService queueAccess,
+            IContactLookupService contactLookup,
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(req.Subject))
@@ -112,6 +114,12 @@ public static class TicketEndpoints
             var requester = await companies.GetContactAsync(req.RequesterContactId, ct);
             if (requester is null) return Results.BadRequest(new { error = "Unknown requester contact." });
 
+            // Run the same resolution tree the mail-intake uses so an
+            // agent-created ticket freezes its company_id identically. An
+            // ambiguous contact → awaiting_company_assignment=true and the
+            // Ticket dialog (ToDo #4) prompts the agent to pick explicitly.
+            var resolution = await contactLookup.ResolveCompanyForNewTicketAsync(req.RequesterContactId, ct);
+
             var created = await tickets.CreateAsync(new NewTicket(
                 Subject: req.Subject.Trim(),
                 BodyText: req.BodyText ?? "",
@@ -122,7 +130,10 @@ public static class TicketEndpoints
                 PriorityId: req.PriorityId,
                 CategoryId: req.CategoryId,
                 AssigneeUserId: req.AssigneeUserId,
-                Source: req.Source ?? "Api"), ct);
+                Source: req.Source ?? "Api",
+                CompanyId: resolution.CompanyId,
+                AwaitingCompanyAssignment: resolution.Awaiting,
+                CompanyResolvedVia: resolution.ResolvedVia), ct);
 
             var (actor, role) = ActorContext.Resolve(http);
             await audit.LogAsync(new AuditEvent(

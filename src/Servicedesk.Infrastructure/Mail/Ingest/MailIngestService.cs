@@ -130,6 +130,11 @@ public sealed class MailIngestService : IMailIngestService
                     "No default status/priority configured; cannot create a ticket from mail.");
             }
 
+            // Run the decision tree — thread-reply is already handled by the
+            // existingTicketId branch below, so here we only see the "new
+            // ticket" paths (primary / single secondary / ambiguous / none).
+            var resolution = await _contacts.ResolveCompanyForNewTicketAsync(contact.Id, ct);
+
             var newTicket = new NewTicket(
                 Subject: string.IsNullOrWhiteSpace(msg.Subject) ? "(no subject)" : msg.Subject,
                 BodyText: string.Empty,
@@ -140,13 +145,21 @@ public sealed class MailIngestService : IMailIngestService
                 PriorityId: defaults.Value.PriorityId,
                 CategoryId: null,
                 AssigneeUserId: null,
-                Source: "Mail");
+                Source: "Mail",
+                CompanyId: resolution.CompanyId,
+                AwaitingCompanyAssignment: resolution.Awaiting,
+                CompanyResolvedVia: resolution.ResolvedVia);
             var ticket = await _tickets.CreateAsync(newTicket, ct);
             ticketId = ticket.Id;
             await _sla.OnTicketCreatedAsync(ticketId, ct);
         }
         else
         {
+            // Thread-reply: the existing ticket keeps its own company_id /
+            // resolved_via / awaiting state. We don't re-run the decision tree
+            // on replies — a mid-thread "move" would silently reassign tickets
+            // and lose audit integrity. Manual reassignment stays the only way
+            // to change company post-creation.
             ticketId = existingTicketId.Value;
         }
 

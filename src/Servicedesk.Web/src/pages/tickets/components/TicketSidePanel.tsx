@@ -110,11 +110,14 @@ export function TicketSidePanel({ ticket, onUpdate }: TicketSidePanelProps) {
     staleTime: 300_000,
   });
 
+  // The ticket's frozen company (set at intake, see DatabaseBootstrapper
+  // v0.0.9 step 3) is the source of truth for the Company tab — not the
+  // requester's current primary, which may drift after a jobwissel.
   const { data: companyDetail } = useQuery({
-    queryKey: ["company", contact?.primaryCompanyId],
-    queryFn: () => companyApi.get(contact!.primaryCompanyId!),
+    queryKey: ["company", ticket.companyId],
+    queryFn: () => companyApi.get(ticket.companyId!),
     staleTime: 300_000,
-    enabled: !!contact?.primaryCompanyId,
+    enabled: !!ticket.companyId,
   });
 
   const contactLabel = contact
@@ -164,7 +167,7 @@ export function TicketSidePanel({ ticket, onUpdate }: TicketSidePanelProps) {
           <ContactTab contact={contact ?? null} />
         )}
         {activeTab === "company" && (
-          <CompanyTab companyDetail={companyDetail ?? null} />
+          <CompanyTab ticket={ticket} companyDetail={companyDetail ?? null} />
         )}
       </div>
     </div>
@@ -407,8 +410,39 @@ function ContactTab({ contact }: { contact: Contact | null }) {
 
 /* ─── Company Tab ─── */
 
-function CompanyTab({ companyDetail }: { companyDetail: CompanyDetail | null }) {
-  if (!companyDetail) return <EmptyState text="No company linked" />;
+const RESOLVED_VIA_LABEL: Record<NonNullable<Ticket["companyResolvedVia"]>, string> = {
+  thread_reply: "via thread-reply",
+  primary: "via primary link",
+  secondary: "via secondary link",
+  manual: "manueel toegewezen",
+  unresolved: "niet eenduidig",
+};
+
+function ResolutionBadge({ ticket }: { ticket: Ticket }) {
+  if (ticket.awaitingCompanyAssignment) {
+    return (
+      <div className="rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-200 text-xs px-2 py-1.5">
+        In afwachting van company-toewijzing
+      </div>
+    );
+  }
+  if (!ticket.companyResolvedVia) return null;
+  return (
+    <div className="text-[11px] text-muted-foreground/70 italic">
+      {RESOLVED_VIA_LABEL[ticket.companyResolvedVia]}
+    </div>
+  );
+}
+
+function CompanyTab({ ticket, companyDetail }: { ticket: Ticket; companyDetail: CompanyDetail | null }) {
+  if (!companyDetail) {
+    return (
+      <>
+        <ResolutionBadge ticket={ticket} />
+        <EmptyState text="No company linked" />
+      </>
+    );
+  }
 
   const { company, domains } = companyDetail;
 
@@ -423,6 +457,8 @@ function CompanyTab({ companyDetail }: { companyDetail: CompanyDetail | null }) 
 
   return (
     <>
+      <ResolutionBadge ticket={ticket} />
+
       <FieldRow icon={Building2} label="Name">
         <Link
           to="/companies/$companyId"

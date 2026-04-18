@@ -40,6 +40,15 @@ async function request<T>(
 
 // ---- Ticket types ----
 
+/// Which branch of the mail-intake decision tree (or post-creation action)
+/// settled the ticket's company. 'unresolved' pairs with awaitingCompanyAssignment=true.
+export type CompanyResolvedVia =
+  | "thread_reply"
+  | "primary"
+  | "secondary"
+  | "manual"
+  | "unresolved";
+
 export type TicketListItem = {
   id: string;
   number: number;
@@ -68,6 +77,8 @@ export type TicketListItem = {
   createdUtc: string;
   updatedUtc: string;
   dueUtc: string | null;
+  awaitingCompanyAssignment: boolean;
+  companyResolvedVia: CompanyResolvedVia | null;
 };
 
 export type TicketPage = {
@@ -95,6 +106,9 @@ export type Ticket = {
   resolvedUtc: string | null;
   closedUtc: string | null;
   isDeleted: boolean;
+  companyId: string | null;
+  awaitingCompanyAssignment: boolean;
+  companyResolvedVia: CompanyResolvedVia | null;
 };
 
 export type TicketBody = {

@@ -34,7 +34,10 @@ public sealed record NewTicket(
     Guid PriorityId,
     Guid? CategoryId,
     Guid? AssigneeUserId,
-    string Source);
+    string Source,
+    Guid? CompanyId = null,
+    bool AwaitingCompanyAssignment = false,
+    string? CompanyResolvedVia = null);
 
 public sealed record TicketFieldUpdate(
     Guid? QueueId = null,

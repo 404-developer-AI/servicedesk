@@ -38,6 +38,10 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         ["companyName"]    = "COALESCE(co.name, '')",
         ["categoryName"]   = "COALESCE(cat.name, '')",
     };
+    // The ticket's company is frozen at intake in t.company_id (v0.0.9 step 3).
+    // RequesterCompanyId keeps its name for frontend stability — semantically
+    // it is now "the ticket's resolved company id", which for the common case
+    // (primary resolution) equals the requester's current primary anyway.
     private const string ListSelect = """
         SELECT
             t.id                            AS Id,
@@ -58,7 +62,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             c.email                         AS RequesterEmail,
             c.first_name                    AS RequesterFirstName,
             c.last_name                     AS RequesterLastName,
-            cc.company_id                   AS RequesterCompanyId,
+            t.company_id                    AS RequesterCompanyId,
             co.name                         AS CompanyName,
             t.assignee_user_id              AS AssigneeUserId,
             u.email                         AS AssigneeEmail,
@@ -66,14 +70,15 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             cat.name                        AS CategoryName,
             t.created_utc                   AS CreatedUtc,
             t.updated_utc                   AS UpdatedUtc,
-            t.due_utc                       AS DueUtc
+            t.due_utc                       AS DueUtc,
+            t.awaiting_company_assignment   AS AwaitingCompanyAssignment,
+            t.company_resolved_via          AS CompanyResolvedVia
         FROM tickets t
         JOIN queues     q ON q.id = t.queue_id
         JOIN statuses   s ON s.id = t.status_id
         JOIN priorities p ON p.id = t.priority_id
         JOIN contacts   c ON c.id = t.requester_contact_id
-        LEFT JOIN contact_companies cc ON cc.contact_id = c.id AND cc.role = 'primary'
-        LEFT JOIN companies  co  ON co.id  = cc.company_id
+        LEFT JOIN companies  co  ON co.id  = t.company_id
         LEFT JOIN users      u   ON u.id   = t.assignee_user_id
         LEFT JOIN categories cat ON cat.id = t.category_id
         """;
@@ -119,11 +124,11 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                 // no natural match; it's reserved for the customer portal.
                 break;
             case VisibilityScope.Company:
-                // Customer-portal visibility resolves via the primary link only:
-                // a member of company X sees tickets whose requester has X as
-                // their primary company. Secondary/supplier involvements never
-                // broaden portal visibility.
-                sql.Append(" AND cc.company_id = @ViewerCompanyId");
+                // Customer-portal visibility is bound to the ticket's frozen
+                // company (t.company_id), not the requester's current primary.
+                // That way moving a contact between companies doesn't leak old
+                // tickets into the new company's portal view.
+                sql.Append(" AND t.company_id = @ViewerCompanyId");
                 break;
             case VisibilityScope.All:
             default:
@@ -232,7 +237,10 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                    category_id AS CategoryId, source AS Source, external_ref AS ExternalRef,
                    created_utc AS CreatedUtc, updated_utc AS UpdatedUtc, due_utc AS DueUtc,
                    first_response_utc AS FirstResponseUtc, resolved_utc AS ResolvedUtc,
-                   closed_utc AS ClosedUtc, is_deleted AS IsDeleted
+                   closed_utc AS ClosedUtc, is_deleted AS IsDeleted,
+                   company_id AS CompanyId,
+                   awaiting_company_assignment AS AwaitingCompanyAssignment,
+                   company_resolved_via AS CompanyResolvedVia
             FROM tickets WHERE id = @id AND is_deleted = FALSE
             """;
         const string bodySql = """
@@ -286,16 +294,21 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
     {
         const string insertTicket = """
             INSERT INTO tickets (subject, requester_contact_id, assignee_user_id, queue_id,
-                                 status_id, priority_id, category_id, source)
+                                 status_id, priority_id, category_id, source,
+                                 company_id, awaiting_company_assignment, company_resolved_via)
             VALUES (@Subject, @RequesterContactId, @AssigneeUserId, @QueueId,
-                    @StatusId, @PriorityId, @CategoryId, @Source)
+                    @StatusId, @PriorityId, @CategoryId, @Source,
+                    @CompanyId, @AwaitingCompanyAssignment, @CompanyResolvedVia)
             RETURNING id AS Id, number AS Number, subject AS Subject,
                       requester_contact_id AS RequesterContactId, assignee_user_id AS AssigneeUserId,
                       queue_id AS QueueId, status_id AS StatusId, priority_id AS PriorityId,
                       category_id AS CategoryId, source AS Source, external_ref AS ExternalRef,
                       created_utc AS CreatedUtc, updated_utc AS UpdatedUtc, due_utc AS DueUtc,
                       first_response_utc AS FirstResponseUtc, resolved_utc AS ResolvedUtc,
-                      closed_utc AS ClosedUtc, is_deleted AS IsDeleted
+                      closed_utc AS ClosedUtc, is_deleted AS IsDeleted,
+                      company_id AS CompanyId,
+                      awaiting_company_assignment AS AwaitingCompanyAssignment,
+                      company_resolved_via AS CompanyResolvedVia
             """;
         const string insertBody = """
             INSERT INTO ticket_bodies (ticket_id, body_text, body_html)

@@ -60,7 +60,9 @@ public sealed record TicketListItem(
     string? CategoryName,
     DateTime CreatedUtc,
     DateTime UpdatedUtc,
-    DateTime? DueUtc);
+    DateTime? DueUtc,
+    bool AwaitingCompanyAssignment = false,
+    string? CompanyResolvedVia = null);
 
 public sealed record TicketPage(
     IReadOnlyList<TicketListItem> Items,

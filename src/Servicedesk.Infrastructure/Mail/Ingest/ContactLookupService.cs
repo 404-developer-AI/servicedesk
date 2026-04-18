@@ -25,6 +25,34 @@ public sealed class ContactLookupService : IContactLookupService
         _logger = logger;
     }
 
+    public async Task<CompanyResolution> ResolveCompanyForNewTicketAsync(Guid contactId, CancellationToken ct)
+    {
+        // Ordered by decision-tree specificity. First match wins; the caller
+        // never sees more than one branch.
+        var links = await _companies.ListContactLinksAsync(contactId, ct);
+
+        var primary = links.FirstOrDefault(l => l.Role == "primary");
+        if (primary is not null)
+            return new CompanyResolution(primary.CompanyId, "primary", Awaiting: false);
+
+        var secondaries = links.Where(l => l.Role == "secondary").ToList();
+        if (secondaries.Count == 1)
+            return new CompanyResolution(secondaries[0].CompanyId, "secondary", Awaiting: false);
+        if (secondaries.Count > 1)
+            return new CompanyResolution(null, "unresolved", Awaiting: true);
+
+        // Supplier-only: a supplier relationship never auto-resolves — even if
+        // there's exactly one, we still require a manual choice so a ticket from
+        // a vendor never silently binds to the vendor's "customer" company.
+        if (links.Any(l => l.Role == "supplier"))
+            return new CompanyResolution(null, "unresolved", Awaiting: true);
+
+        // No links at all — not awaiting; this is just a personal sender with
+        // no CRM relationship yet. Leaving resolved_via NULL distinguishes
+        // "never attempted" from "attempted but ambiguous".
+        return CompanyResolution.None;
+    }
+
     public async Task<Contact> EnsureByEmailAsync(string email, string displayName, CancellationToken ct)
     {
         var existing = await _companies.GetContactByEmailAsync(email, ct);

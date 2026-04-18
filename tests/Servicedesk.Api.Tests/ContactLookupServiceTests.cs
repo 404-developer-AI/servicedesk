@@ -133,6 +133,93 @@ public sealed class ContactLookupServiceTests
             repo.UpsertContactLinkAsync(Guid.NewGuid(), Guid.NewGuid(), "vip", default));
     }
 
+    // ----- v0.0.9 step 3: 6-step resolution decision tree -----
+    //
+    // Thread-reply (step 1) is handled in MailIngestService, not here — see
+    // MailIngestServiceTests. The remaining five branches all fall out of
+    // ResolveCompanyForNewTicketAsync against the contact's link set.
+
+    [Fact]
+    public async Task Resolve_uses_primary_link_when_present()
+    {
+        var repo = new FakeCompanies();
+        var contactId = Guid.NewGuid();
+        var primary = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        repo.Links[(contactId, primary)] = "primary";
+        repo.Links[(contactId, other)] = "secondary"; // primary must still win
+
+        var svc = Build(repo, new FakeAuditLogger(), autoLinkEnabled: false);
+        var result = await svc.ResolveCompanyForNewTicketAsync(contactId, default);
+
+        Assert.Equal(primary, result.CompanyId);
+        Assert.Equal("primary", result.ResolvedVia);
+        Assert.False(result.Awaiting);
+    }
+
+    [Fact]
+    public async Task Resolve_uses_single_secondary_when_no_primary()
+    {
+        var repo = new FakeCompanies();
+        var contactId = Guid.NewGuid();
+        var secondary = Guid.NewGuid();
+        repo.Links[(contactId, secondary)] = "secondary";
+
+        var svc = Build(repo, new FakeAuditLogger(), autoLinkEnabled: false);
+        var result = await svc.ResolveCompanyForNewTicketAsync(contactId, default);
+
+        Assert.Equal(secondary, result.CompanyId);
+        Assert.Equal("secondary", result.ResolvedVia);
+        Assert.False(result.Awaiting);
+    }
+
+    [Fact]
+    public async Task Resolve_marks_awaiting_when_multiple_secondaries()
+    {
+        var repo = new FakeCompanies();
+        var contactId = Guid.NewGuid();
+        repo.Links[(contactId, Guid.NewGuid())] = "secondary";
+        repo.Links[(contactId, Guid.NewGuid())] = "secondary";
+
+        var svc = Build(repo, new FakeAuditLogger(), autoLinkEnabled: false);
+        var result = await svc.ResolveCompanyForNewTicketAsync(contactId, default);
+
+        Assert.Null(result.CompanyId);
+        Assert.Equal("unresolved", result.ResolvedVia);
+        Assert.True(result.Awaiting);
+    }
+
+    [Fact]
+    public async Task Resolve_marks_awaiting_for_supplier_only()
+    {
+        // Even a single supplier link is not enough to auto-resolve: a vendor's
+        // mail must never silently bind a ticket to the vendor's "customer"
+        // company. Manual pick is mandatory.
+        var repo = new FakeCompanies();
+        var contactId = Guid.NewGuid();
+        repo.Links[(contactId, Guid.NewGuid())] = "supplier";
+
+        var svc = Build(repo, new FakeAuditLogger(), autoLinkEnabled: false);
+        var result = await svc.ResolveCompanyForNewTicketAsync(contactId, default);
+
+        Assert.Null(result.CompanyId);
+        Assert.Equal("unresolved", result.ResolvedVia);
+        Assert.True(result.Awaiting);
+    }
+
+    [Fact]
+    public async Task Resolve_returns_none_when_contact_has_no_links()
+    {
+        var repo = new FakeCompanies();
+        var svc = Build(repo, new FakeAuditLogger(), autoLinkEnabled: false);
+
+        var result = await svc.ResolveCompanyForNewTicketAsync(Guid.NewGuid(), default);
+
+        Assert.Null(result.CompanyId);
+        Assert.Null(result.ResolvedVia);
+        Assert.False(result.Awaiting);
+    }
+
     private static Company NewCompany(string name, string code) => new(
         Id: Guid.NewGuid(),
         Name: name,
@@ -248,6 +335,17 @@ public sealed class ContactLookupServiceTests
             return Task.FromResult(new ContactCompanyLink(Guid.NewGuid(), contactId, companyId, role, now, now));
         }
 
+        public Task<IReadOnlyList<ContactCompanyLink>> ListContactLinksAsync(Guid contactId, CancellationToken ct)
+        {
+            var now = DateTime.UtcNow;
+            IReadOnlyList<ContactCompanyLink> rows = Links
+                .Where(kv => kv.Key.ContactId == contactId)
+                .Select(kv => new ContactCompanyLink(
+                    Guid.NewGuid(), kv.Key.ContactId, kv.Key.CompanyId, kv.Value, now, now))
+                .ToList();
+            return Task.FromResult(rows);
+        }
+
         // ---- Unused members — throw so accidental reliance fails loudly ----
         public Task<IReadOnlyList<Company>> ListCompaniesAsync(string? search, bool includeInactive, CancellationToken ct) => throw new NotImplementedException();
         public Task<Company?> GetCompanyAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
@@ -262,7 +360,6 @@ public sealed class ContactLookupServiceTests
         public Task<Contact?> GetContactAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
         public Task<Contact?> UpdateContactAsync(Guid id, Contact patch, CancellationToken ct) => throw new NotImplementedException();
         public Task<DeleteResult> DeleteContactAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
-        public Task<IReadOnlyList<ContactCompanyLink>> ListContactLinksAsync(Guid contactId, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<ContactCompanyLink>> ListCompanyLinksAsync(Guid companyId, CancellationToken ct) => throw new NotImplementedException();
         public Task<bool> RemoveContactLinkAsync(Guid contactId, Guid companyId, CancellationToken ct) => throw new NotImplementedException();
         public Task<bool> SetPrimaryCompanyAsync(Guid contactId, Guid? companyId, CancellationToken ct) => throw new NotImplementedException();

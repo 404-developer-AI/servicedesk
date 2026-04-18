@@ -23,7 +23,7 @@ public sealed class MailIngestServiceTests
     [Fact]
     public async Task Skips_auto_submitted_header_other_than_no()
     {
-        var (svc, graph, _, _) = Build();
+        var (svc, graph, _, _, _) = Build();
         graph.Message = NewMessage(autoSubmitted: "auto-replied");
 
         var result = await svc.IngestAsync(QueueId, QueueMailbox, "gid-1", default);
@@ -34,7 +34,7 @@ public sealed class MailIngestServiceTests
     [Fact]
     public async Task Skips_when_from_matches_own_mailbox()
     {
-        var (svc, graph, _, _) = Build();
+        var (svc, graph, _, _, _) = Build();
         graph.Message = NewMessage(from: new GraphRecipient(QueueMailbox, "self"));
 
         var result = await svc.IngestAsync(QueueId, QueueMailbox, "gid-1", default);
@@ -45,7 +45,7 @@ public sealed class MailIngestServiceTests
     [Fact]
     public async Task Deduplicates_known_message_id()
     {
-        var (svc, graph, mailRepo, _) = Build();
+        var (svc, graph, mailRepo, _, _) = Build();
         graph.Message = NewMessage(messageId: "abc@example");
         mailRepo.ByMessageId["abc@example"] = new MailMessageRow(
             Guid.NewGuid(), "abc@example", null, "s", "x@y", "", QueueMailbox,
@@ -59,7 +59,7 @@ public sealed class MailIngestServiceTests
     [Fact]
     public async Task Creates_new_ticket_when_no_thread_match()
     {
-        var (svc, graph, mailRepo, tickets) = Build();
+        var (svc, graph, mailRepo, tickets, _) = Build();
         graph.Message = NewMessage(messageId: "new@example");
 
         var result = await svc.IngestAsync(QueueId, QueueMailbox, "gid-1", default);
@@ -74,7 +74,7 @@ public sealed class MailIngestServiceTests
     [Fact]
     public async Task Appends_when_plus_address_matches_existing_ticket()
     {
-        var (svc, graph, _, tickets) = Build();
+        var (svc, graph, _, tickets, _) = Build();
         var existing = Guid.NewGuid();
         tickets.NumberToId[1234] = existing;
         graph.Message = NewMessage(
@@ -91,7 +91,7 @@ public sealed class MailIngestServiceTests
     [Fact]
     public async Task Attachments_on_graph_message_are_forwarded_to_repository()
     {
-        var (svc, graph, mailRepo, _) = Build();
+        var (svc, graph, mailRepo, _, _) = Build();
         graph.Message = NewMessage(messageId: "withatt@example") with
         {
             Attachments = new[]
@@ -115,7 +115,7 @@ public sealed class MailIngestServiceTests
     [Fact]
     public async Task Appends_via_in_reply_to_reference()
     {
-        var (svc, graph, mailRepo, tickets) = Build();
+        var (svc, graph, mailRepo, tickets, _) = Build();
         var existing = Guid.NewGuid();
         mailRepo.ReferenceLookup["parent@example"] = existing;
         graph.Message = NewMessage(messageId: "child@example", inReplyTo: "<parent@example>");
@@ -125,6 +125,62 @@ public sealed class MailIngestServiceTests
         Assert.Equal(MailIngestOutcome.Appended, result.Outcome);
         Assert.Equal(existing, result.TicketId);
         Assert.Empty(tickets.Created);
+    }
+
+    // v0.0.9 step 3: thread-reply must not re-run the decision tree. The
+    // existing ticket already has its own company_id / resolved_via frozen at
+    // creation; touching it on every reply would silently migrate tickets
+    // between companies and break audit integrity.
+    [Fact]
+    public async Task Thread_reply_does_not_invoke_company_resolution()
+    {
+        var (svc, graph, _, tickets, contacts) = Build();
+        contacts.NextResolution = new CompanyResolution(Guid.NewGuid(), "primary", false);
+        var existing = Guid.NewGuid();
+        tickets.NumberToId[9999] = existing;
+        graph.Message = NewMessage(
+            messageId: "reply@example",
+            to: new[] { new GraphRecipient("servicedesk+TCK-9999@domain.com", "Desk") });
+
+        var result = await svc.IngestAsync(QueueId, QueueMailbox, "gid-1", default);
+
+        Assert.Equal(MailIngestOutcome.Appended, result.Outcome);
+        Assert.Equal(0, contacts.ResolveCalls);
+        Assert.Empty(tickets.Created);
+    }
+
+    [Fact]
+    public async Task New_ticket_writes_resolution_fields_from_decision_tree()
+    {
+        var (svc, graph, _, tickets, contacts) = Build();
+        var companyId = Guid.NewGuid();
+        contacts.NextResolution = new CompanyResolution(companyId, "secondary", Awaiting: false);
+        graph.Message = NewMessage(messageId: "fresh-resolve@example");
+
+        var result = await svc.IngestAsync(QueueId, QueueMailbox, "gid-1", default);
+
+        Assert.Equal(MailIngestOutcome.Created, result.Outcome);
+        Assert.Equal(1, contacts.ResolveCalls);
+        var created = Assert.Single(tickets.Created);
+        Assert.Equal(companyId, created.CompanyId);
+        Assert.Equal("secondary", created.CompanyResolvedVia);
+        Assert.False(created.AwaitingCompanyAssignment);
+    }
+
+    [Fact]
+    public async Task New_ticket_marks_awaiting_when_resolution_unresolved()
+    {
+        var (svc, graph, _, tickets, contacts) = Build();
+        contacts.NextResolution = new CompanyResolution(null, "unresolved", Awaiting: true);
+        graph.Message = NewMessage(messageId: "fresh-ambiguous@example");
+
+        var result = await svc.IngestAsync(QueueId, QueueMailbox, "gid-1", default);
+
+        Assert.Equal(MailIngestOutcome.Created, result.Outcome);
+        var created = Assert.Single(tickets.Created);
+        Assert.Null(created.CompanyId);
+        Assert.Equal("unresolved", created.CompanyResolvedVia);
+        Assert.True(created.AwaitingCompanyAssignment);
     }
 
     private static GraphFullMessage NewMessage(
@@ -150,7 +206,7 @@ public sealed class MailIngestServiceTests
             AutoSubmitted: autoSubmitted,
             Attachments: Array.Empty<GraphAttachmentInfo>());
 
-    private static (MailIngestService svc, StubGraph graph, StubMailRepo mail, StubTickets tickets) Build()
+    private static (MailIngestService svc, StubGraph graph, StubMailRepo mail, StubTickets tickets, StubContacts contacts) Build()
     {
         var graph = new StubGraph();
         var mail = new StubMailRepo();
@@ -161,7 +217,7 @@ public sealed class MailIngestServiceTests
         var settings = new StubSettings();
         var svc = new MailIngestService(graph, mail, tickets, taxonomy, contacts, blobs, settings,
             new NoopSlaEngine(), NullLogger<MailIngestService>.Instance);
-        return (svc, graph, mail, tickets);
+        return (svc, graph, mail, tickets, contacts);
     }
 
     private sealed class StubGraph : IGraphMailClient
@@ -304,8 +360,17 @@ public sealed class MailIngestServiceTests
 
     private sealed class StubContacts : IContactLookupService
     {
+        public CompanyResolution NextResolution { get; set; } = CompanyResolution.None;
+        public int ResolveCalls { get; private set; }
+
         public Task<Contact> EnsureByEmailAsync(string email, string displayName, CancellationToken ct)
             => Task.FromResult(new Contact(Guid.NewGuid(), "Member", displayName, "", email, "", "", true, DateTime.UtcNow, DateTime.UtcNow));
+
+        public Task<CompanyResolution> ResolveCompanyForNewTicketAsync(Guid contactId, CancellationToken ct)
+        {
+            ResolveCalls++;
+            return Task.FromResult(NextResolution);
+        }
     }
 
     private sealed class StubBlobs : IBlobStore

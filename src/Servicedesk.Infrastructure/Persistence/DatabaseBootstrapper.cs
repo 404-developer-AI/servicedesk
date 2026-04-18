@@ -277,6 +277,47 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_tickets_search
             ON tickets USING GIN (search_vector);
 
+        -- v0.0.9 step 3: company-resolution state frozen on the ticket.
+        -- company_id decouples "the ticket's company" from "the requester's
+        -- current primary" so moving a contact's primary later doesn't
+        -- retroactively reassign historical tickets (supports the jobwissel
+        -- flow in ToDo #5). company_resolved_via records which branch of the
+        -- mail-intake decision tree picked this company (or 'manual' when an
+        -- agent later assigns it). awaiting_company_assignment signals the UI
+        -- to prompt for a manual pick when intake couldn't resolve.
+        ALTER TABLE tickets
+            ADD COLUMN IF NOT EXISTS company_id UUID NULL
+                REFERENCES companies(id) ON DELETE SET NULL,
+            ADD COLUMN IF NOT EXISTS awaiting_company_assignment BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS company_resolved_via TEXT NULL;
+
+        -- Postgres has no IF NOT EXISTS for CHECK constraints — guard via pg_constraint.
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_ticket_resolved_via') THEN
+                ALTER TABLE tickets
+                    ADD CONSTRAINT chk_ticket_resolved_via
+                    CHECK (company_resolved_via IS NULL
+                           OR company_resolved_via IN ('thread_reply','primary','secondary','manual','unresolved'));
+            END IF;
+        END $$;
+
+        -- One-time backfill (idempotent: filters out rows where company_id is
+        -- already set). Populates historical tickets from the requester's
+        -- current primary link so the UI keeps showing the same company it
+        -- used to derive on-the-fly. Tickets whose requester has no primary
+        -- stay NULL and will show "no company" — unchanged from before.
+        UPDATE tickets t
+        SET company_id = cc.company_id,
+            company_resolved_via = 'primary'
+        FROM contact_companies cc
+        WHERE cc.contact_id = t.requester_contact_id
+          AND cc.role = 'primary'
+          AND t.company_id IS NULL;
+
+        CREATE INDEX IF NOT EXISTS ix_tickets_company
+            ON tickets (company_id)
+            WHERE is_deleted = FALSE AND company_id IS NOT NULL;
+
         -- Large text lives in its own table so the hot list index doesn't have
         -- to scan it. One-to-one with tickets.
         CREATE TABLE IF NOT EXISTS ticket_bodies (
