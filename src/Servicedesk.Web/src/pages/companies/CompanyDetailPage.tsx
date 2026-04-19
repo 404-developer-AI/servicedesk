@@ -83,12 +83,25 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-6">
-      <Link
-        to="/tickets"
-        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-3 w-3" /> Back
-      </Link>
+      {/* Admins reach this page from /settings/companies; agents reach it
+          via the ticket side-panel or global search, where /settings/* is
+          403. Route the "Back" link accordingly so each role lands
+          somewhere sensible. */}
+      {isAdmin ? (
+        <Link
+          to="/settings/companies"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-3 w-3" /> Back to companies
+        </Link>
+      ) : (
+        <Link
+          to="/tickets"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-3 w-3" /> Back
+        </Link>
+      )}
 
       <header className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">

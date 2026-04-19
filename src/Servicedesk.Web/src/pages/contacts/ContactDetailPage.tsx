@@ -17,6 +17,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { ApiError } from "@/lib/api";
+import { useAuth } from "@/auth/authStore";
 import {
   companyApi,
   contactApi,
@@ -60,7 +61,35 @@ const ROLE_BADGE: Record<ContactCompanyRole, { label: string; className: string 
 
 type Props = { contactId: string };
 
+// Agents reach this page via the ticket side-panel or global search, but
+// the contacts overview (/settings/contacts) is admin-only — so the "Back"
+// link target depends on the viewer's role. Admins return to the overview;
+// agents return to the ticket list (their primary working surface).
+function BackLink({
+  isAdmin,
+  className,
+  children,
+}: {
+  isAdmin: boolean;
+  className: string;
+  children: React.ReactNode;
+}) {
+  return isAdmin ? (
+    <Link to="/settings/contacts" className={className}>
+      {children}
+    </Link>
+  ) : (
+    <Link to="/tickets" className={className}>
+      {children}
+    </Link>
+  );
+}
+
 export function ContactDetailPage({ contactId }: Props) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "Admin";
+  const backLabel = isAdmin ? "Back to contacts" : "Back";
+
   const { data: contact, isLoading } = useQuery({
     queryKey: ["contact", contactId],
     queryFn: () => contactApi.get(contactId),
@@ -89,9 +118,9 @@ export function ContactDetailPage({ contactId }: Props) {
     return (
       <div className="rounded-md border border-white/10 bg-white/[0.04] p-6 text-center text-sm text-muted-foreground">
         Contact not found.{" "}
-        <Link to="/settings/contacts" className="text-primary hover:underline">
-          Back to contacts
-        </Link>
+        <BackLink isAdmin={isAdmin} className="text-primary hover:underline">
+          {backLabel}
+        </BackLink>
       </div>
     );
   }
@@ -100,12 +129,12 @@ export function ContactDetailPage({ contactId }: Props) {
     <div className="flex flex-col gap-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-2">
-          <Link
-            to="/settings/contacts"
+          <BackLink
+            isAdmin={isAdmin}
             className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           >
-            <ArrowLeft className="h-3 w-3" /> Back to contacts
-          </Link>
+            <ArrowLeft className="h-3 w-3" /> {backLabel}
+          </BackLink>
           <h1 className="text-display-md font-semibold text-foreground">
             {[contact.firstName, contact.lastName].filter(Boolean).join(" ").trim() ||
               contact.email}

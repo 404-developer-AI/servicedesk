@@ -4,15 +4,21 @@
 
 import type { SearchHit } from "@/lib/api";
 
-export type SearchKind = "tickets" | "contacts" | "settings" | (string & {});
+export type SearchKind =
+  | "tickets"
+  | "contacts"
+  | "companies"
+  | "settings"
+  | (string & {});
 
 export const KIND_LABELS: Record<string, string> = {
   tickets: "Tickets",
   contacts: "Contacten",
+  companies: "Bedrijven",
   settings: "Settings",
 };
 
-export const KIND_ORDER: string[] = ["tickets", "contacts", "settings"];
+export const KIND_ORDER: string[] = ["tickets", "contacts", "companies", "settings"];
 
 export function labelForKind(kind: string): string {
   return KIND_LABELS[kind] ?? kind;
@@ -24,10 +30,9 @@ export function hitHref(hit: SearchHit): string {
     case "tickets":
       return `/tickets/${hit.entityId}`;
     case "contacts":
-      // Contacts live inside the company view; a dedicated /contacts/:id
-      // page lands with the customer portal. For now, deeplink into the
-      // ticket list filtered by requester.
-      return `/tickets?requesterContactId=${hit.entityId}`;
+      return `/contacts/${hit.entityId}`;
+    case "companies":
+      return `/companies/${hit.entityId}`;
     case "settings":
       return hit.meta?.path ?? "/settings";
     default:

@@ -498,7 +498,7 @@ function TicketDetailBody({
     <div className="flex gap-6 pt-3 h-[calc(100vh-0.75rem)] overflow-hidden">
       {/* Left column — header + description static, activity scrolls, reply pinned bottom */}
       <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
-        {/* Static: ticket number + subject on one line */}
+        {/* Static: ticket number + subject on one line, with SLA pills + PDF inline */}
         <div className="shrink-0 pb-4">
           <div className="flex items-start gap-3">
             <div className="flex-1 min-w-0">
@@ -510,9 +510,9 @@ function TicketDetailBody({
                 }}
               />
             </div>
+            <SlaPill ticketId={ticket.id} className="shrink-0 justify-end" />
             <ExportPdfButton ticketId={ticketId} />
           </div>
-          <SlaPill ticketId={ticket.id} className="mt-3" />
         </div>
 
         {/* Static: description */}

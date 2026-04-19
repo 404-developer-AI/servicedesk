@@ -1,9 +1,9 @@
 import * as React from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { ChevronDown, Search, Plus, User } from "lucide-react"
-import { contactApi, type Contact, type ContactInput } from "@/lib/ticket-api"
+import { contactApi, type Contact } from "@/lib/ticket-api"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { ContactFormDialog } from "@/components/ContactFormDialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -15,35 +15,17 @@ type ContactPickerProps = {
   className?: string
 }
 
-type CreateFormState = {
-  firstName: string
-  lastName: string
-  email: string
-}
-
-type CreateFormErrors = {
-  email?: string
-}
-
 export function ContactPicker({
   value,
   onChange,
   placeholder = "Select a contact…",
   className,
 }: ContactPickerProps) {
-  const queryClient = useQueryClient()
   const [open, setOpen] = React.useState(false)
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [search, setSearch] = React.useState("")
   const [debouncedSearch, setDebouncedSearch] = React.useState("")
   const [selectedContact, setSelectedContact] = React.useState<Contact | null>(null)
-  const [createForm, setCreateForm] = React.useState<CreateFormState>({
-    firstName: "",
-    lastName: "",
-    email: "",
-  })
-  const [createErrors, setCreateErrors] = React.useState<CreateFormErrors>({})
-  const [creating, setCreating] = React.useState(false)
   const searchRef = React.useRef<HTMLInputElement>(null)
 
   React.useEffect(() => {
@@ -78,43 +60,6 @@ export function ContactPicker({
     setSelectedContact(contact)
     onChange(contact.id)
     setOpen(false)
-  }
-
-  function validateCreate(form: CreateFormState): CreateFormErrors {
-    const errs: CreateFormErrors = {}
-    if (!form.email.trim()) {
-      errs.email = "Email is required"
-    } else if (!form.email.includes("@")) {
-      errs.email = "Enter a valid email address"
-    }
-    return errs
-  }
-
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault()
-    const errs = validateCreate(createForm)
-    if (Object.keys(errs).length > 0) {
-      setCreateErrors(errs)
-      return
-    }
-    setCreating(true)
-    try {
-      const input: ContactInput = {
-        email: createForm.email.trim(),
-        firstName: createForm.firstName.trim() || undefined,
-        lastName: createForm.lastName.trim() || undefined,
-      }
-      const created = await contactApi.create(input)
-      await queryClient.invalidateQueries({ queryKey: ["contacts"] })
-      setSelectedContact(created)
-      onChange(created.id)
-      setDialogOpen(false)
-      setOpen(false)
-      setCreateForm({ firstName: "", lastName: "", email: "" })
-      setCreateErrors({})
-    } finally {
-      setCreating(false)
-    }
   }
 
   const displayLabel = selectedContact
@@ -242,80 +187,18 @@ export function ContactPicker({
         </PopoverContent>
       </Popover>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="glass-card border-white/10 sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle>New contact</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleCreate} className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">
-                  First name
-                </label>
-                <input
-                  value={createForm.firstName}
-                  onChange={(e) =>
-                    setCreateForm((f) => ({ ...f, firstName: e.target.value }))
-                  }
-                  className="flex h-9 w-full rounded-[var(--radius)] border border-white/10 bg-white/[0.04] px-3 text-sm outline-none placeholder:text-muted-foreground focus:border-white/20 focus:bg-white/[0.06] transition-colors"
-                  placeholder="First"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">
-                  Last name
-                </label>
-                <input
-                  value={createForm.lastName}
-                  onChange={(e) =>
-                    setCreateForm((f) => ({ ...f, lastName: e.target.value }))
-                  }
-                  className="flex h-9 w-full rounded-[var(--radius)] border border-white/10 bg-white/[0.04] px-3 text-sm outline-none placeholder:text-muted-foreground focus:border-white/20 focus:bg-white/[0.06] transition-colors"
-                  placeholder="Last"
-                />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">
-                Email <span className="text-destructive">*</span>
-              </label>
-              <input
-                type="email"
-                value={createForm.email}
-                onChange={(e) => {
-                  setCreateForm((f) => ({ ...f, email: e.target.value }))
-                  setCreateErrors({})
-                }}
-                className={cn(
-                  "flex h-9 w-full rounded-[var(--radius)] border border-white/10 bg-white/[0.04] px-3 text-sm outline-none placeholder:text-muted-foreground focus:border-white/20 focus:bg-white/[0.06] transition-colors",
-                  createErrors.email && "border-destructive/50"
-                )}
-                placeholder="email@example.com"
-              />
-              {createErrors.email && (
-                <p className="text-xs text-destructive">{createErrors.email}</p>
-              )}
-            </div>
-            <DialogFooter>
-              <button
-                type="button"
-                onClick={() => setDialogOpen(false)}
-                className="h-9 px-4 rounded-[var(--radius)] border border-white/10 bg-white/[0.04] text-sm hover:bg-white/[0.07] transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={creating}
-                className="h-9 px-4 rounded-[var(--radius)] bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
-              >
-                {creating ? "Creating…" : "Create contact"}
-              </button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <ContactFormDialog
+        open={dialogOpen}
+        mode="create"
+        onClose={() => setDialogOpen(false)}
+        onSaved={(created) => {
+          // Adopt the freshly-created contact into this form field so the
+          // calling drawer can submit without a second round-trip.
+          setSelectedContact(created)
+          onChange(created.id)
+          setDialogOpen(false)
+        }}
+      />
     </>
   )
 }
