@@ -24,6 +24,7 @@ import { SettingsLayout } from "@/shell/SettingsLayout";
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { SetupWizardPage } from "@/pages/auth/SetupWizardPage";
 import { ProfilePage } from "@/pages/profile/ProfilePage";
+import { MentionHistoryPage } from "@/pages/profile/MentionHistoryPage";
 import { ViewsSettingsPage } from "@/pages/settings/ViewsSettingsPage";
 import { QueueAccessSettingsPage } from "@/pages/settings/QueueAccessSettingsPage";
 import { ViewGroupsSettingsPage } from "@/pages/settings/ViewGroupsSettingsPage";
@@ -33,6 +34,7 @@ import { ContactsPage } from "@/pages/contacts/ContactsPage";
 import { ContactDetailPage } from "@/pages/contacts/ContactDetailPage";
 import { TicketListPage } from "@/pages/tickets/TicketListPage";
 import { TicketDetailPage } from "@/pages/tickets/TicketDetailPage";
+import { TicketComposePage } from "@/pages/tickets/TicketComposePage";
 import { SlaLogPage } from "@/pages/sla/SlaLogPage";
 import { SearchPage } from "@/pages/search/SearchPage";
 
@@ -66,9 +68,18 @@ function anyAuthenticatedGate() {
 
 const UNAUTHENTICATED_PATHS = new Set(["/login", "/setup"]);
 
+/// Routes that render OUTSIDE AppShell — no sidebar, no CriticalBanner.
+/// Used for the pop-out compose window so the agent can park it next to
+/// the main tab with just the form visible.
+function isBareRoute(path: string): boolean {
+  if (UNAUTHENTICATED_PATHS.has(path)) return true;
+  if (path.endsWith("/compose")) return true;
+  return false;
+}
+
 function RootLayout() {
   const path = useRouterState({ select: (s) => s.location.pathname });
-  if (UNAUTHENTICATED_PATHS.has(path)) {
+  if (isBareRoute(path)) {
     return <Outlet />;
   }
   return <AppShell />;
@@ -155,6 +166,19 @@ const ticketDetailRoute = createRoute({
   },
 });
 
+// Pop-out compose window. Rendered outside AppShell (see RootLayout) so
+// the agent can park it as a second browser window and keep the main
+// tab on the activity feed.
+const ticketComposeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tickets/$ticketId/compose",
+  beforeLoad: authGate(["Agent", "Admin"]),
+  component: function TicketComposeRoute() {
+    const { ticketId } = ticketComposeRoute.useParams();
+    return <TicketComposePage ticketId={ticketId} />;
+  },
+});
+
 const searchRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/search",
@@ -186,6 +210,15 @@ const profileRoute = createRoute({
   path: "/profile",
   beforeLoad: anyAuthenticatedGate(),
   component: ProfilePage,
+});
+
+// v0.0.12 stap 4 — history of @@-mentions received by the caller.
+// Agent+Admin only; customers never receive mentions in this release.
+const profileMentionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/profile/mentions",
+  beforeLoad: authGate(["Agent", "Admin"]),
+  component: MentionHistoryPage,
 });
 
 // Parent route renders the master-detail layout (secondary nav rail + Outlet).
@@ -316,12 +349,14 @@ const routeTree = rootRoute.addChildren([
   dashboardRoute,
   ticketsRoute,
   ticketDetailRoute,
+  ticketComposeRoute,
   companyDetailRoute,
   contactDetailRoute,
   searchRoute,
   slaLogRoute,
   kbRoute,
   profileRoute,
+  profileMentionsRoute,
   settingsRoute.addChildren([
     settingsIndexRoute,
     settingsGeneralRoute,

@@ -21,6 +21,7 @@ using Servicedesk.Api.Views;
 using Servicedesk.Api.Users;
 using Servicedesk.Api.Preferences;
 using Servicedesk.Api.Presence;
+using Servicedesk.Api.Notifications;
 using Servicedesk.Infrastructure;
 using Servicedesk.Infrastructure.Settings;
 
@@ -74,6 +75,9 @@ builder.Services.AddSignalR();
 // ticket-list notifier so background services (mail ingest) can push updates.
 builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.ITicketListNotifier,
     Servicedesk.Api.Presence.SignalRTicketListNotifier>();
+// v0.0.12 stap 4 — same trick for per-user notifications.
+builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.IUserNotifier,
+    Servicedesk.Api.Presence.SignalRUserNotifier>();
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -179,6 +183,7 @@ app.MapCompanyEndpoints();
 app.MapTicketEndpoints();
 app.MapTicketExportEndpoints();
 app.MapTicketMailEndpoints();
+app.MapTicketAttachmentEndpoints();
 app.MapSearchEndpoints();
 app.MapSettingEndpoints();
 app.MapSlaEndpoints();
@@ -192,8 +197,10 @@ app.MapViewAccessEndpoints();
 app.MapAgentQueueEndpoints();
 app.MapUserEndpoints();
 app.MapUserPreferencesEndpoints();
+app.MapNotificationEndpoints();
 app.MapDevBenchmarkEndpoints(app.Environment);
 app.MapHub<TicketPresenceHub>("/hubs/presence");
+app.MapHub<UserNotificationHub>("/hubs/notifications");
 
 app.Run();
 

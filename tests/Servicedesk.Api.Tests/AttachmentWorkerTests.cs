@@ -152,6 +152,11 @@ public sealed class AttachmentWorkerTests
         public Task<bool> MarkReadyAsync(Guid id, string contentHash, long sizeBytes, string mimeType, CancellationToken ct)
         { ReadyMarks[id] = (contentHash, sizeBytes, mimeType); return Task.FromResult(true); }
         public Task MarkFailedAsync(Guid id, CancellationToken ct) { Failed.Add(id); return Task.CompletedTask; }
+        public Task<IReadOnlyList<AttachmentRow>> ListByEventAsync(long eventId, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<AttachmentRow>>(Rows.Values.Where(r => r.EventId == eventId).ToList());
+        public Task<Guid> CreateUploadedAsync(NewUploadedAttachment input, CancellationToken ct) => throw new NotImplementedException();
+        public Task<int> ReassignToEventAsync(IReadOnlyList<Guid> ids, Guid ticketId, long eventId, CancellationToken ct) => throw new NotImplementedException();
+        public Task<int> ReassignToMailAsync(IReadOnlyList<AttachmentReassignToMail> assignments, Guid ticketId, Guid mailMessageId, long ticketEventId, CancellationToken ct) => throw new NotImplementedException();
     }
 
     private sealed class StubGraph : IGraphMailClient
@@ -176,6 +181,7 @@ public sealed class AttachmentWorkerTests
         public Task MarkAsReadAsync(string m, string id, CancellationToken ct) => Task.CompletedTask;
         public Task MoveAsync(string m, string id, string f, CancellationToken ct) => Task.CompletedTask;
         public Task<string> EnsureFolderAsync(string m, string n, CancellationToken ct) => Task.FromResult("f");
+        public Task<GraphSentMailResult> SendMailAsync(GraphOutboundMessage m, CancellationToken ct) => throw new NotImplementedException();
     }
 
     private sealed class StubBlobs : IBlobStore

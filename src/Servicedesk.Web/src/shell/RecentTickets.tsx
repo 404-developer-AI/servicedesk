@@ -51,7 +51,10 @@ export function RecentTickets({ collapsed }: { collapsed: boolean }) {
           Recent
         </div>
       )}
-      <div className="space-y-0.5" onDragOver={(e) => e.preventDefault()}>
+      <div
+        className="max-h-[40vh] space-y-0.5 overflow-y-auto pr-0.5"
+        onDragOver={(e) => e.preventDefault()}
+      >
         {tickets.map((t, index) => {
           const href = `/tickets/${t.id}`;
           const active = pathname === href;

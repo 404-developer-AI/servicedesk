@@ -231,6 +231,47 @@ export type NewTicketEvent = {
   bodyText?: string;
   bodyHtml?: string;
   isInternal?: boolean;
+  /// Ids of attachments uploaded via /api/tickets/{id}/attachments while the
+  /// post was being composed. The server flips them onto the freshly-created
+  /// event in the same request; mismatched ids (other ticket, already linked)
+  /// are silently dropped so a stale draft can't fail the submit.
+  attachmentIds?: string[];
+  /// Agent user-ids tagged via @@-mention in the editor body. Filtered
+  /// server-side against the Agent+Admin set; unknown / customer / deleted
+  /// ids are silently dropped before the event metadata is written.
+  mentionedUserIds?: string[];
+};
+
+export type TicketAttachmentMeta = {
+  id: string;
+  url: string;
+  mimeType: string;
+  size: number;
+  filename: string;
+};
+
+export type OutboundMailKind = "Reply" | "ReplyAll" | "New" | "Forward";
+
+export type MailRecipientInput = {
+  address: string;
+  name?: string;
+};
+
+export type SendOutboundMailRequest = {
+  kind: OutboundMailKind;
+  to?: MailRecipientInput[];
+  cc?: MailRecipientInput[];
+  bcc?: MailRecipientInput[];
+  subject: string;
+  bodyHtml: string;
+  /// Attachments uploaded via /api/tickets/{id}/attachments while composing.
+  /// Server resolves them, detects inline (URL appears in bodyHtml AND mime
+  /// is image/*), rewrites those URLs to cid:{generated}, and ships the
+  /// rest as plain Graph file-attachments. Total bytes capped at
+  /// Mail.MaxOutboundTotalBytes — exceeding it returns 413.
+  attachmentIds?: string[];
+  /// Agent user-ids tagged via @@-mention. See NewTicketEvent for semantics.
+  mentionedUserIds?: string[];
 };
 
 // ---- Views ----
@@ -494,6 +535,8 @@ export const ticketApi = {
     request<TicketDetail>("PATCH", `/api/tickets/${id}`, fields),
   addEvent: (id: string, event: NewTicketEvent) =>
     request<TicketEvent>("POST", `/api/tickets/${id}/events`, event),
+  sendMail: (id: string, payload: SendOutboundMailRequest) =>
+    request<TicketEvent>("POST", `/api/tickets/${id}/mail`, payload),
   updateEvent: (id: string, eventId: number, body: UpdateTicketEventRequest) =>
     request<TicketEvent>("PUT", `/api/tickets/${id}/events/${eventId}`, body),
   getEventRevisions: (id: string, eventId: number) =>
@@ -512,6 +555,34 @@ export const ticketApi = {
     const qs = params.toString();
     return `/api/tickets/${id}/export/pdf${qs ? `?${qs}` : ""}`;
   },
+  /// Multipart upload of a single file. The server streams to IBlobStore,
+  /// sniffs MIME, enforces the size cap, and returns metadata + the
+  /// session-cookie-authenticated URL the editor can use as <img src>.
+  uploadAttachment: async (
+    ticketId: string,
+    file: File,
+  ): Promise<TicketAttachmentMeta> => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    const url = `/api/tickets/${ticketId}/attachments`;
+    const res = await fetch(url, {
+      method: "POST",
+      credentials: "include",
+      headers: csrfHeader(),
+      body: form,
+    });
+    if (!res.ok) {
+      let message = `Upload failed (${res.status})`;
+      try {
+        const body = (await res.json()) as { error?: string };
+        if (body?.error) message = body.error;
+      } catch {
+        /* ignore */
+      }
+      throw new ApiError(res.status, url, message);
+    }
+    return (await res.json()) as TicketAttachmentMeta;
+  },
 };
 
 export const viewApi = {
@@ -525,6 +596,14 @@ export const viewApi = {
 
 export const userApi = {
   listAgents: () => request<AgentUser[]>("GET", "/api/users"),
+  /// Typeahead for the @@-mention popover. Agent + Admin only; customers
+  /// never appear. Empty `q` returns the top-N alphabetically.
+  searchAgents: (q: string, limit = 20) => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    params.set("limit", String(limit));
+    return request<AgentUser[]>("GET", `/api/users/agents/search?${params.toString()}`);
+  },
 };
 
 export const contactApi = {

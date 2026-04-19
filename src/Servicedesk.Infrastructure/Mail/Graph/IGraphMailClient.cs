@@ -50,6 +50,13 @@ public interface IGraphMailClient
     /// Lists all top-level mail folders in the mailbox. Used by the admin UI
     /// to populate the inbound-folder dropdown per queue.
     Task<IReadOnlyList<GraphMailFolderInfo>> ListMailFoldersAsync(string mailbox, CancellationToken ct);
+
+    /// Sends a new mail from <paramref name="fromMailbox"/>. Uses the
+    /// draft-then-send pattern so the internet-message-id assigned by Graph
+    /// can be captured before send — that id is what we persist on the
+    /// outbound <c>mail_messages</c> row so inbound replies matching
+    /// In-Reply-To / References resolve back to the same ticket.
+    Task<GraphSentMailResult> SendMailAsync(GraphOutboundMessage message, CancellationToken ct);
 }
 
 public sealed record GraphMailSummary(
@@ -98,3 +105,34 @@ public sealed record GraphMailFolderInfo(
     string Id,
     string DisplayName,
     int TotalItemCount);
+
+/// Outbound-mail payload for <see cref="IGraphMailClient.SendMailAsync"/>.
+/// The caller owns subject/body/recipients; this record carries no logic.
+public sealed record GraphOutboundMessage(
+    string FromMailbox,
+    string Subject,
+    string BodyHtml,
+    IReadOnlyList<GraphRecipient> To,
+    IReadOnlyList<GraphRecipient> Cc,
+    IReadOnlyList<GraphRecipient> Bcc,
+    IReadOnlyList<GraphRecipient> ReplyTo,
+    IReadOnlyList<GraphOutboundAttachment>? Attachments = null);
+
+/// One file-attachment to ship with an outbound mail. Bytes are passed
+/// in-memory because Graph's <c>fileAttachment</c> resource embeds the bytes
+/// as base64 in the draft-create body. <see cref="ContentId"/> is set for
+/// inline images (referenced from the body via <c>cid:{ContentId}</c>) and
+/// must be unique within the message; left null for plain attachments.
+public sealed record GraphOutboundAttachment(
+    string FileName,
+    string ContentType,
+    byte[] Bytes,
+    bool IsInline,
+    string? ContentId);
+
+/// Result of a successful send. InternetMessageId is the RFC-5322 id the
+/// recipient will see in <c>In-Reply-To</c> on their reply — we persist it
+/// so the existing threading lookup can match replies back to this mail.
+public sealed record GraphSentMailResult(
+    string InternetMessageId,
+    DateTimeOffset SentUtc);

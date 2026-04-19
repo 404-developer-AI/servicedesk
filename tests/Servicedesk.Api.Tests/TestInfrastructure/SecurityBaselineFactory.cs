@@ -232,6 +232,33 @@ public sealed class FakeUserService : IUserService
             .ToList();
         return Task.FromResult<IReadOnlyList<AgentUser>>(agents);
     }
+
+    public Task<IReadOnlyList<AgentUser>> SearchAgentsAsync(string? search, int limit, CancellationToken ct = default)
+    {
+        var effectiveLimit = limit <= 0 ? 20 : Math.Min(limit, 50);
+        var trimmed = (search ?? string.Empty).Trim();
+        var query = _byId.Values.Where(u => u.RoleName is "Agent" or "Admin");
+        if (trimmed.Length > 0)
+        {
+            query = query.Where(u => u.Email.Contains(trimmed, StringComparison.OrdinalIgnoreCase));
+        }
+        var agents = query
+            .OrderBy(u => u.Email, StringComparer.OrdinalIgnoreCase)
+            .Take(effectiveLimit)
+            .Select(u => new AgentUser(u.Id, u.Email, u.RoleName))
+            .ToList();
+        return Task.FromResult<IReadOnlyList<AgentUser>>(agents);
+    }
+
+    public Task<IReadOnlyList<Guid>> FilterAgentIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default)
+    {
+        if (ids is null || ids.Count == 0) return Task.FromResult<IReadOnlyList<Guid>>(Array.Empty<Guid>());
+        var allowed = new HashSet<Guid>(_byId.Values
+            .Where(u => u.RoleName is "Agent" or "Admin")
+            .Select(u => u.Id));
+        var filtered = ids.Distinct().Where(id => allowed.Contains(id)).ToList();
+        return Task.FromResult<IReadOnlyList<Guid>>(filtered);
+    }
 }
 
 public sealed class FakeSessionService : ISessionService

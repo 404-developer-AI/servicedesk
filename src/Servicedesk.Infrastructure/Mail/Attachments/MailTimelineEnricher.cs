@@ -34,27 +34,36 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
         var enriched = new List<TicketEvent>(detail.Events.Count);
         foreach (var evt in detail.Events)
         {
-            if (evt.EventType != "MailReceived")
+            // Inbound mail — full enrichment with cid-rewrite + recipient
+            // metadata. Mail-message id lives in the metadata so we can join
+            // to mail_messages + attachments efficiently.
+            if (evt.EventType == "MailReceived")
             {
-                enriched.Add(evt);
+                var mailId = TryGetMailMessageId(evt.MetadataJson);
+                enriched.Add(mailId is null
+                    ? evt
+                    : await TryEnrichMailReceivedAsync(detail.Ticket.Id, mailId.Value, evt, ct));
                 continue;
             }
 
-            var mailId = TryGetMailMessageId(evt.MetadataJson);
-            if (mailId is null)
+            // Note / Comment / outbound mail (MailSent) — attachments are
+            // linked to the event via attachments.event_id. Outbound-mail
+            // bodies already use /api/.../attachments/{id} URLs (the editor
+            // view), so there's no cid-rewrite to do; just surface the
+            // non-inline rows in metadata for the timeline-strip.
+            if (evt.EventType == "Note" || evt.EventType == "Comment" || evt.EventType == "MailSent")
             {
-                enriched.Add(evt);
+                enriched.Add(await TryAppendEventAttachmentsAsync(detail.Ticket.Id, evt, ct));
                 continue;
             }
 
-            var enrichedEvt = await TryEnrichAsync(detail.Ticket.Id, mailId.Value, evt, ct);
-            enriched.Add(enrichedEvt);
+            enriched.Add(evt);
         }
 
         return detail with { Events = enriched };
     }
 
-    private async Task<TicketEvent> TryEnrichAsync(
+    private async Task<TicketEvent> TryEnrichMailReceivedAsync(
         Guid ticketId, Guid mailId, TicketEvent evt, CancellationToken ct)
     {
         try
@@ -82,7 +91,8 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
                 "[MailEnrich] ticket={TicketId} mail={MailId} attachments total={Total} ready={Ready} pending={Pending} failed={Failed} cid replaced={Replaced} unmatched={Unmatched}",
                 ticketId, mailId, attachments.Count, readyCount, pendingCount, failedCount, cidReplaced, cidUnmatched);
 
-            var newMetadata = InjectAttachments(evt.MetadataJson, ticketId, mailId, attachments);
+            var recipients = await _mail.ListRecipientsAsync(mailId, ct);
+            var newMetadata = InjectMailAttachmentsAndRecipients(evt.MetadataJson, ticketId, mailId, attachments, recipients);
             return evt with
             {
                 BodyHtml = rewrittenHtml ?? evt.BodyHtml,
@@ -98,8 +108,63 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
         }
     }
 
-    private static string InjectAttachments(
-        string metadataJson, Guid ticketId, Guid mailId, IReadOnlyList<AttachmentRow> attachments)
+    private async Task<TicketEvent> TryAppendEventAttachmentsAsync(
+        Guid ticketId, TicketEvent evt, CancellationToken ct)
+    {
+        try
+        {
+            var attachments = await _attachments.ListByEventAsync(evt.Id, ct);
+            if (attachments.Count == 0) return evt;
+            // Inline rows are already embedded in bodyHtml via the original
+            // /api/.../attachments/{id} URL the editor produced — surfacing
+            // them again as a download chip would double-render. Only the
+            // non-inline rows belong in the strip.
+            var visible = attachments
+                .Where(a => a.ProcessingState == "Ready" && !a.IsInline)
+                .ToList();
+            if (visible.Count == 0) return evt;
+            var newMetadata = InjectAttachmentsList(
+                evt.MetadataJson,
+                visible.Select(a => BuildEventAttachmentDescriptor(ticketId, a)));
+            return evt with { MetadataJson = newMetadata };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "MailTimelineEnricher (event-attached) failed for ticket {TicketId} event {EventId} — leaving event untouched.",
+                ticketId, evt.Id);
+            return evt;
+        }
+    }
+
+    private static object BuildEventAttachmentDescriptor(Guid ticketId, AttachmentRow a)
+    {
+        // Single canonical URL for both ticket-staged and event-attached
+        // rows: the generic ticket attachment endpoint authenticates by
+        // ticket-membership, not by mail-membership. Inbound mail
+        // attachments still use the per-mail URL set in
+        // InjectMailAttachmentsAndRecipients above.
+        return new
+        {
+            id = a.Id,
+            name = a.OriginalFilename,
+            mimeType = a.MimeType,
+            size = a.SizeBytes,
+            url = $"/api/tickets/{ticketId}/attachments/{a.Id}",
+        };
+    }
+
+    private static string InjectAttachmentsList(string metadataJson, IEnumerable<object> items)
+    {
+        var dict = ParseMetadata(metadataJson);
+        dict["attachments"] = JsonSerializer.SerializeToElement(items.ToList());
+        return JsonSerializer.Serialize(dict);
+    }
+
+    private static string InjectMailAttachmentsAndRecipients(
+        string metadataJson, Guid ticketId, Guid mailId,
+        IReadOnlyList<AttachmentRow> attachments,
+        IReadOnlyList<MailRecipientRow> recipients)
     {
         // Only non-inline Ready attachments are surfaced as download links —
         // inline images are already placed in the HTML via cid-rewrite above.
@@ -116,24 +181,33 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
             })
             .ToList();
 
-        var dict = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-        if (!string.IsNullOrWhiteSpace(metadataJson))
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(metadataJson);
-                if (doc.RootElement.ValueKind == JsonValueKind.Object)
-                {
-                    foreach (var prop in doc.RootElement.EnumerateObject())
-                        dict[prop.Name] = prop.Value.Clone();
-                }
-            }
-            catch { /* treat unparseable metadata as empty */ }
-        }
+        var toList = recipients.Where(r => r.Kind == "to")
+            .Select(r => new { address = r.Address, name = r.DisplayName }).ToList();
+        var ccList = recipients.Where(r => r.Kind == "cc")
+            .Select(r => new { address = r.Address, name = r.DisplayName }).ToList();
 
-        var attachmentsJson = JsonSerializer.SerializeToElement(items);
-        dict["attachments"] = attachmentsJson;
+        var dict = ParseMetadata(metadataJson);
+        dict["attachments"] = JsonSerializer.SerializeToElement(items);
+        dict["to"] = JsonSerializer.SerializeToElement(toList);
+        dict["cc"] = JsonSerializer.SerializeToElement(ccList);
         return JsonSerializer.Serialize(dict);
+    }
+
+    private static Dictionary<string, JsonElement> ParseMetadata(string metadataJson)
+    {
+        var dict = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(metadataJson)) return dict;
+        try
+        {
+            using var doc = JsonDocument.Parse(metadataJson);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in doc.RootElement.EnumerateObject())
+                    dict[prop.Name] = prop.Value.Clone();
+            }
+        }
+        catch { /* treat unparseable metadata as empty */ }
+        return dict;
     }
 
     private static string RewriteCidReferences(

@@ -17,7 +17,9 @@ using Servicedesk.Infrastructure.Health;
 using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Mail.Ingest;
+using Servicedesk.Infrastructure.Mail.Outbound;
 using Servicedesk.Infrastructure.Mail.Polling;
+using Servicedesk.Infrastructure.Notifications;
 using Servicedesk.Infrastructure.Observability;
 using Servicedesk.Domain.Search;
 using Servicedesk.Infrastructure.Search;
@@ -84,6 +86,11 @@ public static class DependencyInjection
         // Default to the no-op notifier; the Api project overrides this
         // with the SignalR-backed implementation.
         services.AddSingleton<Realtime.ITicketListNotifier, Realtime.NullTicketListNotifier>();
+        services.AddSingleton<Realtime.IUserNotifier, Realtime.NullUserNotifier>();
+
+        // Mention notification pipeline (v0.0.12 stap 4).
+        services.AddSingleton<INotificationRepository, NotificationRepository>();
+        services.AddSingleton<IMentionNotificationService, MentionNotificationService>();
 
         services.AddSingleton<IMailMessageRepository, MailMessageRepository>();
         services.AddSingleton<IAttachmentRepository, AttachmentRepository>();
@@ -93,6 +100,7 @@ public static class DependencyInjection
         services.AddSingleton<IMailFinalizer, MailFinalizer>();
         services.AddSingleton<IContactLookupService, ContactLookupService>();
         services.AddSingleton<IMailIngestService, MailIngestService>();
+        services.AddSingleton<IOutboundMailService, OutboundMailService>();
         services.AddSingleton<ITicketNumberLookup>(sp =>
             (ITicketNumberLookup)sp.GetRequiredService<ITicketRepository>());
 

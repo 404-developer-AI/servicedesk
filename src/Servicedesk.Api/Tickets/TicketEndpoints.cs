@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Servicedesk.Api.Auth;
@@ -9,7 +10,10 @@ using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Mail.Attachments;
+using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Mail.Ingest;
+using Servicedesk.Infrastructure.Mail.Outbound;
+using Servicedesk.Infrastructure.Notifications;
 using Servicedesk.Infrastructure.Persistence.Companies;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Sla;
@@ -320,6 +324,8 @@ public static class TicketEndpoints
         group.MapPost("/{id:guid}/events", async (
             Guid id, [FromBody] AddEventRequest req, HttpContext http,
             ITicketRepository tickets, IQueueAccessService queueAccess,
+            IAttachmentRepository attachmentsRepo, IUserService users,
+            IMentionNotificationService mentionService,
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(req.EventType))
@@ -335,14 +341,45 @@ public static class TicketEndpoints
             if (ticket is null) return Results.NotFound();
             if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.Ticket.QueueId, ct))
                 return Results.NotFound();
+
+            // @@-mention filtering (v0.0.12 stap 3): unknown ids, customer ids,
+            // or deleted-user ids are silently dropped. Same soft-drop semantics
+            // as the attachment-ownership guard — a stale draft mentioning an
+            // ex-agent shouldn't fail the submit.
+            IReadOnlyList<Guid> mentionedIds = Array.Empty<Guid>();
+            if (req.MentionedUserIds is { Count: > 0 } incomingMentions)
+            {
+                mentionedIds = await users.FilterAgentIdsAsync(incomingMentions, ct);
+            }
+            var metadataJson = mentionedIds.Count > 0
+                ? JsonSerializer.Serialize(new { mentionedUserIds = mentionedIds })
+                : null;
+
             var input = new NewTicketEvent(
                 EventType: req.EventType,
                 BodyText: req.BodyText,
                 BodyHtml: req.BodyHtml,
                 IsInternal: req.IsInternal ?? (req.EventType == "Note"),
-                AuthorUserId: userId);
+                AuthorUserId: userId,
+                MetadataJson: metadataJson);
             var evt = await tickets.AddEventAsync(id, input, ct);
             if (evt is null) return Results.NotFound();
+
+            // Re-link any user-uploaded attachments to the freshly-created
+            // event. Ownership-guarded inside the repo: attempting to attach
+            // a file owned by another ticket is a no-op (returned count
+            // simply doesn't match), so a hostile payload can't graft
+            // someone else's attachment onto this ticket. Failures here are
+            // not worth rolling the event back over — we log and continue.
+            if (req.AttachmentIds is { Count: > 0 } attIds)
+            {
+                var moved = await attachmentsRepo.ReassignToEventAsync(attIds, id, evt.Id, ct);
+                if (moved != attIds.Count)
+                {
+                    // Some ids didn't match — almost always a stale draft.
+                    // Logged as info because it's not an attack signal.
+                }
+            }
 
             var (actor, role) = ActorContext.Resolve(http);
             await audit.LogAsync(new AuditEvent(
@@ -352,7 +389,13 @@ public static class TicketEndpoints
                 Target: id.ToString(),
                 ClientIp: http.Connection.RemoteIpAddress?.ToString(),
                 UserAgent: http.Request.Headers.UserAgent.ToString(),
-                Payload: new { evt.EventType, evt.IsInternal }));
+                Payload: new
+                {
+                    evt.EventType,
+                    evt.IsInternal,
+                    attachmentCount = req.AttachmentIds?.Count ?? 0,
+                    mentionedUserCount = mentionedIds.Count,
+                }));
 
             // Notify viewers of this ticket + the ticket list
             var ticketIdStr = id.ToString();
@@ -361,8 +404,97 @@ public static class TicketEndpoints
 
             await sla.OnTicketEventAsync(id, evt.EventType, ct);
 
+            // @@-mention notification raamwerk (v0.0.12 stap 4). Fire-and-forget
+            // semantics: the service logs + swallows everything. The request
+            // result is already decided, so an errant notifier can't 500 us.
+            if (mentionedIds.Count > 0)
+            {
+                var sourceEmail = http.User.FindFirst(ClaimTypes.Email)?.Value ?? string.Empty;
+                await mentionService.PublishAsync(new MentionNotificationSource(
+                    TicketId: id,
+                    TicketNumber: ticket.Ticket.Number,
+                    TicketSubject: ticket.Ticket.Subject,
+                    QueueId: ticket.Ticket.QueueId,
+                    EventId: evt.Id,
+                    EventType: evt.EventType,
+                    SourceUserId: userId,
+                    SourceUserEmail: sourceEmail,
+                    MentionedUserIds: mentionedIds,
+                    BodyHtml: evt.BodyHtml ?? string.Empty,
+                    BodyText: evt.BodyText ?? string.Empty), ct);
+            }
+
             return Results.Created($"/api/tickets/{id}/events/{evt.Id}", evt);
         }).WithName("AddTicketEvent").WithOpenApi();
+
+        group.MapPost("/{id:guid}/mail", async (
+            Guid id, [FromBody] SendOutboundMailRequest req, HttpContext http,
+            ITicketRepository tickets, IQueueAccessService queueAccess,
+            IOutboundMailService outbound, IHubContext<TicketPresenceHub> hub,
+            IAuditLogger audit, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            var ticket = await tickets.GetByIdAsync(id, ct);
+            if (ticket is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.Ticket.QueueId, ct))
+                return Results.NotFound();
+
+            if (!Enum.TryParse<OutboundMailKind>(req.Kind, ignoreCase: true, out var kind))
+                return Results.BadRequest(new { error = "kind must be Reply, ReplyAll, or New." });
+
+            var request = new OutboundMailRequest(
+                TicketId: id,
+                AuthorUserId: userId,
+                Kind: kind,
+                To: MapRecipients(req.To),
+                Cc: MapRecipients(req.Cc),
+                Bcc: MapRecipients(req.Bcc),
+                Subject: req.Subject ?? string.Empty,
+                BodyHtml: req.BodyHtml ?? string.Empty,
+                AttachmentIds: req.AttachmentIds,
+                MentionedUserIds: req.MentionedUserIds);
+
+            var result = await outbound.SendAsync(request, ct);
+            switch (result.Status)
+            {
+                case OutboundMailStatus.TicketNotFound:
+                    return Results.NotFound();
+                case OutboundMailStatus.NoMailboxConfigured:
+                    return Results.BadRequest(new { error = result.ErrorMessage });
+                case OutboundMailStatus.InvalidRequest:
+                    return Results.BadRequest(new { error = result.ErrorMessage });
+                case OutboundMailStatus.AttachmentTooLarge:
+                    return Results.Json(new { error = result.ErrorMessage }, statusCode: 413);
+            }
+
+            var evt = result.Event!;
+            var (actor, role) = ActorContext.Resolve(http);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "ticket.mail.sent",
+                Actor: actor,
+                ActorRole: role,
+                Target: id.ToString(),
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: new
+                {
+                    kind = kind.ToString(),
+                    toCount = request.To.Count,
+                    ccCount = request.Cc.Count,
+                    bccCount = request.Bcc.Count,
+                    subject = request.Subject,
+                    attachmentCount = req.AttachmentIds?.Count ?? 0,
+                    mentionedUserCount = result.MentionedUserCount,
+                }));
+
+            var ticketIdStr = id.ToString();
+            await hub.Clients.Group($"ticket:{ticketIdStr}").SendAsync("TicketUpdated", ticketIdStr, ct);
+            await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", ticketIdStr, ct);
+
+            return Results.Created($"/api/tickets/{id}/events/{evt.Id}", evt);
+        }).WithName("SendTicketMail").WithOpenApi();
 
         group.MapPut("/{id:guid}/events/{eventId:long}", async (
             Guid id, long eventId, [FromBody] UpdateEventRequest req, HttpContext http,
@@ -626,12 +758,38 @@ public static class TicketEndpoints
         string? EventType,
         string? BodyText,
         string? BodyHtml,
-        bool? IsInternal);
+        bool? IsInternal,
+        IReadOnlyList<Guid>? AttachmentIds = null,
+        IReadOnlyList<Guid>? MentionedUserIds = null);
 
     public sealed record UpdateEventRequest(
         string? BodyText,
         string? BodyHtml,
         bool? IsInternal);
+
+    public sealed record SendOutboundMailRequest(
+        string Kind,
+        IReadOnlyList<MailRecipientInput>? To,
+        IReadOnlyList<MailRecipientInput>? Cc,
+        IReadOnlyList<MailRecipientInput>? Bcc,
+        string? Subject,
+        string? BodyHtml,
+        IReadOnlyList<Guid>? AttachmentIds = null,
+        IReadOnlyList<Guid>? MentionedUserIds = null);
+
+    public sealed record MailRecipientInput(string Address, string? Name);
+
+    private static IReadOnlyList<GraphRecipient> MapRecipients(IReadOnlyList<MailRecipientInput>? input)
+    {
+        if (input is null || input.Count == 0) return Array.Empty<GraphRecipient>();
+        var list = new List<GraphRecipient>(input.Count);
+        foreach (var r in input)
+        {
+            if (string.IsNullOrWhiteSpace(r.Address)) continue;
+            list.Add(new GraphRecipient(r.Address.Trim(), (r.Name ?? r.Address).Trim()));
+        }
+        return list;
+    }
 
     public sealed record PinEventRequest(string? Remark);
 

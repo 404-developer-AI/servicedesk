@@ -203,4 +203,84 @@ public sealed class MailMessageRepository : IMailMessageRepository
         return await conn.QueryFirstOrDefaultAsync<FinalizeCandidate>(
             new CommandDefinition(sql, new { mailId }, cancellationToken: ct));
     }
+
+    public async Task<Guid> InsertOutboundAsync(
+        NewOutboundMailMessage row,
+        IReadOnlyList<NewMailRecipient> recipients,
+        CancellationToken ct)
+    {
+        // mailbox_moved_utc is set to sent_utc on insert so the finalizer
+        // sweeper — which looks for ticket-attached mails with
+        // mailbox_moved_utc IS NULL — never picks outbound rows. The finalizer
+        // is inbound-only (it moves messages out of Inbox via Graph); outbound
+        // mail lives in the sender's Sent Items, managed by Exchange itself.
+        const string insertMail = """
+            INSERT INTO mail_messages
+                (message_id, in_reply_to, references_header, subject,
+                 from_address, from_name, mailbox_address,
+                 received_utc, sent_utc, body_text,
+                 ticket_id, ticket_event_id,
+                 direction, mailbox_moved_utc)
+            VALUES
+                (@MessageId, @InReplyTo, @References, @Subject,
+                 @FromAddress, @FromName, @MailboxAddress,
+                 NULL, @SentUtc, @BodyText,
+                 @TicketId, @TicketEventId,
+                 'Outbound', @SentUtc)
+            RETURNING id
+            """;
+        const string insertRecipient = """
+            INSERT INTO mail_recipients (mail_id, kind, address, display_name)
+            VALUES (@MailId, @Kind, @Address, @DisplayName)
+            """;
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        var mailId = await conn.ExecuteScalarAsync<Guid>(
+            new CommandDefinition(insertMail, row, tx, cancellationToken: ct));
+
+        foreach (var r in recipients)
+        {
+            await conn.ExecuteAsync(new CommandDefinition(insertRecipient,
+                new { MailId = mailId, r.Kind, r.Address, r.DisplayName },
+                tx, cancellationToken: ct));
+        }
+
+        await tx.CommitAsync(ct);
+        return mailId;
+    }
+
+    public async Task<IReadOnlyList<MailRecipientRow>> ListRecipientsAsync(Guid mailId, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT kind         AS Kind,
+                   address::text AS Address,
+                   display_name  AS DisplayName
+              FROM mail_recipients
+             WHERE mail_id = @mailId
+             ORDER BY id
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<MailRecipientRow>(
+            new CommandDefinition(sql, new { mailId }, cancellationToken: ct));
+        return rows.ToList();
+    }
+
+    public async Task<MailThreadAnchor?> GetLatestThreadAnchorAsync(Guid ticketId, CancellationToken ct)
+    {
+        // Pick the newest mail row for this ticket (inbound or outbound) by
+        // timestamp — coalesce handles the direction-dependent column.
+        const string sql = """
+            SELECT message_id        AS MessageId,
+                   references_header AS References
+              FROM mail_messages
+             WHERE ticket_id = @ticketId
+             ORDER BY COALESCE(received_utc, sent_utc) DESC, id DESC
+             LIMIT 1
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.QueryFirstOrDefaultAsync<MailThreadAnchor>(
+            new CommandDefinition(sql, new { ticketId }, cancellationToken: ct));
+    }
 }

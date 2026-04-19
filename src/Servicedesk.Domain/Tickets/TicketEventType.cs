@@ -13,4 +13,5 @@ public enum TicketEventType
     CategoryChange,
     SystemNote,
     MailReceived,
+    MailSent,
 }

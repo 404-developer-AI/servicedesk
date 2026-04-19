@@ -121,6 +121,8 @@ public sealed class MailPollingServiceTests
             => Task.FromResult("folder-id");
         public Task<Stream> FetchAttachmentBytesAsync(string mailbox, string id, string attachmentId, CancellationToken ct)
             => throw new NotImplementedException();
+        public Task<GraphSentMailResult> SendMailAsync(GraphOutboundMessage m, CancellationToken ct)
+            => throw new NotImplementedException();
     }
 
     private sealed class InMemoryPollStateRepo : IMailPollStateRepository

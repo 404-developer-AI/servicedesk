@@ -237,6 +237,8 @@ public sealed class MailIngestServiceTests
         public Task<string> EnsureFolderAsync(string m, string n, CancellationToken ct) => Task.FromResult("f");
         public Task<Stream> FetchAttachmentBytesAsync(string m, string id, string aid, CancellationToken ct)
             => Task.FromResult<Stream>(new MemoryStream(Array.Empty<byte>()));
+        public Task<GraphSentMailResult> SendMailAsync(GraphOutboundMessage m, CancellationToken ct)
+            => throw new NotImplementedException();
     }
 
     private sealed class StubMailRepo : IMailMessageRepository
@@ -273,6 +275,9 @@ public sealed class MailIngestServiceTests
             => Task.FromResult<IReadOnlyList<FinalizeCandidate>>(Array.Empty<FinalizeCandidate>());
         public Task<FinalizeCandidate?> GetIfReadyForFinalizeAsync(Guid mailId, CancellationToken ct)
             => Task.FromResult<FinalizeCandidate?>(null);
+        public Task<Guid> InsertOutboundAsync(NewOutboundMailMessage row, IReadOnlyList<NewMailRecipient> r, CancellationToken ct) => Task.FromResult(Guid.NewGuid());
+        public Task<MailThreadAnchor?> GetLatestThreadAnchorAsync(Guid ticketId, CancellationToken ct) => Task.FromResult<MailThreadAnchor?>(null);
+        public Task<IReadOnlyList<MailRecipientRow>> ListRecipientsAsync(Guid mailId, CancellationToken ct) => Task.FromResult<IReadOnlyList<MailRecipientRow>>(Array.Empty<MailRecipientRow>());
     }
 
     private sealed class StubTickets : ITicketRepository, ITicketNumberLookup
@@ -319,6 +324,7 @@ public sealed class MailIngestServiceTests
         public Task<TicketEventPin?> PinEventAsync(Guid t, long e, Guid u, string r, CancellationToken ct) => throw new NotImplementedException();
         public Task<bool> UnpinEventAsync(Guid t, long e, CancellationToken ct) => throw new NotImplementedException();
         public Task<TicketEventPin?> UpdatePinRemarkAsync(Guid t, long e, string r, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> EventBelongsToTicketAsync(Guid t, long e, CancellationToken ct) => Task.FromResult(false);
         public Task<IReadOnlyDictionary<Guid, int>> GetOpenCountsByQueueAsync(CancellationToken ct) => throw new NotImplementedException();
         public Task<int> InsertFakeBatchAsync(int c, CancellationToken ct) => throw new NotImplementedException();
     }

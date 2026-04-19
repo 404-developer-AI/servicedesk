@@ -236,6 +236,86 @@ public sealed class GraphMailClient : IGraphMailClient
         return folders;
     }
 
+    public async Task<GraphSentMailResult> SendMailAsync(GraphOutboundMessage message, CancellationToken ct)
+    {
+        var graph = await BuildClientAsync(ct);
+
+        // Draft-then-send: creating the draft first lets Graph assign the
+        // internet-message-id which we capture before sending. That id is
+        // what inbound replies reference via In-Reply-To / References.
+        var draft = new Message
+        {
+            Subject = message.Subject,
+            Body = new ItemBody { ContentType = BodyType.Html, Content = message.BodyHtml },
+            ToRecipients = ToRecipientList(message.To),
+            CcRecipients = ToRecipientList(message.Cc),
+            BccRecipients = ToRecipientList(message.Bcc),
+            ReplyTo = ToRecipientList(message.ReplyTo),
+        };
+
+        var created = await graph.Users[message.FromMailbox].Messages.PostAsync(draft, cancellationToken: ct);
+        var draftId = created?.Id
+            ?? throw new InvalidOperationException($"Graph returned no id for draft in mailbox {message.FromMailbox}.");
+        var internetMessageId = created.InternetMessageId;
+        if (string.IsNullOrWhiteSpace(internetMessageId))
+        {
+            // Extremely rare: draft exists without a pre-assigned id. Re-fetch
+            // with an explicit select so we never persist an empty string as
+            // message_id (it's UNIQUE NOT NULL).
+            var refreshed = await graph.Users[message.FromMailbox].Messages[draftId]
+                .GetAsync(cfg => cfg.QueryParameters.Select = new[] { "internetMessageId" }, ct);
+            internetMessageId = refreshed?.InternetMessageId;
+        }
+        if (string.IsNullOrWhiteSpace(internetMessageId))
+            throw new InvalidOperationException($"Graph did not assign an internetMessageId to draft {draftId}.");
+
+        // Attach files *before* send. fileAttachment carries contentBytes
+        // base64-encoded in the draft body — only safe for items <3 MB
+        // total, which is why OutboundMailService caps via
+        // Mail.MaxOutboundTotalBytes. Larger payloads need uploadSession
+        // (deferred — see ROADMAP).
+        if (message.Attachments is { Count: > 0 } items)
+        {
+            foreach (var a in items)
+            {
+                var attachment = new FileAttachment
+                {
+                    Name = string.IsNullOrWhiteSpace(a.FileName) ? "attachment" : a.FileName,
+                    ContentType = string.IsNullOrWhiteSpace(a.ContentType) ? "application/octet-stream" : a.ContentType,
+                    ContentBytes = a.Bytes,
+                    IsInline = a.IsInline,
+                    // ContentId on inline parts links the file to the cid:
+                    // reference rewritten into the body. Outbound mail
+                    // clients render the image inline iff the cid matches.
+                    ContentId = string.IsNullOrWhiteSpace(a.ContentId) ? null : a.ContentId,
+                };
+                await graph.Users[message.FromMailbox].Messages[draftId].Attachments.PostAsync(attachment, cancellationToken: ct);
+            }
+        }
+
+        await graph.Users[message.FromMailbox].Messages[draftId].Send.PostAsync(cancellationToken: ct);
+        return new GraphSentMailResult(internetMessageId, DateTimeOffset.UtcNow);
+    }
+
+    private static List<Recipient> ToRecipientList(IReadOnlyList<GraphRecipient> source)
+    {
+        if (source is null || source.Count == 0) return new List<Recipient>();
+        var list = new List<Recipient>(source.Count);
+        foreach (var r in source)
+        {
+            if (string.IsNullOrWhiteSpace(r.Address)) continue;
+            list.Add(new Recipient
+            {
+                EmailAddress = new EmailAddress
+                {
+                    Address = r.Address,
+                    Name = string.IsNullOrWhiteSpace(r.Name) ? r.Address : r.Name,
+                },
+            });
+        }
+        return list;
+    }
+
     private async Task<GraphServiceClient> BuildClientAsync(CancellationToken ct)
     {
         var tenantId = await _settings.GetAsync<string>(SettingKeys.Graph.TenantId, ct);

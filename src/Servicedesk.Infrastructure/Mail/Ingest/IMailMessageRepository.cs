@@ -38,6 +38,26 @@ public interface IMailMessageRepository
     /// returns its candidate; otherwise null. Used by the attachment worker
     /// after Complete/DeadLetter to avoid full sweeps.
     Task<FinalizeCandidate?> GetIfReadyForFinalizeAsync(Guid mailId, CancellationToken ct);
+
+    /// Inserts a sent-mail row (<c>direction = 'Outbound'</c>) plus its
+    /// recipients atomically. The ticket + event link is set at insert-time
+    /// so no separate attach step is needed. <c>mailbox_moved_utc</c> is
+    /// pre-populated with the sent timestamp so outbound rows never show up
+    /// in the finalizer sweep (we never move our own sent mail anywhere).
+    Task<Guid> InsertOutboundAsync(
+        NewOutboundMailMessage row,
+        IReadOnlyList<NewMailRecipient> recipients,
+        CancellationToken ct);
+
+    /// Returns the internet-message-id of the most recent row for this
+    /// ticket (inbound or outbound), or null if the ticket has no mail yet.
+    /// Used by outbound-send to populate In-Reply-To + extend References.
+    Task<MailThreadAnchor?> GetLatestThreadAnchorAsync(Guid ticketId, CancellationToken ct);
+
+    /// Lists the to/cc/bcc recipients stored for a given mail. Used by the
+    /// timeline enricher to surface them on MailReceived events so the
+    /// frontend can pre-fill reply-all recipients.
+    Task<IReadOnlyList<MailRecipientRow>> ListRecipientsAsync(Guid mailId, CancellationToken ct);
 }
 
 public sealed record MailMessageRow(
@@ -91,3 +111,31 @@ public sealed record NewMailAttachment(
     long Size,
     bool IsInline,
     string? ContentId);
+
+/// Outbound-mail insert payload. <c>MessageId</c> is the internet-message-id
+/// Graph assigned to the draft — persisting it lets inbound replies resolve
+/// via <see cref="IMailMessageRepository.FindTicketIdByReferencesAsync"/>.
+public sealed record NewOutboundMailMessage(
+    string MessageId,
+    string? InReplyTo,
+    string? References,
+    string Subject,
+    string FromAddress,
+    string FromName,
+    string MailboxAddress,
+    DateTime SentUtc,
+    string BodyText,
+    Guid TicketId,
+    long TicketEventId);
+
+/// The piece of mail we're threading against when sending an outbound reply.
+/// For reply / reply-all we need its message_id (In-Reply-To) and, if
+/// present, its References header so we can extend the chain.
+public sealed record MailThreadAnchor(
+    string MessageId,
+    string? References);
+
+public sealed record MailRecipientRow(
+    string Kind,
+    string Address,
+    string DisplayName);

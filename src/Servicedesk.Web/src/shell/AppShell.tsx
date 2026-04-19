@@ -1,14 +1,29 @@
 import { Outlet } from "@tanstack/react-router";
 import { Toaster } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 import { Sidebar } from "@/shell/Sidebar";
 import { CriticalBanner } from "@/components/health/CriticalBanner";
 import { useSecondarySidebarStore } from "@/stores/useSecondarySidebarStore";
 import { usePresenceConnection } from "@/hooks/usePresence";
+import { useNotificationSignalR } from "@/hooks/useNotificationSignalR";
 import { useWorkspaceAutoSave } from "@/hooks/useWorkspaceAutoSave";
+import { settingsApi } from "@/lib/api";
 
 export function AppShell() {
   usePresenceConnection();
   useWorkspaceAutoSave();
+
+  // Pull the popup-duration from settings so the toast-duration is admin-
+  // tunable without a client rebuild. Falls back to 10s while the query
+  // is in flight. Cached aggressively — the setting rarely changes.
+  const notificationSettings = useQuery({
+    queryKey: ["settings", "notifications"],
+    queryFn: () => settingsApi.notifications(),
+    staleTime: 5 * 60_000,
+  });
+  const popupDurationMs = (notificationSettings.data?.popupDurationSeconds ?? 10) * 1000;
+  useNotificationSignalR(popupDurationMs);
+
   const secondarySidebar = useSecondarySidebarStore((s) => s.content);
 
   return (

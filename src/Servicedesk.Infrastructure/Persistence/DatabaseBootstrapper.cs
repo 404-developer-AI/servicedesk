@@ -698,12 +698,19 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- Extend ticket_events CHECK to allow MailReceived (distinct from the
         -- legacy 'Mail' outbound/reply event type) and CompanyAssignment
         -- (v0.0.9 ToDo #4 manual company-assignment timeline event).
+        --
+        -- NOT VALID grandfathers any pre-existing row whose event_type is
+        -- outside the whitelist (old dev fixtures, manually-inserted debug
+        -- rows, data migrated from an earlier prototype) so an upgrade boots
+        -- on brownfield installs. The CHECK still rejects all *new*
+        -- INSERT/UPDATE, which is the invariant we actually care about —
+        -- once legacy rows age out there's nothing to clean up.
         ALTER TABLE ticket_events DROP CONSTRAINT IF EXISTS chk_ticket_event_type;
         ALTER TABLE ticket_events ADD CONSTRAINT chk_ticket_event_type
             CHECK (event_type IN ('Created','Comment','Mail','Note','StatusChange',
                                   'AssignmentChange','PriorityChange','QueueChange',
                                   'CategoryChange','SystemNote','MailReceived',
-                                  'CompanyAssignment'));
+                                  'CompanyAssignment')) NOT VALID;
 
         -- ===================================================================
         -- v0.0.8 step 6b: attachments pipeline
@@ -732,6 +739,20 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_attachments_pending
             ON attachments (created_utc)
             WHERE processing_state = 'Pending';
+
+        -- v0.0.12 step 2: user-uploaded attachments on Notes / Comments. The
+        -- attachment row carries owner_kind='Ticket' while the upload is
+        -- staged (no post submitted yet); on submit the API stamps event_id
+        -- so the timeline-enricher can look up the strip per-event without a
+        -- separate join table. Mail-owned rows leave event_id NULL —
+        -- inbound/outbound mail attachments still resolve via
+        -- (owner_kind='Mail', owner_id=mail_message_id).
+        ALTER TABLE attachments ADD COLUMN IF NOT EXISTS event_id BIGINT NULL
+            REFERENCES ticket_events(id) ON DELETE CASCADE;
+
+        CREATE INDEX IF NOT EXISTS ix_attachments_event
+            ON attachments (event_id)
+            WHERE event_id IS NOT NULL;
 
         -- Extend attachment_jobs state CHECK with 'Cancelled' so an admin can
         -- dismiss dead-lettered jobs from the Health page without losing the
@@ -1040,6 +1061,105 @@ public sealed class DatabaseBootstrapper : IHostedService
         END $$;
 
         ALTER TABLE contacts DROP COLUMN IF EXISTS company_id;
+
+        -- ===================================================================
+        -- v0.0.12 step 1: outbound mail
+        --
+        -- mail_messages grows a direction column so both inbound and our own
+        -- sent mails live in the same table. received_utc becomes nullable
+        -- (outbound rows carry sent_utc instead) and a CHECK enforces that
+        -- exactly the right timestamp is populated per direction. Threading
+        -- (FindTicketIdByReferences) already matches on message_id, so
+        -- replies to our outbound mail resolve back to the same ticket
+        -- without any code change.
+        --
+        -- ticket_events CHECK is extended with MailSent so outbound events
+        -- can be persisted alongside MailReceived.
+        -- ===================================================================
+
+        ALTER TABLE mail_messages
+            ADD COLUMN IF NOT EXISTS direction TEXT        NOT NULL DEFAULT 'Inbound',
+            ADD COLUMN IF NOT EXISTS sent_utc  TIMESTAMPTZ NULL;
+
+        ALTER TABLE mail_messages ALTER COLUMN received_utc DROP NOT NULL;
+
+        -- NOT VALID so pre-existing inbound rows that somehow violate the
+        -- invariant (e.g. received_utc NULL from an earlier schema iteration)
+        -- don't block the bootstrap. New writes still enforce it.
+        ALTER TABLE mail_messages DROP CONSTRAINT IF EXISTS chk_mail_messages_direction;
+        ALTER TABLE mail_messages ADD CONSTRAINT chk_mail_messages_direction
+            CHECK (direction IN ('Inbound','Outbound')) NOT VALID;
+
+        ALTER TABLE mail_messages DROP CONSTRAINT IF EXISTS chk_mail_messages_timestamp;
+        ALTER TABLE mail_messages ADD CONSTRAINT chk_mail_messages_timestamp
+            CHECK (
+                (direction = 'Inbound'  AND received_utc IS NOT NULL) OR
+                (direction = 'Outbound' AND sent_utc     IS NOT NULL)
+            ) NOT VALID;
+
+        -- See v0.0.8 block above for the NOT VALID rationale — legacy rows
+        -- outside the whitelist are grandfathered; only new writes enforce.
+        ALTER TABLE ticket_events DROP CONSTRAINT IF EXISTS chk_ticket_event_type;
+        ALTER TABLE ticket_events ADD CONSTRAINT chk_ticket_event_type
+            CHECK (event_type IN ('Created','Comment','Mail','Note','StatusChange',
+                                  'AssignmentChange','PriorityChange','QueueChange',
+                                  'CategoryChange','SystemNote','MailReceived',
+                                  'MailSent','CompanyAssignment')) NOT VALID;
+
+        -- ===============================================================
+        -- v0.0.12 stap 4 — mention notifications (@@-tag pipeline)
+        -- ===============================================================
+        -- One row per (user_id, event_id) pair: when agent A tags agent B in
+        -- a post, a row is inserted for B with `source_user_id=A`. The row is
+        -- the persistent backstop — SignalR push + toast are fire-and-forget,
+        -- the navbar-widget + /profile/mentions page always read from here.
+        -- Ticket metadata is denormalised (ticket_number, ticket_subject) so
+        -- the history-page renders without joining through tickets for a row
+        -- whose ticket was later deleted — ON DELETE CASCADE trims the row,
+        -- but until that point the denormalised columns show the last-known
+        -- state. source_user_id uses ON DELETE SET NULL so history survives
+        -- after the author leaves (a 2026-pattern: audit keeps references
+        -- stable even when principals are removed).
+        CREATE TABLE IF NOT EXISTS user_notifications (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id             UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            source_user_id      UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            notification_type   TEXT        NOT NULL DEFAULT 'mention',
+            ticket_id           UUID        NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            ticket_number       BIGINT      NOT NULL,
+            ticket_subject      TEXT        NOT NULL DEFAULT '',
+            event_id            BIGINT      NOT NULL REFERENCES ticket_events(id) ON DELETE CASCADE,
+            event_type          TEXT        NOT NULL,
+            preview_text        TEXT        NOT NULL DEFAULT '',
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            viewed_utc          TIMESTAMPTZ NULL,
+            acked_utc           TIMESTAMPTZ NULL,
+            email_sent_utc      TIMESTAMPTZ NULL,
+            email_error         TEXT        NULL
+        );
+
+        -- Hot path: "my open notifications" drives the navbar-widget + pulse.
+        -- Partial index keeps the struct small on installs with a lot of
+        -- acked history.
+        CREATE INDEX IF NOT EXISTS ix_user_notifications_pending
+            ON user_notifications (user_id, created_utc DESC)
+            WHERE acked_utc IS NULL;
+
+        -- History page: keyset pagination on (created_utc DESC, id DESC).
+        CREATE INDEX IF NOT EXISTS ix_user_notifications_user_history
+            ON user_notifications (user_id, created_utc DESC, id DESC);
+
+        -- Reverse lookup used by future dedup passes (e.g. only one
+        -- notification per (user, event) even if the editor's
+        -- mentionedUserIds array sneaks the same id twice).
+        CREATE INDEX IF NOT EXISTS ix_user_notifications_event
+            ON user_notifications (event_id);
+
+        -- NOT VALID so future notification_type additions can land without
+        -- a table-rewrite. The whitelist guards new writes only.
+        ALTER TABLE user_notifications DROP CONSTRAINT IF EXISTS chk_user_notifications_type;
+        ALTER TABLE user_notifications ADD CONSTRAINT chk_user_notifications_type
+            CHECK (notification_type IN ('mention')) NOT VALID;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

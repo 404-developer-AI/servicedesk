@@ -16,6 +16,23 @@ public interface IUserService
     Task<ApplicationUser?> FindByIdAsync(Guid id, CancellationToken ct = default);
     Task<IReadOnlyList<AgentUser>> ListAgentsAsync(CancellationToken ct = default);
 
+    /// Typeahead for the @@-mention picker (v0.0.12 stap 3). Caller-supplied
+    /// <paramref name="search"/> does a case-insensitive substring match on
+    /// <c>email</c> (the only human-readable column we have — the users table
+    /// has no first/last-name yet). <paramref name="limit"/> is always clamped
+    /// so a hostile client can't ask for all rows. Returns Agent + Admin rows
+    /// only; customers are never surfaced here, even if they share a mailbox
+    /// local-part with an agent.
+    Task<IReadOnlyList<AgentUser>> SearchAgentsAsync(string? search, int limit, CancellationToken ct = default);
+
+    /// Input-filter for the mention-ids that accompany a Note/Comment/MailSent
+    /// event. Returns exactly the subset of <paramref name="ids"/> that map to
+    /// an Agent or Admin row — unknown ids, customer ids, or soft-deleted rows
+    /// are silently dropped. This mirrors the attachment-ownership filter in
+    /// <c>ReassignToEventAsync</c>: a hostile payload that tags a customer id
+    /// or a random guid is not an error, it just doesn't persist that id.
+    Task<IReadOnlyList<Guid>> FilterAgentIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default);
+
     Task UpdatePasswordHashAsync(Guid userId, string newHash, CancellationToken ct = default);
     Task RecordSuccessfulLoginAsync(Guid userId, CancellationToken ct = default);
 
@@ -185,6 +202,66 @@ public sealed class UserService : IUserService
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         var rows = await connection.QueryAsync<AgentUser>(
             new CommandDefinition(sql, cancellationToken: ct));
+        return rows.ToList();
+    }
+
+    public async Task<IReadOnlyList<AgentUser>> SearchAgentsAsync(string? search, int limit, CancellationToken ct = default)
+    {
+        var effectiveLimit = limit <= 0 ? 20 : Math.Min(limit, 50);
+        var trimmed = (search ?? string.Empty).Trim();
+
+        const string sqlWithSearch = """
+            SELECT id AS Id, email AS Email, role_name AS RoleName
+            FROM users
+            WHERE role_name IN ('Agent', 'Admin')
+              AND email ILIKE @pattern
+            ORDER BY email
+            LIMIT @limit
+            """;
+        const string sqlNoSearch = """
+            SELECT id AS Id, email AS Email, role_name AS RoleName
+            FROM users
+            WHERE role_name IN ('Agent', 'Admin')
+            ORDER BY email
+            LIMIT @limit
+            """;
+
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        if (trimmed.Length == 0)
+        {
+            var rows = await connection.QueryAsync<AgentUser>(
+                new CommandDefinition(sqlNoSearch, new { limit = effectiveLimit }, cancellationToken: ct));
+            return rows.ToList();
+        }
+
+        // ILIKE %term% — Dapper parameterizes the value so escaping '%' / '_'
+        // inside the user's input is the only concern. We escape both so a
+        // query containing a literal percent sign ("admin%") matches that
+        // literal instead of being treated as a wildcard run-on.
+        var escaped = trimmed
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal);
+        var pattern = "%" + escaped + "%";
+        var withSearch = await connection.QueryAsync<AgentUser>(
+            new CommandDefinition(sqlWithSearch, new { pattern, limit = effectiveLimit }, cancellationToken: ct));
+        return withSearch.ToList();
+    }
+
+    public async Task<IReadOnlyList<Guid>> FilterAgentIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default)
+    {
+        if (ids is null || ids.Count == 0) return Array.Empty<Guid>();
+        var distinct = ids.Distinct().ToArray();
+
+        const string sql = """
+            SELECT id
+            FROM users
+            WHERE role_name IN ('Agent', 'Admin')
+              AND id = ANY(@ids)
+            """;
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await connection.QueryAsync<Guid>(
+            new CommandDefinition(sql, new { ids = distinct }, cancellationToken: ct));
         return rows.ToList();
     }
 

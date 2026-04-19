@@ -1,3 +1,5 @@
+import { Link } from "@tanstack/react-router";
+import { AtSign, ChevronRight } from "lucide-react";
 import { useAuth } from "@/auth/authStore";
 import { TwoFactorSection } from "@/pages/profile/TwoFactorSection";
 
@@ -30,6 +32,24 @@ export function ProfilePage() {
           <dd className="font-mono text-[11px] uppercase tracking-[0.1em]">{user?.amr}</dd>
         </dl>
       </section>
+
+      {(user?.role === "Agent" || user?.role === "Admin") ? (
+        <Link
+          to="/profile/mentions"
+          className="glass-card flex items-center gap-3 p-4 transition-colors hover:bg-white/[0.04]"
+        >
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-purple-500/30 bg-purple-500/15">
+            <AtSign className="h-4 w-4 text-purple-200" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium">Mijn tags</div>
+            <div className="text-xs text-muted-foreground">
+              Alle @@-tags die jij ontvangen hebt, met ack / viewed status.
+            </div>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        </Link>
+      ) : null}
 
       <TwoFactorSection />
     </div>

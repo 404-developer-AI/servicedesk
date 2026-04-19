@@ -52,9 +52,25 @@ public static class SettingEndpoints
         .WithName("GetNavigationSettings")
         .WithOpenApi();
 
+        // ---- Notification settings (v0.0.12 stap 4, agent-readable) ----
+        // The notification raamwerk needs the toast duration on the client.
+        // Exposing the two public-safe knobs here keeps the settings read
+        // off the admin-only `/api/settings` endpoint.
+        app.MapGet("/api/settings/notifications", async (ISettingsService svc, CancellationToken ct) =>
+        {
+            var popupDuration = await svc.GetAsync<int>(SettingKeys.Notifications.PopupDurationSeconds, ct);
+            if (popupDuration <= 0) popupDuration = 10;
+            return Results.Ok(new NotificationsSettings(popupDuration));
+        })
+        .WithTags("Settings")
+        .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+        .WithName("GetNotificationsSettings")
+        .WithOpenApi();
+
         return app;
     }
 
     public sealed record UpdateSettingRequest([property: Required] string Value);
     public sealed record NavigationSettings(bool ShowOpenTickets);
+    public sealed record NotificationsSettings(int PopupDurationSeconds);
 }

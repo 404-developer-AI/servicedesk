@@ -343,6 +343,10 @@ export type NavigationSettings = {
   showOpenTickets: boolean;
 };
 
+export type NotificationsSettings = {
+  popupDurationSeconds: number;
+};
+
 export const settingsApi = {
   list: (category?: string) => {
     const params = category ? `?category=${encodeURIComponent(category)}` : "";
@@ -352,6 +356,8 @@ export const settingsApi = {
     request<void>("PUT", `/api/settings/${encodeURIComponent(key)}`, { value }),
   navigation: () =>
     request<NavigationSettings>("GET", "/api/settings/navigation"),
+  notifications: () =>
+    request<NotificationsSettings>("GET", "/api/settings/notifications"),
 };
 
 // ---- Microsoft Graph admin ----

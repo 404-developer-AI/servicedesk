@@ -1,8 +1,12 @@
 namespace Servicedesk.Infrastructure.Realtime;
 
-/// Fan-out for "something in the ticket list changed" events. The concrete
-/// implementation lives in the Api project (SignalR hub) so Infrastructure
-/// doesn't take a direct dependency on ASP.NET Core SignalR.
+/// Fan-out for "a ticket changed" events from background services (mail
+/// ingest, SLA recalc, etc.) that don't sit on the ASP.NET Core SignalR
+/// hub themselves. Implementations MUST broadcast both
+/// <c>TicketListUpdated</c> (so the overview invalidates) and
+/// <c>TicketUpdated</c> for the specific ticket (so an open detail page
+/// re-fetches) — matching what the HTTP endpoints already send after a
+/// mutation. A single notify call therefore covers every viewer surface.
 public interface ITicketListNotifier
 {
     Task NotifyUpdatedAsync(Guid ticketId, CancellationToken ct);

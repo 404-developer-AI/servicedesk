@@ -766,6 +766,14 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
     private sealed record TicketFieldSnapshot(
         Guid QueueId, Guid StatusId, Guid PriorityId, Guid? CategoryId, Guid? AssigneeUserId);
 
+    public async Task<bool> EventBelongsToTicketAsync(Guid ticketId, long eventId, CancellationToken ct)
+    {
+        const string sql = "SELECT EXISTS(SELECT 1 FROM ticket_events WHERE id = @eventId AND ticket_id = @ticketId)";
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.ExecuteScalarAsync<bool>(
+            new CommandDefinition(sql, new { ticketId, eventId }, cancellationToken: ct));
+    }
+
     public async Task<IReadOnlyDictionary<Guid, int>> GetOpenCountsByQueueAsync(CancellationToken ct)
     {
         // Uses ix_tickets_queue_status_updated as a count-only index scan.

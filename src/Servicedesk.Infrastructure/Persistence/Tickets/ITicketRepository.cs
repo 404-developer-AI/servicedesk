@@ -20,6 +20,11 @@ public interface ITicketRepository
     Task<TicketEventPin?> PinEventAsync(Guid ticketId, long eventId, Guid userId, string remark, CancellationToken ct);
     Task<bool> UnpinEventAsync(Guid ticketId, long eventId, CancellationToken ct);
     Task<TicketEventPin?> UpdatePinRemarkAsync(Guid ticketId, long eventId, string remark, CancellationToken ct);
+    /// Cheap existence check used by the attachment download endpoint to
+    /// verify an attachment owned by a ticket-event actually belongs to the
+    /// ticket the agent is viewing — returns false when the join doesn't
+    /// hold so the endpoint can 404 instead of leaking the pair.
+    Task<bool> EventBelongsToTicketAsync(Guid ticketId, long eventId, CancellationToken ct);
     Task<IReadOnlyDictionary<Guid, int>> GetOpenCountsByQueueAsync(CancellationToken ct);
     Task<int> InsertFakeBatchAsync(int count, CancellationToken ct);
 }

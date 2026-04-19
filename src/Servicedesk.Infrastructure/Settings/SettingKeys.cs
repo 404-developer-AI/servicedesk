@@ -59,6 +59,7 @@ public static class SettingKeys
         public const string BlobDiskWarnPercent = "Storage.BlobDiskWarnPercent";
         public const string BlobDiskCriticalPercent = "Storage.BlobDiskCriticalPercent";
         public const string PerMailboxMonthlyCapMB = "Storage.PerMailboxMonthlyCapMB";
+        public const string OrphanRetentionHours = "Storage.OrphanRetentionHours";
     }
 
     public static class Mail
@@ -72,6 +73,7 @@ public static class SettingKeys
         public const string ProcessedFolderName = "Mail.ProcessedFolderName";
         public const string AutoLinkCompanyByDomain = "Mail.AutoLinkCompanyByDomain";
         public const string AutoLinkDomainBlacklist = "Mail.AutoLinkDomainBlacklist";
+        public const string MaxOutboundTotalBytes = "Mail.MaxOutboundTotalBytes";
     }
 
     public static class Companies
@@ -105,6 +107,22 @@ public static class SettingKeys
         public const string MinQueryLength = "Search.MinQueryLength";
         public const string DropdownLimit = "Search.DropdownLimit";
         public const string DebounceMs = "Search.DebounceMs";
+    }
+
+    public static class App
+    {
+        /// Absolute base URL of this install (e.g. `https://desk.example.com`).
+        /// Consumed by notification-mail templates to build CTA links that
+        /// survive the round-trip to an agent's mailbox. Empty → links fall
+        /// back to relative paths and a warning is logged so an admin can
+        /// spot the misconfiguration.
+        public const string PublicBaseUrl = "App.PublicBaseUrl";
+    }
+
+    public static class Notifications
+    {
+        public const string MentionEmailEnabled = "Notifications.MentionEmailEnabled";
+        public const string PopupDurationSeconds = "Notifications.PopupDurationSeconds";
     }
 
     public static class Jobs
@@ -205,6 +223,8 @@ public static class SettingDefaults
             "Disk usage percentage that pauses mail polling and raises a critical alert."),
         new SettingDefault(SettingKeys.Storage.PerMailboxMonthlyCapMB, "0", "int", "Storage",
             "Per-mailbox monthly ingestion cap in MB. 0 = no cap."),
+        new SettingDefault(SettingKeys.Storage.OrphanRetentionHours, "24", "int", "Storage",
+            "How long (hours) a user-uploaded attachment that was never linked to a post or mail is kept before the orphan-sweeper deletes it."),
 
         // Mail — ADR-001 placeholders consumed from v0.0.8 step 4 onwards.
         new SettingDefault(SettingKeys.Mail.PollingIntervalSeconds, "60", "int", "Mail",
@@ -227,6 +247,8 @@ public static class SettingDefaults
             "[\"gmail.com\",\"outlook.com\",\"hotmail.com\",\"live.com\",\"yahoo.com\",\"icloud.com\",\"me.com\",\"msn.com\",\"aol.com\",\"proton.me\",\"protonmail.com\",\"pm.me\",\"mail.com\",\"gmx.com\",\"gmx.net\",\"yandex.com\",\"yandex.ru\",\"zoho.com\",\"fastmail.com\",\"tutanota.com\",\"web.de\",\"t-online.de\",\"orange.fr\",\"laposte.net\",\"free.fr\",\"telenet.be\",\"skynet.be\"]",
             "json", "Mail",
             "JSON array of freemail/public domains that must never auto-link to a company. The Companies → Domains endpoint also refuses to store any of these as a company domain. Manual contact↔company linking is unaffected."),
+        new SettingDefault(SettingKeys.Mail.MaxOutboundTotalBytes, "3145728", "int", "Mail",
+            "Hard cap (bytes) on the combined size of attachments allowed on a single outbound mail. Default 3 MB matches Microsoft Graph's inline-fileAttachment limit; mails above this are rejected with a clear error."),
 
         // Companies — v0.0.9.
         new SettingDefault(SettingKeys.Companies.SearchLimit, "25", "int", "Companies",
@@ -285,5 +307,22 @@ public static class SettingDefaults
             "Show the 'Average first-response per queue' tile on the dashboard."),
         new SettingDefault(SettingKeys.Sla.RecalcIntervalSeconds, "60", "int", "Sla",
             "How often (seconds) the SLA recalc worker refreshes deadlines for open tickets."),
+
+        // App — v0.0.12 stap 4. Absolute public URL is empty out-of-the-box;
+        // the one-link installer (v0.0.15) will set it at provisioning time.
+        // Until then, the notification-mail CTA falls back to relative paths
+        // (which break when opened outside the browser session).
+        new SettingDefault(SettingKeys.App.PublicBaseUrl, "", "string", "App",
+            "Absolute public URL of this install (e.g. https://desk.example.com). Used to build deep-links in notification emails. Leave empty and a warning is logged; the installer fills this in automatically."),
+
+        // Notifications — v0.0.12 stap 4. Mention-trigger notification
+        // raamwerk (@@-tag pipeline). Per-user preferences are out of scope
+        // for this release — the global kill-switch covers the immediate
+        // "too-noisy" case until we know what fine-grained control installs
+        // actually want.
+        new SettingDefault(SettingKeys.Notifications.MentionEmailEnabled, "true", "bool", "Notifications",
+            "When true, a tagged agent receives an email from the ticket's queue mailbox on top of the in-app toast + navbar entry. Turn off on installs where the in-app channel is sufficient."),
+        new SettingDefault(SettingKeys.Notifications.PopupDurationSeconds, "10", "int", "Notifications",
+            "How long (seconds) the mention pop-up toast stays on screen before auto-dismissing. The navbar entry and history page are unaffected."),
     };
 }

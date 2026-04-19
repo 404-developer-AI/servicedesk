@@ -15,13 +15,18 @@ import {
   Info,
   Mail,
   MailOpen,
+  Send,
+  Reply,
+  ReplyAll,
+  Forward as ForwardIcon,
   Building2,
   Download,
   Pencil,
   Pin,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ticketApi, type TicketEvent } from "@/lib/ticket-api";
+import { ticketApi, type TicketEvent, type OutboundMailKind } from "@/lib/ticket-api";
+import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import {
   Dialog,
@@ -62,6 +67,18 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
+/// DOMPurify config that preserves @@-mention chips. Tiptap's Mention
+/// extension emits `<span data-type="mention" class="sd-mention"
+/// data-id="..." data-label="...">@john</span>`. The default sanitiser
+/// strips `data-*` attributes, which would flatten the chip to plain
+/// text and (more importantly) destroy the agent-id needed for any
+/// future hover / click-through affordance. We allow the three data
+/// attrs *only* on `span` elements and do not enable HTML5-custom-data
+/// on anything else (tightest scope that still lets the chip survive).
+const SANITIZE_CONFIG = {
+  ADD_ATTR: ["data-type", "data-id", "data-label"],
+};
+
 function SafeHtml({ html }: { html: string }) {
   const preview = usePreview();
   const onClick = React.useCallback(
@@ -88,8 +105,91 @@ function SafeHtml({ html }: { html: string }) {
     <div
       onClick={onClick}
       className="prose-sm text-foreground/90 [&_a]:text-primary [&_a]:underline [&_p]:my-1 [&_ul]:pl-5 [&_ol]:pl-5 [&_img]:cursor-zoom-in"
-      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html) }}
+      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html, SANITIZE_CONFIG) as unknown as string }}
     />
+  );
+}
+
+/// Renders a post body (HTML preferred, plain text fallback) with a
+/// collapse affordance: caps visible height at COLLAPSED_MAX_PX, fades
+/// the bottom edge into the background, and shows a Read more / Show
+/// less button. Threshold includes a small slack so a body that just
+/// barely exceeds the cap doesn't get a needless toggle. Re-measures
+/// on body-change and when inline images finish loading (they can
+/// significantly bump the rendered height after first paint).
+function CollapsibleBody({
+  html,
+  text,
+}: {
+  html: string | null | undefined;
+  text: string | null | undefined;
+}) {
+  const COLLAPSED_MAX_PX = 360;
+  const SLACK_PX = 16;
+  const ref = React.useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = React.useState(false);
+  const [overflows, setOverflows] = React.useState(false);
+
+  React.useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      setOverflows(el.scrollHeight > COLLAPSED_MAX_PX + SLACK_PX);
+    };
+    measure();
+    // Re-measure once each image settles; scrollHeight before img.load
+    // is 0-for-that-image, so the cap misfires on image-heavy bodies
+    // without this.
+    const imgs = Array.from(el.querySelectorAll("img"));
+    const onImg = () => measure();
+    imgs.forEach((img) => {
+      if (!img.complete) {
+        img.addEventListener("load", onImg);
+        img.addEventListener("error", onImg);
+      }
+    });
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      imgs.forEach((img) => {
+        img.removeEventListener("load", onImg);
+        img.removeEventListener("error", onImg);
+      });
+    };
+  }, [html, text]);
+
+  const hasBody = (html && html.length > 0) || (text && text.length > 0);
+  if (!hasBody) return null;
+
+  const collapsed = overflows && !expanded;
+  return (
+    <div>
+      <div
+        className={cn("relative", collapsed && "overflow-hidden")}
+        style={collapsed ? { maxHeight: COLLAPSED_MAX_PX } : undefined}
+      >
+        <div ref={ref}>
+          {html ? (
+            <SafeHtml html={html} />
+          ) : (
+            <p className="whitespace-pre-wrap text-sm text-foreground/90">{text}</p>
+          )}
+        </div>
+        {collapsed ? (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background via-background/80 to-transparent" />
+        ) : null}
+      </div>
+      {overflows ? (
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80"
+        >
+          {expanded ? "Show less" : "Read more…"}
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -162,6 +262,11 @@ const EVENT_CONFIG: Record<string, EventConfig> = {
     icon: MailOpen,
     dotColor: "bg-sky-400",
     label: "Mail received",
+  },
+  MailSent: {
+    icon: Send,
+    dotColor: "bg-sky-500",
+    label: "Mail sent",
   },
   Note: {
     icon: StickyNote,
@@ -258,6 +363,35 @@ function AssignmentText({ meta }: { meta: Record<string, unknown> }) {
   );
 }
 
+function readAttachmentsFromMeta(meta: Record<string, unknown>): MailAttachment[] {
+  if (!Array.isArray(meta.attachments)) return [];
+  return (meta.attachments as Array<Partial<MailAttachment>>)
+    .filter(
+      (a): a is MailAttachment =>
+        typeof a?.id === "string" &&
+        typeof a?.name === "string" &&
+        typeof a?.url === "string",
+    )
+    .map((a) => ({
+      id: a.id,
+      name: a.name,
+      mimeType: typeof a.mimeType === "string" ? a.mimeType : "application/octet-stream",
+      size: typeof a.size === "number" ? a.size : 0,
+      url: a.url,
+    }));
+}
+
+function PostAttachmentStrip({ attachments }: { attachments: MailAttachment[] }) {
+  if (attachments.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-2 pt-1">
+      {attachments.map((a) => (
+        <AttachmentChip key={a.id} attachment={a} />
+      ))}
+    </div>
+  );
+}
+
 function EventBody({ event }: { event: TicketEvent }) {
   const meta = parseMetadata(event.metadataJson);
 
@@ -300,11 +434,115 @@ function EventBody({ event }: { event: TicketEvent }) {
         </span>
       );
 
-    case "MailReceived": {
-      const from =
-        (typeof meta.fromName === "string" && meta.fromName.length > 0
+    case "MailSent": {
+      const fromAddr = typeof meta.from === "string" ? meta.from : null;
+      const fromName =
+        typeof meta.fromName === "string" && meta.fromName.length > 0
           ? meta.fromName
-          : null) ?? (typeof meta.from === "string" ? meta.from : null);
+          : null;
+      const subject = typeof meta.subject === "string" ? meta.subject : null;
+      const sentAttachments = readAttachmentsFromMeta(meta);
+      const toList = Array.isArray(meta.to)
+        ? (meta.to as Array<{ address: string; name?: string }>)
+        : [];
+      const ccList = Array.isArray(meta.cc)
+        ? (meta.cc as Array<{ address: string; name?: string }>)
+        : [];
+      const formatList = (list: Array<{ address: string; name?: string }>) =>
+        list
+          .map((r) => (r.name && r.name !== r.address ? `${r.name} <${r.address}>` : r.address))
+          .join(", ");
+
+      const normalizedTo = toList
+        .filter((r) => typeof r?.address === "string" && r.address.length > 0)
+        .map((r) => ({ address: r.address, name: r.name ?? r.address }));
+      const normalizedCc = ccList
+        .filter((r) => typeof r?.address === "string" && r.address.length > 0)
+        .map((r) => ({ address: r.address, name: r.name ?? r.address }));
+
+      const startOutboundAction = (kind: OutboundMailKind) => {
+        useWorkspaceStore.getState().requestMailAction({
+          ticketId: event.ticketId,
+          kind,
+          source: {
+            from: fromAddr
+              ? { address: fromAddr, name: fromName ?? fromAddr }
+              : null,
+            to: normalizedTo,
+            cc: normalizedCc,
+            subject,
+            bodyHtml: event.bodyHtml ?? null,
+            receivedUtc: event.createdUtc ?? null,
+            isOutbound: true,
+          },
+        });
+      };
+
+      return (
+        <div className="space-y-2">
+          <div className="text-xs text-muted-foreground space-y-0.5">
+            {fromAddr ? (
+              <div>
+                From <span className="text-foreground/80">{fromAddr}</span>
+              </div>
+            ) : null}
+            {toList.length > 0 ? (
+              <div>
+                To <span className="text-foreground/80">{formatList(toList)}</span>
+              </div>
+            ) : null}
+            {ccList.length > 0 ? (
+              <div>
+                Cc <span className="text-foreground/80">{formatList(ccList)}</span>
+              </div>
+            ) : null}
+            {subject ? (
+              <div>
+                <span className="text-foreground/80">{subject}</span>
+              </div>
+            ) : null}
+          </div>
+          <CollapsibleBody html={event.bodyHtml} text={event.bodyText} />
+          <PostAttachmentStrip attachments={sentAttachments} />
+          <div className="flex flex-wrap items-center gap-1 pt-1">
+            <button
+              type="button"
+              onClick={() => startOutboundAction("Reply")}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+            >
+              <Reply className="h-3 w-3" />
+              Reply
+            </button>
+            {normalizedCc.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => startOutboundAction("ReplyAll")}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+              >
+                <ReplyAll className="h-3 w-3" />
+                Reply all
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => startOutboundAction("Forward")}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+            >
+              <ForwardIcon className="h-3 w-3" />
+              Forward
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    case "MailReceived": {
+      const fromAddrRaw = typeof meta.from === "string" ? meta.from : null;
+      const fromNameRaw =
+        typeof meta.fromName === "string" && meta.fromName.length > 0
+          ? meta.fromName
+          : null;
+      const fromDisplay = fromNameRaw ?? fromAddrRaw;
       const subject =
         typeof meta.subject === "string" ? meta.subject : null;
       const mailId =
@@ -320,24 +558,51 @@ function EventBody({ event }: { event: TicketEvent }) {
             url: string;
           }>)
         : [];
+      const metaTo = Array.isArray(meta.to)
+        ? (meta.to as Array<{ address: string; name?: string }>)
+            .filter((r) => typeof r?.address === "string" && r.address.length > 0)
+            .map((r) => ({ address: r.address, name: r.name ?? r.address }))
+        : [];
+      const metaCc = Array.isArray(meta.cc)
+        ? (meta.cc as Array<{ address: string; name?: string }>)
+            .filter((r) => typeof r?.address === "string" && r.address.length > 0)
+            .map((r) => ({ address: r.address, name: r.name ?? r.address }))
+        : [];
+
+      const startMailAction = (kind: OutboundMailKind) => {
+        useWorkspaceStore.getState().requestMailAction({
+          ticketId: event.ticketId,
+          kind,
+          source: {
+            from: fromAddrRaw
+              ? { address: fromAddrRaw, name: fromNameRaw ?? fromAddrRaw }
+              : null,
+            to: metaTo,
+            cc: metaCc,
+            subject,
+            bodyHtml: event.bodyHtml ?? null,
+            receivedUtc: event.createdUtc ?? null,
+            isOutbound: false,
+          },
+        });
+      };
+
       return (
         <div className="space-y-2">
           <div className="text-xs text-muted-foreground">
-            {from ? <>From <span className="text-foreground/80">{from}</span></> : null}
+            {fromDisplay ? (
+              <>
+                From <span className="text-foreground/80">{fromDisplay}</span>
+              </>
+            ) : null}
             {subject ? (
               <>
-                {from ? " · " : ""}
+                {fromDisplay ? " · " : ""}
                 <span className="text-foreground/80">{subject}</span>
               </>
             ) : null}
           </div>
-          {event.bodyHtml ? (
-            <SafeHtml html={event.bodyHtml} />
-          ) : event.bodyText ? (
-            <p className="whitespace-pre-wrap text-sm text-foreground/90">
-              {event.bodyText}
-            </p>
-          ) : null}
+          <CollapsibleBody html={event.bodyHtml} text={event.bodyText} />
           {attachments.length > 0 ? (
             <div className="flex flex-wrap gap-2 pt-1">
               {attachments.map((a) => (
@@ -345,40 +610,65 @@ function EventBody({ event }: { event: TicketEvent }) {
               ))}
             </div>
           ) : null}
-          {mailId ? (
-            <a
-              href={`/api/tickets/${event.ticketId}/mail/${mailId}/raw`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          <div className="flex flex-wrap items-center gap-1 pt-1">
+            <button
+              type="button"
+              onClick={() => startMailAction("Reply")}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
             >
-              <Download className="h-3 w-3" />
-              View raw (.eml)
-            </a>
-          ) : null}
+              <Reply className="h-3 w-3" />
+              Reply
+            </button>
+            <button
+              type="button"
+              onClick={() => startMailAction("ReplyAll")}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+            >
+              <ReplyAll className="h-3 w-3" />
+              Reply all
+            </button>
+            <button
+              type="button"
+              onClick={() => startMailAction("Forward")}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+            >
+              <ForwardIcon className="h-3 w-3" />
+              Forward
+            </button>
+            {mailId ? (
+              <a
+                href={`/api/tickets/${event.ticketId}/mail/${mailId}/raw`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors ml-auto"
+              >
+                <Download className="h-3 w-3" />
+                .eml
+              </a>
+            ) : null}
+          </div>
         </div>
       );
     }
 
-    default:
-      if (event.bodyHtml) {
-        return <SafeHtml html={event.bodyHtml} />;
-      }
-      if (event.bodyText) {
-        return (
-          <p className="whitespace-pre-wrap text-sm text-foreground/90">
-            {event.bodyText}
-          </p>
-        );
-      }
-      return null;
+    default: {
+      const postAttachments = readAttachmentsFromMeta(meta);
+      const hasBody = !!(event.bodyHtml || event.bodyText);
+      if (!hasBody && postAttachments.length === 0) return null;
+      return (
+        <div className="space-y-2">
+          <CollapsibleBody html={event.bodyHtml} text={event.bodyText} />
+          <PostAttachmentStrip attachments={postAttachments} />
+        </div>
+      );
+    }
   }
 }
 
 /* ─── Editable event card ─── */
 
 const EDITABLE_TYPES = new Set(["Comment", "Note", "Mail"]);
-const PINNABLE_TYPES = new Set(["Comment", "Note", "Mail", "MailReceived"]);
+const PINNABLE_TYPES = new Set(["Comment", "Note", "Mail", "MailReceived", "MailSent"]);
 
 function TimelineEvent({
   event,

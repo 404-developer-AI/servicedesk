@@ -27,6 +27,7 @@ import {
 import { viewApi } from "@/lib/ticket-api";
 import { settingsApi } from "@/lib/api";
 import { RecentTickets } from "@/shell/RecentTickets";
+import { NotificationsWidget } from "@/shell/NotificationsWidget";
 import { GlobalSearchBar } from "@/components/search/GlobalSearchBar";
 import { useAuth, authStore } from "@/auth/authStore";
 import { authApi } from "@/lib/api";
@@ -185,6 +186,14 @@ export function Sidebar() {
 
         <RecentTickets collapsed={collapsed} />
       </nav>
+
+      {/*
+        v0.0.12 stap 4 — @@-mention notifications. Sits between the nav-area
+        and the collapse button so it is always visible "linksonder boven
+        collapse" per the spec. The widget itself handles its two
+        presentations (expanded glass-card, collapsed icon-with-popover).
+      */}
+      <NotificationsWidget collapsed={collapsed} />
 
       {/*
         When the sidebar is collapsed, Settings + New ticket live above the

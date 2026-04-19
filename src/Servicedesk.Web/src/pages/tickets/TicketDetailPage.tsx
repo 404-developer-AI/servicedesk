@@ -2,7 +2,8 @@ import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Check, Copy, FileDown, Pencil, X } from "lucide-react";
-import { ticketApi, type TicketFieldUpdate } from "@/lib/ticket-api";
+import { ticketApi, contactApi, type TicketFieldUpdate } from "@/lib/ticket-api";
+import { agentQueueApi } from "@/lib/api";
 import {
   CompanyAlertDialog,
   hasSeenAlertThisSession,
@@ -20,11 +21,13 @@ import { TicketSidePanel } from "./components/TicketSidePanel";
 import { TicketTimeline } from "./components/TicketTimeline";
 import { PinnedEventsSummary } from "./components/PinnedEventsSummary";
 import { AddNoteForm } from "./components/AddNoteForm";
+import { buildMailContext, flattenQueueMailboxes } from "./mailContext";
 import { InTicketSearchProvider, useInTicketSearch } from "./components/InTicketSearch";
 
 type TicketDetailPageProps = {
   ticketId: string;
 };
+
 
 function LoadingSkeleton() {
   return (
@@ -344,6 +347,30 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
     queryFn: () => ticketApi.get(ticketId),
   });
 
+  // Pull the requester's email so "Send mail → New" can pre-fill the To
+  // field. Same query key as TicketSidePanel so the two components share
+  // one fetch (React Query auto-dedupes by key + staleTime).
+  const requesterContactId = data?.ticket?.requesterContactId ?? null;
+  const { data: requesterContact } = useQuery({
+    queryKey: ["contact", requesterContactId],
+    queryFn: () => contactApi.get(requesterContactId!),
+    enabled: !!requesterContactId,
+    staleTime: 300_000,
+  });
+
+  // All queue mailboxes so "Reply-all" can strip them from To/Cc —
+  // a queue mailbox is never a correct recipient on an outbound reply.
+  // Same query key as TicketListPage so the fetch is deduped.
+  const { data: accessibleQueues } = useQuery({
+    queryKey: ["accessible-queues"],
+    queryFn: agentQueueApi.list,
+    staleTime: 60_000,
+  });
+  const ownMailboxAddresses = React.useMemo(
+    () => flattenQueueMailboxes(accessibleQueues),
+    [accessibleQueues],
+  );
+
   React.useEffect(() => {
     if (data?.ticket) {
       addTicket({
@@ -354,6 +381,28 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
       useWorkspaceStore.getState().setLastTicket(data.ticket.id);
     }
   }, [data?.ticket, addTicket]);
+
+  // v0.0.12 stap 4 — deep-link to a specific event (from mention
+  // notifications, mail CTAs, etc.). Runs once events are in the DOM.
+  // Scroll + ring-animate pattern copied from PinnedEventsSummary.handleJump.
+  React.useEffect(() => {
+    if (!data?.events?.length) return;
+    const hash = window.location.hash;
+    const match = hash.match(/^#event-(\d+)$/);
+    if (!match) return;
+    const eventId = match[1];
+    // requestAnimationFrame waits for the timeline to render before we try
+    // to find the anchor — the query may resolve before the DOM settles.
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`event-${eventId}`);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ring-2", "ring-primary/50", "rounded-lg");
+      setTimeout(() => {
+        el.classList.remove("ring-2", "ring-primary/50", "rounded-lg");
+      }, 2000);
+    });
+  }, [data?.events]);
 
   const updateMutation = useMutation({
     mutationFn: (fields: TicketFieldUpdate) => ticketApi.update(ticketId, fields),
@@ -453,6 +502,8 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         pinnedEventIds={pinnedEventIds}
         updateMutation={updateMutation}
         queryClient={queryClient}
+        requesterEmail={requesterContact?.email ?? null}
+        ownMailboxAddresses={ownMailboxAddresses}
         onRequestCompanyAssign={() => setAssignOpen(true)}
       />
       {companyAlert && (
@@ -476,6 +527,8 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
 
 function TicketDetailBody({
   ticketId, ticket, body, events, pinnedEvents, pinnedEventIds, updateMutation, queryClient,
+  requesterEmail,
+  ownMailboxAddresses,
   onRequestCompanyAssign,
 }: {
   ticketId: string;
@@ -486,6 +539,8 @@ function TicketDetailBody({
   pinnedEventIds: Set<number>;
   updateMutation: any;
   queryClient: any;
+  requesterEmail: string | null;
+  ownMailboxAddresses: string[];
   onRequestCompanyAssign: () => void;
 }) {
   const { matchesEvent, mode, query, registerScope } = useInTicketSearch();
@@ -556,9 +611,13 @@ function TicketDetailBody({
           </div>
         </div>
 
-        {/* Scrollable: activity timeline. The ref is handed to the
-            in-ticket search highlighter so it knows which subtree to
-            walk — nothing outside this container gets mutated. */}
+        {/* Scrollable: activity timeline + inline compose form. The form
+            sits at the bottom of the scroll region so agents can scroll
+            past it to re-read earlier posts while typing a reply — a
+            static bottom-bar used to obscure the feed below itself. The
+            ref is handed to the in-ticket search highlighter so it knows
+            which subtree to walk — nothing outside this container gets
+            mutated. */}
         <div ref={registerScope} className="flex-1 min-h-0 overflow-y-auto pr-1">
           <TicketTimeline ticketId={ticketId} events={visibleEvents} pinnedEventIds={pinnedEventIds} />
           {mode === "filter" && query.trim() && visibleEvents.length === 0 && (
@@ -566,17 +625,17 @@ function TicketDetailBody({
               Geen events matchen "{query}".
             </div>
           )}
-        </div>
 
-        {/* Static: reply form */}
-        <div className="shrink-0 pt-3">
-          <AddNoteForm
-            key={ticketId}
-            ticketId={ticketId}
-            onSubmitted={() => {
-              queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
-            }}
-          />
+          <div className="pt-4 pb-2">
+            <AddNoteForm
+              key={ticketId}
+              ticketId={ticketId}
+              mailContext={buildMailContext(ticket, events, requesterEmail, ownMailboxAddresses)}
+              onSubmitted={() => {
+                queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
+              }}
+            />
+          </div>
         </div>
       </div>
 

@@ -1,7 +1,10 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-const MAX_RECENT = 10;
+// Upper bound so the persisted list in localStorage doesn't grow
+// unbounded. The sidebar list itself is scrollable, so a larger cap is
+// fine — most agents will never hit this.
+const MAX_RECENT = 50;
 
 export type RecentTicket = {
   id: string;
@@ -34,9 +37,12 @@ export const useRecentTicketsStore = create<RecentTicketsState>()(
               ),
             };
           }
-          // New ticket goes to the end
+          // New ticket goes to the end; when we're at cap, trim the
+          // OLDEST entries (head) — `slice(0, MAX_RECENT)` used to drop
+          // the just-added ticket at the tail, which meant the nav
+          // effectively stopped updating after the 10th open ticket.
           return {
-            recentTickets: [...s.recentTickets, ticket].slice(0, MAX_RECENT),
+            recentTickets: [...s.recentTickets, ticket].slice(-MAX_RECENT),
           };
         }),
       removeTicket: (id) =>

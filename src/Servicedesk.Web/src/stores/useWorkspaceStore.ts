@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { preferencesApi } from "@/lib/api";
+import type { OutboundMailKind } from "@/lib/ticket-api";
 
 export type Draft = {
   ticketId: string;
@@ -9,11 +10,37 @@ export type Draft = {
   updatedUtc: string;
 };
 
+// Transient (not persisted) — set when the agent clicks Reply / Reply-all /
+// Forward on a specific MailReceived event so <AddNoteForm> + <SendMailForm>
+// can react by expanding, switching to the mail tab and pre-filling from the
+// clicked event instead of the ticket's latest inbound.
+export type PendingMailAction = {
+  id: number;  // monotonic — lets listeners detect a fresh click on the same event
+  ticketId: string;
+  kind: OutboundMailKind;
+  source: {
+    // `from` is the *display sender* for the quote preamble. For inbound it's
+    // the external sender; for outbound it's our own mailbox so the "On X,
+    // Y wrote:" line still makes sense.
+    from: { address: string; name: string } | null;
+    to: { address: string; name: string }[];
+    cc: { address: string; name: string }[];
+    subject: string | null;
+    bodyHtml: string | null;
+    receivedUtc: string | null;
+    // When true the event is our own outbound mail — a "Reply" then targets
+    // the original audience (source.to) rather than source.from, because
+    // replying *to ourselves* is never what the agent means.
+    isOutbound: boolean;
+  };
+};
+
 type WorkspaceState = {
   lastTicketId: string | null;
   sidebarCollapsed: boolean;
   drafts: Record<string, Draft>;
   loaded: boolean;
+  pendingMailAction: PendingMailAction | null;
 
   setLastTicket: (ticketId: string) => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
@@ -23,6 +50,10 @@ type WorkspaceState = {
   ) => void;
   removeDraft: (ticketId: string) => void;
   getDraft: (ticketId: string) => Draft | undefined;
+  requestMailAction: (
+    intent: Omit<PendingMailAction, "id">,
+  ) => void;
+  clearMailAction: () => void;
   loadFromServer: () => Promise<void>;
   flush: () => Promise<void>;
   flushSync: () => void;
@@ -70,11 +101,14 @@ function fromEntries(entries: Record<string, string>) {
   return result;
 }
 
+let mailActionCounter = 0;
+
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   lastTicketId: null,
   sidebarCollapsed: false,
   drafts: {},
   loaded: false,
+  pendingMailAction: null,
 
   setLastTicket: (ticketId) => set({ lastTicketId: ticketId }),
 
@@ -101,6 +135,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }),
 
   getDraft: (ticketId) => get().drafts[ticketId],
+
+  requestMailAction: (intent) =>
+    set({
+      pendingMailAction: { ...intent, id: ++mailActionCounter },
+    }),
+
+  clearMailAction: () => set({ pendingMailAction: null }),
 
   loadFromServer: async () => {
     try {

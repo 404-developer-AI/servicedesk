@@ -129,6 +129,9 @@ public sealed class MailTimelineEnricherTests
             => Task.FromResult<IReadOnlyList<FinalizeCandidate>>(Array.Empty<FinalizeCandidate>());
         public Task<FinalizeCandidate?> GetIfReadyForFinalizeAsync(Guid mailId, CancellationToken ct)
             => Task.FromResult<FinalizeCandidate?>(null);
+        public Task<Guid> InsertOutboundAsync(NewOutboundMailMessage row, IReadOnlyList<NewMailRecipient> r, CancellationToken ct) => Task.FromResult(Guid.NewGuid());
+        public Task<MailThreadAnchor?> GetLatestThreadAnchorAsync(Guid ticketId, CancellationToken ct) => Task.FromResult<MailThreadAnchor?>(null);
+        public Task<IReadOnlyList<MailRecipientRow>> ListRecipientsAsync(Guid mailId, CancellationToken ct) => Task.FromResult<IReadOnlyList<MailRecipientRow>>(Array.Empty<MailRecipientRow>());
     }
 
     private sealed class StubAttachmentRepo : IAttachmentRepository
@@ -137,8 +140,13 @@ public sealed class MailTimelineEnricherTests
         public StubAttachmentRepo(IReadOnlyList<AttachmentRow> rows) => _rows = rows;
         public Task<AttachmentRow?> GetByIdAsync(Guid id, CancellationToken ct) => Task.FromResult<AttachmentRow?>(_rows.FirstOrDefault(r => r.Id == id));
         public Task<IReadOnlyList<AttachmentRow>> ListByMailAsync(Guid mailId, CancellationToken ct) => Task.FromResult(_rows);
+        public Task<IReadOnlyList<AttachmentRow>> ListByEventAsync(long eventId, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<AttachmentRow>>(_rows.Where(r => r.EventId == eventId).ToList());
         public Task<bool> MarkReadyAsync(Guid id, string h, long s, string m, CancellationToken ct) => Task.FromResult(true);
         public Task MarkFailedAsync(Guid id, CancellationToken ct) => Task.CompletedTask;
+        public Task<Guid> CreateUploadedAsync(NewUploadedAttachment input, CancellationToken ct) => throw new NotImplementedException();
+        public Task<int> ReassignToEventAsync(IReadOnlyList<Guid> ids, Guid ticketId, long eventId, CancellationToken ct) => throw new NotImplementedException();
+        public Task<int> ReassignToMailAsync(IReadOnlyList<AttachmentReassignToMail> assignments, Guid ticketId, Guid mailMessageId, long ticketEventId, CancellationToken ct) => throw new NotImplementedException();
     }
 
     private sealed class StubBlobStore : IBlobStore
