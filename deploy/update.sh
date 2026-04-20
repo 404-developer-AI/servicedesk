@@ -180,8 +180,20 @@ reconcile_env_vars() {
 # ===========================================================================
 # 6. build + swap app container
 # ===========================================================================
+# MinVer can't read tags from inside the image build — .dockerignore strips
+# .git — so we compute the version on the host (mirroring install.sh) and
+# pass it through as a build-arg. Must be re-computed after any git checkout
+# because HEAD (and therefore the nearest tag) changes: the rollback path
+# below relies on this to tag the restored image with the *previous* version,
+# not the failed new one.
+compute_app_version() {
+    export APP_VERSION
+    APP_VERSION="$(git -C "$INSTALL_DIR" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0-update")"
+}
+
 rebuild_and_restart_app() {
-    log "Building new app image (this can take 2-5 min) …"
+    compute_app_version
+    log "Building new app image at version ${APP_VERSION} (this can take 2-5 min) …"
     (cd "${INSTALL_DIR}/deploy" && DOMAIN="$DOMAIN" docker compose build app)
     log "Stopping old app …"
     (cd "${INSTALL_DIR}/deploy" && docker compose stop app)
@@ -204,6 +216,7 @@ wait_for_health_or_rollback() {
     warn "New app did NOT reach healthy state in $((tries*2))s — rolling back to ${PREVIOUS_SHA:0:12} …"
     docker logs servicedesk-app-1 2>&1 | tail -40
     git -C "$INSTALL_DIR" checkout "$PREVIOUS_SHA" --quiet
+    compute_app_version
     (cd "${INSTALL_DIR}/deploy" && DOMAIN="$DOMAIN" docker compose build app)
     (cd "${INSTALL_DIR}/deploy" && docker compose stop app)
     (cd "${INSTALL_DIR}/deploy" && DOMAIN="$DOMAIN" docker compose up -d app)
