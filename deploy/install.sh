@@ -470,7 +470,10 @@ bootstrap_certbot() {
     fi
     log "Issuing initial Let's Encrypt cert (standalone, port 80) …"
     log "Temporarily freeing :80 — nginx has not been started yet, so nothing else should hold it."
-    (cd "$INSTALL_DIR/deploy" && docker compose run --rm --service-ports --entrypoint certbot certbot \
+    # Explicit -p 80:80 because the certbot compose service has no 'ports:'
+    # block (it's on-demand only). Without this, certbot's standalone HTTP-01
+    # challenge server is unreachable from the internet → validation fails.
+    (cd "$INSTALL_DIR/deploy" && docker compose run --rm -p 80:80 --entrypoint certbot certbot \
         certonly --standalone \
         -d "$DOMAIN" \
         --email "$EMAIL" \
