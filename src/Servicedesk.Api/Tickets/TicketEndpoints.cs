@@ -321,6 +321,81 @@ public static class TicketEndpoints
             });
         }).WithName("AssignTicketCompany").WithOpenApi();
 
+        // v0.0.12: switch the requester on an ongoing ticket. The new contact's
+        // company is re-resolved with the same decision tree used at ticket
+        // creation (primary → single secondary → supplier_only → none), so the
+        // ticket's frozen company_id follows the new requester. Writes a
+        // RequesterChange timeline event with from/to contact + company.
+        group.MapPatch("/{id:guid}/requester", async (
+            Guid id, [FromBody] ChangeTicketRequesterRequest req, HttpContext http,
+            ITicketRepository tickets, ICompanyRepository companies, IQueueAccessService queueAccess,
+            IContactLookupService contactLookup,
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla, CancellationToken ct) =>
+        {
+            if (req.ContactId == Guid.Empty)
+                return Results.BadRequest(new { error = "contactId is required." });
+
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            var current = await tickets.GetByIdAsync(id, ct);
+            if (current is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, current.Ticket.QueueId, ct))
+                return Results.NotFound();
+
+            var contact = await companies.GetContactAsync(req.ContactId, ct);
+            if (contact is null)
+                return Results.BadRequest(new { error = "Unknown contact." });
+            if (!contact.IsActive)
+                return Results.BadRequest(new { error = "Cannot assign an inactive contact." });
+
+            var resolution = await contactLookup.ResolveCompanyForNewTicketAsync(req.ContactId, ct);
+
+            var detail = await tickets.ChangeRequesterAsync(
+                ticketId: id,
+                newContactId: req.ContactId,
+                newCompanyId: resolution.CompanyId,
+                awaitingCompanyAssignment: resolution.Awaiting,
+                companyResolvedVia: resolution.ResolvedVia,
+                actorUserId: userId,
+                ct: ct);
+            if (detail is null) return Results.NotFound();
+
+            var (actor, role) = ActorContext.Resolve(http);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "ticket.requester.changed",
+                Actor: actor,
+                ActorRole: role,
+                Target: id.ToString(),
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: new
+                {
+                    fromContactId = current.Ticket.RequesterContactId,
+                    toContactId = req.ContactId,
+                    fromCompanyId = current.Ticket.CompanyId,
+                    toCompanyId = resolution.CompanyId,
+                    resolvedVia = resolution.ResolvedVia,
+                    awaiting = resolution.Awaiting,
+                }));
+
+            var ticketIdStr = id.ToString();
+            await hub.Clients.Group($"ticket:{ticketIdStr}").SendAsync("TicketUpdated", ticketIdStr, ct);
+            await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", ticketIdStr, ct);
+
+            await sla.OnTicketFieldsChangedAsync(id, ct);
+
+            var companyAlert = await BuildCompanyAlertAsync(companies, detail.Ticket.RequesterContactId, ct);
+            return Results.Ok(new
+            {
+                ticket = detail.Ticket,
+                body = detail.Body,
+                events = detail.Events,
+                pinnedEvents = detail.PinnedEvents,
+                companyAlert,
+            });
+        }).WithName("ChangeTicketRequester").WithOpenApi();
+
         group.MapPost("/{id:guid}/events", async (
             Guid id, [FromBody] AddEventRequest req, HttpContext http,
             ITicketRepository tickets, IQueueAccessService queueAccess,
@@ -801,6 +876,11 @@ public static class TicketEndpoints
         bool LinkAsSupplier);
 
     public sealed record UpdatePinRemarkRequest(string Remark);
+
+    /// v0.0.12: payload for switching a ticket's requester to another contact.
+    /// The company re-resolves server-side via <see cref="IContactLookupService"/>,
+    /// so the client only needs to pass the target contact id.
+    public sealed record ChangeTicketRequesterRequest(Guid ContactId);
 
     /// v0.0.9: per-company alert surfaced next to a ticket. Non-null only
     /// when the requester's contact is linked to an active company. The

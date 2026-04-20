@@ -14,6 +14,19 @@ public interface ITicketRepository
     /// from/to metadata. Returns the refreshed detail, or null if the
     /// ticket doesn't exist.
     Task<TicketDetail?> AssignCompanyAsync(Guid ticketId, Guid companyId, Guid actorUserId, CancellationToken ct);
+    /// Switches the ticket's requester to a different contact and applies the
+    /// company resolution that the caller already computed (so the endpoint
+    /// stays in charge of the policy). Writes a RequesterChange timeline event
+    /// with from/to contact + company metadata. Returns the refreshed detail,
+    /// or null if the ticket doesn't exist.
+    Task<TicketDetail?> ChangeRequesterAsync(
+        Guid ticketId,
+        Guid newContactId,
+        Guid? newCompanyId,
+        bool awaitingCompanyAssignment,
+        string? companyResolvedVia,
+        Guid actorUserId,
+        CancellationToken ct);
     Task<TicketEvent?> AddEventAsync(Guid ticketId, NewTicketEvent input, CancellationToken ct);
     Task<TicketEvent?> UpdateEventAsync(Guid ticketId, long eventId, UpdateTicketEvent input, CancellationToken ct);
     Task<IReadOnlyList<TicketEventRevision>> GetEventRevisionsAsync(Guid ticketId, long eventId, CancellationToken ct);

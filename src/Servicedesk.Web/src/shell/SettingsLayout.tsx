@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { Fragment, useEffect } from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import { SETTINGS_SECTIONS } from "@/shell/settingsSections";
@@ -46,25 +46,32 @@ function SettingsRail() {
           const active = pathname === to || pathname.startsWith(`${to}/`);
           const Icon = section.icon;
           return (
-            <Link
-              key={section.slug}
-              to={to}
-              className={cn(
-                "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all",
-                active
-                  ? "bg-white/[0.07] text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
-                  : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
-              )}
-              data-testid={`settings-nav-${section.slug}`}
-            >
-              <Icon
+            <Fragment key={section.slug}>
+              <Link
+                to={to}
                 className={cn(
-                  "h-4 w-4 shrink-0",
-                  active && "text-primary",
+                  "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all",
+                  active
+                    ? "bg-white/[0.07] text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+                    : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
                 )}
-              />
-              <span className="truncate">{section.label}</span>
-            </Link>
+                data-testid={`settings-nav-${section.slug}`}
+              >
+                <Icon
+                  className={cn(
+                    "h-4 w-4 shrink-0",
+                    active && "text-primary",
+                  )}
+                />
+                <span className="truncate">{section.label}</span>
+              </Link>
+              {section.separatorAfter && (
+                <div
+                  aria-hidden
+                  className="mx-3 my-1 h-px bg-white/[0.06]"
+                />
+              )}
+            </Fragment>
           );
         })}
       </nav>

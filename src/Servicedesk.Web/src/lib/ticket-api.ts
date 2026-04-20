@@ -549,6 +549,8 @@ export const ticketApi = {
     request<TicketEventPin>("PATCH", `/api/tickets/${id}/events/${eventId}/pin`, { remark }),
   assignCompany: (id: string, body: AssignTicketCompanyRequest) =>
     request<TicketDetail>("PATCH", `/api/tickets/${id}/company`, body),
+  changeRequester: (id: string, contactId: string) =>
+    request<TicketDetail>("PATCH", `/api/tickets/${id}/requester`, { contactId }),
   exportPdf: (id: string, excludeInternal = true) => {
     const params = new URLSearchParams();
     if (!excludeInternal) params.set("excludeInternal", "false");

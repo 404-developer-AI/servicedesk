@@ -544,6 +544,103 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
 
     private sealed record TicketCompanySnapshot(Guid TicketId, Guid? CompanyId);
 
+    public async Task<TicketDetail?> ChangeRequesterAsync(
+        Guid ticketId,
+        Guid newContactId,
+        Guid? newCompanyId,
+        bool awaitingCompanyAssignment,
+        string? companyResolvedVia,
+        Guid actorUserId,
+        CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        const string readSql = """
+            SELECT id AS TicketId, requester_contact_id AS RequesterContactId, company_id AS CompanyId
+            FROM tickets WHERE id = @ticketId AND is_deleted = FALSE
+            FOR UPDATE
+            """;
+        var current = await conn.QueryFirstOrDefaultAsync<TicketRequesterSnapshot>(
+            new CommandDefinition(readSql, new { ticketId }, tx, cancellationToken: ct));
+        if (current is null) { await tx.RollbackAsync(ct); return null; }
+
+        // No-op: same contact — don't touch anything so updated_utc stays put
+        // and no noise event lands on the timeline.
+        if (current.RequesterContactId == newContactId
+            && current.CompanyId == newCompanyId)
+        {
+            await tx.RollbackAsync(ct);
+            return await GetByIdAsync(ticketId, ct);
+        }
+
+        const string contactNameSql = """
+            SELECT CONCAT_WS(' ', first_name, last_name) AS Name, email AS Email
+            FROM contacts WHERE id = @id
+            """;
+        var fromContact = await conn.QueryFirstOrDefaultAsync<ContactNameRow>(
+            new CommandDefinition(contactNameSql, new { id = current.RequesterContactId }, tx, cancellationToken: ct));
+        var toContact = await conn.QueryFirstOrDefaultAsync<ContactNameRow>(
+            new CommandDefinition(contactNameSql, new { id = newContactId }, tx, cancellationToken: ct));
+        if (toContact is null) { await tx.RollbackAsync(ct); return null; }
+
+        const string companyNameSql = "SELECT name FROM companies WHERE id = @id";
+        var fromCompanyName = current.CompanyId.HasValue
+            ? await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
+                companyNameSql, new { id = current.CompanyId.Value }, tx, cancellationToken: ct))
+            : null;
+        var toCompanyName = newCompanyId.HasValue
+            ? await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
+                companyNameSql, new { id = newCompanyId.Value }, tx, cancellationToken: ct))
+            : null;
+
+        const string updateSql = """
+            UPDATE tickets
+               SET requester_contact_id = @newContactId,
+                   company_id = @newCompanyId,
+                   awaiting_company_assignment = @awaiting,
+                   company_resolved_via = @resolvedVia,
+                   updated_utc = now()
+             WHERE id = @ticketId AND is_deleted = FALSE
+            """;
+        var rows = await conn.ExecuteAsync(new CommandDefinition(updateSql, new
+        {
+            ticketId,
+            newContactId,
+            newCompanyId,
+            awaiting = awaitingCompanyAssignment,
+            resolvedVia = companyResolvedVia,
+        }, tx, cancellationToken: ct));
+        if (rows == 0) { await tx.RollbackAsync(ct); return null; }
+
+        var metadata = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            fromContactId = current.RequesterContactId,
+            toContactId = newContactId,
+            fromName = fromContact?.Name,
+            toName = toContact.Name,
+            fromEmail = fromContact?.Email,
+            toEmail = toContact.Email,
+            fromCompanyId = current.CompanyId,
+            toCompanyId = newCompanyId,
+            fromCompanyName,
+            toCompanyName,
+            resolvedVia = companyResolvedVia,
+        });
+        await conn.ExecuteAsync(new CommandDefinition(
+            """
+            INSERT INTO ticket_events (ticket_id, event_type, author_user_id, metadata, is_internal)
+            VALUES (@ticketId, 'RequesterChange', @actorUserId, @metadata::jsonb, FALSE)
+            """,
+            new { ticketId, actorUserId, metadata }, tx, cancellationToken: ct));
+
+        await tx.CommitAsync(ct);
+        return await GetByIdAsync(ticketId, ct);
+    }
+
+    private sealed record TicketRequesterSnapshot(Guid TicketId, Guid RequesterContactId, Guid? CompanyId);
+    private sealed record ContactNameRow(string? Name, string? Email);
+
     public async Task<TicketEvent?> AddEventAsync(Guid ticketId, NewTicketEvent input, CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);

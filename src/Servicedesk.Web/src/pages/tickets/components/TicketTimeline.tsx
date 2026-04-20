@@ -23,6 +23,7 @@ import {
   Download,
   Pencil,
   Pin,
+  UserCog,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ticketApi, type TicketEvent, type OutboundMailKind } from "@/lib/ticket-api";
@@ -303,6 +304,11 @@ const EVENT_CONFIG: Record<string, EventConfig> = {
     dotColor: "bg-purple-400",
     label: "Company assigned",
   },
+  RequesterChange: {
+    icon: UserCog,
+    dotColor: "bg-fuchsia-400",
+    label: "Requester changed",
+  },
   SystemNote: {
     icon: Info,
     dotColor: "bg-white/30",
@@ -426,6 +432,33 @@ function EventBody({ event }: { event: TicketEvent }) {
 
     case "CompanyAssignment":
       return <MetaChangeText meta={meta} fieldLabel="Company" />;
+
+    case "RequesterChange": {
+      const fromName =
+        (typeof meta.fromName === "string" && meta.fromName.trim().length > 0)
+          ? meta.fromName
+          : (typeof meta.fromEmail === "string" ? meta.fromEmail : null);
+      const toName =
+        (typeof meta.toName === "string" && meta.toName.trim().length > 0)
+          ? meta.toName
+          : (typeof meta.toEmail === "string" ? meta.toEmail : null);
+      const fromCompany = typeof meta.fromCompanyName === "string" ? meta.fromCompanyName : null;
+      const toCompany = typeof meta.toCompanyName === "string" ? meta.toCompanyName : null;
+      return (
+        <span className="text-sm text-muted-foreground">
+          Requester changed from{" "}
+          <span className="text-foreground/80">{fromName ?? "unknown"}</span>
+          {fromCompany && (
+            <span className="text-muted-foreground/70"> ({fromCompany})</span>
+          )}
+          {" "}to{" "}
+          <span className="text-foreground/80">{toName ?? "unknown"}</span>
+          {toCompany && (
+            <span className="text-muted-foreground/70"> ({toCompany})</span>
+          )}
+        </span>
+      );
+    }
 
     case "SystemNote":
       return (
@@ -711,6 +744,7 @@ function TimelineEvent({
     event.eventType === "QueueChange" ||
     event.eventType === "CategoryChange" ||
     event.eventType === "CompanyAssignment" ||
+    event.eventType === "RequesterChange" ||
     event.eventType === "Created";
 
   const updateMutation = useMutation({

@@ -319,6 +319,7 @@ public sealed class MailIngestServiceTests
         public Task<TicketDetail?> GetByIdAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
         public Task<TicketDetail?> UpdateFieldsAsync(Guid t, TicketFieldUpdate u, Guid a, CancellationToken ct) => throw new NotImplementedException();
         public Task<TicketDetail?> AssignCompanyAsync(Guid t, Guid c, Guid a, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketDetail?> ChangeRequesterAsync(Guid t, Guid c, Guid? co, bool aw, string? rv, Guid a, CancellationToken ct) => throw new NotImplementedException();
         public Task<TicketEvent?> UpdateEventAsync(Guid t, long e, UpdateTicketEvent u, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<TicketEventRevision>> GetEventRevisionsAsync(Guid t, long e, CancellationToken ct) => throw new NotImplementedException();
         public Task<TicketEventPin?> PinEventAsync(Guid t, long e, Guid u, string r, CancellationToken ct) => throw new NotImplementedException();

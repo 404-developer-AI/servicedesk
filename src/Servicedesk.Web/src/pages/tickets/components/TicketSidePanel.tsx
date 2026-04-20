@@ -6,6 +6,7 @@ import { useServerTime, toServerLocal, formatUtcSuffix } from "@/hooks/useServer
 import { AgentPicker } from "@/components/AgentPicker";
 import { ContactFormDialog } from "@/components/ContactFormDialog";
 import { AddContactLinkDialog } from "@/components/AddContactLinkDialog";
+import { SwitchRequesterDialog } from "@/components/SwitchRequesterDialog";
 import { AddCompanyContactDialog } from "@/components/AddCompanyContactDialog";
 import { CompanyEditDialog } from "@/components/CompanyEditDialog";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,7 @@ import {
   Pencil,
   Plus,
   User,
+  UserCog,
 } from "lucide-react";
 
 type TicketSidePanelProps = {
@@ -180,7 +182,12 @@ export function TicketSidePanel({ ticket, onUpdate, onRequestCompanyAssign }: Ti
           <StatusTab ticket={ticket} onUpdate={onUpdate} />
         )}
         {activeTab === "contact" && (
-          <ContactTab contact={contact ?? null} />
+          <ContactTab
+            contact={contact ?? null}
+            ticketId={ticket.id}
+            currentContactId={ticket.requesterContactId}
+            currentCompanyId={ticket.companyId}
+          />
         )}
         {activeTab === "company" && (
           <CompanyTab
@@ -356,10 +363,21 @@ function StatusTab({
 
 /* ─── Contact Tab ─── */
 
-function ContactTab({ contact }: { contact: Contact | null }) {
+function ContactTab({
+  contact,
+  ticketId,
+  currentContactId,
+  currentCompanyId,
+}: {
+  contact: Contact | null;
+  ticketId: string;
+  currentContactId: string;
+  currentCompanyId: string | null;
+}) {
   const qc = useQueryClient();
   const [editing, setEditing] = React.useState(false);
   const [linking, setLinking] = React.useState(false);
+  const [switching, setSwitching] = React.useState(false);
 
   const { data: companyLinks } = useQuery({
     queryKey: ["contact-companies", contact?.id],
@@ -384,15 +402,26 @@ function ContactTab({ contact }: { contact: Contact | null }) {
         <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
           Requester
         </div>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
-          onClick={() => setEditing(true)}
-          title="Edit contact details"
-        >
-          <Pencil className="h-3 w-3 mr-1" /> Edit
-        </Button>
+        <div className="flex items-center gap-0.5">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+            onClick={() => setSwitching(true)}
+            title="Switch to a different contact"
+          >
+            <UserCog className="h-3 w-3 mr-1" /> Switch
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+            onClick={() => setEditing(true)}
+            title="Edit contact details"
+          >
+            <Pencil className="h-3 w-3 mr-1" /> Edit
+          </Button>
+        </div>
       </div>
 
       <ContactFormDialog
@@ -403,6 +432,14 @@ function ContactTab({ contact }: { contact: Contact | null }) {
         onSaved={() => {
           qc.invalidateQueries({ queryKey: ["contact", contact.id] });
         }}
+      />
+
+      <SwitchRequesterDialog
+        open={switching}
+        ticketId={ticketId}
+        currentContactId={currentContactId}
+        currentCompanyId={currentCompanyId}
+        onClose={() => setSwitching(false)}
       />
 
       {linking && (

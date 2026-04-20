@@ -23,6 +23,8 @@ export type SettingsSection = {
   icon: LucideIcon;
   /** When set, the section renders a "coming soon" stub instead of real content. */
   comingIn?: string;
+  /** When true, a subtle separator is drawn below this entry in the nav rail. */
+  separatorAfter?: boolean;
 };
 
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
@@ -32,13 +34,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       "Branding, localization, default timezones and other app-wide knobs.",
     icon: SlidersHorizontal,
-  },
-  {
-    slug: "tickets",
-    label: "Tickets",
-    description:
-      "Queues, statuses, priorities and categories — the taxonomies every ticket hangs off.",
-    icon: Ticket,
+    separatorAfter: true,
   },
   {
     slug: "companies",
@@ -53,6 +49,20 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       "Every contact across companies — primary/secondary/supplier links, inline details and a dedicated primary-move flow.",
     icon: Contact,
+    separatorAfter: true,
+  },
+  {
+    slug: "tickets",
+    label: "Tickets",
+    description:
+      "Queues, statuses, priorities and categories — the taxonomies every ticket hangs off.",
+    icon: Ticket,
+  },
+  {
+    slug: "queue-access",
+    label: "Queue Access",
+    description: "Control which agents can access which queues.",
+    icon: Shield,
   },
   {
     slug: "views",
@@ -62,16 +72,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: Eye,
   },
   {
-    slug: "queue-access",
-    label: "Queue Access",
-    description: "Control which agents can access which queues.",
-    icon: Shield,
-  },
-  {
     slug: "view-groups",
     label: "View Groups",
     description: "Bundle views and assign them to agents as a group.",
     icon: Users,
+    separatorAfter: true,
   },
   {
     slug: "mail",
@@ -81,16 +86,17 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: Mail,
   },
   {
-    slug: "sla",
-    label: "SLA",
-    description: "Response and resolution targets, business hours, holidays, first-contact rules.",
-    icon: Timer,
-  },
-  {
     slug: "integrations",
     label: "Integrations",
     description: "Microsoft 365, webhooks, outbound connectors and API tokens.",
     icon: Plug,
+    separatorAfter: true,
+  },
+  {
+    slug: "sla",
+    label: "SLA",
+    description: "Response and resolution targets, business hours, holidays, first-contact rules.",
+    icon: Timer,
   },
   {
     slug: "mail-diagnostics",
@@ -100,18 +106,18 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     icon: Paperclip,
   },
   {
-    slug: "health",
-    label: "Health",
-    description:
-      "Live status of background subsystems — mail polling, Graph credentials, storage. Retry actions and troubleshooting.",
-    icon: Activity,
-  },
-  {
     slug: "audit",
     label: "Audit log",
     description:
       "Append-only HMAC-chained record of security events — rate limits, CSP violations, setting changes.",
     icon: ScrollText,
+  },
+  {
+    slug: "health",
+    label: "Health",
+    description:
+      "Live status of background subsystems — mail polling, Graph credentials, storage. Retry actions and troubleshooting.",
+    icon: Activity,
   },
 ];
 

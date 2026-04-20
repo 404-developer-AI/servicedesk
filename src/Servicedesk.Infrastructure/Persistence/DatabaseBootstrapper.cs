@@ -346,7 +346,8 @@ public sealed class DatabaseBootstrapper : IHostedService
             CONSTRAINT chk_ticket_event_type
                 CHECK (event_type IN ('Created','Comment','Mail','Note','StatusChange',
                                       'AssignmentChange','PriorityChange','QueueChange',
-                                      'CategoryChange','SystemNote'))
+                                      'CategoryChange','SystemNote','MailReceived',
+                                      'MailSent','CompanyAssignment','RequesterChange'))
         );
 
         CREATE INDEX IF NOT EXISTS ix_ticket_events_ticket_created
@@ -1099,12 +1100,13 @@ public sealed class DatabaseBootstrapper : IHostedService
 
         -- See v0.0.8 block above for the NOT VALID rationale — legacy rows
         -- outside the whitelist are grandfathered; only new writes enforce.
+        -- v0.0.12 adds 'RequesterChange' for the switch-requester timeline event.
         ALTER TABLE ticket_events DROP CONSTRAINT IF EXISTS chk_ticket_event_type;
         ALTER TABLE ticket_events ADD CONSTRAINT chk_ticket_event_type
             CHECK (event_type IN ('Created','Comment','Mail','Note','StatusChange',
                                   'AssignmentChange','PriorityChange','QueueChange',
                                   'CategoryChange','SystemNote','MailReceived',
-                                  'MailSent','CompanyAssignment')) NOT VALID;
+                                  'MailSent','CompanyAssignment','RequesterChange')) NOT VALID;
 
         -- ===============================================================
         -- v0.0.12 stap 4 — mention notifications (@@-tag pipeline)
