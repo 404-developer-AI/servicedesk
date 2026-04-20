@@ -1252,6 +1252,20 @@ public sealed class DatabaseBootstrapper : IHostedService
                 await using var command = connection.CreateCommand();
                 command.CommandText = Sql;
                 await command.ExecuteNonQueryAsync(cancellationToken);
+
+                // On a fresh database the CREATE EXTENSION statements above
+                // install citext/pg_trgm/unaccent/pgcrypto. Npgsql caches the
+                // type-OID → CLR-type map on first-connection (e.g. for
+                // DataProtection's keyring read that happens before this
+                // hosted service). Connections opened before the extensions
+                // existed return DataTypeName "-" for citext columns, which
+                // crashes Dapper later (TaxonomyRepository.ListQueuesAsync).
+                // ReloadTypes refreshes the cache for this connection, and
+                // ClearPool discards every other pooled connection so future
+                // rents re-fetch the now-complete type catalogue.
+                connection.ReloadTypes();
+                NpgsqlConnection.ClearPool(connection);
+
                 _logger.LogInformation(
                     "Database bootstrap complete (audit + auth + ticket domain) after {Attempts} attempt(s).",
                     attempt);
