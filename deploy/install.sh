@@ -128,6 +128,39 @@ check_os_and_root() {
 }
 
 # ===========================================================================
+# 1b. verify the clock — apt + TLS + Let's Encrypt all refuse to work with
+#     a skewed system clock. Fresh VPSes frequently boot with the clock set
+#     to their hypervisor host's time and need a few seconds for NTP to
+#     converge.
+# ===========================================================================
+check_clock() {
+    local synced
+    synced="$(timedatectl show --property=NTPSynchronized --value 2>/dev/null || echo no)"
+    if [[ "$synced" == "yes" ]]; then
+        ok "System clock is NTP-synchronized."
+        return
+    fi
+
+    warn "System clock is NOT NTP-synchronized — this breaks apt + TLS + Let's Encrypt."
+    log "Enabling systemd-timesyncd and waiting up to 30s for sync …"
+    timedatectl set-ntp true >/dev/null 2>&1 || true
+    systemctl restart systemd-timesyncd >/dev/null 2>&1 || true
+
+    for i in $(seq 1 15); do
+        sleep 2
+        synced="$(timedatectl show --property=NTPSynchronized --value 2>/dev/null || echo no)"
+        if [[ "$synced" == "yes" ]]; then
+            ok "Clock converged after $((i*2))s."
+            return
+        fi
+    done
+
+    die "Clock did not sync within 30s. Fix manually then re-run install.sh:
+    sudo apt install -y chrony && sudo systemctl enable --now chrony
+    # wait for: chronyc sources → should show a '*' next to a server"
+}
+
+# ===========================================================================
 # 2. prompts
 # ===========================================================================
 collect_prompts() {
@@ -505,6 +538,7 @@ main() {
     hr
 
     check_os_and_root
+    check_clock
     collect_prompts
     install_docker
     install_postgres
