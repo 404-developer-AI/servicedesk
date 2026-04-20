@@ -42,13 +42,18 @@ public sealed class SecurityHeadersTests : IClassFixture<SecurityBaselineFactory
         Assert.Contains("report-uri /api/security/csp-report", csp);
         Assert.DoesNotContain("'unsafe-eval'", csp);
 
-        // script-src stays strict — no 'unsafe-inline'. style-src intentionally
-        // allows 'unsafe-inline' because Sonner/Radix/Framer/Vaul inject
-        // stylesheets at runtime without a nonce; see middleware comment.
+        // script-src stays strict — no 'unsafe-inline', nonce enforced.
         var scriptDirective = ExtractDirective(csp, "script-src");
         Assert.DoesNotContain("'unsafe-inline'", scriptDirective);
+        Assert.Contains("'nonce-", scriptDirective);
+
+        // style-src intentionally allows 'unsafe-inline' because
+        // Sonner/Radix/Framer/Vaul inject stylesheets at runtime without a
+        // nonce. CRITICAL: no nonce in style-src — browsers ignore
+        // 'unsafe-inline' when a nonce is present in the same directive.
         var styleDirective = ExtractDirective(csp, "style-src");
         Assert.Contains("'unsafe-inline'", styleDirective);
+        Assert.DoesNotContain("'nonce-", styleDirective);
         Assert.Contains("https://fonts.googleapis.com", styleDirective);
         Assert.Contains("https://fonts.gstatic.com", ExtractDirective(csp, "font-src"));
     }

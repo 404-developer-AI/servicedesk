@@ -80,11 +80,21 @@ public sealed class ContentSecurityPolicyMiddleware
         // renders unstyled. The CSP-3 nonce model has no 'strict-dynamic' for
         // styles, and sonner@2.0.7 exposes no nonce prop. Accepted tradeoff:
         // style-injection is not script-injection; script-src stays strict.
+        //
+        // NOTE: the nonce is deliberately NOT emitted in style-src. Per CSP-3,
+        // the presence of a nonce in a directive causes 'unsafe-inline' to be
+        // IGNORED by conformant browsers (Chrome/Firefox) — a strict-mode
+        // fallback for backwards compatibility. Since we do not render any
+        // nonced <style> tags ourselves (the SPA only uses <link rel=stylesheet>
+        // plus runtime-injected styles), the nonce adds nothing here and its
+        // mere presence would break the UI libs. It still lives in script-src
+        // where it continues to be the primary defense against XSS.
+        //
         // fonts.googleapis.com is whitelisted because index.css @imports Inter
         // from there; the actual .woff2 files come from fonts.gstatic.com
         // (see font-src below).
         const string styleHosts = "https://fonts.googleapis.com";
-        var styleSrc = $"'self' 'nonce-{nonce}' 'unsafe-inline' {styleHosts}";
+        var styleSrc = $"'self' 'unsafe-inline' {styleHosts}";
 
         var connectSrc = development
             ? "'self' ws: wss: http://localhost:* https://localhost:*"
