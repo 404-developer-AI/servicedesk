@@ -51,3 +51,54 @@ jobs:
 
       - name: Test
         run: npm test
+
+  docker:
+    name: docker (image build + boot smoke)
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # MinVer needs tags for the APP_VERSION build-arg fallback.
+
+      - name: Derive APP_VERSION from git
+        id: ver
+        run: echo "value=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        run: |
+          docker build \
+            --build-arg APP_VERSION="${{ steps.ver.outputs.value }}" \
+            --tag servicedesk/app:ci \
+            .
+
+      - name: Boot container (expect healthcheck degraded — no DB on CI)
+        run: |
+          # Supply the three required SERVICEDESK_ secrets with dummy values so
+          # StartupSecretValidator passes. Postgres is unreachable on CI, so
+          # DatabaseBootstrapper will retry until we stop the container.
+          docker run -d --name sd \
+            -e SERVICEDESK_ConnectionStrings__Postgres="Host=127.0.0.1;Database=x;Username=x;Password=x" \
+            -e SERVICEDESK_Audit__HashKey="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" \
+            -e SERVICEDESK_DataProtection__MasterKey="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" \
+            -p 8080:8080 \
+            servicedesk/app:ci
+
+          # Give Kestrel a few seconds to bind :8080. We don't wait for healthy
+          # because Postgres is unreachable — we only prove the image starts,
+          # accepts a TCP connection, and serves the version endpoint.
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:8080/api/system/version; then
+              echo "boot ok"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "boot failed — dumping logs:"
+          docker logs sd
+          exit 1
+
+      - name: Stop container
+        if: always()
+        run: docker rm -f sd 2>/dev/null || true

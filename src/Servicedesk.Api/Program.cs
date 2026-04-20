@@ -140,6 +140,12 @@ if (!app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseServicedeskSecurityHeaders();
 app.UseServicedeskContentSecurityPolicy();
+
+// Serve the React SPA bundle from /wwwroot in production. In dev the folder
+// is empty (Vite serves the UI on :5173 via proxy), so this is a no-op.
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -203,6 +209,10 @@ app.MapNotificationEndpoints();
 app.MapDevBenchmarkEndpoints(app.Environment);
 app.MapHub<TicketPresenceHub>("/hubs/presence");
 app.MapHub<UserNotificationHub>("/hubs/notifications");
+
+// Deep-link fallback for the SPA. The regex excludes /api/* and /hubs/* so an
+// unknown API route still returns 404 (JSON client) instead of HTML.
+app.MapFallbackToFile("{*path:regex(^(?!api/|hubs/).*$)}", "index.html");
 
 app.Run();
 

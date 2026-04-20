@@ -1,0 +1,44 @@
+# Build outputs — regenerated inside the image.
+**/bin/
+**/obj/
+**/node_modules/
+src/Servicedesk.Web/dist/
+
+# Git metadata is not needed in the image (MinVer uses APP_VERSION build-arg
+# when running under Docker — see Dockerfile).
+.git/
+.github/
+.vscode/
+.vs/
+.idea/
+
+# Dev-only secrets and local env. Production reads from /etc/servicedesk/secrets.env
+# mounted via compose; nothing in the repo should contain real credentials.
+.env
+.env.*
+!.env.example
+**/secrets.json
+**/user-secrets/
+
+# OS + editor cruft.
+*.DS_Store
+Thumbs.db
+*.swp
+*.log
+**/*.user
+
+# Test artifacts.
+TestResults/
+coverage/
+*.trx
+
+# Internal docs that must never ship in an image (see CLAUDE.md "Docs — two tracks").
+CLAUDE.md
+ARCHITECTURE.md
+ROADMAP.md
+CHANGELOG.md
+CHANGELOG-archive.md
+docs/
+
+# Plans and memory never belong in a container.
+.claude/

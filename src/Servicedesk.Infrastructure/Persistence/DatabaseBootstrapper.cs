@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -1223,13 +1224,57 @@ public sealed class DatabaseBootstrapper : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = Sql;
-        await command.ExecuteNonQueryAsync(cancellationToken);
-        _logger.LogInformation(
-            "Database bootstrap complete (audit + auth + ticket domain).");
+        // Under Docker-compose on a VPS, Postgres runs native on the host and
+        // may be a few seconds behind container start. In dev (Windows) Postgres
+        // is always up so the first attempt wins. Same code path for both.
+        var delay = TimeSpan.FromMilliseconds(500);
+        var maxDelay = TimeSpan.FromSeconds(5);
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(2);
+        var attempt = 0;
+
+        while (true)
+        {
+            attempt++;
+            try
+            {
+                await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+                await using var command = connection.CreateCommand();
+                command.CommandText = Sql;
+                await command.ExecuteNonQueryAsync(cancellationToken);
+                _logger.LogInformation(
+                    "Database bootstrap complete (audit + auth + ticket domain) after {Attempts} attempt(s).",
+                    attempt);
+                return;
+            }
+            catch (Exception ex) when (IsTransient(ex))
+            {
+                if (DateTimeOffset.UtcNow >= deadline)
+                {
+                    _logger.LogError(ex,
+                        "Database bootstrap giving up after {Attempts} attempts — Postgres unreachable for 2 minutes.",
+                        attempt);
+                    throw;
+                }
+
+                _logger.LogWarning(
+                    "Database bootstrap attempt {Attempt} failed ({ErrorType}). Retrying in {DelayMs}ms…",
+                    attempt, ex.GetType().Name, (int)delay.TotalMilliseconds);
+
+                await Task.Delay(delay, cancellationToken);
+                delay = delay < maxDelay
+                    ? TimeSpan.FromMilliseconds(Math.Min(delay.TotalMilliseconds * 2, maxDelay.TotalMilliseconds))
+                    : maxDelay;
+            }
+        }
     }
+
+    internal static bool IsTransient(Exception ex) => ex switch
+    {
+        NpgsqlException npg => npg.IsTransient || npg.InnerException is SocketException,
+        SocketException => true,
+        TimeoutException => true,
+        _ => false,
+    };
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

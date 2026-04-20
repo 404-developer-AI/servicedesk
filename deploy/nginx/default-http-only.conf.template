@@ -1,0 +1,63 @@
+# default-http-only.conf.template — non-TLS variant for the SSL=no install.sh
+# path. Used in dev-demos, VPN-only deployments, or behind a trusted external
+# TLS terminator. install.sh (v0.0.15) copies this to the template mount when
+# the admin declines Let's Encrypt.
+#
+# Same header-ownership rule as the TLS variant: nginx owns zero response
+# headers here (no HSTS without TLS) — all security headers come from the app.
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+limit_req_zone $binary_remote_addr zone=auth:10m rate=10r/s;
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+
+    gzip on;
+    gzip_vary on;
+    gzip_types text/plain text/css application/json application/javascript application/xml+rss application/xml text/javascript;
+    gzip_min_length 1024;
+
+    client_max_body_size 50M;
+
+    location ~ ^/api/auth/ {
+        limit_req zone=auth burst=20 nodelay;
+        proxy_pass http://app:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /hubs/ {
+        proxy_pass http://app:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 24h;
+        proxy_send_timeout 24h;
+        proxy_buffering off;
+    }
+
+    location / {
+        proxy_pass http://app:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 300s;
+    }
+}

@@ -31,4 +31,8 @@
     <ProjectReference Include="..\Servicedesk.Domain\Servicedesk.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Servicedesk.Api.Tests" />
+  </ItemGroup>
+
 </Project>

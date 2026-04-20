@@ -1,0 +1,84 @@
+# docker-compose.yml — production topology.
+#
+# Postgres runs native on the host (deliberate, not in this compose — see
+# ARCHITECTURE.md "Data"). The app container reaches it via the host-gateway
+# bridge (host.docker.internal). Connection string lives in
+# /etc/servicedesk/secrets.env (root:root 600, provisioned by install.sh in
+# v0.0.15).
+#
+# The certbot service is profile-gated (`--profile certs`) — it is only run
+# on-demand for first-issue and (later, v0.0.16) manual-renew via the Health
+# page. We do not leave a long-running cert container in the compose.
+
+name: servicedesk
+
+services:
+  app:
+    image: servicedesk/app:${APP_VERSION:-latest}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-}
+    restart: unless-stopped
+    env_file:
+      - /etc/servicedesk/secrets.env
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+    extra_hosts:
+      # Lets the app resolve `host.docker.internal` to the host that runs
+      # docker — the native Postgres listens there on 127.0.0.1 + 172.17.0.1.
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Content-addressed blob store. Same path inside and outside the
+      # container so the Storage.BlobRoot setting is identical for dev + prod.
+      - /var/lib/servicedesk/blobs:/var/lib/servicedesk/blobs
+    networks:
+      - servicedesk
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/system/health"]
+      interval: 20s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+    volumes:
+      # Templated config — nginx entrypoint runs envsubst on *.template files.
+      # install.sh (v0.0.15) points this at default-http-only.conf.template
+      # when the admin opts out of Let's Encrypt.
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - certs:/etc/letsencrypt:ro
+      - acme-webroot:/var/www/certbot:ro
+    networks:
+      - servicedesk
+    depends_on:
+      app:
+        condition: service_healthy
+
+  certbot:
+    image: certbot/certbot:latest
+    profiles: ["certs"]
+    volumes:
+      - certs:/etc/letsencrypt
+      - acme-webroot:/var/www/certbot
+    # Entrypoint overridden per invocation by install.sh (first-issue) or the
+    # future Health-page "Renew now" action (v0.0.16). No long-running loop.
+    entrypoint: ["certbot"]
+
+networks:
+  servicedesk:
+    driver: bridge
+
+volumes:
+  certs:
+  acme-webroot:

@@ -1,0 +1,100 @@
+# default.conf.template — TLS-terminated reverse proxy for the SSL=true path.
+# install.sh (v0.0.15) selects between this template and default-http-only.conf.template
+# based on the admin's SSL choice, then the nginx:alpine entrypoint renders
+# ${DOMAIN} via envsubst at container start.
+#
+# Header overlap: the app itself writes X-Content-Type-Options, X-Frame-Options,
+# CSP, Referrer-Policy, Permissions-Policy, COOP, CORP via
+# SecurityHeadersMiddleware + ContentSecurityPolicyMiddleware. Nginx owns only
+# HSTS (TLS-termination concern — the app cannot know TLS is on).
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+# Per-IP rate-limit zone for /api/auth/*. Belt-and-braces with the app's own
+# AddRateLimiter — nginx stops abusive traffic before it reaches Kestrel.
+limit_req_zone $binary_remote_addr zone=auth:10m rate=10r/s;
+
+# ---------------------------------------------------------------------------
+# Port 80 — ACME http-01 challenge + redirect to https.
+# ---------------------------------------------------------------------------
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Port 443 — TLS-terminated reverse proxy. Requires certs at
+# /etc/letsencrypt/live/${DOMAIN}/ (provisioned by install.sh certbot step).
+# ---------------------------------------------------------------------------
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_timeout 1d;
+    ssl_session_cache   shared:MozSSL:10m;
+
+    # HSTS — 1 year, includeSubDomains, no preload-list submission until v0.1.0.
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    gzip on;
+    gzip_vary on;
+    gzip_types text/plain text/css application/json application/javascript application/xml+rss application/xml text/javascript;
+    gzip_min_length 1024;
+
+    # Attachment upload ceiling. Individual caps live in Mail.MaxAttachmentBytes.
+    client_max_body_size 50M;
+
+    location ~ ^/api/auth/ {
+        limit_req zone=auth burst=20 nodelay;
+        proxy_pass http://app:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /hubs/ {
+        proxy_pass http://app:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 24h;
+        proxy_send_timeout 24h;
+        proxy_buffering off;
+    }
+
+    location / {
+        proxy_pass http://app:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 300s;
+    }
+}
