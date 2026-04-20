@@ -116,10 +116,6 @@ export function SwitchRequesterDialog({
       ? [currentContact.firstName, currentContact.lastName].filter(Boolean).join(" ")
         || currentContact.email
       : "Current requester";
-  const newName = newContact
-    ? [newContact.firstName, newContact.lastName].filter(Boolean).join(" ")
-      || newContact.email
-    : null;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && !switchMutation.isPending && onClose()}>
