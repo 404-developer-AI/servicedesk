@@ -41,7 +41,16 @@ public sealed class SecurityHeadersTests : IClassFixture<SecurityBaselineFactory
         Assert.Contains("object-src 'none'", csp);
         Assert.Contains("report-uri /api/security/csp-report", csp);
         Assert.DoesNotContain("'unsafe-eval'", csp);
-        Assert.DoesNotContain("'unsafe-inline'", csp);
+
+        // script-src stays strict — no 'unsafe-inline'. style-src intentionally
+        // allows 'unsafe-inline' because Sonner/Radix/Framer/Vaul inject
+        // stylesheets at runtime without a nonce; see middleware comment.
+        var scriptDirective = ExtractDirective(csp, "script-src");
+        Assert.DoesNotContain("'unsafe-inline'", scriptDirective);
+        var styleDirective = ExtractDirective(csp, "style-src");
+        Assert.Contains("'unsafe-inline'", styleDirective);
+        Assert.Contains("https://fonts.googleapis.com", styleDirective);
+        Assert.Contains("https://fonts.gstatic.com", ExtractDirective(csp, "font-src"));
     }
 
     [Fact]
@@ -68,5 +77,19 @@ public sealed class SecurityHeadersTests : IClassFixture<SecurityBaselineFactory
         var start = i + marker.Length;
         var end = csp.IndexOf('\'', start);
         return end < 0 ? "" : csp[start..end];
+    }
+
+    private static string ExtractDirective(string csp, string name)
+    {
+        foreach (var part in csp.Split(';'))
+        {
+            var trimmed = part.Trim();
+            if (trimmed.StartsWith(name + " ", StringComparison.Ordinal) ||
+                trimmed.Equals(name, StringComparison.Ordinal))
+            {
+                return trimmed;
+            }
+        }
+        return "";
     }
 }

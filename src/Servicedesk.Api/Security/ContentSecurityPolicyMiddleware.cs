@@ -73,11 +73,18 @@ public sealed class ContentSecurityPolicyMiddleware
             ? $"'self' 'nonce-{nonce}' 'unsafe-eval'"
             : $"'self' 'nonce-{nonce}'";
 
-        // Vite's dev client injects <style> tags without a nonce; allow 'unsafe-inline'
-        // in dev only so HMR CSS updates work. Production keeps the nonce-only policy.
-        var styleSrc = development
-            ? $"'self' 'nonce-{nonce}' 'unsafe-inline'"
-            : $"'self' 'nonce-{nonce}'";
+        // style-src allows 'unsafe-inline' in both dev and prod. Reason: Sonner,
+        // Radix, Framer Motion, Vaul and other UI libs inject stylesheets at
+        // runtime via document.createElement('style') without a nonce — a
+        // nonce-only policy blocks them and the toast/drawer/dropdown UI
+        // renders unstyled. The CSP-3 nonce model has no 'strict-dynamic' for
+        // styles, and sonner@2.0.7 exposes no nonce prop. Accepted tradeoff:
+        // style-injection is not script-injection; script-src stays strict.
+        // fonts.googleapis.com is whitelisted because index.css @imports Inter
+        // from there; the actual .woff2 files come from fonts.gstatic.com
+        // (see font-src below).
+        const string styleHosts = "https://fonts.googleapis.com";
+        var styleSrc = $"'self' 'nonce-{nonce}' 'unsafe-inline' {styleHosts}";
 
         var connectSrc = development
             ? "'self' ws: wss: http://localhost:* https://localhost:*"
@@ -89,7 +96,7 @@ public sealed class ContentSecurityPolicyMiddleware
             $"script-src {scriptSrc}",
             $"style-src {styleSrc}",
             "img-src 'self' data: blob:",
-            "font-src 'self' data:",
+            "font-src 'self' data: https://fonts.gstatic.com",
             $"connect-src {connectSrc}",
             allowSameOriginFrame ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
             "base-uri 'self'",
