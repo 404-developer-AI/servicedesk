@@ -207,6 +207,7 @@ configure_postgres_listen() {
     pg_conf=$(sudo -u postgres psql -tAc "SHOW config_file")
     pg_hba=$(sudo -u postgres psql -tAc "SHOW hba_file")
     local sentinel="# servicedesk-managed"
+    local needs_restart=0
 
     if ! grep -q "$sentinel" "$pg_conf"; then
         log "Configuring postgresql.conf for docker-gateway access …"
@@ -215,6 +216,7 @@ configure_postgres_listen() {
 ${sentinel} — added by install.sh
 listen_addresses = 'localhost,172.17.0.1'
 EOF
+        needs_restart=1
     fi
 
     if ! grep -q "$sentinel" "$pg_hba"; then
@@ -226,8 +228,27 @@ host    ${PG_APP_DB}   ${DB_USER}   172.17.0.0/16   scram-sha-256
 EOF
     fi
 
-    systemctl reload postgresql
-    ok "Postgres listen + hba configured."
+    # listen_addresses is a *restart-only* parameter — reload does NOT apply
+    # it. Run a full restart when the config file was newly touched so the
+    # docker bridge IP actually gets a listener. pg_hba reload is a subset
+    # of restart, so the restart covers both.
+    if [[ "$needs_restart" == "1" ]]; then
+        log "Restarting postgresql (listen_addresses is restart-only) …"
+        systemctl restart postgresql
+    else
+        systemctl reload postgresql
+    fi
+
+    # Verify the docker-gateway listener actually came up before we hand off
+    # to the app container. Fails fast with a clear message instead of the
+    # container retrying for 2 minutes.
+    if ! pg_isready -h 172.17.0.1 -p 5432 -t 5 >/dev/null 2>&1; then
+        die "Postgres is not accepting connections on 172.17.0.1:5432 after restart.
+    Check: sudo -u postgres psql -tAc 'SHOW listen_addresses'
+    Expected: localhost,172.17.0.1
+    Fix manually: sudo systemctl restart postgresql"
+    fi
+    ok "Postgres listen + hba configured (gateway 172.17.0.1 reachable)."
 }
 
 # ===========================================================================
