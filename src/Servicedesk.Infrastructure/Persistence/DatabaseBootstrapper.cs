@@ -307,13 +307,24 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- current primary link so the UI keeps showing the same company it
         -- used to derive on-the-fly. Tickets whose requester has no primary
         -- stay NULL and will show "no company" — unchanged from before.
-        UPDATE tickets t
-        SET company_id = cc.company_id,
-            company_resolved_via = 'primary'
-        FROM contact_companies cc
-        WHERE cc.contact_id = t.requester_contact_id
-          AND cc.role = 'primary'
-          AND t.company_id IS NULL;
+        --
+        -- Guarded: contact_companies is created further down this script (it
+        -- arrived in v0.0.9 step 2). On a fresh install the table doesn't
+        -- exist yet on first read, but there are no historical tickets to
+        -- backfill either — so we skip the UPDATE until a subsequent run
+        -- (when contact_companies is present) picks it up.
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.tables
+                       WHERE table_schema = 'public' AND table_name = 'contact_companies') THEN
+                UPDATE tickets t
+                SET company_id = cc.company_id,
+                    company_resolved_via = 'primary'
+                FROM contact_companies cc
+                WHERE cc.contact_id = t.requester_contact_id
+                  AND cc.role = 'primary'
+                  AND t.company_id IS NULL;
+            END IF;
+        END $$;
 
         CREATE INDEX IF NOT EXISTS ix_tickets_company
             ON tickets (company_id)
