@@ -36,6 +36,11 @@ readonly REPO_URL_DEFAULT="https://github.com/404-developer-AI/servicedesk.git"
 readonly REPO_REF_DEFAULT="main"
 readonly PG_APP_DB="servicedesk"
 readonly PG_VERSION_TARGET="16"
+# Must match the subnet pinned in deploy/docker-compose.yml. Hardcoded in both
+# places because install.sh writes the pg_hba rule BEFORE the compose network
+# exists — we cannot query docker for it yet.
+readonly COMPOSE_SUBNET="172.28.0.0/16"
+readonly COMPOSE_GATEWAY="172.28.0.1"
 
 # Color output — auto-disabled when stdout is not a TTY.
 if [[ -t 1 ]]; then
@@ -239,49 +244,63 @@ configure_postgres_listen() {
     local pg_conf pg_hba
     pg_conf=$(sudo -u postgres psql -tAc "SHOW config_file")
     pg_hba=$(sudo -u postgres psql -tAc "SHOW hba_file")
-    local sentinel="# servicedesk-managed"
-    local needs_restart=0
+    local begin="# >>> servicedesk-managed — do not edit between these markers"
+    local end="# <<< servicedesk-managed"
 
-    if ! grep -q "$sentinel" "$pg_conf"; then
-        log "Configuring postgresql.conf for docker-gateway access …"
-        cat >> "$pg_conf" <<EOF
+    # Strip any previous servicedesk-managed block so re-runs (and upgrades
+    # of install.sh across versions) land on the current policy instead of
+    # appending a new block each time. Uses in-place sed; the `\` in the
+    # range is the actual regex character class.
+    strip_managed_block() {
+        local f=$1
+        [[ -f "$f" ]] || return 0
+        sed -i "/${begin}/,/${end}/d" "$f"
+    }
 
-${sentinel} — added by install.sh
-listen_addresses = 'localhost,172.17.0.1'
+    strip_managed_block "$pg_conf"
+    strip_managed_block "$pg_hba"
+
+    # listen_addresses='*' + strict pg_hba is the standard dockerised pattern.
+    # pg_hba is the real auth gate; '*' only widens *which interfaces Postgres
+    # binds to*, not *who can authenticate*. External firewalls (UFW, cloud
+    # provider security groups) should still block 5432 from the WAN — the
+    # runbook covers this.
+    log "Writing postgresql.conf servicedesk-managed block …"
+    cat >> "$pg_conf" <<EOF
+
+${begin}
+# Listen on all interfaces so the docker-compose bridge (subnet pinned in
+# deploy/docker-compose.yml to ${COMPOSE_SUBNET}) can reach us. Auth is enforced
+# by the host-rule below in pg_hba.conf.
+listen_addresses = '*'
+${end}
 EOF
-        needs_restart=1
-    fi
 
-    if ! grep -q "$sentinel" "$pg_hba"; then
-        log "Configuring pg_hba.conf for docker bridge (172.17.0.0/16) …"
-        cat >> "$pg_hba" <<EOF
+    log "Writing pg_hba.conf servicedesk-managed block (subnet ${COMPOSE_SUBNET}) …"
+    cat >> "$pg_hba" <<EOF
 
-${sentinel} — added by install.sh
-host    ${PG_APP_DB}   ${DB_USER}   172.17.0.0/16   scram-sha-256
+${begin}
+# Allow the app container on the pinned compose bridge. scram-sha-256 only;
+# no 'trust' lines ever. The 'md5' method is deprecated and explicitly avoided.
+host    ${PG_APP_DB}   ${DB_USER}   ${COMPOSE_SUBNET}   scram-sha-256
+${end}
 EOF
-    fi
 
     # listen_addresses is a *restart-only* parameter — reload does NOT apply
-    # it. Run a full restart when the config file was newly touched so the
-    # docker bridge IP actually gets a listener. pg_hba reload is a subset
-    # of restart, so the restart covers both.
-    if [[ "$needs_restart" == "1" ]]; then
-        log "Restarting postgresql (listen_addresses is restart-only) …"
-        systemctl restart postgresql
-    else
-        systemctl reload postgresql
-    fi
+    # it. Always restart after we've (re)written the block.
+    log "Restarting postgresql to apply listen_addresses + hba …"
+    systemctl restart postgresql
 
-    # Verify the docker-gateway listener actually came up before we hand off
-    # to the app container. Fails fast with a clear message instead of the
-    # container retrying for 2 minutes.
-    if ! pg_isready -h 172.17.0.1 -p 5432 -t 5 >/dev/null 2>&1; then
-        die "Postgres is not accepting connections on 172.17.0.1:5432 after restart.
+    # Verify Postgres is accepting TCP connections from a bridge-local address.
+    # pg_isready over 127.0.0.1 proves the listener is up; the actual hba
+    # rule is exercised later when the app container authenticates.
+    if ! pg_isready -h 127.0.0.1 -p 5432 -t 5 >/dev/null 2>&1; then
+        die "Postgres is not accepting connections on 127.0.0.1:5432 after restart.
+    Check: systemctl status postgresql
     Check: sudo -u postgres psql -tAc 'SHOW listen_addresses'
-    Expected: localhost,172.17.0.1
-    Fix manually: sudo systemctl restart postgresql"
+    Expected listen_addresses: *"
     fi
-    ok "Postgres listen + hba configured (gateway 172.17.0.1 reachable)."
+    ok "Postgres listen (='*') + hba (${COMPOSE_SUBNET}) configured."
 }
 
 # ===========================================================================
@@ -337,7 +356,7 @@ generate_secrets_env() {
 # Generated: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 # Mode: 600 root:root. Keep out of git, rsync, or any backup that is not encrypted.
 
-SERVICEDESK_ConnectionStrings__Postgres=Host=host.docker.internal;Port=5432;Database=${PG_APP_DB};Username=${DB_USER};Password=${DB_PASSWORD}
+SERVICEDESK_ConnectionStrings__Postgres=Host=${COMPOSE_GATEWAY};Port=5432;Database=${PG_APP_DB};Username=${DB_USER};Password=${DB_PASSWORD}
 SERVICEDESK_Audit__HashKey=${hash_key}
 SERVICEDESK_DataProtection__MasterKey=${master_key}
 EOF
@@ -494,7 +513,7 @@ Postgres:
   Role:             ${DB_USER}
   Database:         ${PG_APP_DB}
   Password:         ${DB_PASSWORD}
-  Connection:       Host=host.docker.internal;Port=5432;Database=${PG_APP_DB};Username=${DB_USER}
+  Connection:       Host=${COMPOSE_GATEWAY};Port=5432;Database=${PG_APP_DB};Username=${DB_USER}
 
 TLS:                ${SSL}
 $([[ "$SSL" == "yes" ]] && echo "Let's Encrypt cert: /etc/letsencrypt/live/${DOMAIN}/fullchain.pem (inside certbot volume)")
