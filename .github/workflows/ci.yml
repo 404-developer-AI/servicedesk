@@ -56,6 +56,20 @@ jobs:
     name: docker (image build + boot smoke)
     runs-on: ubuntu-latest
     needs: [backend, frontend]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: sd_ci
+          POSTGRES_PASSWORD: ci_stub_password
+          POSTGRES_DB: servicedesk_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sd_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -79,24 +93,24 @@ jobs:
             --tag servicedesk/app:ci \
             .
 
-      - name: Boot container (expect healthcheck degraded — no DB on CI)
+      - name: Boot container against service-postgres (full smoke)
         run: |
-          # Supply the three required SERVICEDESK_ secrets with dummy values so
-          # StartupSecretValidator passes. Postgres is unreachable on CI, so
-          # DatabaseBootstrapper will retry until we stop the container.
+          # --network host lets the container reach the postgres service on
+          # localhost:5432 exactly as a VPS install would reach native-host
+          # Postgres. ASPNETCORE_URLS=:8080 stays the same — the runner's port
+          # is free because GitHub Actions runners give us a fresh host.
           docker run -d --name sd \
-            -e SERVICEDESK_ConnectionStrings__Postgres="Host=127.0.0.1;Database=x;Username=x;Password=x" \
+            --network host \
+            -e SERVICEDESK_ConnectionStrings__Postgres="Host=127.0.0.1;Port=5432;Database=servicedesk_ci;Username=sd_ci;Password=ci_stub_password" \
             -e SERVICEDESK_Audit__HashKey="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" \
             -e SERVICEDESK_DataProtection__MasterKey="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" \
-            -p 8080:8080 \
             servicedesk/app:ci
 
-          # Give Kestrel a few seconds to bind :8080. We don't wait for healthy
-          # because Postgres is unreachable — we only prove the image starts,
-          # accepts a TCP connection, and serves the version endpoint.
-          for i in $(seq 1 20); do
-            if curl -fsS http://127.0.0.1:8080/api/system/version; then
-              echo "boot ok"
+          # Wait up to 60s for the app to boot, bootstrap schema, and answer.
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/api/system/version > /dev/null; then
+              echo "boot ok — /api/system/version responded"
+              curl -fsS http://127.0.0.1:8080/api/system/version
               exit 0
             fi
             sleep 2
