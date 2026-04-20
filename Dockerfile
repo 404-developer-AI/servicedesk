@@ -56,8 +56,13 @@ COPY --from=node-build /web/dist/ /app/publish/wwwroot/
 FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS runtime
 
 # Non-root runtime user. uid 10001 avoids colliding with host uids < 1000.
+# icu-libs is required because Servicedesk.Api.csproj sets
+# InvariantGlobalization=false (we rely on culture-aware sorting + date
+# formatting for audit timestamps and ticket displays). Alpine-aspnet ships
+# without ICU; without this the app FailFasts on the first CultureInfo call.
 RUN addgroup -S sd && adduser -S -G sd -u 10001 sd \
-    && apk add --no-cache wget
+    && apk add --no-cache wget icu-libs
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 
 WORKDIR /app
 COPY --from=dotnet-build --chown=sd:sd /app/publish/ ./
