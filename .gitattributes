@@ -1,0 +1,24 @@
+# Shell scripts and Docker/nginx configs MUST have LF line endings regardless
+# of the OS that committed them. Bash + nginx choke on CR characters.
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+.dockerignore   text eol=lf
+*.conf          text eol=lf
+*.conf.template text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+
+# Text files — let git normalise on commit but keep working-copy native.
+*.cs            text
+*.csproj        text
+*.json          text
+*.md            text
+*.ts            text
+*.tsx           text
+
+# Binary — never munge.
+*.png           binary
+*.jpg           binary
+*.pdf           binary
+*.woff          binary
+*.woff2         binary
