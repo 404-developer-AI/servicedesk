@@ -143,8 +143,18 @@ app.UseServicedeskContentSecurityPolicy();
 
 // Serve the React SPA bundle from /wwwroot in production. In dev the folder
 // is empty (Vite serves the UI on :5173 via proxy), so this is a no-op.
+//
+// Order matters: StaticFileMiddleware has a ValidateNoEndpoint check that
+// skips serving when routing has already matched an endpoint. If we let
+// WebApplication auto-insert UseRouting at the start of the pipeline, the
+// MapFallbackToFile catch-all matches FIRST — then UseStaticFiles sees the
+// matched endpoint and passes through, so every /assets/*.js request returns
+// index.html with text/html. Calling UseRouting() explicitly AFTER
+// UseStaticFiles moves routing past the static-file check, so real files on
+// disk are served before the fallback endpoint is considered.
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.UseRouting();
 
 app.UseRateLimiter();
 app.UseAuthentication();
