@@ -440,6 +440,8 @@ public sealed class OutboundMailServiceTests
         public Task<ApplicationUser?> CreateFirstAdminAsync(string email, string passwordHash, CancellationToken ct = default) => Task.FromResult<ApplicationUser?>(null);
         public Task<ApplicationUser?> FindByEmailAsync(string email, CancellationToken ct = default) => Task.FromResult<ApplicationUser?>(null);
         public Task<ApplicationUser?> FindByIdAsync(Guid id, CancellationToken ct = default) => Task.FromResult<ApplicationUser?>(null);
+        public Task<ApplicationUser?> FindByExternalAsync(string provider, string subject, CancellationToken ct = default) => Task.FromResult<ApplicationUser?>(null);
+        public Task MarkInactiveAsync(Guid userId, CancellationToken ct = default) => Task.CompletedTask;
         public Task<IReadOnlyList<AgentUser>> ListAgentsAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<AgentUser>>(Array.Empty<AgentUser>());
         public Task<IReadOnlyList<AgentUser>> SearchAgentsAsync(string? search, int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<AgentUser>>(Array.Empty<AgentUser>());
         public Task<IReadOnlyList<Guid>> FilterAgentIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default)

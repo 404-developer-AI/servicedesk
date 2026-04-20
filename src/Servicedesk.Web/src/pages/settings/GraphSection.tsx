@@ -9,6 +9,8 @@ import { SettingField } from "@/components/settings/SettingField";
 
 const GRAPH_QUERY_KEY = ["settings", "list", "Graph"] as const;
 const GRAPH_SECRET_QUERY_KEY = ["settings", "graph", "secret"] as const;
+const AUTH_QUERY_KEY = ["settings", "list", "Auth"] as const;
+const APP_QUERY_KEY = ["settings", "list", "App"] as const;
 
 function findEntry(entries: SettingEntry[] | undefined, key: string) {
   return entries?.find((e) => e.key === key);
@@ -23,6 +25,14 @@ export function GraphSection() {
   const secret = useQuery({
     queryKey: GRAPH_SECRET_QUERY_KEY,
     queryFn: () => graphAdminApi.secretStatus(),
+  });
+  const auth = useQuery({
+    queryKey: AUTH_QUERY_KEY,
+    queryFn: () => settingsApi.list("Auth"),
+  });
+  const appSettings = useQuery({
+    queryKey: APP_QUERY_KEY,
+    queryFn: () => settingsApi.list("App"),
   });
 
   const [secretValue, setSecretValue] = useState("");
@@ -61,9 +71,18 @@ export function GraphSection() {
       setTestResult(err instanceof ApiError ? `FAILED — HTTP ${err.status}` : "FAILED"),
   });
 
-  if (graph.isLoading || secret.isLoading) {
+  if (graph.isLoading || secret.isLoading || auth.isLoading || appSettings.isLoading) {
     return <Skeleton className="h-48 w-full" />;
   }
+
+  const microsoftEnabledEntry = findEntry(auth.data, "Auth.Microsoft.Enabled");
+  const microsoftEnabled = microsoftEnabledEntry?.value === "true";
+  const publicBaseEntry = findEntry(appSettings.data, "App.PublicBaseUrl");
+  const publicBaseSet = (publicBaseEntry?.value ?? "").trim().length > 0;
+  const isFullyConfigured =
+    secret.data?.configured === true &&
+    (findEntry(graph.data, "Graph.TenantId")?.value ?? "").length > 0 &&
+    (findEntry(graph.data, "Graph.ClientId")?.value ?? "").length > 0;
 
   return (
     <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
@@ -73,9 +92,22 @@ export function GraphSection() {
             Microsoft Graph
           </h2>
           <p className="text-xs text-muted-foreground">
-            App-registration credentials for mailbox polling. See{" "}
+            App-registration credentials for mailbox polling, outbound mail, and
+            Microsoft 365 sign-in. One app covers all three. See{" "}
             <code className="rounded bg-white/[0.04] px-1">docs/microsoft-graph-setup.md</code>{" "}
-            for the Azure Portal steps and required permissions.
+            for the Azure Portal walkthrough.
+          </p>
+          <p className="text-[11px] text-muted-foreground/80">
+            Required permissions — application:{" "}
+            <code className="rounded bg-white/[0.04] px-1">Mail.ReadWrite</code>,{" "}
+            <code className="rounded bg-white/[0.04] px-1">Mail.Send</code>,{" "}
+            <code className="rounded bg-white/[0.04] px-1">User.Read.All</code>. Delegated
+            (only if M365 login is enabled):{" "}
+            <code className="rounded bg-white/[0.04] px-1">openid</code>,{" "}
+            <code className="rounded bg-white/[0.04] px-1">profile</code>,{" "}
+            <code className="rounded bg-white/[0.04] px-1">email</code>,{" "}
+            <code className="rounded bg-white/[0.04] px-1">User.Read</code>. Redirect URI:{" "}
+            <code className="rounded bg-white/[0.04] px-1">&lt;public-host&gt;/api/auth/microsoft/callback</code>.
           </p>
         </div>
       </header>
@@ -146,6 +178,58 @@ export function GraphSection() {
             >
               {testResult}
             </span>
+          )}
+        </div>
+
+        <div className="mt-2 border-t border-white/[0.04] pt-4">
+          <h3 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60 mb-2">
+            Microsoft 365 sign-in
+          </h3>
+          <p className="text-xs text-muted-foreground mb-3">
+            When on, the login page shows a "Sign in with Microsoft" button and
+            the callback endpoint is active. The app registration must carry
+            the delegated <code className="rounded bg-white/[0.04] px-1">openid / profile / email / User.Read</code>{" "}
+            permissions and have a redirect URI pointing at{" "}
+            <code className="rounded bg-white/[0.04] px-1">&lt;App.PublicBaseUrl&gt;/api/auth/microsoft/callback</code>.
+            See the setup guide for details.
+          </p>
+
+          {publicBaseEntry && (
+            <div className="mb-3 space-y-1.5">
+              <SettingField
+                entry={publicBaseEntry}
+                queryKey={APP_QUERY_KEY}
+                label="App.PublicBaseUrl"
+                hint="Browser-origin for this install. Production: the public HTTPS URL behind nginx (e.g. https://desk.example.com). Dev: the Vite dev-server origin (e.g. http://localhost:5173). Required so the callback redirect lands on the SPA, not the bare Kestrel port."
+              />
+              {microsoftEnabled && !publicBaseSet && (
+                <div className="rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2 text-[11px] text-amber-200">
+                  M365 login is on but <span className="font-mono">App.PublicBaseUrl</span>{" "}
+                  is empty. After a successful Azure sign-in the browser will
+                  land on a 404 — fill this in and match it with the redirect
+                  URI in the Azure app registration.
+                </div>
+              )}
+            </div>
+          )}
+
+          {!isFullyConfigured && (
+            <div className="mb-3 rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2 text-[11px] text-amber-200">
+              Fill in Tenant ID, Client ID and the client secret above before enabling.
+            </div>
+          )}
+          {microsoftEnabledEntry ? (
+            <SettingField
+              entry={microsoftEnabledEntry}
+              queryKey={AUTH_QUERY_KEY}
+              label="Auth.Microsoft.Enabled"
+              readOnly={!isFullyConfigured}
+            />
+          ) : (
+            <div className="rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-xs text-muted-foreground">
+              Setting row not yet seeded. Restart the API once to seed the new
+              Auth defaults.
+            </div>
           )}
         </div>
       </div>

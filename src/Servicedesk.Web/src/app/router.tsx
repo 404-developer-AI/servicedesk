@@ -27,6 +27,7 @@ import { ProfilePage } from "@/pages/profile/ProfilePage";
 import { MentionHistoryPage } from "@/pages/profile/MentionHistoryPage";
 import { ViewsSettingsPage } from "@/pages/settings/ViewsSettingsPage";
 import { QueueAccessSettingsPage } from "@/pages/settings/QueueAccessSettingsPage";
+import { UsersSettingsPage } from "@/pages/settings/UsersSettingsPage";
 import { ViewGroupsSettingsPage } from "@/pages/settings/ViewGroupsSettingsPage";
 import { CompaniesSettingsPage } from "@/pages/settings/CompaniesSettingsPage";
 import { CompanyDetailPage } from "@/pages/companies/CompanyDetailPage";
@@ -305,6 +306,12 @@ const settingsQueueAccessRoute = createRoute({
   component: QueueAccessSettingsPage,
 });
 
+const settingsUsersRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "users",
+  component: UsersSettingsPage,
+});
+
 const settingsViewGroupsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "view-groups",
@@ -368,6 +375,7 @@ const routeTree = rootRoute.addChildren([
     settingsContactsRoute,
     settingsViewsRoute,
     settingsQueueAccessRoute,
+    settingsUsersRoute,
     settingsViewGroupsRoute,
     settingsMailDiagnosticsRoute,
     settingsHealthRoute,

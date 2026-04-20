@@ -21,6 +21,8 @@ public static class AuthEndpoints
 
         group.MapGet("/setup/status", GetSetupStatus).WithName("AuthSetupStatus").WithOpenApi();
 
+        group.MapGet("/config", GetAuthConfig).WithName("AuthConfig").WithOpenApi();
+
         group.MapPost("/setup/create-admin", CreateFirstAdmin)
             .WithName("AuthSetupCreateAdmin")
             .WithOpenApi()
@@ -64,6 +66,22 @@ public static class AuthEndpoints
     {
         var count = await users.CountAsync(ct);
         return Results.Ok(new { available = count == 0 });
+    }
+
+    /// Anonymous feature-flag snapshot consumed by the login page before
+    /// an auth session exists. Intentionally minimal — only signals that
+    /// an unauthenticated client legitimately needs: whether the M365
+    /// button should render, and whether the first-admin setup wizard is
+    /// still open. No tenant-id / client-id / secret exposure.
+    private static async Task<IResult> GetAuthConfig(ISettingsService settings, IUserService users, CancellationToken ct)
+    {
+        var microsoftEnabled = await settings.GetAsync<bool>(SettingKeys.Auth.MicrosoftEnabled, ct);
+        var userCount = await users.CountAsync(ct);
+        return Results.Ok(new
+        {
+            microsoftEnabled,
+            setupAvailable = userCount == 0,
+        });
     }
 
     public sealed record CreateAdminRequest(
@@ -152,6 +170,25 @@ public static class AuthEndpoints
         if (user.LockoutUntilUtc.HasValue && user.LockoutUntilUtc > DateTimeOffset.UtcNow)
         {
             return Results.StatusCode(StatusCodes.Status423Locked);
+        }
+
+        // Local-login is only available to Local-mode users. A Microsoft
+        // user has no password_hash by construction (chk_users_auth_mode
+        // enforces this), so we can't run the hasher against it. Same
+        // 401-no-details response as a wrong email so a hostile prober
+        // can't enumerate which accounts are on M365.
+        if (user.AuthMode != AuthModes.Local || string.IsNullOrEmpty(user.PasswordHash) || !user.IsActive)
+        {
+            _ = hasher.Verify("$argon2id$v=19$m=65536,t=3,p=1$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", request.Password, out _);
+            await audit.LogAsync(new AuditEvent(
+                EventType: AuthEventTypes.LoginFailed,
+                Actor: user.Email,
+                ActorRole: user.RoleName,
+                Target: user.Id.ToString(),
+                ClientIp: httpContext.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: httpContext.Request.Headers.UserAgent.ToString(),
+                Payload: new { reason = user.IsActive ? "wrong_channel" : "inactive" }), ct);
+            return Results.Unauthorized();
         }
 
         var verified = hasher.Verify(user.PasswordHash, request.Password, out var rehash);

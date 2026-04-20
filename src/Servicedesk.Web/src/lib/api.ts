@@ -751,8 +751,14 @@ export const searchApi = {
     ),
 };
 
+export type AuthConfig = {
+  microsoftEnabled: boolean;
+  setupAvailable: boolean;
+};
+
 export const authApi = {
   setupStatus: () => request<SetupStatus>("GET", "/api/auth/setup/status"),
+  config: () => request<AuthConfig>("GET", "/api/auth/config"),
   createAdmin: (email: string, password: string) =>
     request<{ email: string; role: Role }>("POST", "/api/auth/setup/create-admin", { email, password }),
   login: (email: string, password: string) =>

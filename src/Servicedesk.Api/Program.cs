@@ -178,6 +178,8 @@ app.MapGet("/api/system/time", () =>
 app.MapCspReportEndpoint();
 app.MapAuditEndpoints();
 app.MapAuthEndpoints();
+app.MapMicrosoftAuthEndpoints();
+app.MapAdminUserEndpoints();
 app.MapTaxonomyEndpoints();
 app.MapCompanyEndpoints();
 app.MapTicketEndpoints();

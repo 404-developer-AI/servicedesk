@@ -14,6 +14,20 @@ public interface IUserService
 
     Task<ApplicationUser?> FindByEmailAsync(string email, CancellationToken ct = default);
     Task<ApplicationUser?> FindByIdAsync(Guid id, CancellationToken ct = default);
+
+    /// Lookup used by the M365 login callback. Returns the row whose
+    /// <c>(external_provider, external_subject)</c> matches — i.e. the user
+    /// that previously linked this Azure OID. Returns <c>null</c> if the OID
+    /// has never been linked; the callback treats that as
+    /// <c>auth.microsoft.login.rejected_unknown</c>.
+    Task<ApplicationUser?> FindByExternalAsync(string provider, string subject, CancellationToken ct = default);
+
+    /// Deactivates a user (sets <c>is_active=false</c>) without touching any
+    /// other column. Used by the M365 callback when Graph reports the Azure
+    /// account as disabled, so a subsequent login attempt with the same OID
+    /// is rejected before it reaches the Graph-check again.
+    Task MarkInactiveAsync(Guid userId, CancellationToken ct = default);
+
     Task<IReadOnlyList<AgentUser>> ListAgentsAsync(CancellationToken ct = default);
 
     /// Typeahead for the @@-mention picker (v0.0.12 stap 3). Caller-supplied
@@ -89,7 +103,9 @@ public sealed class UserService : IUserService
             VALUES (@Email, @PasswordHash, 'Admin')
             RETURNING id AS Id, email AS Email, password_hash AS PasswordHash, role_name AS RoleName,
                       created_utc AS CreatedUtc, last_login_utc AS LastLoginUtc,
-                      failed_attempts AS FailedAttempts, lockout_until_utc AS LockoutUntilUtc
+                      failed_attempts AS FailedAttempts, lockout_until_utc AS LockoutUntilUtc,
+                      auth_mode AS AuthMode, external_provider AS ExternalProvider,
+                      external_subject AS ExternalSubject, is_active AS IsActive
             """;
 
         var user = await connection.QuerySingleAsync<ApplicationUser>(new CommandDefinition(
@@ -107,7 +123,9 @@ public sealed class UserService : IUserService
         const string sql = """
             SELECT id AS Id, email AS Email, password_hash AS PasswordHash, role_name AS RoleName,
                    created_utc AS CreatedUtc, last_login_utc AS LastLoginUtc,
-                   failed_attempts AS FailedAttempts, lockout_until_utc AS LockoutUntilUtc
+                   failed_attempts AS FailedAttempts, lockout_until_utc AS LockoutUntilUtc,
+                   auth_mode AS AuthMode, external_provider AS ExternalProvider,
+                   external_subject AS ExternalSubject, is_active AS IsActive
             FROM users WHERE email = @email
             """;
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
@@ -120,12 +138,39 @@ public sealed class UserService : IUserService
         const string sql = """
             SELECT id AS Id, email AS Email, password_hash AS PasswordHash, role_name AS RoleName,
                    created_utc AS CreatedUtc, last_login_utc AS LastLoginUtc,
-                   failed_attempts AS FailedAttempts, lockout_until_utc AS LockoutUntilUtc
+                   failed_attempts AS FailedAttempts, lockout_until_utc AS LockoutUntilUtc,
+                   auth_mode AS AuthMode, external_provider AS ExternalProvider,
+                   external_subject AS ExternalSubject, is_active AS IsActive
             FROM users WHERE id = @id
             """;
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         return await connection.QueryFirstOrDefaultAsync<ApplicationUser>(
             new CommandDefinition(sql, new { id }, cancellationToken: ct));
+    }
+
+    public async Task<ApplicationUser?> FindByExternalAsync(string provider, string subject, CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT id AS Id, email AS Email, password_hash AS PasswordHash, role_name AS RoleName,
+                   created_utc AS CreatedUtc, last_login_utc AS LastLoginUtc,
+                   failed_attempts AS FailedAttempts, lockout_until_utc AS LockoutUntilUtc,
+                   auth_mode AS AuthMode, external_provider AS ExternalProvider,
+                   external_subject AS ExternalSubject, is_active AS IsActive
+            FROM users
+            WHERE external_provider = @provider AND external_subject = @subject
+            """;
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        return await connection.QueryFirstOrDefaultAsync<ApplicationUser>(
+            new CommandDefinition(sql, new { provider, subject }, cancellationToken: ct));
+    }
+
+    public async Task MarkInactiveAsync(Guid userId, CancellationToken ct = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await connection.ExecuteAsync(new CommandDefinition(
+            "UPDATE users SET is_active = FALSE WHERE id = @id",
+            new { id = userId },
+            cancellationToken: ct));
     }
 
     public async Task UpdatePasswordHashAsync(Guid userId, string newHash, CancellationToken ct = default)

@@ -11,6 +11,7 @@ import {
   SlidersHorizontal,
   Ticket,
   Timer,
+  UserCog,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -90,6 +91,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: "Integrations",
     description: "Microsoft 365, webhooks, outbound connectors and API tokens.",
     icon: Plug,
+  },
+  {
+    slug: "users",
+    label: "Users",
+    description:
+      "Agents and admins — local accounts, M365-linked accounts, role assignment, activate / deactivate.",
+    icon: UserCog,
     separatorAfter: true,
   },
   {

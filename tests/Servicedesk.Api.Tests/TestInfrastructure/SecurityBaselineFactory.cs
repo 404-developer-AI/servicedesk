@@ -176,7 +176,7 @@ public sealed class FakeUserService : IUserService
             return Task.FromResult<ApplicationUser?>(null);
         }
         var user = new ApplicationUser(Guid.NewGuid(), email, passwordHash, "Admin",
-            DateTime.UtcNow, null, 0, null);
+            DateTime.UtcNow, null, 0, null, AuthModes.Local, null, null, true);
         _byId[user.Id] = user;
         _byEmail[email] = user.Id;
         return Task.FromResult<ApplicationUser?>(user);
@@ -259,6 +259,23 @@ public sealed class FakeUserService : IUserService
         var filtered = ids.Distinct().Where(id => allowed.Contains(id)).ToList();
         return Task.FromResult<IReadOnlyList<Guid>>(filtered);
     }
+
+    public Task<ApplicationUser?> FindByExternalAsync(string provider, string subject, CancellationToken ct = default)
+    {
+        var match = _byId.Values.FirstOrDefault(u =>
+            string.Equals(u.ExternalProvider, provider, StringComparison.Ordinal) &&
+            string.Equals(u.ExternalSubject, subject, StringComparison.Ordinal));
+        return Task.FromResult<ApplicationUser?>(match);
+    }
+
+    public Task MarkInactiveAsync(Guid userId, CancellationToken ct = default)
+    {
+        if (_byId.TryGetValue(userId, out var u))
+        {
+            _byId[userId] = u with { IsActive = false };
+        }
+        return Task.CompletedTask;
+    }
 }
 
 public sealed class FakeSessionService : ISessionService
@@ -282,7 +299,8 @@ public sealed class FakeSessionService : ISessionService
         }
         // Tests supply the user via FakeUserService-resolved principal, but the
         // handler in production only needs a user. We synthesise a minimal one.
-        var user = new ApplicationUser(e.UserId, "test@example.com", "", "Admin", DateTime.UtcNow, null, 0, null);
+        var user = new ApplicationUser(e.UserId, "test@example.com", "", "Admin", DateTime.UtcNow, null, 0, null,
+            AuthModes.Local, null, null, true);
         return Task.FromResult<SessionValidation?>(new SessionValidation(e.Id, user, e.Amr, e.ExpiresUtc));
     }
 
@@ -300,6 +318,18 @@ public sealed class FakeSessionService : ISessionService
         if (_sessions.TryGetValue(sessionId, out var e))
         {
             _sessions[sessionId] = e with { Revoked = true };
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task RevokeAllForUserAsync(Guid userId, CancellationToken ct = default)
+    {
+        foreach (var kv in _sessions)
+        {
+            if (kv.Value.UserId == userId && !kv.Value.Revoked)
+            {
+                _sessions[kv.Key] = kv.Value with { Revoked = true };
+            }
         }
         return Task.CompletedTask;
     }

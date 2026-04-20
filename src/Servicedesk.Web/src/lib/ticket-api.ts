@@ -608,6 +608,62 @@ export const userApi = {
   },
 };
 
+// ---- Admin user-management (v0.0.13 step 3) --------------------------
+
+export type UserAdminRow = {
+  id: string;
+  email: string;
+  role: "Agent" | "Admin" | "Customer";
+  authMode: "Local" | "Microsoft";
+  externalSubject: string | null;
+  isActive: boolean;
+  twoFactorEnabled: boolean;
+  createdUtc: string;
+  lastLoginUtc: string | null;
+};
+
+export type M365PickerUser = {
+  oid: string;
+  displayName: string | null;
+  userPrincipalName: string | null;
+  mail: string | null;
+  accountEnabled: boolean;
+};
+
+export const adminUserApi = {
+  list: () => request<UserAdminRow[]>("GET", "/api/admin/users/"),
+
+  /// Graph typeahead. 409 if M365 login is disabled or Graph is not
+  /// fully configured — the UI surfaces the server's message verbatim.
+  searchM365: (q: string, limit = 20) => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    params.set("limit", String(limit));
+    return request<M365PickerUser[]>("GET", `/api/admin/users/m365/search?${params.toString()}`);
+  },
+
+  addFromM365: (oid: string, role: "Agent" | "Admin") =>
+    request<UserAdminRow>("POST", "/api/admin/users/m365", { oid, role }),
+
+  addLocal: (email: string, password: string, role: "Agent" | "Admin") =>
+    request<UserAdminRow>("POST", "/api/admin/users/local", { email, password, role }),
+
+  upgradeToM365: (userId: string, oid: string) =>
+    request<UserAdminRow>("POST", `/api/admin/users/${userId}/upgrade-to-m365`, { oid }),
+
+  updateRole: (userId: string, role: "Agent" | "Admin") =>
+    request<UserAdminRow>("PUT", `/api/admin/users/${userId}/role`, { role }),
+
+  activate: (userId: string) =>
+    request<UserAdminRow>("POST", `/api/admin/users/${userId}/activate`, {}),
+
+  deactivate: (userId: string) =>
+    request<UserAdminRow>("POST", `/api/admin/users/${userId}/deactivate`, {}),
+
+  remove: (userId: string) =>
+    request<void>("DELETE", `/api/admin/users/${userId}`),
+};
+
 export const contactApi = {
   list: (search?: string, companyId?: string) => {
     const params = new URLSearchParams();

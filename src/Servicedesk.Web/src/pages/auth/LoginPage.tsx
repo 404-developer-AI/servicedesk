@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Sparkles, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
+import { Sparkles, LockKeyhole, Mail, ShieldCheck, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +31,29 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [stage, setStage] = useState<Stage>("credentials");
   const [serverError, setServerError] = useState<string | null>(null);
+
+  // Feature-flag snapshot for the M365 button. Failing fast here (stale
+  // or missing config) must not break the local-login path — we render
+  // the page regardless and only gate the Microsoft button on the flag.
+  const { data: config } = useQuery({
+    queryKey: ["auth", "config"],
+    queryFn: () => authApi.config(),
+    staleTime: 60_000,
+  });
+
+  // Reads `?error=…` set by the M365 callback on redirect-to-/login.
+  // Done once on mount; subsequent renders shouldn't surface a stale
+  // banner after a user-driven retry. Grabbed from window.location
+  // because this page is outside the router's typed-search zone.
+  const callbackError = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get("error");
+  }, []);
+  const callbackErrorMessage = useMemo(
+    () => (callbackError ? describeCallbackError(callbackError) : null),
+    [callbackError],
+  );
 
   useEffect(() => {
     // If someone lands on /login with an active session, bounce to dashboard.
@@ -77,9 +101,13 @@ export function LoginPage() {
   });
 
   const onMicrosoft = () => {
-    toast.message("Microsoft sign-in is not yet available", {
-      description: "Local admin sign-in only in this release.",
-    });
+    // Top-level redirect into the backend's /challenge endpoint. The
+    // server reads the Auth.Microsoft.Enabled flag again on that request
+    // — belt-and-braces in case config.microsoftEnabled is stale. It
+    // then sets the intent cookie, redirects to login.microsoftonline.com,
+    // and the whole OIDC round-trip lands back on /login with either a
+    // minted session (→ redirect to /) or ?error=… query.
+    window.location.href = "/api/auth/microsoft/challenge";
   };
 
   return (
@@ -105,6 +133,19 @@ export function LoginPage() {
         </div>
 
         <div className="space-y-5 px-7 py-6">
+          {callbackErrorMessage && stage === "credentials" && (
+            <div
+              role="alert"
+              className="flex items-start gap-2.5 rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2.5 text-xs text-amber-200"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+              <div>
+                <p className="font-medium">Microsoft sign-in failed</p>
+                <p className="mt-0.5 opacity-90">{callbackErrorMessage}</p>
+              </div>
+            </div>
+          )}
+
           {stage === "credentials" ? (
             <form onSubmit={onLogin} className="space-y-4" noValidate>
               <div className="space-y-1.5">
@@ -198,27 +239,61 @@ export function LoginPage() {
             </form>
           )}
 
-          <div className="relative py-1 text-center">
-            <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-white/5" />
-            <span className="relative inline-block bg-transparent px-3 text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-              or
-            </span>
-          </div>
+          {config?.microsoftEnabled && stage === "credentials" && (
+            <>
+              <div className="relative py-1 text-center">
+                <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-white/5" />
+                <span className="relative inline-block bg-transparent px-3 text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+                  or
+                </span>
+              </div>
 
-          <Button
-            type="button"
-            variant="secondary"
-            className="w-full justify-center gap-2"
-            onClick={onMicrosoft}
-            data-testid="m365-signin"
-          >
-            <ShieldCheck className="h-4 w-4" />
-            Sign in with Microsoft
-          </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full justify-center gap-2"
+                onClick={onMicrosoft}
+                data-testid="m365-signin"
+              >
+                <ShieldCheck className="h-4 w-4" />
+                Sign in with Microsoft
+              </Button>
+            </>
+          )}
         </div>
       </motion.div>
     </div>
   );
+}
+
+// Map the backend's `?error=<code>` values — emitted by
+// MicrosoftAuthEndpoints.RedirectToLogin and MapRejection — to human
+// copy. Unknown codes fall through to a generic message so we never
+// render the raw token to the user.
+function describeCallbackError(code: string): string {
+  switch (code) {
+    case "not_authorized":
+      return "Your Microsoft account is not linked to this servicedesk. Ask an admin to add you via Settings → Users.";
+    case "disabled":
+      return "Your Microsoft account is disabled. Ask your tenant admin to re-enable it and try again.";
+    case "inactive":
+      return "Your servicedesk account has been deactivated. Ask an admin to reactivate it.";
+    case "invalid_token":
+      return "The sign-in token could not be validated. Try again; if the problem persists, contact support.";
+    case "code_exchange_failed":
+      return "Microsoft rejected the sign-in request. Try again or contact your admin.";
+    case "state_mismatch":
+    case "missing_intent":
+    case "invalid_callback":
+      return "The sign-in session expired. Please start again.";
+    case "access_denied":
+      return "Sign-in was cancelled at Microsoft.";
+    case "consent_required":
+    case "interaction_required":
+      return "Your tenant requires additional consent or sign-in. Please try again.";
+    default:
+      return "Microsoft sign-in did not complete. Please try again or use your local account.";
+  }
 }
 
 function describeAuthError(err: unknown, fallback: string): string {

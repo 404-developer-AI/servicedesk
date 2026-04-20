@@ -1162,6 +1162,54 @@ public sealed class DatabaseBootstrapper : IHostedService
         ALTER TABLE user_notifications DROP CONSTRAINT IF EXISTS chk_user_notifications_type;
         ALTER TABLE user_notifications ADD CONSTRAINT chk_user_notifications_type
             CHECK (notification_type IN ('mention')) NOT VALID;
+
+        -- ===================================================================
+        -- v0.0.13 M365 login — per-user auth mode
+        -- Local accounts keep password_hash + TOTP; Microsoft accounts carry
+        -- an Azure AD object-id (oid claim) and MUST NOT have a local
+        -- password (see chk_users_auth_mode below). The two modes are
+        -- mutually exclusive per row — a user is either Local or Microsoft,
+        -- never both. Upgrading a Local admin to Microsoft drops the
+        -- password + TOTP rows in the same transaction (handled by the
+        -- user-admin endpoint, not the schema).
+        -- ===================================================================
+
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS auth_mode         TEXT    NOT NULL DEFAULT 'Local',
+            ADD COLUMN IF NOT EXISTS external_provider TEXT    NULL,
+            ADD COLUMN IF NOT EXISTS external_subject  TEXT    NULL,
+            ADD COLUMN IF NOT EXISTS is_active         BOOLEAN NOT NULL DEFAULT TRUE;
+
+        -- password_hash must be nullable for Microsoft accounts. NULL-ing
+        -- the NOT NULL is idempotent — Postgres no-ops if the column is
+        -- already nullable.
+        ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+
+        -- One Azure OID maps to at most one row. Partial index so local
+        -- accounts (NULL subject) don't collide with each other.
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_users_external
+            ON users (external_provider, external_subject)
+            WHERE external_subject IS NOT NULL;
+
+        -- auth_mode invariant. Drop-then-add so we can tighten the rule
+        -- on an existing install without the "constraint already exists"
+        -- error. NOT VALID guards new writes only — any pre-existing row
+        -- written before this release (all Local with a password_hash) is
+        -- already compliant, so validation would pass, but keeping it
+        -- NOT VALID matches the pattern used elsewhere in this file.
+        ALTER TABLE users DROP CONSTRAINT IF EXISTS chk_users_auth_mode;
+        ALTER TABLE users ADD CONSTRAINT chk_users_auth_mode
+            CHECK (
+                (auth_mode = 'Local'
+                    AND password_hash IS NOT NULL
+                    AND external_provider IS NULL
+                    AND external_subject IS NULL)
+                OR
+                (auth_mode = 'Microsoft'
+                    AND password_hash IS NULL
+                    AND external_provider IS NOT NULL
+                    AND external_subject IS NOT NULL)
+            ) NOT VALID;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

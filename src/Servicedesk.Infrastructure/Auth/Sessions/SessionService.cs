@@ -11,6 +11,13 @@ public interface ISessionService
     Task<SessionValidation?> ValidateAsync(Guid sessionId, TimeSpan idleTimeout, CancellationToken ct = default);
     Task TouchAsync(Guid sessionId, CancellationToken ct = default);
     Task RevokeAsync(Guid sessionId, CancellationToken ct = default);
+
+    /// Revokes every open session belonging to <paramref name="userId"/>.
+    /// Called when an admin deactivates or deletes a user so existing
+    /// browser sessions die the next time they hit the server, rather
+    /// than waiting for <c>SessionLifetimeHours</c> to expire.
+    Task RevokeAllForUserAsync(Guid userId, CancellationToken ct = default);
+
     Task UpgradeAmrAsync(Guid sessionId, string amr, CancellationToken ct = default);
 }
 
@@ -53,7 +60,9 @@ public sealed class SessionService : ISessionService
                    u.id AS UserId, u.email AS Email, u.password_hash AS PasswordHash,
                    u.role_name AS RoleName, u.created_utc AS CreatedUtc,
                    u.last_login_utc AS LastLoginUtc, u.failed_attempts AS FailedAttempts,
-                   u.lockout_until_utc AS LockoutUntilUtc
+                   u.lockout_until_utc AS LockoutUntilUtc,
+                   u.auth_mode AS AuthMode, u.external_provider AS ExternalProvider,
+                   u.external_subject AS ExternalSubject, u.is_active AS IsActive
             FROM user_sessions s
             INNER JOIN users u ON u.id = s.user_id
             WHERE s.id = @sessionId
@@ -76,9 +85,21 @@ public sealed class SessionService : ISessionService
             return null;
         }
 
+        // An inactive user's session is treated as if it never existed — the
+        // deprovision path (M365 accountEnabled=false, admin-initiated
+        // deactivate) sets is_active=false and the next request hits this
+        // branch and is logged out. Existing sessions don't need to be
+        // revoked explicitly; this short-circuit covers them.
+        if (!row.IsActive)
+        {
+            await RevokeAsync(sessionId, ct);
+            return null;
+        }
+
         var user = new ApplicationUser(
             row.UserId, row.Email, row.PasswordHash, row.RoleName, row.CreatedUtc,
-            row.LastLoginUtc, row.FailedAttempts, row.LockoutUntilUtc);
+            row.LastLoginUtc, row.FailedAttempts, row.LockoutUntilUtc,
+            row.AuthMode, row.ExternalProvider, row.ExternalSubject, row.IsActive);
         return new SessionValidation(row.SessionId, user, row.Amr, row.ExpiresUtc);
     }
 
@@ -100,6 +121,15 @@ public sealed class SessionService : ISessionService
             cancellationToken: ct));
     }
 
+    public async Task RevokeAllForUserAsync(Guid userId, CancellationToken ct = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await connection.ExecuteAsync(new CommandDefinition(
+            "UPDATE user_sessions SET revoked_utc = now() WHERE user_id = @userId AND revoked_utc IS NULL",
+            new { userId },
+            cancellationToken: ct));
+    }
+
     public async Task UpgradeAmrAsync(Guid sessionId, string amr, CancellationToken ct = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
@@ -117,10 +147,14 @@ public sealed class SessionService : ISessionService
         DateTime? RevokedUtc,
         Guid UserId,
         string Email,
-        string PasswordHash,
+        string? PasswordHash,
         string RoleName,
         DateTime CreatedUtc,
         DateTime? LastLoginUtc,
         int FailedAttempts,
-        DateTime? LockoutUntilUtc);
+        DateTime? LockoutUntilUtc,
+        string AuthMode,
+        string? ExternalProvider,
+        string? ExternalSubject,
+        bool IsActive);
 }

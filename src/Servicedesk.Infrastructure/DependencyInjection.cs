@@ -3,6 +3,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth;
+using Servicedesk.Infrastructure.Auth.Admin;
+using Servicedesk.Infrastructure.Auth.Microsoft;
 using Servicedesk.Infrastructure.Auth.Sessions;
 using Servicedesk.Infrastructure.Auth.Totp;
 using Servicedesk.Infrastructure.DataProtection;
@@ -63,6 +65,13 @@ public static class DependencyInjection
         services.AddSingleton<IUserService, UserService>();
         services.AddSingleton<ISessionService, SessionService>();
         services.AddSingleton<ITotpService, TotpService>();
+
+        // M365 login (v0.0.13). GraphDirectoryClient reads accountEnabled
+        // for the deprovisioning check; MicrosoftAuthService wraps the
+        // full OIDC challenge + callback flow.
+        services.AddSingleton<IGraphDirectoryClient, GraphDirectoryClient>();
+        services.AddSingleton<IMicrosoftAuthService, MicrosoftAuthService>();
+        services.AddSingleton<IUserAdminService, UserAdminService>();
 
         services.AddSingleton<ITaxonomyRepository, TaxonomyRepository>();
         services.AddSingleton<ICompanyRepository, CompanyRepository>();

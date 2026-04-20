@@ -92,6 +92,17 @@ public static class SettingKeys
         public const string ClientId = "Graph.ClientId";
     }
 
+    public static class Auth
+    {
+        // Microsoft / Azure AD login. Single-tenant — the tenant id is read
+        // from Graph.TenantId (shared app-registration with the mail Graph
+        // client). The client secret for OIDC is the same value stored in
+        // ISecretProvider under the "GraphClientSecret" key; no separate
+        // secret needed until an install requires distinct app-registrations
+        // for mail and auth.
+        public const string MicrosoftEnabled = "Auth.Microsoft.Enabled";
+    }
+
     public static class Sla
     {
         public const string FirstContactTriggers = "Sla.FirstContact.Triggers";
@@ -260,9 +271,15 @@ public static class SettingDefaults
 
         // Graph — tenant/client id only. Client secret lives in ISecretProvider, never here.
         new SettingDefault(SettingKeys.Graph.TenantId, "", "string", "Graph",
-            "Azure AD tenant ID used for Microsoft Graph mail access."),
+            "Azure AD tenant ID. Shared across Microsoft Graph mail access and the M365 login flow (v0.0.13)."),
         new SettingDefault(SettingKeys.Graph.ClientId, "", "string", "Graph",
-            "Application (client) ID registered in Azure AD for this install."),
+            "Application (client) ID registered in Azure AD for this install. Used by both the mail Graph client (app-only) and the M365 login flow (delegated OIDC) — one app-registration, two permission sets."),
+
+        // Auth — v0.0.13 M365 login. Off by default so a fresh install
+        // boots with local-only login until an admin fills in tenant/client
+        // and adds the OIDC permissions + redirect URI in Azure Portal.
+        new SettingDefault(SettingKeys.Auth.MicrosoftEnabled, "false", "bool", "Auth",
+            "When true, the login page shows 'Sign in with Microsoft' and the /api/auth/microsoft/* endpoints are active. Requires Graph.TenantId + Graph.ClientId + GraphClientSecret to be set, and the app-registration must carry delegated openid/profile/email/User.Read permissions plus a redirect URI matching this install's public base URL."),
 
         // Search — v0.0.8 step 8. Tunables for the global search dropdown
         // and the full-page search. Exposed so installs can raise MinQueryLength

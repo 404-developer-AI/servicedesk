@@ -217,11 +217,14 @@ public sealed class MentionNotificationServiceTests
 
         public Task<ApplicationUser?> FindByIdAsync(Guid id, CancellationToken ct = default) =>
             Task.FromResult<ApplicationUser?>(new ApplicationUser(
-                id, _recipientEmail, "", "Agent", DateTime.UtcNow, null, 0, null));
+                id, _recipientEmail, "", "Agent", DateTime.UtcNow, null, 0, null,
+                AuthModes.Local, null, null, true));
 
         public Task<int> CountAsync(CancellationToken ct = default) => Task.FromResult(0);
         public Task<ApplicationUser?> CreateFirstAdminAsync(string email, string passwordHash, CancellationToken ct = default) => Task.FromResult<ApplicationUser?>(null);
         public Task<ApplicationUser?> FindByEmailAsync(string email, CancellationToken ct = default) => Task.FromResult<ApplicationUser?>(null);
+        public Task<ApplicationUser?> FindByExternalAsync(string provider, string subject, CancellationToken ct = default) => Task.FromResult<ApplicationUser?>(null);
+        public Task MarkInactiveAsync(Guid userId, CancellationToken ct = default) => Task.CompletedTask;
         public Task<IReadOnlyList<AgentUser>> ListAgentsAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<AgentUser>>(Array.Empty<AgentUser>());
         public Task<IReadOnlyList<AgentUser>> SearchAgentsAsync(string? search, int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<AgentUser>>(Array.Empty<AgentUser>());
         public Task<IReadOnlyList<Guid>> FilterAgentIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<Guid>>(Array.Empty<Guid>());

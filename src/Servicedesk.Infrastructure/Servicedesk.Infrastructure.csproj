@@ -21,6 +21,8 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.10" />
     <PackageReference Include="Microsoft.Graph" Version="5.56.0" />
     <PackageReference Include="Azure.Identity" Version="1.12.1" />
+    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="7.6.3" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="7.6.3" />
     <PackageReference Include="QuestPDF" Version="2024.12.2" />
     <PackageReference Include="Serilog" Version="4.0.2" />
   </ItemGroup>
