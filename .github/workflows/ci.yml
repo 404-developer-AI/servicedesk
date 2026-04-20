@@ -61,9 +61,16 @@ jobs:
         with:
           fetch-depth: 0  # MinVer needs tags for the APP_VERSION build-arg fallback.
 
-      - name: Derive APP_VERSION from git
+      - name: Derive APP_VERSION (SemVer for MinVer override)
         id: ver
-        run: echo "value=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+        run: |
+          # MinVer's --version-override needs a clean SemVer string. git describe
+          # produces "v0.0.13-2-gSHA" which MinVer rejects (MINVER1005). We
+          # synthesise a CI-scoped pre-release version from the latest tag.
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          BASE=${LATEST_TAG#v}
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "value=${BASE}-ci.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Build image
         run: |
