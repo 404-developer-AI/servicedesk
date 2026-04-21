@@ -4,6 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { searchApi, type SearchHit } from "@/lib/api";
+import { sanitizeSnippet } from "@/lib/sanitize";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/authStore";
 import { KIND_ORDER, labelForKind, hitHref } from "@/components/search/searchMeta";
@@ -193,7 +194,7 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
                               {hit.snippet && (
                                 <span
                                   className="truncate text-xs text-muted-foreground"
-                                  dangerouslySetInnerHTML={{ __html: hit.snippet }}
+                                  dangerouslySetInnerHTML={{ __html: sanitizeSnippet(hit.snippet) }}
                                 />
                               )}
                             </Command.Item>

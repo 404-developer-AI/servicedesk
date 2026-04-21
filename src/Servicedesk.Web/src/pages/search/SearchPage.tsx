@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { searchApi, type SearchHit } from "@/lib/api";
+import { sanitizeSnippet } from "@/lib/sanitize";
 import { KIND_ORDER, labelForKind, hitHref } from "@/components/search/searchMeta";
 import { cn } from "@/lib/utils";
 
@@ -168,7 +169,7 @@ function HitRow({ hit }: { hit: SearchHit }) {
       {hit.snippet && (
         <div
           className="mt-1 truncate text-xs text-muted-foreground"
-          dangerouslySetInnerHTML={{ __html: hit.snippet }}
+          dangerouslySetInnerHTML={{ __html: sanitizeSnippet(hit.snippet) }}
         />
       )}
     </li>
