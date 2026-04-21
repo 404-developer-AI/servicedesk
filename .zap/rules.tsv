@@ -1,0 +1,24 @@
+# ZAP baseline scanner — per-rule overrides for the unauthenticated boot
+# scan. Format: ID<TAB>ACTION<TAB>DESCRIPTION
+#  ACTION = IGNORE | WARN | FAIL
+#
+# We FAIL on the rules that genuinely matter for an internet-facing app and
+# IGNORE the noise that always fires on an SPA + minimal-API surface
+# (ZAP doesn't see auth endpoints behind credentials in baseline mode).
+
+# ---------------------------------------------------------------------
+# IGNORED — not actionable in baseline (unauth, no-TLS) mode
+# ---------------------------------------------------------------------
+10049	IGNORE	Storable + Cacheable Content (we set Cache-Control on auth responses; static SPA assets are cacheable on purpose)
+10027	IGNORE	Information Disclosure - Suspicious Comments (Vite source-map comments only present when ASPNETCORE_ENVIRONMENT=Development)
+10010	IGNORE	Cookie No HttpOnly Flag (XSRF-TOKEN is intentionally JS-readable for double-submit; baseline cannot distinguish that cookie from session cookies)
+10011	IGNORE	Cookie Without Secure Flag (CI scan target is plain HTTP; production always sits behind nginx TLS where cookies become Secure)
+10054	IGNORE	Cookie without SameSite Attribute (same caveat — cookies are SameSite=Strict in production-flagged code paths)
+
+# ---------------------------------------------------------------------
+# Explicit FAILs — must always block CI
+# ---------------------------------------------------------------------
+10202	FAIL	Absence of Anti-CSRF Tokens
+10038	FAIL	Content Security Policy (CSP) Header Not Set
+10063	FAIL	Permissions Policy Header Not Set
+90004	FAIL	Insufficient Site Isolation Against Spectre Vulnerability

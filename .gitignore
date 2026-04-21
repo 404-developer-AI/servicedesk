@@ -146,6 +146,7 @@ CHANGELOG-archive.md
 NOTFORCLAUDE.md
 NOTFORCLAUDE.MD
 rapport.md
+SECURITY-AUDIT-*.md
 
 # Claude Code local settings
 .claude/
