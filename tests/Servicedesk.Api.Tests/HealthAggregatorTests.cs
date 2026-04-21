@@ -329,6 +329,31 @@ public sealed class HealthAggregatorTests
     }
 
     [Fact]
+    public async Task SecurityActivity_snapshot_with_ack_baseline_renders_counter_reset_detail()
+    {
+        var ackAt = DateTime.UtcNow.AddMinutes(-3);
+        var snap = new InMemorySecurityActivitySnapshot();
+        snap.Set(new SecurityActivitySnapshot(
+            EvaluatedUtc: DateTime.UtcNow,
+            Window: TimeSpan.FromHours(1),
+            Status: HealthStatus.Ok,
+            Summary: "No notable security activity since the last acknowledge.",
+            Categories: new[]
+            {
+                new SecurityActivityCategoryResult("login_failed", "Failed logins", 0, 10, 30, HealthStatus.Ok),
+            },
+            MonitorEnabled: true,
+            AcknowledgedFromUtc: ackAt));
+
+        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true, securityActivity: snap);
+
+        var report = await agg.CollectAsync(CancellationToken.None);
+
+        var sec = report.Subsystems.Single(s => s.Key == "security-activity");
+        Assert.Contains(sec.Details, d => d.Label == "Counter reset" && d.Value.Contains("Acknowledged"));
+    }
+
+    [Fact]
     public async Task SecurityActivity_disabled_snapshot_reports_ok_with_disabled_detail()
     {
         var snap = new InMemorySecurityActivitySnapshot();

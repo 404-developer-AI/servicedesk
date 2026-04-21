@@ -162,6 +162,111 @@ public sealed class SecurityActivityMonitorTests
         Assert.Equal(2, notifier.Sent.Count);
     }
 
+    [Fact]
+    public async Task Ack_narrows_query_window_to_events_after_ack()
+    {
+        // Admin acks at T. StubAuditQuery records the from/to bounds on
+        // every call. The next tick after an ack must ask for events from
+        // the ack moment onward, not from (now - windowSeconds).
+        var audit = new StubAuditQuery(new Dictionary<string, int>(StringComparer.Ordinal));
+        var incidents = new StubIncidentLog();
+        var notifier = new StubAlertNotifier();
+        var (monitor, snapshot) = BuildMonitor(audit, incidents, notifier);
+
+        var ackAt = DateTime.UtcNow.AddSeconds(-5);
+        snapshot.Acknowledge(ackAt);
+
+        await monitor.TickAsync(CancellationToken.None);
+
+        var lastFrom = audit.LastFromUtc;
+        Assert.True(lastFrom >= new DateTimeOffset(ackAt, TimeSpan.Zero).AddMilliseconds(-1),
+            $"Expected fromUtc >= ack ({ackAt:o}) but got {lastFrom:o}");
+    }
+
+    [Fact]
+    public async Task Ack_suppresses_refire_when_only_pre_ack_events_exist()
+    {
+        // The audit store has 12 login_failed events that all predate the
+        // ack. After ack, the monitor counts only post-ack events (zero)
+        // → rollup drops to Ok → no new incident, no new push.
+        // This is the bug the user reported: acknowledge clicked, but card
+        // immediately flipped red again because the query window still
+        // contained the ack'd events.
+        var audit = new StubAuditQuery(new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["login_failed"] = 12,
+        });
+        var incidents = new StubIncidentLog();
+        var notifier = new StubAlertNotifier();
+        var (monitor, snapshot) = BuildMonitor(audit, incidents, notifier);
+
+        await monitor.TickAsync(CancellationToken.None); // initial Warning
+        Assert.Single(incidents.Reports);
+
+        // Admin acks — from now on, the audit stub returns the same 12
+        // events but the monitor should treat them as pre-ack and ignore
+        // them. (The stub doesn't filter by time itself; the monitor's
+        // window narrowing is what matters here. To make the assertion
+        // meaningful we switch the stub to "no events after ack".)
+        snapshot.Acknowledge(DateTime.UtcNow);
+        audit.Counts = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        await monitor.TickAsync(CancellationToken.None);
+
+        // Still one report — no refire even though pre-ack events remain
+        // (visible on the full rolling window).
+        Assert.Single(incidents.Reports);
+        Assert.Single(notifier.Sent);
+        var snap = snapshot.Get();
+        Assert.Equal(HealthStatus.Ok, snap!.Status);
+        Assert.NotNull(snap.AcknowledgedFromUtc);
+    }
+
+    [Fact]
+    public async Task Post_ack_new_attack_still_fires_fresh_incident()
+    {
+        // A persistent attack should still be able to re-page the admin.
+        // Sequence: ack at T, then 12 NEW login_failed events arrive, next
+        // tick should flip to Warning and fire a fresh incident + push.
+        var audit = new StubAuditQuery(new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["login_failed"] = 12,
+        });
+        var incidents = new StubIncidentLog();
+        var notifier = new StubAlertNotifier();
+        var (monitor, snapshot) = BuildMonitor(audit, incidents, notifier);
+
+        await monitor.TickAsync(CancellationToken.None); // initial Warning
+        snapshot.Acknowledge(DateTime.UtcNow);
+        // 12 new events arrive post-ack.
+        audit.Counts = new Dictionary<string, int>(StringComparer.Ordinal) { ["login_failed"] = 12 };
+
+        await monitor.TickAsync(CancellationToken.None);
+
+        Assert.Equal(2, incidents.Reports.Count);
+        Assert.Equal(2, notifier.Sent.Count);
+    }
+
+    [Fact]
+    public async Task Ack_baseline_is_discarded_once_window_rolls_past_it()
+    {
+        // If the ack was more than one full window ago, the baseline is
+        // effectively stale — all ack'd events have naturally aged out of
+        // the rolling window. Monitor drops the baseline and reverts to
+        // full-window querying.
+        var audit = new StubAuditQuery(new Dictionary<string, int>(StringComparer.Ordinal));
+        var incidents = new StubIncidentLog();
+        var notifier = new StubAlertNotifier();
+        var (monitor, snapshot) = BuildMonitor(audit, incidents, notifier);
+
+        // Default window is 3600s → set ack to 2 hours ago.
+        snapshot.Acknowledge(DateTime.UtcNow.AddHours(-2));
+
+        await monitor.TickAsync(CancellationToken.None);
+
+        Assert.Null(snapshot.GetAcknowledgedFromUtc());
+    }
+
     private static (SecurityActivityMonitor monitor, ISecurityActivitySnapshot snapshot) BuildMonitor(
         StubAuditQuery audit,
         StubIncidentLog incidents,
@@ -187,6 +292,8 @@ public sealed class SecurityActivityMonitorTests
     {
         public IReadOnlyDictionary<string, int> Counts { get; set; }
         public int QueryCount { get; private set; }
+        public DateTimeOffset LastFromUtc { get; private set; }
+        public DateTimeOffset LastToUtc { get; private set; }
         public StubAuditQuery(IReadOnlyDictionary<string, int> counts) { Counts = counts; }
 
         public Task<AuditPage> ListAsync(AuditQuery query, CancellationToken ct = default) =>
@@ -199,6 +306,8 @@ public sealed class SecurityActivityMonitorTests
             IReadOnlyCollection<string> eventTypes, DateTimeOffset fromUtc, DateTimeOffset toUtc, CancellationToken ct = default)
         {
             QueryCount++;
+            LastFromUtc = fromUtc;
+            LastToUtc = toUtc;
             return Task.FromResult(Counts);
         }
     }

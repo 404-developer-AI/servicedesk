@@ -50,13 +50,16 @@ public sealed class HealthSubsystemReset : IHealthSubsystemReset
                 _blobHealth.Clear();
                 return new[] { "blob_store.consecutive_failures" };
             case "security-activity":
-                // Drop the cached snapshot + alert-guard so the next monitor
-                // tick starts from "no prior state". If the attack is still
-                // ongoing, a fresh Warning/Critical incident fires on that
-                // tick and admins are re-paged — exactly what you want after
-                // acknowledging a historical one.
-                _securityActivity.Clear();
-                return new[] { "security_activity.snapshot" };
+                // Register the ack moment as a counter baseline so the next
+                // monitor tick only counts events that arrive AFTER the
+                // acknowledge. Without this, the admin would ack a Warning
+                // only to see it flip red again on the next tick because
+                // the already-ack'd events are still inside the window.
+                // If the attack genuinely continues, post-ack events will
+                // cross the threshold again and a fresh incident + toast
+                // fire — admins are not silenced, just un-duplicated.
+                _securityActivity.Acknowledge(DateTime.UtcNow);
+                return new[] { "security_activity.snapshot", "security_activity.counter_baseline" };
             default:
                 // graph-auth, attachment-jobs, tls-cert: intrinsic state
                 // (missing secret, dead-letter rows, cert file on disk)

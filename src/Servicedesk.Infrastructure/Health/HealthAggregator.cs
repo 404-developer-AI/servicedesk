@@ -468,6 +468,13 @@ public sealed class HealthAggregator : IHealthAggregator
                 "Window",
                 $"{(int)snap.Window.TotalSeconds}s rolling, evaluated {snap.EvaluatedUtc:u}"));
 
+            if (snap.AcknowledgedFromUtc is { } ack)
+            {
+                details.Add(new HealthDetail(
+                    "Counter reset",
+                    $"Acknowledged at {ack:u} — only counting events after that moment until the window has fully rolled past."));
+            }
+
             foreach (var c in snap.Categories)
             {
                 var lvl = c.Status switch

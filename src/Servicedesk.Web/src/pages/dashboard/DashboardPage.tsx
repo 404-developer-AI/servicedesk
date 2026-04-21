@@ -1,7 +1,12 @@
 import { HealthPill } from "@/components/health/HealthPill";
 import { AvgPickupTile } from "@/components/dashboard/AvgPickupTile";
+import { SystemHealthTile } from "@/components/dashboard/SystemHealthTile";
+import { useCurrentRole } from "@/hooks/useCurrentRole";
 
 export function DashboardPage() {
+  const role = useCurrentRole();
+  const isAdmin = role === "Admin";
+
   return (
     <div className="flex flex-1 flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
@@ -10,6 +15,7 @@ export function DashboardPage() {
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <AvgPickupTile />
+        {isAdmin ? <SystemHealthTile /> : null}
       </div>
     </div>
   );

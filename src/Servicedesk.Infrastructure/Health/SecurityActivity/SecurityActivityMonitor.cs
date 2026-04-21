@@ -105,6 +105,20 @@ public sealed class SecurityActivityMonitor : BackgroundService
         }
 
         var nowUtc = _clock.GetUtcNow().UtcDateTime;
+        var windowStart = nowUtc - window;
+
+        // Apply the ack-baseline: after an admin acknowledges an incident,
+        // we only count events that occurred after the ack moment. Once
+        // the rolling window has rolled completely past the ack, the
+        // baseline is discarded and normal full-window counting resumes.
+        var ackFrom = _snapshot.GetAcknowledgedFromUtc();
+        if (ackFrom is { } ack && ack <= windowStart)
+        {
+            _snapshot.SetAcknowledgedFromUtc(null);
+            ackFrom = null;
+        }
+
+        var effectiveFromUtc = ackFrom is { } a && a > windowStart ? a : windowStart;
 
         IReadOnlyDictionary<string, int> counts;
         if (!enabled)
@@ -113,7 +127,7 @@ public sealed class SecurityActivityMonitor : BackgroundService
         }
         else
         {
-            var fromUtc = new DateTimeOffset(nowUtc - window, TimeSpan.Zero);
+            var fromUtc = new DateTimeOffset(effectiveFromUtc, TimeSpan.Zero);
             var toUtc = new DateTimeOffset(nowUtc, TimeSpan.Zero);
             counts = await audit.CountByEventTypesAsync(
                 SecurityActivityCategories.AllEventTypes, fromUtc, toUtc, ct);
@@ -125,7 +139,8 @@ public sealed class SecurityActivityMonitor : BackgroundService
             criticalMultiplier: multiplier,
             window: window,
             nowUtc: nowUtc,
-            monitorEnabled: enabled);
+            monitorEnabled: enabled,
+            acknowledgedFromUtc: ackFrom);
 
         _snapshot.Set(snapshot);
 

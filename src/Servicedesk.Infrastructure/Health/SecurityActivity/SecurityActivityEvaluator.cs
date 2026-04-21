@@ -11,7 +11,8 @@ public static class SecurityActivityEvaluator
         int criticalMultiplier,
         TimeSpan window,
         DateTime nowUtc,
-        bool monitorEnabled)
+        bool monitorEnabled,
+        DateTime? acknowledgedFromUtc = null)
     {
         var multiplier = criticalMultiplier < 1 ? 1 : criticalMultiplier;
         var rollup = HealthStatus.Ok;
@@ -62,6 +63,10 @@ public static class SecurityActivityEvaluator
         }
 
         var windowText = FormatWindow(window);
+        var sinceText = acknowledgedFromUtc is { } ack
+            ? $"since the last acknowledge ({ack:HH:mm:ss} UTC)"
+            : $"in the last {windowText}";
+
         string summary;
         if (!monitorEnabled)
         {
@@ -71,12 +76,12 @@ public static class SecurityActivityEvaluator
         {
             var total = results.Sum(r => r.Count);
             summary = total == 0
-                ? $"No notable security activity in the last {windowText}."
-                : $"{total} security event(s) in the last {windowText} — all categories below threshold.";
+                ? $"No notable security activity {sinceText}."
+                : $"{total} security event(s) {sinceText} — all categories below threshold.";
         }
         else
         {
-            summary = $"Elevated security activity in the last {windowText} — {string.Join(", ", hotParts)}.";
+            summary = $"Elevated security activity {sinceText} — {string.Join(", ", hotParts)}.";
         }
 
         return new SecurityActivitySnapshot(
@@ -85,7 +90,8 @@ public static class SecurityActivityEvaluator
             Status: monitorEnabled ? rollup : HealthStatus.Ok,
             Summary: summary,
             Categories: results,
-            MonitorEnabled: monitorEnabled);
+            MonitorEnabled: monitorEnabled,
+            AcknowledgedFromUtc: acknowledgedFromUtc);
     }
 
     private static string FormatWindow(TimeSpan window)
