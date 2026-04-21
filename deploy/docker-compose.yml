@@ -23,6 +23,12 @@ services:
     restart: unless-stopped
     env_file:
       - /etc/servicedesk/secrets.env
+      # Non-secret runtime config (TZ today, more knobs later). install.sh/
+      # update.sh always create this file before `compose up`, seeding TZ
+      # from the host timezone so the container clock matches logs + cron
+      # out-of-the-box. Keeping secrets + non-secrets in separate files lets
+      # backup.sh copy env.conf in the clear without ever touching a master key.
+      - /etc/servicedesk/env.conf
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
     extra_hosts:

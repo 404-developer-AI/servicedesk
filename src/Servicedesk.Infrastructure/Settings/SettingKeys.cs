@@ -128,6 +128,14 @@ public static class SettingKeys
         /// back to relative paths and a warning is logged so an admin can
         /// spot the misconfiguration.
         public const string PublicBaseUrl = "App.PublicBaseUrl";
+
+        /// IANA time-zone id (e.g. `Europe/Brussels`). Drives the server time
+        /// shown in the UI and the offsetMinutes returned by `/api/system/time`.
+        /// Empty or invalid → server falls back to the container's local time
+        /// (set via the `TZ` env-var, provisioned by install.sh). Business-
+        /// hours schedules and SLA math stay on their per-schema timezone and
+        /// are not affected by this value.
+        public const string TimeZone = "App.TimeZone";
     }
 
     public static class Notifications
@@ -331,6 +339,8 @@ public static class SettingDefaults
         // (which break when opened outside the browser session).
         new SettingDefault(SettingKeys.App.PublicBaseUrl, "", "string", "App",
             "Absolute public URL of this install (e.g. https://desk.example.com). Used to build deep-links in notification emails. Leave empty and a warning is logged; the installer fills this in automatically."),
+        new SettingDefault(SettingKeys.App.TimeZone, "", "string", "App",
+            "IANA time-zone id (e.g. Europe/Brussels, America/New_York). Drives the server clock shown in the UI and the offset returned by /api/system/time. Empty = fall back to the container's local time, which install.sh sets from the host TZ. Business-hours schedules and SLA math keep their own per-schema timezone."),
 
         // Notifications — v0.0.12 stap 4. Mention-trigger notification
         // raamwerk (@@-tag pipeline). Per-user preferences are out of scope

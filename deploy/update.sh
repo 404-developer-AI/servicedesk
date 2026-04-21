@@ -28,6 +28,7 @@ set -euo pipefail
 
 readonly SECRETS_DIR="/etc/servicedesk"
 readonly SECRETS_FILE="${SECRETS_DIR}/secrets.env"
+readonly ENV_CONF_FILE="${SECRETS_DIR}/env.conf"
 readonly INSTALL_DIR_DEFAULT="/opt/servicedesk"
 readonly PG_APP_DB="servicedesk"
 
@@ -178,6 +179,48 @@ reconcile_env_vars() {
 }
 
 # ===========================================================================
+# 5b. ensure /etc/servicedesk/env.conf exists. Installs predating v0.0.18
+#     don't have it, but docker-compose.yml now lists it as env_file — a
+#     missing file makes `compose up` abort with `env file not found`.
+#     Re-detect the host timezone here so the upgrade path matches a fresh
+#     install without requiring the admin to re-run install.sh.
+# ===========================================================================
+ensure_env_conf() {
+    if [[ -f "$ENV_CONF_FILE" ]]; then
+        return
+    fi
+
+    local detected=""
+    if command -v timedatectl >/dev/null 2>&1; then
+        detected="$(timedatectl show --value --property=Timezone 2>/dev/null || true)"
+    fi
+    if [[ -z "$detected" && -r /etc/timezone ]]; then
+        detected="$(tr -d '\n' < /etc/timezone)"
+    fi
+    if [[ -z "$detected" && -L /etc/localtime ]]; then
+        local target
+        target="$(readlink -f /etc/localtime 2>/dev/null || true)"
+        if [[ "$target" == */zoneinfo/* ]]; then
+            detected="${target#*/zoneinfo/}"
+        fi
+    fi
+    [[ -n "$detected" ]] || detected="UTC"
+
+    log "Creating ${ENV_CONF_FILE} (first upgrade to v0.0.18+) with TZ=${detected} …"
+    mkdir -p "$SECRETS_DIR"
+    local tmp
+    tmp="$(mktemp)"
+    cat > "$tmp" <<EOF
+# Servicedesk runtime environment — managed by install.sh/update.sh.
+# Non-secret. Mode 644. Safe to edit and restart the app container.
+TZ=${detected}
+EOF
+    install -m 644 -o root -g root "$tmp" "$ENV_CONF_FILE"
+    rm -f "$tmp"
+    ok "env.conf created (TZ=${detected})."
+}
+
+# ===========================================================================
 # 6. build + swap app container
 # ===========================================================================
 # MinVer can't read tags from inside the image build — .dockerignore strips
@@ -280,6 +323,7 @@ main() {
     snapshot_current_state
     fetch_and_checkout
     reconcile_env_vars
+    ensure_env_conf
     rebuild_and_restart_app
     if ! wait_for_health_or_rollback; then
         exit 1

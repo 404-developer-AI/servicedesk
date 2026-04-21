@@ -60,8 +60,12 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS runtime
 # InvariantGlobalization=false (we rely on culture-aware sorting + date
 # formatting for audit timestamps and ticket displays). Alpine-aspnet ships
 # without ICU; without this the app FailFasts on the first CultureInfo call.
+# tzdata is required (v0.0.18) so TimeZoneInfo.FindSystemTimeZoneById("Europe/…")
+# and the TZ env-var provisioned by install.sh both resolve — Alpine ships
+# without zoneinfo, which would silently leave every install on UTC regardless
+# of the App.TimeZone setting or the container TZ.
 RUN addgroup -S sd && adduser -S -G sd -u 10001 sd \
-    && apk add --no-cache wget icu-libs
+    && apk add --no-cache wget icu-libs tzdata
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 
 WORKDIR /app

@@ -178,15 +178,44 @@ app.MapGet("/api/system/version", () => Results.Ok(new
 .WithName("GetSystemVersion")
 .WithOpenApi();
 
-app.MapGet("/api/system/time", () =>
+// Display-timezone resolution order:
+//   1. `App.TimeZone` setting (IANA id). Admin can override from Settings → General.
+//   2. Container `TZ` env-var → surfaces here as TimeZoneInfo.Local. install.sh
+//      writes this from the host timezone so a fresh install already reflects
+//      the admin's local clock without a trip through the Settings page.
+//   3. UTC hard floor if both fail.
+// An invalid IANA id or a DB-read hiccup silently falls back to step 2/3 so the
+// endpoint never 500s — clients depend on it for every live-clock tick.
+app.MapGet("/api/system/time", async (ISettingsService settings, CancellationToken ct) =>
 {
+    string configured = string.Empty;
+    try
+    {
+        configured = await settings.GetAsync<string>(SettingKeys.App.TimeZone, ct);
+    }
+    catch
+    {
+        // Settings store unreachable — drop through to the host default below.
+    }
+
+    var tz = ResolveDisplayTimeZone(configured);
     var nowUtc = DateTimeOffset.UtcNow;
     return Results.Ok(new
     {
         utc = nowUtc,
-        timezone = TimeZoneInfo.Local.Id,
-        offsetMinutes = (int)TimeZoneInfo.Local.GetUtcOffset(nowUtc.UtcDateTime).TotalMinutes
+        timezone = tz.Id,
+        offsetMinutes = (int)tz.GetUtcOffset(nowUtc.UtcDateTime).TotalMinutes
     });
+
+    static TimeZoneInfo ResolveDisplayTimeZone(string id)
+    {
+        if (!string.IsNullOrWhiteSpace(id))
+        {
+            try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
+            catch { /* Invalid IANA id — fall through. */ }
+        }
+        return TimeZoneInfo.Local;
+    }
 })
 .WithName("GetSystemTime")
 .WithOpenApi();

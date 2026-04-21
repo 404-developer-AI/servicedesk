@@ -29,6 +29,11 @@ set -euo pipefail
 # ===========================================================================
 readonly SECRETS_DIR="/etc/servicedesk"
 readonly SECRETS_FILE="${SECRETS_DIR}/secrets.env"
+# Non-secret runtime config (TZ, later additions). Split from secrets.env so
+# mode 644 is safe — compose bind-mounts both as env_file entries. Keeping the
+# two files apart also means `backup.sh` can include env.conf in plain backups
+# without ever copying a master-key off the box.
+readonly ENV_CONF_FILE="${SECRETS_DIR}/env.conf"
 readonly BLOB_ROOT="/var/lib/servicedesk/blobs"
 readonly SUMMARY_FILE="/root/servicedesk-install-summary.txt"
 readonly INSTALL_DIR_DEFAULT="/opt/servicedesk"
@@ -366,6 +371,64 @@ EOF
 }
 
 # ===========================================================================
+# 7b. write /etc/servicedesk/env.conf with the host timezone so the app
+#     container's clock (logs, cron, shell) matches the admin's local time.
+#     docker-compose picks this up via a second env_file entry.
+#
+# Why detect and pin, rather than rely on the host? Compose containers default
+# to UTC regardless of host TZ — without an explicit env-var every fresh
+# install shows UTC timestamps in logs, cron fires in UTC, and the in-app
+# clock falls back to UTC too until an admin sets App.TimeZone. Detecting at
+# install time makes the common case (admin installs from the host they
+# already configured) just work.
+# ===========================================================================
+generate_env_conf() {
+    if [[ -f "$ENV_CONF_FILE" ]]; then
+        ok "${ENV_CONF_FILE} already exists — leaving untouched."
+        return
+    fi
+
+    local detected=""
+    if command -v timedatectl >/dev/null 2>&1; then
+        detected="$(timedatectl show --value --property=Timezone 2>/dev/null || true)"
+    fi
+    if [[ -z "$detected" && -r /etc/timezone ]]; then
+        detected="$(tr -d '\n' < /etc/timezone)"
+    fi
+    if [[ -z "$detected" && -L /etc/localtime ]]; then
+        # `readlink -f` resolves the symlink into e.g. /usr/share/zoneinfo/Europe/Brussels.
+        local target
+        target="$(readlink -f /etc/localtime 2>/dev/null || true)"
+        if [[ "$target" == */zoneinfo/* ]]; then
+            detected="${target#*/zoneinfo/}"
+        fi
+    fi
+    if [[ -z "$detected" ]]; then
+        warn "Could not detect host timezone — falling back to UTC. Override via Settings → General after login."
+        detected="UTC"
+    else
+        log "Detected host timezone: ${detected}"
+    fi
+
+    local tmp
+    tmp="$(mktemp)"
+    cat > "$tmp" <<EOF
+# Servicedesk runtime environment — managed by install.sh.
+# This file is NOT a secret. Mode 644 so backup.sh can copy it freely.
+# Edit values by re-running install.sh (which is idempotent) or by rewriting
+# this file and running \`docker compose up -d app\`.
+
+# IANA time-zone id. Sets the container's clock (TZ env-var). The UI time
+# zone can be overridden independently via the \`App.TimeZone\` setting in
+# Settings → General; when that setting is empty the UI falls back to this.
+TZ=${detected}
+EOF
+    install -m 644 -o root -g root "$tmp" "$ENV_CONF_FILE"
+    rm -f "$tmp"
+    ok "env.conf written (644 root:root, TZ=${detected})."
+}
+
+# ===========================================================================
 # 8. blob-store directory
 # ===========================================================================
 prepare_blob_root() {
@@ -510,6 +573,7 @@ Setup wizard:       ${base_url}/setup
 
 Install directory:  ${INSTALL_DIR}
 Secrets file:       ${SECRETS_FILE}       (mode 600 root:root)
+Runtime env file:   ${ENV_CONF_FILE}       (mode 644 root:root — non-secret, TZ + future runtime knobs)
 Summary file:       ${SUMMARY_FILE}       (this file — mode 600 root:root)
 
 Postgres:
@@ -567,6 +631,7 @@ main() {
     configure_postgres_listen
     setup_postgres_role_and_db
     generate_secrets_env
+    generate_env_conf
     prepare_blob_root
     clone_repo
     select_nginx_template
