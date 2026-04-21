@@ -102,11 +102,21 @@ function SafeHtml({ html }: { html: string }) {
     },
     [preview],
   );
+  // Memoise the sanitised output per html-string. Without this, sanitize()
+  // runs on every render; dompurify 3.4.x can return a string whose byte
+  // content differs between calls on the same input, which tricks React's
+  // dangerouslySetInnerHTML diff into swapping the DOM, which re-creates
+  // every inline <img>, which re-fires its GET — the classic "200 reqs
+  // for the same 2 attachments in one second" loop.
+  const sanitized = React.useMemo(
+    () => DOMPurify.sanitize(html, SANITIZE_CONFIG) as unknown as string,
+    [html],
+  );
   return (
     <div
       onClick={onClick}
       className="prose-sm text-foreground/90 [&_a]:text-primary [&_a]:underline [&_p]:my-1 [&_ul]:pl-5 [&_ol]:pl-5 [&_img]:cursor-zoom-in"
-      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html, SANITIZE_CONFIG) as unknown as string }}
+      dangerouslySetInnerHTML={{ __html: sanitized }}
     />
   );
 }
