@@ -35,6 +35,12 @@ readonly SECRETS_FILE="${SECRETS_DIR}/secrets.env"
 # without ever copying a master-key off the box.
 readonly ENV_CONF_FILE="${SECRETS_DIR}/env.conf"
 readonly BLOB_ROOT="/var/lib/servicedesk/blobs"
+# Shared signal directory for the Let's Encrypt renewal bridge (v0.0.18).
+# App container (uid 10001) writes renew.request here; the host-side
+# servicedesk-cert-renew.path unit watches, runs certbot, writes renew.status
+# back. Bind-mounted into the app at the same path so Options.SignalDirectory
+# matches inside + outside the container.
+readonly CERT_RENEW_DIR="/var/lib/servicedesk/cert-renew"
 readonly SUMMARY_FILE="/root/servicedesk-install-summary.txt"
 readonly INSTALL_DIR_DEFAULT="/opt/servicedesk"
 readonly REPO_URL_DEFAULT="https://github.com/404-developer-AI/servicedesk.git"
@@ -383,10 +389,9 @@ EOF
 # already configured) just work.
 # ===========================================================================
 generate_env_conf() {
-    if [[ -f "$ENV_CONF_FILE" ]]; then
-        ok "${ENV_CONF_FILE} already exists — leaving untouched."
-        return
-    fi
+    # Idempotent: existing env.conf is NEVER overwritten (admins may have
+    # hand-tuned values). Missing keys are appended so new releases (e.g.
+    # v0.0.18's TlsCert keys) land on a re-run without losing customizations.
 
     local detected=""
     if command -v timedatectl >/dev/null 2>&1; then
@@ -403,29 +408,72 @@ generate_env_conf() {
             detected="${target#*/zoneinfo/}"
         fi
     fi
-    if [[ -z "$detected" ]]; then
-        warn "Could not detect host timezone — falling back to UTC. Override via Settings → General after login."
-        detected="UTC"
-    else
-        log "Detected host timezone: ${detected}"
+    [[ -n "$detected" ]] || detected="UTC"
+
+    # TlsCert keys: empty when SSL=no so the app's tls-cert card reports
+    # "monitoring disabled" instead of flagging a missing cert file.
+    local tls_domain="" tls_email=""
+    if [[ "$SSL" == "yes" ]]; then
+        tls_domain="$DOMAIN"
+        tls_email="$EMAIL"
     fi
 
-    local tmp
-    tmp="$(mktemp)"
-    cat > "$tmp" <<EOF
-# Servicedesk runtime environment — managed by install.sh.
+    if [[ ! -f "$ENV_CONF_FILE" ]]; then
+        log "Creating ${ENV_CONF_FILE} (detected TZ=${detected}) …"
+        local tmp
+        tmp="$(mktemp)"
+        cat > "$tmp" <<EOF
+# Servicedesk runtime environment — managed by install.sh/update.sh.
 # This file is NOT a secret. Mode 644 so backup.sh can copy it freely.
-# Edit values by re-running install.sh (which is idempotent) or by rewriting
-# this file and running \`docker compose up -d app\`.
+# Edit values by re-running install.sh (which is idempotent), by rewriting
+# this file and running \`docker compose up -d app\`, or by editing in place
+# and (for cert renewal) \`systemctl restart servicedesk-cert-renew.path\`.
 
 # IANA time-zone id. Sets the container's clock (TZ env-var). The UI time
 # zone can be overridden independently via the \`App.TimeZone\` setting in
 # Settings → General; when that setting is empty the UI falls back to this.
 TZ=${detected}
+
+# TLS certificate monitoring + renewal (v0.0.18 tls-cert health subsystem).
+# The app reads fullchain.pem's expiry to drive the Health-page card; the
+# host-side servicedesk-cert-renew.service reads the same three keys when
+# the admin clicks "Renew now" (webroot challenge, no cron).
+# Empty Domain → tls-cert card reports "monitoring disabled".
+SERVICEDESK_TlsCert__Domain=${tls_domain}
+APP_LE_EMAIL=${tls_email}
+APP_INSTALL_DIR=${INSTALL_DIR}
 EOF
-    install -m 644 -o root -g root "$tmp" "$ENV_CONF_FILE"
-    rm -f "$tmp"
-    ok "env.conf written (644 root:root, TZ=${detected})."
+        install -m 644 -o root -g root "$tmp" "$ENV_CONF_FILE"
+        rm -f "$tmp"
+        ok "env.conf written (TZ=${detected}, Domain=${tls_domain:-<none>})."
+        return
+    fi
+
+    # Append-only backfill: only add keys the existing file does NOT already
+    # define. An admin's hand-tuned value always wins over the installer's.
+    local added=()
+    _append_env_conf_if_missing "TZ"                          "$detected"    added
+    _append_env_conf_if_missing "SERVICEDESK_TlsCert__Domain" "$tls_domain"  added
+    _append_env_conf_if_missing "APP_LE_EMAIL"                "$tls_email"   added
+    _append_env_conf_if_missing "APP_INSTALL_DIR"             "$INSTALL_DIR" added
+
+    if [[ ${#added[@]} -eq 0 ]]; then
+        ok "${ENV_CONF_FILE} already complete — leaving untouched."
+    else
+        ok "${ENV_CONF_FILE} backfilled with: ${added[*]}"
+    fi
+}
+
+# Appends KEY=VALUE to env.conf iff KEY isn't already defined. Adds KEY to
+# the `out` name-ref so the caller can report what changed.
+_append_env_conf_if_missing() {
+    local key=$1 value=$2
+    local -n out=$3
+    if grep -qE "^${key}=" "$ENV_CONF_FILE" 2>/dev/null; then
+        return
+    fi
+    printf '%s=%s\n' "$key" "$value" >> "$ENV_CONF_FILE"
+    out+=("$key")
 }
 
 # ===========================================================================
@@ -438,6 +486,24 @@ prepare_blob_root() {
         log "Creating blob root ${BLOB_ROOT} …"
         install -d -m 755 -o 10001 -g 10001 "$BLOB_ROOT"
     fi
+}
+
+# ===========================================================================
+# 8b. cert-renew signal directory. App writes renew.request here (uid 10001);
+#     the host-side systemd.path unit reads + runs certbot. 750 owner=10001
+#     so the unprivileged container can write and root/systemd can still
+#     watch the directory for inotify events.
+# ===========================================================================
+prepare_cert_renew_dir() {
+    if [[ -d "$CERT_RENEW_DIR" ]]; then
+        ok "Cert-renew signal dir ${CERT_RENEW_DIR} already exists."
+        # Re-apply ownership in case a previous run created it as root.
+        chown 10001:10001 "$CERT_RENEW_DIR"
+        chmod 750 "$CERT_RENEW_DIR"
+        return
+    fi
+    log "Creating cert-renew signal dir ${CERT_RENEW_DIR} …"
+    install -d -m 750 -o 10001 -g 10001 "$CERT_RENEW_DIR"
 }
 
 # ===========================================================================
@@ -554,6 +620,47 @@ start_nginx() {
 }
 
 # ===========================================================================
+# 14b. cert-renew systemd units (SSL=yes only).
+#
+# Installs three files:
+#   • /usr/local/sbin/servicedesk-cert-renew.sh   (wrapper script)
+#   • /etc/systemd/system/servicedesk-cert-renew.path
+#   • /etc/systemd/system/servicedesk-cert-renew.service
+#
+# The path unit watches /var/lib/servicedesk/cert-renew/renew.request. When
+# the app container writes that file (via the Health-page "Renew now"-action)
+# systemd fires the oneshot service, which runs certbot in the existing
+# compose `certs`-profile container and HUPs nginx on success.
+#
+# Result: renewal is admin-triggered, UI-driven, audit-logged; the app
+# container stays unprivileged (no docker socket, no setuid helper).
+# ===========================================================================
+install_cert_renew_units() {
+    if [[ "$SSL" != "yes" ]]; then
+        log "SSL=no → skipping cert-renew systemd units."
+        return
+    fi
+
+    local src_dir="${INSTALL_DIR}/deploy/cert-renew"
+    [[ -d "$src_dir" ]] || die "Cert-renew source directory missing: ${src_dir}"
+
+    log "Installing servicedesk-cert-renew helper + systemd units …"
+    install -m 755 -o root -g root \
+        "${src_dir}/servicedesk-cert-renew.sh" \
+        "/usr/local/sbin/servicedesk-cert-renew.sh"
+    install -m 644 -o root -g root \
+        "${src_dir}/servicedesk-cert-renew.path" \
+        "/etc/systemd/system/servicedesk-cert-renew.path"
+    install -m 644 -o root -g root \
+        "${src_dir}/servicedesk-cert-renew.service" \
+        "/etc/systemd/system/servicedesk-cert-renew.service"
+
+    systemctl daemon-reload
+    systemctl enable --now servicedesk-cert-renew.path >/dev/null
+    ok "Cert-renew path watcher enabled — \"Renew now\" on the Health page is live."
+}
+
+# ===========================================================================
 # 15. write human-readable summary + delete-reminder
 # ===========================================================================
 write_summary() {
@@ -583,7 +690,12 @@ Postgres:
   Connection:       Host=${COMPOSE_GATEWAY};Port=5432;Database=${PG_APP_DB};Username=${DB_USER}
 
 TLS:                ${SSL}
-$([[ "$SSL" == "yes" ]] && echo "Let's Encrypt cert: /etc/letsencrypt/live/${DOMAIN}/fullchain.pem (inside certbot volume)")
+$([[ "$SSL" == "yes" ]] && cat <<TLS_EOF
+Let's Encrypt cert: /etc/letsencrypt/live/${DOMAIN}/fullchain.pem (inside certbot volume)
+Cert renewal:       Settings → Health → TLS certificate → "Renew now"
+                    (backed by servicedesk-cert-renew.path systemd unit)
+TLS_EOF
+)
 
 Day-to-day operations:
   Update:           bash <(curl -sSL ${REPO_URL%%.git}/raw/${REPO_REF}/deploy/update.sh)
@@ -633,6 +745,7 @@ main() {
     generate_secrets_env
     generate_env_conf
     prepare_blob_root
+    prepare_cert_renew_dir
     clone_repo
     select_nginx_template
     start_app
@@ -640,6 +753,7 @@ main() {
     post_install_revoke_audit_log
     bootstrap_certbot
     start_nginx
+    install_cert_renew_units
     write_summary
 }
 

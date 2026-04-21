@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Polling;
 using Servicedesk.Infrastructure.Observability;
@@ -33,6 +34,9 @@ public sealed class HealthAggregator : IHealthAggregator
     private readonly IAttachmentJobRepository _attachmentJobs;
     private readonly IBlobStoreHealth _blobHealth;
     private readonly IIncidentLog _incidents;
+    private readonly ITlsCertReader _tlsCert;
+    private readonly ICertRenewalTrigger _certRenewal;
+    private readonly IOptions<TlsCertHealthOptions> _tlsOptions;
 
     public HealthAggregator(
         IMailPollStateRepository pollState,
@@ -40,7 +44,10 @@ public sealed class HealthAggregator : IHealthAggregator
         IProtectedSecretStore secrets,
         IAttachmentJobRepository attachmentJobs,
         IBlobStoreHealth blobHealth,
-        IIncidentLog incidents)
+        IIncidentLog incidents,
+        ITlsCertReader tlsCert,
+        ICertRenewalTrigger certRenewal,
+        IOptions<TlsCertHealthOptions> tlsOptions)
     {
         _pollState = pollState;
         _taxonomy = taxonomy;
@@ -48,6 +55,9 @@ public sealed class HealthAggregator : IHealthAggregator
         _attachmentJobs = attachmentJobs;
         _blobHealth = blobHealth;
         _incidents = incidents;
+        _tlsCert = tlsCert;
+        _certRenewal = certRenewal;
+        _tlsOptions = tlsOptions;
     }
 
     public async Task<HealthReport> CollectAsync(CancellationToken ct)
@@ -60,6 +70,7 @@ public sealed class HealthAggregator : IHealthAggregator
             ApplyIncidents(await BuildGraphAuthAsync(ct), openIncidents),
             ApplyIncidents(await BuildAttachmentJobsAsync(ct), openIncidents),
             ApplyIncidents(BuildBlobStore(), openIncidents),
+            ApplyIncidents(BuildTlsCert(), openIncidents),
         };
         var rollup = subsystems.Aggregate(HealthStatus.Ok,
             (acc, s) => s.Status > acc ? s.Status : acc);
@@ -305,4 +316,123 @@ public sealed class HealthAggregator : IHealthAggregator
             Details: details,
             Actions: actions);
     }
+
+    private SubsystemHealth BuildTlsCert()
+    {
+        var opts = _tlsOptions.Value;
+        var details = new List<HealthDetail>();
+        var actions = new List<HealthAction>();
+
+        if (string.IsNullOrWhiteSpace(opts.Domain))
+        {
+            // SSL=no install, or a pre-v0.0.18 upgrade that has not yet
+            // re-run update.sh with the TlsCert backfill. No cert file to
+            // read — report Ok with an explanatory line rather than a
+            // spurious warning.
+            return new SubsystemHealth(
+                Key: "tls-cert",
+                Label: "TLS certificate",
+                Status: HealthStatus.Ok,
+                Summary: "TLS monitoring disabled — no domain configured.",
+                Details: new[]
+                {
+                    new HealthDetail("Domain",
+                        "Not configured. Run install.sh with SSL=yes, or set SERVICEDESK_TlsCert__Domain in /etc/servicedesk/env.conf."),
+                },
+                Actions: Array.Empty<HealthAction>());
+        }
+
+        var info = _tlsCert.Read();
+        var status = HealthStatus.Ok;
+        string summary;
+
+        AppendLastRun(details);
+
+        if (info is null)
+        {
+            // Domain is set but the cert file is missing — typically the
+            // one short window between install.sh running and certbot's
+            // first-issue finishing, OR a broken state where the certbot
+            // volume lost its content. Either way: Warning, let admin
+            // trigger renewal.
+            status = HealthStatus.Warning;
+            summary = $"No certificate found for {opts.Domain}.";
+            details.Add(new HealthDetail("Domain", opts.Domain));
+            details.Add(new HealthDetail("Certificate",
+                $"Expected at {opts.CertDirectory}/{opts.Domain}/fullchain.pem — not readable."));
+            actions.Add(BuildRenewAction(opts.Domain));
+            return new SubsystemHealth(
+                Key: "tls-cert",
+                Label: "TLS certificate",
+                Status: status,
+                Summary: summary,
+                Details: details,
+                Actions: actions);
+        }
+
+        var daysLeft = (info.NotAfterUtc - DateTime.UtcNow).TotalDays;
+        var daysLeftRounded = (int)Math.Floor(daysLeft);
+
+        if (daysLeft < 0)
+        {
+            status = HealthStatus.Critical;
+            summary = $"Certificate expired {Math.Abs(daysLeftRounded)} day(s) ago — nginx is serving an invalid cert.";
+        }
+        else if (daysLeft < opts.CriticalDays)
+        {
+            status = HealthStatus.Critical;
+            summary = $"Certificate expires in {daysLeftRounded} day(s) — renew immediately.";
+        }
+        else if (daysLeft < opts.WarningDays)
+        {
+            status = HealthStatus.Warning;
+            summary = $"Certificate expires in {daysLeftRounded} day(s).";
+        }
+        else
+        {
+            summary = $"Certificate valid for {daysLeftRounded} more day(s).";
+        }
+
+        details.Add(new HealthDetail("Domain", opts.Domain));
+        details.Add(new HealthDetail("Subject", info.Subject));
+        details.Add(new HealthDetail("Expires", info.NotAfterUtc.ToString("u")));
+        details.Add(new HealthDetail("Days remaining", daysLeftRounded.ToString()));
+
+        actions.Add(BuildRenewAction(opts.Domain));
+
+        return new SubsystemHealth(
+            Key: "tls-cert",
+            Label: "TLS certificate",
+            Status: status,
+            Summary: summary,
+            Details: details,
+            Actions: actions);
+    }
+
+    private void AppendLastRun(List<HealthDetail> details)
+    {
+        var status = _certRenewal.TryReadStatus();
+        if (status is null) return;
+
+        var label = status.State switch
+        {
+            "running" => "Last renew attempt",
+            "success" => "Last renew attempt",
+            "failed" => "Last renew attempt",
+            _ => "Last renew attempt",
+        };
+        var value = status.Detail is null
+            ? $"{status.State} at {status.WhenUtc:u}"
+            : $"{status.State} at {status.WhenUtc:u} — {status.Detail}";
+        details.Add(new HealthDetail(label, value));
+    }
+
+    private static HealthAction BuildRenewAction(string domain) => new(
+        Key: "renew-tls-cert",
+        Label: "Renew now",
+        Endpoint: "/api/admin/health/tls-cert/renew",
+        ConfirmMessage:
+            $"Request a Let's Encrypt renewal for {domain}? " +
+            "Certbot runs on the host (webroot challenge via nginx) and nginx is " +
+            "reloaded automatically on success. Watch this card for the result.");
 }

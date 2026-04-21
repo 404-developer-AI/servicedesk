@@ -115,6 +115,30 @@ public static class HealthEndpoints
         })
         .WithName("CancelDeadLetteredAttachmentJobs").WithOpenApi();
 
+        admin.MapPost("/tls-cert/renew", async (
+            HttpContext http,
+            ICertRenewalTrigger trigger,
+            IAuditLogger audit,
+            CancellationToken ct) =>
+        {
+            // Drop the signal file for the host-side systemd.path unit. The
+            // actual certbot run + nginx reload happens out-of-process — we
+            // return 202 immediately and the admin watches the tls-cert card
+            // for the "Last renew attempt" detail to flip.
+            await trigger.TriggerAsync(ct);
+            var (actor, role) = ActorContext.Resolve(http);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "health.tls-cert.renew-requested",
+                Actor: actor,
+                ActorRole: role,
+                Target: "tls-cert",
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: null));
+            return Results.Accepted();
+        })
+        .WithName("RenewTlsCert").WithOpenApi();
+
         admin.MapPost("/blob-store/clear", async (
             HttpContext http,
             IBlobStoreHealth blobHealth,

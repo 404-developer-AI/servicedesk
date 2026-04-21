@@ -1,0 +1,17 @@
+# servicedesk-cert-renew.service — oneshot that runs certbot + HUPs nginx.
+# Fired by servicedesk-cert-renew.path; never run directly under normal use.
+# Runs as root because it needs the docker socket and `docker kill`.
+
+[Unit]
+Description=Servicedesk TLS cert renewal (certbot + nginx HUP)
+Documentation=https://github.com/404-developer-AI/servicedesk
+# The app container runs under docker compose, not systemd — we only
+# require docker itself to be up when we fire.
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/servicedesk-cert-renew.sh
+StandardOutput=journal
+StandardError=journal

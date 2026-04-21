@@ -38,6 +38,8 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        services.Configure<Health.TlsCertHealthOptions>(configuration.GetSection("TlsCert"));
+
         services.AddSingleton<ISecretProvider, ConfigurationSecretProvider>();
 
         // StartupSecretValidator must run before DataProtectionHostedService
@@ -90,6 +92,8 @@ public static class DependencyInjection
         services.AddSingleton<IProtectedSecretStore, ProtectedSecretStore>();
         services.AddSingleton<IMailPollStateRepository, MailPollStateRepository>();
         services.AddSingleton<IGraphMailClient, GraphMailClient>();
+        services.AddSingleton<ITlsCertReader, FileTlsCertReader>();
+        services.AddSingleton<ICertRenewalTrigger, FileSignalCertRenewalTrigger>();
         services.AddSingleton<IHealthAggregator, HealthAggregator>();
         services.AddSingleton<IHealthSubsystemReset, HealthSubsystemReset>();
         // Default to the no-op notifier; the Api project overrides this

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Servicedesk.Domain.Taxonomy;
 using Servicedesk.Infrastructure.Health;
 using Servicedesk.Infrastructure.Mail.Attachments;
@@ -185,6 +186,111 @@ public sealed class HealthAggregatorTests
     }
 
     [Fact]
+    public async Task TlsCert_no_domain_configured_reports_ok_with_disabled_summary()
+    {
+        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+            tlsOptions: new TlsCertHealthOptions { Domain = null });
+
+        var report = await agg.CollectAsync(CancellationToken.None);
+
+        var tls = report.Subsystems.Single(s => s.Key == "tls-cert");
+        Assert.Equal(HealthStatus.Ok, tls.Status);
+        Assert.Contains("monitoring disabled", tls.Summary, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(tls.Actions);
+    }
+
+    [Fact]
+    public async Task TlsCert_domain_set_but_no_cert_file_reports_warning_with_renew_action()
+    {
+        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+            tlsOptions: new TlsCertHealthOptions { Domain = "sd.example.com" },
+            tlsCert: new StubTlsCertReader(null));
+
+        var report = await agg.CollectAsync(CancellationToken.None);
+
+        var tls = report.Subsystems.Single(s => s.Key == "tls-cert");
+        Assert.Equal(HealthStatus.Warning, tls.Status);
+        var action = Assert.Single(tls.Actions);
+        Assert.Equal("/api/admin/health/tls-cert/renew", action.Endpoint);
+    }
+
+    [Fact]
+    public async Task TlsCert_30_days_remaining_reports_ok()
+    {
+        // Bias past the 14-day Warning threshold with margin — exact "30"
+        // would race against wall-clock progression between now() in the
+        // test and now() inside the aggregator.
+        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+            tlsOptions: new TlsCertHealthOptions { Domain = "sd.example.com" },
+            tlsCert: new StubTlsCertReader(new TlsCertInfo("CN=sd.example.com", DateTime.UtcNow.AddDays(30))));
+
+        var report = await agg.CollectAsync(CancellationToken.None);
+
+        var tls = report.Subsystems.Single(s => s.Key == "tls-cert");
+        Assert.Equal(HealthStatus.Ok, tls.Status);
+        Assert.Contains(tls.Details, d => d.Label == "Days remaining");
+    }
+
+    [Fact]
+    public async Task TlsCert_10_days_remaining_reports_warning()
+    {
+        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+            tlsOptions: new TlsCertHealthOptions { Domain = "sd.example.com" },
+            tlsCert: new StubTlsCertReader(new TlsCertInfo("CN=sd.example.com", DateTime.UtcNow.AddDays(10))));
+
+        var report = await agg.CollectAsync(CancellationToken.None);
+
+        var tls = report.Subsystems.Single(s => s.Key == "tls-cert");
+        Assert.Equal(HealthStatus.Warning, tls.Status);
+        Assert.Single(tls.Actions);
+    }
+
+    [Fact]
+    public async Task TlsCert_5_days_remaining_reports_critical()
+    {
+        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+            tlsOptions: new TlsCertHealthOptions { Domain = "sd.example.com" },
+            tlsCert: new StubTlsCertReader(new TlsCertInfo("CN=sd.example.com", DateTime.UtcNow.AddDays(5))));
+
+        var report = await agg.CollectAsync(CancellationToken.None);
+
+        Assert.Equal(HealthStatus.Critical, report.Status);
+        var tls = report.Subsystems.Single(s => s.Key == "tls-cert");
+        Assert.Equal(HealthStatus.Critical, tls.Status);
+    }
+
+    [Fact]
+    public async Task TlsCert_expired_reports_critical()
+    {
+        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+            tlsOptions: new TlsCertHealthOptions { Domain = "sd.example.com" },
+            tlsCert: new StubTlsCertReader(new TlsCertInfo("CN=sd.example.com", DateTime.UtcNow.AddDays(-2))));
+
+        var report = await agg.CollectAsync(CancellationToken.None);
+
+        Assert.Equal(HealthStatus.Critical, report.Status);
+        var tls = report.Subsystems.Single(s => s.Key == "tls-cert");
+        Assert.Contains("expired", tls.Summary, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task TlsCert_last_renew_status_surfaces_as_detail()
+    {
+        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+            tlsOptions: new TlsCertHealthOptions { Domain = "sd.example.com" },
+            tlsCert: new StubTlsCertReader(new TlsCertInfo("CN=sd.example.com", DateTime.UtcNow.AddDays(30))),
+            certRenewal: new StubCertRenewalTrigger(
+                new CertRenewalStatus("failed", DateTime.UtcNow.AddMinutes(-5), "certbot exit non-zero")));
+
+        var report = await agg.CollectAsync(CancellationToken.None);
+
+        var tls = report.Subsystems.Single(s => s.Key == "tls-cert");
+        Assert.Contains(tls.Details, d => d.Label == "Last renew attempt"
+                                           && (d.Value?.Contains("failed") ?? false)
+                                           && (d.Value?.Contains("certbot exit non-zero") ?? false));
+    }
+
+    [Fact]
     public async Task Missing_graph_secret_reports_warning()
     {
         var agg = Build(queues: new List<Queue>(), states: new List<MailPollState>(), hasSecret: false);
@@ -202,14 +308,20 @@ public sealed class HealthAggregatorTests
         int backlog = 0,
         int deadLetters = 0,
         IBlobStoreHealth? blobHealth = null,
-        IReadOnlyDictionary<string, IncidentSeverity>? openIncidents = null)
+        IReadOnlyDictionary<string, IncidentSeverity>? openIncidents = null,
+        ITlsCertReader? tlsCert = null,
+        ICertRenewalTrigger? certRenewal = null,
+        TlsCertHealthOptions? tlsOptions = null)
         => new(
             new StubPollStateRepo(states),
             new StubTaxonomyRepo(queues),
             new StubSecretStore(hasSecret),
             new StubAttachmentJobsRepo(backlog, deadLetters),
             blobHealth ?? new BlobStoreHealth(),
-            new StubIncidentLog(openIncidents ?? new Dictionary<string, IncidentSeverity>()));
+            new StubIncidentLog(openIncidents ?? new Dictionary<string, IncidentSeverity>()),
+            tlsCert ?? new StubTlsCertReader(null),
+            certRenewal ?? new StubCertRenewalTrigger(null),
+            Options.Create(tlsOptions ?? new TlsCertHealthOptions()));
 
     private sealed class StubIncidentLog : IIncidentLog
     {
@@ -276,6 +388,21 @@ public sealed class HealthAggregatorTests
         public Task<string?> GetAsync(string key, CancellationToken ct) => Task.FromResult<string?>(_has ? "secret" : null);
         public Task SetAsync(string key, string value, CancellationToken ct) => Task.CompletedTask;
         public Task DeleteAsync(string key, CancellationToken ct) => Task.CompletedTask;
+    }
+
+    private sealed class StubTlsCertReader : ITlsCertReader
+    {
+        private readonly TlsCertInfo? _info;
+        public StubTlsCertReader(TlsCertInfo? info) => _info = info;
+        public TlsCertInfo? Read() => _info;
+    }
+
+    private sealed class StubCertRenewalTrigger : ICertRenewalTrigger
+    {
+        private readonly CertRenewalStatus? _status;
+        public StubCertRenewalTrigger(CertRenewalStatus? status) => _status = status;
+        public Task TriggerAsync(CancellationToken ct) => Task.CompletedTask;
+        public CertRenewalStatus? TryReadStatus() => _status;
     }
 
     private sealed class StubTaxonomyRepo : ITaxonomyRepository

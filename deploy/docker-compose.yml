@@ -39,6 +39,16 @@ services:
       # Content-addressed blob store. Same path inside and outside the
       # container so the Storage.BlobRoot setting is identical for dev + prod.
       - /var/lib/servicedesk/blobs:/var/lib/servicedesk/blobs
+      # Read-only view of the Let's Encrypt live directory (v0.0.18 tls-cert
+      # health). The app reads fullchain.pem's notAfter to surface a Warning/
+      # Critical card when expiry approaches; it never writes here.
+      - certs:/etc/letsencrypt:ro
+      # Signal directory for the Renew-Now action (v0.0.18). The app drops a
+      # `renew.request` file here; a host-side systemd.path unit watches this
+      # path and runs certbot. Kept off the docker socket on purpose — the
+      # container stays unprivileged. Same path inside + outside the container
+      # so the TlsCert.SignalDirectory setting is identical to the mount.
+      - /var/lib/servicedesk/cert-renew:/var/lib/servicedesk/cert-renew
     networks:
       - servicedesk
     expose:

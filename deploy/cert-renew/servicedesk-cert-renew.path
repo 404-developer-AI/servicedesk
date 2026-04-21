@@ -1,0 +1,15 @@
+# servicedesk-cert-renew.path — watches for a renew.request signal file
+# written by the app container's /api/admin/health/tls-cert/renew endpoint.
+# PathChanged fires on IN_CLOSE_WRITE, so a fresh write (even of an existing
+# path) re-arms the trigger.
+
+[Unit]
+Description=Servicedesk TLS cert renewal (path watcher)
+Documentation=https://github.com/404-developer-AI/servicedesk
+
+[Path]
+PathChanged=/var/lib/servicedesk/cert-renew/renew.request
+Unit=servicedesk-cert-renew.service
+
+[Install]
+WantedBy=multi-user.target

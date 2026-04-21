@@ -31,6 +31,7 @@ readonly SECRETS_FILE="${SECRETS_DIR}/secrets.env"
 readonly ENV_CONF_FILE="${SECRETS_DIR}/env.conf"
 readonly INSTALL_DIR_DEFAULT="/opt/servicedesk"
 readonly PG_APP_DB="servicedesk"
+readonly CERT_RENEW_DIR="/var/lib/servicedesk/cert-renew"
 
 # --- colors + log helpers (identical to install.sh) ----------------------
 if [[ -t 1 ]]; then
@@ -186,10 +187,6 @@ reconcile_env_vars() {
 #     install without requiring the admin to re-run install.sh.
 # ===========================================================================
 ensure_env_conf() {
-    if [[ -f "$ENV_CONF_FILE" ]]; then
-        return
-    fi
-
     local detected=""
     if command -v timedatectl >/dev/null 2>&1; then
         detected="$(timedatectl show --value --property=Timezone 2>/dev/null || true)"
@@ -206,18 +203,117 @@ ensure_env_conf() {
     fi
     [[ -n "$detected" ]] || detected="UTC"
 
-    log "Creating ${ENV_CONF_FILE} (first upgrade to v0.0.18+) with TZ=${detected} …"
-    mkdir -p "$SECRETS_DIR"
-    local tmp
-    tmp="$(mktemp)"
-    cat > "$tmp" <<EOF
+    # Detect whether the install was set up with SSL — we fill TlsCert keys
+    # only when there's actually a cert to monitor. Presence of a fullchain
+    # is the most reliable signal (nginx template may list DOMAIN for HTTP
+    # installs too).
+    local tls_domain="" tls_email=""
+    if [[ -n "${DOMAIN:-}" ]] && docker run --rm -v servicedesk_certs:/etc/letsencrypt alpine \
+            test -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" 2>/dev/null; then
+        tls_domain="$DOMAIN"
+        # No stored LE email — use the Unknown-admin fallback. Admin can edit
+        # env.conf and re-run `systemctl restart servicedesk-cert-renew.path`
+        # if they want a different renewal-notice address.
+        tls_email="${LE_EMAIL:-admin@${DOMAIN}}"
+    fi
+
+    if [[ ! -f "$ENV_CONF_FILE" ]]; then
+        log "Creating ${ENV_CONF_FILE} (first upgrade to v0.0.18+) with TZ=${detected} …"
+        mkdir -p "$SECRETS_DIR"
+        local tmp
+        tmp="$(mktemp)"
+        cat > "$tmp" <<EOF
 # Servicedesk runtime environment — managed by install.sh/update.sh.
 # Non-secret. Mode 644. Safe to edit and restart the app container.
 TZ=${detected}
+SERVICEDESK_TlsCert__Domain=${tls_domain}
+APP_LE_EMAIL=${tls_email}
+APP_INSTALL_DIR=${INSTALL_DIR}
 EOF
-    install -m 644 -o root -g root "$tmp" "$ENV_CONF_FILE"
-    rm -f "$tmp"
-    ok "env.conf created (TZ=${detected})."
+        install -m 644 -o root -g root "$tmp" "$ENV_CONF_FILE"
+        rm -f "$tmp"
+        ok "env.conf created (TZ=${detected}, Domain=${tls_domain:-<none>})."
+        return
+    fi
+
+    # Existing file: only backfill keys that are missing — admin's manual
+    # edits always win. Crucial on v0.0.17 → v0.0.18 upgrades that added the
+    # TlsCert keys.
+    local added=()
+    _append_env_conf_if_missing "TZ"                          "$detected"    added
+    _append_env_conf_if_missing "SERVICEDESK_TlsCert__Domain" "$tls_domain"  added
+    _append_env_conf_if_missing "APP_LE_EMAIL"                "$tls_email"   added
+    _append_env_conf_if_missing "APP_INSTALL_DIR"             "$INSTALL_DIR" added
+
+    if [[ ${#added[@]} -gt 0 ]]; then
+        ok "${ENV_CONF_FILE} backfilled with: ${added[*]}"
+    fi
+}
+
+_append_env_conf_if_missing() {
+    local key=$1 value=$2
+    local -n out=$3
+    if grep -qE "^${key}=" "$ENV_CONF_FILE" 2>/dev/null; then
+        return
+    fi
+    printf '%s=%s\n' "$key" "$value" >> "$ENV_CONF_FILE"
+    out+=("$key")
+}
+
+# ===========================================================================
+# 5c. cert-renew bridge (v0.0.18). Installs or refreshes the host-side
+#     systemd.path + service + wrapper script that implement the Health-page
+#     "Renew now"-action. Idempotent: files are install(1)'d (overwrite OK),
+#     systemctl enable only re-runs when state isn't already enabled.
+# ===========================================================================
+ensure_cert_renew_bridge() {
+    # Create / fix the signal directory regardless of SSL state — costs
+    # nothing and means turning SSL on later doesn't require install.sh.
+    if [[ ! -d "$CERT_RENEW_DIR" ]]; then
+        log "Creating cert-renew signal dir ${CERT_RENEW_DIR} …"
+        install -d -m 750 -o 10001 -g 10001 "$CERT_RENEW_DIR"
+    else
+        chown 10001:10001 "$CERT_RENEW_DIR" 2>/dev/null || true
+        chmod 750 "$CERT_RENEW_DIR" 2>/dev/null || true
+    fi
+
+    local src_dir="${INSTALL_DIR}/deploy/cert-renew"
+    if [[ ! -d "$src_dir" ]]; then
+        warn "Cert-renew source directory missing (${src_dir}) — skipping systemd-unit install."
+        return
+    fi
+
+    # Only install systemd units when the host actually has a cert to renew.
+    # Pre-SSL installs shouldn't have renewal bridge running.
+    local have_cert=no
+    if [[ -n "${DOMAIN:-}" ]] && docker run --rm -v servicedesk_certs:/etc/letsencrypt alpine \
+            test -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" 2>/dev/null; then
+        have_cert=yes
+    fi
+    if [[ "$have_cert" != "yes" ]]; then
+        log "No Let's Encrypt cert detected — skipping cert-renew systemd units."
+        return
+    fi
+
+    log "Refreshing servicedesk-cert-renew helper + systemd units …"
+    install -m 755 -o root -g root \
+        "${src_dir}/servicedesk-cert-renew.sh" \
+        "/usr/local/sbin/servicedesk-cert-renew.sh"
+    install -m 644 -o root -g root \
+        "${src_dir}/servicedesk-cert-renew.path" \
+        "/etc/systemd/system/servicedesk-cert-renew.path"
+    install -m 644 -o root -g root \
+        "${src_dir}/servicedesk-cert-renew.service" \
+        "/etc/systemd/system/servicedesk-cert-renew.service"
+
+    systemctl daemon-reload
+    if ! systemctl is-enabled servicedesk-cert-renew.path >/dev/null 2>&1; then
+        systemctl enable servicedesk-cert-renew.path >/dev/null
+    fi
+    if ! systemctl is-active servicedesk-cert-renew.path >/dev/null 2>&1; then
+        systemctl start servicedesk-cert-renew.path
+    fi
+    ok "Cert-renew bridge active — \"Renew now\" on the Health page is live."
 }
 
 # ===========================================================================
@@ -324,6 +420,7 @@ main() {
     fetch_and_checkout
     reconcile_env_vars
     ensure_env_conf
+    ensure_cert_renew_bridge
     rebuild_and_restart_app
     if ! wait_for_health_or_rollback; then
         exit 1

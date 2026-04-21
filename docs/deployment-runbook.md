@@ -152,3 +152,61 @@ Expected. It's idempotent; re-applying a REVOKE that's already in place is a no-
 
 ### DataProtection-keyring errors at boot
 This means Postgres is unreachable and DataProtection couldn't read the keyring. Retry-loop in `DatabaseBootstrapper` tolerates a slow-starting Postgres (2-min deadline). If it exceeds that, Postgres is genuinely offline — `systemctl status postgresql`.
+
+---
+
+## 5. TLS certificate renewal
+
+Renewals are admin-triggered from the Health page — there's no host cron and no certbot sidecar.
+
+### Normal flow
+
+1. Open Settings → Health. The **TLS certificate** card shows the current cert's `Expires` and `Days remaining`. The card flips amber at <14 days and red at <7 days (or expired).
+2. Click **Renew now**. Confirm the prompt.
+3. The card updates within a second to "Last renew attempt: running …". After certbot finishes (typically 5–15 s) the line flips to "success" or "failed".
+4. On success, nginx is HUP'd in-place — no dropped connections, no manual restart.
+
+### What runs under the hood
+
+The app drops `/var/lib/servicedesk/cert-renew/renew.request`. A `servicedesk-cert-renew.path` systemd unit watches the file (inotify `IN_CLOSE_WRITE`) and triggers the oneshot service that runs `docker compose run --rm --entrypoint certbot certbot certonly --webroot …` — same `certs`-profile container the installer used for first-issue, just with the webroot challenge so nginx keeps serving traffic. On success the helper sends `SIGHUP` to the nginx container; on failure the helper writes the error tail to `renew.status` for the Health card.
+
+### Inspecting a failed renewal
+
+```bash
+# Live view of the helper's output:
+journalctl -fu servicedesk-cert-renew
+
+# Most-recent attempt (status file in the bind mount):
+cat /var/lib/servicedesk/cert-renew/renew.status
+
+# Full certbot log inside the container:
+docker compose -f /opt/servicedesk/deploy/docker-compose.yml run --rm --entrypoint sh certbot \
+    -c "tail -n 200 /var/log/letsencrypt/letsencrypt.log"
+```
+
+Common failure causes:
+- **A-record drifted off this host** → certbot's webroot challenge can't be fetched. Fix DNS, retry from the Health page.
+- **nginx :80 not serving** `/.well-known/acme-challenge/` → check `docker logs servicedesk-nginx-1` and confirm the active template is `default.conf.template` (not the http-only variant — that one omits the ACME location).
+- **Let's Encrypt rate-limited** (5 renewals / week / cert) → wait it out; manual renewal isn't urgent until <7 days remain.
+
+### Bypassing the bridge (manual renewal)
+
+If the systemd unit itself is broken and you need to renew anyway:
+
+```bash
+cd /opt/servicedesk/deploy
+DOMAIN=<your-domain> docker compose run --rm --entrypoint certbot certbot \
+    certonly --webroot -w /var/www/certbot -d <your-domain> \
+    --email <ops-email> --agree-tos --non-interactive --no-eff-email
+docker kill -s HUP servicedesk-nginx-1
+```
+
+### Disabling the bridge
+
+If for some reason you want to revert to manual / cron-based renewal:
+
+```bash
+systemctl disable --now servicedesk-cert-renew.path
+```
+
+The Health card's "Renew now" button still POSTs the renew request — the request file just sits unprocessed. The card will still show the live `Days remaining` based on the cert file directly.
