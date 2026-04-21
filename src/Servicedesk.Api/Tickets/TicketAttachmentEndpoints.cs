@@ -50,6 +50,17 @@ public static class TicketAttachmentEndpoints
             if (!http.Request.HasFormContentType)
                 return Results.BadRequest(new { error = "multipart/form-data required." });
 
+            // Cheap pre-flight cap: if the client truthfully advertises a
+            // gigantic Content-Length we reject before ReadFormAsync allocates
+            // anything. Matches the nginx client_max_body_size = 50 MB. The
+            // fine-grained, admin-tunable Storage.MaxAttachmentBytes still
+            // applies after parsing — this is just a denial-of-service guard.
+            const long HardBodyCeilingBytes = 52_428_800;
+            if (http.Request.ContentLength is long advertised && advertised > HardBodyCeilingBytes)
+            {
+                return Results.Json(new { error = "Request body exceeds 50 MB hard ceiling." }, statusCode: 413);
+            }
+
             var form = await http.Request.ReadFormAsync(ct);
             var file = form.Files.FirstOrDefault();
             if (file is null || file.Length == 0)
@@ -136,9 +147,6 @@ public static class TicketAttachmentEndpoints
                 filename = safeFilename,
             });
         }).WithName("UploadTicketAttachment").WithOpenApi()
-          // Body-size cap: defence in depth. Setting consumes the maximum
-          // configured value at endpoint registration (read once at startup);
-          // runtime enforcement above uses the live setting.
           .DisableRequestTimeout();
 
         // Generic download for ticket-owned and event-owned attachments
