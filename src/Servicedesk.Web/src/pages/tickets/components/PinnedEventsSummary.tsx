@@ -65,9 +65,16 @@ function PinnedItem({
     if (!event) return "Unknown event";
     if (event.bodyText?.trim()) return event.bodyText.slice(0, 80);
     if (event.bodyHtml) {
-      const div = document.createElement("div");
-      div.innerHTML = event.bodyHtml;
-      const text = div.textContent?.trim();
+      // DOMParser builds a synthetic document that does NOT fetch external
+      // resources (img/iframe/link). Using `div.innerHTML = bodyHtml` would
+      // attach a live DOM node and the browser would immediately fire GETs
+      // for every inline `<img src="/api/.../attachments/…">` — once per
+      // render of this preview. Combined with re-renders triggered by
+      // popover open/close, query invalidation, or a parent prop change,
+      // that produces "100 reqs for the same 2 attachments / second"
+      // without anything actually being viewed.
+      const doc = new DOMParser().parseFromString(event.bodyHtml, "text/html");
+      const text = doc.body.textContent?.trim();
       if (text) return text.slice(0, 80);
     }
     return config.label;
