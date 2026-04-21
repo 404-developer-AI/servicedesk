@@ -23,6 +23,10 @@
     <PackageReference Include="Azure.Identity" Version="1.12.1" />
     <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="7.6.3" />
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="7.6.3" />
+    <!-- Pulled in transitively by Microsoft.IdentityModel.* and Microsoft.Graph.
+         Pinning 8.0.3 (last on the 8.x track that patches GHSA-37gx-xxp4-5rgx
+         and GHSA-w3x6-4m5h-cxqf — both fixed there). -->
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="8.0.3" />
     <PackageReference Include="QuestPDF" Version="2024.12.2" />
     <PackageReference Include="Serilog" Version="4.0.2" />
   </ItemGroup>
