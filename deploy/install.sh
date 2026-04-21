@@ -442,6 +442,13 @@ TZ=${detected}
 SERVICEDESK_TlsCert__Domain=${tls_domain}
 APP_LE_EMAIL=${tls_email}
 APP_INSTALL_DIR=${INSTALL_DIR}
+
+# Lock the Host header at the Kestrel boundary. Without this an attacker can
+# send a forged Host header to the backend (e.g. via SSRF) and trigger
+# cache-poisoning or password-reset link tampering. Empty = wildcard (the
+# appsettings.json default), which is fine in dev but should always be set
+# in production.
+SERVICEDESK_AllowedHosts=${DOMAIN}
 EOF
         install -m 644 -o root -g root "$tmp" "$ENV_CONF_FILE"
         rm -f "$tmp"
@@ -456,6 +463,7 @@ EOF
     _append_env_conf_if_missing "SERVICEDESK_TlsCert__Domain" "$tls_domain"  added
     _append_env_conf_if_missing "APP_LE_EMAIL"                "$tls_email"   added
     _append_env_conf_if_missing "APP_INSTALL_DIR"             "$INSTALL_DIR" added
+    _append_env_conf_if_missing "SERVICEDESK_AllowedHosts"    "$DOMAIN"      added
 
     if [[ ${#added[@]} -eq 0 ]]; then
         ok "${ENV_CONF_FILE} already complete — leaving untouched."
