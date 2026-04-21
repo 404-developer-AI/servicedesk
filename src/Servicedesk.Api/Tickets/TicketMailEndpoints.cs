@@ -85,6 +85,22 @@ public static class TicketMailEndpoints
             var mailRow = await mail.GetByIdAsync(mailMessageId, ct);
             if (mailRow is null || mailRow.TicketId != id) return Results.NotFound();
 
+            // Content-addressed → stable strong ETag. A conditional GET
+            // skips the blob-open, the body, and the audit row. Critical
+            // here because mail threads that quote prior replies embed the
+            // same inline image across multiple events, and without cache
+            // headers incognito browsers fire one GET per <img>. See the
+            // sibling comment in TicketAttachmentEndpoints for the full
+            // rationale.
+            var etag = $"\"{att.ContentHash}\"";
+            http.Response.Headers.ETag = etag;
+            http.Response.Headers.CacheControl = "private, max-age=604800, must-revalidate";
+            var ifNoneMatch = http.Request.Headers.IfNoneMatch.ToString();
+            if (!string.IsNullOrEmpty(ifNoneMatch) && (ifNoneMatch == "*" || ifNoneMatch.Contains(etag)))
+            {
+                return Results.StatusCode(StatusCodes.Status304NotModified);
+            }
+
             var stream = await blobs.OpenReadAsync(att.ContentHash, ct);
             if (stream is null) return Results.NotFound();
 

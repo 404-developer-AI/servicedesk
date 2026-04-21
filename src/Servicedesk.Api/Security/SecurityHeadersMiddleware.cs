@@ -41,11 +41,13 @@ public sealed class SecurityHeadersMiddleware
 
     private static bool IsAttachmentDownload(PathString path)
     {
-        // Matches /api/tickets/{ticketId}/mail/{mailId}/attachments/{attachmentId}.
+        // Matches both attachment surfaces so the preview-lightbox iframe
+        // can load either:
+        //   /api/tickets/{ticketId}/attachments/{attachmentId}
+        //   /api/tickets/{ticketId}/mail/{mailId}/attachments/{attachmentId}
         if (!path.HasValue) return false;
         var v = path.Value!;
         return v.StartsWith("/api/tickets/", StringComparison.OrdinalIgnoreCase)
-            && v.Contains("/mail/", StringComparison.OrdinalIgnoreCase)
             && v.Contains("/attachments/", StringComparison.OrdinalIgnoreCase);
     }
 }

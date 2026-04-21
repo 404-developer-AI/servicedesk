@@ -102,21 +102,26 @@ function SafeHtml({ html }: { html: string }) {
     },
     [preview],
   );
-  // Memoise the sanitised output per html-string. Without this, sanitize()
-  // runs on every render; dompurify 3.4.x can return a string whose byte
-  // content differs between calls on the same input, which tricks React's
-  // dangerouslySetInnerHTML diff into swapping the DOM, which re-creates
-  // every inline <img>, which re-fires its GET — the classic "200 reqs
-  // for the same 2 attachments in one second" loop.
-  const sanitized = React.useMemo(
-    () => DOMPurify.sanitize(html, SANITIZE_CONFIG) as unknown as string,
+  // Memoise both the sanitised output AND the wrapper object. The string
+  // avoids re-running DOMPurify each render (its 3.4.x output can vary
+  // byte-for-byte on identical input). The wrapper object matters even
+  // more: React's reconciler compares `dangerouslySetInnerHTML` with
+  // strict-equality on the prop value — `{__html: s}` as an inline
+  // literal is a fresh object every render, so React calls setProp, and
+  // setProp for dangerouslySetInnerHTML assigns `innerHTML` unconditionally
+  // without re-comparing the string. That nukes every inline <img> from
+  // the DOM each parent re-render (e.g. every second when useServerTime
+  // ticks), which re-fires the GET — a sub-rosa loop that only shows up
+  // without the HTTP cache (incognito, DevTools "Disable cache").
+  const danger = React.useMemo(
+    () => ({ __html: DOMPurify.sanitize(html, SANITIZE_CONFIG) as unknown as string }),
     [html],
   );
   return (
     <div
       onClick={onClick}
       className="prose-sm text-foreground/90 [&_a]:text-primary [&_a]:underline [&_p]:my-1 [&_ul]:pl-5 [&_ol]:pl-5 [&_img]:cursor-zoom-in"
-      dangerouslySetInnerHTML={{ __html: sanitized }}
+      dangerouslySetInnerHTML={danger}
     />
   );
 }

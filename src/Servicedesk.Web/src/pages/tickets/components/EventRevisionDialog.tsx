@@ -30,6 +30,17 @@ function RevisionEntry({
   const { time: serverTime } = useServerTime();
   const offset = serverTime?.offsetMinutes ?? 0;
   const [expanded, setExpanded] = React.useState(isFirst);
+  // Memoise both the sanitised string and the wrapper object. Inline
+  // `{__html: DOMPurify.sanitize(...)}` is a new object every render, which
+  // React treats as a changed prop → unconditional innerHTML assign → DOM
+  // swap → inline-img re-fetch. See sibling comment in TicketTimeline.
+  const danger = React.useMemo(
+    () =>
+      revision.bodyHtmlBefore
+        ? { __html: DOMPurify.sanitize(revision.bodyHtmlBefore) as unknown as string }
+        : null,
+    [revision.bodyHtmlBefore],
+  );
 
   return (
     <div className="glass-panel p-3 space-y-2">
@@ -67,12 +78,10 @@ function RevisionEntry({
           </button>
           {expanded && (
             <div className="rounded-md border border-white/10 bg-white/[0.02] p-3 text-sm">
-              {revision.bodyHtmlBefore ? (
+              {danger ? (
                 <div
                   className="prose-sm text-foreground/70 [&_a]:text-primary [&_a]:underline [&_p]:my-1 [&_ul]:pl-5 [&_ol]:pl-5"
-                  dangerouslySetInnerHTML={{
-                    __html: DOMPurify.sanitize(revision.bodyHtmlBefore),
-                  }}
+                  dangerouslySetInnerHTML={danger}
                 />
               ) : (
                 <p className="whitespace-pre-wrap text-foreground/70">

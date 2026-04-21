@@ -185,6 +185,23 @@ public static class TicketAttachmentEndpoints
             var ownsViaEvent = att.EventId.HasValue && await tickets.EventBelongsToTicketAsync(id, att.EventId.Value, ct);
             if (!ownsDirect && !ownsViaEvent) return Results.NotFound();
 
+            // Blobs are content-addressed so the sha256 is a stable strong
+            // ETag for the lifetime of this attachment row. A matching
+            // If-None-Match short-circuits: no blob-open, no body, no audit
+            // row — which matters because a quoted-reply thread can embed
+            // the same inline image across every event, and incognito
+            // browsers (no HTTP cache) would otherwise fire one GET per
+            // <img>. must-revalidate keeps the ownership check honest after
+            // the TTL expires; private because the body is auth-gated.
+            var etag = $"\"{att.ContentHash}\"";
+            http.Response.Headers.ETag = etag;
+            http.Response.Headers.CacheControl = "private, max-age=604800, must-revalidate";
+            var ifNoneMatch = http.Request.Headers.IfNoneMatch.ToString();
+            if (!string.IsNullOrEmpty(ifNoneMatch) && (ifNoneMatch == "*" || ifNoneMatch.Contains(etag)))
+            {
+                return Results.StatusCode(StatusCodes.Status304NotModified);
+            }
+
             var stream = await blobs.OpenReadAsync(att.ContentHash, ct);
             if (stream is null) return Results.NotFound();
 
