@@ -49,12 +49,45 @@ builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "Servicedesk API", Version = "v1" });
 });
 
-// Trust the X-Forwarded-For header from nginx so RemoteIpAddress is correct.
+// Trust the X-Forwarded-For + X-Forwarded-Proto headers from nginx so
+// Connection.RemoteIpAddress + Request.IsHttps reflect the real client.
+//
+// We Clear() the defaults (which trust loopback only) and explicitly trust
+// the docker compose bridge — pinned to 172.28.0.0/16 in
+// deploy/docker-compose.yml. Without this allow-list ASP.NET silently
+// drops the XFF chain because nginx's container IP isn't in the trust
+// list, leaving every audit-log row tagged with the bridge gateway IP
+// instead of the real client. The subnet is overridable via
+// SERVICEDESK_ForwardedHeaders__TrustedNetwork for installs that re-pin
+// the bridge; defaults to the install.sh-managed value.
 builder.Services.Configure<ForwardedHeadersOptions>(o =>
 {
     o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
     o.KnownNetworks.Clear();
     o.KnownProxies.Clear();
+
+    var trustedCidr = builder.Configuration["ForwardedHeaders:TrustedNetwork"] ?? "172.28.0.0/16";
+    if (TryParseCidr(trustedCidr, out var address, out var prefix))
+    {
+        o.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(address, prefix));
+    }
+
+    // Allow up to 2 hops in the XFF chain so a future inline-CDN
+    // (Cloudflare, etc.) doesn't have to be wired in here as well.
+    o.ForwardLimit = 2;
+
+    static bool TryParseCidr(string cidr, out System.Net.IPAddress address, out int prefix)
+    {
+        address = System.Net.IPAddress.None;
+        prefix = 0;
+        var parts = cidr.Split('/', 2);
+        if (parts.Length != 2) return false;
+        if (!System.Net.IPAddress.TryParse(parts[0], out var addr)) return false;
+        if (!int.TryParse(parts[1], out var p) || p < 0 || p > 32) return false;
+        address = addr;
+        prefix = p;
+        return true;
+    }
 });
 
 // Data Protection keyring lives in Postgres, AES-GCM encrypted with a master
