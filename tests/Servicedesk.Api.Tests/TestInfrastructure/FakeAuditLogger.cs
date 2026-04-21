@@ -74,4 +74,19 @@ public sealed class FakeAuditQuery : IAuditQuery
         var list = items.OrderByDescending(e => e.Id).Take(Math.Clamp(limit, 1, 200)).ToList();
         return Task.FromResult(new AuditPage(list, null));
     }
+
+    public Task<IReadOnlyDictionary<string, int>> CountByEventTypesAsync(
+        IReadOnlyCollection<string> eventTypes,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var types = new HashSet<string>(eventTypes, StringComparer.Ordinal);
+        var dict = _entries
+            .Where(e => types.Contains(e.EventType))
+            .Where(e => e.Utc >= fromUtc.UtcDateTime && e.Utc < toUtc.UtcDateTime)
+            .GroupBy(e => e.EventType, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+        return Task.FromResult<IReadOnlyDictionary<string, int>>(dict);
+    }
 }

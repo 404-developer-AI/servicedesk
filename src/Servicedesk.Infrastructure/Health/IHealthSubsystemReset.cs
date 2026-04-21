@@ -1,3 +1,4 @@
+using Servicedesk.Infrastructure.Health.SecurityActivity;
 using Servicedesk.Infrastructure.Mail.Polling;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Storage;
@@ -18,15 +19,18 @@ public sealed class HealthSubsystemReset : IHealthSubsystemReset
     private readonly IMailPollStateRepository _pollState;
     private readonly ITaxonomyRepository _taxonomy;
     private readonly IBlobStoreHealth _blobHealth;
+    private readonly ISecurityActivitySnapshot _securityActivity;
 
     public HealthSubsystemReset(
         IMailPollStateRepository pollState,
         ITaxonomyRepository taxonomy,
-        IBlobStoreHealth blobHealth)
+        IBlobStoreHealth blobHealth,
+        ISecurityActivitySnapshot securityActivity)
     {
         _pollState = pollState;
         _taxonomy = taxonomy;
         _blobHealth = blobHealth;
+        _securityActivity = securityActivity;
     }
 
     public async Task<IReadOnlyList<string>> ResetAsync(string subsystem, CancellationToken ct)
@@ -45,9 +49,18 @@ public sealed class HealthSubsystemReset : IHealthSubsystemReset
             case "blob-store":
                 _blobHealth.Clear();
                 return new[] { "blob_store.consecutive_failures" };
+            case "security-activity":
+                // Drop the cached snapshot + alert-guard so the next monitor
+                // tick starts from "no prior state". If the attack is still
+                // ongoing, a fresh Warning/Critical incident fires on that
+                // tick and admins are re-paged — exactly what you want after
+                // acknowledging a historical one.
+                _securityActivity.Clear();
+                return new[] { "security_activity.snapshot" };
             default:
-                // graph-auth, attachment-jobs: intrinsic state (missing secret,
-                // dead-letter rows) can't be cleared by an acknowledge alone.
+                // graph-auth, attachment-jobs, tls-cert: intrinsic state
+                // (missing secret, dead-letter rows, cert file on disk)
+                // can't be cleared by an acknowledge alone.
                 return Array.Empty<string>();
         }
     }

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using Servicedesk.Domain.Taxonomy;
 using Servicedesk.Infrastructure.Health;
+using Servicedesk.Infrastructure.Health.SecurityActivity;
 using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Polling;
 using Servicedesk.Infrastructure.Observability;
@@ -291,6 +292,64 @@ public sealed class HealthAggregatorTests
     }
 
     [Fact]
+    public async Task SecurityActivity_no_snapshot_reports_ok_with_waiting_summary()
+    {
+        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true);
+
+        var report = await agg.CollectAsync(CancellationToken.None);
+
+        var sec = report.Subsystems.Single(s => s.Key == "security-activity");
+        Assert.Equal(HealthStatus.Ok, sec.Status);
+        Assert.Contains("Waiting", sec.Summary);
+    }
+
+    [Fact]
+    public async Task SecurityActivity_warning_snapshot_renders_warning_status_and_counts()
+    {
+        var snap = new InMemorySecurityActivitySnapshot();
+        snap.Set(new SecurityActivitySnapshot(
+            EvaluatedUtc: DateTime.UtcNow,
+            Window: TimeSpan.FromHours(1),
+            Status: HealthStatus.Warning,
+            Summary: "Elevated security activity in the last hour — Failed logins: 12.",
+            Categories: new[]
+            {
+                new SecurityActivityCategoryResult("login_failed", "Failed logins", 12, 10, 30, HealthStatus.Warning),
+                new SecurityActivityCategoryResult("csrf_rejected", "CSRF rejections", 0, 5, 15, HealthStatus.Ok),
+            },
+            MonitorEnabled: true));
+
+        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true, securityActivity: snap);
+
+        var report = await agg.CollectAsync(CancellationToken.None);
+
+        var sec = report.Subsystems.Single(s => s.Key == "security-activity");
+        Assert.Equal(HealthStatus.Warning, sec.Status);
+        Assert.Contains(sec.Details, d => d.Label == "Failed logins" && d.Value.Contains("12"));
+    }
+
+    [Fact]
+    public async Task SecurityActivity_disabled_snapshot_reports_ok_with_disabled_detail()
+    {
+        var snap = new InMemorySecurityActivitySnapshot();
+        snap.Set(new SecurityActivitySnapshot(
+            EvaluatedUtc: DateTime.UtcNow,
+            Window: TimeSpan.FromHours(1),
+            Status: HealthStatus.Ok,
+            Summary: "Monitoring disabled — security activity is not sampled.",
+            Categories: Array.Empty<SecurityActivityCategoryResult>(),
+            MonitorEnabled: false));
+
+        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true, securityActivity: snap);
+
+        var report = await agg.CollectAsync(CancellationToken.None);
+
+        var sec = report.Subsystems.Single(s => s.Key == "security-activity");
+        Assert.Equal(HealthStatus.Ok, sec.Status);
+        Assert.Contains(sec.Details, d => d.Value.Contains("Disabled"));
+    }
+
+    [Fact]
     public async Task Missing_graph_secret_reports_warning()
     {
         var agg = Build(queues: new List<Queue>(), states: new List<MailPollState>(), hasSecret: false);
@@ -311,7 +370,8 @@ public sealed class HealthAggregatorTests
         IReadOnlyDictionary<string, IncidentSeverity>? openIncidents = null,
         ITlsCertReader? tlsCert = null,
         ICertRenewalTrigger? certRenewal = null,
-        TlsCertHealthOptions? tlsOptions = null)
+        TlsCertHealthOptions? tlsOptions = null,
+        ISecurityActivitySnapshot? securityActivity = null)
         => new(
             new StubPollStateRepo(states),
             new StubTaxonomyRepo(queues),
@@ -321,7 +381,8 @@ public sealed class HealthAggregatorTests
             new StubIncidentLog(openIncidents ?? new Dictionary<string, IncidentSeverity>()),
             tlsCert ?? new StubTlsCertReader(null),
             certRenewal ?? new StubCertRenewalTrigger(null),
-            Options.Create(tlsOptions ?? new TlsCertHealthOptions()));
+            Options.Create(tlsOptions ?? new TlsCertHealthOptions()),
+            securityActivity ?? new InMemorySecurityActivitySnapshot());
 
     private sealed class StubIncidentLog : IIncidentLog
     {

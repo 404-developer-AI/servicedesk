@@ -153,6 +153,24 @@ public static class SettingKeys
         public const string AttachmentWorkerConcurrency = "Jobs.AttachmentWorkerConcurrency";
         public const string AttachmentWorkerPollSeconds = "Jobs.AttachmentWorkerPollSeconds";
     }
+
+    public static class Health
+    {
+        // Security-activity subsystem (v0.0.18). Samples the audit_log over a
+        // rolling window and raises an incident + admin push when one of the
+        // categories exceeds its threshold. Categories collapse semantically
+        // related event types (the five M365 reject reasons → one bucket).
+        public const string SecurityActivityEnabled = "Health.SecurityActivity.Enabled";
+        public const string SecurityActivityWindowSeconds = "Health.SecurityActivity.WindowSeconds";
+        public const string SecurityActivityIntervalSeconds = "Health.SecurityActivity.IntervalSeconds";
+        public const string SecurityActivityCriticalMultiplier = "Health.SecurityActivity.CriticalMultiplier";
+
+        public const string SecurityActivityThresholdLoginFailed = "Health.SecurityActivity.Threshold.LoginFailed";
+        public const string SecurityActivityThresholdLoginLockedOut = "Health.SecurityActivity.Threshold.LoginLockedOut";
+        public const string SecurityActivityThresholdCsrfRejected = "Health.SecurityActivity.Threshold.CsrfRejected";
+        public const string SecurityActivityThresholdRateLimited = "Health.SecurityActivity.Threshold.RateLimited";
+        public const string SecurityActivityThresholdMicrosoftLoginRejected = "Health.SecurityActivity.Threshold.MicrosoftLoginRejected";
+    }
 }
 
 public sealed record SettingDefault(
@@ -351,5 +369,30 @@ public static class SettingDefaults
             "When true, a tagged agent receives an email from the ticket's queue mailbox on top of the in-app toast + navbar entry. Turn off on installs where the in-app channel is sufficient."),
         new SettingDefault(SettingKeys.Notifications.PopupDurationSeconds, "10", "int", "Notifications",
             "How long (seconds) the mention pop-up toast stays on screen before auto-dismissing. The navbar entry and history page are unaffected."),
+
+        // Health — Security activity monitor (v0.0.18). Replaces "watch the
+        // logs yourself". Defaults are tuned for a single-tenant install with
+        // a few agents: noisy categories (login_failed, rate_limited) get a
+        // higher bar than rare ones (csrf_rejected, locked_out, M365 reject).
+        // Critical multiplier applies on top of every threshold — set to 1
+        // to disable the Warning→Critical escalation entirely.
+        new SettingDefault(SettingKeys.Health.SecurityActivityEnabled, "true", "bool", "Health",
+            "When true, the security-activity subsystem samples the audit log on a rolling window and raises Health incidents + admin notifications when thresholds are exceeded."),
+        new SettingDefault(SettingKeys.Health.SecurityActivityWindowSeconds, "3600", "int", "Health",
+            "Rolling time window (seconds) over which security events are counted. Default 3600 = last hour."),
+        new SettingDefault(SettingKeys.Health.SecurityActivityIntervalSeconds, "60", "int", "Health",
+            "How often (seconds) the monitor samples the audit log and re-evaluates thresholds. Default 60s. Lower = faster alerts, more DB load."),
+        new SettingDefault(SettingKeys.Health.SecurityActivityCriticalMultiplier, "3", "int", "Health",
+            "Multiplier applied to each category threshold to flip Warning → Critical. E.g. login_failed threshold 10 + multiplier 3 → Warning at 10, Critical at 30 within the window. Set to 1 to keep everything Warning."),
+        new SettingDefault(SettingKeys.Health.SecurityActivityThresholdLoginFailed, "10", "int", "Health",
+            "Number of failed local-login attempts within the window before raising a Warning. Counts the 'login_failed' audit event."),
+        new SettingDefault(SettingKeys.Health.SecurityActivityThresholdLoginLockedOut, "3", "int", "Health",
+            "Number of account-lockouts within the window before raising a Warning. Counts the 'login_locked_out' audit event — each lockout already implies multiple failed attempts, so this threshold is intentionally low."),
+        new SettingDefault(SettingKeys.Health.SecurityActivityThresholdCsrfRejected, "5", "int", "Health",
+            "Number of CSRF-rejected requests within the window before raising a Warning. Counts the 'csrf_rejected' audit event — non-zero on a healthy install usually means an outdated browser tab; sustained activity indicates a real attempt."),
+        new SettingDefault(SettingKeys.Health.SecurityActivityThresholdRateLimited, "50", "int", "Health",
+            "Number of rate-limit rejections within the window before raising a Warning. Counts the 'rate_limited' audit event — set deliberately high because a single misbehaving client can hit this fast."),
+        new SettingDefault(SettingKeys.Health.SecurityActivityThresholdMicrosoftLoginRejected, "5", "int", "Health",
+            "Number of M365-login rejections within the window before raising a Warning. Sums all five reject reasons (unknown OID, disabled account, customer role, inactive, callback failure)."),
     };
 }

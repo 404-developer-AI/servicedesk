@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using Servicedesk.Infrastructure.Health.SecurityActivity;
 using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Polling;
 using Servicedesk.Infrastructure.Observability;
@@ -37,6 +38,7 @@ public sealed class HealthAggregator : IHealthAggregator
     private readonly ITlsCertReader _tlsCert;
     private readonly ICertRenewalTrigger _certRenewal;
     private readonly IOptions<TlsCertHealthOptions> _tlsOptions;
+    private readonly ISecurityActivitySnapshot _securityActivity;
 
     public HealthAggregator(
         IMailPollStateRepository pollState,
@@ -47,7 +49,8 @@ public sealed class HealthAggregator : IHealthAggregator
         IIncidentLog incidents,
         ITlsCertReader tlsCert,
         ICertRenewalTrigger certRenewal,
-        IOptions<TlsCertHealthOptions> tlsOptions)
+        IOptions<TlsCertHealthOptions> tlsOptions,
+        ISecurityActivitySnapshot securityActivity)
     {
         _pollState = pollState;
         _taxonomy = taxonomy;
@@ -58,6 +61,7 @@ public sealed class HealthAggregator : IHealthAggregator
         _tlsCert = tlsCert;
         _certRenewal = certRenewal;
         _tlsOptions = tlsOptions;
+        _securityActivity = securityActivity;
     }
 
     public async Task<HealthReport> CollectAsync(CancellationToken ct)
@@ -71,6 +75,7 @@ public sealed class HealthAggregator : IHealthAggregator
             ApplyIncidents(await BuildAttachmentJobsAsync(ct), openIncidents),
             ApplyIncidents(BuildBlobStore(), openIncidents),
             ApplyIncidents(BuildTlsCert(), openIncidents),
+            ApplyIncidents(BuildSecurityActivity(), openIncidents),
         };
         var rollup = subsystems.Aggregate(HealthStatus.Ok,
             (acc, s) => s.Status > acc ? s.Status : acc);
@@ -435,4 +440,52 @@ public sealed class HealthAggregator : IHealthAggregator
             $"Request a Let's Encrypt renewal for {domain}? " +
             "Certbot runs on the host (webroot challenge via nginx) and nginx is " +
             "reloaded automatically on success. Watch this card for the result.");
+
+    private SubsystemHealth BuildSecurityActivity()
+    {
+        var snap = _securityActivity.Get();
+        if (snap is null)
+        {
+            return new SubsystemHealth(
+                Key: "security-activity",
+                Label: "Security activity",
+                Status: HealthStatus.Ok,
+                Summary: "Waiting for first evaluation cycle…",
+                Details: Array.Empty<HealthDetail>(),
+                Actions: Array.Empty<HealthAction>());
+        }
+
+        var details = new List<HealthDetail>();
+        if (!snap.MonitorEnabled)
+        {
+            details.Add(new HealthDetail(
+                "Status",
+                "Disabled — toggle Health.SecurityActivity.Enabled to start sampling."));
+        }
+        else
+        {
+            details.Add(new HealthDetail(
+                "Window",
+                $"{(int)snap.Window.TotalSeconds}s rolling, evaluated {snap.EvaluatedUtc:u}"));
+
+            foreach (var c in snap.Categories)
+            {
+                var lvl = c.Status switch
+                {
+                    HealthStatus.Critical => $"CRITICAL ({c.Count} ≥ {c.CriticalThreshold})",
+                    HealthStatus.Warning => $"WARNING ({c.Count} ≥ {c.Threshold})",
+                    _ => $"{c.Count} / {c.Threshold}",
+                };
+                details.Add(new HealthDetail(c.Label, lvl));
+            }
+        }
+
+        return new SubsystemHealth(
+            Key: "security-activity",
+            Label: "Security activity",
+            Status: snap.Status,
+            Summary: snap.Summary,
+            Details: details,
+            Actions: Array.Empty<HealthAction>());
+    }
 }

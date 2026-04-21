@@ -16,6 +16,7 @@ using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Persistence.ViewGroups;
 using Servicedesk.Infrastructure.Persistence.Views;
 using Servicedesk.Infrastructure.Health;
+using Servicedesk.Infrastructure.Health.SecurityActivity;
 using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Mail.Ingest;
@@ -94,12 +95,14 @@ public static class DependencyInjection
         services.AddSingleton<IGraphMailClient, GraphMailClient>();
         services.AddSingleton<ITlsCertReader, FileTlsCertReader>();
         services.AddSingleton<ICertRenewalTrigger, FileSignalCertRenewalTrigger>();
+        services.AddSingleton<ISecurityActivitySnapshot, InMemorySecurityActivitySnapshot>();
         services.AddSingleton<IHealthAggregator, HealthAggregator>();
         services.AddSingleton<IHealthSubsystemReset, HealthSubsystemReset>();
-        // Default to the no-op notifier; the Api project overrides this
-        // with the SignalR-backed implementation.
+        // Default to the no-op notifiers; the Api project overrides these
+        // with the SignalR-backed implementations.
         services.AddSingleton<Realtime.ITicketListNotifier, Realtime.NullTicketListNotifier>();
         services.AddSingleton<Realtime.IUserNotifier, Realtime.NullUserNotifier>();
+        services.AddSingleton<Realtime.ISecurityAlertNotifier, Realtime.NullSecurityAlertNotifier>();
 
         // Mention notification pipeline (v0.0.12 stap 4).
         services.AddSingleton<INotificationRepository, NotificationRepository>();
@@ -147,6 +150,7 @@ public static class DependencyInjection
         services.AddHostedService<AttachmentWorker>();
         services.AddHostedService<HolidaySyncWorker>();
         services.AddHostedService<SlaRecalcWorker>();
+        services.AddHostedService<SecurityActivityMonitor>();
 
         return services;
     }

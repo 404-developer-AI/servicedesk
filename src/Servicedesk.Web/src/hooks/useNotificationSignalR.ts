@@ -37,6 +37,18 @@ type NotificationPush = {
   createdUtc: string;
 };
 
+/// Server-push for the security-activity health subsystem. Fired only on
+/// upward severity transitions (Ok→Warning / Warning→Critical) by the
+/// backend monitor, so a sustained attack doesn't spam the toast. Mirrors
+/// `SecurityAlertPush` on the server.
+type SecurityAlertPush = {
+  severity: "Warning" | "Critical";
+  subsystem: string;
+  summary: string;
+  incidentId: number | null;
+  createdUtc: string;
+};
+
 /// Mounts the /hubs/notifications connection once per session. On every
 /// `NotificationReceived` push: invalidate the pending-list query so the
 /// navbar widget re-renders, and surface a sonner toast with a View-action
@@ -103,6 +115,32 @@ export function useNotificationSignalR(toastDurationMs: number) {
 
     hub.on("NotificationReceived", handleNotification);
 
+    const handleSecurityAlert = (payload: SecurityAlertPush) => {
+      // Invalidate the health + incidents queries so the card and pill on
+      // /settings/health update when the admin is already on the page.
+      queryClient.invalidateQueries({ queryKey: ["admin", "health"] });
+      queryClient.invalidateQueries({ queryKey: ["admin", "health", "incidents"] });
+      queryClient.invalidateQueries({ queryKey: ["system", "health"] });
+
+      const title = payload.severity === "Critical"
+        ? "Critical security activity detected"
+        : "Elevated security activity detected";
+
+      const showToast = payload.severity === "Critical" ? toast.error : toast.warning;
+      showToast(title, {
+        description: payload.summary,
+        duration: Math.max(durationRef.current, 15_000),
+        action: {
+          label: "Review",
+          onClick: () => {
+            void navigateRef.current({ to: "/settings/health" });
+          },
+        },
+      });
+    };
+
+    hub.on("SecurityAlertReceived", handleSecurityAlert);
+
     async function start() {
       if (hub.state === HubConnectionState.Disconnected) {
         try {
@@ -118,6 +156,7 @@ export function useNotificationSignalR(toastDurationMs: number) {
 
     return () => {
       hub.off("NotificationReceived", handleNotification);
+      hub.off("SecurityAlertReceived", handleSecurityAlert);
     };
   }, [queryClient]);
 }

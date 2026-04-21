@@ -117,4 +117,43 @@ public sealed class AuditQueryService : IAuditQuery
         return await connection.QueryFirstOrDefaultAsync<AuditLogEntry>(
             new CommandDefinition(sql, new { id }, cancellationToken: cancellationToken));
     }
+
+    public async Task<IReadOnlyDictionary<string, int>> CountByEventTypesAsync(
+        IReadOnlyCollection<string> eventTypes,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        if (eventTypes is null || eventTypes.Count == 0)
+        {
+            return new Dictionary<string, int>(StringComparer.Ordinal);
+        }
+
+        // ix_audit_log_event_type covers (event_type); the planner adds the
+        // utc range filter on top. ANY(@types) keeps the parameter list a
+        // single bind instead of expanding to N OR-clauses.
+        const string sql = """
+            SELECT event_type, COUNT(*)::int AS cnt
+              FROM audit_log
+             WHERE event_type = ANY(@types)
+               AND utc >= @from
+               AND utc <  @to
+             GROUP BY event_type
+            """;
+
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        var rows = await connection.QueryAsync(new CommandDefinition(sql, new
+        {
+            types = eventTypes.ToArray(),
+            from = fromUtc,
+            to = toUtc,
+        }, cancellationToken: cancellationToken));
+
+        var result = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var r in rows)
+        {
+            result[(string)r.event_type] = (int)r.cnt;
+        }
+        return result;
+    }
 }

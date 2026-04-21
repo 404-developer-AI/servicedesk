@@ -78,6 +78,12 @@ builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.ITicketListNot
 // v0.0.12 stap 4 — same trick for per-user notifications.
 builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.IUserNotifier,
     Servicedesk.Api.Presence.SignalRUserNotifier>();
+// v0.0.18 — security-activity health-subsystem pushes alerts to all
+// active Admins via the same UserNotificationHub, using a different
+// SignalR method name ("SecurityAlertReceived") so the existing
+// mention-notification handler shape is left untouched.
+builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.ISecurityAlertNotifier,
+    Servicedesk.Api.Presence.SignalRSecurityAlertNotifier>();
 
 builder.Services.AddRateLimiter(options =>
 {

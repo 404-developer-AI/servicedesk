@@ -19,4 +19,14 @@ public interface IAuditQuery
     /// the contact via <c>payload-&gt;&gt;'contactId'</c> (e.g.
     /// <c>company.contact.linked</c> / <c>company.contact.unlinked</c>).
     Task<AuditPage> ListForContactAsync(Guid contactId, long? cursorId, int limit, CancellationToken cancellationToken = default);
+    /// Aggregate count per event-type within a half-open time window
+    /// (<c>fromUtc &lt;= utc &lt; toUtc</c>). Returns only the event-types
+    /// passed in; types with zero matches are absent from the result. Used
+    /// by the security-activity monitor to evaluate thresholds without
+    /// pulling full rows back to user-space.
+    Task<IReadOnlyDictionary<string, int>> CountByEventTypesAsync(
+        IReadOnlyCollection<string> eventTypes,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken = default);
 }

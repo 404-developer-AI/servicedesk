@@ -1,23 +1,42 @@
 import * as React from "react";
-import { Activity, AlertTriangle, Archive, CheckCircle2, ChevronDown, ChevronRight } from "lucide-react";
+import { Activity, AlertTriangle, Archive, CheckCircle2, ChevronDown, ChevronRight, ShieldAlert } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   ApiError,
   healthApi,
+  settingsApi,
   type HealthStatus,
   type IncidentRow,
+  type SettingEntry,
   type SubsystemHealth,
 } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SettingField } from "@/components/settings/SettingField";
 
 const HEALTH_QUERY_KEY = ["admin", "health"] as const;
 const INCIDENTS_QUERY_KEY = ["admin", "health", "incidents"] as const;
 const ARCHIVE_QUERY_KEY = ["admin", "health", "incidents", "archive"] as const;
+const HEALTH_SETTINGS_QUERY_KEY = ["settings", "list", "Health"] as const;
 // Re-using the dashboard pill's key so resetting refreshes both views.
 const PILL_QUERY_KEY = ["system", "health"] as const;
+
+// Ordered list of the security-activity keys surfaced in the settings
+// card. Defined once here so the card stays tidy even if new thresholds
+// are introduced on the server — unknown keys simply don't render.
+const SECURITY_ACTIVITY_SETTINGS: ReadonlyArray<{ key: string; label: string }> = [
+  { key: "Health.SecurityActivity.Enabled", label: "Enabled" },
+  { key: "Health.SecurityActivity.WindowSeconds", label: "Window (seconds)" },
+  { key: "Health.SecurityActivity.IntervalSeconds", label: "Evaluation interval (seconds)" },
+  { key: "Health.SecurityActivity.CriticalMultiplier", label: "Critical multiplier" },
+  { key: "Health.SecurityActivity.Threshold.LoginFailed", label: "Threshold — failed logins" },
+  { key: "Health.SecurityActivity.Threshold.LoginLockedOut", label: "Threshold — account lockouts" },
+  { key: "Health.SecurityActivity.Threshold.CsrfRejected", label: "Threshold — CSRF rejections" },
+  { key: "Health.SecurityActivity.Threshold.RateLimited", label: "Threshold — rate-limit rejections" },
+  { key: "Health.SecurityActivity.Threshold.MicrosoftLoginRejected", label: "Threshold — M365 login rejections" },
+];
 
 const STATUS_BADGE: Record<HealthStatus, { label: string; className: string; icon: React.ReactNode }> = {
   Ok: {
@@ -122,6 +141,8 @@ export function HealthSettingsPage() {
         ) : null}
       </header>
 
+      <SecurityActivitySettingsCard />
+
       {query.isLoading ? (
         <div className="space-y-3">
           <Skeleton className="h-28 w-full" />
@@ -149,6 +170,72 @@ export function HealthSettingsPage() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function SecurityActivitySettingsCard() {
+  const [open, setOpen] = React.useState(false);
+  const settings = useQuery({
+    queryKey: HEALTH_SETTINGS_QUERY_KEY,
+    queryFn: () => settingsApi.list("Health"),
+    enabled: open,
+  });
+
+  const entriesByKey = React.useMemo(() => {
+    const m = new Map<string, SettingEntry>();
+    for (const e of settings.data ?? []) m.set(e.key, e);
+    return m;
+  }, [settings.data]);
+
+  return (
+    <section className="rounded-lg border border-white/[0.06] bg-white/[0.02]">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-3 px-5 py-4 text-left"
+      >
+        <div className="rounded-md bg-white/[0.04] p-2 text-primary">
+          <ShieldAlert className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-sm font-semibold text-foreground">Security activity monitoring</h2>
+          <p className="text-xs text-muted-foreground">
+            Thresholds and timing for the security-activity subsystem. Counts are
+            sampled from the audit log on a rolling window; breaching a threshold
+            raises a Health incident and pushes a notification to every active Admin.
+          </p>
+        </div>
+        {open ? (
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        )}
+      </button>
+      {open ? (
+        <div className="border-t border-white/[0.04] px-5 py-4">
+          {settings.isLoading ? (
+            <Skeleton className="h-24 w-full" />
+          ) : settings.isError ? (
+            <p className="text-sm text-muted-foreground">Failed to load settings.</p>
+          ) : (
+            <div className="flex flex-col">
+              {SECURITY_ACTIVITY_SETTINGS.map(({ key, label }) => {
+                const entry = entriesByKey.get(key);
+                if (!entry) return null;
+                return (
+                  <SettingField
+                    key={key}
+                    entry={entry}
+                    queryKey={HEALTH_SETTINGS_QUERY_KEY}
+                    label={label}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
