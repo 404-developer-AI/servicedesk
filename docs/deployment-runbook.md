@@ -64,6 +64,40 @@ bash <(curl -sSL https://raw.githubusercontent.com/404-developer-AI/servicedesk/
 2. Copy the contents of `/root/servicedesk-install-summary.txt` to a password manager.
 3. Securely delete the summary file: `shred -u /root/servicedesk-install-summary.txt`.
 4. Bookmark `https://<domain>/settings/health` — it's the admin-only dashboard for every background subsystem.
+5. **Set the display timezone**: Settings → General → **Localization**. Pick an IANA zone (e.g. `Europe/Brussels`). Empty = fall back to the container's `TZ` env-var (auto-detected from the host during install). The "Currently resolved" subblock shows the zone + UTC offset the server is actually returning so you can verify without a refresh. This drives the sidebar clock, audit-log timestamps, and every timeline — SLA and business-hours calculations keep using their own per-schema zone and are unaffected.
+6. **Review security-activity thresholds**: Settings → Health → **Security activity monitoring** (collapsible card). Defaults are intentionally non-alarmist (login_failed=10/h, csrf_rejected=5/h, rate_limited=50/h, login_locked_out=3/h, microsoft_login_rejected=5/h; Critical at 3× threshold). Tune down on quiet installs that want early warning, up on public-portal installs that legitimately see higher login-failure volume. `Acknowledge` acts as "counter reset" — subsequent ticks only count post-ack events, so a sustained attack still re-fires when fresh events cross the threshold.
+
+### Configuration files
+
+Two env-files sit on the host. They are separate on purpose: one is secret-grade, the other is free to back up in cleartext.
+
+| Path | Mode | Contains | Backup OK? |
+|---|---|---|---|
+| `/etc/servicedesk/secrets.env` | 600 root:root | `SERVICEDESK_ConnectionStrings__Postgres`, `SERVICEDESK_Audit__HashKey`, `SERVICEDESK_DataProtection__MasterKey`, Graph client-secret, any other credential | **No — never copy in cleartext.** |
+| `/etc/servicedesk/env.conf` | 644 root:root | `TZ`, `SERVICEDESK_TlsCert__Domain`, `APP_LE_EMAIL`, `APP_INSTALL_DIR`, `SERVICEDESK_AllowedHosts` | Yes — non-secret by design. |
+
+Both files are loaded by the `app` service in `docker-compose.yml` (`env_file:` list). `env.conf` is also read by the host-side `servicedesk-cert-renew.service` via `EnvironmentFile=` — that's how the renewal helper gets `DOMAIN` + `APP_LE_EMAIL` without parsing anything.
+
+`install.sh` and `update.sh` both do **append-only backfill** on `env.conf`: missing keys get added, existing keys are never overwritten. Safe to edit by hand between updates.
+
+#### Host-header pinning (`SERVICEDESK_AllowedHosts`)
+
+`install.sh` writes this key automatically with the single domain you entered. It pins Kestrel's `Host:` header validation — requests with a `Host` header that doesn't match are rejected before the request hits any controller. This blocks Host-header injection if nginx is ever bypassed (SSRF, misconfigured reverse proxy).
+
+Override scenarios (edit `/etc/servicedesk/env.conf`, then `docker compose restart app`):
+
+```bash
+# CDN terminates TLS at a different hostname and forwards to your origin:
+SERVICEDESK_AllowedHosts=desk.example.com;origin.example.com
+
+# Multi-hostname install (vanity domain + default):
+SERVICEDESK_AllowedHosts=help.example.com;support.example.com
+
+# Internal-only install reached by IP (not recommended, dev only):
+SERVICEDESK_AllowedHosts=*
+```
+
+Semicolon-separated. Wildcard `*` reverts to the dev-friendly default and disables Host-header validation — only do this behind a trusted internal network.
 
 ---
 
@@ -153,6 +187,58 @@ Expected. It's idempotent; re-applying a REVOKE that's already in place is a no-
 ### DataProtection-keyring errors at boot
 This means Postgres is unreachable and DataProtection couldn't read the keyring. Retry-loop in `DatabaseBootstrapper` tolerates a slow-starting Postgres (2-min deadline). If it exceeds that, Postgres is genuinely offline — `systemctl status postgresql`.
 
+### TLS card stays on "monitoring disabled" after adding a domain
+The `tls-cert` subsystem is keyed on `SERVICEDESK_TlsCert__Domain` in `env.conf`. If you filled a domain during install but the card still reports "monitoring disabled":
+
+```bash
+# Confirm the key is present:
+grep TlsCert /etc/servicedesk/env.conf
+
+# If missing or wrong, edit it, then restart:
+docker compose -f /opt/servicedesk/deploy/docker-compose.yml restart app
+```
+
+The reader parses `/etc/letsencrypt/live/<domain>/fullchain.pem`. If that path doesn't exist (SSL=no install, or cert never issued), the card flips to Warning with "Certificate not found" rather than "monitoring disabled" — that signals the domain is configured but the cert isn't there yet.
+
+### TLS card flips to Warning even though the cert was just renewed
+Check cert-file read permission for uid 10001 (the app container user):
+
+```bash
+docker exec servicedesk-app-1 ls -la /etc/letsencrypt/live/<domain>/fullchain.pem
+```
+
+`fullchain.pem` should be mode 644 (world-readable). Let's Encrypt sets that by default; only `privkey.pem` is 600. If perms drifted (custom symlinks, manual copy), restore the mode and restart the app.
+
+### Security-activity card stays on "Waiting for first evaluation cycle…"
+The monitor ticks every `Health.SecurityActivity.IntervalSeconds` (default 60s). On a fresh boot the card shows the waiting message until the first tick completes. If it persists beyond 2 minutes:
+
+- Check `Health.SecurityActivity.Enabled` at `/settings/health` — `false` forces Ok + "Disabled" detail, never populates the counts.
+- Check the app logs for an exception in `SecurityActivityMonitor.TickAsync` (usually a DB-read failure on `audit_log`).
+- Drop `IntervalSeconds` to 10s temporarily to force a fast first tick, then restore.
+
+### Security-activity keeps firing toasts on normal traffic
+Thresholds are too low for your install's baseline. The upward-transition guard means each attack-episode triggers at most one Warning + one Critical toast — if you're seeing more, the card is genuinely crossing Ok→Warning repeatedly. Pull the 1h audit-log counts:
+
+```sql
+SELECT event_type, count(*)
+FROM audit_log
+WHERE utc > now() - interval '1 hour'
+  AND event_type IN (
+    'login_failed',
+    'login_locked_out',
+    'csrf_rejected',
+    'rate_limited',
+    'auth.microsoft.login.rejected_unknown',
+    'auth.microsoft.login.rejected_disabled',
+    'auth.microsoft.login.rejected_customer',
+    'auth.microsoft.login.rejected_inactive',
+    'auth.microsoft.login.failed_callback'
+  )
+GROUP BY event_type;
+```
+
+Raise the matching threshold at `/settings/health` → Security activity monitoring until the baseline sits comfortably below it. No restart needed — the monitor re-reads settings each tick.
+
 ---
 
 ## 5. TLS certificate renewal
@@ -200,6 +286,48 @@ DOMAIN=<your-domain> docker compose run --rm --entrypoint certbot certbot \
     --email <ops-email> --agree-tos --non-interactive --no-eff-email
 docker kill -s HUP servicedesk-nginx-1
 ```
+
+### Migrating from pre-v0.0.18 manual cron renewal
+
+Installs created before v0.0.18 used a host-side cron entry (typically `@daily certbot renew` or a custom wrapper) to renew the Let's Encrypt cert. From v0.0.18 onward, renewal runs through the UI-triggered systemd.path bridge — the cron entry is no longer needed.
+
+**Migration is safe to defer.** The systemd.path unit and an existing cron don't interfere with each other — certbot itself is idempotent and Let's Encrypt will short-circuit a renewal that's not yet due (<30 days to expiry). Leave both paths running through the first post-upgrade renewal cycle if you want a safety net.
+
+**Steps (after `update.sh` has run at least once on the new version):**
+
+1. Confirm the bridge is active:
+
+   ```bash
+   systemctl status servicedesk-cert-renew.path
+   # Expect: active (waiting) — Condition: start condition met
+   ```
+
+2. Trigger a test-renewal from **Settings → Health → TLS certificate → Renew now**. Watch the card flip to "running" and then "success" within ~15 s. Certbot will return "Certificate not yet due for renewal" if you're still >30 days out; that counts as a successful dry-run of the bridge.
+
+3. Remove the old cron entry. Common locations:
+
+   ```bash
+   # Root crontab:
+   crontab -l | grep -i certbot
+   crontab -e                    # delete the certbot line
+
+   # Cron.d / cron.daily drop-ins (check all three):
+   ls /etc/cron.d/ | grep -i certbot
+   ls /etc/cron.daily/ | grep -i certbot
+   ls /etc/cron.weekly/ | grep -i certbot
+
+   # Certbot's own systemd timer (if installed via apt):
+   systemctl list-timers | grep certbot
+   systemctl disable --now certbot.timer     # only if found
+   ```
+
+4. Verify nothing else is still scheduled to touch `/etc/letsencrypt`:
+
+   ```bash
+   grep -rI letsencrypt /etc/cron.* /etc/systemd/system/ /var/spool/cron/ 2>/dev/null
+   ```
+
+Your only remaining renewal path should now be the `servicedesk-cert-renew.path` unit, triggered either by an admin click or by a future scheduled-renewal feature (not shipped yet — manual for now).
 
 ### Disabling the bridge
 
