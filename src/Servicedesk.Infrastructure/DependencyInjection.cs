@@ -17,6 +17,7 @@ using Servicedesk.Infrastructure.Persistence.ViewGroups;
 using Servicedesk.Infrastructure.Persistence.Views;
 using Servicedesk.Infrastructure.Health;
 using Servicedesk.Infrastructure.Health.SecurityActivity;
+using Servicedesk.Infrastructure.IntakeForms;
 using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Mail.Ingest;
@@ -142,6 +143,28 @@ public static class DependencyInjection
         services.AddSingleton<ISlaEngine, SlaEngine>();
         services.AddSingleton<IHolidaySyncService, HolidaySyncService>();
 
+        // Intake Forms (v0.0.19)
+        services.AddSingleton<IIntakeTemplateRepository, IntakeTemplateRepository>();
+        services.AddSingleton<IIntakeFormRepository, IntakeFormRepository>();
+        services.AddSingleton<IIntakeFormTokenService, IntakeFormTokenService>();
+        services.AddSingleton<IIntakeTokenResolver, IntakeTokenResolver>();
+        services.AddSingleton<IIntakeFormPdfBuilder, IntakeFormPdfBuilder>();
+
+        // PdfSharpCore needs a font resolver on every platform (its default
+        // is null and throws on MeasureString). The bundled FontResolver
+        // searches the OS font directories — works on Windows out of the
+        // box and on Linux containers where `fonts-liberation` or similar
+        // is installed. Set once per process; GlobalFontSettings is static.
+        if (PdfSharpCore.Fonts.GlobalFontSettings.FontResolver is null)
+        {
+            PdfSharpCore.Fonts.GlobalFontSettings.FontResolver =
+                new PdfSharpCore.Utils.FontResolver();
+        }
+        services.AddSingleton<IntakeTemplateSearchSource>();
+        services.AddSingleton<IntakeSubmissionSearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<IntakeTemplateSearchSource>()));
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<IntakeSubmissionSearchSource>()));
+
         services.AddHostedService<DatabaseBootstrapper>();
         services.AddHostedService<SettingsSeeder>();
         services.AddHostedService<TaxonomySeeder>();
@@ -151,6 +174,7 @@ public static class DependencyInjection
         services.AddHostedService<HolidaySyncWorker>();
         services.AddHostedService<SlaRecalcWorker>();
         services.AddHostedService<SecurityActivityMonitor>();
+        services.AddHostedService<IntakeFormExpiryWorker>();
 
         return services;
     }

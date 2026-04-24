@@ -9,6 +9,8 @@ public static class SearchSourceKind
     public const string Contacts = "contacts";
     public const string Companies = "companies";
     public const string Settings = "settings";
+    public const string IntakeTemplates = "intake-templates";
+    public const string IntakeSubmissions = "intake-submissions";
 }
 
 /// A single request to the search façade. <see cref="Type"/> is null for

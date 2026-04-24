@@ -26,11 +26,19 @@ public sealed class DoubleSubmitCsrfMiddleware
     };
 
     // Endpoints that must be reachable without a prior session to bootstrap.
+    // /api/intake-forms/ is also exempt because the customer hitting that
+    // link has no session, no cookie, and cannot be issued a CSRF token
+    // before receiving the link in the mail. Rate limiting + single-shot
+    // token semantics are the defence here (see Program.cs "intake-public"
+    // policy). Only the two /{token}... routes live under that prefix;
+    // admin + agent management endpoints live under /api/settings/... and
+    // /api/tickets/{id}/intake-forms/... respectively and stay CSRF-enforced.
     private static readonly string[] ExemptPrefixes =
     {
         "/api/auth/login",
         "/api/auth/setup",
         "/api/security/csp-report",
+        "/api/intake-forms/",
         "/hubs/",
     };
 

@@ -37,7 +37,13 @@ public sealed record OutboundMailRequest(
     /// Filtered server-side against the Agent+Admin set; customer ids and
     /// unknown guids are silently dropped before the event metadata is
     /// written.
-    IReadOnlyList<Guid>? MentionedUserIds = null);
+    IReadOnlyList<Guid>? MentionedUserIds = null,
+    /// Intake-form instance ids embedded via `::`-mention (v0.0.19). Each
+    /// id must point to a Draft instance owned by this ticket; the Mail
+    /// service mints a token, embeds the link in the body, and atomically
+    /// flips the instance to Sent + writes an IntakeFormSent ticket event
+    /// once Graph accepts the message.
+    IReadOnlyList<Guid>? LinkedFormIds = null);
 
 public enum OutboundMailStatus
 {

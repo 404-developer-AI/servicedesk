@@ -1,6 +1,7 @@
 import {
   Activity,
   Building2,
+  ClipboardList,
   Contact,
   Eye,
   Mail,
@@ -105,6 +106,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: "SLA",
     description: "Response and resolution targets, business hours, holidays, first-contact rules.",
     icon: Timer,
+  },
+  {
+    slug: "intake-forms",
+    label: "Intake Forms",
+    description:
+      "Reusable questionnaires agents send to customers via a public link — drag-reorder questions, bind defaults to ticket fields.",
+    icon: ClipboardList,
   },
   {
     slug: "mail-diagnostics",

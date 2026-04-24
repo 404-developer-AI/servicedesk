@@ -14,4 +14,7 @@ public enum TicketEventType
     SystemNote,
     MailReceived,
     MailSent,
+    IntakeFormSent,
+    IntakeFormSubmitted,
+    IntakeFormExpired,
 }

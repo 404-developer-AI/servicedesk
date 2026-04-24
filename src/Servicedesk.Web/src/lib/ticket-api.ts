@@ -272,6 +272,11 @@ export type SendOutboundMailRequest = {
   attachmentIds?: string[];
   /// Agent user-ids tagged via @@-mention. See NewTicketEvent for semantics.
   mentionedUserIds?: string[];
+  /// Intake-form instance ids embedded via `::`-mention (v0.0.19). Each id
+  /// must be a Draft instance owned by this ticket; the server mints a
+  /// token, embeds the public link in the body and atomically flips the
+  /// instance to Sent + writes an IntakeFormSent ticket event.
+  linkedFormIds?: string[];
 };
 
 // ---- Views ----

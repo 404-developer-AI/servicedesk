@@ -9,6 +9,8 @@ export type SearchKind =
   | "contacts"
   | "companies"
   | "settings"
+  | "intake-templates"
+  | "intake-submissions"
   | (string & {});
 
 export const KIND_LABELS: Record<string, string> = {
@@ -16,9 +18,18 @@ export const KIND_LABELS: Record<string, string> = {
   contacts: "Contacten",
   companies: "Bedrijven",
   settings: "Settings",
+  "intake-templates": "Intake Templates",
+  "intake-submissions": "Intake Submissions",
 };
 
-export const KIND_ORDER: string[] = ["tickets", "contacts", "companies", "settings"];
+export const KIND_ORDER: string[] = [
+  "tickets",
+  "contacts",
+  "companies",
+  "settings",
+  "intake-templates",
+  "intake-submissions",
+];
 
 export function labelForKind(kind: string): string {
   return KIND_LABELS[kind] ?? kind;
@@ -35,6 +46,17 @@ export function hitHref(hit: SearchHit): string {
       return `/companies/${hit.entityId}`;
     case "settings":
       return hit.meta?.path ?? "/settings";
+    case "intake-templates":
+      return `/settings/intake-forms?template=${hit.entityId}`;
+    case "intake-submissions": {
+      // Submissions sit inside a ticket's timeline; route to that ticket
+      // and deep-link to the submission event so the scroll lands on it.
+      const ticketId = hit.meta?.ticketId;
+      const eventId = hit.meta?.eventId;
+      if (!ticketId) return "#";
+      const hash = eventId ? `#event-${eventId}` : "";
+      return `/tickets/${ticketId}${hash}`;
+    }
     default:
       return "#";
   }

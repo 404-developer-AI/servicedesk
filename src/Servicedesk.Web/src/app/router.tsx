@@ -19,6 +19,8 @@ import { IntegrationsSettingsPage } from "@/pages/settings/IntegrationsSettingsP
 import { MailSettingsPage } from "@/pages/settings/MailSettingsPage";
 import { MailDiagnosticsPage } from "@/pages/settings/MailDiagnosticsPage";
 import { SlaSettingsPage } from "@/pages/settings/SlaSettingsPage";
+import { IntakeFormsSettingsPage } from "@/pages/settings/IntakeFormsSettingsPage";
+import { PublicIntakeFormPage } from "@/pages/intake/PublicIntakeFormPage";
 import { TicketsSettingsPage } from "@/pages/settings/TicketsSettingsPage";
 import { SettingsLayout } from "@/shell/SettingsLayout";
 import { LoginPage } from "@/pages/auth/LoginPage";
@@ -71,10 +73,13 @@ const UNAUTHENTICATED_PATHS = new Set(["/login", "/setup"]);
 
 /// Routes that render OUTSIDE AppShell — no sidebar, no CriticalBanner.
 /// Used for the pop-out compose window so the agent can park it next to
-/// the main tab with just the form visible.
+/// the main tab with just the form visible. Public tokenised intake-form
+/// fills also land here — the customer has no session and never sees the
+/// agent UI.
 function isBareRoute(path: string): boolean {
   if (UNAUTHENTICATED_PATHS.has(path)) return true;
   if (path.endsWith("/compose")) return true;
+  if (path.startsWith("/intake/")) return true;
   return false;
 }
 
@@ -264,6 +269,12 @@ const settingsSlaRoute = createRoute({
   component: SlaSettingsPage,
 });
 
+const settingsIntakeFormsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "intake-forms",
+  component: IntakeFormsSettingsPage,
+});
+
 const settingsIntegrationsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "integrations",
@@ -310,6 +321,19 @@ const settingsUsersRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "users",
   component: UsersSettingsPage,
+});
+
+// Public tokenised intake form. Rendered outside AppShell (see RootLayout)
+// so a customer without a session sees only the form. No beforeLoad gate
+// because the server-side token validates the request; an invalid or
+// expired token renders an in-page error state instead of redirecting.
+const publicIntakeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/intake/$token",
+  component: function PublicIntakeRoute() {
+    const { token } = publicIntakeRoute.useParams();
+    return <PublicIntakeFormPage token={token} />;
+  },
 });
 
 const settingsViewGroupsRoute = createRoute({
@@ -369,6 +393,7 @@ const routeTree = rootRoute.addChildren([
     settingsGeneralRoute,
     settingsMailRoute,
     settingsSlaRoute,
+    settingsIntakeFormsRoute,
     settingsIntegrationsRoute,
     settingsTicketsRoute,
     settingsCompaniesRoute,
@@ -381,6 +406,7 @@ const routeTree = rootRoute.addChildren([
     settingsHealthRoute,
     settingsAuditRoute,
   ]),
+  publicIntakeRoute,
 ]);
 
 export const router = createRouter({

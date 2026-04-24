@@ -9,6 +9,7 @@ using Servicedesk.Api.Audit;
 using Servicedesk.Api.Auth;
 using Servicedesk.Api.Companies;
 using Servicedesk.Api.Health;
+using Servicedesk.Api.IntakeForms;
 using Servicedesk.Api.Security;
 using Servicedesk.Api.System;
 using Servicedesk.Api.Taxonomy;
@@ -164,6 +165,43 @@ builder.Services.AddRateLimiter(options =>
             AutoReplenishment = true,
         });
     });
+
+    // Intake Forms public endpoints (v0.0.19). Partitioned per (IP, token)
+    // so one IP probing many tokens is throttled per-token AND a single
+    // legitimate customer reloading their form stays well under the cap.
+    // Defaults to 20 req / 60s — tunable via IntakeForms.PublicRateLimit.*
+    // setting keys in the settings DB (rate-limit config is loaded at
+    // startup and not live-reloaded, matching the global + auth policies).
+    var intakePublicPermit = builder.Configuration.GetValue<int?>("IntakeForms:PublicRateLimit:PermitPerWindow") ?? 20;
+    var intakePublicWindow = builder.Configuration.GetValue<int?>("IntakeForms:PublicRateLimit:WindowSeconds") ?? 60;
+
+    options.AddPolicy("intake-public", ctx =>
+    {
+        var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
+        // Extract the token path segment so the partition key is
+        // {ip}:{token-prefix}. The token is opaque to us; slicing at 32
+        // chars keeps the key short without collapsing distinct tokens.
+        var path = ctx.Request.Path.Value ?? string.Empty;
+        string tokenPart = "-";
+        const string prefix = "/api/intake-forms/";
+        if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var rest = path[prefix.Length..];
+            var slash = rest.IndexOf('/');
+            var token = slash < 0 ? rest : rest[..slash];
+            if (token.Length > 32) token = token[..32];
+            if (!string.IsNullOrEmpty(token)) tokenPart = token;
+        }
+
+        var key = ip + ":" + tokenPart;
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = intakePublicPermit,
+            Window = TimeSpan.FromSeconds(intakePublicWindow),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        });
+    });
 });
 
 var app = builder.Build();
@@ -273,6 +311,7 @@ app.MapTicketAttachmentEndpoints();
 app.MapSearchEndpoints();
 app.MapSettingEndpoints();
 app.MapSlaEndpoints();
+app.MapIntakeFormEndpoints();
 app.MapGraphAdminEndpoints();
 app.MapAdminMailDiagnosticsEndpoints();
 app.MapHealthEndpoints();

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useEditor, EditorContent, ReactRenderer } from "@tiptap/react";
+import { mergeAttributes } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -20,6 +21,11 @@ import {
 import { cn } from "@/lib/utils";
 import type { TicketAttachmentMeta, AgentUser } from "@/lib/ticket-api";
 import { MentionList, type MentionListHandle } from "./MentionList";
+import {
+  IntakeMentionList,
+  type IntakeMentionListHandle,
+  type IntakeMentionItem,
+} from "./intake/IntakeMentionList";
 
 type RichTextEditorProps = {
   content?: string;
@@ -47,6 +53,24 @@ type RichTextEditorProps = {
   /// mentioned user-ids (deduplicated, source order).
   onMentionQuery?: (query: string) => Promise<AgentUser[]>;
   onMentionsChange?: (ids: string[]) => void;
+  /// v0.0.19 — parallel to onMentionQuery but for the `::` intake-form
+  /// trigger. Returns the admin-managed template catalogue. Mounting the
+  /// extension is opt-in so composers that don't need intake forms pay
+  /// nothing for the suggestion wiring.
+  onIntakeQuery?: (query: string) => Promise<IntakeMentionItem[]>;
+  /// Called immediately after an agent picks a template in the `::` popover.
+  /// Implementation should POST /api/tickets/{id}/intake-forms to create a
+  /// Draft instance and return its id. The editor uses the returned
+  /// instanceId to replace the chip's node attrs so onLinkedFormsChange
+  /// can emit it on next update.
+  onIntakeInsert?: (templateId: string) => Promise<string | null>;
+  /// Emitted alongside onChange whenever an `::`-chip is added, replaced
+  /// (after its Draft is created), or removed. Payload is the deduplicated
+  /// list of instance-ids in document order.
+  onLinkedFormsChange?: (instanceIds: string[]) => void;
+  /// Called when the agent clicks an existing `::`-chip — the parent opens
+  /// the prefill drawer for that instanceId.
+  onIntakeChipClick?: (instanceId: string) => void;
 };
 
 type ToolbarButtonProps = {
@@ -93,6 +117,10 @@ export function RichTextEditor({
   onUploadFile,
   onMentionQuery,
   onMentionsChange,
+  onIntakeQuery,
+  onIntakeInsert,
+  onLinkedFormsChange,
+  onIntakeChipClick,
 }: RichTextEditorProps) {
   // Stash the latest upload callback in a ref so the editor extensions —
   // which see only the prop-snapshot at construction time — can still call
@@ -111,6 +139,23 @@ export function RichTextEditor({
   useEffect(() => {
     mentionsChangeRef.current = onMentionsChange;
   }, [onMentionsChange]);
+
+  const intakeQueryRef = useRef<typeof onIntakeQuery>(onIntakeQuery);
+  useEffect(() => {
+    intakeQueryRef.current = onIntakeQuery;
+  }, [onIntakeQuery]);
+  const intakeInsertRef = useRef<typeof onIntakeInsert>(onIntakeInsert);
+  useEffect(() => {
+    intakeInsertRef.current = onIntakeInsert;
+  }, [onIntakeInsert]);
+  const linkedFormsChangeRef = useRef<typeof onLinkedFormsChange>(onLinkedFormsChange);
+  useEffect(() => {
+    linkedFormsChangeRef.current = onLinkedFormsChange;
+  }, [onLinkedFormsChange]);
+  const intakeChipClickRef = useRef<typeof onIntakeChipClick>(onIntakeChipClick);
+  useEffect(() => {
+    intakeChipClickRef.current = onIntakeChipClick;
+  }, [onIntakeChipClick]);
 
   const extensions = [
     StarterKit,
@@ -154,6 +199,80 @@ export function RichTextEditor({
     );
   }
 
+  // v0.0.19 — second Mention extension keyed to `::` for intake-form
+  // templates. A distinct `name` is required because Tiptap registers
+  // extensions by name; sharing "mention" with the agent trigger would
+  // collide. We emit `<span data-intake-form="{instanceId}">{templateName}</span>`
+  // at render time — OutboundMailService recognises that marker and swaps
+  // it for the real anchor when the mail goes out.
+  if (onIntakeQuery) {
+    // Extend Mention first so we can add our own attrs + HTML
+    // serialisation (which `.configure()` does not expose), then chain
+    // `.configure()` purely for the option-shape fields (HTMLAttributes
+    // + suggestion wiring). The extended extension emits
+    // `<span data-intake-form="{instanceId}">{templateName}</span>` at
+    // render time — OutboundMailService recognises that marker and swaps
+    // it for the real anchor when the mail leaves the mailbox.
+    const IntakeMention = Mention.extend({
+      name: "intakeMention",
+      addAttributes() {
+        return {
+          id: {
+            default: null,
+            parseHTML: (el: HTMLElement) =>
+              el.getAttribute("data-template-id"),
+            renderHTML: (attrs: Record<string, unknown>) => ({
+              "data-template-id": (attrs.id as string) ?? "",
+            }),
+          },
+          instanceId: {
+            default: null,
+            parseHTML: (el: HTMLElement) =>
+              el.getAttribute("data-intake-form"),
+            renderHTML: (attrs: Record<string, unknown>) => {
+              const iid = attrs.instanceId as string | null;
+              return iid ? { "data-intake-form": iid } : {};
+            },
+          },
+          label: {
+            default: null,
+            parseHTML: (el: HTMLElement) => el.getAttribute("data-label"),
+            renderHTML: (attrs: Record<string, unknown>) => ({
+              "data-label": (attrs.label as string) ?? "",
+            }),
+          },
+        };
+      },
+      renderHTML({ node, HTMLAttributes }) {
+        const label = (node.attrs.label as string) ?? "";
+        // IMPORTANT: merge options.HTMLAttributes (class + data-intake-mention)
+        // with the per-attribute HTMLAttributes (data-template-id / data-intake-form
+        // / data-label). Tiptap does this in its default Mention.renderHTML; by
+        // overriding we lose the class unless we re-merge here.
+        return [
+          "span",
+          mergeAttributes(
+            { "data-type": "intakeMention" },
+            this.options.HTMLAttributes,
+            HTMLAttributes,
+          ),
+          label,
+        ];
+      },
+      renderText({ node }) {
+        return `[${node.attrs.label ?? "Intake form"}]`;
+      },
+    }).configure({
+      HTMLAttributes: {
+        class: "sd-intake-mention",
+        "data-intake-mention": "true",
+      },
+      suggestion: buildIntakeSuggestion(intakeQueryRef, intakeInsertRef),
+    });
+
+    extensions.push(IntakeMention);
+  }
+
   const editor = useEditor({
     autofocus: autoFocus ? "end" : false,
     extensions: extensions as never,
@@ -163,8 +282,29 @@ export function RichTextEditor({
       onChange?.(e.getHTML());
       const cb = mentionsChangeRef.current;
       if (cb) cb(extractMentionIds(e.getJSON()));
+      const fb = linkedFormsChangeRef.current;
+      if (fb) fb(extractIntakeInstanceIds(e.getJSON()));
     },
     editorProps: {
+      handleClick(_view, _pos, event) {
+        // Intake-form chips are passive DOM — Tiptap lets events bubble.
+        // We look up the closest element with data-intake-form and fire
+        // onIntakeChipClick so the parent opens the prefill drawer.
+        const target = event.target as HTMLElement | null;
+        if (!target) return false;
+        const chip = target.closest(
+          "[data-intake-form]",
+        ) as HTMLElement | null;
+        if (!chip) return false;
+        const instanceId = chip.getAttribute("data-intake-form");
+        if (!instanceId) return false;
+        const cb = intakeChipClickRef.current;
+        if (cb) {
+          cb(instanceId);
+          return true;
+        }
+        return false;
+      },
       handlePaste(_view, event) {
         if (!uploadRef.current) return false;
         const files = collectFilesFromClipboard(event.clipboardData);
@@ -321,6 +461,35 @@ export function RichTextEditor({
         }
         .rte-content .ProseMirror .sd-mention[data-type="mention"]::after {
           content: "";
+        }
+        .rte-content .ProseMirror .sd-intake-mention {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.25em;
+          padding: 0 0.55em 0 0.45em;
+          border-radius: 9999px;
+          background: hsl(180 70% 55% / 0.15);
+          color: hsl(180 70% 80%);
+          border: 1px solid hsl(180 70% 55% / 0.35);
+          font-weight: 500;
+          font-size: 0.92em;
+          white-space: nowrap;
+          line-height: 1.4;
+          vertical-align: baseline;
+          cursor: pointer;
+        }
+        .rte-content .ProseMirror .sd-intake-mention:hover {
+          background: hsl(180 70% 55% / 0.22);
+          border-color: hsl(180 70% 55% / 0.5);
+        }
+        .rte-content .ProseMirror .sd-intake-mention::before {
+          content: "";
+          width: 0.9em;
+          height: 0.9em;
+          flex-shrink: 0;
+          background-color: hsl(180 70% 80%);
+          -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect width='8' height='4' x='8' y='2' rx='1' ry='1'/><path d='M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2'/><path d='M12 11h4'/><path d='M12 16h4'/><path d='M8 11h.01'/><path d='M8 16h.01'/></svg>") no-repeat center / contain;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect width='8' height='4' x='8' y='2' rx='1' ry='1'/><path d='M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2'/><path d='M12 11h4'/><path d='M12 16h4'/><path d='M8 11h.01'/><path d='M8 16h.01'/></svg>") no-repeat center / contain;
         }
         .rte-content .ProseMirror {
           min-height: var(--rte-min-height, 120px);
@@ -485,6 +654,36 @@ function insertImageIfApplicable(
     .run();
 }
 
+/// Walk a Tiptap JSON doc and collect the `attrs.instanceId` of every
+/// `intakeMention` node, in document order, deduplicated. Only nodes whose
+/// draft-instance was successfully created (i.e. attrs.instanceId is a
+/// string) are included — freshly-inserted chips waiting on the POST still
+/// have `instanceId: null` and must not leak into LinkedFormIds.
+export function extractIntakeInstanceIds(doc: unknown): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const walk = (node: unknown) => {
+    if (!node || typeof node !== "object") return;
+    const n = node as {
+      type?: string;
+      attrs?: { instanceId?: string | null };
+      content?: unknown[];
+    };
+    if (n.type === "intakeMention" && typeof n.attrs?.instanceId === "string") {
+      const id = n.attrs.instanceId;
+      if (!seen.has(id)) {
+        seen.add(id);
+        out.push(id);
+      }
+    }
+    if (Array.isArray(n.content)) {
+      for (const child of n.content) walk(child);
+    }
+  };
+  walk(doc);
+  return out;
+}
+
 /// Walk a Tiptap JSON doc and collect the `attrs.id` of every `mention`
 /// node, in document order, deduplicated. Used at submit-time by the forms
 /// to pass a concise `mentionedUserIds[]` to the server without re-parsing
@@ -508,6 +707,183 @@ export function extractMentionIds(doc: unknown): string[] {
   };
   walk(doc);
   return out;
+}
+
+/// Suggestion-plugin wiring for the `::` intake-form mention. Parallel
+/// shape to `buildMentionSuggestion` but swaps the trigger char, query
+/// source, and command callback. The command runs the caller's
+/// `onIntakeInsert` to create a Draft on the server, then patches the
+/// just-inserted node's `attrs.instanceId` once the id comes back. A
+/// failed create removes the chip — the mail should never leave with a
+/// placeholder whose draft was never committed.
+function buildIntakeSuggestion(
+  queryRef: React.MutableRefObject<
+    ((query: string) => Promise<IntakeMentionItem[]>) | undefined
+  >,
+  insertRef: React.MutableRefObject<
+    ((templateId: string) => Promise<string | null>) | undefined
+  >,
+): Omit<SuggestionOptions<IntakeMentionItem, MentionNodeAttrs>, "editor"> {
+  return {
+    char: "::",
+    async items({ query }: { query: string }) {
+      const fn = queryRef.current;
+      if (!fn) return [];
+      try {
+        return await fn(query);
+      } catch {
+        return [];
+      }
+    },
+    // Wrap the default suggestion command so we can chase the
+    // server roundtrip for draft-instance creation. Tiptap's
+    // extension-mention calls our override; we run its default insert
+    // first (so the chip is visible while the POST is in-flight) and
+    // then patch the node when the id resolves.
+    command: ({ editor, range, props }: {
+      editor: import("@tiptap/react").Editor;
+      range: { from: number; to: number };
+      props: MentionNodeAttrs;
+    }) => {
+      const templateId = (props.id as string | null) ?? "";
+      const label = (props.label as string | null) ?? "";
+
+      editor
+        .chain()
+        .focus()
+        .insertContentAt(range, [
+          {
+            type: "intakeMention",
+            attrs: { id: templateId, label, instanceId: null },
+          },
+          { type: "text", text: " " },
+        ])
+        .run();
+
+      const insert = insertRef.current;
+      if (!insert || !templateId) return;
+
+      // Fire-and-forget. On success, walk the doc to find the chip we
+      // just inserted (matched by templateId + null instanceId) and
+      // patch it with the real instance id. On failure, remove the chip.
+      void insert(templateId)
+        .then((instanceId) => {
+          if (!instanceId) {
+            removeChipByTemplateId(editor, templateId);
+            return;
+          }
+          patchChipInstanceId(editor, templateId, instanceId);
+        })
+        .catch(() => {
+          removeChipByTemplateId(editor, templateId);
+        });
+    },
+    render: () => {
+      let component: ReactRenderer<IntakeMentionListHandle> | null = null;
+      let popup: TippyInstance | null = null;
+
+      return {
+        onStart: (props: SuggestionProps<IntakeMentionItem, MentionNodeAttrs>) => {
+          component = new ReactRenderer(IntakeMentionList, {
+            props: {
+              items: props.items,
+              loading: false,
+              command: (attrs: { id: string; label: string }) =>
+                props.command(attrs),
+            },
+            editor: props.editor,
+          });
+
+          if (!props.clientRect) return;
+
+          popup = tippy(document.body, {
+            getReferenceClientRect: () => props.clientRect!() ?? new DOMRect(),
+            appendTo: () => document.body,
+            content: component.element,
+            showOnCreate: true,
+            interactive: true,
+            trigger: "manual",
+            placement: "bottom-start",
+            theme: "sd-mention",
+          });
+        },
+        onUpdate(props: SuggestionProps<IntakeMentionItem, MentionNodeAttrs>) {
+          component?.updateProps({
+            items: props.items,
+            loading: false,
+            command: (attrs: { id: string; label: string }) =>
+              props.command(attrs),
+          });
+          if (!props.clientRect) return;
+          popup?.setProps({
+            getReferenceClientRect: () => props.clientRect!() ?? new DOMRect(),
+          });
+        },
+        onKeyDown(props: { event: KeyboardEvent }) {
+          if (props.event.key === "Escape") {
+            popup?.hide();
+            return true;
+          }
+          return component?.ref?.onKeyDown(props) ?? false;
+        },
+        onExit() {
+          popup?.destroy();
+          component?.destroy();
+          popup = null;
+          component = null;
+        },
+      };
+    },
+  };
+}
+
+function patchChipInstanceId(
+  editor: import("@tiptap/react").Editor,
+  templateId: string,
+  instanceId: string,
+): void {
+  const tr = editor.state.tr;
+  let changed = false;
+  editor.state.doc.descendants((node, pos) => {
+    if (
+      node.type.name === "intakeMention" &&
+      node.attrs.id === templateId &&
+      !node.attrs.instanceId
+    ) {
+      tr.setNodeMarkup(pos, undefined, {
+        ...node.attrs,
+        instanceId,
+      });
+      changed = true;
+    }
+    return true;
+  });
+  if (changed) {
+    editor.view.dispatch(tr);
+  }
+}
+
+function removeChipByTemplateId(
+  editor: import("@tiptap/react").Editor,
+  templateId: string,
+): void {
+  const tr = editor.state.tr;
+  const deletions: Array<{ from: number; to: number }> = [];
+  editor.state.doc.descendants((node, pos) => {
+    if (
+      node.type.name === "intakeMention" &&
+      node.attrs.id === templateId &&
+      !node.attrs.instanceId
+    ) {
+      deletions.push({ from: pos, to: pos + node.nodeSize });
+    }
+    return true;
+  });
+  // Apply deletions from tail to head so earlier indexes stay valid.
+  for (const d of deletions.reverse()) {
+    tr.delete(d.from, d.to);
+  }
+  if (deletions.length > 0) editor.view.dispatch(tr);
 }
 
 /// Suggestion-plugin wiring for the Mention extension. The `char: "@@"`

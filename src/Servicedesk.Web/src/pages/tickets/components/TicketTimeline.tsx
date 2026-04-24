@@ -24,6 +24,9 @@ import {
   Pencil,
   Pin,
   UserCog,
+  ClipboardList,
+  ClipboardCheck,
+  ClipboardX,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ticketApi, type TicketEvent, type OutboundMailKind } from "@/lib/ticket-api";
@@ -41,6 +44,7 @@ import {
   type AttachmentPreview,
 } from "@/components/attachments/AttachmentPreviewDialog";
 import { EventRevisionDialog } from "./EventRevisionDialog";
+import { IntakeSubmissionPanel } from "@/components/intake/IntakeSubmissionPanel";
 
 type PreviewContextValue = {
   open: (preview: AttachmentPreview) => void;
@@ -329,6 +333,21 @@ const EVENT_CONFIG: Record<string, EventConfig> = {
     dotColor: "bg-white/30",
     label: "System",
   },
+  IntakeFormSent: {
+    icon: ClipboardList,
+    dotColor: "bg-emerald-500",
+    label: "Intake form sent",
+  },
+  IntakeFormSubmitted: {
+    icon: ClipboardCheck,
+    dotColor: "bg-emerald-400",
+    label: "Intake form submitted",
+  },
+  IntakeFormExpired: {
+    icon: ClipboardX,
+    dotColor: "bg-orange-400",
+    label: "Intake form expired",
+  },
 };
 
 function parseMetadata(json: string): Record<string, unknown> {
@@ -481,6 +500,39 @@ function EventBody({ event }: { event: TicketEvent }) {
           {event.bodyText ?? "System event"}
         </span>
       );
+
+    case "IntakeFormSent":
+    case "IntakeFormSubmitted":
+    case "IntakeFormExpired": {
+      const instanceId =
+        typeof meta.instanceId === "string" ? meta.instanceId : null;
+      const templateName =
+        typeof meta.templateName === "string" ? meta.templateName : null;
+      const sentToEmail =
+        typeof meta.sentToEmail === "string" ? meta.sentToEmail : null;
+      const variant =
+        event.eventType === "IntakeFormSubmitted"
+          ? "submitted"
+          : event.eventType === "IntakeFormExpired"
+            ? "expired"
+            : "sent";
+      if (!instanceId) {
+        return (
+          <span className="text-sm text-muted-foreground">
+            {templateName ?? "Intake form"}
+          </span>
+        );
+      }
+      return (
+        <IntakeSubmissionPanel
+          ticketId={event.ticketId}
+          instanceId={instanceId}
+          variant={variant}
+          templateName={templateName}
+          sentToEmail={sentToEmail}
+        />
+      );
+    }
 
     case "MailSent": {
       const fromAddr = typeof meta.from === "string" ? meta.from : null;

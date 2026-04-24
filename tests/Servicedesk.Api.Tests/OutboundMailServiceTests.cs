@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Servicedesk.Domain.Taxonomy;
 using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure.Auth;
+using Servicedesk.Infrastructure.IntakeForms;
 using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Mail.Ingest;
@@ -231,8 +232,10 @@ public sealed class OutboundMailServiceTests
         var sla = new StubSla();
         var users = new StubUsers(knownAgents);
         var mentions = new StubMentions();
+        var intakeForms = new StubIntakeForms();
+        var intakeTokens = new StubIntakeTokens();
         var svc = new OutboundMailService(graph, taxonomy, tickets, mail, atts, blobs, settings, sla, users, mentions,
-            NullLogger<OutboundMailService>.Instance);
+            intakeForms, intakeTokens, NullLogger<OutboundMailService>.Instance);
         return (svc, graph, mail, atts, tickets);
     }
 
@@ -452,5 +455,25 @@ public sealed class OutboundMailServiceTests
         public Task UpdatePasswordHashAsync(Guid userId, string newHash, CancellationToken ct = default) => Task.CompletedTask;
         public Task RecordSuccessfulLoginAsync(Guid userId, CancellationToken ct = default) => Task.CompletedTask;
         public Task<bool> RecordFailedLoginAsync(Guid userId, int maxAttempts, int windowSeconds, int lockoutDurationSeconds, CancellationToken ct = default) => Task.FromResult(false);
+    }
+
+    private sealed class StubIntakeForms : IIntakeFormRepository
+    {
+        public Task<Guid> CreateDraftAsync(Guid ticketId, Guid templateId, string prefillJson, Guid? createdBy, CancellationToken ct) => Task.FromResult(Guid.Empty);
+        public Task<bool> UpdateDraftPrefillAsync(Guid instanceId, Guid ticketId, string prefillJson, CancellationToken ct) => Task.FromResult(false);
+        public Task<bool> DeleteDraftAsync(Guid instanceId, Guid ticketId, CancellationToken ct) => Task.FromResult(false);
+        public Task<IReadOnlyList<IntakeFormInstanceSummary>> ListForTicketAsync(Guid ticketId, CancellationToken ct) => Task.FromResult<IReadOnlyList<IntakeFormInstanceSummary>>(Array.Empty<IntakeFormInstanceSummary>());
+        public Task<IntakeFormAgentView?> GetAgentViewAsync(Guid ticketId, Guid instanceId, CancellationToken ct) => Task.FromResult<IntakeFormAgentView?>(null);
+        public Task<long?> SendDraftAsync(Guid instanceId, Guid ticketId, Guid actorUserId, byte[] tokenHash, byte[] tokenCipher, DateTime expiresUtc, string sentToEmail, string metadataJson, CancellationToken ct) => Task.FromResult<long?>(null);
+        public Task<bool> CancelSentAsync(Guid instanceId, Guid ticketId, Guid actorUserId, CancellationToken ct) => Task.FromResult(false);
+        public Task<IntakePublicView?> GetByTokenHashForPublicAsync(byte[] tokenHash, CancellationToken ct) => Task.FromResult<IntakePublicView?>(null);
+        public Task<SubmitResult?> TrySubmitAsync(byte[] tokenHash, IReadOnlyList<IntakeFormSubmitAnswer> answers, string? ip, string? userAgent, DateTime nowUtc, CancellationToken ct) => Task.FromResult<SubmitResult?>(null);
+        public Task<IReadOnlyList<ExpiredInstance>> ExpireStaleAsync(int maxBatch, DateTime nowUtc, CancellationToken ct) => Task.FromResult<IReadOnlyList<ExpiredInstance>>(Array.Empty<ExpiredInstance>());
+    }
+
+    private sealed class StubIntakeTokens : IIntakeFormTokenService
+    {
+        public (string Raw, byte[] Hash, byte[] Cipher) Mint() => ("stub", Array.Empty<byte>(), Array.Empty<byte>());
+        public byte[]? HashForLookup(string rawFromUrl) => null;
     }
 }

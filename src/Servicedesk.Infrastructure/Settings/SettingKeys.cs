@@ -154,6 +154,17 @@ public static class SettingKeys
         public const string AttachmentWorkerPollSeconds = "Jobs.AttachmentWorkerPollSeconds";
     }
 
+    public static class IntakeForms
+    {
+        public const string DefaultExpiryDays = "IntakeForms.DefaultExpiryDays";
+        public const string MaxQuestionsPerTemplate = "IntakeForms.MaxQuestionsPerTemplate";
+        public const string MaxAnswerSizeBytes = "IntakeForms.MaxAnswerSizeBytes";
+        public const string MaxTotalAnswersBytes = "IntakeForms.MaxTotalAnswersBytes";
+        public const string ExpirySweepMinutes = "IntakeForms.ExpirySweepMinutes";
+        public const string PublicRateLimitPermits = "IntakeForms.PublicRateLimit.PermitPerWindow";
+        public const string PublicRateLimitWindowSeconds = "IntakeForms.PublicRateLimit.WindowSeconds";
+    }
+
     public static class Health
     {
         // Security-activity subsystem (v0.0.18). Samples the audit_log over a
@@ -394,5 +405,28 @@ public static class SettingDefaults
             "Number of rate-limit rejections within the window before raising a Warning. Counts the 'rate_limited' audit event — set deliberately high because a single misbehaving client can hit this fast."),
         new SettingDefault(SettingKeys.Health.SecurityActivityThresholdMicrosoftLoginRejected, "5", "int", "Health",
             "Number of M365-login rejections within the window before raising a Warning. Sums all five reject reasons (unknown OID, disabled account, customer role, inactive, callback failure)."),
+
+        // Intake Forms — v0.0.19. Customer-facing tokenised questionnaires.
+        // Defaults are tuned for a small-to-medium helpdesk: a 14-day validity
+        // window covers realistic customer response times including one weekend
+        // stacked on top of a bank holiday, without leaving links indefinitely
+        // exploitable. The 20/60 rate-limit is deliberately conservative —
+        // each customer realistically GETs the page once and POSTs once, with
+        // maybe one reload, so 20/min per {ip,token} is 10× the legitimate
+        // traffic and catches brute-force token enumeration cleanly.
+        new SettingDefault(SettingKeys.IntakeForms.DefaultExpiryDays, "14", "int", "IntakeForms",
+            "Validity window (days) for a newly sent intake-form link. After this the link shows a 'formulier verlopen' page. Tunable per install; existing instances keep their original expires_utc."),
+        new SettingDefault(SettingKeys.IntakeForms.MaxQuestionsPerTemplate, "50", "int", "IntakeForms",
+            "Maximum number of questions (including section headers) allowed per template. Enforced server-side on template save; a bigger cap means a bigger submit payload for the customer."),
+        new SettingDefault(SettingKeys.IntakeForms.MaxAnswerSizeBytes, "10240", "int", "IntakeForms",
+            "Hard cap (bytes) on a single answer value submitted by a customer. Protects the DB from abuse via the long-text field. Above this the submit is rejected with 413."),
+        new SettingDefault(SettingKeys.IntakeForms.MaxTotalAnswersBytes, "262144", "int", "IntakeForms",
+            "Hard cap (bytes) on the total submitted payload (all answers combined). 413 on overflow."),
+        new SettingDefault(SettingKeys.IntakeForms.ExpirySweepMinutes, "15", "int", "IntakeForms",
+            "How often (minutes) the background worker flips Sent → Expired for instances past their expires_utc and writes an IntakeFormExpired ticket event."),
+        new SettingDefault(SettingKeys.IntakeForms.PublicRateLimitPermits, "20", "int", "IntakeForms",
+            "Requests permitted per rate-limit window against the public /api/intake-forms/{token} endpoints, partitioned by {ip,token}. Tune up only if legitimate customers hit the limit on reload."),
+        new SettingDefault(SettingKeys.IntakeForms.PublicRateLimitWindowSeconds, "60", "int", "IntakeForms",
+            "Rate-limit window length (seconds) for the public intake-form endpoints."),
     };
 }

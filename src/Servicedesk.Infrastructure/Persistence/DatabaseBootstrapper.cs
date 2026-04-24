@@ -1222,6 +1222,196 @@ public sealed class DatabaseBootstrapper : IHostedService
                     AND external_provider IS NOT NULL
                     AND external_subject IS NOT NULL)
             ) NOT VALID;
+
+        -- ===================================================================
+        -- v0.0.19 Intake Forms — customer-facing tokenised questionnaires.
+        --
+        -- intake_templates hold admin-authored reusable question sets.
+        -- intake_template_questions carry ordered typed questions (including
+        -- 'SectionHeader' which is a layout-only row, not an input). Dropdown
+        -- options live in their own child table so a value can be renamed
+        -- without rewriting the question row. default_value holds a literal
+        -- prefill; default_token (e.g. '{{requester.email}}') is resolved
+        -- server-side at send time into the instance's prefill_json snapshot.
+        --
+        -- intake_form_instances are per-send rows. Token handling mirrors the
+        -- MS OIDC challenge pattern: the raw token (32-byte CSPRNG, base64url
+        -- encoded in the URL) is never persisted — only sha256(token) as the
+        -- lookup key and DataProtection-ciphertext for redisplay. prefill_json
+        -- is a {questionId: value} snapshot frozen at send time so token-
+        -- resolution drift (requester email change, etc.) doesn't reshape a
+        -- form that's already in the customer's inbox.
+        --
+        -- intake_form_answers store submissions. answer_json is flexible to
+        -- avoid per-type columns: string | number | bool | string[] | ISO date.
+        -- question_id has no live FK — answers are rendered against the
+        -- instance's template_snapshot_json so the admin can freely rewrite
+        -- a template after it's been used without breaking historical
+        -- timeline rendering.
+        -- ===================================================================
+
+        CREATE TABLE IF NOT EXISTS intake_templates (
+            id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            name            TEXT NOT NULL,
+            description     TEXT NULL,
+            is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+            created_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            created_by      UUID NULL REFERENCES users(id) ON DELETE SET NULL
+        );
+
+        -- Soft-unique on name among active templates. A deactivated template
+        -- keeps its name so audit rows referencing it stay readable.
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_intake_templates_active_name
+            ON intake_templates (name)
+            WHERE is_active;
+
+        CREATE TABLE IF NOT EXISTS intake_template_questions (
+            id              BIGSERIAL PRIMARY KEY,
+            template_id     UUID NOT NULL REFERENCES intake_templates(id) ON DELETE CASCADE,
+            sort_order      INT NOT NULL,
+            question_type   TEXT NOT NULL,
+            label           TEXT NOT NULL,
+            help_text       TEXT NULL,
+            is_required     BOOLEAN NOT NULL DEFAULT FALSE,
+            default_value   TEXT NULL,
+            default_token   TEXT NULL,
+            UNIQUE (template_id, sort_order)
+        );
+
+        ALTER TABLE intake_template_questions DROP CONSTRAINT IF EXISTS chk_intake_question_type;
+        ALTER TABLE intake_template_questions ADD CONSTRAINT chk_intake_question_type
+            CHECK (question_type IN (
+                'ShortText','LongText','DropdownSingle','DropdownMulti',
+                'Number','Date','YesNo','SectionHeader'
+            )) NOT VALID;
+
+        CREATE TABLE IF NOT EXISTS intake_template_question_options (
+            id              BIGSERIAL PRIMARY KEY,
+            question_id     BIGINT NOT NULL REFERENCES intake_template_questions(id) ON DELETE CASCADE,
+            sort_order      INT NOT NULL,
+            value           TEXT NOT NULL,
+            label           TEXT NOT NULL,
+            UNIQUE (question_id, sort_order)
+        );
+
+        CREATE TABLE IF NOT EXISTS intake_form_instances (
+            id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            template_id         UUID NOT NULL REFERENCES intake_templates(id) ON DELETE RESTRICT,
+            ticket_id           UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            sent_event_id       BIGINT NULL REFERENCES ticket_events(id) ON DELETE SET NULL,
+            submitted_event_id  BIGINT NULL REFERENCES ticket_events(id) ON DELETE SET NULL,
+            token_hash          BYTEA NULL,
+            token_cipher        BYTEA NULL,
+            prefill_json        JSONB NOT NULL DEFAULT '{}'::jsonb,
+            status              TEXT NOT NULL DEFAULT 'Draft',
+            expires_utc         TIMESTAMPTZ NULL,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            sent_utc            TIMESTAMPTZ NULL,
+            submitted_utc       TIMESTAMPTZ NULL,
+            submitter_ip        INET NULL,
+            submitter_ua        TEXT NULL,
+            created_by          UUID NULL REFERENCES users(id) ON DELETE SET NULL,
+            sent_to_email       TEXT NULL
+        );
+
+        ALTER TABLE intake_form_instances DROP CONSTRAINT IF EXISTS chk_intake_form_status;
+        ALTER TABLE intake_form_instances ADD CONSTRAINT chk_intake_form_status
+            CHECK (status IN ('Draft','Sent','Submitted','Expired','Cancelled')) NOT VALID;
+
+        -- Partial unique: a token_hash is only meaningful for Sent/Submitted
+        -- rows. Draft + Cancelled rows have NULL hash (never left the server)
+        -- and must not collide.
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_intake_form_instances_token_hash
+            ON intake_form_instances (token_hash)
+            WHERE token_hash IS NOT NULL;
+
+        CREATE INDEX IF NOT EXISTS ix_intake_form_instances_ticket
+            ON intake_form_instances (ticket_id, created_utc DESC);
+
+        -- Expiry sweeper hot path: only Sent rows can expire.
+        CREATE INDEX IF NOT EXISTS ix_intake_form_instances_expiry
+            ON intake_form_instances (expires_utc)
+            WHERE status = 'Sent';
+
+        CREATE TABLE IF NOT EXISTS intake_form_answers (
+            id              BIGSERIAL PRIMARY KEY,
+            instance_id     UUID NOT NULL REFERENCES intake_form_instances(id) ON DELETE CASCADE,
+            question_id     BIGINT NOT NULL REFERENCES intake_template_questions(id) ON DELETE RESTRICT,
+            answer_json     JSONB NOT NULL,
+            UNIQUE (instance_id, question_id)
+        );
+
+        -- v0.0.19 snapshot-based template history. Instead of locking a
+        -- template after the first submission, we freeze the question set
+        -- on the instance at Draft → Sent time. Historical submissions
+        -- render against this snapshot; live template edits no longer
+        -- corrupt timeline rendering of already-submitted forms.
+        ALTER TABLE intake_form_instances
+            ADD COLUMN IF NOT EXISTS template_snapshot_json JSONB NULL;
+
+        -- Drop the RESTRICT FK on intake_form_answers.question_id. Answers
+        -- resolve against the instance's snapshot after this change, so the
+        -- referential guarantee to live template_questions is no longer
+        -- needed — and it used to block the full-replace update pattern.
+        -- Named constraint uses Postgres' default naming convention.
+        ALTER TABLE intake_form_answers
+            DROP CONSTRAINT IF EXISTS intake_form_answers_question_id_fkey;
+
+        -- One-shot backfill for Sent/Submitted/Expired rows that predate
+        -- the snapshot column. Draft instances don't need one — the
+        -- repository takes the snapshot at send time. Idempotent via the
+        -- IS NULL guard.
+        UPDATE intake_form_instances i
+        SET template_snapshot_json = (
+            SELECT jsonb_build_object(
+                'name', t.name,
+                'description', t.description,
+                'questions', COALESCE((
+                    SELECT jsonb_agg(
+                        jsonb_build_object(
+                            'id', q.id,
+                            'sortOrder', q.sort_order,
+                            'type', q.question_type,
+                            'label', q.label,
+                            'helpText', q.help_text,
+                            'isRequired', q.is_required,
+                            'defaultValue', q.default_value,
+                            'defaultToken', q.default_token,
+                            'options', COALESCE((
+                                SELECT jsonb_agg(
+                                    jsonb_build_object(
+                                        'id', o.id,
+                                        'sortOrder', o.sort_order,
+                                        'value', o.value,
+                                        'label', o.label
+                                    ) ORDER BY o.sort_order
+                                )
+                                FROM intake_template_question_options o
+                                WHERE o.question_id = q.id
+                            ), '[]'::jsonb)
+                        ) ORDER BY q.sort_order
+                    )
+                    FROM intake_template_questions q
+                    WHERE q.template_id = t.id
+                ), '[]'::jsonb)
+            )
+            FROM intake_templates t
+            WHERE t.id = i.template_id
+        )
+        WHERE i.status IN ('Sent','Submitted','Expired')
+          AND i.template_snapshot_json IS NULL;
+
+        -- v0.0.19 extends the ticket_events CHECK with the three intake-form
+        -- event types. Same NOT VALID pattern — legacy rows are already
+        -- compliant (the enum is append-only), new writes enforce.
+        ALTER TABLE ticket_events DROP CONSTRAINT IF EXISTS chk_ticket_event_type;
+        ALTER TABLE ticket_events ADD CONSTRAINT chk_ticket_event_type
+            CHECK (event_type IN ('Created','Comment','Mail','Note','StatusChange',
+                                  'AssignmentChange','PriorityChange','QueueChange',
+                                  'CategoryChange','SystemNote','MailReceived',
+                                  'MailSent','CompanyAssignment','RequesterChange',
+                                  'IntakeFormSent','IntakeFormSubmitted','IntakeFormExpired')) NOT VALID;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

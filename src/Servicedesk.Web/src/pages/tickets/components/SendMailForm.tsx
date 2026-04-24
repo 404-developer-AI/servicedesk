@@ -13,6 +13,8 @@ import { cn } from "@/lib/utils";
 import type { PendingMailAction } from "@/stores/useWorkspaceStore";
 import { AttachmentTray } from "./AttachmentTray";
 import { useAttachmentUploads } from "../hooks/useAttachmentUploads";
+import { intakeFormsApi } from "@/lib/intakeForms-api";
+import { IntakePrefillDrawer } from "@/components/intake/IntakePrefillDrawer";
 
 export type MailRecipient = { address: string; name: string };
 
@@ -146,6 +148,10 @@ export function SendMailForm({ ticketId, context, initialIntent, onSent, onCance
   const [showCc, setShowCc] = React.useState(false);
   const [showBcc, setShowBcc] = React.useState(false);
   const [mentionedUserIds, setMentionedUserIds] = React.useState<string[]>([]);
+  const [linkedFormIds, setLinkedFormIds] = React.useState<string[]>([]);
+  const [drawerInstanceId, setDrawerInstanceId] = React.useState<string | null>(
+    null,
+  );
   const queryClient = useQueryClient();
   const attachments = useAttachmentUploads(ticketId);
 
@@ -267,11 +273,13 @@ export function SendMailForm({ ticketId, context, initialIntent, onSent, onCance
         bodyHtml,
         attachmentIds: attachments.readyAttachmentIds,
         mentionedUserIds: mentionedUserIds.length > 0 ? mentionedUserIds : undefined,
+        linkedFormIds: linkedFormIds.length > 0 ? linkedFormIds : undefined,
       }),
     onSuccess: () => {
       toast.success("Mail sent");
       setBodyHtml("");
       setMentionedUserIds([]);
+      setLinkedFormIds([]);
       attachments.reset();
       setEditorKey((k) => k + 1);
       queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
@@ -440,11 +448,49 @@ export function SendMailForm({ ticketId, context, initialIntent, onSent, onCance
         content={initialEditorContent}
         autoFocus={false}
         onChange={(html) => setBodyHtml(html)}
-        placeholder="Write your message. Type @@ to tag an agent..."
+        placeholder="Write your message. Type @@ to tag an agent, :: to attach an intake form..."
         minHeight="140px"
         onUploadFile={attachments.upload}
         onMentionQuery={(q) => userApi.searchAgents(q)}
         onMentionsChange={setMentionedUserIds}
+        onIntakeQuery={async (q) => {
+          const list = await intakeFormsApi.listTemplates(false);
+          const needle = q.trim().toLowerCase();
+          const filtered = needle
+            ? list.filter(
+                (t) =>
+                  t.name.toLowerCase().includes(needle) ||
+                  (t.description ?? "").toLowerCase().includes(needle),
+              )
+            : list;
+          return filtered.slice(0, 8).map((t) => ({
+            id: t.id,
+            name: t.name,
+            description: t.description,
+          }));
+        }}
+        onIntakeInsert={async (templateId) => {
+          try {
+            const created = await intakeFormsApi.createDraft(ticketId, {
+              templateId,
+            });
+            return created.instance.id;
+          } catch {
+            toast.error("Could not attach intake form.");
+            return null;
+          }
+        }}
+        onLinkedFormsChange={setLinkedFormIds}
+        onIntakeChipClick={(instanceId) => setDrawerInstanceId(instanceId)}
+      />
+
+      <IntakePrefillDrawer
+        ticketId={ticketId}
+        instanceId={drawerInstanceId}
+        onClose={() => setDrawerInstanceId(null)}
+        onDeleted={(deletedId) => {
+          setLinkedFormIds((prev) => prev.filter((id) => id !== deletedId));
+        }}
       />
 
       <AttachmentTray items={attachments.items} onRemove={attachments.remove} />

@@ -529,7 +529,8 @@ public static class TicketEndpoints
                 Subject: req.Subject ?? string.Empty,
                 BodyHtml: req.BodyHtml ?? string.Empty,
                 AttachmentIds: req.AttachmentIds,
-                MentionedUserIds: req.MentionedUserIds);
+                MentionedUserIds: req.MentionedUserIds,
+                LinkedFormIds: req.LinkedFormIds);
 
             var result = await outbound.SendAsync(request, ct);
             switch (result.Status)
@@ -850,7 +851,8 @@ public static class TicketEndpoints
         string? Subject,
         string? BodyHtml,
         IReadOnlyList<Guid>? AttachmentIds = null,
-        IReadOnlyList<Guid>? MentionedUserIds = null);
+        IReadOnlyList<Guid>? MentionedUserIds = null,
+        IReadOnlyList<Guid>? LinkedFormIds = null);
 
     public sealed record MailRecipientInput(string Address, string? Name);
 
