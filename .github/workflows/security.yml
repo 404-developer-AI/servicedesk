@@ -45,9 +45,43 @@ jobs:
           REPORT=$(dotnet list Servicedesk.slnx package --vulnerable --include-transitive 2>&1 || true)
           echo "$REPORT"
           echo "$REPORT" > nuget-vuln.txt
-          # Fail when High or Critical appears anywhere in the report.
-          if grep -E '\b(High|Critical)\b' nuget-vuln.txt; then
-            echo "::error::High or Critical vulnerable NuGet package detected."
+
+          # ---------------------------------------------------------------
+          # Accepted-advisory allowlist.
+          #
+          # SixLabors.ImageSharp 1.0.4 is a transitive dep of PdfSharpCore
+          # 1.3.67 (the latest release; the maintainer has not yet bumped
+          # to an ImageSharp 2.x line). Every advisory in the group below
+          # is in image-decoding code (PNG/GIF/BMP/TGA/TIFF parsers).
+          #
+          # Reachability: IntakeFormPdfBuilder only uses XFont / XGraphics
+          # text APIs (DrawString, DrawLine, MeasureString) — no XImage,
+          # no raster load paths. A grep over the codebase confirms zero
+          # call sites into ImageSharp from our code. Exploit requires
+          # the app to decode attacker-supplied images via ImageSharp;
+          # that code path is unreachable.
+          #
+          # Remove entries from this list as soon as PdfSharpCore ships
+          # with a newer ImageSharp. Track: https://github.com/ssg/PdfSharpCore
+          # ---------------------------------------------------------------
+          ALLOWED_GHSAS=(
+            GHSA-65x7-c272-7g7r
+            GHSA-63p8-c4ww-9cg7
+            GHSA-2cmq-823j-5qj8
+            GHSA-g85r-6x2q-45w7
+            GHSA-5x7m-6737-26cr
+            GHSA-qxrv-gp6x-rc23
+            GHSA-rxmq-m78w-7wmc
+          )
+          # Build one alternation for a single grep pass.
+          FILTER_PATTERN=$(IFS='|'; echo "${ALLOWED_GHSAS[*]}")
+
+          # Remove allowlisted GHSAs before the severity gate.
+          FILTERED=$(grep -v -E "advisories/(${FILTER_PATTERN})" nuget-vuln.txt || true)
+
+          # Fail if a non-allowlisted High or Critical remains.
+          if echo "$FILTERED" | grep -E '\b(High|Critical)\b'; then
+            echo "::error::High or Critical vulnerable NuGet package detected (outside allowlist)."
             exit 1
           fi
 
