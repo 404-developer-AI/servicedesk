@@ -389,6 +389,25 @@ reapply_audit_log_revoke() {
 }
 
 # ===========================================================================
+# 8b. backfill App.PublicBaseUrl if empty. Pre-v0.0.19 installs never
+#     populated it; v0.0.19 intake-form mails + M365 login + mention
+#     notifications all embed absolute URLs built from this setting.
+#     Scheme comes from cert-presence (same signal ensure_env_conf uses).
+#     WHERE value = '' guards against clobbering admin-configured values.
+# ===========================================================================
+backfill_public_base_url() {
+    local scheme="http"
+    if [[ -n "${DOMAIN:-}" ]] && docker run --rm -v servicedesk_certs:/etc/letsencrypt alpine \
+            test -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" 2>/dev/null; then
+        scheme="https"
+    fi
+    local base_url="${scheme}://${DOMAIN}"
+    sudo -u postgres psql -d "${PG_APP_DB}" -c \
+        "UPDATE settings SET value = '${base_url}', updated_utc = now() WHERE key = 'App.PublicBaseUrl' AND value = '';" >/dev/null 2>&1 || true
+    ok "App.PublicBaseUrl backfilled where empty (base=${base_url})."
+}
+
+# ===========================================================================
 # 9. human summary of the update
 # ===========================================================================
 print_summary() {
@@ -427,6 +446,7 @@ main() {
     fi
     reload_nginx_if_config_changed
     reapply_audit_log_revoke
+    backfill_public_base_url
     print_summary
 }
 

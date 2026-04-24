@@ -592,6 +592,26 @@ post_install_revoke_audit_log() {
 }
 
 # ===========================================================================
+# 12b. post-install: seed App.PublicBaseUrl from the captured DOMAIN + SSL.
+#      Intake-form mails (v0.0.19), M365 login callback, and mention-
+#      notification CTAs all embed absolute URLs built from this setting.
+#      Leaving it empty makes embedded links render as '/path/…' which
+#      mail clients can't resolve (Outlook shows 'http:///…').
+#
+#      Idempotent via WHERE value = '' — an admin override in Settings
+#      is never clobbered.
+# ===========================================================================
+seed_public_base_url() {
+    local scheme="http"
+    [[ "$SSL" == "yes" ]] && scheme="https"
+    local base_url="${scheme}://${DOMAIN}"
+    log "Seeding App.PublicBaseUrl (when empty) → ${base_url}"
+    sudo -u postgres psql -d "${PG_APP_DB}" -c \
+        "UPDATE settings SET value = '${base_url}', updated_utc = now() WHERE key = 'App.PublicBaseUrl' AND value = '';" >/dev/null
+    ok "App.PublicBaseUrl backfilled where empty."
+}
+
+# ===========================================================================
 # 13. first-issue Let's Encrypt cert (only when SSL=yes)
 # ===========================================================================
 bootstrap_certbot() {
@@ -759,6 +779,7 @@ main() {
     start_app
     wait_for_app_health
     post_install_revoke_audit_log
+    seed_public_base_url
     bootstrap_certbot
     start_nginx
     install_cert_renew_units
