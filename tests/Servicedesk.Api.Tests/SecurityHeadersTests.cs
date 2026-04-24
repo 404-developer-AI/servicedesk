@@ -25,6 +25,7 @@ public sealed class SecurityHeadersTests : IClassFixture<SecurityBaselineFactory
         Assert.Equal("no-referrer", Single(response, "Referrer-Policy"));
         Assert.Equal("same-origin", Single(response, "Cross-Origin-Opener-Policy"));
         Assert.Equal("same-origin", Single(response, "Cross-Origin-Resource-Policy"));
+        Assert.Equal("require-corp", Single(response, "Cross-Origin-Embedder-Policy"));
         Assert.Contains("camera=()", Single(response, "Permissions-Policy"));
     }
 

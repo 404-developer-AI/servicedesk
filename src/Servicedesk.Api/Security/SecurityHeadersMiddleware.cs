@@ -31,6 +31,7 @@ public sealed class SecurityHeadersMiddleware
             headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()";
             headers["Cross-Origin-Opener-Policy"] = "same-origin";
             headers["Cross-Origin-Resource-Policy"] = "same-origin";
+            headers["Cross-Origin-Embedder-Policy"] = "require-corp";
             headers.Remove("Server");
             headers.Remove("X-Powered-By");
             return Task.CompletedTask;

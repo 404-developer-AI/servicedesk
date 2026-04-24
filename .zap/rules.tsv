@@ -14,6 +14,9 @@
 10010	IGNORE	Cookie No HttpOnly Flag (XSRF-TOKEN is intentionally JS-readable for double-submit; baseline cannot distinguish that cookie from session cookies)
 10011	IGNORE	Cookie Without Secure Flag (CI scan target is plain HTTP; production always sits behind nginx TLS where cookies become Secure)
 10054	IGNORE	Cookie without SameSite Attribute (same caveat — cookies are SameSite=Strict in production-flagged code paths)
+10055	IGNORE	CSP: style-src unsafe-inline (intentional — Sonner/Radix/Framer/Vaul inject nonce-less stylesheets at runtime; documented in ARCHITECTURE.md → Security → CSP)
+10096	IGNORE	Timestamp Disclosure - Unix (false-positive on source-map references inside the JS bundle; not a runtime timestamp)
+10109	IGNORE	Modern Web Application (informational — ZAP can't crawl an SPA behind client-side routing in baseline mode)
 
 # ---------------------------------------------------------------------
 # Explicit FAILs — must always block CI
