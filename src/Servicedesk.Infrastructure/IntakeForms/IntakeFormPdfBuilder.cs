@@ -29,6 +29,13 @@ public sealed class IntakeFormPdfBuilder : IIntakeFormPdfBuilder
 {
     private const double MarginPt = 50;
 
+    // Liberation Sans ships in the Alpine runtime image via the
+    // ttf-liberation apk package (Dockerfile v0.0.20). MIT-licensed and
+    // metric-compatible with Arial, so no layout changes vs the earlier
+    // "Arial"-on-Windows dev runs. PdfSharpCore's SystemFonts enumeration
+    // finds it without any custom resolver setup.
+    private const string FontFamily = "Liberation Sans";
+
     public byte[] Render(IntakeFormAgentView view, long ticketNumber)
     {
         if (view.Instance.Status != IntakeFormStatus.Submitted || view.Answers is null)
@@ -56,14 +63,14 @@ public sealed class IntakeFormPdfBuilder : IIntakeFormPdfBuilder
         // Fonts. Segoe UI is present on Windows; PdfSharpCore falls back via
         // its font resolver on Linux containers. We pick a neutral family
         // name so the resolver can substitute without the call erroring.
-        var titleFont = new XFont("Arial", 18, XFontStyle.Bold);
-        var metaFont = new XFont("Arial", 9, XFontStyle.Regular);
-        var metaLabelFont = new XFont("Arial", 9, XFontStyle.Bold);
-        var sectionFont = new XFont("Arial", 11, XFontStyle.Bold);
-        var labelFont = new XFont("Arial", 10, XFontStyle.Bold);
-        var valueFont = new XFont("Arial", 10, XFontStyle.Regular);
-        var valueMutedFont = new XFont("Arial", 10, XFontStyle.Italic);
-        var footerFont = new XFont("Arial", 8, XFontStyle.Regular);
+        var titleFont = new XFont(FontFamily, 18, XFontStyle.Bold);
+        var metaFont = new XFont(FontFamily, 9, XFontStyle.Regular);
+        var metaLabelFont = new XFont(FontFamily, 9, XFontStyle.Bold);
+        var sectionFont = new XFont(FontFamily, 11, XFontStyle.Bold);
+        var labelFont = new XFont(FontFamily, 10, XFontStyle.Bold);
+        var valueFont = new XFont(FontFamily, 10, XFontStyle.Regular);
+        var valueMutedFont = new XFont(FontFamily, 10, XFontStyle.Italic);
+        var footerFont = new XFont(FontFamily, 8, XFontStyle.Regular);
 
         var pen = new XPen(XColor.FromArgb(220, 220, 220), 0.6);
         var accent = new XSolidBrush(XColor.FromArgb(88, 101, 242));
