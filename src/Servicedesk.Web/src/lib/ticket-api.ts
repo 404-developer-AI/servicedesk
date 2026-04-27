@@ -109,6 +109,17 @@ export type Ticket = {
   companyId: string | null;
   awaitingCompanyAssignment: boolean;
   companyResolvedVia: CompanyResolvedVia | null;
+  /// Set on tickets that have been merged into another (v0.0.23). The detail
+  /// payload also surfaces `mergedIntoTicketNumber` separately for banner
+  /// rendering without a second round-trip.
+  mergedIntoTicketId: string | null;
+  mergedUtc: string | null;
+  mergedByUserId: string | null;
+  /// Set on tickets that were split off from another (v0.0.23). The detail
+  /// payload surfaces `splitFromTicketNumber` separately for the banner.
+  splitFromTicketId: string | null;
+  splitFromUtc: string | null;
+  splitFromUserId: string | null;
 };
 
 export type TicketBody = {
@@ -177,6 +188,67 @@ export type TicketDetail = {
   events: TicketEvent[];
   pinnedEvents: TicketEventPin[];
   companyAlert: CompanyAlert | null;
+  /// Numbers of tickets that have been merged INTO this ticket (v0.0.23).
+  /// Empty array on tickets that have never received a merge — the banner
+  /// is hidden in that case. Ordered chronologically by merge time.
+  mergedSourceTicketNumbers: number[];
+  /// Resolved display name (email) of the agent who performed the merge that
+  /// sent THIS ticket into another. Null on tickets that aren't merged.
+  mergedByUserName: string | null;
+  /// Number of the ticket this one was merged into. Companion to the
+  /// `mergedIntoTicketId` on the ticket itself — saves the banner from
+  /// having to fetch the target just to render its number.
+  mergedIntoTicketNumber: string | null;
+  /// Number of the ticket this one was split from (v0.0.23). Null when this
+  /// ticket wasn't created by a split.
+  splitFromTicketNumber: string | null;
+  /// Resolved display name (email) of the agent who performed the split.
+  splitFromUserName: string | null;
+  /// Tickets that were split off from this one (v0.0.23). Empty array when no
+  /// splits have been performed. Carries id+number pairs so the banner can
+  /// link straight to each child.
+  splitChildren: { id: string; number: number }[];
+};
+
+/// Lightweight row returned by /api/tickets/picker for the merge dialog.
+export type TicketPickerItem = {
+  id: string;
+  number: number;
+  subject: string;
+  statusId: string;
+  statusName: string;
+  statusColor: string;
+  statusStateCategory: string;
+  companyId: string | null;
+  companyName: string | null;
+  requesterContactId: string;
+  requesterEmail: string | null;
+  requesterFirstName: string | null;
+  requesterLastName: string | null;
+};
+
+export type MergeTicketResponse = {
+  targetTicketId: string;
+  sourceNumber: number;
+  targetNumber: number;
+  movedEventCount: number;
+  crossCustomer: boolean;
+};
+
+export type MergeTicketRequest = {
+  targetTicketId: string;
+  acknowledgedCrossCustomer: boolean;
+};
+
+export type SplitTicketRequest = {
+  sourceMailEventId: number;
+  newSubject: string;
+};
+
+export type SplitTicketResponse = {
+  newTicketId: string;
+  newTicketNumber: number;
+  sourceNumber: number;
 };
 
 export type CreateTicketResponse = {
@@ -556,6 +628,20 @@ export const ticketApi = {
     request<TicketDetail>("PATCH", `/api/tickets/${id}/company`, body),
   changeRequester: (id: string, contactId: string) =>
     request<TicketDetail>("PATCH", `/api/tickets/${id}/requester`, { contactId }),
+  picker: (q?: string, excludeTicketId?: string, limit = 20) => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (excludeTicketId) params.set("excludeTicketId", excludeTicketId);
+    params.set("limit", String(limit));
+    return request<{ items: TicketPickerItem[] }>(
+      "GET",
+      `/api/tickets/picker?${params.toString()}`,
+    );
+  },
+  merge: (id: string, body: MergeTicketRequest) =>
+    request<MergeTicketResponse>("POST", `/api/tickets/${id}/merge`, body),
+  split: (id: string, body: SplitTicketRequest) =>
+    request<SplitTicketResponse>("POST", `/api/tickets/${id}/split`, body),
   exportPdf: (id: string, excludeInternal = true) => {
     const params = new URLSearchParams();
     if (!excludeInternal) params.set("excludeInternal", "false");

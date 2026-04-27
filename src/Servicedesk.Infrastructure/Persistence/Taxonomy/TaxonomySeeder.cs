@@ -21,12 +21,17 @@ public sealed class TaxonomySeeder : IHostedService
 
         -- Default statuses — each pinned to a state_category so SLA and
         -- "open" filters keep working when admins rename the display labels.
+        -- 'Merged' is its own seeded status (v0.0.23) so the UI can render a
+        -- distinct badge and admins can filter for it; state_category stays
+        -- 'Closed' so existing OpenOnly / open-count queries treat it as
+        -- terminal without further changes.
         INSERT INTO statuses (name, slug, state_category, color, icon, sort_order, is_active, is_system, is_default) VALUES
             ('New',      'new',      'New',      '#60a5fa', 'sparkles',    10, TRUE, TRUE, TRUE),
             ('Open',     'open',     'Open',     '#7c7cff', 'circle-dot',  20, TRUE, TRUE, FALSE),
             ('Pending',  'pending',  'Pending',  '#f59e0b', 'hourglass',   30, TRUE, TRUE, FALSE),
             ('Resolved', 'resolved', 'Resolved', '#22c55e', 'check',       40, TRUE, TRUE, FALSE),
-            ('Closed',   'closed',   'Closed',   '#64748b', 'archive',     50, TRUE, TRUE, FALSE)
+            ('Closed',   'closed',   'Closed',   '#64748b', 'archive',     50, TRUE, TRUE, FALSE),
+            ('Merged',   'merged',   'Closed',   '#a855f7', 'git-merge',   60, TRUE, TRUE, FALSE)
         ON CONFLICT (slug) DO NOTHING;
         """;
 

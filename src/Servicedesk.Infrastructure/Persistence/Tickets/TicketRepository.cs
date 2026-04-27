@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Dapper;
 using Npgsql;
 using Servicedesk.Domain.Tickets;
@@ -240,7 +241,13 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                    closed_utc AS ClosedUtc, is_deleted AS IsDeleted,
                    company_id AS CompanyId,
                    awaiting_company_assignment AS AwaitingCompanyAssignment,
-                   company_resolved_via AS CompanyResolvedVia
+                   company_resolved_via AS CompanyResolvedVia,
+                   merged_into_ticket_id AS MergedIntoTicketId,
+                   merged_utc AS MergedUtc,
+                   merged_by_user_id AS MergedByUserId,
+                   split_from_ticket_id AS SplitFromTicketId,
+                   split_from_utc AS SplitFromUtc,
+                   split_from_user_id AS SplitFromUserId
             FROM tickets WHERE id = @id AND is_deleted = FALSE
             """;
         const string bodySql = """
@@ -308,7 +315,13 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                       closed_utc AS ClosedUtc, is_deleted AS IsDeleted,
                       company_id AS CompanyId,
                       awaiting_company_assignment AS AwaitingCompanyAssignment,
-                      company_resolved_via AS CompanyResolvedVia
+                      company_resolved_via AS CompanyResolvedVia,
+                      merged_into_ticket_id AS MergedIntoTicketId,
+                      merged_utc AS MergedUtc,
+                      merged_by_user_id AS MergedByUserId,
+                      split_from_ticket_id AS SplitFromTicketId,
+                      split_from_utc AS SplitFromUtc,
+                      split_from_user_id AS SplitFromUserId
             """;
         const string insertBody = """
             INSERT INTO ticket_bodies (ticket_id, body_text, body_html)
@@ -886,6 +899,590 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var rows = await conn.QueryAsync<(Guid QueueId, int OpenCount)>(new CommandDefinition(sql, cancellationToken: ct));
         return rows.ToDictionary(r => r.QueueId, r => r.OpenCount);
+    }
+
+    public Task<Guid?> GetMergedIntoAsync(Guid ticketId, CancellationToken ct)
+    {
+        // Tiny lookup used by the mail-ingest resolver to follow a redirect
+        // chain hop-by-hop. Soft-deleted tickets still expose the pointer so a
+        // mid-flight delete doesn't strand the redirect.
+        const string sql = "SELECT merged_into_ticket_id FROM tickets WHERE id = @ticketId";
+        return GetMergedIntoCoreAsync(sql, ticketId, ct);
+    }
+
+    private async Task<Guid?> GetMergedIntoCoreAsync(string sql, Guid ticketId, CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.ExecuteScalarAsync<Guid?>(
+            new CommandDefinition(sql, new { ticketId }, cancellationToken: ct));
+    }
+
+    public async Task<IReadOnlyList<TicketPickerHit>> SearchPickerAsync(
+        string? search,
+        Guid excludeTicketId,
+        IReadOnlyCollection<Guid>? accessibleQueueIds,
+        int limit,
+        CancellationToken ct)
+    {
+        // Picker filters out tickets that are already merged so an agent can't
+        // accidentally select a "tombstone" as the target. We exclude self
+        // (no-op merge) and respect queue-access — admins pass null and skip
+        // the filter. Limit is clamped to a sane range to keep typeahead snappy.
+        var clampedLimit = Math.Clamp(limit, 1, 50);
+        var sql = new StringBuilder("""
+            SELECT t.id            AS Id,
+                   t.number        AS Number,
+                   t.subject       AS Subject,
+                   t.status_id     AS StatusId,
+                   s.name          AS StatusName,
+                   s.color         AS StatusColor,
+                   s.state_category AS StatusStateCategory,
+                   t.company_id    AS CompanyId,
+                   co.name         AS CompanyName,
+                   t.requester_contact_id AS RequesterContactId,
+                   c.email         AS RequesterEmail,
+                   c.first_name    AS RequesterFirstName,
+                   c.last_name     AS RequesterLastName
+            FROM tickets t
+            JOIN statuses s ON s.id = t.status_id
+            JOIN contacts c ON c.id = t.requester_contact_id
+            LEFT JOIN companies co ON co.id = t.company_id
+            WHERE t.is_deleted = FALSE
+              AND t.merged_into_ticket_id IS NULL
+              AND t.id <> @excludeTicketId
+            """);
+
+        if (accessibleQueueIds is not null)
+            sql.Append(" AND t.queue_id = ANY(@AccessibleQueueIds)");
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            // FTS on subject OR exact ticket-number match — same shape as the
+            // list endpoint so an agent can paste a number and find it.
+            sql.Append(" AND (t.search_vector @@ plainto_tsquery('simple', @Search) OR t.number::text = @SearchRaw)");
+        }
+
+        sql.Append(" ORDER BY t.updated_utc DESC, t.id DESC LIMIT @Limit");
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<TicketPickerHit>(new CommandDefinition(sql.ToString(), new
+        {
+            excludeTicketId,
+            AccessibleQueueIds = accessibleQueueIds as IEnumerable<Guid>,
+            Search = search ?? string.Empty,
+            SearchRaw = search ?? string.Empty,
+            Limit = clampedLimit,
+        }, cancellationToken: ct));
+        return rows.ToList();
+    }
+
+    public async Task<IReadOnlyList<long>> GetMergedSourceTicketNumbersAsync(Guid targetTicketId, CancellationToken ct)
+    {
+        // Sparse index ix_tickets_merged_into makes this an index-only scan even
+        // at scale. Order by merged_utc ASC so the "Merged from #A, #B" strip
+        // reads chronologically.
+        const string sql = """
+            SELECT number FROM tickets
+            WHERE merged_into_ticket_id = @targetTicketId
+            ORDER BY merged_utc NULLS LAST, number
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<long>(
+            new CommandDefinition(sql, new { targetTicketId }, cancellationToken: ct));
+        return rows.ToList();
+    }
+
+    public async Task<MergeResult?> MergeAsync(
+        Guid sourceTicketId,
+        Guid targetTicketId,
+        Guid actorUserId,
+        bool acknowledgedCrossCustomer,
+        CancellationToken ct)
+    {
+        if (sourceTicketId == targetTicketId)
+            return new MergeResult(false, 0, 0, 0, false, MergeFailureReason.SameTicket);
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        // Lock both rows up-front (deterministic order to avoid deadlocks with
+        // a parallel A↔B merge). is_deleted=FALSE filter keeps soft-deleted
+        // tickets out of the merge entirely.
+        var orderedIds = sourceTicketId.CompareTo(targetTicketId) < 0
+            ? new[] { sourceTicketId, targetTicketId }
+            : new[] { targetTicketId, sourceTicketId };
+        const string lockSql = """
+            SELECT id AS Id, number AS Number, requester_contact_id AS RequesterContactId,
+                   company_id AS CompanyId, merged_into_ticket_id AS MergedIntoTicketId
+            FROM tickets WHERE id = @id AND is_deleted = FALSE
+            FOR UPDATE
+            """;
+        var locked = new Dictionary<Guid, MergeLockedRow>();
+        foreach (var id in orderedIds)
+        {
+            var row = await conn.QueryFirstOrDefaultAsync<MergeLockedRow>(
+                new CommandDefinition(lockSql, new { id }, tx, cancellationToken: ct));
+            if (row is not null) locked[id] = row;
+        }
+
+        if (!locked.TryGetValue(sourceTicketId, out var source))
+        {
+            await tx.RollbackAsync(ct);
+            return new MergeResult(false, 0, 0, 0, false, MergeFailureReason.SourceNotFound);
+        }
+        if (!locked.TryGetValue(targetTicketId, out var target))
+        {
+            await tx.RollbackAsync(ct);
+            return new MergeResult(false, 0, source.Number, 0, false, MergeFailureReason.TargetNotFound);
+        }
+        if (source.MergedIntoTicketId is not null)
+        {
+            await tx.RollbackAsync(ct);
+            return new MergeResult(false, 0, source.Number, target.Number, false, MergeFailureReason.AlreadyMerged);
+        }
+        if (target.MergedIntoTicketId is not null)
+        {
+            await tx.RollbackAsync(ct);
+            return new MergeResult(false, 0, source.Number, target.Number, false, MergeFailureReason.AlreadyMerged);
+        }
+
+        // Cycle check: walk the target's existing merge chain (target itself is
+        // not merged, so this is normally a no-op; defensive against future
+        // multi-hop scenarios).
+        var hop = target.MergedIntoTicketId;
+        var hops = 0;
+        while (hop is not null && hops++ < 16)
+        {
+            if (hop == sourceTicketId)
+            {
+                await tx.RollbackAsync(ct);
+                return new MergeResult(false, 0, source.Number, target.Number, false, MergeFailureReason.WouldCycle);
+            }
+            hop = await conn.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+                "SELECT merged_into_ticket_id FROM tickets WHERE id = @id",
+                new { id = hop }, tx, cancellationToken: ct));
+        }
+
+        var crossCustomer = source.RequesterContactId != target.RequesterContactId
+            || source.CompanyId != target.CompanyId;
+        if (crossCustomer && !acknowledgedCrossCustomer)
+        {
+            await tx.RollbackAsync(ct);
+            return new MergeResult(false, 0, source.Number, target.Number, true, MergeFailureReason.CrossCustomerNotAcknowledged);
+        }
+
+        // Merged status row is seeded by TaxonomySeeder with slug='merged'.
+        // We resolve by slug rather than caching the id so admins can re-color
+        // or rename without a config change.
+        var mergedStatusId = await conn.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+            "SELECT id FROM statuses WHERE slug = 'merged' LIMIT 1",
+            transaction: tx, cancellationToken: ct));
+        if (mergedStatusId is null)
+        {
+            // Seeder hasn't run or row was force-deleted. Insert it inline so
+            // the merge can complete; idempotent with the seeder's ON CONFLICT.
+            mergedStatusId = await conn.ExecuteScalarAsync<Guid>(new CommandDefinition("""
+                INSERT INTO statuses (name, slug, state_category, color, icon, sort_order, is_active, is_system, is_default)
+                VALUES ('Merged', 'merged', 'Closed', '#a855f7', 'git-merge', 60, TRUE, TRUE, FALSE)
+                ON CONFLICT (slug) DO UPDATE SET updated_utc = now()
+                RETURNING id
+                """, transaction: tx, cancellationToken: ct));
+        }
+
+        // Re-point everything that hangs off the source ticket to the target.
+        // ticket_events is the heaviest — we tag every moved event in metadata
+        // so the timeline can render a "from #1234" badge.
+        var moved = await conn.ExecuteAsync(new CommandDefinition("""
+            UPDATE ticket_events
+               SET ticket_id = @target,
+                   metadata = jsonb_set(
+                       jsonb_set(metadata, '{mergedFromTicketId}', to_jsonb(@source::text), TRUE),
+                       '{mergedFromTicketNumber}', to_jsonb(@sourceNumber), TRUE)
+             WHERE ticket_id = @source
+            """, new { source = sourceTicketId, target = targetTicketId, sourceNumber = source.Number },
+            tx, cancellationToken: ct));
+
+        // The ticket_event_search trigger only fires on INSERT or on UPDATE OF
+        // body_text/body_html — not on UPDATE OF ticket_id. We therefore
+        // re-point the sidecar explicitly so search keeps returning hits for
+        // moved events under the surviving ticket.
+        await conn.ExecuteAsync(new CommandDefinition(
+            "UPDATE ticket_event_search SET ticket_id = @target WHERE ticket_id = @source",
+            new { source = sourceTicketId, target = targetTicketId }, tx, cancellationToken: ct));
+
+        await conn.ExecuteAsync(new CommandDefinition(
+            "UPDATE mail_messages SET ticket_id = @target WHERE ticket_id = @source",
+            new { source = sourceTicketId, target = targetTicketId }, tx, cancellationToken: ct));
+
+        await conn.ExecuteAsync(new CommandDefinition(
+            "UPDATE ticket_event_pins SET ticket_id = @target WHERE ticket_id = @source",
+            new { source = sourceTicketId, target = targetTicketId }, tx, cancellationToken: ct));
+
+        await conn.ExecuteAsync(new CommandDefinition(
+            "UPDATE user_notifications SET ticket_id = @target WHERE ticket_id = @source",
+            new { source = sourceTicketId, target = targetTicketId }, tx, cancellationToken: ct));
+
+        await conn.ExecuteAsync(new CommandDefinition(
+            "UPDATE intake_form_instances SET ticket_id = @target WHERE ticket_id = @source",
+            new { source = sourceTicketId, target = targetTicketId }, tx, cancellationToken: ct));
+
+        // The original ticket-body of the source is a 1:1 row, not part of the
+        // event stream. To preserve the requester's first message we project
+        // it onto the target as a Comment event timestamped at the source's
+        // creation. Then we replace the source body with a placeholder so the
+        // merged ticket reads cleanly.
+        var sourceBody = await conn.QueryFirstOrDefaultAsync<(string BodyText, string? BodyHtml)>(
+            new CommandDefinition(
+                "SELECT body_text AS BodyText, body_html AS BodyHtml FROM ticket_bodies WHERE ticket_id = @source",
+                new { source = sourceTicketId }, tx, cancellationToken: ct));
+        var sourceCreatedUtc = await conn.ExecuteScalarAsync<DateTime>(new CommandDefinition(
+            "SELECT created_utc FROM tickets WHERE id = @source",
+            new { source = sourceTicketId }, tx, cancellationToken: ct));
+        var sourceRequesterId = source.RequesterContactId;
+        if (!string.IsNullOrWhiteSpace(sourceBody.BodyText) || !string.IsNullOrWhiteSpace(sourceBody.BodyHtml))
+        {
+            var bodyMetadata = JsonSerializer.Serialize(new
+            {
+                mergedFromTicketId = sourceTicketId.ToString(),
+                mergedFromTicketNumber = source.Number,
+                isOriginalDescription = true,
+            });
+            await conn.ExecuteAsync(new CommandDefinition("""
+                INSERT INTO ticket_events (ticket_id, event_type, author_contact_id,
+                                           body_text, body_html, metadata, is_internal, created_utc)
+                VALUES (@target, 'Comment', @authorContactId, @bodyText, @bodyHtml,
+                        @metadata::jsonb, FALSE, @createdUtc)
+                """, new
+            {
+                target = targetTicketId,
+                authorContactId = sourceRequesterId,
+                bodyText = sourceBody.BodyText ?? string.Empty,
+                bodyHtml = sourceBody.BodyHtml,
+                metadata = bodyMetadata,
+                createdUtc = sourceCreatedUtc,
+            }, tx, cancellationToken: ct));
+            moved += 1;
+        }
+
+        var targetNumber = target.Number;
+        await conn.ExecuteAsync(new CommandDefinition("""
+            UPDATE ticket_bodies
+               SET body_text = @placeholder, body_html = NULL
+             WHERE ticket_id = @source
+            """, new
+        {
+            source = sourceTicketId,
+            placeholder = $"This ticket was merged into #{targetNumber}.",
+        }, tx, cancellationToken: ct));
+
+        // Stamp the source ticket: status flip + merge pointer + closed_utc so
+        // SLA-state and reporting queries treat it as a finalised terminal row.
+        await conn.ExecuteAsync(new CommandDefinition("""
+            UPDATE tickets
+               SET status_id            = @mergedStatusId,
+                   merged_into_ticket_id = @target,
+                   merged_utc            = now(),
+                   merged_by_user_id     = @actorUserId,
+                   resolved_utc          = COALESCE(resolved_utc, now()),
+                   closed_utc            = COALESCE(closed_utc, now()),
+                   updated_utc           = now()
+             WHERE id = @source
+            """, new
+        {
+            source = sourceTicketId,
+            target = targetTicketId,
+            mergedStatusId,
+            actorUserId,
+        }, tx, cancellationToken: ct));
+
+        // Bump the target's updated_utc so list views surface it.
+        await conn.ExecuteAsync(new CommandDefinition(
+            "UPDATE tickets SET updated_utc = now() WHERE id = @target",
+            new { target = targetTicketId }, tx, cancellationToken: ct));
+
+        // System-note timeline events on both tickets so the audit story is
+        // self-contained even when the audit_log row isn't surfaced in the UI.
+        var sourceNoteMeta = JsonSerializer.Serialize(new
+        {
+            mergedIntoTicketId = targetTicketId.ToString(),
+            mergedIntoTicketNumber = targetNumber,
+            actorUserId = actorUserId.ToString(),
+        });
+        await conn.ExecuteAsync(new CommandDefinition("""
+            INSERT INTO ticket_events (ticket_id, event_type, author_user_id, metadata, is_internal, body_text)
+            VALUES (@source, 'SystemNote', @actorUserId, @metadata::jsonb, FALSE, @body)
+            """, new
+        {
+            source = sourceTicketId,
+            actorUserId,
+            metadata = sourceNoteMeta,
+            body = $"Merged into #{targetNumber}.",
+        }, tx, cancellationToken: ct));
+
+        var targetNoteMeta = JsonSerializer.Serialize(new
+        {
+            mergedFromTicketId = sourceTicketId.ToString(),
+            mergedFromTicketNumber = source.Number,
+            actorUserId = actorUserId.ToString(),
+            movedEventCount = moved,
+        });
+        await conn.ExecuteAsync(new CommandDefinition("""
+            INSERT INTO ticket_events (ticket_id, event_type, author_user_id, metadata, is_internal, body_text)
+            VALUES (@target, 'SystemNote', @actorUserId, @metadata::jsonb, FALSE, @body)
+            """, new
+        {
+            target = targetTicketId,
+            actorUserId,
+            metadata = targetNoteMeta,
+            body = $"Ticket #{source.Number} was merged into this ticket.",
+        }, tx, cancellationToken: ct));
+
+        await tx.CommitAsync(ct);
+        return new MergeResult(true, moved, source.Number, targetNumber, crossCustomer, null);
+    }
+
+    private sealed class MergeLockedRow
+    {
+        public Guid Id { get; set; }
+        public long Number { get; set; }
+        public Guid RequesterContactId { get; set; }
+        public Guid? CompanyId { get; set; }
+        public Guid? MergedIntoTicketId { get; set; }
+    }
+
+    public async Task<IReadOnlyList<SplitChildTicket>> GetSplitChildrenAsync(Guid parentTicketId, CancellationToken ct)
+    {
+        // Sparse index ix_tickets_split_from makes this an index-only scan.
+        // Returns id+number pairs so the banner can render clickable links to
+        // the children. Order by split_from_utc so the "Split into #A, #B"
+        // strip reads in the chronological order the agent created them.
+        const string sql = """
+            SELECT id AS Id, number AS Number FROM tickets
+            WHERE split_from_ticket_id = @parentTicketId
+              AND is_deleted = FALSE
+            ORDER BY split_from_utc NULLS LAST, number
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<SplitChildTicket>(
+            new CommandDefinition(sql, new { parentTicketId }, cancellationToken: ct));
+        return rows.ToList();
+    }
+
+    public async Task<SplitResult?> SplitAsync(
+        Guid sourceTicketId,
+        long sourceMailEventId,
+        string newSubject,
+        Guid actorUserId,
+        CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        // Lock the source row first so a concurrent merge/delete can't race us.
+        const string lockSql = """
+            SELECT id AS Id, number AS Number, queue_id AS QueueId,
+                   requester_contact_id AS RequesterContactId,
+                   company_id AS CompanyId,
+                   awaiting_company_assignment AS AwaitingCompanyAssignment,
+                   company_resolved_via AS CompanyResolvedVia,
+                   merged_into_ticket_id AS MergedIntoTicketId
+            FROM tickets WHERE id = @sourceTicketId AND is_deleted = FALSE
+            FOR UPDATE
+            """;
+        var source = await conn.QueryFirstOrDefaultAsync<SplitSourceRow>(
+            new CommandDefinition(lockSql, new { sourceTicketId }, tx, cancellationToken: ct));
+        if (source is null)
+        {
+            await tx.RollbackAsync(ct);
+            return new SplitResult(false, null, null, 0, SplitFailureReason.SourceNotFound);
+        }
+        if (source.MergedIntoTicketId is not null)
+        {
+            await tx.RollbackAsync(ct);
+            return new SplitResult(false, null, null, source.Number, SplitFailureReason.SourceMerged);
+        }
+
+        // Verify the mail event belongs to this ticket and is the right type.
+        // We pull the body and the linked mail row in one shot so we can stamp
+        // a system-note that includes the original mail subject.
+        const string mailEventSql = """
+            SELECT e.id AS Id, e.event_type AS EventType,
+                   e.body_text AS BodyText, e.body_html AS BodyHtml,
+                   e.author_contact_id AS AuthorContactId,
+                   e.created_utc AS CreatedUtc,
+                   m.id AS MailMessageId, m.subject AS MailSubject
+            FROM ticket_events e
+            LEFT JOIN mail_messages m ON m.ticket_event_id = e.id
+            WHERE e.id = @sourceMailEventId AND e.ticket_id = @sourceTicketId
+            """;
+        var mailEvent = await conn.QueryFirstOrDefaultAsync<SplitMailEventRow>(
+            new CommandDefinition(mailEventSql, new { sourceMailEventId, sourceTicketId }, tx, cancellationToken: ct));
+        if (mailEvent is null)
+        {
+            await tx.RollbackAsync(ct);
+            return new SplitResult(false, null, null, source.Number, SplitFailureReason.MailEventNotFound);
+        }
+        if (!string.Equals(mailEvent.EventType, "MailReceived", StringComparison.Ordinal))
+        {
+            await tx.RollbackAsync(ct);
+            return new SplitResult(false, null, null, source.Number, SplitFailureReason.NotAMailEvent);
+        }
+
+        // Resolve system defaults for the new ticket. Priority + status carry
+        // is_default; queue does not, so we fall back to the lowest-sort active
+        // queue. All three must exist for the new ticket to be valid.
+        var defaultStatusId = await conn.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+            "SELECT id FROM statuses WHERE is_default = TRUE AND is_active = TRUE LIMIT 1",
+            transaction: tx, cancellationToken: ct));
+        var defaultPriorityId = await conn.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+            "SELECT id FROM priorities WHERE is_default = TRUE AND is_active = TRUE LIMIT 1",
+            transaction: tx, cancellationToken: ct));
+        var defaultQueueId = await conn.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+            "SELECT id FROM queues WHERE is_active = TRUE ORDER BY sort_order, name LIMIT 1",
+            transaction: tx, cancellationToken: ct));
+        if (defaultStatusId is null || defaultPriorityId is null || defaultQueueId is null)
+        {
+            await tx.RollbackAsync(ct);
+            return new SplitResult(false, null, null, source.Number, SplitFailureReason.DefaultsMissing);
+        }
+
+        // Create the new ticket. Requester + company carry over from the source
+        // (the email came from the same person), but queue/priority/status are
+        // system defaults so the agent can re-triage explicitly. Source field
+        // 'Split' marks the intake channel for reporting.
+        const string insertTicketSql = """
+            INSERT INTO tickets (subject, requester_contact_id, queue_id,
+                                 status_id, priority_id, source,
+                                 company_id, awaiting_company_assignment, company_resolved_via,
+                                 split_from_ticket_id, split_from_utc, split_from_user_id)
+            VALUES (@Subject, @RequesterContactId, @QueueId,
+                    @StatusId, @PriorityId, 'Split',
+                    @CompanyId, @AwaitingCompanyAssignment, @CompanyResolvedVia,
+                    @SplitFromTicketId, now(), @SplitFromUserId)
+            RETURNING id, number
+            """;
+        var newRow = await conn.QueryFirstAsync<(Guid Id, long Number)>(
+            new CommandDefinition(insertTicketSql, new
+            {
+                Subject = newSubject,
+                source.RequesterContactId,
+                QueueId = defaultQueueId.Value,
+                StatusId = defaultStatusId.Value,
+                PriorityId = defaultPriorityId.Value,
+                source.CompanyId,
+                source.AwaitingCompanyAssignment,
+                source.CompanyResolvedVia,
+                SplitFromTicketId = sourceTicketId,
+                SplitFromUserId = actorUserId,
+            }, tx, cancellationToken: ct));
+
+        // Description = the mail body. We keep the HTML untouched so inline
+        // images keep resolving via the original mail's attachment URLs (the
+        // mail row stays on the source ticket, so an agent with queue access
+        // there can still load them; this matches how forwarded mails work
+        // elsewhere in the codebase).
+        await conn.ExecuteAsync(new CommandDefinition("""
+            INSERT INTO ticket_bodies (ticket_id, body_text, body_html)
+            VALUES (@ticketId, @bodyText, @bodyHtml)
+            """, new
+        {
+            ticketId = newRow.Id,
+            bodyText = mailEvent.BodyText ?? string.Empty,
+            bodyHtml = mailEvent.BodyHtml,
+        }, tx, cancellationToken: ct));
+
+        // Created event mirrors what CreateAsync writes — same shape so list/
+        // detail readers don't need to special-case split origins.
+        var createdMeta = JsonSerializer.Serialize(new
+        {
+            source = "Split",
+            splitFromTicketId = sourceTicketId.ToString(),
+            splitFromTicketNumber = source.Number,
+            splitFromMailEventId = sourceMailEventId,
+            splitFromMailMessageId = mailEvent.MailMessageId?.ToString(),
+        });
+        await conn.ExecuteAsync(new CommandDefinition("""
+            INSERT INTO ticket_events (ticket_id, event_type, author_contact_id,
+                                       body_text, body_html, metadata, is_internal)
+            VALUES (@ticketId, 'Created', @authorContactId, NULL, NULL, @metadata::jsonb, FALSE)
+            """, new
+        {
+            ticketId = newRow.Id,
+            authorContactId = source.RequesterContactId,
+            metadata = createdMeta,
+        }, tx, cancellationToken: ct));
+
+        // System-note on the new ticket pointing back to the source.
+        var newNoteMeta = JsonSerializer.Serialize(new
+        {
+            splitFromTicketId = sourceTicketId.ToString(),
+            splitFromTicketNumber = source.Number,
+            splitFromMailEventId = sourceMailEventId,
+            actorUserId = actorUserId.ToString(),
+        });
+        await conn.ExecuteAsync(new CommandDefinition("""
+            INSERT INTO ticket_events (ticket_id, event_type, author_user_id,
+                                       metadata, is_internal, body_text)
+            VALUES (@ticketId, 'SystemNote', @actorUserId, @metadata::jsonb, FALSE, @body)
+            """, new
+        {
+            ticketId = newRow.Id,
+            actorUserId,
+            metadata = newNoteMeta,
+            body = $"Split from #{source.Number}.",
+        }, tx, cancellationToken: ct));
+
+        // System-note on the source ticket pointing forward to the new one.
+        var sourceNoteMeta = JsonSerializer.Serialize(new
+        {
+            splitIntoTicketId = newRow.Id.ToString(),
+            splitIntoTicketNumber = newRow.Number,
+            sourceMailEventId,
+            actorUserId = actorUserId.ToString(),
+        });
+        await conn.ExecuteAsync(new CommandDefinition("""
+            INSERT INTO ticket_events (ticket_id, event_type, author_user_id,
+                                       metadata, is_internal, body_text)
+            VALUES (@sourceTicketId, 'SystemNote', @actorUserId, @metadata::jsonb, FALSE, @body)
+            """, new
+        {
+            sourceTicketId,
+            actorUserId,
+            metadata = sourceNoteMeta,
+            body = $"Split into #{newRow.Number}.",
+        }, tx, cancellationToken: ct));
+
+        // Bump the source ticket's updated_utc so the list refreshes.
+        await conn.ExecuteAsync(new CommandDefinition(
+            "UPDATE tickets SET updated_utc = now() WHERE id = @sourceTicketId",
+            new { sourceTicketId }, tx, cancellationToken: ct));
+
+        await tx.CommitAsync(ct);
+        return new SplitResult(true, newRow.Id, newRow.Number, source.Number, null);
+    }
+
+    private sealed class SplitSourceRow
+    {
+        public Guid Id { get; set; }
+        public long Number { get; set; }
+        public Guid QueueId { get; set; }
+        public Guid RequesterContactId { get; set; }
+        public Guid? CompanyId { get; set; }
+        public bool AwaitingCompanyAssignment { get; set; }
+        public string? CompanyResolvedVia { get; set; }
+        public Guid? MergedIntoTicketId { get; set; }
+    }
+
+    private sealed class SplitMailEventRow
+    {
+        public long Id { get; set; }
+        public string EventType { get; set; } = string.Empty;
+        public string? BodyText { get; set; }
+        public string? BodyHtml { get; set; }
+        public Guid? AuthorContactId { get; set; }
+        public DateTime CreatedUtc { get; set; }
+        public Guid? MailMessageId { get; set; }
+        public string? MailSubject { get; set; }
     }
 
     public async Task<int> InsertFakeBatchAsync(int count, CancellationToken ct)

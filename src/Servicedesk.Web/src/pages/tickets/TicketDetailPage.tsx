@@ -1,9 +1,10 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Check, Copy, FileDown, PanelRightClose, PanelRightOpen, Pencil, X } from "lucide-react";
+import { Check, Copy, FileDown, GitBranch, GitMerge, PanelRightClose, PanelRightOpen, Pencil, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ticketApi, contactApi, type TicketFieldUpdate } from "@/lib/ticket-api";
+import { ticketApi, contactApi, type Ticket, type TicketFieldUpdate } from "@/lib/ticket-api";
 import { agentQueueApi } from "@/lib/api";
 import {
   CompanyAlertDialog,
@@ -491,6 +492,12 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
   }
 
   const { ticket, body, events, pinnedEvents } = data;
+  const mergedSourceTicketNumbers = data.mergedSourceTicketNumbers ?? [];
+  const mergedByUserName = data.mergedByUserName ?? null;
+  const mergedIntoTicketNumber = data.mergedIntoTicketNumber ?? null;
+  const splitFromTicketNumber = data.splitFromTicketNumber ?? null;
+  const splitFromUserName = data.splitFromUserName ?? null;
+  const splitChildren = data.splitChildren ?? [];
 
   return (
     <>
@@ -506,6 +513,12 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         requesterEmail={requesterContact?.email ?? null}
         ownMailboxAddresses={ownMailboxAddresses}
         onRequestCompanyAssign={() => setAssignOpen(true)}
+        mergedSourceTicketNumbers={mergedSourceTicketNumbers}
+        mergedByUserName={mergedByUserName}
+        mergedIntoTicketNumber={mergedIntoTicketNumber}
+        splitFromTicketNumber={splitFromTicketNumber}
+        splitFromUserName={splitFromUserName}
+        splitChildren={splitChildren}
       />
       {companyAlert && (
         <CompanyAlertDialog
@@ -531,6 +544,12 @@ function TicketDetailBody({
   requesterEmail,
   ownMailboxAddresses,
   onRequestCompanyAssign,
+  mergedSourceTicketNumbers,
+  mergedByUserName,
+  mergedIntoTicketNumber,
+  splitFromTicketNumber,
+  splitFromUserName,
+  splitChildren,
 }: {
   ticketId: string;
   ticket: any;
@@ -543,6 +562,12 @@ function TicketDetailBody({
   requesterEmail: string | null;
   ownMailboxAddresses: string[];
   onRequestCompanyAssign: () => void;
+  mergedSourceTicketNumbers: number[];
+  mergedByUserName: string | null;
+  mergedIntoTicketNumber: string | null;
+  splitFromTicketNumber: string | null;
+  splitFromUserName: string | null;
+  splitChildren: { id: string; number: number }[];
 }) {
   const { matchesEvent, mode, query, registerScope } = useInTicketSearch();
   const visibleEvents = React.useMemo(() => {
@@ -581,6 +606,20 @@ function TicketDetailBody({
             <ExportPdfButton ticketId={ticketId} />
           </div>
         </div>
+
+        <MergeBanners
+          ticket={ticket}
+          mergedIntoTicketNumber={mergedIntoTicketNumber}
+          mergedSourceTicketNumbers={mergedSourceTicketNumbers}
+          mergedByUserName={mergedByUserName}
+        />
+
+        <SplitBanners
+          ticket={ticket}
+          splitFromTicketNumber={splitFromTicketNumber}
+          splitFromUserName={splitFromUserName}
+          splitChildren={splitChildren}
+        />
 
         {/* Static: description */}
         <div className="shrink-0 pb-4">
@@ -639,14 +678,21 @@ function TicketDetailBody({
           )}
 
           <div className="pt-4 pb-2">
-            <AddNoteForm
-              key={ticketId}
-              ticketId={ticketId}
-              mailContext={buildMailContext(ticket, events, requesterEmail, ownMailboxAddresses)}
-              onSubmitted={() => {
-                queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
-              }}
-            />
+            {ticket.mergedIntoTicketId ? (
+              <div className="rounded-md border border-white/10 bg-white/[0.02] px-3 py-3 text-xs text-muted-foreground/70 text-center">
+                This ticket is closed and merged. Reply on the target ticket
+                instead.
+              </div>
+            ) : (
+              <AddNoteForm
+                key={ticketId}
+                ticketId={ticketId}
+                mailContext={buildMailContext(ticket, events, requesterEmail, ownMailboxAddresses)}
+                onSubmitted={() => {
+                  queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
+                }}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -685,6 +731,130 @@ function TicketDetailBody({
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+function MergeBanners({
+  ticket,
+  mergedIntoTicketNumber,
+  mergedSourceTicketNumbers,
+  mergedByUserName,
+}: {
+  ticket: Ticket;
+  mergedIntoTicketNumber: string | null;
+  mergedSourceTicketNumbers: number[];
+  mergedByUserName: string | null;
+}) {
+  const isMerged = !!ticket.mergedIntoTicketId;
+  const hasIncomingMerges = mergedSourceTicketNumbers.length > 0;
+  if (!isMerged && !hasIncomingMerges) return null;
+
+  return (
+    <div className="shrink-0 pb-3 space-y-2">
+      {isMerged && ticket.mergedIntoTicketId && (
+        <div className="rounded-md border border-purple-400/30 bg-purple-500/[0.06] px-3 py-2.5 flex items-start gap-2">
+          <GitMerge className="h-4 w-4 shrink-0 mt-0.5 text-purple-300/90" />
+          <div className="text-sm text-purple-100/90">
+            This ticket was merged into{" "}
+            <Link
+              to="/tickets/$ticketId"
+              params={{ ticketId: ticket.mergedIntoTicketId }}
+              className="font-medium underline underline-offset-2 hover:text-purple-50"
+            >
+              #{mergedIntoTicketNumber ?? "?"}
+            </Link>
+            {ticket.mergedUtc && (
+              <>
+                {" "}on {new Date(ticket.mergedUtc).toLocaleDateString()}
+              </>
+            )}
+            {mergedByUserName && (
+              <>
+                {" "}by <span className="text-purple-50/90">{mergedByUserName}</span>
+              </>
+            )}
+            .
+          </div>
+        </div>
+      )}
+      {hasIncomingMerges && !isMerged && (
+        <div className="rounded-md border border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-muted-foreground/80 flex items-center gap-2 flex-wrap">
+          <GitMerge className="h-3.5 w-3.5 shrink-0 text-purple-300/80" />
+          <span>Merged from</span>
+          {mergedSourceTicketNumbers.map((n, idx) => (
+            <span key={n}>
+              <span className="text-foreground/80 font-medium">#{n}</span>
+              {idx < mergedSourceTicketNumbers.length - 1 ? "," : ""}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SplitBanners({
+  ticket,
+  splitFromTicketNumber,
+  splitFromUserName,
+  splitChildren,
+}: {
+  ticket: Ticket;
+  splitFromTicketNumber: string | null;
+  splitFromUserName: string | null;
+  splitChildren: { id: string; number: number }[];
+}) {
+  const isSplit = !!ticket.splitFromTicketId;
+  const hasChildren = splitChildren.length > 0;
+  if (!isSplit && !hasChildren) return null;
+
+  return (
+    <div className="shrink-0 pb-3 space-y-2">
+      {isSplit && ticket.splitFromTicketId && (
+        <div className="rounded-md border border-sky-400/30 bg-sky-500/[0.06] px-3 py-2.5 flex items-start gap-2">
+          <GitBranch className="h-4 w-4 shrink-0 mt-0.5 text-sky-300/90" />
+          <div className="text-sm text-sky-100/90">
+            This ticket was split from{" "}
+            <Link
+              to="/tickets/$ticketId"
+              params={{ ticketId: ticket.splitFromTicketId }}
+              className="font-medium underline underline-offset-2 hover:text-sky-50"
+            >
+              #{splitFromTicketNumber ?? "?"}
+            </Link>
+            {ticket.splitFromUtc && (
+              <>
+                {" "}on {new Date(ticket.splitFromUtc).toLocaleDateString()}
+              </>
+            )}
+            {splitFromUserName && (
+              <>
+                {" "}by <span className="text-sky-50/90">{splitFromUserName}</span>
+              </>
+            )}
+            .
+          </div>
+        </div>
+      )}
+      {hasChildren && (
+        <div className="rounded-md border border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-muted-foreground/80 flex items-center gap-2 flex-wrap">
+          <GitBranch className="h-3.5 w-3.5 shrink-0 text-sky-300/80" />
+          <span>Split into</span>
+          {splitChildren.map((child, idx) => (
+            <span key={child.id}>
+              <Link
+                to="/tickets/$ticketId"
+                params={{ ticketId: child.id }}
+                className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2"
+              >
+                #{child.number}
+              </Link>
+              {idx < splitChildren.length - 1 ? "," : ""}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

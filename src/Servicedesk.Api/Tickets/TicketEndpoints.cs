@@ -77,7 +77,8 @@ public static class TicketEndpoints
 
         group.MapGet("/{id:guid}", async (
             Guid id, HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess,
-            ICompanyRepository companies, IMailTimelineEnricher mailEnricher, CancellationToken ct) =>
+            ICompanyRepository companies, IMailTimelineEnricher mailEnricher,
+            Npgsql.NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
             var detail = await repo.GetByIdAsync(id, ct);
             if (detail is null) return Results.NotFound();
@@ -89,6 +90,54 @@ public static class TicketEndpoints
 
             detail = await mailEnricher.EnrichAsync(detail, ct);
             var companyAlert = await BuildCompanyAlertAsync(companies, detail.Ticket.RequesterContactId, ct);
+
+            // v0.0.23: surface merge metadata so the UI can render the banners
+            // ("Merged into #X" on the source, "Merged from #A, #B" on the
+            // target). One round-trip each — both index-only at scale.
+            var mergedSourceNumbers = await repo.GetMergedSourceTicketNumbersAsync(id, ct);
+            var splitChildren = await repo.GetSplitChildrenAsync(id, ct);
+            string? mergedByUserName = null;
+            string? mergedIntoTicketNumber = null;
+            string? splitFromTicketNumber = null;
+            string? splitFromUserName = null;
+            if (detail.Ticket.MergedByUserId is not null
+                || detail.Ticket.MergedIntoTicketId is not null
+                || detail.Ticket.SplitFromTicketId is not null
+                || detail.Ticket.SplitFromUserId is not null)
+            {
+                await using var conn = await dataSource.OpenConnectionAsync(ct);
+                if (detail.Ticket.MergedByUserId is { } actorId)
+                {
+                    mergedByUserName = await Dapper.SqlMapper.ExecuteScalarAsync<string?>(conn,
+                        new Dapper.CommandDefinition(
+                            "SELECT email FROM users WHERE id = @id",
+                            new { id = actorId }, cancellationToken: ct));
+                }
+                if (detail.Ticket.MergedIntoTicketId is { } targetId)
+                {
+                    var targetNumber = await Dapper.SqlMapper.ExecuteScalarAsync<long?>(conn,
+                        new Dapper.CommandDefinition(
+                            "SELECT number FROM tickets WHERE id = @id",
+                            new { id = targetId }, cancellationToken: ct));
+                    if (targetNumber is { } n) mergedIntoTicketNumber = n.ToString();
+                }
+                if (detail.Ticket.SplitFromTicketId is { } parentId)
+                {
+                    var parentNumber = await Dapper.SqlMapper.ExecuteScalarAsync<long?>(conn,
+                        new Dapper.CommandDefinition(
+                            "SELECT number FROM tickets WHERE id = @id",
+                            new { id = parentId }, cancellationToken: ct));
+                    if (parentNumber is { } n) splitFromTicketNumber = n.ToString();
+                }
+                if (detail.Ticket.SplitFromUserId is { } splitActorId)
+                {
+                    splitFromUserName = await Dapper.SqlMapper.ExecuteScalarAsync<string?>(conn,
+                        new Dapper.CommandDefinition(
+                            "SELECT email FROM users WHERE id = @id",
+                            new { id = splitActorId }, cancellationToken: ct));
+                }
+            }
+
             return Results.Ok(new
             {
                 ticket = detail.Ticket,
@@ -96,6 +145,12 @@ public static class TicketEndpoints
                 events = detail.Events,
                 pinnedEvents = detail.PinnedEvents,
                 companyAlert,
+                mergedSourceTicketNumbers = mergedSourceNumbers,
+                mergedByUserName,
+                mergedIntoTicketNumber,
+                splitFromTicketNumber,
+                splitFromUserName,
+                splitChildren = splitChildren.Select(c => new { id = c.Id, number = c.Number }),
             });
         }).WithName("GetTicket").WithOpenApi();
 
@@ -718,6 +773,233 @@ public static class TicketEndpoints
             return Results.Ok(pin);
         }).WithName("UpdatePinRemark").WithOpenApi();
 
+        // v0.0.23 ticket merge: lightweight typeahead used by the merge dialog
+        // to pick a target ticket. Filters out the source ticket, soft-deleted
+        // rows, and any ticket that is itself already merged. Queue-access is
+        // enforced server-side: an agent cannot merge into a queue they can't
+        // see, regardless of what the client sends.
+        group.MapGet("/picker", async (
+            string? q, Guid? excludeTicketId, int? limit,
+            HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess,
+            CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            IReadOnlyList<Guid>? accessibleQueueIds = null;
+            if (!string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
+            {
+                accessibleQueueIds = await queueAccess.GetAccessibleQueueIdsAsync(userId, role, ct);
+                if (accessibleQueueIds.Count == 0)
+                    return Results.Ok(new { items = Array.Empty<object>() });
+            }
+
+            var hits = await repo.SearchPickerAsync(
+                search: q,
+                excludeTicketId: excludeTicketId ?? Guid.Empty,
+                accessibleQueueIds: accessibleQueueIds,
+                limit: limit ?? 20,
+                ct: ct);
+            return Results.Ok(new { items = hits });
+        }).WithName("PickTicket").WithOpenApi();
+
+        // v0.0.23 ticket merge endpoint. Idempotency-by-construction: if the
+        // source is already merged the repository returns AlreadyMerged and we
+        // 409 instead of silently re-running. Cross-customer merges require
+        // explicit acknowledgement from the caller — the dialog flips the flag
+        // when the requester or company differs and the agent confirms.
+        group.MapPost("/{id:guid}/merge", async (
+            Guid id, [FromBody] MergeTicketRequest req, HttpContext http,
+            ITicketRepository tickets, IQueueAccessService queueAccess,
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
+        {
+            if (req.TargetTicketId == Guid.Empty)
+                return Results.BadRequest(new { error = "targetTicketId is required." });
+            if (req.TargetTicketId == id)
+                return Results.BadRequest(new { error = "A ticket cannot be merged into itself." });
+
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            // Both tickets must be visible to the actor through queue-access.
+            // Admins bypass; agents who can't see one side get a 404 so we
+            // don't leak which ticket exists in a forbidden queue.
+            var source = await tickets.GetByIdAsync(id, ct);
+            if (source is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, source.Ticket.QueueId, ct))
+                return Results.NotFound();
+
+            var target = await tickets.GetByIdAsync(req.TargetTicketId, ct);
+            if (target is null)
+                return Results.BadRequest(new { error = "Target ticket not found." });
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, target.Ticket.QueueId, ct))
+                return Results.Json(
+                    new { error = "You do not have access to the target ticket's queue.", code = "queue_forbidden" },
+                    statusCode: 403);
+
+            var result = await tickets.MergeAsync(
+                sourceTicketId: id,
+                targetTicketId: req.TargetTicketId,
+                actorUserId: userId,
+                acknowledgedCrossCustomer: req.AcknowledgedCrossCustomer,
+                ct: ct);
+
+            if (result is null || !result.Success)
+            {
+                var reason = result?.FailureReason ?? MergeFailureReason.SourceNotFound;
+                return reason switch
+                {
+                    MergeFailureReason.CrossCustomerNotAcknowledged => Results.Conflict(new
+                    {
+                        error = "Source and target belong to different customers or companies. " +
+                                "Confirm to proceed.",
+                        code = "cross_customer_unconfirmed",
+                    }),
+                    MergeFailureReason.AlreadyMerged => Results.Conflict(new
+                    {
+                        error = "One of the tickets is already merged.",
+                        code = "already_merged",
+                    }),
+                    MergeFailureReason.WouldCycle => Results.Conflict(new
+                    {
+                        error = "This merge would create a cycle.",
+                        code = "would_cycle",
+                    }),
+                    MergeFailureReason.SameTicket => Results.BadRequest(new
+                    {
+                        error = "A ticket cannot be merged into itself.",
+                    }),
+                    _ => Results.NotFound(),
+                };
+            }
+
+            var (actor, role) = ActorContext.Resolve(http);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "ticket.merged",
+                Actor: actor,
+                ActorRole: role,
+                Target: id.ToString(),
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: new
+                {
+                    targetTicketId = req.TargetTicketId,
+                    sourceNumber = result.SourceNumber,
+                    targetNumber = result.TargetNumber,
+                    movedEventCount = result.MovedEventCount,
+                    crossCustomer = result.CrossCustomer,
+                }));
+
+            // Both tickets need a cache-invalidation kick: the source flips to
+            // Merged and gains a redirect pointer; the target gains the moved
+            // events. The list is bumped once because the SignalR group
+            // dedupes on the client side.
+            var sourceIdStr = id.ToString();
+            var targetIdStr = req.TargetTicketId.ToString();
+            await hub.Clients.Group($"ticket:{sourceIdStr}").SendAsync("TicketUpdated", sourceIdStr, ct);
+            await hub.Clients.Group($"ticket:{targetIdStr}").SendAsync("TicketUpdated", targetIdStr, ct);
+            await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", targetIdStr, ct);
+
+            return Results.Ok(new
+            {
+                targetTicketId = req.TargetTicketId,
+                sourceNumber = result.SourceNumber,
+                targetNumber = result.TargetNumber,
+                movedEventCount = result.MovedEventCount,
+                crossCustomer = result.CrossCustomer,
+            });
+        }).WithName("MergeTicket").WithOpenApi();
+
+        // v0.0.23 ticket split endpoint. Splits a multi-question mail off into
+        // a fresh ticket with system defaults for queue/priority/status. The
+        // source ticket gains a "Split into #X" SystemNote; the new ticket
+        // gains a "Split from #Y" SystemNote and a `split_from_ticket_id`
+        // pointer. Permissions: agent + queue access on source. Admins bypass.
+        group.MapPost("/{id:guid}/split", async (
+            Guid id, [FromBody] SplitTicketRequest req, HttpContext http,
+            ITicketRepository tickets, IQueueAccessService queueAccess,
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
+        {
+            if (req.SourceMailEventId <= 0)
+                return Results.BadRequest(new { error = "sourceMailEventId is required." });
+            if (string.IsNullOrWhiteSpace(req.NewSubject))
+                return Results.BadRequest(new { error = "newSubject is required." });
+
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            var source = await tickets.GetByIdAsync(id, ct);
+            if (source is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, source.Ticket.QueueId, ct))
+                return Results.NotFound();
+
+            var result = await tickets.SplitAsync(
+                sourceTicketId: id,
+                sourceMailEventId: req.SourceMailEventId,
+                newSubject: req.NewSubject.Trim(),
+                actorUserId: userId,
+                ct: ct);
+
+            if (result is null || !result.Success)
+            {
+                var reason = result?.FailureReason ?? SplitFailureReason.SourceNotFound;
+                return reason switch
+                {
+                    SplitFailureReason.SourceMerged => Results.Conflict(new
+                    {
+                        error = "This ticket is already merged and cannot be split.",
+                        code = "source_merged",
+                    }),
+                    SplitFailureReason.MailEventNotFound => Results.BadRequest(new
+                    {
+                        error = "The selected mail does not belong to this ticket.",
+                        code = "mail_event_not_found",
+                    }),
+                    SplitFailureReason.NotAMailEvent => Results.BadRequest(new
+                    {
+                        error = "Splitting is only supported on received-mail events.",
+                        code = "not_a_mail_event",
+                    }),
+                    SplitFailureReason.DefaultsMissing => Results.Conflict(new
+                    {
+                        error = "Cannot split: no default queue, priority, or status is configured.",
+                        code = "defaults_missing",
+                    }),
+                    _ => Results.NotFound(),
+                };
+            }
+
+            var (actor, role) = ActorContext.Resolve(http);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "ticket.split",
+                Actor: actor,
+                ActorRole: role,
+                Target: id.ToString(),
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: new
+                {
+                    newTicketId = result.NewTicketId,
+                    newTicketNumber = result.NewTicketNumber,
+                    sourceMailEventId = req.SourceMailEventId,
+                    sourceNumber = result.SourceNumber,
+                }));
+
+            // Source ticket gains a SystemNote (so cache must invalidate);
+            // the new ticket needs to surface in list views.
+            var sourceIdStr = id.ToString();
+            var newIdStr = result.NewTicketId!.Value.ToString();
+            await hub.Clients.Group($"ticket:{sourceIdStr}").SendAsync("TicketUpdated", sourceIdStr, ct);
+            await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", newIdStr, ct);
+
+            return Results.Ok(new
+            {
+                newTicketId = result.NewTicketId,
+                newTicketNumber = result.NewTicketNumber,
+                sourceNumber = result.SourceNumber,
+            });
+        }).WithName("SplitTicket").WithOpenApi();
+
         return app;
     }
 
@@ -883,6 +1165,20 @@ public static class TicketEndpoints
     /// The company re-resolves server-side via <see cref="IContactLookupService"/>,
     /// so the client only needs to pass the target contact id.
     public sealed record ChangeTicketRequesterRequest(Guid ContactId);
+
+    /// v0.0.23: payload for merging this ticket into another. The acknowledge
+    /// flag is required only when the dialog detected a cross-customer or
+    /// cross-company merge — the server still re-validates from its own data.
+    public sealed record MergeTicketRequest(
+        Guid TargetTicketId,
+        bool AcknowledgedCrossCustomer);
+
+    /// v0.0.23: payload for splitting a single received-mail off this ticket
+    /// into a brand-new ticket with the same requester and system defaults
+    /// for queue/priority/status. The agent fills the title manually.
+    public sealed record SplitTicketRequest(
+        long SourceMailEventId,
+        string NewSubject);
 
     /// v0.0.9: per-company alert surfaced next to a ticket. Non-null only
     /// when the requester's contact is linked to an active company. The

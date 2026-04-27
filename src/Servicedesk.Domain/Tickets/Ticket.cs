@@ -21,7 +21,13 @@ public sealed record Ticket(
     bool IsDeleted,
     Guid? CompanyId = null,
     bool AwaitingCompanyAssignment = false,
-    string? CompanyResolvedVia = null);
+    string? CompanyResolvedVia = null,
+    Guid? MergedIntoTicketId = null,
+    DateTime? MergedUtc = null,
+    Guid? MergedByUserId = null,
+    Guid? SplitFromTicketId = null,
+    DateTime? SplitFromUtc = null,
+    Guid? SplitFromUserId = null);
 
 public sealed record TicketBody(
     Guid TicketId,

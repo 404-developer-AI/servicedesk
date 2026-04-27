@@ -323,6 +323,16 @@ public sealed class OutboundMailServiceTests
         public Task<bool> EventBelongsToTicketAsync(Guid t, long e, CancellationToken ct) => Task.FromResult(true);
         public Task<IReadOnlyDictionary<Guid, int>> GetOpenCountsByQueueAsync(CancellationToken ct) => throw new NotImplementedException();
         public Task<int> InsertFakeBatchAsync(int c, CancellationToken ct) => throw new NotImplementedException();
+        public Task<IReadOnlyList<TicketPickerHit>> SearchPickerAsync(string? s, Guid e, IReadOnlyCollection<Guid>? q, int l, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<TicketPickerHit>>(Array.Empty<TicketPickerHit>());
+        public Task<IReadOnlyList<long>> GetMergedSourceTicketNumbersAsync(Guid t, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<long>>(Array.Empty<long>());
+        public Task<MergeResult?> MergeAsync(Guid s, Guid t, Guid a, bool ack, CancellationToken ct)
+            => Task.FromResult<MergeResult?>(null);
+        public Task<IReadOnlyList<SplitChildTicket>> GetSplitChildrenAsync(Guid p, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<SplitChildTicket>>(Array.Empty<SplitChildTicket>());
+        public Task<SplitResult?> SplitAsync(Guid s, long e, string subj, Guid a, CancellationToken ct)
+            => Task.FromResult<SplitResult?>(null);
 
         private static TicketDetail MakeDetail()
         {

@@ -1412,6 +1412,43 @@ public sealed class DatabaseBootstrapper : IHostedService
                                   'CategoryChange','SystemNote','MailReceived',
                                   'MailSent','CompanyAssignment','RequesterChange',
                                   'IntakeFormSent','IntakeFormSubmitted','IntakeFormExpired')) NOT VALID;
+
+        -- v0.0.23 ticket merge: a finalised merge stamps merged_into_ticket_id
+        -- on the source ticket so mail-ingest can follow the redirect chain to
+        -- the surviving target. merged_utc/merged_by_user_id give the UI a
+        -- "Merged into #X on {date} by {agent}" banner without a join. Status
+        -- moves to the seeded 'Merged' system status (state_category='Closed'
+        -- so existing OpenOnly/list-counter filters keep treating it as
+        -- terminal). The dedicated status_id allows the UI to render a
+        -- distinct badge and lets agents filter for it explicitly.
+        ALTER TABLE tickets
+            ADD COLUMN IF NOT EXISTS merged_into_ticket_id UUID NULL
+                REFERENCES tickets(id) ON DELETE SET NULL,
+            ADD COLUMN IF NOT EXISTS merged_utc           TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS merged_by_user_id    UUID NULL
+                REFERENCES users(id) ON DELETE SET NULL;
+
+        -- Sparse index — only used to render the "Merged from #A1, #A2" strip
+        -- on the target ticket and to list sources during admin debugging.
+        CREATE INDEX IF NOT EXISTS ix_tickets_merged_into
+            ON tickets (merged_into_ticket_id)
+            WHERE merged_into_ticket_id IS NOT NULL;
+
+        -- v0.0.23 ticket split: when an agent splits a multi-question mail off
+        -- into a fresh ticket, the new ticket records its parent here so both
+        -- ends can render a "Split from #X" banner and the parent can list its
+        -- children via a sparse-index lookup. ON DELETE SET NULL preserves the
+        -- child if the parent is hard-deleted.
+        ALTER TABLE tickets
+            ADD COLUMN IF NOT EXISTS split_from_ticket_id UUID NULL
+                REFERENCES tickets(id) ON DELETE SET NULL,
+            ADD COLUMN IF NOT EXISTS split_from_utc       TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS split_from_user_id   UUID NULL
+                REFERENCES users(id) ON DELETE SET NULL;
+
+        CREATE INDEX IF NOT EXISTS ix_tickets_split_from
+            ON tickets (split_from_ticket_id)
+            WHERE split_from_ticket_id IS NOT NULL;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

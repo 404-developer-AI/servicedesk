@@ -167,6 +167,45 @@ public sealed class MailIngestServiceTests
         Assert.False(created.AwaitingCompanyAssignment);
     }
 
+    // v0.0.23: a reply on a thread whose ticket has been merged must land on
+    // the surviving target. The resolver follows merged_into_ticket_id up to
+    // 10 hops so multi-step chains (A → B → C) still route correctly.
+    [Fact]
+    public async Task Plus_address_follows_merge_chain_to_final_target()
+    {
+        var (svc, graph, _, tickets, _) = Build();
+        var middle = Guid.NewGuid();
+        var final = Guid.NewGuid();
+        tickets.NumberToId[1234] = middle;
+        tickets.MergedInto[middle] = final;
+        graph.Message = NewMessage(
+            messageId: "reply@example",
+            to: new[] { new GraphRecipient("servicedesk+TCK-1234@domain.com", "Desk") });
+
+        var result = await svc.IngestAsync(QueueId, QueueMailbox, "gid-1", default);
+
+        Assert.Equal(MailIngestOutcome.Appended, result.Outcome);
+        Assert.Equal(final, result.TicketId);
+    }
+
+    [Fact]
+    public async Task In_reply_to_follows_multi_hop_merge_chain()
+    {
+        var (svc, graph, mailRepo, tickets, _) = Build();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var third = Guid.NewGuid();
+        mailRepo.ReferenceLookup["parent@example"] = first;
+        tickets.MergedInto[first] = second;
+        tickets.MergedInto[second] = third;
+        graph.Message = NewMessage(messageId: "child@example", inReplyTo: "<parent@example>");
+
+        var result = await svc.IngestAsync(QueueId, QueueMailbox, "gid-1", default);
+
+        Assert.Equal(MailIngestOutcome.Appended, result.Outcome);
+        Assert.Equal(third, result.TicketId);
+    }
+
     [Fact]
     public async Task New_ticket_marks_awaiting_when_resolution_unresolved()
     {
@@ -284,9 +323,13 @@ public sealed class MailIngestServiceTests
     {
         public List<NewTicket> Created { get; } = new();
         public Dictionary<long, Guid> NumberToId { get; } = new();
+        public Dictionary<Guid, Guid> MergedInto { get; } = new();
 
         public Task<Guid?> GetIdByNumberAsync(long number, CancellationToken ct)
             => Task.FromResult(NumberToId.TryGetValue(number, out var g) ? (Guid?)g : null);
+
+        public Task<Guid?> GetMergedIntoAsync(Guid ticketId, CancellationToken ct)
+            => Task.FromResult(MergedInto.TryGetValue(ticketId, out var g) ? (Guid?)g : null);
 
         public Task<Ticket> CreateAsync(NewTicket input, CancellationToken ct)
         {
@@ -328,6 +371,16 @@ public sealed class MailIngestServiceTests
         public Task<bool> EventBelongsToTicketAsync(Guid t, long e, CancellationToken ct) => Task.FromResult(false);
         public Task<IReadOnlyDictionary<Guid, int>> GetOpenCountsByQueueAsync(CancellationToken ct) => throw new NotImplementedException();
         public Task<int> InsertFakeBatchAsync(int c, CancellationToken ct) => throw new NotImplementedException();
+        public Task<IReadOnlyList<TicketPickerHit>> SearchPickerAsync(string? s, Guid e, IReadOnlyCollection<Guid>? q, int l, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<TicketPickerHit>>(Array.Empty<TicketPickerHit>());
+        public Task<IReadOnlyList<long>> GetMergedSourceTicketNumbersAsync(Guid t, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<long>>(Array.Empty<long>());
+        public Task<MergeResult?> MergeAsync(Guid s, Guid t, Guid a, bool ack, CancellationToken ct)
+            => Task.FromResult<MergeResult?>(null);
+        public Task<IReadOnlyList<SplitChildTicket>> GetSplitChildrenAsync(Guid p, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<SplitChildTicket>>(Array.Empty<SplitChildTicket>());
+        public Task<SplitResult?> SplitAsync(Guid s, long e, string subj, Guid a, CancellationToken ct)
+            => Task.FromResult<SplitResult?>(null);
     }
 
     private sealed class StubTaxonomy : ITaxonomyRepository

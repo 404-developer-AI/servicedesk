@@ -27,6 +27,7 @@ import {
   ClipboardList,
   ClipboardCheck,
   ClipboardX,
+  GitBranch,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ticketApi, type TicketEvent, type OutboundMailKind } from "@/lib/ticket-api";
@@ -45,6 +46,7 @@ import {
 } from "@/components/attachments/AttachmentPreviewDialog";
 import { EventRevisionDialog } from "./EventRevisionDialog";
 import { IntakeSubmissionPanel } from "@/components/intake/IntakeSubmissionPanel";
+import { SplitMailDialog } from "@/components/SplitMailDialog";
 
 type PreviewContextValue = {
   open: (preview: AttachmentPreview) => void;
@@ -434,6 +436,9 @@ function PostAttachmentStrip({ attachments }: { attachments: MailAttachment[] })
 
 function EventBody({ event }: { event: TicketEvent }) {
   const meta = parseMetadata(event.metadataJson);
+  // Used only by the MailReceived branch but declared here so React's hook
+  // ordering stays stable across event types — switch arms can't host hooks.
+  const [splitOpen, setSplitOpen] = React.useState(false);
 
   switch (event.eventType) {
     case "Created": {
@@ -735,6 +740,14 @@ function EventBody({ event }: { event: TicketEvent }) {
               <ForwardIcon className="h-3 w-3" />
               Forward
             </button>
+            <button
+              type="button"
+              onClick={() => setSplitOpen(true)}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+            >
+              <GitBranch className="h-3 w-3" />
+              Split
+            </button>
             {mailId ? (
               <a
                 href={`/api/tickets/${event.ticketId}/mail/${mailId}/raw`}
@@ -747,6 +760,13 @@ function EventBody({ event }: { event: TicketEvent }) {
               </a>
             ) : null}
           </div>
+          <SplitMailDialog
+            open={splitOpen}
+            sourceTicketId={event.ticketId}
+            sourceMailEventId={event.id}
+            mailSubject={subject}
+            onClose={() => setSplitOpen(false)}
+          />
         </div>
       );
     }
@@ -803,6 +823,14 @@ function TimelineEvent({
   const isEditable = EDITABLE_TYPES.has(event.eventType);
   const isPinnable = PINNABLE_TYPES.has(event.eventType);
   const isPublicComment = !event.isInternal && event.eventType === "Comment";
+
+  // v0.0.23: events that came in via a ticket merge keep their original
+  // timestamps so the timeline stays chronological — but we badge them so
+  // an agent can see "this came from #1234" without opening the source.
+  const eventMetadata = parseMetadata(event.metadataJson);
+  const mergedFromNumber = typeof eventMetadata.mergedFromTicketNumber === "number"
+    ? eventMetadata.mergedFromTicketNumber
+    : null;
   const isSystemLike =
     event.eventType === "SystemNote" ||
     event.eventType === "StatusChange" ||
@@ -920,6 +948,11 @@ function TimelineEvent({
                 >
                   (edited)
                 </button>
+              )}
+              {mergedFromNumber !== null && (
+                <span className="rounded px-1.5 py-0.5 text-[10px] font-medium border border-purple-400/30 bg-purple-500/10 text-purple-200/90">
+                  from #{mergedFromNumber}
+                </span>
               )}
             </div>
             <div className="flex items-center gap-1">

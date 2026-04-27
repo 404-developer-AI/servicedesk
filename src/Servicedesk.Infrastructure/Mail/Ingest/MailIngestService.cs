@@ -255,7 +255,7 @@ public sealed class MailIngestService : IMailIngestService
             if (m.Success && long.TryParse(m.Groups[1].Value, out var number))
             {
                 var id = await LookupTicketByNumberAsync(number, ct);
-                if (id is not null) return id;
+                if (id is not null) return await FollowMergeChainAsync(id.Value, ct);
             }
         }
 
@@ -276,7 +276,7 @@ public sealed class MailIngestService : IMailIngestService
         if (all.Count > 0)
         {
             var t = await _mail.FindTicketIdByReferencesAsync(all, ct);
-            if (t is not null) return t;
+            if (t is not null) return await FollowMergeChainAsync(t.Value, ct);
         }
 
         // 3. Subject token [TCK-1234].
@@ -284,7 +284,8 @@ public sealed class MailIngestService : IMailIngestService
         var sm = subjectRegex.Match(msg.Subject ?? string.Empty);
         if (sm.Success && long.TryParse(sm.Groups[1].Value, out var subjNumber))
         {
-            return await LookupTicketByNumberAsync(subjNumber, ct);
+            var id = await LookupTicketByNumberAsync(subjNumber, ct);
+            return id is null ? null : await FollowMergeChainAsync(id.Value, ct);
         }
 
         return null;
@@ -294,6 +295,31 @@ public sealed class MailIngestService : IMailIngestService
         => _tickets is ITicketNumberLookup l
             ? l.GetIdByNumberAsync(number, ct)
             : Task.FromResult<Guid?>(null);
+
+    /// Walks the merge pointer up to <c>maxHops</c> times so a reply on a
+    /// merged thread lands on the surviving ticket. Logs every hop so admins
+    /// can trace why a customer's mail ended up on a different ticket. Cycle
+    /// detection is implicit: hop-cap stops a malformed chain, and the merge
+    /// endpoint itself rejects A↔B before persisting.
+    private async Task<Guid> FollowMergeChainAsync(Guid startTicketId, CancellationToken ct)
+    {
+        const int maxHops = 10;
+        if (_tickets is not ITicketNumberLookup lookup) return startTicketId;
+        var current = startTicketId;
+        for (var hop = 0; hop < maxHops; hop++)
+        {
+            var next = await lookup.GetMergedIntoAsync(current, ct);
+            if (next is null) return current;
+            _logger.LogInformation(
+                "[MailIngest] following merge redirect hop {Hop}: ticket {From} → {To}",
+                hop + 1, current, next.Value);
+            current = next.Value;
+        }
+        _logger.LogWarning(
+            "[MailIngest] merge redirect chain from {Start} exceeded {MaxHops} hops; landing on {Final} regardless.",
+            startTicketId, maxHops, current);
+        return current;
+    }
 
     private async Task<(Guid StatusId, Guid PriorityId)?> ResolveDefaultsAsync(CancellationToken ct)
     {
@@ -368,4 +394,10 @@ public sealed class MailIngestService : IMailIngestService
 public interface ITicketNumberLookup
 {
     Task<Guid?> GetIdByNumberAsync(long number, CancellationToken ct);
+
+    /// Returns the immediate merge target of a ticket, or null if it isn't
+    /// merged. The caller is responsible for walking the chain — typical use
+    /// is the mail-ingest resolver, which iterates with a hop-cap to land
+    /// inbound replies on the surviving ticket.
+    Task<Guid?> GetMergedIntoAsync(Guid ticketId, CancellationToken ct);
 }

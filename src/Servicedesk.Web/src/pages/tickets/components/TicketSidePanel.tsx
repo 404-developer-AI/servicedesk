@@ -7,6 +7,7 @@ import { AgentPicker } from "@/components/AgentPicker";
 import { ContactFormDialog } from "@/components/ContactFormDialog";
 import { AddContactLinkDialog } from "@/components/AddContactLinkDialog";
 import { SwitchRequesterDialog } from "@/components/SwitchRequesterDialog";
+import { MergeTicketDialog } from "@/components/MergeTicketDialog";
 import { AddCompanyContactDialog } from "@/components/AddCompanyContactDialog";
 import { CompanyEditDialog } from "@/components/CompanyEditDialog";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ import {
 } from "@/components/ui/tooltip";
 import {
   Building2,
+  GitMerge,
   Globe,
   Mail,
   Phone,
@@ -125,6 +127,7 @@ function EmptyState({ text }: { text: string }) {
 
 export function TicketSidePanel({ ticket, onUpdate, onRequestCompanyAssign, pinned = false, onTogglePin }: TicketSidePanelProps) {
   const [activeTab, setActiveTab] = React.useState<TabId>("status");
+  const [mergeOpen, setMergeOpen] = React.useState(false);
 
   const { data: contact } = useQuery({
     queryKey: ["contact", ticket.requesterContactId],
@@ -215,7 +218,11 @@ export function TicketSidePanel({ ticket, onUpdate, onRequestCompanyAssign, pinn
       {/* Tab content */}
       <div className="p-4 space-y-4 flex-1 overflow-y-auto">
         {activeTab === "status" && (
-          <StatusTab ticket={ticket} onUpdate={onUpdate} />
+          <StatusTab
+            ticket={ticket}
+            onUpdate={onUpdate}
+            onRequestMerge={() => setMergeOpen(true)}
+          />
         )}
         {activeTab === "contact" && (
           <ContactTab
@@ -233,6 +240,11 @@ export function TicketSidePanel({ ticket, onUpdate, onRequestCompanyAssign, pinn
           />
         )}
       </div>
+      <MergeTicketDialog
+        open={mergeOpen}
+        source={ticket}
+        onClose={() => setMergeOpen(false)}
+      />
     </div>
   );
 }
@@ -242,9 +254,11 @@ export function TicketSidePanel({ ticket, onUpdate, onRequestCompanyAssign, pinn
 function StatusTab({
   ticket,
   onUpdate,
+  onRequestMerge,
 }: {
   ticket: Ticket;
   onUpdate: (fields: TicketFieldUpdate) => Promise<void>;
+  onRequestMerge: () => void;
 }) {
   const { data: queues } = useQuery({
     queryKey: ["accessible-queues"],
@@ -369,6 +383,19 @@ function StatusTab({
           onChange={(userId) => onUpdate({ assigneeUserId: userId ?? undefined })}
         />
       </div>
+
+      {!ticket.mergedIntoTicketId && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-full justify-start gap-2 text-xs"
+          onClick={onRequestMerge}
+        >
+          <GitMerge className="h-3.5 w-3.5" />
+          Merge into another ticket
+        </Button>
+      )}
 
       <div className="border-t border-white/10" />
 

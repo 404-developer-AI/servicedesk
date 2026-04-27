@@ -40,6 +40,113 @@ public interface ITicketRepository
     Task<bool> EventBelongsToTicketAsync(Guid ticketId, long eventId, CancellationToken ct);
     Task<IReadOnlyDictionary<Guid, int>> GetOpenCountsByQueueAsync(CancellationToken ct);
     Task<int> InsertFakeBatchAsync(int count, CancellationToken ct);
+
+    /// Lightweight ticket numbers + subjects for the merge picker autocomplete.
+    /// Filters out merged/deleted tickets and the source ticket itself; queue
+    /// access is enforced by the caller passing AccessibleQueueIds (null = admin).
+    Task<IReadOnlyList<TicketPickerHit>> SearchPickerAsync(
+        string? search,
+        Guid excludeTicketId,
+        IReadOnlyCollection<Guid>? accessibleQueueIds,
+        int limit,
+        CancellationToken ct);
+
+    /// Returns the ticket numbers that have been merged INTO this ticket so the
+    /// detail view can render the "Merged from #1234, #5678" strip without a
+    /// second round-trip.
+    Task<IReadOnlyList<long>> GetMergedSourceTicketNumbersAsync(Guid targetTicketId, CancellationToken ct);
+
+    /// Performs the merge in a single transaction. Re-points all events,
+    /// mail messages, pinned events, mention notifications and intake forms
+    /// from <paramref name="sourceTicketId"/> onto <paramref name="targetTicketId"/>;
+    /// stores the original source body as a Comment event on the target so the
+    /// requester's first message is not lost; flips the source ticket to status
+    /// "Merged" with merged_into / merged_utc / merged_by_user_id stamped.
+    /// Returns the moved-event count, or null on validation failure.
+    Task<MergeResult?> MergeAsync(
+        Guid sourceTicketId,
+        Guid targetTicketId,
+        Guid actorUserId,
+        bool acknowledgedCrossCustomer,
+        CancellationToken ct);
+
+    /// Returns the (id, number) pairs of tickets that were split off from this
+    /// ticket so the detail view can render a clickable "Split into #1234,
+    /// #5678" strip without a second round-trip.
+    Task<IReadOnlyList<SplitChildTicket>> GetSplitChildrenAsync(Guid parentTicketId, CancellationToken ct);
+
+    /// Splits a multi-question mail off into a fresh ticket. Looks up the
+    /// source mail event on <paramref name="sourceTicketId"/>, creates a new
+    /// ticket using the source's requester/company plus the queue/priority/status
+    /// defaults, copies the mail body into the new ticket's description, copies
+    /// any attachments hanging off the source mail, and writes a SystemNote
+    /// event on each side referencing the other. Returns null when the source
+    /// mail event isn't found, isn't a MailReceived event, or doesn't belong
+    /// to the source ticket.
+    Task<SplitResult?> SplitAsync(
+        Guid sourceTicketId,
+        long sourceMailEventId,
+        string newSubject,
+        Guid actorUserId,
+        CancellationToken ct);
+}
+
+public sealed class TicketPickerHit
+{
+    public Guid Id { get; set; }
+    public long Number { get; set; }
+    public string Subject { get; set; } = string.Empty;
+    public Guid StatusId { get; set; }
+    public string StatusName { get; set; } = string.Empty;
+    public string StatusColor { get; set; } = string.Empty;
+    public string StatusStateCategory { get; set; } = string.Empty;
+    public Guid? CompanyId { get; set; }
+    public string? CompanyName { get; set; }
+    public Guid RequesterContactId { get; set; }
+    public string? RequesterEmail { get; set; }
+    public string? RequesterFirstName { get; set; }
+    public string? RequesterLastName { get; set; }
+}
+
+public enum MergeFailureReason
+{
+    SourceNotFound,
+    TargetNotFound,
+    SameTicket,
+    AlreadyMerged,
+    WouldCycle,
+    CrossCustomerNotAcknowledged,
+}
+
+public sealed record MergeResult(
+    bool Success,
+    int MovedEventCount,
+    long SourceNumber,
+    long TargetNumber,
+    bool CrossCustomer,
+    MergeFailureReason? FailureReason);
+
+public enum SplitFailureReason
+{
+    SourceNotFound,
+    SourceMerged,
+    SourceDeleted,
+    MailEventNotFound,
+    NotAMailEvent,
+    DefaultsMissing,
+}
+
+public sealed record SplitResult(
+    bool Success,
+    Guid? NewTicketId,
+    long? NewTicketNumber,
+    long SourceNumber,
+    SplitFailureReason? FailureReason);
+
+public sealed class SplitChildTicket
+{
+    public Guid Id { get; set; }
+    public long Number { get; set; }
 }
 
 public sealed record TicketDetail(
