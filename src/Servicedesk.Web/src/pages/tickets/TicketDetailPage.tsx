@@ -2,7 +2,7 @@ import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Check, Copy, FileDown, GitBranch, GitMerge, PanelRightClose, PanelRightOpen, Pencil, X } from "lucide-react";
+import { Check, Copy, Download, FileDown, GitBranch, GitMerge, PanelRightClose, PanelRightOpen, Pencil, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ticketApi, contactApi, type Ticket, type TicketFieldUpdate } from "@/lib/ticket-api";
 import { agentQueueApi } from "@/lib/api";
@@ -498,6 +498,7 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
   const splitFromTicketNumber = data.splitFromTicketNumber ?? null;
   const splitFromUserName = data.splitFromUserName ?? null;
   const splitChildren = data.splitChildren ?? [];
+  const descriptionAttachments = data.descriptionAttachments ?? [];
 
   return (
     <>
@@ -519,6 +520,7 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         splitFromTicketNumber={splitFromTicketNumber}
         splitFromUserName={splitFromUserName}
         splitChildren={splitChildren}
+        descriptionAttachments={descriptionAttachments}
       />
       {companyAlert && (
         <CompanyAlertDialog
@@ -550,6 +552,7 @@ function TicketDetailBody({
   splitFromTicketNumber,
   splitFromUserName,
   splitChildren,
+  descriptionAttachments,
 }: {
   ticketId: string;
   ticket: any;
@@ -568,6 +571,7 @@ function TicketDetailBody({
   splitFromTicketNumber: string | null;
   splitFromUserName: string | null;
   splitChildren: { id: string; number: number }[];
+  descriptionAttachments: { id: string; name: string; mimeType: string; size: number; url: string }[];
 }) {
   const { matchesEvent, mode, query, registerScope } = useInTicketSearch();
   const visibleEvents = React.useMemo(() => {
@@ -638,6 +642,13 @@ function TicketDetailBody({
               await updateMutation.mutateAsync({ bodyHtml, bodyText });
             }}
           />
+          {descriptionAttachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 pt-2">
+              {descriptionAttachments.map((a) => (
+                <DescriptionAttachmentChip key={a.id} attachment={a} />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Pinned events summary */}
@@ -791,6 +802,34 @@ function MergeBanners({
         </div>
       )}
     </div>
+  );
+}
+
+function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function DescriptionAttachmentChip({
+  attachment: a,
+}: {
+  attachment: { id: string; name: string; mimeType: string; size: number; url: string };
+}) {
+  return (
+    <a
+      href={a.url}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-2.5 py-1.5 text-xs text-foreground/90 hover:border-primary/50 hover:bg-primary/10"
+      title={`${a.mimeType} · ${formatBytes(a.size)}`}
+    >
+      <Download className="h-3.5 w-3.5 text-primary" />
+      <span className="max-w-[220px] truncate">{a.name}</span>
+      <span className="text-muted-foreground">{formatBytes(a.size)}</span>
+    </a>
   );
 }
 

@@ -208,6 +208,16 @@ export type TicketDetail = {
   /// splits have been performed. Carries id+number pairs so the banner can
   /// link straight to each child.
   splitChildren: { id: string; number: number }[];
+  /// Non-inline attachments from the source mail of a split ticket (v0.0.23).
+  /// Empty array on non-split tickets. URLs route through the source ticket's
+  /// mail-attachment endpoint so the bytes never move.
+  descriptionAttachments: {
+    id: string;
+    name: string;
+    mimeType: string;
+    size: number;
+    url: string;
+  }[];
 };
 
 /// Lightweight row returned by /api/tickets/picker for the merge dialog.

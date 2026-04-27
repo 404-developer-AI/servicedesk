@@ -78,16 +78,21 @@ public interface ITicketRepository
     /// Splits a multi-question mail off into a fresh ticket. Looks up the
     /// source mail event on <paramref name="sourceTicketId"/>, creates a new
     /// ticket using the source's requester/company plus the queue/priority/status
-    /// defaults, copies the mail body into the new ticket's description, copies
-    /// any attachments hanging off the source mail, and writes a SystemNote
-    /// event on each side referencing the other. Returns null when the source
-    /// mail event isn't found, isn't a MailReceived event, or doesn't belong
-    /// to the source ticket.
+    /// defaults, copies the mail body into the new ticket's description, and
+    /// writes a SystemNote event on each side referencing the other. The
+    /// caller passes <paramref name="overrideBodyHtml"/> (and optionally
+    /// <paramref name="overrideBodyText"/>) when the raw event body still
+    /// contains MIME `cid:` references — the endpoint runs the mail-timeline
+    /// enricher first so inline images keep resolving against the source
+    /// mail's attachment URLs. Returns null when the source mail event isn't
+    /// found, isn't a MailReceived event, or doesn't belong to the source.
     Task<SplitResult?> SplitAsync(
         Guid sourceTicketId,
         long sourceMailEventId,
         string newSubject,
         Guid actorUserId,
+        string? overrideBodyHtml,
+        string? overrideBodyText,
         CancellationToken ct);
 }
 

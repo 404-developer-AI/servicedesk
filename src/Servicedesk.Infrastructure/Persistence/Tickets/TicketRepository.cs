@@ -1273,6 +1273,8 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         long sourceMailEventId,
         string newSubject,
         Guid actorUserId,
+        string? overrideBodyHtml,
+        string? overrideBodyText,
         CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -1376,19 +1378,19 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                 SplitFromUserId = actorUserId,
             }, tx, cancellationToken: ct));
 
-        // Description = the mail body. We keep the HTML untouched so inline
-        // images keep resolving via the original mail's attachment URLs (the
-        // mail row stays on the source ticket, so an agent with queue access
-        // there can still load them; this matches how forwarded mails work
-        // elsewhere in the codebase).
+        // Description = the mail body. The caller passes the cid-rewritten HTML
+        // (mail-timeline-enricher output) so inline `cid:` references resolve
+        // against the source mail's attachment URLs. Falls back to the raw
+        // event body when the enricher didn't produce a rewrite (e.g. a mail
+        // without inline attachments).
         await conn.ExecuteAsync(new CommandDefinition("""
             INSERT INTO ticket_bodies (ticket_id, body_text, body_html)
             VALUES (@ticketId, @bodyText, @bodyHtml)
             """, new
         {
             ticketId = newRow.Id,
-            bodyText = mailEvent.BodyText ?? string.Empty,
-            bodyHtml = mailEvent.BodyHtml,
+            bodyText = overrideBodyText ?? mailEvent.BodyText ?? string.Empty,
+            bodyHtml = overrideBodyHtml ?? mailEvent.BodyHtml,
         }, tx, cancellationToken: ct));
 
         // Created event mirrors what CreateAsync writes — same shape so list/

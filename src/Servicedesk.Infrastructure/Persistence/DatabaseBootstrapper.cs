@@ -1449,6 +1449,14 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_tickets_split_from
             ON tickets (split_from_ticket_id)
             WHERE split_from_ticket_id IS NOT NULL;
+
+        -- v0.0.23 ticket split: extend the source allow-list with 'Split' so the
+        -- new ticket can record where it came from. Drop-then-add is idempotent
+        -- across re-deploys; existing rows are guaranteed to satisfy the new
+        -- predicate (it's a superset of the old one).
+        ALTER TABLE tickets DROP CONSTRAINT IF EXISTS chk_ticket_source;
+        ALTER TABLE tickets ADD CONSTRAINT chk_ticket_source
+            CHECK (source IN ('Web','Mail','Api','System','Split'));
         """;
 
     private readonly NpgsqlDataSource _dataSource;

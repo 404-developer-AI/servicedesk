@@ -379,7 +379,7 @@ public sealed class MailIngestServiceTests
             => Task.FromResult<MergeResult?>(null);
         public Task<IReadOnlyList<SplitChildTicket>> GetSplitChildrenAsync(Guid p, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<SplitChildTicket>>(Array.Empty<SplitChildTicket>());
-        public Task<SplitResult?> SplitAsync(Guid s, long e, string subj, Guid a, CancellationToken ct)
+        public Task<SplitResult?> SplitAsync(Guid s, long e, string subj, Guid a, string? oh, string? ot, CancellationToken ct)
             => Task.FromResult<SplitResult?>(null);
     }
 

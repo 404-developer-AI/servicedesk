@@ -138,6 +138,14 @@ public static class TicketEndpoints
                 }
             }
 
+            // For tickets created via split, surface the source-mail's non-inline
+            // attachments so the description block can render download chips.
+            // The bytes stay on the source mail; the URLs route through the
+            // source ticket's mail-attachment endpoint, which the agent can
+            // already access (split requires queue access on the source).
+            var descriptionAttachments = await BuildSplitDescriptionAttachmentsAsync(
+                detail, dataSource, ct);
+
             return Results.Ok(new
             {
                 ticket = detail.Ticket,
@@ -151,6 +159,7 @@ public static class TicketEndpoints
                 splitFromTicketNumber,
                 splitFromUserName,
                 splitChildren = splitChildren.Select(c => new { id = c.Id, number = c.Number }),
+                descriptionAttachments,
             });
         }).WithName("GetTicket").WithOpenApi();
 
@@ -918,6 +927,7 @@ public static class TicketEndpoints
         group.MapPost("/{id:guid}/split", async (
             Guid id, [FromBody] SplitTicketRequest req, HttpContext http,
             ITicketRepository tickets, IQueueAccessService queueAccess,
+            IMailTimelineEnricher mailEnricher,
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
         {
             if (req.SourceMailEventId <= 0)
@@ -933,11 +943,22 @@ public static class TicketEndpoints
             if (!await queueAccess.HasQueueAccessAsync(userId, userRole, source.Ticket.QueueId, ct))
                 return Results.NotFound();
 
+            // Run the timeline enricher so the chosen MailReceived event's
+            // `body_html` has its `cid:` references rewritten to absolute
+            // /api/tickets/{sourceId}/mail/{mailId}/attachments/{attId} URLs.
+            // Storing the rewritten copy on the new ticket keeps inline images
+            // visible without copying the attachment rows — the agent's
+            // source-queue access carries them.
+            var enriched = await mailEnricher.EnrichAsync(source, ct);
+            var sourceEvent = enriched.Events.FirstOrDefault(e => e.Id == req.SourceMailEventId);
+
             var result = await tickets.SplitAsync(
                 sourceTicketId: id,
                 sourceMailEventId: req.SourceMailEventId,
                 newSubject: req.NewSubject.Trim(),
                 actorUserId: userId,
+                overrideBodyHtml: sourceEvent?.BodyHtml,
+                overrideBodyText: sourceEvent?.BodyText,
                 ct: ct);
 
             if (result is null || !result.Success)
@@ -1206,5 +1227,61 @@ public static class TicketEndpoints
             AlertOnCreate: company.AlertOnCreate,
             AlertOnOpen: company.AlertOnOpen,
             AlertOnOpenMode: company.AlertOnOpenMode);
+    }
+
+    /// v0.0.23 split: when this ticket was created by splitting a mail off
+    /// another ticket, surface the source-mail's non-inline attachments so the
+    /// description block can render download chips. URLs route through the
+    /// source ticket's per-mail attachment endpoint — the bytes never move.
+    /// Returns an empty list for tickets that aren't splits.
+    private static async Task<IReadOnlyList<object>> BuildSplitDescriptionAttachmentsAsync(
+        TicketDetail detail, Npgsql.NpgsqlDataSource dataSource, CancellationToken ct)
+    {
+        if (detail.Ticket.SplitFromTicketId is null) return Array.Empty<object>();
+
+        // Created event carries splitFromMailMessageId in its metadata (set by
+        // SplitAsync). Locate it and parse out the source mail id.
+        var createdEvent = detail.Events.FirstOrDefault(e => e.EventType == "Created");
+        if (createdEvent is null || string.IsNullOrWhiteSpace(createdEvent.MetadataJson))
+            return Array.Empty<object>();
+
+        Guid? sourceMailMessageId = null;
+        try
+        {
+            using var doc = JsonDocument.Parse(createdEvent.MetadataJson);
+            if (doc.RootElement.TryGetProperty("splitFromMailMessageId", out var prop)
+                && prop.ValueKind == JsonValueKind.String
+                && Guid.TryParse(prop.GetString(), out var g))
+            {
+                sourceMailMessageId = g;
+            }
+        }
+        catch { /* malformed metadata — treat as no attachments */ }
+
+        if (sourceMailMessageId is null) return Array.Empty<object>();
+
+        const string sql = """
+            SELECT a.id, a.original_filename, a.mime_type, a.size_bytes
+            FROM attachments a
+            WHERE a.owner_kind = 'Mail'
+              AND a.owner_id = @mailId
+              AND a.processing_state = 'Ready'
+              AND a.is_inline = FALSE
+            ORDER BY a.created_utc, a.id
+            """;
+        await using var conn = await dataSource.OpenConnectionAsync(ct);
+        var rows = await Dapper.SqlMapper.QueryAsync<(Guid Id, string OriginalFilename, string MimeType, long SizeBytes)>(
+            conn, new Dapper.CommandDefinition(sql, new { mailId = sourceMailMessageId.Value }, cancellationToken: ct));
+
+        var sourceTicketId = detail.Ticket.SplitFromTicketId.Value;
+        var mailId = sourceMailMessageId.Value;
+        return rows.Select(r => (object)new
+        {
+            id = r.Id,
+            name = r.OriginalFilename,
+            mimeType = r.MimeType,
+            size = r.SizeBytes,
+            url = $"/api/tickets/{sourceTicketId}/mail/{mailId}/attachments/{r.Id}",
+        }).ToList();
     }
 }
