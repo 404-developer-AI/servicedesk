@@ -274,4 +274,145 @@ public class TriggerValidatorTests
         var r = TriggerValidator.Validate("t", "action", "selective", "{\"op\":\"AND\",\"items\":[]}", actions, null, null);
         Assert.True(r.IsValid, r.Error);
     }
+
+    // ---- chain-target validation (v0.0.24 fix batch 2) -----------
+
+    [Fact]
+    public void ExtractChainedTargetIds_returns_unique_guids_from_set_pending_till()
+    {
+        var a = Guid.NewGuid();
+        var b = Guid.NewGuid();
+        var actions = $$"""
+            [
+              {"kind":"set_priority","priority_id":"{{Guid.NewGuid()}}"},
+              {"kind":"set_pending_till","relative":"PT1H","nextTriggerId":"{{a}}"},
+              {"kind":"set_pending_till","relative":"PT2H","nextTriggerId":"{{b}}"},
+              {"kind":"set_pending_till","relative":"PT3H","nextTriggerId":"{{a}}"}
+            ]
+            """;
+        var ids = TriggerValidator.ExtractChainedTargetIds(actions);
+        Assert.Equal(2, ids.Count);
+        Assert.Contains(a, ids);
+        Assert.Contains(b, ids);
+    }
+
+    [Fact]
+    public void ExtractChainedTargetIds_skips_null_or_invalid_pointers()
+    {
+        const string actions = """
+            [
+              {"kind":"set_pending_till","relative":"PT1H"},
+              {"kind":"set_pending_till","relative":"PT1H","nextTriggerId":null},
+              {"kind":"set_pending_till","relative":"PT1H","nextTriggerId":"not-a-uuid"},
+              {"kind":"set_pending_till","relative":"PT1H","nextTriggerId":42}
+            ]
+            """;
+        var ids = TriggerValidator.ExtractChainedTargetIds(actions);
+        Assert.Empty(ids);
+    }
+
+    [Fact]
+    public async Task ValidateChainTargetsAsync_passes_when_target_is_time_reminder()
+    {
+        var target = NewRow("time", "reminder");
+        var actions = $$"""[{"kind":"set_pending_till","relative":"PT1H","nextTriggerId":"{{target.Id}}"}]""";
+        var repo = new ChainFakeRepo(target);
+
+        var r = await TriggerValidator.ValidateChainTargetsAsync(
+            actions, "action", "selective", selfId: null, repo, CancellationToken.None);
+
+        Assert.True(r.IsValid, r.Error);
+    }
+
+    [Fact]
+    public async Task ValidateChainTargetsAsync_rejects_when_target_is_action_kind()
+    {
+        var target = NewRow("action", "selective");
+        var actions = $$"""[{"kind":"set_pending_till","relative":"PT1H","nextTriggerId":"{{target.Id}}"}]""";
+        var repo = new ChainFakeRepo(target);
+
+        var r = await TriggerValidator.ValidateChainTargetsAsync(
+            actions, "action", "selective", selfId: null, repo, CancellationToken.None);
+
+        Assert.False(r.IsValid);
+        Assert.Contains("time:reminder", r.Error!);
+    }
+
+    [Fact]
+    public async Task ValidateChainTargetsAsync_rejects_when_target_is_missing()
+    {
+        var ghost = Guid.NewGuid();
+        var actions = $$"""[{"kind":"set_pending_till","relative":"PT1H","nextTriggerId":"{{ghost}}"}]""";
+        var repo = new ChainFakeRepo();  // no rows
+
+        var r = await TriggerValidator.ValidateChainTargetsAsync(
+            actions, "action", "selective", selfId: null, repo, CancellationToken.None);
+
+        Assert.False(r.IsValid);
+        Assert.Contains("does not exist", r.Error!);
+    }
+
+    [Fact]
+    public async Task ValidateChainTargetsAsync_allows_self_chain_when_self_is_time_reminder()
+    {
+        var self = Guid.NewGuid();
+        var actions = $$"""[{"kind":"set_pending_till","relative":"PT1H","nextTriggerId":"{{self}}"}]""";
+        var repo = new ChainFakeRepo();  // no row written for self yet
+
+        var r = await TriggerValidator.ValidateChainTargetsAsync(
+            actions, "time", "reminder", selfId: self, repo, CancellationToken.None);
+
+        Assert.True(r.IsValid, r.Error);
+    }
+
+    [Fact]
+    public async Task ValidateChainTargetsAsync_rejects_self_chain_when_self_is_not_time_reminder()
+    {
+        var self = Guid.NewGuid();
+        var actions = $$"""[{"kind":"set_pending_till","relative":"PT1H","nextTriggerId":"{{self}}"}]""";
+        var repo = new ChainFakeRepo();
+
+        var r = await TriggerValidator.ValidateChainTargetsAsync(
+            actions, "time", "escalation", selfId: self, repo, CancellationToken.None);
+
+        Assert.False(r.IsValid);
+        Assert.Contains("chained targets must be time:reminder", r.Error!);
+    }
+
+    private static TriggerRow NewRow(string kind, string mode) => new()
+    {
+        Id = Guid.NewGuid(),
+        Name = "x",
+        ActivatorKind = kind,
+        ActivatorMode = mode,
+        ConditionsJson = "{\"op\":\"AND\",\"items\":[]}",
+        ActionsJson = "[]",
+        IsActive = true,
+        CreatedUtc = DateTime.UtcNow,
+        UpdatedUtc = DateTime.UtcNow,
+    };
+
+    /// Tiny fake limited to <see cref="GetByIdAsync"/> — chain-target
+    /// validation only consults the repo by id. Other methods throw so
+    /// an accidental call surfaces loudly in the test output.
+    private sealed class ChainFakeRepo : ITriggerRepository
+    {
+        private readonly Dictionary<Guid, TriggerRow> _byId;
+        public ChainFakeRepo(params TriggerRow[] rows)
+            => _byId = rows.ToDictionary(r => r.Id);
+        public Task<TriggerRow?> GetByIdAsync(Guid triggerId, CancellationToken ct)
+            => Task.FromResult(_byId.TryGetValue(triggerId, out var r) ? r : null);
+        public Task<IReadOnlyList<TriggerRow>> LoadActiveAsync(TriggerActivatorKind activatorKind, CancellationToken ct) => throw new NotImplementedException();
+        public Task<IReadOnlyList<TriggerRow>> ListAllAsync(CancellationToken ct) => throw new NotImplementedException();
+        public Task<TriggerRow> CreateAsync(NewTrigger row, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TriggerRow?> UpdateAsync(Guid id, UpdateTrigger row, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> SetActiveAsync(Guid id, bool isActive, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> DeleteAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
+        public Task<IReadOnlyDictionary<Guid, TriggerRunSummary>> GetRunSummariesAsync(DateTime sinceUtc, CancellationToken ct) => throw new NotImplementedException();
+        public Task<IReadOnlyList<TriggerRunDetail>> ListRunsAsync(Guid triggerId, int limit, DateTime? cursorUtc, CancellationToken ct) => throw new NotImplementedException();
+        public Task RecordRunAsync(TriggerRunRecord record, CancellationToken ct) => throw new NotImplementedException();
+        public Task<IReadOnlyList<TriggerScheduleCandidate>> ListReminderCandidatesAsync(int limit, CancellationToken ct) => throw new NotImplementedException();
+        public Task<IReadOnlyList<TriggerScheduleCandidate>> ListEscalationCandidatesAsync(int limit, CancellationToken ct) => throw new NotImplementedException();
+        public Task<IReadOnlyList<TriggerScheduleCandidate>> ListEscalationWarningCandidatesAsync(int warningMinutes, int limit, CancellationToken ct) => throw new NotImplementedException();
+    }
 }

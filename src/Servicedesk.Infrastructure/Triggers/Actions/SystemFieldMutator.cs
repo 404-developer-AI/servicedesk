@@ -218,24 +218,31 @@ internal sealed class SystemFieldMutator
         return true;
     }
 
-    /// Clears the chained-trigger pointer without touching pending_till_utc.
-    /// Called by <see cref="TriggerService"/> after a chained reminder
-    /// trigger has been dispatched so the next pending-cycle re-arms
-    /// explicitly. We deliberately do NOT clear pending_till_utc here —
-    /// the chained trigger is allowed to set its own pending-till
-    /// downstream, or leave it expired so the agent sees the elapsed
-    /// state.
-    public async Task ClearPendingTillNextTriggerAsync(Guid ticketId, CancellationToken ct)
+    /// Clears BOTH <c>pending_till_utc</c> and the chained-trigger
+    /// pointer once a chained reminder has run on Applied/Failed —
+    /// stops the wide-scan from picking the ticket back up on the next
+    /// tick, which was the leak before v0.0.24 fix batch 2 (pointer
+    /// cleared, pending_till still elapsed, wide branch re-fired every
+    /// reminder trigger). The optimistic <c>WHERE</c> guard preserves a
+    /// re-arm: if the chained trigger's actions reset pending_till_utc
+    /// to a new boundary (or pointed to a new chain), the row no longer
+    /// matches the original (boundary, pointer) and the clear is a
+    /// no-op — the trigger's re-arm wins.
+    public async Task ClearChainedReminderStateAsync(
+        Guid ticketId, Guid triggerId, DateTime boundaryUtc, CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition(
             """
             UPDATE tickets
-               SET pending_till_next_trigger_id = NULL
+               SET pending_till_utc = NULL,
+                   pending_till_next_trigger_id = NULL,
+                   updated_utc = now()
              WHERE id = @ticketId
-               AND pending_till_next_trigger_id IS NOT NULL
+               AND pending_till_next_trigger_id = @triggerId
+               AND pending_till_utc = @boundaryUtc
             """,
-            new { ticketId }, cancellationToken: ct));
+            new { ticketId, triggerId, boundaryUtc }, cancellationToken: ct));
     }
 }
 

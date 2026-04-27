@@ -31,10 +31,27 @@ public interface ITriggerService
     /// a time-trigger with conditions (e.g. only escalate priority=high)
     /// short-circuits when conditions don't match and writes a
     /// <c>skipped_no_match</c> row instead.
-    Task EvaluateScheduledAsync(
+    ///
+    /// <paramref name="expectedActivatorMode"/> is what the scheduler
+    /// expected this trigger to be (<c>reminder</c>, <c>escalation</c>,
+    /// <c>escalation_warning</c>) — defends against the race where the
+    /// admin re-typed the trigger between the candidate scan and
+    /// dispatch (or where a chained pending-till pointer was set when
+    /// the target was time:reminder but has since been re-typed). On
+    /// mismatch the evaluator writes a Failed run row and returns
+    /// without invoking handlers.
+    ///
+    /// Returns the outcome the evaluator persisted (or null when the
+    /// trigger or ticket disappeared mid-pass and no row was written).
+    /// The scheduler uses this to decide whether to clear chained-
+    /// reminder pointer state — chained reminders only release the
+    /// pointer on Applied/Failed so a SkippedNoMatch can re-evaluate
+    /// when the ticket changes shape.
+    Task<TriggerRunOutcome?> EvaluateScheduledAsync(
         Guid triggerId,
         Guid ticketId,
         DateTime boundaryUtc,
+        string expectedActivatorMode,
         CancellationToken ct);
 
     /// Admin test-runner (Blok 7). Evaluates a single trigger against a

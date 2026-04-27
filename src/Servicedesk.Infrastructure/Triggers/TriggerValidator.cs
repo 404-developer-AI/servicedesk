@@ -42,6 +42,11 @@ public static class TriggerValidator
         "time:reminder", "time:escalation", "time:escalation_warning",
     };
 
+    /// Pair the validator hands back when it has work for the caller to
+    /// finish — chain-target validation needs DB access (look up each
+    /// nextTriggerId) so the static <see cref="Validate"/> can only
+    /// extract the candidate ids; the endpoint completes the check via
+    /// <see cref="ValidateChainTargetsAsync"/>.
     public static ValidationResult Validate(
         string name,
         string activatorKind,
@@ -88,6 +93,84 @@ public static class TriggerValidator
             }
         }
 
+        return ValidationResult.Ok();
+    }
+
+    /// Walks the actions JSON and returns the GUID values found on
+    /// <c>set_pending_till.nextTriggerId</c> entries. Used by the
+    /// endpoint to drive a follow-up DB lookup that confirms each
+    /// chained target exists and is itself a <c>time:reminder</c>
+    /// trigger. Pure-sync because the parsing has no side effects;
+    /// the lookup itself happens in <see cref="ValidateChainTargetsAsync"/>.
+    public static IReadOnlyList<Guid> ExtractChainedTargetIds(string actionsJson)
+    {
+        if (string.IsNullOrWhiteSpace(actionsJson)) return Array.Empty<Guid>();
+        List<Guid>? ids = null;
+        JsonDocument doc;
+        try { doc = JsonDocument.Parse(actionsJson); }
+        catch (JsonException) { return Array.Empty<Guid>(); }
+
+        try
+        {
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) return Array.Empty<Guid>();
+            foreach (var action in doc.RootElement.EnumerateArray())
+            {
+                if (action.ValueKind != JsonValueKind.Object) continue;
+                if (!action.TryGetProperty("kind", out var kind)
+                    || kind.ValueKind != JsonValueKind.String
+                    || kind.GetString() != "set_pending_till") continue;
+                if (!action.TryGetProperty("nextTriggerId", out var el)
+                    || el.ValueKind != JsonValueKind.String) continue;
+                if (Guid.TryParse(el.GetString(), out var g))
+                {
+                    ids ??= new List<Guid>(2);
+                    if (!ids.Contains(g)) ids.Add(g);
+                }
+            }
+            return (IReadOnlyList<Guid>?)ids ?? Array.Empty<Guid>();
+        }
+        finally
+        {
+            doc.Dispose();
+        }
+    }
+
+    /// DB-backed completion of <see cref="Validate"/>. Confirms every
+    /// chained <c>nextTriggerId</c> resolves to an existing trigger
+    /// whose activator pair is <c>time:reminder</c> — chaining to an
+    /// action- or escalation-trigger would fire it blindly outside its
+    /// designed activator path. Self-chain (id == <paramref name="selfId"/>)
+    /// against a trigger being saved as <c>time:reminder</c> is allowed
+    /// without a lookup so the editor can re-arm a reminder against
+    /// itself in a single save.
+    public static async Task<ValidationResult> ValidateChainTargetsAsync(
+        string actionsJson,
+        string activatorKind,
+        string activatorMode,
+        Guid? selfId,
+        ITriggerRepository repo,
+        CancellationToken ct)
+    {
+        var ids = ExtractChainedTargetIds(actionsJson);
+        if (ids.Count == 0) return ValidationResult.Ok();
+
+        foreach (var id in ids)
+        {
+            if (selfId.HasValue && id == selfId.Value)
+            {
+                if (activatorKind != "time" || activatorMode != "reminder")
+                    return ValidationResult.Fail(
+                        $"nextTriggerId points at this trigger, but its activator is {activatorKind}:{activatorMode}; chained targets must be time:reminder.");
+                continue;
+            }
+
+            var target = await repo.GetByIdAsync(id, ct);
+            if (target is null)
+                return ValidationResult.Fail($"nextTriggerId '{id}' does not exist.");
+            if (target.ActivatorKind != "time" || target.ActivatorMode != "reminder")
+                return ValidationResult.Fail(
+                    $"nextTriggerId '{id}' must reference a time:reminder trigger (was {target.ActivatorKind}:{target.ActivatorMode}).");
+        }
         return ValidationResult.Ok();
     }
 

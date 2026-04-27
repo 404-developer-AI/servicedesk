@@ -29,8 +29,10 @@ public class TriggerSchedulerTests
         var matcher = new FakeMatcher(matches: true);
         var service = BuildService(repo, dispatcher, matcher, new FakeTicketRepo());
 
-        await service.EvaluateScheduledAsync(trigger.Id, Guid.NewGuid(), DateTime.UtcNow, CancellationToken.None);
+        var outcome = await service.EvaluateScheduledAsync(
+            trigger.Id, Guid.NewGuid(), DateTime.UtcNow, "reminder", CancellationToken.None);
 
+        Assert.Null(outcome);
         Assert.Empty(repo.Recorded);
         Assert.Equal(0, dispatcher.Calls);
     }
@@ -46,8 +48,10 @@ public class TriggerSchedulerTests
         var tickets = new FakeTicketRepo(); // returns null
         var service = BuildService(repo, new FakeDispatcher(), new FakeMatcher(true), tickets);
 
-        await service.EvaluateScheduledAsync(trigger.Id, Guid.NewGuid(), DateTime.UtcNow, CancellationToken.None);
+        var outcome = await service.EvaluateScheduledAsync(
+            trigger.Id, Guid.NewGuid(), DateTime.UtcNow, "reminder", CancellationToken.None);
 
+        Assert.Null(outcome);
         Assert.Empty(repo.Recorded);
     }
 
@@ -67,8 +71,10 @@ public class TriggerSchedulerTests
         var matcher = new FakeMatcher(matches: false);
         var service = BuildService(repo, dispatcher, matcher, tickets);
 
-        await service.EvaluateScheduledAsync(trigger.Id, ticketId, DateTime.UtcNow, CancellationToken.None);
+        var outcome = await service.EvaluateScheduledAsync(
+            trigger.Id, ticketId, DateTime.UtcNow, "reminder", CancellationToken.None);
 
+        Assert.Equal(TriggerRunOutcome.SkippedNoMatch, outcome);
         var record = Assert.Single(repo.Recorded);
         Assert.Equal(TriggerRunOutcome.SkippedNoMatch, record.Outcome);
         Assert.Null(record.AppliedChangesJson);
@@ -90,8 +96,10 @@ public class TriggerSchedulerTests
         var service = BuildService(repo, dispatcher, matcher, tickets);
 
         var boundary = new DateTime(2026, 4, 27, 12, 0, 0, DateTimeKind.Utc);
-        await service.EvaluateScheduledAsync(trigger.Id, ticketId, boundary, CancellationToken.None);
+        var outcome = await service.EvaluateScheduledAsync(
+            trigger.Id, ticketId, boundary, "reminder", CancellationToken.None);
 
+        Assert.Equal(TriggerRunOutcome.Applied, outcome);
         var record = Assert.Single(repo.Recorded);
         Assert.Equal(TriggerRunOutcome.Applied, record.Outcome);
         Assert.NotNull(record.AppliedChangesJson);
@@ -116,10 +124,41 @@ public class TriggerSchedulerTests
         var matcher = new FakeMatcher(matches: true);
         var service = BuildService(repo, dispatcher, matcher, tickets);
 
-        await service.EvaluateScheduledAsync(trigger.Id, ticketId, DateTime.UtcNow, CancellationToken.None);
+        var outcome = await service.EvaluateScheduledAsync(
+            trigger.Id, ticketId, DateTime.UtcNow, "reminder", CancellationToken.None);
 
+        Assert.Equal(TriggerRunOutcome.Failed, outcome);
         var record = Assert.Single(repo.Recorded);
         Assert.Equal(TriggerRunOutcome.Failed, record.Outcome);
+    }
+
+    [Fact]
+    public async Task Activator_mismatch_records_failed_without_dispatch()
+    {
+        // The scheduler tells the evaluator what activator pair it
+        // expected to dispatch (chained-pointer setups still see the
+        // trigger via the JOIN even if the admin re-typed the trigger
+        // afterwards). On mismatch we must NOT run the trigger's
+        // actions — they were authored for a different activator path.
+        var ticketId = Guid.NewGuid();
+        // Trigger was retyped to action:selective in flight.
+        var trigger = MakeTrigger();
+        trigger.ActivatorKind = "action";
+        trigger.ActivatorMode = "selective";
+        var repo = new FakeTriggerRepo(trigger);
+        var tickets = new FakeTicketRepo(SeedTicket(ticketId));
+        var dispatcher = new FakeDispatcher();
+        var matcher = new FakeMatcher(matches: true);
+        var service = BuildService(repo, dispatcher, matcher, tickets);
+
+        var outcome = await service.EvaluateScheduledAsync(
+            trigger.Id, ticketId, DateTime.UtcNow, "reminder", CancellationToken.None);
+
+        Assert.Equal(TriggerRunOutcome.Failed, outcome);
+        var record = Assert.Single(repo.Recorded);
+        Assert.Equal(TriggerRunOutcome.Failed, record.Outcome);
+        Assert.Equal("ActivatorMismatch", record.ErrorClass);
+        Assert.Equal(0, dispatcher.Calls);
     }
 
     // ----- fakes -----

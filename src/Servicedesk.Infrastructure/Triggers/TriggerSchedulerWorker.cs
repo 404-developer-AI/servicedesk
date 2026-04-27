@@ -25,6 +25,15 @@ public sealed class TriggerSchedulerWorker : BackgroundService
     private readonly IServiceProvider _sp;
     private readonly ILogger<TriggerSchedulerWorker> _logger;
 
+    /// Single-instance overlap guard. Today the loop below already runs
+    /// ticks sequentially so this is belt-and-braces, but if a future
+    /// refactor fans the loop out (e.g. <c>Task.Run</c>) or a hosted-
+    /// service refresh ever spawns a second instance into the same
+    /// process, this guarantees only one tick scans the candidate
+    /// tables at a time. <c>0 = idle, 1 = running</c>; CompareExchange
+    /// races safely.
+    private int _running;
+
     public TriggerSchedulerWorker(IServiceProvider sp, ILogger<TriggerSchedulerWorker> logger)
     {
         _sp = sp;
@@ -50,7 +59,23 @@ public sealed class TriggerSchedulerWorker : BackgroundService
                 interval = Math.Max(15, await settings.GetAsync<int>(
                     SettingKeys.Triggers.SchedulerIntervalSeconds, stoppingToken));
 
-                await TickAsync(scope.ServiceProvider, stoppingToken);
+                if (System.Threading.Interlocked.CompareExchange(ref _running, 1, 0) != 0)
+                {
+                    _logger.LogWarning(
+                        "Trigger scheduler tick skipped: previous tick still running. Increase {Setting} if this happens consistently.",
+                        SettingKeys.Triggers.SchedulerIntervalSeconds);
+                }
+                else
+                {
+                    try
+                    {
+                        await TickAsync(scope.ServiceProvider, stoppingToken);
+                    }
+                    finally
+                    {
+                        System.Threading.Interlocked.Exchange(ref _running, 0);
+                    }
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -75,18 +100,26 @@ public sealed class TriggerSchedulerWorker : BackgroundService
 
         // Reminder candidates: pending-till elapsed. The repository
         // returns chained candidates (`IsChainedReminder = true`) ahead
-        // of wide-scan ones for ergonomics — chain semantics: the
-        // pointer is cleared after dispatch (any outcome) so the next
-        // pending-cycle re-arms explicitly. Without the clear, a chained
-        // trigger with no actions (or one that didn't reset pending_till)
-        // would re-fire on every tick.
+        // of wide-scan ones for ergonomics. Chained-pointer state is
+        // cleared only on Applied/Failed — a SkippedNoMatch keeps the
+        // pointer + pending_till in place so the next tick can re-
+        // evaluate against possibly-changed ticket state. The clear
+        // method also wipes pending_till_utc (under an optimistic guard
+        // so a chained re-arm via set_pending_till is preserved),
+        // which prevents the wide branch from picking the ticket back
+        // up after the chain is consumed.
         var reminders = await repo.ListReminderCandidatesAsync(CandidateLimit, ct);
         foreach (var c in reminders)
         {
             if (ct.IsCancellationRequested) return;
-            await triggerService.EvaluateScheduledAsync(c.TriggerId, c.TicketId, c.BoundaryUtc, ct);
-            if (c.IsChainedReminder)
-                await mutator.ClearPendingTillNextTriggerAsync(c.TicketId, ct);
+            var outcome = await triggerService.EvaluateScheduledAsync(
+                c.TriggerId, c.TicketId, c.BoundaryUtc, "reminder", ct);
+            if (c.IsChainedReminder
+                && (outcome == TriggerRunOutcome.Applied || outcome == TriggerRunOutcome.Failed))
+            {
+                await mutator.ClearChainedReminderStateAsync(
+                    c.TicketId, c.TriggerId, c.BoundaryUtc, ct);
+            }
         }
 
         // Escalation candidates: SLA deadline elapsed.
@@ -94,7 +127,8 @@ public sealed class TriggerSchedulerWorker : BackgroundService
         foreach (var c in escalations)
         {
             if (ct.IsCancellationRequested) return;
-            await triggerService.EvaluateScheduledAsync(c.TriggerId, c.TicketId, c.BoundaryUtc, ct);
+            await triggerService.EvaluateScheduledAsync(
+                c.TriggerId, c.TicketId, c.BoundaryUtc, "escalation", ct);
         }
 
         // Warning candidates: deadline minus offset elapsed, deadline still ahead.
@@ -105,7 +139,8 @@ public sealed class TriggerSchedulerWorker : BackgroundService
         foreach (var c in warnings)
         {
             if (ct.IsCancellationRequested) return;
-            await triggerService.EvaluateScheduledAsync(c.TriggerId, c.TicketId, c.BoundaryUtc, ct);
+            await triggerService.EvaluateScheduledAsync(
+                c.TriggerId, c.TicketId, c.BoundaryUtc, "escalation_warning", ct);
         }
     }
 }

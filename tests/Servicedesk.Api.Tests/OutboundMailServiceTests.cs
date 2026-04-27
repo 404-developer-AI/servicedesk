@@ -494,9 +494,10 @@ public sealed class OutboundMailServiceTests
             Guid ticketId, long? ticketEventId, TriggerActivatorKind activatorKind,
             TriggerChangeSet changeSet, CancellationToken ct) => Task.CompletedTask;
 
-        public Task EvaluateScheduledAsync(
-            Guid triggerId, Guid ticketId, DateTime boundaryUtc, CancellationToken ct)
-            => Task.CompletedTask;
+        public Task<TriggerRunOutcome?> EvaluateScheduledAsync(
+            Guid triggerId, Guid ticketId, DateTime boundaryUtc,
+            string expectedActivatorMode, CancellationToken ct)
+            => Task.FromResult<TriggerRunOutcome?>(null);
 
         public Task<TriggerDryRunResult?> DryRunAsync(
             Guid triggerId, Guid ticketId, CancellationToken ct)

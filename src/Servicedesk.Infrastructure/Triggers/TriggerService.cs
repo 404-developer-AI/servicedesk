@@ -149,7 +149,7 @@ public sealed class TriggerService : ITriggerService
                 triggeringEvent = detail.Events.FirstOrDefault(e => e.Id == ticketEventId.Value);
             }
 
-            var results = await RunOneTriggerAsync(
+            var (_, results) = await RunOneTriggerAsync(
                 trigger, detail.Ticket, triggeringEvent,
                 ticketEventId, changeSet, scheduledBoundaryUtc: null, ct);
 
@@ -225,10 +225,11 @@ public sealed class TriggerService : ITriggerService
         _ => null,
     };
 
-    public async Task EvaluateScheduledAsync(
+    public async Task<TriggerRunOutcome?> EvaluateScheduledAsync(
         Guid triggerId,
         Guid ticketId,
         DateTime boundaryUtc,
+        string expectedActivatorMode,
         CancellationToken ct)
     {
         // Loop guard still applies: a time-trigger that mutates the ticket
@@ -245,7 +246,7 @@ public sealed class TriggerService : ITriggerService
             await SafeRecordAsync(new TriggerRunRecord(
                 triggerId, ticketId, TicketEventId: null,
                 TriggerRunOutcome.SkippedLoop, null, null, null), ct);
-            return;
+            return TriggerRunOutcome.SkippedLoop;
         }
 
         using var scope = _loopGuard.Enter();
@@ -258,7 +259,7 @@ public sealed class TriggerService : ITriggerService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Trigger evaluator failed to load trigger {TriggerId}.", triggerId);
-            return;
+            return null;
         }
 
         if (trigger is null || !trigger.IsActive)
@@ -267,17 +268,37 @@ public sealed class TriggerService : ITriggerService
             // scan and the dispatch. No trigger_run row to write — there
             // is nothing left to attach it to.
             _logger.LogDebug("Scheduled trigger {TriggerId} no longer active; skipping.", triggerId);
-            return;
+            return null;
+        }
+
+        // Defensive activator-pair check — closes the gap where an admin
+        // re-typed the trigger between candidate scan and dispatch (e.g.
+        // a chained reminder pointer that now resolves to an action-kind
+        // trigger). Without this, the trigger's actions would fire
+        // outside their designed activator path. We record Failed so the
+        // run-history surfaces the misconfiguration, then return Failed
+        // so the scheduler clears any chained pointer pointing here.
+        if (trigger.ActivatorKind != "time" || trigger.ActivatorMode != expectedActivatorMode)
+        {
+            _logger.LogWarning(
+                "Scheduled trigger {TriggerId} skipped on ticket {TicketId}: expected time:{Expected} but trigger is {Kind}:{Mode}.",
+                triggerId, ticketId, expectedActivatorMode, trigger.ActivatorKind, trigger.ActivatorMode);
+            await SafeRecordAsync(new TriggerRunRecord(
+                triggerId, ticketId, TicketEventId: null,
+                TriggerRunOutcome.Failed, null,
+                "ActivatorMismatch",
+                $"Expected time:{expectedActivatorMode} but trigger is {trigger.ActivatorKind}:{trigger.ActivatorMode}."), ct);
+            return TriggerRunOutcome.Failed;
         }
 
         var detail = await _tickets.GetByIdAsync(ticketId, ct);
         if (detail is null)
         {
             _logger.LogWarning("Ticket {TicketId} disappeared before scheduled trigger evaluation.", ticketId);
-            return;
+            return null;
         }
 
-        var results = await RunOneTriggerAsync(
+        var (outcome, results) = await RunOneTriggerAsync(
             trigger, detail.Ticket, triggeringEvent: null,
             ticketEventId: null, TriggerChangeSet.Empty,
             scheduledBoundaryUtc: boundaryUtc, ct);
@@ -290,6 +311,8 @@ public sealed class TriggerService : ITriggerService
         {
             await SafeNotifyAsync(ticketId, ct);
         }
+
+        return outcome;
     }
 
     public async Task<TriggerDryRunResult?> DryRunAsync(
@@ -370,14 +393,16 @@ public sealed class TriggerService : ITriggerService
         }
     }
 
-    /// Returns the dispatched action results for this trigger. Empty list
-    /// means "didn't match / errored / parse failure" — caller treats that
-    /// as "trigger contributed nothing this pass". The list shape lets the
-    /// foreach loop in <see cref="EvaluateAsync"/> propagate field-changes
-    /// (set_status, set_queue, ...) into the running ChangeSet so a later
-    /// trigger conditioned on <c>has_changed</c> can react to what the
-    /// previous trigger did in this same pass.
-    private async Task<IReadOnlyList<TriggerActionResult>> RunOneTriggerAsync(
+    /// Returns the trigger_runs outcome it persisted plus the dispatched
+    /// action results. The action list lets <see cref="EvaluateAsync"/>
+    /// propagate field-changes (set_status, set_queue, …) into the
+    /// running ChangeSet so a later trigger conditioned on
+    /// <c>has_changed</c> can react to what the previous trigger did in
+    /// this same pass. The outcome lets <see cref="EvaluateScheduledAsync"/>
+    /// signal back to the scheduler whether to clear chained-pointer
+    /// state — Failed-vs-SkippedNoMatch can no longer be inferred from
+    /// an empty list because both produce no actions.
+    private async Task<(TriggerRunOutcome Outcome, IReadOnlyList<TriggerActionResult> Results)> RunOneTriggerAsync(
         TriggerRow trigger,
         Ticket ticket,
         TicketEvent? triggeringEvent,
@@ -402,7 +427,7 @@ public sealed class TriggerService : ITriggerService
                 nameof(JsonException), ex.Message), ct);
             condDoc?.Dispose();
             actionsDoc?.Dispose();
-            return Array.Empty<TriggerActionResult>();
+            return (TriggerRunOutcome.Failed, Array.Empty<TriggerActionResult>());
         }
 
         try
@@ -421,7 +446,7 @@ public sealed class TriggerService : ITriggerService
                 await SafeRecordAsync(new TriggerRunRecord(
                     trigger.Id, ticket.Id, ticketEventId,
                     TriggerRunOutcome.SkippedNoMatch, null, null, null), ct);
-                return Array.Empty<TriggerActionResult>();
+                return (TriggerRunOutcome.SkippedNoMatch, Array.Empty<TriggerActionResult>());
             }
 
             var renderCtx = await _renderFactory.BuildAsync(ctx, trigger.Locale, trigger.Timezone, ct);
@@ -471,7 +496,7 @@ public sealed class TriggerService : ITriggerService
                     }), ct);
             }
 
-            return results;
+            return (outcome, results);
         }
         catch (Exception ex)
         {
@@ -479,7 +504,7 @@ public sealed class TriggerService : ITriggerService
             await SafeRecordAsync(new TriggerRunRecord(
                 trigger.Id, ticket.Id, ticketEventId,
                 TriggerRunOutcome.Failed, null, ex.GetType().Name, ex.Message), ct);
-            return Array.Empty<TriggerActionResult>();
+            return (TriggerRunOutcome.Failed, Array.Empty<TriggerActionResult>());
         }
         finally
         {

@@ -44,6 +44,14 @@ public static class TriggerEndpoints
             var validation = ValidateAndNormalize(req, out var normalized);
             if (!validation.IsValid) return Results.BadRequest(new { error = validation.Error });
 
+            // Self-chain via nextTriggerId is impossible on POST (no self-id
+            // exists yet) — pass null so the validator falls through to the
+            // straight DB-lookup path.
+            var chainCheck = await TriggerValidator.ValidateChainTargetsAsync(
+                normalized.ActionsJson, normalized.ActivatorKind, normalized.ActivatorMode,
+                selfId: null, repo, ct);
+            if (!chainCheck.IsValid) return Results.BadRequest(new { error = chainCheck.Error });
+
             var creatorId = TryGetUserId(http);
             var row = await repo.CreateAsync(new NewTrigger(
                 Name: normalized.Name,
@@ -71,6 +79,14 @@ public static class TriggerEndpoints
         {
             var validation = ValidateAndNormalize(req, out var normalized);
             if (!validation.IsValid) return Results.BadRequest(new { error = validation.Error });
+
+            // Pass the row's own id as selfId so a re-arm self-chain
+            // ("trigger A pending-tills back to A") doesn't trigger the
+            // not-found path on its own row.
+            var chainCheck = await TriggerValidator.ValidateChainTargetsAsync(
+                normalized.ActionsJson, normalized.ActivatorKind, normalized.ActivatorMode,
+                selfId: id, repo, ct);
+            if (!chainCheck.IsValid) return Results.BadRequest(new { error = chainCheck.Error });
 
             var row = await repo.UpdateAsync(id, new UpdateTrigger(
                 Name: normalized.Name,
