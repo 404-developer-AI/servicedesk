@@ -78,7 +78,7 @@ public static class TicketEndpoints
         group.MapGet("/{id:guid}", async (
             Guid id, HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess,
             ICompanyRepository companies, IMailTimelineEnricher mailEnricher,
-            Npgsql.NpgsqlDataSource dataSource, CancellationToken ct) =>
+            [FromServices] Npgsql.NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
             var detail = await repo.GetByIdAsync(id, ct);
             if (detail is null) return Results.NotFound();
