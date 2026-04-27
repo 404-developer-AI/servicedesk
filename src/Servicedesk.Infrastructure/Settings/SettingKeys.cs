@@ -178,6 +178,23 @@ public static class SettingKeys
         public const string AutoPinSubmittedForms = "IntakeForms.AutoPinSubmittedForms";
     }
 
+    public static class Triggers
+    {
+        // v0.0.24 — admin-configurable automation. Hard caps that keep a
+        // misconfigured trigger from spiralling: chain depth on a single
+        // ticket-mutation, dedup window for outbound mail-actions.
+        public const string MaxChainPerMutation = "Triggers.MaxChainPerMutation";
+        public const string MailDedupWindowMinutes = "Triggers.MailDedupWindowMinutes";
+
+        // v0.0.24 Blok 5 — time-based activator scheduler. The worker ticks
+        // every SchedulerIntervalSeconds and feeds the evaluator on three
+        // boundaries: pending_till_utc reached (reminder), SLA deadline
+        // reached (escalation), and SLA deadline minus EscalationWarningMinutes
+        // (escalation_warning).
+        public const string SchedulerIntervalSeconds = "Triggers.SchedulerIntervalSeconds";
+        public const string EscalationWarningMinutes = "Triggers.EscalationWarningMinutes";
+    }
+
     public static class Health
     {
         // Security-activity subsystem (v0.0.18). Samples the audit_log over a
@@ -456,5 +473,19 @@ public static class SettingDefaults
             "Rate-limit window length (seconds) for the public intake-form endpoints."),
         new SettingDefault(SettingKeys.IntakeForms.AutoPinSubmittedForms, "true", "bool", "IntakeForms",
             "When true, an intake-form submission is automatically pinned in the ticket activity feed so the agent sees it at the top. Pin can still be removed manually. Turn off if your team prefers to triage submissions chronologically without surfacing them above other pinned context."),
+
+        // Triggers — v0.0.24. Loop-prevention knobs for the evaluator. The
+        // chain-cap stops a trigger storm where trigger A's side-effects
+        // re-arm trigger B which re-arms A. The mail dedup window prevents
+        // the same trigger from mailing the same ticket twice when an agent
+        // makes several rapid edits that all match the same condition.
+        new SettingDefault(SettingKeys.Triggers.MaxChainPerMutation, "10", "int", "Triggers",
+            "Hard cap on the number of trigger evaluations chained off a single ticket mutation. A trigger whose actions re-match other triggers stops escalating once this cap is reached and the chain is logged with outcome='skipped_loop'."),
+        new SettingDefault(SettingKeys.Triggers.MailDedupWindowMinutes, "5", "int", "Triggers",
+            "Within this rolling window (minutes), a trigger that already sent a mail for a given ticket suppresses repeat sends from the same trigger. Prevents spam when an agent rapidly toggles fields that all match the same trigger condition."),
+        new SettingDefault(SettingKeys.Triggers.SchedulerIntervalSeconds, "60", "int", "Triggers",
+            "How often (seconds) the time-trigger scheduler scans for tickets whose pending-till or SLA deadline has elapsed. Lower values reduce latency but raise DB load; the floor is 15 seconds. The default of 60 mirrors a 1-minute tick which is fine-grained enough for any helpdesk SLA."),
+        new SettingDefault(SettingKeys.Triggers.EscalationWarningMinutes, "30", "int", "Triggers",
+            "How many minutes before the SLA deadline an 'escalation_warning' trigger fires (e.g. 30 = warn 30 minutes before breach). Has no effect on triggers using the 'reminder' or 'escalation' modes."),
     };
 }

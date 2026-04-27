@@ -1457,6 +1457,114 @@ public sealed class DatabaseBootstrapper : IHostedService
         ALTER TABLE tickets DROP CONSTRAINT IF EXISTS chk_ticket_source;
         ALTER TABLE tickets ADD CONSTRAINT chk_ticket_source
             CHECK (source IN ('Web','Mail','Api','System','Split'));
+
+        -- v0.0.24 triggers Blok 3: per-ticket pending-till timestamp written by
+        -- the set_pending_till action and consumed by the Blok 5 scheduler
+        -- worker (reminder_reached → fire time-based triggers when this passes
+        -- now()). Nullable; agents can also clear it manually.
+        ALTER TABLE tickets
+            ADD COLUMN IF NOT EXISTS pending_till_utc TIMESTAMPTZ NULL;
+
+        -- v0.0.24 Blok 5: partial index for the scheduler's reminder query.
+        -- The vast majority of rows have no pending-till and is_deleted=FALSE
+        -- already costs a row scan, so we keep the index small by predicating
+        -- on both. The 1-minute tick query becomes a tight index range scan.
+        CREATE INDEX IF NOT EXISTS ix_tickets_pending_till_utc
+            ON tickets (pending_till_utc)
+            WHERE pending_till_utc IS NOT NULL AND is_deleted = FALSE;
+
+        -- ===================================================================
+        -- v0.0.24 Triggers — admin-configurable automation
+        -- ===================================================================
+        -- Conditions/actions are JSONB; the schema is enforced at the C# layer
+        -- (whitelisted action kinds, condition tree shape) rather than the DB
+        -- so adding a new action handler does not require a migration. The
+        -- shape of the conditions tree is documented in TRIGGERS.md §4.1.
+        -- name is unique because it doubles as evaluation-order key
+        -- (alphabetical, MVP convention from Zammad — admins prefix with
+        -- 010-/020- when they want fine control).
+        CREATE TABLE IF NOT EXISTS triggers (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            name                TEXT        NOT NULL UNIQUE,
+            description         TEXT        NOT NULL DEFAULT '',
+            is_active           BOOLEAN     NOT NULL DEFAULT TRUE,
+            activator_kind      TEXT        NOT NULL,
+            activator_mode      TEXT        NOT NULL,
+            conditions          JSONB       NOT NULL DEFAULT '{"op":"AND","items":[]}'::jsonb,
+            actions             JSONB       NOT NULL DEFAULT '[]'::jsonb,
+            locale              TEXT        NULL,
+            timezone            TEXT        NULL,
+            note                TEXT        NOT NULL DEFAULT '',
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            created_by_user_id  UUID        NULL REFERENCES users(id) ON DELETE SET NULL
+        );
+
+        -- activator_kind/activator_mode are paired: 'action'-kind triggers run
+        -- in selective or always mode (selective = only on attribute change,
+        -- always = on every matching mutation), while 'time'-kind triggers
+        -- fire from the scheduler worker on reminder/escalation events.
+        ALTER TABLE triggers DROP CONSTRAINT IF EXISTS chk_trigger_activator;
+        ALTER TABLE triggers ADD CONSTRAINT chk_trigger_activator
+            CHECK (
+                (activator_kind = 'action' AND activator_mode IN ('selective','always'))
+                OR
+                (activator_kind = 'time'   AND activator_mode IN ('reminder','escalation','escalation_warning'))
+            ) NOT VALID;
+
+        -- Hot path for the evaluator: list active triggers in alphabetical
+        -- order. lower(name) keeps the order case-insensitive so admins can
+        -- name "010-Route" or "010-route" interchangeably.
+        CREATE INDEX IF NOT EXISTS ix_triggers_active_name
+            ON triggers (is_active, lower(name));
+
+        -- Append-only audit of every trigger evaluation. Rows are kept
+        -- indefinitely in MVP; a retention sweep is added later if volume
+        -- becomes a concern (1M tickets × N triggers can grow fast).
+        -- ticket_event_id is BIGINT to match ticket_events.id (BIGSERIAL).
+        CREATE TABLE IF NOT EXISTS trigger_runs (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            trigger_id          UUID        NOT NULL REFERENCES triggers(id)      ON DELETE CASCADE,
+            ticket_id           UUID        NOT NULL REFERENCES tickets(id)       ON DELETE CASCADE,
+            ticket_event_id     BIGINT      NULL     REFERENCES ticket_events(id) ON DELETE SET NULL,
+            fired_utc           TIMESTAMPTZ NOT NULL DEFAULT now(),
+            outcome             TEXT        NOT NULL,
+            applied_changes     JSONB       NULL,
+            error_class         TEXT        NULL,
+            error_message       TEXT        NULL
+        );
+
+        ALTER TABLE trigger_runs DROP CONSTRAINT IF EXISTS chk_trigger_runs_outcome;
+        ALTER TABLE trigger_runs ADD CONSTRAINT chk_trigger_runs_outcome
+            CHECK (outcome IN ('applied','skipped_no_match','skipped_loop','failed')) NOT VALID;
+
+        -- Per-ticket history (timeline drawer: "which triggers touched this ticket?")
+        CREATE INDEX IF NOT EXISTS ix_trigger_runs_ticket
+            ON trigger_runs (ticket_id, fired_utc DESC);
+
+        -- Per-trigger history (admin run-log page: "is this trigger still firing?")
+        CREATE INDEX IF NOT EXISTS ix_trigger_runs_trigger
+            ON trigger_runs (trigger_id, fired_utc DESC);
+
+        -- v0.0.24 (post-feature) — chained pending-till. When a trigger's
+        -- set_pending_till action carries a `nextTriggerId`, the handler
+        -- writes that GUID here. The scheduler's reminder scan checks this
+        -- pointer first: if non-null, the chained trigger fires *exclusively*
+        -- for that ticket on this pending-cycle (other reminder triggers
+        -- skip this ticket until the pointer clears). The pointer is cleared
+        -- after the chained trigger runs (Applied/Failed/SkippedNoMatch all
+        -- count) so the next pending-cycle is explicit. ON DELETE SET NULL
+        -- so removing the chained trigger doesn't strand the ticket.
+        ALTER TABLE tickets
+            ADD COLUMN IF NOT EXISTS pending_till_next_trigger_id UUID NULL
+                REFERENCES triggers(id) ON DELETE SET NULL;
+
+        -- Sparse index for the scheduler's chain-aware reminder scan.
+        -- The vast majority of pending-till tickets have no chain, so the
+        -- WHERE-clause keeps this index tiny.
+        CREATE INDEX IF NOT EXISTS ix_tickets_pending_till_next_trigger
+            ON tickets (pending_till_next_trigger_id)
+            WHERE pending_till_next_trigger_id IS NOT NULL;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

@@ -108,6 +108,10 @@ public sealed record GraphMailFolderInfo(
 
 /// Outbound-mail payload for <see cref="IGraphMailClient.SendMailAsync"/>.
 /// The caller owns subject/body/recipients; this record carries no logic.
+/// <see cref="InternetMessageHeaders"/> are custom RFC-5322 headers stamped
+/// on the draft. Microsoft Graph only persists names that start with
+/// <c>x-</c>, so the trigger send-path uses <c>X-Auto-Submitted</c> rather
+/// than the bare <c>Auto-Submitted</c> name.
 public sealed record GraphOutboundMessage(
     string FromMailbox,
     string Subject,
@@ -116,7 +120,11 @@ public sealed record GraphOutboundMessage(
     IReadOnlyList<GraphRecipient> Cc,
     IReadOnlyList<GraphRecipient> Bcc,
     IReadOnlyList<GraphRecipient> ReplyTo,
-    IReadOnlyList<GraphOutboundAttachment>? Attachments = null);
+    IReadOnlyList<GraphOutboundAttachment>? Attachments = null,
+    IReadOnlyList<GraphOutboundHeader>? InternetMessageHeaders = null);
+
+/// One custom RFC-5322 header set on an outbound message.
+public sealed record GraphOutboundHeader(string Name, string Value);
 
 /// One file-attachment to ship with an outbound mail. Bytes are passed
 /// in-memory because Graph's <c>fileAttachment</c> resource embeds the bytes

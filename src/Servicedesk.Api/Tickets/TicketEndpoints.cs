@@ -17,6 +17,7 @@ using Servicedesk.Infrastructure.Notifications;
 using Servicedesk.Infrastructure.Persistence.Companies;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Sla;
+using Servicedesk.Infrastructure.Triggers;
 
 namespace Servicedesk.Api.Tickets;
 
@@ -167,7 +168,8 @@ public static class TicketEndpoints
             [FromBody] CreateTicketRequest req, HttpContext http,
             ITicketRepository tickets, ICompanyRepository companies, IQueueAccessService queueAccess,
             IContactLookupService contactLookup,
-            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla, CancellationToken ct) =>
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla,
+            ITriggerService triggers, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(req.Subject))
                 return Results.BadRequest(new { error = "Subject is required." });
@@ -218,6 +220,18 @@ public static class TicketEndpoints
 
             await sla.OnTicketCreatedAsync(created.Id, ct);
 
+            // Trigger evaluator (v0.0.24 Blok 2). Runs after SLA so an
+            // action handler that consults SLA-derived fields sees the
+            // current deadlines. AllFieldsNew + ArticleAdded=true is the
+            // ChangeSet for a fresh ticket — every field is "changed" and
+            // a description-event was just written.
+            await triggers.EvaluateAsync(
+                ticketId: created.Id,
+                ticketEventId: null,
+                activatorKind: TriggerActivatorKind.Action,
+                changeSet: TriggerChangeSet.AllFieldsNew(),
+                ct: ct);
+
             var companyAlert = await BuildCompanyAlertAsync(companies, created.RequesterContactId, ct);
             var showAlertOnCreate = companyAlert is not null && companyAlert.AlertOnCreate
                 && !string.IsNullOrWhiteSpace(companyAlert.AlertText);
@@ -232,7 +246,8 @@ public static class TicketEndpoints
         group.MapPatch("/{id:guid}", async (
             Guid id, [FromBody] UpdateTicketRequest req, HttpContext http,
             ITicketRepository tickets, ICompanyRepository companies, IQueueAccessService queueAccess,
-            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla, CancellationToken ct) =>
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla,
+            ITriggerService triggerService, CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
@@ -278,6 +293,25 @@ public static class TicketEndpoints
             await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", ticketIdStr, ct);
 
             await sla.OnTicketFieldsChangedAsync(id, ct);
+
+            // Trigger evaluator (v0.0.24 Blok 2). Build a ChangeSet from
+            // the PATCH request: any non-null field counts as "changed"
+            // (a no-op same-value PATCH still trips the Selective check,
+            // refining that costs an extra pre-update fetch we don't pay
+            // for elsewhere).
+            var changedFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (req.QueueId.HasValue) changedFields.Add(TriggerFieldKeys.TicketQueueId);
+            if (req.StatusId.HasValue) changedFields.Add(TriggerFieldKeys.TicketStatusId);
+            if (req.PriorityId.HasValue) changedFields.Add(TriggerFieldKeys.TicketPriorityId);
+            if (req.CategoryId.HasValue) changedFields.Add(TriggerFieldKeys.TicketCategoryId);
+            if (req.AssigneeUserId.HasValue) changedFields.Add(TriggerFieldKeys.TicketOwnerId);
+            if (req.Subject is not null) changedFields.Add(TriggerFieldKeys.TicketSubject);
+            await triggerService.EvaluateAsync(
+                ticketId: id,
+                ticketEventId: null,
+                activatorKind: TriggerActivatorKind.Action,
+                changeSet: new TriggerChangeSet(changedFields, ArticleAdded: false),
+                ct: ct);
 
             var companyAlert = await BuildCompanyAlertAsync(companies, detail.Ticket.RequesterContactId, ct);
             return Results.Ok(new
@@ -465,7 +499,8 @@ public static class TicketEndpoints
             ITicketRepository tickets, IQueueAccessService queueAccess,
             IAttachmentRepository attachmentsRepo, IUserService users,
             IMentionNotificationService mentionService,
-            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla, CancellationToken ct) =>
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla,
+            ITriggerService triggerService, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(req.EventType))
                 return Results.BadRequest(new { error = "eventType is required." });
@@ -542,6 +577,16 @@ public static class TicketEndpoints
             await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", ticketIdStr, ct);
 
             await sla.OnTicketEventAsync(id, evt.EventType, ct);
+
+            // Trigger evaluator (v0.0.24 Blok 2). A new article was just
+            // added — that satisfies the Selective short-circuit by
+            // itself, so no per-field changedFields tracking needed here.
+            await triggerService.EvaluateAsync(
+                ticketId: id,
+                ticketEventId: evt.Id,
+                activatorKind: TriggerActivatorKind.Action,
+                changeSet: TriggerChangeSet.ArticleOnly(),
+                ct: ct);
 
             // @@-mention notification raamwerk (v0.0.12 stap 4). Fire-and-forget
             // semantics: the service logs + swallows everything. The request

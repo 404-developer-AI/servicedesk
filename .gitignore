@@ -147,6 +147,7 @@ NOTFORCLAUDE.md
 NOTFORCLAUDE.MD
 rapport.md
 SECURITY-AUDIT-*.md
+TRIGGERS.md
 
 # Claude Code local settings
 .claude/

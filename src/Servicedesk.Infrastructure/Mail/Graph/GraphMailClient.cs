@@ -106,7 +106,12 @@ public sealed class GraphMailClient : IGraphMailClient
             BodyHtml: bodyHtml,
             BodyText: bodyText,
             ReceivedUtc: msg.ReceivedDateTime ?? DateTimeOffset.UtcNow,
-            AutoSubmitted: header("Auto-Submitted"),
+            // X-Auto-Submitted is the trigger send-path's loop marker:
+            // Microsoft Graph only persists custom headers prefixed with
+            // x-, so our outbound trigger mails carry X-Auto-Submitted in
+            // place of the bare RFC-3834 name. Treat both as equivalent
+            // here so the ingest skip-check sees them.
+            AutoSubmitted: header("Auto-Submitted") ?? header("X-Auto-Submitted"),
             Attachments: attachments);
     }
 
@@ -243,6 +248,12 @@ public sealed class GraphMailClient : IGraphMailClient
         // Draft-then-send: creating the draft first lets Graph assign the
         // internet-message-id which we capture before sending. That id is
         // what inbound replies reference via In-Reply-To / References.
+        //
+        // Microsoft.Graph SDK quirk: the Kiota-generated Message tracks
+        // "set" properties via a backing store. Setting a property to null
+        // still puts it in the serialized JSON ("internetMessageHeaders":
+        // null), which Graph rejects with "unable to deserialize". So we
+        // must only assign when there is at least one header to send.
         var draft = new Message
         {
             Subject = message.Subject,
@@ -252,6 +263,11 @@ public sealed class GraphMailClient : IGraphMailClient
             BccRecipients = ToRecipientList(message.Bcc),
             ReplyTo = ToRecipientList(message.ReplyTo),
         };
+        var headers = ToHeaderList(message.InternetMessageHeaders);
+        if (headers is not null)
+        {
+            draft.InternetMessageHeaders = headers;
+        }
 
         var created = await graph.Users[message.FromMailbox].Messages.PostAsync(draft, cancellationToken: ct);
         var draftId = created?.Id
@@ -295,6 +311,18 @@ public sealed class GraphMailClient : IGraphMailClient
 
         await graph.Users[message.FromMailbox].Messages[draftId].Send.PostAsync(cancellationToken: ct);
         return new GraphSentMailResult(internetMessageId, DateTimeOffset.UtcNow);
+    }
+
+    private static List<InternetMessageHeader>? ToHeaderList(IReadOnlyList<GraphOutboundHeader>? source)
+    {
+        if (source is null || source.Count == 0) return null;
+        var list = new List<InternetMessageHeader>(source.Count);
+        foreach (var h in source)
+        {
+            if (string.IsNullOrWhiteSpace(h.Name)) continue;
+            list.Add(new InternetMessageHeader { Name = h.Name, Value = h.Value ?? string.Empty });
+        }
+        return list.Count == 0 ? null : list;
     }
 
     private static List<Recipient> ToRecipientList(IReadOnlyList<GraphRecipient> source)

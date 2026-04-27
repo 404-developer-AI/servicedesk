@@ -759,6 +759,155 @@ export const searchApi = {
     ),
 };
 
+// ---- Triggers (admin) ----
+
+export type TriggerActivatorKind = "action" | "time";
+export type TriggerActivatorMode =
+  | "selective"
+  | "always"
+  | "reminder"
+  | "escalation"
+  | "escalation_warning";
+
+export type TriggerRunSummary = {
+  applied: number;
+  skippedNoMatch: number;
+  skippedLoop: number;
+  failed: number;
+  lastFiredUtc: string | null;
+};
+
+export type TriggerListItem = {
+  id: string;
+  name: string;
+  description: string;
+  isActive: boolean;
+  activatorKind: TriggerActivatorKind;
+  activatorMode: TriggerActivatorMode;
+  locale: string | null;
+  timezone: string | null;
+  createdUtc: string;
+  updatedUtc: string;
+  runs: TriggerRunSummary;
+};
+
+export type TriggerListResponse = {
+  items: TriggerListItem[];
+  runSummaryWindowHours: number;
+};
+
+export type TriggerDetail = {
+  id: string;
+  name: string;
+  description: string;
+  isActive: boolean;
+  activatorKind: TriggerActivatorKind;
+  activatorMode: TriggerActivatorMode;
+  conditionsJson: string;
+  actionsJson: string;
+  locale: string | null;
+  timezone: string | null;
+  note: string;
+  createdUtc: string;
+  updatedUtc: string;
+  createdByUserId: string | null;
+};
+
+export type TriggerInput = {
+  name: string;
+  description: string;
+  isActive: boolean;
+  activatorKind: TriggerActivatorKind;
+  activatorMode: TriggerActivatorMode;
+  conditionsJson: string;
+  actionsJson: string;
+  locale: string | null;
+  timezone: string | null;
+  note: string;
+};
+
+export type TriggerConditionField = {
+  key: string;
+  label: string;
+  type: string;
+};
+
+export type TriggerTemplateVariable = {
+  path: string;
+  label: string;
+  type: "string" | "datetime";
+  example: string;
+};
+
+export type TriggerMetadata = {
+  conditionFields: TriggerConditionField[];
+  conditionOperators: string[];
+  actionKinds: string[];
+  activatorPairs: string[];
+  templateVariables: TriggerTemplateVariable[];
+  maxConditionDepth: number;
+};
+
+export type TriggerRun = {
+  id: string;
+  triggerId: string;
+  ticketId: string;
+  ticketNumber: number | null;
+  ticketEventId: number | null;
+  firedUtc: string;
+  outcome: string;
+  appliedChangesJson: string | null;
+  errorClass: string | null;
+  errorMessage: string | null;
+};
+
+export type TriggerRunPage = {
+  items: TriggerRun[];
+  nextCursor: string | null;
+};
+
+export type TriggerDryRunActionStatus =
+  | "wouldapply"
+  | "wouldnoop"
+  | "failed"
+  | "nohandler";
+
+export type TriggerDryRunAction = {
+  kind: string;
+  status: TriggerDryRunActionStatus;
+  summary: unknown;
+  failure: string | null;
+};
+
+export type TriggerDryRunResult = {
+  matched: boolean;
+  failureReason: string | null;
+  actions: TriggerDryRunAction[];
+};
+
+export const triggerApi = {
+  list: () => request<TriggerListResponse>("GET", "/api/admin/triggers"),
+  get: (id: string) => request<TriggerDetail>("GET", `/api/admin/triggers/${id}`),
+  create: (body: TriggerInput) =>
+    request<TriggerDetail>("POST", "/api/admin/triggers", body),
+  update: (id: string, body: TriggerInput) =>
+    request<TriggerDetail>("PUT", `/api/admin/triggers/${id}`, body),
+  setActive: (id: string, isActive: boolean) =>
+    request<void>("POST", `/api/admin/triggers/${id}/active`, { isActive }),
+  remove: (id: string) =>
+    request<void>("DELETE", `/api/admin/triggers/${id}`),
+  metadata: () => request<TriggerMetadata>("GET", "/api/admin/triggers/metadata"),
+  runs: (id: string, params: { limit?: number; cursorUtc?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.limit) qs.set("limit", String(params.limit));
+    if (params.cursorUtc) qs.set("cursorUtc", params.cursorUtc);
+    const tail = qs.toString() ? `?${qs.toString()}` : "";
+    return request<TriggerRunPage>("GET", `/api/admin/triggers/${id}/runs${tail}`);
+  },
+  dryRun: (id: string, ticketId: string) =>
+    request<TriggerDryRunResult>("POST", `/api/admin/triggers/${id}/dry-run`, { ticketId }),
+};
+
 export type AuthConfig = {
   microsoftEnabled: boolean;
   setupAvailable: boolean;

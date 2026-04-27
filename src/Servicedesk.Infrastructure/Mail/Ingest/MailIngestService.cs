@@ -8,6 +8,7 @@ using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Storage;
+using Servicedesk.Infrastructure.Triggers;
 
 namespace Servicedesk.Infrastructure.Mail.Ingest;
 
@@ -28,6 +29,7 @@ public sealed class MailIngestService : IMailIngestService
     private readonly IBlobStore _blobs;
     private readonly ISettingsService _settings;
     private readonly ISlaEngine _sla;
+    private readonly ITriggerService _triggers;
     private readonly ILogger<MailIngestService> _logger;
 
     public MailIngestService(
@@ -39,6 +41,7 @@ public sealed class MailIngestService : IMailIngestService
         IBlobStore blobs,
         ISettingsService settings,
         ISlaEngine sla,
+        ITriggerService triggers,
         ILogger<MailIngestService> logger)
     {
         _graph = graph;
@@ -49,6 +52,7 @@ public sealed class MailIngestService : IMailIngestService
         _blobs = blobs;
         _settings = settings;
         _sla = sla;
+        _triggers = triggers;
         _logger = logger;
     }
 
@@ -237,6 +241,18 @@ public sealed class MailIngestService : IMailIngestService
         // nor as a pause-exit, but may affect deadlines if any recalc logic lands
         // later. Calling the engine keeps state fresh without special-casing.
         await _sla.OnTicketEventAsync(ticketId, evt.EventType, ct);
+
+        // Trigger evaluator (v0.0.24 Blok 2). A new MailReceived event is
+        // an article addition — Selective triggers fire on this alone.
+        // Whether the ticket is freshly Created or just Appended is
+        // irrelevant to the evaluator: action-based triggers see the
+        // post-ingest state and the article-added signal.
+        await _triggers.EvaluateAsync(
+            ticketId: ticketId,
+            ticketEventId: evt.Id,
+            activatorKind: TriggerActivatorKind.Action,
+            changeSet: TriggerChangeSet.ArticleOnly(),
+            ct: ct);
 
         return new MailIngestResult(
             existingTicketId is null ? MailIngestOutcome.Created : MailIngestOutcome.Appended,

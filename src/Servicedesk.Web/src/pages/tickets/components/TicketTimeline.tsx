@@ -912,9 +912,24 @@ function TimelineEvent({
             <EventBody event={event} />
           </div>
           <span className="text-[11px] text-muted-foreground/40">
-            {event.authorName && (
-              <>{event.authorName} · </>
-            )}
+            {(() => {
+              // Trigger-fired events are written with author_user_id IS NULL
+              // (system actor) and carry `triggered_by` in the metadata.
+              // The SQL projection builds AuthorName via
+              // `COALESCE(au.email, CONCAT_WS(' ', ac.first_name, ac.last_name))`,
+              // which yields the empty string (not null) when both joins
+              // miss — so a plain `?? fallback` never fires. Trim-and-test
+              // first, then either use the real name or fall back to
+              // "Automatic Trigger" for system-actor / triggered_by events.
+              const realName = (event.authorName ?? "").trim();
+              const hasTriggerSignal =
+                (typeof eventMetadata.triggered_by === "string" && eventMetadata.triggered_by.length > 0)
+                || event.authorUserId === null;
+              const author = realName.length > 0
+                ? realName
+                : (hasTriggerSignal ? "Automatic Trigger" : null);
+              return author ? <>{author} · </> : null;
+            })()}
             {fmtDate(event.createdUtc)} <span className="text-muted-foreground/40">{fmtUtc(event.createdUtc)}</span>
           </span>
         </div>

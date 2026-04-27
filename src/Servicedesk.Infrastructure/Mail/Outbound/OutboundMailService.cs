@@ -14,6 +14,7 @@ using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Storage;
+using Servicedesk.Infrastructure.Triggers;
 
 namespace Servicedesk.Infrastructure.Mail.Outbound;
 
@@ -34,6 +35,7 @@ public sealed class OutboundMailService : IOutboundMailService
     private readonly IMentionNotificationService _mentions;
     private readonly IIntakeFormRepository _intakeForms;
     private readonly IIntakeFormTokenService _intakeTokens;
+    private readonly ITriggerService _triggers;
     private readonly ILogger<OutboundMailService> _logger;
 
     public OutboundMailService(
@@ -49,6 +51,7 @@ public sealed class OutboundMailService : IOutboundMailService
         IMentionNotificationService mentions,
         IIntakeFormRepository intakeForms,
         IIntakeFormTokenService intakeTokens,
+        ITriggerService triggers,
         ILogger<OutboundMailService> logger)
     {
         _graph = graph;
@@ -63,6 +66,7 @@ public sealed class OutboundMailService : IOutboundMailService
         _mentions = mentions;
         _intakeForms = intakeForms;
         _intakeTokens = intakeTokens;
+        _triggers = triggers;
         _logger = logger;
     }
 
@@ -265,6 +269,20 @@ public sealed class OutboundMailService : IOutboundMailService
         }
 
         await _sla.OnTicketEventAsync(request.TicketId, evt.EventType, ct);
+
+        // Trigger evaluator (v0.0.24 follow-up). The MailSent event we
+        // just wrote is an article-added signal; without this hook
+        // action-triggers conditioned on `article.type = MailSent`
+        // (typical "agent replied → set status to WFC" automation)
+        // would never fire. Mirrors the AddTicketEvent and MailIngest
+        // hook-points; the trigger evaluator's own send_mail path is
+        // separate and never re-enters here.
+        await _triggers.EvaluateAsync(
+            ticketId: request.TicketId,
+            ticketEventId: evt.Id,
+            activatorKind: TriggerActivatorKind.Action,
+            changeSet: TriggerChangeSet.ArticleOnly(),
+            ct: ct);
 
         // Intake Forms finalize step. Atomic Draft → Sent + IntakeFormSent
         // event per prepared instance. A rare failure here (form cancelled

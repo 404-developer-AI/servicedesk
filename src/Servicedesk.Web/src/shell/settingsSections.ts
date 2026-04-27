@@ -14,6 +14,7 @@ import {
   Timer,
   UserCog,
   Users,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 
@@ -113,6 +114,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       "Reusable questionnaires agents send to customers via a public link — drag-reorder questions, bind defaults to ticket fields.",
     icon: ClipboardList,
+  },
+  {
+    slug: "triggers",
+    label: "Triggers",
+    description:
+      "If-this-then-that automation — auto-route by sender, auto-reply on new tickets, escalate on SLA breach.",
+    icon: Zap,
   },
   {
     slug: "mail-diagnostics",

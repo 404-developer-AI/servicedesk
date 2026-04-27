@@ -11,6 +11,7 @@ export type SearchKind =
   | "settings"
   | "intake-templates"
   | "intake-submissions"
+  | "triggers"
   | (string & {});
 
 export const KIND_LABELS: Record<string, string> = {
@@ -20,6 +21,7 @@ export const KIND_LABELS: Record<string, string> = {
   settings: "Settings",
   "intake-templates": "Intake Templates",
   "intake-submissions": "Intake Submissions",
+  triggers: "Triggers",
 };
 
 export const KIND_ORDER: string[] = [
@@ -29,6 +31,7 @@ export const KIND_ORDER: string[] = [
   "settings",
   "intake-templates",
   "intake-submissions",
+  "triggers",
 ];
 
 export function labelForKind(kind: string): string {
@@ -57,6 +60,8 @@ export function hitHref(hit: SearchHit): string {
       const hash = eventId ? `#event-${eventId}` : "";
       return `/tickets/${ticketId}${hash}`;
     }
+    case "triggers":
+      return `/settings/triggers/${hit.entityId}`;
     default:
       return "#";
   }

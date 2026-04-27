@@ -15,6 +15,7 @@ using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Storage;
+using Servicedesk.Infrastructure.Triggers;
 using Xunit;
 
 namespace Servicedesk.Api.Tests;
@@ -235,7 +236,7 @@ public sealed class OutboundMailServiceTests
         var intakeForms = new StubIntakeForms();
         var intakeTokens = new StubIntakeTokens();
         var svc = new OutboundMailService(graph, taxonomy, tickets, mail, atts, blobs, settings, sla, users, mentions,
-            intakeForms, intakeTokens, NullLogger<OutboundMailService>.Instance);
+            intakeForms, intakeTokens, new NoopTriggerService(), NullLogger<OutboundMailService>.Instance);
         return (svc, graph, mail, atts, tickets);
     }
 
@@ -485,5 +486,20 @@ public sealed class OutboundMailServiceTests
     {
         public (string Raw, byte[] Hash, byte[] Cipher) Mint() => ("stub", Array.Empty<byte>(), Array.Empty<byte>());
         public byte[]? HashForLookup(string rawFromUrl) => null;
+    }
+
+    private sealed class NoopTriggerService : ITriggerService
+    {
+        public Task EvaluateAsync(
+            Guid ticketId, long? ticketEventId, TriggerActivatorKind activatorKind,
+            TriggerChangeSet changeSet, CancellationToken ct) => Task.CompletedTask;
+
+        public Task EvaluateScheduledAsync(
+            Guid triggerId, Guid ticketId, DateTime boundaryUtc, CancellationToken ct)
+            => Task.CompletedTask;
+
+        public Task<TriggerDryRunResult?> DryRunAsync(
+            Guid triggerId, Guid ticketId, CancellationToken ct)
+            => Task.FromResult<TriggerDryRunResult?>(null);
     }
 }

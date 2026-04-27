@@ -11,6 +11,7 @@ using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Storage;
+using Servicedesk.Infrastructure.Triggers;
 using Xunit;
 
 namespace Servicedesk.Api.Tests;
@@ -255,7 +256,7 @@ public sealed class MailIngestServiceTests
         var blobs = new StubBlobs();
         var settings = new StubSettings();
         var svc = new MailIngestService(graph, mail, tickets, taxonomy, contacts, blobs, settings,
-            new NoopSlaEngine(), NullLogger<MailIngestService>.Instance);
+            new NoopSlaEngine(), new NoopTriggerService(), NullLogger<MailIngestService>.Instance);
         return (svc, graph, mail, tickets, contacts);
     }
 
@@ -469,5 +470,20 @@ public sealed class MailIngestServiceTests
         public Task OnTicketEventAsync(Guid ticketId, string eventType, CancellationToken ct) => Task.CompletedTask;
         public Task OnTicketFieldsChangedAsync(Guid ticketId, CancellationToken ct) => Task.CompletedTask;
         public Task RecalcAsync(Guid ticketId, CancellationToken ct) => Task.CompletedTask;
+    }
+
+    private sealed class NoopTriggerService : ITriggerService
+    {
+        public Task EvaluateAsync(
+            Guid ticketId, long? ticketEventId, TriggerActivatorKind activatorKind,
+            TriggerChangeSet changeSet, CancellationToken ct) => Task.CompletedTask;
+
+        public Task EvaluateScheduledAsync(
+            Guid triggerId, Guid ticketId, DateTime boundaryUtc, CancellationToken ct)
+            => Task.CompletedTask;
+
+        public Task<TriggerDryRunResult?> DryRunAsync(
+            Guid triggerId, Guid ticketId, CancellationToken ct)
+            => Task.FromResult<TriggerDryRunResult?>(null);
     }
 }

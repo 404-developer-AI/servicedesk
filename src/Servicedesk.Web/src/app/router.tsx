@@ -22,6 +22,8 @@ import { SlaSettingsPage } from "@/pages/settings/SlaSettingsPage";
 import { IntakeFormsSettingsPage } from "@/pages/settings/IntakeFormsSettingsPage";
 import { PublicIntakeFormPage } from "@/pages/intake/PublicIntakeFormPage";
 import { TicketsSettingsPage } from "@/pages/settings/TicketsSettingsPage";
+import { TriggersSettingsPage } from "@/pages/settings/TriggersSettingsPage";
+import { TriggerRunsPage } from "@/pages/settings/triggers/TriggerRunsPage";
 import { SettingsLayout } from "@/shell/SettingsLayout";
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { SetupWizardPage } from "@/pages/auth/SetupWizardPage";
@@ -275,6 +277,32 @@ const settingsIntakeFormsRoute = createRoute({
   component: IntakeFormsSettingsPage,
 });
 
+const settingsTriggersRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "triggers",
+  component: TriggersSettingsPage,
+});
+
+// Deep-link from global search and run-history "edit" button. Renders the
+// list page with the editor pre-opened on the requested trigger.
+const settingsTriggerDetailRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "triggers/$triggerId",
+  component: function SettingsTriggerDetailRoute() {
+    const { triggerId } = settingsTriggerDetailRoute.useParams();
+    return <TriggersSettingsPage initialEditId={triggerId} />;
+  },
+});
+
+const settingsTriggerRunsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "triggers/$triggerId/runs",
+  component: function SettingsTriggerRunsRoute() {
+    const { triggerId } = settingsTriggerRunsRoute.useParams();
+    return <TriggerRunsPage triggerId={triggerId} />;
+  },
+});
+
 const settingsIntegrationsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "integrations",
@@ -394,6 +422,9 @@ const routeTree = rootRoute.addChildren([
     settingsMailRoute,
     settingsSlaRoute,
     settingsIntakeFormsRoute,
+    settingsTriggersRoute,
+    settingsTriggerDetailRoute,
+    settingsTriggerRunsRoute,
     settingsIntegrationsRoute,
     settingsTicketsRoute,
     settingsCompaniesRoute,
