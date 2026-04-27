@@ -25,6 +25,13 @@ public sealed class SlaEngine : ISlaEngine
         "Mail", "Comment", "Note", "StatusChange", "AssignmentChange", "QueueChange"
     };
 
+    // The settings UI exposes "Mail" but OutboundMailService writes "MailSent" on
+    // the ticket_events row. Translate the user-facing key to the actual event type
+    // so the FR-detection SQL finds it. Inbound mail ("MailReceived") is excluded
+    // by the author_user_id IS NOT NULL filter — never an agent touch.
+    private static string ToEventType(string trigger)
+        => string.Equals(trigger, "Mail", StringComparison.OrdinalIgnoreCase) ? "MailSent" : trigger;
+
     private readonly NpgsqlDataSource _dataSource;
     private readonly ISlaRepository _repo;
     private readonly IBusinessHoursCalculator _calculator;
@@ -212,11 +219,13 @@ public sealed class SlaEngine : ISlaEngine
         try
         {
             var arr = JsonSerializer.Deserialize<string[]>(json) ?? Array.Empty<string>();
-            return new HashSet<string>(arr.Where(AllowedTriggers.Contains), StringComparer.OrdinalIgnoreCase);
+            return new HashSet<string>(
+                arr.Where(AllowedTriggers.Contains).Select(ToEventType),
+                StringComparer.OrdinalIgnoreCase);
         }
         catch
         {
-            return new HashSet<string>(new[] { "Mail", "Comment" }, StringComparer.OrdinalIgnoreCase);
+            return new HashSet<string>(new[] { "MailSent", "Comment" }, StringComparer.OrdinalIgnoreCase);
         }
     }
 

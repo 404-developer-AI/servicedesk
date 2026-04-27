@@ -292,6 +292,7 @@ public sealed class IntakeFormRepository : IIntakeFormRepository
         string? ip,
         string? userAgent,
         DateTime nowUtc,
+        bool autoPin,
         CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -300,12 +301,17 @@ public sealed class IntakeFormRepository : IIntakeFormRepository
         // Atomic gate: returns the row only when status=Sent AND not expired.
         // SELECT FOR UPDATE locks the row so concurrent submit attempts see
         // our UPDATE in step 4 and pick up the 'Submitted' state, returning 0
-        // affected and triggering the 409 branch.
+        // affected and triggering the 409 branch. SentByUserId comes from the
+        // IntakeFormSent event so the auto-pin (when enabled) can attribute
+        // the pin to the agent who actually sent the link to the customer —
+        // pinned_by_user_id is NOT NULL so we need a real user id here.
         var lookup = await conn.QueryFirstOrDefaultAsync<SubmitLookupRow>(new CommandDefinition("""
             SELECT i.id AS InstanceId, i.ticket_id AS TicketId, i.template_id AS TemplateId,
-                   t.name AS TemplateName, i.expires_utc AS ExpiresUtc
+                   t.name AS TemplateName, i.expires_utc AS ExpiresUtc,
+                   se.author_user_id AS SentByUserId
             FROM intake_form_instances i
             JOIN intake_templates t ON t.id = i.template_id
+            LEFT JOIN ticket_events se ON se.id = i.sent_event_id
             WHERE i.token_hash = @tokenHash AND i.status = 'Sent'
             FOR UPDATE OF i
             """, new { tokenHash }, transaction: tx, cancellationToken: ct));
@@ -362,6 +368,20 @@ public sealed class IntakeFormRepository : IIntakeFormRepository
             """,
             new { instanceId = lookup.InstanceId, nowUtc, ip, userAgent, submittedEventId },
             transaction: tx, cancellationToken: ct));
+
+        // Auto-pin in the same transaction. Skipped silently when SentByUserId
+        // is null (legacy rows where sent_event_id was never recorded) — the
+        // submission itself still lands; only the auto-pin is best-effort.
+        if (autoPin && lookup.SentByUserId is Guid pinnedBy)
+        {
+            await conn.ExecuteAsync(new CommandDefinition("""
+                INSERT INTO ticket_event_pins (event_id, ticket_id, pinned_by_user_id, remark)
+                VALUES (@eventId, @ticketId, @pinnedBy, '')
+                ON CONFLICT (event_id) DO NOTHING
+                """,
+                new { eventId = submittedEventId, ticketId = lookup.TicketId, pinnedBy },
+                transaction: tx, cancellationToken: ct));
+        }
 
         await tx.CommitAsync(ct);
 
@@ -693,6 +713,7 @@ public sealed class IntakeFormRepository : IIntakeFormRepository
         public Guid TemplateId { get; set; }
         public string TemplateName { get; set; } = string.Empty;
         public DateTime? ExpiresUtc { get; set; }
+        public Guid? SentByUserId { get; set; }
     }
 
     private sealed record ExpireLookupRow(Guid InstanceId, Guid TicketId, Guid TemplateId, string TemplateName);

@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { authApi, ApiError } from "@/lib/api";
 import { authStore } from "@/auth/authStore";
 import { refreshAuth } from "@/auth/bootstrap";
+import { MaintenanceBanner } from "@/components/maintenance/MaintenanceBanner";
 
 const loginSchema = z.object({
   email: z.string().min(1, "Email is required").email("Enter a valid email"),
@@ -111,7 +112,8 @@ export function LoginPage() {
   };
 
   return (
-    <div className="app-background relative flex min-h-screen items-center justify-center px-4 py-10">
+    <div className="app-background relative flex min-h-screen flex-col items-center justify-center px-4 py-10">
+      <MaintenanceBanner variant="auth" />
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}

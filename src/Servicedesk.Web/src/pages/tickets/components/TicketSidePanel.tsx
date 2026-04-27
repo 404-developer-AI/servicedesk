@@ -37,6 +37,8 @@ import {
   MapPin,
   Briefcase,
   Pencil,
+  Pin,
+  PinOff,
   Plus,
   User,
   UserCog,
@@ -46,6 +48,8 @@ type TicketSidePanelProps = {
   ticket: Ticket;
   onUpdate: (fields: TicketFieldUpdate) => Promise<void>;
   onRequestCompanyAssign?: () => void;
+  pinned?: boolean;
+  onTogglePin?: () => void;
 };
 
 type TabId = "status" | "contact" | "company";
@@ -119,7 +123,7 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
-export function TicketSidePanel({ ticket, onUpdate, onRequestCompanyAssign }: TicketSidePanelProps) {
+export function TicketSidePanel({ ticket, onUpdate, onRequestCompanyAssign, pinned = false, onTogglePin }: TicketSidePanelProps) {
   const [activeTab, setActiveTab] = React.useState<TabId>("status");
 
   const { data: contact } = useQuery({
@@ -153,27 +157,59 @@ export function TicketSidePanel({ ticket, onUpdate, onRequestCompanyAssign }: Ti
   ];
 
   return (
-    <div className="glass-card w-[320px] shrink-0 flex flex-col min-h-0">
-      {/* Tab bar */}
-      <div className="flex border-b border-white/10 shrink-0">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setActiveTab(tab.id)}
-            className={cn(
-              "flex-1 px-2 py-2.5 text-xs font-medium truncate transition-colors relative",
-              activeTab === tab.id
-                ? "text-foreground"
-                : "text-muted-foreground hover:text-foreground/80",
-            )}
-          >
-            <span className="truncate">{tab.label}</span>
-            {activeTab === tab.id && (
-              <span className="absolute bottom-0 inset-x-2 h-0.5 rounded-full bg-primary" />
-            )}
-          </button>
-        ))}
+    <div className="glass-card w-[320px] shrink-0 flex flex-col min-h-0 h-full">
+      {/* Tab bar — pin button on the trailing edge controls the
+          per-user "always open" preference for this panel across all tickets. */}
+      <div className="flex items-stretch border-b border-white/10 shrink-0">
+        <div className="flex flex-1 min-w-0">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "flex-1 min-w-0 px-2 py-2.5 text-xs font-medium truncate transition-colors relative",
+                activeTab === tab.id
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:text-foreground/80",
+              )}
+            >
+              <span className="truncate">{tab.label}</span>
+              {activeTab === tab.id && (
+                <span className="absolute bottom-0 inset-x-2 h-0.5 rounded-full bg-primary" />
+              )}
+            </button>
+          ))}
+        </div>
+        {onTogglePin && (
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={onTogglePin}
+                  aria-pressed={pinned}
+                  aria-label={pinned ? "Unpin side panel" : "Pin side panel open"}
+                  className={cn(
+                    "shrink-0 px-2.5 flex items-center justify-center transition-colors border-l border-white/10",
+                    pinned
+                      ? "text-primary hover:text-primary/80 bg-primary/[0.08]"
+                      : "text-muted-foreground/50 hover:text-foreground hover:bg-white/[0.06]",
+                  )}
+                >
+                  {pinned
+                    ? <Pin className="h-3.5 w-3.5 fill-current" />
+                    : <PinOff className="h-3.5 w-3.5" />}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {pinned
+                  ? "Pinned — side panel opens automatically on every ticket"
+                  : "Pin side panel — keep it open on every ticket"}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
       </div>
 
       {/* Tab content */}

@@ -38,12 +38,14 @@ export type PendingMailAction = {
 type WorkspaceState = {
   lastTicketId: string | null;
   sidebarCollapsed: boolean;
+  ticketSidePanelPinned: boolean;
   drafts: Record<string, Draft>;
   loaded: boolean;
   pendingMailAction: PendingMailAction | null;
 
   setLastTicket: (ticketId: string) => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
+  setTicketSidePanelPinned: (pinned: boolean) => void;
   setDraft: (
     ticketId: string,
     draft: Pick<Draft, "bodyHtml" | "isInternal" | "tab">,
@@ -68,6 +70,10 @@ function toEntries(state: WorkspaceState) {
     key: "workspace:sidebar",
     value: String(state.sidebarCollapsed),
   });
+  entries.push({
+    key: "workspace:ticketSidePanelPinned",
+    value: String(state.ticketSidePanelPinned),
+  });
   for (const draft of Object.values(state.drafts)) {
     entries.push({
       key: `workspace:draft:${draft.ticketId}`,
@@ -81,14 +87,22 @@ function fromEntries(entries: Record<string, string>) {
   const result: {
     lastTicketId: string | null;
     sidebarCollapsed: boolean;
+    ticketSidePanelPinned: boolean;
     drafts: Record<string, Draft>;
-  } = { lastTicketId: null, sidebarCollapsed: false, drafts: {} };
+  } = {
+    lastTicketId: null,
+    sidebarCollapsed: false,
+    ticketSidePanelPinned: false,
+    drafts: {},
+  };
 
   for (const [key, value] of Object.entries(entries)) {
     if (key === "workspace:lastTicket") {
       result.lastTicketId = value;
     } else if (key === "workspace:sidebar") {
       result.sidebarCollapsed = value === "true";
+    } else if (key === "workspace:ticketSidePanelPinned") {
+      result.ticketSidePanelPinned = value === "true";
     } else if (key.startsWith("workspace:draft:")) {
       try {
         const draft = JSON.parse(value) as Draft;
@@ -106,6 +120,7 @@ let mailActionCounter = 0;
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   lastTicketId: null,
   sidebarCollapsed: false,
+  ticketSidePanelPinned: false,
   drafts: {},
   loaded: false,
   pendingMailAction: null,
@@ -113,6 +128,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   setLastTicket: (ticketId) => set({ lastTicketId: ticketId }),
 
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+
+  setTicketSidePanelPinned: (pinned) => {
+    set({ ticketSidePanelPinned: pinned });
+    // Persist immediately — pin/unpin is a deliberate user action and the
+    // expectation is that the next ticket-open already respects the change,
+    // even on a different tab. Other workspace fields rely on the periodic
+    // auto-save in useWorkspaceAutoSave.
+    preferencesApi.fireAndForgetWorkspaceSave([
+      { key: "workspace:ticketSidePanelPinned", value: String(pinned) },
+    ]);
+  },
 
   setDraft: (ticketId, { bodyHtml, isInternal, tab }) =>
     set((s) => ({

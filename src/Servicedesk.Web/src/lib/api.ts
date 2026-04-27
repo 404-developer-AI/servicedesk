@@ -13,6 +13,13 @@ export type SystemTime = {
   offsetMinutes: number;
 };
 
+export type MaintenanceState = {
+  active: boolean;
+  startUtc: string | null;
+  endUtc: string | null;
+  message: string;
+};
+
 export type AuditEntry = {
   id: number;
   utc: string;
@@ -137,6 +144,7 @@ export const systemApi = {
   version: () => request<SystemVersion>("GET", "/api/system/version"),
   time: () => request<SystemTime>("GET", "/api/system/time"),
   health: () => request<{ status: HealthStatus }>("GET", "/api/system/health"),
+  maintenance: () => request<MaintenanceState>("GET", "/api/system/maintenance"),
 };
 
 export type IncidentSeverity = "Warning" | "Critical";

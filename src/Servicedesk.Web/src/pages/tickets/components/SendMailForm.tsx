@@ -283,6 +283,7 @@ export function SendMailForm({ ticketId, context, initialIntent, onSent, onCance
       attachments.reset();
       setEditorKey((k) => k + 1);
       queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
+      queryClient.invalidateQueries({ queryKey: ["sla", "ticket", ticketId] });
       onSent();
     },
     onError: (err: unknown) => {

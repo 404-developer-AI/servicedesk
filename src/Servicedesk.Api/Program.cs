@@ -297,6 +297,55 @@ app.MapGet("/api/system/time", async (ISettingsService settings, CancellationTok
 .WithName("GetSystemTime")
 .WithOpenApi();
 
+// Maintenance-window read endpoint. Public: the login page (no auth) needs
+// the same banner the authenticated app shows. Server is the single source
+// of truth — `active` is computed from current UTC vs EndUtc so the banner
+// disappears on its own without any admin action. Empty/invalid datetimes
+// are tolerated so a half-configured window never 500s the login page.
+app.MapGet("/api/system/maintenance", async (ISettingsService settings, CancellationToken ct) =>
+{
+    var enabled = false;
+    string startRaw = string.Empty, endRaw = string.Empty, message = string.Empty;
+    try
+    {
+        enabled = await settings.GetAsync<bool>(SettingKeys.App.MaintenanceEnabled, ct);
+        startRaw = await settings.GetAsync<string>(SettingKeys.App.MaintenanceStartUtc, ct);
+        endRaw = await settings.GetAsync<string>(SettingKeys.App.MaintenanceEndUtc, ct);
+        message = await settings.GetAsync<string>(SettingKeys.App.MaintenanceMessage, ct);
+    }
+    catch
+    {
+        // Settings store unreachable — fall through and report inactive.
+    }
+
+    DateTimeOffset? start = TryParseUtc(startRaw);
+    DateTimeOffset? end = TryParseUtc(endRaw);
+    var nowUtc = DateTimeOffset.UtcNow;
+    var active = enabled && (end is null || nowUtc <= end);
+
+    return Results.Ok(new
+    {
+        active,
+        startUtc = start?.UtcDateTime,
+        endUtc = end?.UtcDateTime,
+        message,
+    });
+
+    static DateTimeOffset? TryParseUtc(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        if (DateTimeOffset.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                out var v))
+        {
+            return v;
+        }
+        return null;
+    }
+})
+.WithName("GetSystemMaintenance")
+.WithOpenApi();
+
 app.MapCspReportEndpoint();
 app.MapAuditEndpoints();
 app.MapAuthEndpoints();

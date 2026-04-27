@@ -450,7 +450,9 @@ public static class IntakeFormEndpoints
             var ip = http.Connection.RemoteIpAddress?.ToString();
             var ua = http.Request.Headers.UserAgent.ToString();
 
-            var result = await forms.TrySubmitAsync(hash, validation.Answers!, ip, ua, DateTime.UtcNow, ct);
+            var autoPin = await settings.GetAsync<bool>(SettingKeys.IntakeForms.AutoPinSubmittedForms, ct);
+
+            var result = await forms.TrySubmitAsync(hash, validation.Answers!, ip, ua, DateTime.UtcNow, autoPin, ct);
             if (result is null)
                 return Results.Conflict(new { status = "submitted-or-expired" });
 

@@ -1,14 +1,19 @@
 import { useMemo, useState } from "react";
-import { ClipboardList, Plus, Pencil, Trash2, ArrowLeft } from "lucide-react";
+import { ClipboardList, Plus, Pencil, Trash2, ArrowLeft, Pin } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { SettingField } from "@/components/settings/SettingField";
+import { settingsApi } from "@/lib/api";
 import {
   intakeFormsApi,
   type IntakeTemplate,
 } from "@/lib/intakeForms-api";
 import { TemplateEditor } from "./intake-forms/TemplateEditor";
+
+const SETTINGS_QUERY_KEY = ["settings", "list", "IntakeForms"] as const;
 
 export function IntakeFormsSettingsPage() {
   const [mode, setMode] = useState<
@@ -32,7 +37,10 @@ export function IntakeFormsSettingsPage() {
       </header>
 
       {mode.kind === "list" && (
-        <TemplateListPanel onNew={() => setMode({ kind: "new" })} onEdit={(id) => setMode({ kind: "edit", templateId: id })} />
+        <>
+          <TemplateListPanel onNew={() => setMode({ kind: "new" })} onEdit={(id) => setMode({ kind: "edit", templateId: id })} />
+          <SubmissionBehaviourPanel />
+        </>
       )}
       {mode.kind === "new" && (
         <EditorPanel
@@ -47,6 +55,51 @@ export function IntakeFormsSettingsPage() {
         />
       )}
     </div>
+  );
+}
+
+function SubmissionBehaviourPanel() {
+  const settingsQ = useQuery({
+    queryKey: SETTINGS_QUERY_KEY,
+    queryFn: () => settingsApi.list("IntakeForms"),
+  });
+
+  const autoPinEntry = settingsQ.data?.find(
+    (e) => e.key === "IntakeForms.AutoPinSubmittedForms",
+  );
+
+  return (
+    <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+      <header className="mb-4 flex items-center gap-3">
+        <div className="rounded-md bg-white/[0.04] p-2 text-primary">
+          <Pin className="h-5 w-5" />
+        </div>
+        <div className="space-y-1">
+          <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
+            Submission behaviour
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            How completed intake forms surface on the ticket once a customer
+            submits them.
+          </p>
+        </div>
+      </header>
+
+      {settingsQ.isLoading ? (
+        <Skeleton className="h-16 w-full" />
+      ) : autoPinEntry ? (
+        <SettingField
+          entry={autoPinEntry}
+          queryKey={SETTINGS_QUERY_KEY}
+          label="Auto-pin completed submissions"
+          hint="When on, an intake-form submission is pinned to the top of the ticket activity feed automatically. Agents can still unpin it manually."
+        />
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Auto-pin setting not available.
+        </p>
+      )}
+    </section>
   );
 }
 

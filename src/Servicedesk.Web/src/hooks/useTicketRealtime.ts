@@ -16,6 +16,7 @@ export function useTicketRealtime(ticketId: string) {
     const onTicketUpdated = (updatedTicketId: string) => {
       if (updatedTicketId === ticketId) {
         queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
+        queryClient.invalidateQueries({ queryKey: ["sla", "ticket", ticketId] });
       }
     };
 

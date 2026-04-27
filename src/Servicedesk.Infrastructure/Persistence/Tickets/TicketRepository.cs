@@ -805,7 +805,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             WHERE EXISTS (
                 SELECT 1 FROM ticket_events
                 WHERE id = @eventId AND ticket_id = @ticketId
-                  AND event_type IN ('Comment','Note','Mail','MailReceived')
+                  AND event_type IN ('Comment','Note','Mail','MailReceived','MailSent','IntakeFormSubmitted')
             )
             ON CONFLICT (event_id) DO NOTHING
             RETURNING id AS Id, event_id AS EventId, ticket_id AS TicketId,

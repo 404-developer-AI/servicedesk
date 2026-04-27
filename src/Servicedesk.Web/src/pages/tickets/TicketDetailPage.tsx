@@ -1,7 +1,8 @@
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check, Copy, FileDown, Pencil, X } from "lucide-react";
+import { Check, Copy, FileDown, PanelRightClose, PanelRightOpen, Pencil, X } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { ticketApi, contactApi, type TicketFieldUpdate } from "@/lib/ticket-api";
 import { agentQueueApi } from "@/lib/api";
 import {
@@ -549,6 +550,17 @@ function TicketDetailBody({
     return events.filter(matchesEvent);
   }, [events, matchesEvent, mode, query]);
 
+  // Side-panel collapse — per-user pin state lives in the workspace store and
+  // applies to *every* ticket the agent opens. The local `expanded` flag is
+  // re-seeded from the pin on each ticket switch so a temporary toggle on
+  // ticket A does not leak into ticket B.
+  const sidePanelPinned = useWorkspaceStore((s) => s.ticketSidePanelPinned);
+  const setSidePanelPinned = useWorkspaceStore((s) => s.setTicketSidePanelPinned);
+  const [sidePanelExpanded, setSidePanelExpanded] = React.useState(sidePanelPinned);
+  React.useEffect(() => {
+    setSidePanelExpanded(sidePanelPinned);
+  }, [ticketId, sidePanelPinned]);
+
   return (
     <div className="flex gap-6 pt-3 h-[calc(100vh-0.75rem)] overflow-hidden">
       {/* Left column — header + description static, activity scrolls, reply pinned bottom */}
@@ -639,12 +651,40 @@ function TicketDetailBody({
         </div>
       </div>
 
-      {/* Right column — side panel, full height */}
-      <TicketSidePanel
-        ticket={ticket}
-        onUpdate={async (fields) => { await updateMutation.mutateAsync(fields); }}
-        onRequestCompanyAssign={onRequestCompanyAssign}
-      />
+      {/* Right column — toggle rail + animated side panel.
+          Both live inside a single shrink-0 wrapper so the parent's gap-6
+          stays between the activity feed and this whole assembly. When the
+          panel is collapsed, only the rail remains visible. */}
+      <div className="flex shrink-0 items-stretch gap-2">
+        <div className="flex flex-col items-center pt-1">
+          <button
+            type="button"
+            onClick={() => setSidePanelExpanded((v) => !v)}
+            title={sidePanelExpanded ? "Collapse side panel" : "Expand side panel"}
+            aria-label={sidePanelExpanded ? "Collapse side panel" : "Expand side panel"}
+            className="p-1.5 rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-white/[0.06] transition-colors"
+          >
+            {sidePanelExpanded
+              ? <PanelRightClose className="h-4 w-4" />
+              : <PanelRightOpen className="h-4 w-4" />}
+          </button>
+        </div>
+        <div
+          className={cn(
+            "overflow-hidden transition-[width,opacity] duration-200 ease-out",
+            sidePanelExpanded ? "w-[320px] opacity-100" : "w-0 opacity-0",
+          )}
+          aria-hidden={!sidePanelExpanded}
+        >
+          <TicketSidePanel
+            ticket={ticket}
+            onUpdate={async (fields) => { await updateMutation.mutateAsync(fields); }}
+            onRequestCompanyAssign={onRequestCompanyAssign}
+            pinned={sidePanelPinned}
+            onTogglePin={() => setSidePanelPinned(!sidePanelPinned)}
+          />
+        </div>
+      </div>
     </div>
   );
 }

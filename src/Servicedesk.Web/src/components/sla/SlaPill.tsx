@@ -93,13 +93,13 @@ function Row({
       <span className="font-medium">{label}:</span>
       {isMet
         ? metLate
-          ? `NOK (${durationLabel ?? "late"})`
-          : `OK (${durationLabel ?? "met"})`
+          ? `late (${durationLabel ?? "late"})`
+          : `met (${durationLabel ?? "met"})`
         : paused
           ? "paused"
           : remainingMs < 0
-            ? `-${formatDuration(remainingMs)}`
-            : `in ${formatDuration(remainingMs)}`}
+            ? `${formatDuration(remainingMs)} overdue`
+            : `${formatDuration(remainingMs)} left`}
     </span>
   );
 }

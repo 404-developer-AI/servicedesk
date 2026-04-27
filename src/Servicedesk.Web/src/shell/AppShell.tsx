@@ -3,6 +3,7 @@ import { Toaster } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import { Sidebar } from "@/shell/Sidebar";
 import { CriticalBanner } from "@/components/health/CriticalBanner";
+import { MaintenanceBanner } from "@/components/maintenance/MaintenanceBanner";
 import { useSecondarySidebarStore } from "@/stores/useSecondarySidebarStore";
 import { usePresenceConnection } from "@/hooks/usePresence";
 import { useNotificationSignalR } from "@/hooks/useNotificationSignalR";
@@ -31,6 +32,7 @@ export function AppShell() {
       <Sidebar />
       {secondarySidebar}
       <div className="flex min-w-0 flex-1 flex-col">
+        <MaintenanceBanner variant="shell" />
         <CriticalBanner />
         <main className="flex-1 min-h-0 px-6 pt-6 pb-3 overflow-y-auto flex flex-col">
           <Outlet />

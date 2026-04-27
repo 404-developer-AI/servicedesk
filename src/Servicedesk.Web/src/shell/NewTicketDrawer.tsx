@@ -3,6 +3,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Drawer } from "vaul";
 import { Loader2 } from "lucide-react";
@@ -127,6 +128,7 @@ function TaxonomySelect({
 export function NewTicketDrawer({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const { data: queues } = useQuery({
     queryKey: ["accessible-queues"],
@@ -151,9 +153,6 @@ export function NewTicketDrawer({ children }: { children: ReactNode }) {
     queryFn: taxonomyApi.categories.list,
     staleTime: STALE_TIME,
   });
-
-  const defaultQueueId =
-    queues?.find((q) => q.isActive)?.id ?? "";
 
   const defaultPriorityId =
     priorities?.find((p) => p.isDefault && p.isActive)?.id ??
@@ -188,16 +187,10 @@ export function NewTicketDrawer({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
-    if (defaultQueueId) setValue("queueId", defaultQueueId);
-  }, [defaultQueueId, setValue]);
-
-  useEffect(() => {
+    if (!open) return;
     if (defaultPriorityId) setValue("priorityId", defaultPriorityId);
-  }, [defaultPriorityId, setValue]);
-
-  useEffect(() => {
     if (defaultStatusId) setValue("statusId", defaultStatusId);
-  }, [defaultStatusId, setValue]);
+  }, [open, defaultPriorityId, defaultStatusId, setValue]);
 
   const [postCreateAlert, setPostCreateAlert] = useState<CompanyAlert | null>(null);
 
@@ -211,6 +204,7 @@ export function NewTicketDrawer({ children }: { children: ReactNode }) {
       if (response.showAlertOnCreate && response.companyAlert) {
         setPostCreateAlert(response.companyAlert);
       }
+      navigate({ to: "/tickets/$ticketId", params: { ticketId: response.ticket.id } });
     },
     onError: () => {
       toast.error("Failed to create ticket");

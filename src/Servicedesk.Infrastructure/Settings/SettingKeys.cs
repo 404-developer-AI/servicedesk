@@ -136,6 +136,18 @@ public static class SettingKeys
         /// hours schedules and SLA math stay on their per-schema timezone and
         /// are not affected by this value.
         public const string TimeZone = "App.TimeZone";
+
+        /// Maintenance-window banner. When Enabled is true, the banner shows
+        /// app-wide and on the login page until the server clock passes
+        /// EndUtc; after that the public endpoint reports `active: false`
+        /// without flipping the toggle (admin still owns it). Start is shown
+        /// in the banner copy ("from … until …") but is not gating: an admin
+        /// turning the toggle on with a future Start surfaces the warning
+        /// immediately.
+        public const string MaintenanceEnabled = "App.Maintenance.Enabled";
+        public const string MaintenanceStartUtc = "App.Maintenance.StartUtc";
+        public const string MaintenanceEndUtc = "App.Maintenance.EndUtc";
+        public const string MaintenanceMessage = "App.Maintenance.Message";
     }
 
     public static class Notifications
@@ -163,6 +175,7 @@ public static class SettingKeys
         public const string ExpirySweepMinutes = "IntakeForms.ExpirySweepMinutes";
         public const string PublicRateLimitPermits = "IntakeForms.PublicRateLimit.PermitPerWindow";
         public const string PublicRateLimitWindowSeconds = "IntakeForms.PublicRateLimit.WindowSeconds";
+        public const string AutoPinSubmittedForms = "IntakeForms.AutoPinSubmittedForms";
     }
 
     public static class Health
@@ -371,6 +384,19 @@ public static class SettingDefaults
         new SettingDefault(SettingKeys.App.TimeZone, "", "string", "App",
             "IANA time-zone id (e.g. Europe/Brussels, America/New_York). Drives the server clock shown in the UI and the offset returned by /api/system/time. Empty = fall back to the container's local time, which install.sh sets from the host TZ. Business-hours schedules and SLA math keep their own per-schema timezone."),
 
+        // Maintenance-window banner. Off by default. Stored as ISO-8601 UTC
+        // strings so both server and client treat them as canonical instants;
+        // empty start/end + Enabled=true is allowed (banner shows immediately
+        // with no auto-expiry — admin must flip the toggle).
+        new SettingDefault(SettingKeys.App.MaintenanceEnabled, "false", "bool", "App",
+            "When true, a maintenance-warning banner shows app-wide and on the login page. The banner appears as soon as the toggle flips on — start time is informational. After the end time passes the server reports the window as inactive without changing the toggle, so admins can re-use the same window."),
+        new SettingDefault(SettingKeys.App.MaintenanceStartUtc, "", "string", "App",
+            "ISO-8601 UTC timestamp of the planned maintenance start. Shown in the banner copy. Not used to gate the banner — visibility is driven by Enabled + EndUtc."),
+        new SettingDefault(SettingKeys.App.MaintenanceEndUtc, "", "string", "App",
+            "ISO-8601 UTC timestamp at which the banner auto-disappears. Empty = banner stays up until an admin disables the toggle."),
+        new SettingDefault(SettingKeys.App.MaintenanceMessage, "", "string", "App",
+            "Free-text message shown inside the maintenance banner. Empty falls back to a generic 'service may be temporarily affected' line."),
+
         // Notifications — v0.0.12 stap 4. Mention-trigger notification
         // raamwerk (@@-tag pipeline). Per-user preferences are out of scope
         // for this release — the global kill-switch covers the immediate
@@ -428,5 +454,7 @@ public static class SettingDefaults
             "Requests permitted per rate-limit window against the public /api/intake-forms/{token} endpoints, partitioned by {ip,token}. Tune up only if legitimate customers hit the limit on reload."),
         new SettingDefault(SettingKeys.IntakeForms.PublicRateLimitWindowSeconds, "60", "int", "IntakeForms",
             "Rate-limit window length (seconds) for the public intake-form endpoints."),
+        new SettingDefault(SettingKeys.IntakeForms.AutoPinSubmittedForms, "true", "bool", "IntakeForms",
+            "When true, an intake-form submission is automatically pinned in the ticket activity feed so the agent sees it at the top. Pin can still be removed manually. Turn off if your team prefers to triage submissions chronologically without surfacing them above other pinned context."),
     };
 }

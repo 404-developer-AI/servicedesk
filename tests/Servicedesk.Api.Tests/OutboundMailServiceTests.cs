@@ -467,7 +467,7 @@ public sealed class OutboundMailServiceTests
         public Task<long?> SendDraftAsync(Guid instanceId, Guid ticketId, Guid actorUserId, byte[] tokenHash, byte[] tokenCipher, DateTime expiresUtc, string sentToEmail, string metadataJson, CancellationToken ct) => Task.FromResult<long?>(null);
         public Task<bool> CancelSentAsync(Guid instanceId, Guid ticketId, Guid actorUserId, CancellationToken ct) => Task.FromResult(false);
         public Task<IntakePublicView?> GetByTokenHashForPublicAsync(byte[] tokenHash, CancellationToken ct) => Task.FromResult<IntakePublicView?>(null);
-        public Task<SubmitResult?> TrySubmitAsync(byte[] tokenHash, IReadOnlyList<IntakeFormSubmitAnswer> answers, string? ip, string? userAgent, DateTime nowUtc, CancellationToken ct) => Task.FromResult<SubmitResult?>(null);
+        public Task<SubmitResult?> TrySubmitAsync(byte[] tokenHash, IReadOnlyList<IntakeFormSubmitAnswer> answers, string? ip, string? userAgent, DateTime nowUtc, bool autoPin, CancellationToken ct) => Task.FromResult<SubmitResult?>(null);
         public Task<IReadOnlyList<ExpiredInstance>> ExpireStaleAsync(int maxBatch, DateTime nowUtc, CancellationToken ct) => Task.FromResult<IReadOnlyList<ExpiredInstance>>(Array.Empty<ExpiredInstance>());
     }
 

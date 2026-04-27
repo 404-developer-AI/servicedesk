@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Dapper;
 using Npgsql;
 using Servicedesk.Domain.Search;
@@ -42,19 +43,27 @@ public sealed class TicketSearchSource : ISearchSource
         // above anything else.
         long? numberProbe = long.TryParse(normalized, out var n) ? n : null;
 
-        // websearch_to_tsquery tolerates bare user input (unquoted terms,
-        // phrase-like usage) without throwing on special chars.
+        // Build a prefix-matching tsquery: each alphanumeric token gets a `:*`
+        // suffix so "bench" matches "benchmark". User-typed `*` chars act as
+        // word separators (so `*bench`, `bench*`, plain `bench` all behave
+        // the same). Empty after sanitization → tsq is NULL and only the
+        // number probe applies.
+        var tsqueryText = BuildPrefixTsQuery(normalized);
+
+        if (string.IsNullOrEmpty(tsqueryText) && numberProbe is null)
+            return new SearchGroup(Kind, Array.Empty<SearchHit>(), 0, false);
+
         const string sql = """
             WITH q AS (
-                SELECT websearch_to_tsquery('simple', lower(@query)) AS tsq,
-                       lower(@query)                                 AS norm
+                SELECT CASE WHEN @tsqueryText = '' THEN NULL::tsquery
+                            ELSE to_tsquery('simple', @tsqueryText) END AS tsq
             ),
             hits AS (
                 -- Subject / number hits
                 SELECT t.id, t.number, t.subject, t.queue_id, t.updated_utc,
                        t.requester_contact_id,
                        GREATEST(
-                           ts_rank_cd(t.search_vector, (SELECT tsq FROM q)),
+                           COALESCE(ts_rank_cd(t.search_vector, (SELECT tsq FROM q)), 0),
                            CASE WHEN @numberProbe IS NOT NULL AND t.number = @numberProbe THEN 10.0 ELSE 0 END
                        ) AS rank,
                        NULL::text AS body_snippet
@@ -62,7 +71,7 @@ public sealed class TicketSearchSource : ISearchSource
                 WHERE t.is_deleted = FALSE
                   AND (@skipQueueFilter OR t.queue_id = ANY(@allowedQueues))
                   AND (
-                        t.search_vector @@ (SELECT tsq FROM q)
+                        ((SELECT tsq FROM q) IS NOT NULL AND t.search_vector @@ (SELECT tsq FROM q))
                      OR (@numberProbe IS NOT NULL AND t.number = @numberProbe)
                   )
                 UNION ALL
@@ -77,6 +86,7 @@ public sealed class TicketSearchSource : ISearchSource
                 JOIN tickets t ON t.id = tes.ticket_id
                 WHERE t.is_deleted = FALSE
                   AND (@skipQueueFilter OR t.queue_id = ANY(@allowedQueues))
+                  AND (SELECT tsq FROM q) IS NOT NULL
                   AND tes.search_vector @@ (SELECT tsq FROM q)
             ),
             ranked AS (
@@ -106,7 +116,7 @@ public sealed class TicketSearchSource : ISearchSource
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var rows = (await conn.QueryAsync<TicketHitRow>(new CommandDefinition(sql, new
         {
-            query = normalized,
+            tsqueryText,
             numberProbe,
             skipQueueFilter = principal.IsAdmin,
             allowedQueues = allowedQueues?.ToArray() ?? Array.Empty<Guid>(),
@@ -133,6 +143,18 @@ public sealed class TicketSearchSource : ISearchSource
         var hasMore = totalInGroup > offset + hits.Count;
 
         return new SearchGroup(Kind, hits, totalInGroup, hasMore);
+    }
+
+    private static readonly Regex s_tokenPattern = new(@"[\p{L}\p{N}]+", RegexOptions.Compiled);
+
+    private static string BuildPrefixTsQuery(string normalized)
+    {
+        if (string.IsNullOrWhiteSpace(normalized)) return string.Empty;
+
+        var tokens = s_tokenPattern.Matches(normalized)
+            .Select(m => m.Value + ":*");
+
+        return string.Join(" & ", tokens);
     }
 
     private sealed record TicketHitRow(

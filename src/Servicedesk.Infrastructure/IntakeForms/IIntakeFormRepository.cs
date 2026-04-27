@@ -52,15 +52,19 @@ public interface IIntakeFormRepository
     Task<IntakePublicView?> GetByTokenHashForPublicAsync(byte[] tokenHash, CancellationToken ct);
 
     /// Atomic submit: checks status=Sent + not-expired, writes answers +
-    /// IntakeFormSubmitted event, flips status. Returns the ticketId +
-    /// submittedEventId on success. On 409 (already submitted, cancelled, or
-    /// expired between GET and POST) returns null.
+    /// IntakeFormSubmitted event, flips status. When <paramref name="autoPin"/>
+    /// is true, also inserts a ticket_event_pins row attributing the pin to
+    /// the agent who originally sent the form, all in the same transaction —
+    /// so the submission lands pre-pinned without a follow-up request.
+    /// Returns the ticketId + submittedEventId on success. On 409 (already
+    /// submitted, cancelled, or expired between GET and POST) returns null.
     Task<SubmitResult?> TrySubmitAsync(
         byte[] tokenHash,
         IReadOnlyList<IntakeFormSubmitAnswer> answers,
         string? ip,
         string? userAgent,
         DateTime nowUtc,
+        bool autoPin,
         CancellationToken ct);
 
     /// Flips Sent → Expired for all past-due rows and writes an
