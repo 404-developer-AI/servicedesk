@@ -69,12 +69,13 @@ public sealed class TriggerService : ITriggerService
             // Re-entrant trigger pass exceeded the chain cap. Per
             // TRIGGERS.md §5 this is a safety-net for buggy handlers
             // that mutate state through paths that re-enter the
-            // evaluator. We log + skip without writing trigger_runs:
-            // there's no specific trigger-id to attach the row to, and
-            // the inner pass had no chance to load triggers anyway.
+            // evaluator. Record one SkippedLoop row per active trigger
+            // so admins can see in run-history which triggers were
+            // suppressed by the cap (UI/DB already know the outcome).
             _logger.LogWarning(
                 "Trigger evaluation skipped on ticket {TicketId}: chain depth {Depth} reached cap {Cap}.",
                 ticketId, _loopGuard.Depth, maxChain);
+            await RecordChainCapSkipAsync(ticketId, ticketEventId, activatorKind, ct);
             return;
         }
 
@@ -241,6 +242,9 @@ public sealed class TriggerService : ITriggerService
             _logger.LogWarning(
                 "Scheduled trigger {TriggerId} skipped on ticket {TicketId}: chain depth {Depth} reached cap {Cap}.",
                 triggerId, ticketId, _loopGuard.Depth, maxChain);
+            await SafeRecordAsync(new TriggerRunRecord(
+                triggerId, ticketId, TicketEventId: null,
+                TriggerRunOutcome.SkippedLoop, null, null, null), ct);
             return;
         }
 
@@ -513,6 +517,38 @@ public sealed class TriggerService : ITriggerService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to record trigger_run for trigger {TriggerId}.", record.TriggerId);
+        }
+    }
+
+    /// Writes one <see cref="TriggerRunOutcome.SkippedLoop"/> audit row per
+    /// active trigger of the given activator-kind so admins can see in
+    /// run-history that a chain-cap suppressed a pass on this ticket. The
+    /// load itself is the same call <see cref="EvaluateAsync"/> would make
+    /// next; we deliberately do not run the Selective short-circuit here —
+    /// the cap-hit signal matters more than precision about which triggers
+    /// "would have matched".
+    private async Task RecordChainCapSkipAsync(
+        Guid ticketId,
+        long? ticketEventId,
+        TriggerActivatorKind activatorKind,
+        CancellationToken ct)
+    {
+        IReadOnlyList<TriggerRow> triggers;
+        try
+        {
+            triggers = await _repo.LoadActiveAsync(activatorKind, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to load active triggers while recording SkippedLoop on ticket {TicketId}.", ticketId);
+            return;
+        }
+        foreach (var t in triggers)
+        {
+            await SafeRecordAsync(new TriggerRunRecord(
+                t.Id, ticketId, ticketEventId,
+                TriggerRunOutcome.SkippedLoop, null, null, null), ct);
         }
     }
 

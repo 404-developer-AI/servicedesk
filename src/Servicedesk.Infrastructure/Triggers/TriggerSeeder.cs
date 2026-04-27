@@ -48,7 +48,7 @@ public sealed class TriggerSeeder : IHostedService
             "kind": "send_mail",
             "to": "customer",
             "subject": "Re: #{ticket.subject} [##{ticket.number}]",
-            "body_html": "<p>Hi #{contact.first_name},</p><p>Thanks for reaching out — we received your message and a colleague will follow up shortly.</p><p>Reference: <strong>##{ticket.number}</strong></p><p>Kind regards,<br/>The team</p>"
+            "body_html": "<p>Hi #{ticket.customer.firstname},</p><p>Thanks for reaching out — we received your message and a colleague will follow up shortly.</p><p>Reference: <strong>##{ticket.number}</strong></p><p>Kind regards,<br/>The team</p>"
           }
         ]
         """;

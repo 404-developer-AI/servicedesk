@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure.Persistence.Tickets;
+using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Triggers.Templating;
 
 namespace Servicedesk.Infrastructure.Triggers.Actions;
@@ -9,11 +10,13 @@ internal sealed class AddPublicNoteHandler : ITriggerActionHandler
 {
     private readonly ITicketRepository _tickets;
     private readonly ITriggerTemplateRenderer _renderer;
+    private readonly ISlaEngine _sla;
 
-    public AddPublicNoteHandler(ITicketRepository tickets, ITriggerTemplateRenderer renderer)
+    public AddPublicNoteHandler(ITicketRepository tickets, ITriggerTemplateRenderer renderer, ISlaEngine sla)
     {
         _tickets = tickets;
         _renderer = renderer;
+        _sla = sla;
     }
 
     public string Kind => "add_public_note";
@@ -43,6 +46,11 @@ internal sealed class AddPublicNoteHandler : ITriggerActionHandler
 
         if (evt is null)
             return TriggerActionResult.Failed(Kind, "Ticket vanished mid-insert.");
+
+        // Public notes are visible to the customer and count as agent
+        // touches in the SLA engine (FR-detection + Comment handling),
+        // mirroring how OutboundMailService and AddTicketEvent feed it.
+        await _sla.OnTicketEventAsync(ctx.TicketId, evt.EventType, ct);
 
         return TriggerActionResult.Applied(Kind, new { eventId = evt.Id, isInternal = false });
     }

@@ -1,5 +1,6 @@
 using Dapper;
 using Npgsql;
+using Servicedesk.Infrastructure.Sla;
 
 namespace Servicedesk.Infrastructure.Triggers.Actions;
 
@@ -14,10 +15,12 @@ namespace Servicedesk.Infrastructure.Triggers.Actions;
 internal sealed class SystemFieldMutator
 {
     private readonly NpgsqlDataSource _dataSource;
+    private readonly ISlaEngine _sla;
 
-    public SystemFieldMutator(NpgsqlDataSource dataSource)
+    public SystemFieldMutator(NpgsqlDataSource dataSource, ISlaEngine sla)
     {
         _dataSource = dataSource;
+        _sla = sla;
     }
 
     public async Task<FieldChangeOutcome> ChangeFieldAsync(
@@ -27,11 +30,16 @@ internal sealed class SystemFieldMutator
         string lookupColumn,
         string eventType,
         Guid? currentValue,
-        Guid newValue,
+        Guid? newValue,
         Guid triggerId,
         CancellationToken ct)
     {
-        if (currentValue.HasValue && currentValue.Value == newValue)
+        // Nullable newValue is the "clear" path — only meaningful for
+        // columns that are themselves nullable (today: assignee_user_id).
+        // Other handlers (set_queue / set_priority / set_status) always
+        // pass a non-null value and will fail their own TryReadGuid check
+        // before they ever reach here, so the NOT-NULL columns stay safe.
+        if (currentValue == newValue)
             return FieldChangeOutcome.AlreadyAtTarget(columnName);
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -42,13 +50,17 @@ internal sealed class SystemFieldMutator
                 $"SELECT {lookupColumn} FROM {lookupTable} WHERE id = @id",
                 new { id = currentValue.Value }, tx, cancellationToken: ct))
             : null;
-        var toName = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
-            $"SELECT {lookupColumn} FROM {lookupTable} WHERE id = @id",
-            new { id = newValue }, tx, cancellationToken: ct));
-        if (toName is null)
+        string? toName = null;
+        if (newValue.HasValue)
         {
-            await tx.RollbackAsync(ct);
-            return FieldChangeOutcome.TargetNotFound(columnName, newValue);
+            toName = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
+                $"SELECT {lookupColumn} FROM {lookupTable} WHERE id = @id",
+                new { id = newValue.Value }, tx, cancellationToken: ct));
+            if (toName is null)
+            {
+                await tx.RollbackAsync(ct);
+                return FieldChangeOutcome.TargetNotFound(columnName, newValue.Value);
+            }
         }
 
         var updateSql = $"UPDATE tickets SET {columnName} = @newValue, updated_utc = now() WHERE id = @ticketId AND is_deleted = FALSE";
@@ -71,6 +83,12 @@ internal sealed class SystemFieldMutator
             new { ticketId, eventType, metadata }, tx, cancellationToken: ct));
 
         await tx.CommitAsync(ct);
+
+        // Mirror the PATCH-ticket endpoint: any field change re-runs the
+        // SLA engine so resolved/closed timestamps mark deadlines met
+        // and queue/priority changes pick up the new schedule.
+        await _sla.OnTicketFieldsChangedAsync(ticketId, ct);
+
         return FieldChangeOutcome.Applied(columnName, currentValue, newValue, fromName, toName);
     }
 
@@ -134,6 +152,11 @@ internal sealed class SystemFieldMutator
             new { ticketId, metadata }, tx, cancellationToken: ct));
 
         await tx.CommitAsync(ct);
+
+        // Status moving into Resolved/Closed is the canonical SLA-met
+        // signal — let the engine recompute so deadlines stop ticking.
+        await _sla.OnTicketFieldsChangedAsync(ticketId, ct);
+
         return FieldChangeOutcome.Applied("status_id", currentStatusId, newStatusId, fromName, toName);
     }
 
@@ -225,7 +248,7 @@ internal sealed record FieldChangeOutcome(
     string? ToName = null,
     string? Reason = null)
 {
-    public static FieldChangeOutcome Applied(string column, Guid? from, Guid to, string? fromName, string? toName)
+    public static FieldChangeOutcome Applied(string column, Guid? from, Guid? to, string? fromName, string? toName)
         => new(FieldChangeStatus.Applied, column, from, to, fromName, toName);
 
     public static FieldChangeOutcome AlreadyAtTarget(string column)

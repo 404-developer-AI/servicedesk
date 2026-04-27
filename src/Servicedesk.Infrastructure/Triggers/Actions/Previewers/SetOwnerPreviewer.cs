@@ -13,15 +13,17 @@ internal sealed class SetOwnerPreviewer : ITriggerActionPreviewer
 
     public async Task<TriggerActionPreviewResult> PreviewAsync(JsonElement actionJson, TriggerEvaluationContext ctx, CancellationToken ct)
     {
-        if (!ActionJson.TryReadGuid(actionJson, "user_id", out var newUserId))
-            return TriggerActionPreviewResult.Failed(Kind, "Action is missing required string 'user_id'.");
+        if (!ActionJson.TryReadGuidOrNull(actionJson, "user_id", out var newUserId))
+            return TriggerActionPreviewResult.Failed(Kind, "Action is missing required string-or-null 'user_id'.");
 
-        if (ctx.Ticket.AssigneeUserId.HasValue && ctx.Ticket.AssigneeUserId.Value == newUserId)
+        if (ctx.Ticket.AssigneeUserId == newUserId)
             return TriggerActionPreviewResult.WouldNoOp(Kind, new { column = "assignee_user_id", reason = "already_at_target" });
 
-        var to = await _users.FindByIdAsync(newUserId, ct);
-        if (to is null)
-            return TriggerActionPreviewResult.Failed(Kind, $"Target user {newUserId} not found.");
+        var to = newUserId.HasValue
+            ? await _users.FindByIdAsync(newUserId.Value, ct)
+            : null;
+        if (newUserId.HasValue && to is null)
+            return TriggerActionPreviewResult.Failed(Kind, $"Target user {newUserId.Value} not found.");
 
         var from = ctx.Ticket.AssigneeUserId.HasValue
             ? await _users.FindByIdAsync(ctx.Ticket.AssigneeUserId.Value, ct)
@@ -31,9 +33,9 @@ internal sealed class SetOwnerPreviewer : ITriggerActionPreviewer
         {
             column = "assignee_user_id",
             from = ctx.Ticket.AssigneeUserId,
-            to = (Guid?)newUserId,
+            to = newUserId,
             fromName = from?.Email,
-            toName = to.Email,
+            toName = to?.Email,
         });
     }
 }

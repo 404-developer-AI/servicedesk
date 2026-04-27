@@ -147,4 +147,131 @@ public class TriggerValidatorTests
         var r = TriggerValidator.Validate("t", "action", "selective", "{\"op\":\"AND\",\"items\":[]}", actions, null, null);
         Assert.True(r.IsValid, r.Error);
     }
+
+    // ---- per-kind payload validation (v0.0.24 fix batch 1) ----------
+
+    [Fact]
+    public void Set_status_without_status_id_is_rejected()
+    {
+        const string actions = """[{"kind":"set_status"}]""";
+        var r = TriggerValidator.Validate("t", "action", "selective", "{\"op\":\"AND\",\"items\":[]}", actions, null, null);
+        Assert.False(r.IsValid);
+        Assert.Contains("status_id", r.Error!);
+    }
+
+    [Fact]
+    public void Set_status_with_non_uuid_is_rejected()
+    {
+        const string actions = """[{"kind":"set_status","status_id":"not-a-uuid"}]""";
+        var r = TriggerValidator.Validate("t", "action", "selective", "{\"op\":\"AND\",\"items\":[]}", actions, null, null);
+        Assert.False(r.IsValid);
+        Assert.Contains("UUID", r.Error!);
+    }
+
+    [Fact]
+    public void Set_owner_with_explicit_null_is_accepted()
+    {
+        // user_id: null is the editor's "clear assignee" path — must
+        // pass validation so the handler can act on the explicit null.
+        const string actions = """[{"kind":"set_owner","user_id":null}]""";
+        var r = TriggerValidator.Validate("t", "action", "selective", "{\"op\":\"AND\",\"items\":[]}", actions, null, null);
+        Assert.True(r.IsValid, r.Error);
+    }
+
+    [Fact]
+    public void Set_owner_without_user_id_property_is_rejected()
+    {
+        const string actions = """[{"kind":"set_owner"}]""";
+        var r = TriggerValidator.Validate("t", "action", "selective", "{\"op\":\"AND\",\"items\":[]}", actions, null, null);
+        Assert.False(r.IsValid);
+        Assert.Contains("user_id", r.Error!);
+    }
+
+    [Fact]
+    public void Send_mail_without_subject_is_rejected()
+    {
+        const string actions = """[{"kind":"send_mail","to":"customer","body_html":"<p>hi</p>"}]""";
+        var r = TriggerValidator.Validate("t", "action", "selective", "{\"op\":\"AND\",\"items\":[]}", actions, null, null);
+        Assert.False(r.IsValid);
+        Assert.Contains("subject", r.Error!);
+    }
+
+    [Fact]
+    public void Send_mail_without_body_html_is_rejected()
+    {
+        const string actions = """[{"kind":"send_mail","to":"customer","subject":"hi"}]""";
+        var r = TriggerValidator.Validate("t", "action", "selective", "{\"op\":\"AND\",\"items\":[]}", actions, null, null);
+        Assert.False(r.IsValid);
+        Assert.Contains("body_html", r.Error!);
+    }
+
+    [Fact]
+    public void Send_mail_with_empty_to_is_rejected()
+    {
+        const string actions = """[{"kind":"send_mail","to":"","subject":"hi","body_html":"<p>hi</p>"}]""";
+        var r = TriggerValidator.Validate("t", "action", "selective", "{\"op\":\"AND\",\"items\":[]}", actions, null, null);
+        Assert.False(r.IsValid);
+        Assert.Contains("'to'", r.Error!);
+    }
+
+    [Fact]
+    public void Set_pending_till_without_mode_is_rejected()
+    {
+        const string actions = """[{"kind":"set_pending_till"}]""";
+        var r = TriggerValidator.Validate("t", "action", "selective", "{\"op\":\"AND\",\"items\":[]}", actions, null, null);
+        Assert.False(r.IsValid);
+        Assert.Contains("absolute", r.Error!);
+    }
+
+    [Fact]
+    public void Set_pending_till_relative_with_invalid_duration_is_rejected()
+    {
+        const string actions = """[{"kind":"set_pending_till","relative":"two days"}]""";
+        var r = TriggerValidator.Validate("t", "action", "selective", "{\"op\":\"AND\",\"items\":[]}", actions, null, null);
+        Assert.False(r.IsValid);
+        Assert.Contains("ISO-8601", r.Error!);
+    }
+
+    [Fact]
+    public void Set_pending_till_clear_is_accepted()
+    {
+        const string actions = """[{"kind":"set_pending_till","clear":true}]""";
+        var r = TriggerValidator.Validate("t", "action", "selective", "{\"op\":\"AND\",\"items\":[]}", actions, null, null);
+        Assert.True(r.IsValid, r.Error);
+    }
+
+    [Fact]
+    public void Set_pending_till_business_days_without_wake_at_local_is_rejected()
+    {
+        const string actions = """[{"kind":"set_pending_till","businessDays":2}]""";
+        var r = TriggerValidator.Validate("t", "action", "selective", "{\"op\":\"AND\",\"items\":[]}", actions, null, null);
+        Assert.False(r.IsValid);
+        Assert.Contains("wakeAtLocal", r.Error!);
+    }
+
+    [Fact]
+    public void Set_pending_till_with_invalid_next_trigger_id_is_rejected()
+    {
+        const string actions = """[{"kind":"set_pending_till","relative":"PT4H","nextTriggerId":"not-a-uuid"}]""";
+        var r = TriggerValidator.Validate("t", "action", "selective", "{\"op\":\"AND\",\"items\":[]}", actions, null, null);
+        Assert.False(r.IsValid);
+        Assert.Contains("nextTriggerId", r.Error!);
+    }
+
+    [Fact]
+    public void Add_internal_note_without_body_is_rejected()
+    {
+        const string actions = """[{"kind":"add_internal_note"}]""";
+        var r = TriggerValidator.Validate("t", "action", "selective", "{\"op\":\"AND\",\"items\":[]}", actions, null, null);
+        Assert.False(r.IsValid);
+        Assert.Contains("body", r.Error!);
+    }
+
+    [Fact]
+    public void Add_public_note_with_body_text_is_accepted()
+    {
+        const string actions = """[{"kind":"add_public_note","body_text":"hi"}]""";
+        var r = TriggerValidator.Validate("t", "action", "selective", "{\"op\":\"AND\",\"items\":[]}", actions, null, null);
+        Assert.True(r.IsValid, r.Error);
+    }
 }

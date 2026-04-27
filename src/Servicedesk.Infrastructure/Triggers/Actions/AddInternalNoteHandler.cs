@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure.Persistence.Tickets;
+using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Triggers.Templating;
 
 namespace Servicedesk.Infrastructure.Triggers.Actions;
@@ -9,11 +10,13 @@ internal sealed class AddInternalNoteHandler : ITriggerActionHandler
 {
     private readonly ITicketRepository _tickets;
     private readonly ITriggerTemplateRenderer _renderer;
+    private readonly ISlaEngine _sla;
 
-    public AddInternalNoteHandler(ITicketRepository tickets, ITriggerTemplateRenderer renderer)
+    public AddInternalNoteHandler(ITicketRepository tickets, ITriggerTemplateRenderer renderer, ISlaEngine sla)
     {
         _tickets = tickets;
         _renderer = renderer;
+        _sla = sla;
     }
 
     public string Kind => "add_internal_note";
@@ -43,6 +46,12 @@ internal sealed class AddInternalNoteHandler : ITriggerActionHandler
 
         if (evt is null)
             return TriggerActionResult.Failed(Kind, "Ticket vanished mid-insert.");
+
+        // Internal notes don't reset SLA on their own (Note isn't a
+        // first-response signal), but the engine still recomputes the
+        // ticket's stage so any downstream policy that conditions on
+        // event-presence stays consistent with the agent-typed path.
+        await _sla.OnTicketEventAsync(ctx.TicketId, evt.EventType, ct);
 
         return TriggerActionResult.Applied(Kind, new { eventId = evt.Id, isInternal = true });
     }

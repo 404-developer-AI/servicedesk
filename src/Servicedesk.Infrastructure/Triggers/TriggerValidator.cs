@@ -162,6 +162,10 @@ public static class TriggerValidator
                 var kindStr = kind.GetString() ?? string.Empty;
                 if (!ActionKinds.Contains(kindStr))
                     return $"Action #{idx}: kind '{kindStr}' is not registered. Allowed: {string.Join(", ", ActionKinds)}.";
+
+                var payloadError = ValidateActionPayload(kindStr, action);
+                if (payloadError is not null) return $"Action #{idx} ({kindStr}): {payloadError}";
+
                 idx++;
             }
             return null;
@@ -171,6 +175,123 @@ public static class TriggerValidator
             doc.Dispose();
         }
     }
+
+    /// Per-kind payload check. Mirrors the runtime parsing each handler
+    /// does so admins get a save-time error instead of a silent-fail
+    /// trigger_run row at evaluation. Keep these in sync with the
+    /// matching <see cref="ITriggerActionHandler"/> implementations.
+    private static string? ValidateActionPayload(string kind, JsonElement action)
+    {
+        switch (kind)
+        {
+            case "set_queue":
+                return RequireGuid(action, "queue_id");
+            case "set_priority":
+                return RequireGuid(action, "priority_id");
+            case "set_status":
+                return RequireGuid(action, "status_id");
+            case "set_owner":
+                // user_id may be explicit null (clear) but the property
+                // itself must be present so the handler's clear-vs-malformed
+                // discrimination stays meaningful.
+                return RequireGuidOrNull(action, "user_id");
+            case "set_pending_till":
+                return ValidateSetPendingTill(action);
+            case "add_internal_note":
+            case "add_public_note":
+                if (HasNonEmptyString(action, "body_html") || HasNonEmptyString(action, "body_text"))
+                    return null;
+                return "requires non-empty 'body_html' or 'body_text'.";
+            case "send_mail":
+                if (!HasNonEmptyString(action, "to"))
+                    return "requires non-empty 'to' (e.g. customer, owner-agent, queue-agents, address:foo@bar.com).";
+                if (!HasNonEmptyString(action, "subject"))
+                    return "requires non-empty 'subject'.";
+                if (!HasNonEmptyString(action, "body_html"))
+                    return "requires non-empty 'body_html'.";
+                return null;
+            default:
+                // Unknown kinds are already rejected upstream — kept here
+                // as a defensive null so the switch is exhaustive.
+                return null;
+        }
+    }
+
+    private static string? ValidateSetPendingTill(JsonElement action)
+    {
+        var hasClear = action.TryGetProperty("clear", out var clearEl)
+            && clearEl.ValueKind == JsonValueKind.True;
+        if (hasClear) return null;
+
+        if (HasNonEmptyString(action, "absolute"))
+        {
+            var raw = action.GetProperty("absolute").GetString();
+            if (!DateTime.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal,
+                    out _))
+                return $"'absolute' is not a parseable timestamp: '{raw}'.";
+            return ValidateNextTriggerId(action);
+        }
+
+        if (HasNonEmptyString(action, "relative"))
+        {
+            var raw = action.GetProperty("relative").GetString();
+            try { _ = System.Xml.XmlConvert.ToTimeSpan(raw!); }
+            catch (FormatException) { return $"'relative' is not a valid ISO-8601 duration: '{raw}'."; }
+            return ValidateNextTriggerId(action);
+        }
+
+        if (action.TryGetProperty("businessDays", out var bdEl) && bdEl.ValueKind == JsonValueKind.Number)
+        {
+            if (!bdEl.TryGetInt32(out var days) || days < 0)
+                return "'businessDays' must be a non-negative integer.";
+            if (!HasNonEmptyString(action, "wakeAtLocal"))
+                return "'businessDays' requires 'wakeAtLocal' as a 'HH:mm' time-of-day string.";
+            return ValidateNextTriggerId(action);
+        }
+
+        return "requires one of 'absolute', 'relative', 'businessDays' (+ 'wakeAtLocal'), or 'clear: true'.";
+    }
+
+    private static string? ValidateNextTriggerId(JsonElement action)
+    {
+        if (!action.TryGetProperty("nextTriggerId", out var el)) return null;
+        if (el.ValueKind == JsonValueKind.Null) return null;
+        if (el.ValueKind != JsonValueKind.String)
+            return "'nextTriggerId' must be a UUID string or null.";
+        var raw = el.GetString();
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        return Guid.TryParse(raw, out _)
+            ? null
+            : $"'nextTriggerId' is not a valid UUID: '{raw}'.";
+    }
+
+    private static string? RequireGuid(JsonElement action, string property)
+    {
+        if (!action.TryGetProperty(property, out var el) || el.ValueKind != JsonValueKind.String)
+            return $"requires string '{property}'.";
+        var raw = el.GetString();
+        if (string.IsNullOrWhiteSpace(raw))
+            return $"'{property}' must not be empty.";
+        return Guid.TryParse(raw, out _) ? null : $"'{property}' is not a valid UUID: '{raw}'.";
+    }
+
+    private static string? RequireGuidOrNull(JsonElement action, string property)
+    {
+        if (!action.TryGetProperty(property, out var el))
+            return $"requires '{property}' (UUID string, or null to clear).";
+        if (el.ValueKind == JsonValueKind.Null) return null;
+        if (el.ValueKind != JsonValueKind.String)
+            return $"'{property}' must be a UUID string or null.";
+        var raw = el.GetString();
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        return Guid.TryParse(raw, out _) ? null : $"'{property}' is not a valid UUID: '{raw}'.";
+    }
+
+    private static bool HasNonEmptyString(JsonElement el, string name)
+        => el.TryGetProperty(name, out var prop)
+           && prop.ValueKind == JsonValueKind.String
+           && !string.IsNullOrEmpty(prop.GetString());
 }
 
 public readonly record struct ValidationResult(bool IsValid, string? Error)

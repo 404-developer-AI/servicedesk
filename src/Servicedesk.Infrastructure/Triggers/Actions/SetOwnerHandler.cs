@@ -12,8 +12,10 @@ internal sealed class SetOwnerHandler : ITriggerActionHandler
 
     public async Task<TriggerActionResult> ApplyAsync(JsonElement actionJson, TriggerEvaluationContext ctx, CancellationToken ct)
     {
-        if (!ActionJson.TryReadGuid(actionJson, "user_id", out var newUserId))
-            return TriggerActionResult.Failed(Kind, "Action is missing required string 'user_id'.");
+        // assignee_user_id is nullable — explicit `user_id: null` from
+        // the editor means "clear the assignee", not a malformed action.
+        if (!ActionJson.TryReadGuidOrNull(actionJson, "user_id", out var newUserId))
+            return TriggerActionResult.Failed(Kind, "Action is missing required string-or-null 'user_id'.");
 
         var outcome = await _mutator.ChangeFieldAsync(
             ctx.TicketId,

@@ -27,6 +27,25 @@ internal static class ActionJson
         return Guid.TryParse(s, out value);
     }
 
+    /// "Present-but-nullable" variant: returns true when the key exists
+    /// and is either an explicit JSON null or a valid Guid string. Used by
+    /// handlers whose target column is nullable (e.g. set_owner where
+    /// `user_id: null` clears the assignee). A missing key or wrong type
+    /// still returns false so the handler can distinguish a malformed
+    /// action from an explicit clear.
+    public static bool TryReadGuidOrNull(JsonElement el, string name, out Guid? value)
+    {
+        value = null;
+        if (!el.TryGetProperty(name, out var prop)) return false;
+        if (prop.ValueKind == JsonValueKind.Null) return true;
+        if (prop.ValueKind != JsonValueKind.String) return false;
+        var s = prop.GetString();
+        if (string.IsNullOrEmpty(s)) return true;
+        if (!Guid.TryParse(s, out var g)) return false;
+        value = g;
+        return true;
+    }
+
     public static bool TryReadBool(JsonElement el, string name, out bool value)
     {
         value = default;
