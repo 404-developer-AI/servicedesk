@@ -103,6 +103,40 @@ public static class SettingKeys
         public const string MicrosoftEnabled = "Auth.Microsoft.Enabled";
     }
 
+    /// Adsolut (Wolters Kluwer TAA) OAuth integration. Single-install,
+    /// single-administration: one admin authorizes our access to one Adsolut
+    /// dossier, all agents in this servicedesk read the synced data. The
+    /// authorize/token endpoints are derived from the chosen environment;
+    /// the redirect URI is computed from <see cref="App.PublicBaseUrl"/> at
+    /// runtime so it always matches the install's host.
+    public static class Adsolut
+    {
+        /// `production` (login.wolterskluwer.eu) or `uat`
+        /// (login-stg.wolterskluwer.eu). Anything else falls back to
+        /// production with a warning so a typo is not silently routed at
+        /// the staging IdP.
+        public const string Environment = "Adsolut.Environment";
+
+        /// Client ID provisioned by Wolters Kluwer for this install. The
+        /// matching client secret lives in protected_secrets under
+        /// <c>Adsolut.ClientSecret</c>; both must be filled before the
+        /// authorize-redirect endpoint accepts a request.
+        public const string ClientId = "Adsolut.ClientId";
+
+        /// Space-separated OAuth2 scopes appended to the authorize request.
+        /// Adsolut scopes are API-specific (see api-portal.adsolut.com →
+        /// per-API pages). The default `openid offline_access` covers the
+        /// auth-only flow (id_token + refresh_token) — extend with the
+        /// API scopes you intend to call once that's known.
+        public const string Scopes = "Adsolut.Scopes";
+
+        /// How many days before the refresh-token's sliding-month window
+        /// elapses the Health subsystem flips the Adsolut card to Warning.
+        /// The 30-day window itself is set by Wolters Kluwer; this only
+        /// controls how early we surface "reconnect soon" to the admin.
+        public const string RefreshWarnDays = "Adsolut.RefreshWarnDays";
+    }
+
     public static class Sla
     {
         public const string FirstContactTriggers = "Sla.FirstContact.Triggers";
@@ -347,6 +381,19 @@ public static class SettingDefaults
         // and adds the OIDC permissions + redirect URI in Azure Portal.
         new SettingDefault(SettingKeys.Auth.MicrosoftEnabled, "false", "bool", "Auth",
             "When true, the login page shows 'Sign in with Microsoft' and the /api/auth/microsoft/* endpoints are active. Requires Graph.TenantId + Graph.ClientId + GraphClientSecret to be set, and the app-registration must carry delegated openid/profile/email/User.Read permissions plus a redirect URI matching this install's public base URL."),
+
+        // Adsolut — v0.0.25 OAuth integration. Empty client_id keeps the
+        // tile in 'not configured' state until an admin pastes the WK-issued
+        // credentials. Environment defaults to production so a misclick
+        // doesn't silently route a real connect-attempt to UAT.
+        new SettingDefault(SettingKeys.Adsolut.Environment, "production", "string", "Adsolut",
+            "Wolters Kluwer login environment used for the OAuth dance. 'production' targets login.wolterskluwer.eu; 'uat' targets login-stg.wolterskluwer.eu (use this while Wolters Kluwer is still provisioning your real client). Switching environments does not invalidate stored tokens — it just redirects future authorize/refresh calls — but the refresh_token from one environment will not work against the other, so disconnect + reconnect after switching."),
+        new SettingDefault(SettingKeys.Adsolut.ClientId, "", "string", "Adsolut",
+            "Client ID provisioned by Wolters Kluwer for this servicedesk install. Paired with the client secret stored separately in the protected-secrets store. Both fields plus a registered redirect URI matching <PublicBaseUrl>/api/integrations/adsolut/callback must exist before the Connect button activates."),
+        new SettingDefault(SettingKeys.Adsolut.Scopes, "openid offline_access", "string", "Adsolut",
+            "Space-separated OAuth2 scopes appended to the authorize request. The default covers the auth-only flow (id_token for who-authorized, offline_access for the long-lived refresh token). Adsolut API scopes are documented per endpoint at api-portal.adsolut.com — extend this list once you know which APIs you'll call (e.g. the relations sync of v0.0.26+)."),
+        new SettingDefault(SettingKeys.Adsolut.RefreshWarnDays, "7", "int", "Adsolut",
+            "Days before the refresh-token's sliding 1-month window expires the Health page flips the Adsolut card to Warning so the admin has time to test or reconnect. The 30-day window itself is enforced by Wolters Kluwer and not configurable from our side."),
 
         // Search — v0.0.8 step 8. Tunables for the global search dropdown
         // and the full-page search. Exposed so installs can raise MinQueryLength

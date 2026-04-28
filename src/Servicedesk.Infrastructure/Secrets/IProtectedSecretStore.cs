@@ -15,4 +15,11 @@ public interface IProtectedSecretStore
 public static class ProtectedSecretKeys
 {
     public const string GraphClientSecret = "Graph.ClientSecret";
+
+    // Adsolut OAuth integration (v0.0.25). The client secret is provisioned
+    // by Wolters Kluwer per install; the refresh token is the long-lived
+    // credential of the admin who authorized the integration and is rotated
+    // on every refresh per the Adsolut docs.
+    public const string AdsolutClientSecret = "Adsolut.ClientSecret";
+    public const string AdsolutRefreshToken = "Adsolut.RefreshToken";
 }

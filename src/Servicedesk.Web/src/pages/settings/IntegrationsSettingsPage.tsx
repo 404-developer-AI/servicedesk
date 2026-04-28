@@ -1,7 +1,36 @@
+import { useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { Plug } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import {
+  IntegrationTile,
+  type IntegrationStatus,
+} from "@/components/integrations/IntegrationTile";
+import { adsolutApi, type AdsolutState } from "@/lib/api";
+import adsolutLogo from "@/assets/integrations/adsolut.ico";
+import trmmLogo from "@/assets/integrations/trmm.png";
+import zammadLogo from "@/assets/integrations/zammad.svg";
+
+function tileStatusFor(state: AdsolutState | undefined): IntegrationStatus {
+  switch (state) {
+    case "connected":
+      return "online";
+    case "refresh_failed":
+      return "error";
+    default:
+      return "not-configured";
+  }
+}
 
 export function IntegrationsSettingsPage() {
+  const navigate = useNavigate();
+  const adsolutStatus = useQuery({
+    queryKey: ["integrations", "adsolut", "status"] as const,
+    queryFn: () => adsolutApi.status(),
+    // Slightly stale data is fine — the detail page re-queries on mount.
+    staleTime: 30_000,
+  });
+
   return (
     <div className="flex flex-col gap-6">
       <header className="flex items-start justify-between gap-4">
@@ -21,11 +50,19 @@ export function IntegrationsSettingsPage() {
         </Badge>
       </header>
 
-      <section className="rounded-lg border border-dashed border-white/[0.08] bg-white/[0.02] p-8 text-center">
-        <p className="text-sm text-muted-foreground">
-          No integrations available yet. MSSQL read-only access and external API connectors
-          are planned for v0.0.9.
-        </p>
+      <section
+        aria-label="Available integrations"
+        className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+      >
+        <IntegrationTile
+          name="Adsolut CRM"
+          logo={adsolutLogo}
+          variant="icon"
+          status={tileStatusFor(adsolutStatus.data?.state)}
+          onClick={() => navigate({ to: "/settings/integrations/adsolut" })}
+        />
+        <IntegrationTile name="Tactical RMM" logo={trmmLogo} variant="icon" status="not-configured" />
+        <IntegrationTile name="Zammad Servicedesk" logo={zammadLogo} variant="icon" status="not-configured" />
       </section>
     </div>
   );

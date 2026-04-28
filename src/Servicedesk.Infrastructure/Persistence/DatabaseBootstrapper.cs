@@ -1570,6 +1570,26 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_tickets_pending_till_next_trigger
             ON tickets (pending_till_next_trigger_id)
             WHERE pending_till_next_trigger_id IS NOT NULL;
+
+        -- v0.0.25 — Adsolut OAuth integration. Single-row connection state
+        -- (one Adsolut administration links to one servicedesk install). The
+        -- secrets (client_secret, refresh_token) live in protected_secrets
+        -- under the Adsolut.* keys; this row carries the non-secret
+        -- bookkeeping the UI shows (who authorized, when, when last refreshed)
+        -- so admins can spot a stale connection at a glance. Singleton
+        -- enforced via PRIMARY KEY DEFAULT 1 + CHECK; Disconnect deletes the
+        -- row and the matching protected_secrets entries together.
+        CREATE TABLE IF NOT EXISTS adsolut_connection (
+            id                          INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+            authorized_subject          TEXT        NULL,
+            authorized_email            TEXT        NULL,
+            authorized_utc              TIMESTAMPTZ NULL,
+            last_refreshed_utc          TIMESTAMPTZ NULL,
+            access_token_expires_utc    TIMESTAMPTZ NULL,
+            last_refresh_error          TEXT        NULL,
+            last_refresh_error_utc      TIMESTAMPTZ NULL,
+            updated_utc                 TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
         """;
 
     private readonly NpgsqlDataSource _dataSource;

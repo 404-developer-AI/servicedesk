@@ -16,6 +16,7 @@ import { AuditLogPage } from "@/pages/settings/AuditLogPage";
 import { GeneralSettingsPage } from "@/pages/settings/GeneralSettingsPage";
 import { HealthSettingsPage } from "@/pages/settings/HealthSettingsPage";
 import { IntegrationsSettingsPage } from "@/pages/settings/IntegrationsSettingsPage";
+import { AdsolutIntegrationPage } from "@/pages/settings/AdsolutIntegrationPage";
 import { MailSettingsPage } from "@/pages/settings/MailSettingsPage";
 import { MailDiagnosticsPage } from "@/pages/settings/MailDiagnosticsPage";
 import { SlaSettingsPage } from "@/pages/settings/SlaSettingsPage";
@@ -309,6 +310,12 @@ const settingsIntegrationsRoute = createRoute({
   component: IntegrationsSettingsPage,
 });
 
+const settingsAdsolutIntegrationRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "integrations/adsolut",
+  component: AdsolutIntegrationPage,
+});
+
 const settingsAuditRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "audit",
@@ -426,6 +433,7 @@ const routeTree = rootRoute.addChildren([
     settingsTriggerDetailRoute,
     settingsTriggerRunsRoute,
     settingsIntegrationsRoute,
+    settingsAdsolutIntegrationRoute,
     settingsTicketsRoute,
     settingsCompaniesRoute,
     settingsContactsRoute,

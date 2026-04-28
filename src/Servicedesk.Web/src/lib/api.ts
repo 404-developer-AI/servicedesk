@@ -387,6 +387,66 @@ export const graphAdminApi = {
     request<GraphMailFolder[]>("GET", `/api/admin/settings/graph/folders?mailbox=${encodeURIComponent(mailbox)}`),
 };
 
+// ---- Adsolut OAuth integration ----
+
+export type AdsolutState =
+  | "not_configured"
+  | "not_connected"
+  | "connected"
+  | "refresh_failed";
+
+export type AdsolutStatus = {
+  state: AdsolutState;
+  environment: string;
+  clientIdConfigured: boolean;
+  clientSecretConfigured: boolean;
+  scopes: string;
+  redirectUri: string;
+  authorizedSubject: string | null;
+  authorizedEmail: string | null;
+  authorizedUtc: string | null;
+  lastRefreshedUtc: string | null;
+  accessTokenExpiresUtc: string | null;
+  lastRefreshError: string | null;
+  lastRefreshErrorUtc: string | null;
+};
+
+export type AdsolutSecretStatus = { configured: boolean };
+export type AdsolutAuthorizeStartResponse = { authorizeUrl: string };
+export type AdsolutRefreshResult = {
+  ok: boolean;
+  expiresUtc?: string;
+  upstreamErrorCode?: string;
+  requiresReconnect?: boolean;
+  message?: string;
+};
+
+export const adsolutApi = {
+  status: () =>
+    request<AdsolutStatus>("GET", "/api/admin/integrations/adsolut/status"),
+  startAuthorize: () =>
+    request<AdsolutAuthorizeStartResponse>(
+      "POST",
+      "/api/admin/integrations/adsolut/authorize",
+    ),
+  disconnect: () =>
+    request<void>("POST", "/api/admin/integrations/adsolut/disconnect"),
+  refresh: () =>
+    request<AdsolutRefreshResult>(
+      "POST",
+      "/api/admin/integrations/adsolut/refresh",
+    ),
+  secretStatus: () =>
+    request<AdsolutSecretStatus>(
+      "GET",
+      "/api/admin/integrations/adsolut/secret",
+    ),
+  setSecret: (value: string) =>
+    request<void>("PUT", "/api/admin/integrations/adsolut/secret", { value }),
+  deleteSecret: () =>
+    request<void>("DELETE", "/api/admin/integrations/adsolut/secret"),
+};
+
 // ---- Mail attachment diagnostics ----
 
 export type MailAttachmentJobDiagnostic = {

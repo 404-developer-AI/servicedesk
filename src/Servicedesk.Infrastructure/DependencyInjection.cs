@@ -18,6 +18,7 @@ using Servicedesk.Infrastructure.Persistence.Views;
 using Servicedesk.Infrastructure.Health;
 using Servicedesk.Infrastructure.Health.SecurityActivity;
 using Servicedesk.Infrastructure.IntakeForms;
+using Servicedesk.Infrastructure.Integrations.Adsolut;
 using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Mail.Ingest;
@@ -80,6 +81,13 @@ public static class DependencyInjection
         services.AddSingleton<IGraphDirectoryClient, GraphDirectoryClient>();
         services.AddSingleton<IMicrosoftAuthService, MicrosoftAuthService>();
         services.AddSingleton<IUserAdminService, UserAdminService>();
+
+        // Adsolut OAuth integration (v0.0.25). One install ↔ one Adsolut
+        // administration. Refresh-token rotation + sliding-month window
+        // tracked in adsolut_connection; secrets in protected_secrets.
+        services.AddSingleton<IAdsolutConnectionStore, AdsolutConnectionStore>();
+        services.AddSingleton<IAdsolutAuthService, AdsolutAuthService>();
+        services.AddHttpClient(AdsolutAuthService.HttpClientName);
 
         services.AddSingleton<ITaxonomyRepository, TaxonomyRepository>();
         services.AddSingleton<ICompanyRepository, CompanyRepository>();

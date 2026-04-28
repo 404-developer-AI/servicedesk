@@ -8,9 +8,9 @@ import {
   LogOut,
   Plus,
   Settings as SettingsIcon,
-  Sparkles,
   UserCircle2,
 } from "lucide-react";
+import ticksyMark from "@/assets/brand/ticksy.svg";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -117,9 +117,13 @@ export function Sidebar() {
       data-testid="app-sidebar"
     >
       <div className="flex items-center gap-3 px-4 pt-5 pb-4">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[calc(var(--radius)-4px)] bg-gradient-to-br from-accent-purple to-accent-blue shadow-[0_0_20px_-4px_hsl(var(--primary)/0.7)]">
-          <Sparkles className="h-5 w-5 text-white" />
-        </div>
+        <img
+          src={ticksyMark}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+          className="h-9 w-9 shrink-0 select-none"
+        />
         {!collapsed && !inView && (
           <div className="min-w-0">
             <div className="truncate font-display text-base font-semibold tracking-tight">Servicedesk</div>

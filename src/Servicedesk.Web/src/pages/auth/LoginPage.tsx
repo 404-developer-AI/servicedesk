@@ -5,7 +5,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Sparkles, LockKeyhole, Mail, ShieldCheck, AlertTriangle } from "lucide-react";
+import { LockKeyhole, Mail, ShieldCheck, AlertTriangle } from "lucide-react";
+import ticksyWordmark from "@/assets/brand/ticksy-dark.svg";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -120,18 +121,13 @@ export function LoginPage() {
         transition={{ duration: 0.35, ease: "easeOut" }}
         className="glass-card w-full max-w-[420px] overflow-hidden"
       >
-        <div className="flex items-center gap-3 border-b border-white/5 px-7 pt-6 pb-5">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[calc(var(--radius)-4px)] bg-gradient-to-br from-accent-purple to-accent-blue shadow-[0_0_22px_-4px_hsl(var(--primary)/0.6)]">
-            <Sparkles className="h-5 w-5 text-white" />
-          </div>
-          <div className="min-w-0">
-            <div className="truncate text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-              Servicedesk
-            </div>
-            <h1 className="truncate font-display text-display-sm font-semibold">
-              {stage === "credentials" ? "Welcome back" : "Two-factor check"}
-            </h1>
-          </div>
+        <div className="flex items-center justify-center border-b border-white/5 px-7 py-3">
+          <img
+            src={ticksyWordmark}
+            alt="Ticksy"
+            draggable={false}
+            className="h-24 w-auto select-none"
+          />
         </div>
 
         <div className="space-y-5 px-7 py-6">

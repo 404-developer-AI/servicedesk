@@ -1,0 +1,24 @@
+<svg width="420" height="200" viewBox="0 0 420 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="gradDark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8B5CF6"></stop>
+      <stop offset="50%" stop-color="#6366F1"></stop>
+      <stop offset="100%" stop-color="#22D3EE"></stop>
+    </linearGradient>
+  </defs>
+
+  <!-- Icon -->
+  <g fill="url(#gradDark)">
+    <rect x="24" y="36" width="110" height="28" rx="14"></rect>
+    <rect x="54" y="78" width="110" height="28" rx="14"></rect>
+    <rect x="24" y="120" width="110" height="28" rx="14"></rect>
+  </g>
+
+  <!-- Text -->
+  <text x="170" y="120" font-family="Inter, sans-serif" font-size="56" font-weight="800" fill="#FFFFFF" letter-spacing="1">
+    Ticksy
+  </text>
+
+  <!-- Accent -->
+  <circle cx="260" cy="80" r="6" fill="#22D3EE"></circle>
+</svg>
