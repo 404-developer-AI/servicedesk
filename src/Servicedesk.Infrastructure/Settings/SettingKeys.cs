@@ -137,6 +137,29 @@ public static class SettingKeys
         public const string RefreshWarnDays = "Adsolut.RefreshWarnDays";
     }
 
+    /// Generic integration-framework knobs shared by every connector. The
+    /// per-integration tunables (Adsolut.*, Graph.*) stay in their own
+    /// section; this group only carries the cross-cutting ones.
+    public static class Integrations
+    {
+        /// How often (seconds) the integrations healthcheck worker ticks.
+        /// Each tick: read connection state for every configured
+        /// integration, write a heartbeat row to <c>integration_audit</c>,
+        /// and push the resolved status to admins via SignalR. Floor 60s
+        /// so an over-eager admin can't accidentally hammer Wolters Kluwer
+        /// with refresh probes.
+        public const string HealthcheckIntervalSeconds = "Integrations.Healthcheck.IntervalSeconds";
+
+        /// Hours between active refresh probes performed by the
+        /// healthcheck worker. A passive tick reads the cached connection
+        /// state; an active tick actually calls the upstream token
+        /// endpoint to verify the refresh token still works. Lower = catch
+        /// a revoked RT sooner; higher = less load on the IdP. Default 12
+        /// keeps the WK call-budget tiny while still flagging revocations
+        /// within half a day.
+        public const string HealthcheckActiveProbeHours = "Integrations.Healthcheck.ActiveProbeHours";
+    }
+
     public static class Sla
     {
         public const string FirstContactTriggers = "Sla.FirstContact.Triggers";
@@ -394,6 +417,17 @@ public static class SettingDefaults
             "Space-separated OAuth2 scopes appended to the authorize request. The default covers the auth-only flow (id_token for who-authorized, offline_access for the long-lived refresh token). Adsolut API scopes are documented per endpoint at api-portal.adsolut.com — extend this list once you know which APIs you'll call (e.g. the relations sync of v0.0.26+)."),
         new SettingDefault(SettingKeys.Adsolut.RefreshWarnDays, "7", "int", "Adsolut",
             "Days before the refresh-token's sliding 1-month window expires the Health page flips the Adsolut card to Warning so the admin has time to test or reconnect. The 30-day window itself is enforced by Wolters Kluwer and not configurable from our side."),
+
+        // Integrations — v0.0.25 healthcheck framework. Cross-integration
+        // knobs only; per-connector specifics live under their own
+        // section (Adsolut.*, Graph.*). Defaults tuned for "low load on
+        // upstream IdPs, fast enough heartbeat for the SPA": tick every
+        // 5 minutes, actively probe the refresh token every 12 hours.
+        new SettingDefault(SettingKeys.Integrations.HealthcheckIntervalSeconds, "300", "int", "Integrations",
+            "How often (seconds) the integrations healthcheck worker ticks. Each tick reads connection state for every configured integration, writes a heartbeat row to integration_audit, and pushes the resolved status to admins over SignalR. Floor 60 — set lower and the worker silently clamps. Default 300 = a 5-minute heartbeat which is well below the SPA's 30-second poll fallback."),
+        new SettingDefault(SettingKeys.Integrations.HealthcheckActiveProbeHours, "12", "int", "Integrations",
+            "Hours between active refresh probes by the healthcheck worker. An active probe calls the upstream token endpoint to verify the refresh token still works (catches a revoked RT before the admin finds out via a failing API call). Default 12 keeps Wolters Kluwer load minimal while still surfacing revocation within half a day. Floor 1 hour."),
+
 
         // Search — v0.0.8 step 8. Tunables for the global search dropdown
         // and the full-page search. Exposed so installs can raise MinQueryLength

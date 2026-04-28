@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Integrations.Adsolut;
+using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
 
@@ -39,6 +40,8 @@ public static class AdsolutEndpoints
         admin.MapPut("/secret", SetSecret).WithName("SetAdsolutSecret").WithOpenApi();
         admin.MapDelete("/secret", DeleteSecret).WithName("DeleteAdsolutSecret").WithOpenApi();
 
+        admin.MapGet("/audit", GetAuditLog).WithName("GetAdsolutAuditLog").WithOpenApi();
+
         // Anonymous — see header comment. Validation happens via the
         // tamper-evident intent cookie + the upstream code exchange.
         app.MapGet(CallbackPath, HandleCallback)
@@ -64,29 +67,12 @@ public static class AdsolutEndpoints
         var clientId = (await settings.GetAsync<string>(SettingKeys.Adsolut.ClientId, ct) ?? string.Empty).Trim();
         var scopes = await settings.GetAsync<string>(SettingKeys.Adsolut.Scopes, ct);
         var hasSecret = await secrets.HasAsync(ProtectedSecretKeys.AdsolutClientSecret, ct);
-        var hasRefreshToken = await secrets.HasAsync(ProtectedSecretKeys.AdsolutRefreshToken, ct);
         var connection = await connections.GetAsync(ct);
 
         var publicBase = await ResolvePublicBaseAsync(http, settings, ct);
         var redirectUri = publicBase + CallbackPath;
 
-        string state;
-        if (string.IsNullOrEmpty(clientId) || !hasSecret)
-        {
-            state = "not_configured";
-        }
-        else if (!hasRefreshToken)
-        {
-            state = "not_connected";
-        }
-        else if (connection?.LastRefreshError is not null)
-        {
-            state = "refresh_failed";
-        }
-        else
-        {
-            state = "connected";
-        }
+        var state = await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, ct);
 
         return Results.Ok(new
         {
@@ -153,7 +139,10 @@ public static class AdsolutEndpoints
         string? error_description,
         IAdsolutAuthService auth,
         ISettingsService settings,
+        IProtectedSecretStore secrets,
+        IAdsolutConnectionStore connections,
         IAuditLogger audit,
+        IIntegrationStatusNotifier statusNotifier,
         IDataProtectionProvider dataProtection,
         CancellationToken ct)
     {
@@ -211,7 +200,7 @@ public static class AdsolutEndpoints
             return RedirectToSpa(publicBase, "state_mismatch");
         }
 
-        var result = await auth.CompleteCallbackAsync(code, redirectUri, ct);
+        var result = await auth.CompleteCallbackAsync(code, redirectUri, intent.Actor, intent.ActorRole, ct);
         switch (result)
         {
             case AdsolutCallbackResult.Success success:
@@ -226,6 +215,10 @@ public static class AdsolutEndpoints
                         authorizedSubject = success.AuthorizedSubject,
                         authorizedEmail = success.AuthorizedEmail,
                     }), ct);
+                await statusNotifier.NotifyStatusChangedAsync(
+                    AdsolutEventTypes.Integration,
+                    await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, ct),
+                    ct);
                 return RedirectToSpa(publicBase, "connected");
 
             case AdsolutCallbackResult.Rejected rejected:
@@ -249,6 +242,10 @@ public static class AdsolutEndpoints
         HttpContext http,
         IAdsolutAuthService auth,
         IAuditLogger audit,
+        ISettingsService settings,
+        IProtectedSecretStore secrets,
+        IAdsolutConnectionStore connections,
+        IIntegrationStatusNotifier statusNotifier,
         CancellationToken ct)
     {
         await auth.DisconnectAsync(ct);
@@ -260,6 +257,10 @@ public static class AdsolutEndpoints
             ActorRole: role,
             ClientIp: http.Connection.RemoteIpAddress?.ToString(),
             UserAgent: http.Request.Headers.UserAgent.ToString()), ct);
+        await statusNotifier.NotifyStatusChangedAsync(
+            AdsolutEventTypes.Integration,
+            await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, ct),
+            ct);
         return Results.NoContent();
     }
 
@@ -274,7 +275,7 @@ public static class AdsolutEndpoints
         var (actor, role) = ActorContext.Resolve(http);
         try
         {
-            var refreshed = await auth.RefreshAccessTokenAsync(ct);
+            var refreshed = await auth.RefreshAccessTokenAsync("admin_test", actor, role, ct);
             await audit.LogAsync(new AuditEvent(
                 EventType: AdsolutEventTypes.TokenRefreshed,
                 Actor: actor,
@@ -317,6 +318,9 @@ public static class AdsolutEndpoints
         HttpContext http,
         IProtectedSecretStore secrets,
         IAuditLogger audit,
+        ISettingsService settings,
+        IAdsolutConnectionStore connections,
+        IIntegrationStatusNotifier statusNotifier,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Value))
@@ -332,6 +336,10 @@ public static class AdsolutEndpoints
             ClientIp: http.Connection.RemoteIpAddress?.ToString(),
             UserAgent: http.Request.Headers.UserAgent.ToString(),
             Payload: new { configured = true }), ct);
+        await statusNotifier.NotifyStatusChangedAsync(
+            AdsolutEventTypes.Integration,
+            await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, ct),
+            ct);
         return Results.NoContent();
     }
 
@@ -339,6 +347,9 @@ public static class AdsolutEndpoints
         HttpContext http,
         IProtectedSecretStore secrets,
         IAuditLogger audit,
+        ISettingsService settings,
+        IAdsolutConnectionStore connections,
+        IIntegrationStatusNotifier statusNotifier,
         CancellationToken ct)
     {
         await secrets.DeleteAsync(ProtectedSecretKeys.AdsolutClientSecret, ct);
@@ -351,7 +362,42 @@ public static class AdsolutEndpoints
             ClientIp: http.Connection.RemoteIpAddress?.ToString(),
             UserAgent: http.Request.Headers.UserAgent.ToString(),
             Payload: new { configured = false }), ct);
+        await statusNotifier.NotifyStatusChangedAsync(
+            AdsolutEventTypes.Integration,
+            await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, ct),
+            ct);
         return Results.NoContent();
+    }
+
+    // ---- /audit ---------------------------------------------------------
+
+    private static async Task<IResult> GetAuditLog(
+        IIntegrationAuditQuery audit,
+        long? cursor,
+        int? limit,
+        CancellationToken ct)
+    {
+        // 50 default keeps the table on the detail page legible without
+        // scrolling; the cursor lets the UI walk older rows on demand.
+        var page = await audit.ListAsync(AdsolutEventTypes.Integration, cursor, limit ?? 50, ct);
+        return Results.Ok(new
+        {
+            items = page.Items.Select(e => new
+            {
+                id = e.Id,
+                utc = e.Utc,
+                eventType = e.EventType,
+                outcome = e.Outcome,
+                endpoint = e.Endpoint,
+                httpStatus = e.HttpStatus,
+                latencyMs = e.LatencyMs,
+                actorId = e.ActorId,
+                actorRole = e.ActorRole,
+                errorCode = e.ErrorCode,
+                payload = e.PayloadJson,
+            }),
+            nextCursor = page.NextCursor,
+        });
     }
 
     // ---- helpers --------------------------------------------------------

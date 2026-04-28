@@ -421,6 +421,27 @@ export type AdsolutRefreshResult = {
   message?: string;
 };
 
+export type IntegrationAuditOutcome = "ok" | "warn" | "error";
+
+export type IntegrationAuditEntry = {
+  id: number;
+  utc: string;
+  eventType: string;
+  outcome: IntegrationAuditOutcome;
+  endpoint: string | null;
+  httpStatus: number | null;
+  latencyMs: number | null;
+  actorId: string | null;
+  actorRole: string | null;
+  errorCode: string | null;
+  payload: string;
+};
+
+export type IntegrationAuditPage = {
+  items: IntegrationAuditEntry[];
+  nextCursor: number | null;
+};
+
 export const adsolutApi = {
   status: () =>
     request<AdsolutStatus>("GET", "/api/admin/integrations/adsolut/status"),
@@ -445,6 +466,15 @@ export const adsolutApi = {
     request<void>("PUT", "/api/admin/integrations/adsolut/secret", { value }),
   deleteSecret: () =>
     request<void>("DELETE", "/api/admin/integrations/adsolut/secret"),
+  auditLog: (cursor: number | null, limit = 50) => {
+    const qs = new URLSearchParams();
+    if (cursor !== null) qs.set("cursor", String(cursor));
+    qs.set("limit", String(limit));
+    return request<IntegrationAuditPage>(
+      "GET",
+      `/api/admin/integrations/adsolut/audit?${qs.toString()}`,
+    );
+  },
 };
 
 // ---- Mail attachment diagnostics ----

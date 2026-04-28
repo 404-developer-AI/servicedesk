@@ -18,6 +18,7 @@ using Servicedesk.Infrastructure.Persistence.Views;
 using Servicedesk.Infrastructure.Health;
 using Servicedesk.Infrastructure.Health.SecurityActivity;
 using Servicedesk.Infrastructure.IntakeForms;
+using Servicedesk.Infrastructure.Integrations;
 using Servicedesk.Infrastructure.Integrations.Adsolut;
 using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Graph;
@@ -68,6 +69,13 @@ public static class DependencyInjection
 
         services.AddSingleton<IAuditLogger, AuditLogger>();
         services.AddSingleton<IAuditQuery, AuditQueryService>();
+
+        // Integration-audit (v0.0.25). Operational log for outbound
+        // integration calls — distinct from the security-grade audit_log.
+        // Same instance serves writer + query because the surface is small.
+        services.AddSingleton<IntegrationAuditLogger>();
+        services.AddSingleton<IIntegrationAuditLogger>(sp => sp.GetRequiredService<IntegrationAuditLogger>());
+        services.AddSingleton<IIntegrationAuditQuery>(sp => sp.GetRequiredService<IntegrationAuditLogger>());
         services.AddSingleton<ISettingsService, SettingsService>();
 
         services.AddSingleton<IPasswordHasher, Argon2idPasswordHasher>();
@@ -88,6 +96,14 @@ public static class DependencyInjection
         services.AddSingleton<IAdsolutConnectionStore, AdsolutConnectionStore>();
         services.AddSingleton<IAdsolutAuthService, AdsolutAuthService>();
         services.AddHttpClient(AdsolutAuthService.HttpClientName);
+
+        // Healthcheck-BackgroundService writes integration_audit rows and
+        // pushes resolved status over SignalR. The notifier defaults to
+        // the no-op implementation; the Api project overrides it with
+        // the SignalR-backed broadcaster (same pattern as the ticket-list
+        // and user-notification notifiers above).
+        services.AddSingleton<Realtime.IIntegrationStatusNotifier, Realtime.NullIntegrationStatusNotifier>();
+        services.AddHostedService<IntegrationsHealthcheckWorker>();
 
         services.AddSingleton<ITaxonomyRepository, TaxonomyRepository>();
         services.AddSingleton<ICompanyRepository, CompanyRepository>();

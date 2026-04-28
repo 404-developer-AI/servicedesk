@@ -120,6 +120,10 @@ builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.IUserNotifier,
 // mention-notification handler shape is left untouched.
 builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.ISecurityAlertNotifier,
     Servicedesk.Api.Presence.SignalRSecurityAlertNotifier>();
+// v0.0.25 — integration-framework healthcheck pushes status changes to
+// every connected admin via a dedicated IntegrationsHub.
+builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.IIntegrationStatusNotifier,
+    Servicedesk.Api.Presence.SignalRIntegrationStatusNotifier>();
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -379,6 +383,7 @@ app.MapNotificationEndpoints();
 app.MapDevBenchmarkEndpoints(app.Environment);
 app.MapHub<TicketPresenceHub>("/hubs/presence");
 app.MapHub<UserNotificationHub>("/hubs/notifications");
+app.MapHub<IntegrationsHub>("/hubs/integrations");
 
 // Deep-link fallback for the SPA. The regex excludes /api/* and /hubs/* so an
 // unknown API route still returns 404 (JSON client) instead of HTML.

@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth.Microsoft;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
@@ -20,6 +22,7 @@ public sealed class AdsolutAuthService : IAdsolutAuthService
     private readonly IProtectedSecretStore _secrets;
     private readonly IAdsolutConnectionStore _connections;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IIntegrationAuditLogger _integrationAudit;
     private readonly ILogger<AdsolutAuthService> _logger;
 
     public AdsolutAuthService(
@@ -27,12 +30,14 @@ public sealed class AdsolutAuthService : IAdsolutAuthService
         IProtectedSecretStore secrets,
         IAdsolutConnectionStore connections,
         IHttpClientFactory httpClientFactory,
+        IIntegrationAuditLogger integrationAudit,
         ILogger<AdsolutAuthService> logger)
     {
         _settings = settings;
         _secrets = secrets;
         _connections = connections;
         _httpClientFactory = httpClientFactory;
+        _integrationAudit = integrationAudit;
         _logger = logger;
     }
 
@@ -70,7 +75,12 @@ public sealed class AdsolutAuthService : IAdsolutAuthService
 
     // ---- /callback ------------------------------------------------------
 
-    public async Task<AdsolutCallbackResult> CompleteCallbackAsync(string code, string redirectUri, CancellationToken ct = default)
+    public async Task<AdsolutCallbackResult> CompleteCallbackAsync(
+        string code,
+        string redirectUri,
+        string? actorId = null,
+        string? actorRole = null,
+        CancellationToken ct = default)
     {
         var (env, clientId, clientSecret, _) = await ReadConfigAsync(ct);
         if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret))
@@ -90,7 +100,13 @@ public sealed class AdsolutAuthService : IAdsolutAuthService
         TokenResponse token;
         try
         {
-            token = await PostTokenEndpointAsync(env, clientId, clientSecret, formBody, ct);
+            token = await CallTokenEndpointWithAuditAsync(
+                env, clientId, clientSecret, formBody,
+                eventType: AdsolutEventTypes.OAuthCodeExchange,
+                source: "callback",
+                actorId: actorId,
+                actorRole: actorRole,
+                ct: ct);
         }
         catch (TokenEndpointException ex)
         {
@@ -138,7 +154,11 @@ public sealed class AdsolutAuthService : IAdsolutAuthService
 
     // ---- /refresh -------------------------------------------------------
 
-    public async Task<AdsolutRefreshResult> RefreshAccessTokenAsync(CancellationToken ct = default)
+    public async Task<AdsolutRefreshResult> RefreshAccessTokenAsync(
+        string source = "service",
+        string? actorId = null,
+        string? actorRole = null,
+        CancellationToken ct = default)
     {
         var (env, clientId, clientSecret, _) = await ReadConfigAsync(ct);
         if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret))
@@ -165,7 +185,13 @@ public sealed class AdsolutAuthService : IAdsolutAuthService
         TokenResponse token;
         try
         {
-            token = await PostTokenEndpointAsync(env, clientId, clientSecret, formBody, ct);
+            token = await CallTokenEndpointWithAuditAsync(
+                env, clientId, clientSecret, formBody,
+                eventType: AdsolutEventTypes.OAuthRefresh,
+                source: source,
+                actorId: actorId,
+                actorRole: actorRole,
+                ct: ct);
         }
         catch (TokenEndpointException ex)
         {
@@ -252,7 +278,70 @@ public sealed class AdsolutAuthService : IAdsolutAuthService
         return (env, clientId, clientSecret, scopes);
     }
 
-    private async Task<TokenResponse> PostTokenEndpointAsync(
+    /// Wraps <see cref="PostTokenEndpointAsync"/> with latency-stopwatch +
+    /// integration_audit logging. The audit row lands regardless of outcome
+    /// (success → Ok, transient failure → Warn, terminal/invalid_grant →
+    /// Error), so an admin can see slow-but-succeeding calls and revoked
+    /// refresh tokens in the same table. Logging failures are swallowed
+    /// inside <see cref="IntegrationAuditLogger"/> so a logging glitch
+    /// never escalates into an integration outage.
+    private async Task<TokenResponse> CallTokenEndpointWithAuditAsync(
+        AdsolutEnvironment env,
+        string clientId,
+        string clientSecret,
+        IDictionary<string, string> formBody,
+        string eventType,
+        string source,
+        string? actorId,
+        string? actorRole,
+        CancellationToken ct)
+    {
+        var endpoint = AdsolutOAuthEndpoints.Token(env);
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            var (token, httpStatus) = await PostTokenEndpointAsync(env, clientId, clientSecret, formBody, ct);
+            stopwatch.Stop();
+            await _integrationAudit.LogAsync(new IntegrationAuditEvent(
+                Integration: AdsolutEventTypes.Integration,
+                EventType: eventType,
+                Outcome: IntegrationAuditOutcome.Ok,
+                Endpoint: endpoint,
+                HttpStatus: httpStatus,
+                LatencyMs: (int)stopwatch.ElapsedMilliseconds,
+                ActorId: actorId,
+                ActorRole: actorRole,
+                Payload: new { source }), ct);
+            return token;
+        }
+        catch (TokenEndpointException ex)
+        {
+            stopwatch.Stop();
+            // invalid_grant = the RT was revoked or the sliding window
+            // elapsed; admin must reconnect → flag as Error so the admin
+            // overview surfaces it in red. All other token-endpoint
+            // failures (5xx, network blip, parser hiccup) are transient
+            // and recoverable → Warn so they don't drown out a real
+            // terminal failure.
+            var outcome = string.Equals(ex.UpstreamErrorCode, "invalid_grant", StringComparison.Ordinal)
+                ? IntegrationAuditOutcome.Error
+                : IntegrationAuditOutcome.Warn;
+            await _integrationAudit.LogAsync(new IntegrationAuditEvent(
+                Integration: AdsolutEventTypes.Integration,
+                EventType: eventType,
+                Outcome: outcome,
+                Endpoint: endpoint,
+                HttpStatus: ex.HttpStatus,
+                LatencyMs: (int)stopwatch.ElapsedMilliseconds,
+                ActorId: actorId,
+                ActorRole: actorRole,
+                ErrorCode: ex.UpstreamErrorCode,
+                Payload: new { source, message = ex.Message }), ct);
+            throw;
+        }
+    }
+
+    private async Task<(TokenResponse Token, int HttpStatus)> PostTokenEndpointAsync(
         AdsolutEnvironment env,
         string clientId,
         string clientSecret,
@@ -273,6 +362,7 @@ public sealed class AdsolutAuthService : IAdsolutAuthService
 
         using var response = await http.SendAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
+        var status = (int)response.StatusCode;
 
         if (!response.IsSuccessStatusCode)
         {
@@ -292,19 +382,20 @@ public sealed class AdsolutAuthService : IAdsolutAuthService
                 // the HTTP status in the message.
             }
             throw new TokenEndpointException(
-                $"Token endpoint returned {(int)response.StatusCode}: {upstreamError ?? "non_success"}",
-                upstreamError);
+                $"Token endpoint returned {status}: {upstreamError ?? "non_success"}",
+                upstreamError,
+                status);
         }
 
         try
         {
             var parsed = JsonSerializer.Deserialize<TokenResponse>(body);
-            if (parsed is null) throw new TokenEndpointException("token_response_unparseable", null);
-            return parsed;
+            if (parsed is null) throw new TokenEndpointException("token_response_unparseable", null, status);
+            return (parsed, status);
         }
         catch (JsonException ex)
         {
-            throw new TokenEndpointException("token_response_unparseable: " + ex.GetType().Name, null);
+            throw new TokenEndpointException("token_response_unparseable: " + ex.GetType().Name, null, status);
         }
     }
 
@@ -402,9 +493,11 @@ public sealed class AdsolutAuthService : IAdsolutAuthService
     private sealed class TokenEndpointException : Exception
     {
         public string? UpstreamErrorCode { get; }
-        public TokenEndpointException(string message, string? upstreamErrorCode) : base(message)
+        public int? HttpStatus { get; }
+        public TokenEndpointException(string message, string? upstreamErrorCode, int? httpStatus = null) : base(message)
         {
             UpstreamErrorCode = upstreamErrorCode;
+            HttpStatus = httpStatus;
         }
     }
 }

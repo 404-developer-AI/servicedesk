@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SettingField } from "@/components/settings/SettingField";
+import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditLog";
+import { useIntegrationsSignalR } from "@/hooks/useIntegrationsSignalR";
 import { cn } from "@/lib/utils";
 
 const ADSOLUT_SETTINGS_QUERY_KEY = ["settings", "list", "Adsolut"] as const;
@@ -91,6 +93,9 @@ function clearStatusFromUrl() {
 
 export function AdsolutIntegrationPage() {
   const qc = useQueryClient();
+  // Live status pushes — a connect/disconnect/refresh-failed transition
+  // on another tab flips this page's badges within seconds.
+  useIntegrationsSignalR();
 
   const status = useQuery({
     queryKey: ADSOLUT_STATUS_QUERY_KEY,
@@ -448,6 +453,22 @@ export function AdsolutIntegrationPage() {
             </Button>
           </div>
         </div>
+      </section>
+
+      {/* Audit log — operational call history */}
+      <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+        <header className="mb-4 space-y-1">
+          <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
+            Audit log
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            Every outbound call to Wolters Kluwer plus each healthcheck tick lands here with
+            its latency and any upstream error. Distinct from the security audit log on
+            <span className="font-mono"> /settings/audit</span> — this view tracks
+            integration health, not admin actions.
+          </p>
+        </header>
+        <IntegrationAuditLog integration="adsolut" />
       </section>
     </div>
   );

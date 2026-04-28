@@ -1590,6 +1590,36 @@ public sealed class DatabaseBootstrapper : IHostedService
             last_refresh_error_utc      TIMESTAMPTZ NULL,
             updated_utc                 TIMESTAMPTZ NOT NULL DEFAULT now()
         );
+
+        -- v0.0.25 — operational integration log. Distinct from audit_log:
+        -- this table captures every upstream call (latency, http status,
+        -- upstream error codes) and every healthcheck tick, without the
+        -- hash-chain or actor-required columns that audit_log carries.
+        -- audit_log keeps the admin-action security trail (who clicked what,
+        -- tamper-evident); integration_audit is for "is the integration
+        -- healthy and how slow has it been". Outcome is constrained to a
+        -- short whitelist so an admin overview can colour-code rows without
+        -- a string-soup of variants.
+        CREATE TABLE IF NOT EXISTS integration_audit (
+            id              BIGSERIAL   PRIMARY KEY,
+            utc             TIMESTAMPTZ NOT NULL DEFAULT now(),
+            integration     TEXT        NOT NULL,
+            event_type      TEXT        NOT NULL,
+            outcome         TEXT        NOT NULL CHECK (outcome IN ('ok','warn','error')),
+            endpoint        TEXT        NULL,
+            http_status     INTEGER     NULL,
+            latency_ms      INTEGER     NULL,
+            actor_id        TEXT        NULL,
+            actor_role      TEXT        NULL,
+            error_code      TEXT        NULL,
+            payload         JSONB       NOT NULL DEFAULT '{}'::jsonb
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_integration_audit_integration_utc
+            ON integration_audit (integration, utc DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS ix_integration_audit_outcome_utc
+            ON integration_audit (outcome, utc DESC)
+            WHERE outcome <> 'ok';
         """;
 
     private readonly NpgsqlDataSource _dataSource;

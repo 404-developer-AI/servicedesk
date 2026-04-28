@@ -40,4 +40,35 @@ public static class AdsolutEventTypes
     /// Admin cleared the client secret. Implies the connection is now
     /// inert until a new secret arrives.
     public const string ClientSecretDeleted = "integration.adsolut.client_secret.deleted";
+
+    // ---- integration_audit event types ---------------------------------
+    //
+    // The constants below land in integration_audit (operational log),
+    // not audit_log (security trail). They carry latency + http_status
+    // + upstream error_code so an admin can spot a slow or flapping
+    // integration without correlating across two tables.
+
+    /// Integration name written to <c>integration_audit.integration</c>.
+    /// Centralised so the worker, endpoints and reader all agree.
+    public const string Integration = "adsolut";
+
+    /// Outbound HTTP call to the WK token endpoint to exchange an
+    /// authorization code for tokens (server-side leg of the OAuth dance).
+    /// Latency + http_status are populated; actor_id/role are populated
+    /// from the intent-cookie that survived the cross-site redirect.
+    public const string OAuthCodeExchange = "oauth.code_exchange";
+
+    /// Outbound HTTP call to the WK token endpoint to rotate the refresh
+    /// token. Source is one of: scheduled healthcheck tick, admin-clicked
+    /// "Test refresh", or a future API-call path. Payload distinguishes
+    /// the source so the table can be filtered.
+    public const string OAuthRefresh = "oauth.refresh";
+
+    /// One healthcheck tick. Always produces a row (even when skipped
+    /// because the integration isn't configured), so admins can see the
+    /// worker is alive. Outcome is the resolved status the SignalR push
+    /// would carry — ok = healthy, warn = configured-but-not-connected
+    /// or transient failure, error = invalid_grant / sliding window
+    /// elapsed.
+    public const string HealthcheckTick = "healthcheck.tick";
 }
