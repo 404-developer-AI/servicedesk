@@ -97,6 +97,19 @@ public static class DependencyInjection
         services.AddSingleton<IAdsolutAuthService, AdsolutAuthService>();
         services.AddHttpClient(AdsolutAuthService.HttpClientName);
 
+        // v0.0.26 — API clients for Adsolut /adm and /acc. Access-token
+        // provider caches the bearer 5 minutes so the sync worker doesn't
+        // hit the WK token endpoint on every paged Customers call.
+        services.AddSingleton<IAdsolutAccessTokenProvider, AdsolutAccessTokenProvider>();
+        services.AddSingleton<AdsolutHttpInvoker>();
+        services.AddSingleton<IAdsolutAdministrationsClient, AdsolutAdministrationsClient>();
+        services.AddSingleton<IAdsolutCustomersClient, AdsolutCustomersClient>();
+        services.AddSingleton<IAdsolutSyncStateStore, AdsolutSyncStateStore>();
+        services.AddSingleton<IAdsolutCompanyUpserter, AdsolutCompanyUpserter>();
+        services.AddSingleton<IAdsolutSyncWorkerSignal, AdsolutSyncWorkerSignal>();
+        services.AddHttpClient(AdsolutHttpInvoker.HttpClientName);
+        services.AddHostedService<AdsolutSyncWorker>();
+
         // Healthcheck-BackgroundService writes integration_audit rows and
         // pushes resolved status over SignalR. The notifier defaults to
         // the no-op implementation; the Api project overrides it with

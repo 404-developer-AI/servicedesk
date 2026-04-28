@@ -21,7 +21,9 @@ public sealed record Company(
     bool AlertOnCreate,
     bool AlertOnOpen,
     string AlertOnOpenMode,
-    string Email);
+    string Email,
+    Guid? AdsolutId = null,
+    DateTime? AdsolutLastModified = null);
 
 public sealed record CompanyDomain(
     Guid Id,

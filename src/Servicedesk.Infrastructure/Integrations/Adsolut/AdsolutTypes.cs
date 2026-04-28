@@ -55,7 +55,9 @@ public sealed record AdsolutConnection(
     DateTime? AccessTokenExpiresUtc,
     string? LastRefreshError,
     DateTime? LastRefreshErrorUtc,
-    DateTime UpdatedUtc);
+    DateTime UpdatedUtc,
+    Guid? AdministrationId = null,
+    string? ScopesAtAuthorize = null);
 
 /// Output of <c>CreateChallengeAsync</c>. The endpoint puts <c>State</c>
 /// in a short-lived encrypted cookie and 302s to <c>AuthorizeUrl</c>; on

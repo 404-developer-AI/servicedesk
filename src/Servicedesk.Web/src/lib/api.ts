@@ -409,6 +409,37 @@ export type AdsolutStatus = {
   accessTokenExpiresUtc: string | null;
   lastRefreshError: string | null;
   lastRefreshErrorUtc: string | null;
+  administrationId: string | null;
+  /// Scopes string that was bound to the current refresh token at authorize
+  /// time. Null when the install is not connected.
+  scopesAtAuthorize: string | null;
+  /// True when the saved Settings.Adsolut.Scopes value differs from the
+  /// scope set on the active refresh token — admin saved new scopes via
+  /// the picker but did not reconnect yet, so the next API call will fail
+  /// with insufficient_scope. Surface a "Reconnect required" pill.
+  scopesNeedReconnect: boolean;
+};
+
+export type AdsolutAdministration = {
+  id: string;
+  name: string;
+  code: string | null;
+};
+
+export type AdsolutAdministrationsResponse = {
+  items: AdsolutAdministration[];
+  selectedId: string | null;
+};
+
+export type AdsolutSyncState = {
+  lastFullSyncUtc: string | null;
+  lastDeltaSyncUtc: string | null;
+  lastError: string | null;
+  lastErrorUtc: string | null;
+  companiesSeen: number;
+  companiesUpserted: number;
+  companiesSkippedLoserInConflict: number;
+  updatedUtc: string | null;
 };
 
 export type AdsolutSecretStatus = { configured: boolean };
@@ -475,6 +506,21 @@ export const adsolutApi = {
       `/api/admin/integrations/adsolut/audit?${qs.toString()}`,
     );
   },
+  listAdministrations: () =>
+    request<AdsolutAdministrationsResponse>(
+      "GET",
+      "/api/admin/integrations/adsolut/administrations",
+    ),
+  selectAdministration: (administrationId: string) =>
+    request<{ administrationId: string }>(
+      "POST",
+      "/api/admin/integrations/adsolut/administration",
+      { administrationId },
+    ),
+  syncState: () =>
+    request<AdsolutSyncState>("GET", "/api/admin/integrations/adsolut/sync"),
+  triggerSync: () =>
+    request<void>("POST", "/api/admin/integrations/adsolut/sync"),
 };
 
 // ---- Mail attachment diagnostics ----

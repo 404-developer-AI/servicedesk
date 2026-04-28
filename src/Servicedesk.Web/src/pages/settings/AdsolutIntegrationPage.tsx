@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Copy, Plug } from "lucide-react";
+import { ArrowLeft, Copy, Plug, RefreshCw } from "lucide-react";
 import {
   ApiError,
   adsolutApi,
@@ -13,8 +13,16 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SettingField } from "@/components/settings/SettingField";
+import { AdsolutScopesPicker } from "@/components/settings/AdsolutScopesPicker";
 import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditLog";
 import { useIntegrationsSignalR } from "@/hooks/useIntegrationsSignalR";
 import { cn } from "@/lib/utils";
@@ -22,6 +30,8 @@ import { cn } from "@/lib/utils";
 const ADSOLUT_SETTINGS_QUERY_KEY = ["settings", "list", "Adsolut"] as const;
 const ADSOLUT_STATUS_QUERY_KEY = ["integrations", "adsolut", "status"] as const;
 const ADSOLUT_SECRET_QUERY_KEY = ["integrations", "adsolut", "secret"] as const;
+const ADSOLUT_ADMIN_QUERY_KEY = ["integrations", "adsolut", "administrations"] as const;
+const ADSOLUT_SYNC_QUERY_KEY = ["integrations", "adsolut", "sync"] as const;
 
 const STATE_LABEL: Record<AdsolutState, { tone: string; text: string; dot: string }> = {
   not_configured: {
@@ -110,8 +120,25 @@ export function AdsolutIntegrationPage() {
     queryFn: () => adsolutApi.secretStatus(),
   });
 
+  // Only fetch the dossier list once we are actually connected — no point
+  // calling the Administrations API while the integration is in
+  // not_configured / not_connected state (it would just 401).
+  const isConnectedState =
+    status.data?.state === "connected" || status.data?.state === "refresh_failed";
+  const administrations = useQuery({
+    queryKey: ADSOLUT_ADMIN_QUERY_KEY,
+    queryFn: () => adsolutApi.listAdministrations(),
+    enabled: isConnectedState,
+  });
+  const syncState = useQuery({
+    queryKey: ADSOLUT_SYNC_QUERY_KEY,
+    queryFn: () => adsolutApi.syncState(),
+    enabled: isConnectedState,
+  });
+
   const [secretValue, setSecretValue] = useState("");
   const [refreshOutcome, setRefreshOutcome] = useState<string | null>(null);
+  const [dossierPick, setDossierPick] = useState<string>("");
 
   // Surface the post-callback ?status= query param as a toast, then strip it
   // from the URL so a refresh doesn't fire it again.
@@ -188,6 +215,34 @@ export function AdsolutIntegrationPage() {
       qc.invalidateQueries({ queryKey: ADSOLUT_SECRET_QUERY_KEY });
       qc.invalidateQueries({ queryKey: ADSOLUT_STATUS_QUERY_KEY });
     },
+  });
+
+  const selectAdministration = useMutation({
+    mutationFn: (id: string) => adsolutApi.selectAdministration(id),
+    onSuccess: () => {
+      toast.success("Adsolut dossier activated");
+      setDossierPick("");
+      qc.invalidateQueries({ queryKey: ADSOLUT_STATUS_QUERY_KEY });
+      qc.invalidateQueries({ queryKey: ADSOLUT_ADMIN_QUERY_KEY });
+      qc.invalidateQueries({ queryKey: ADSOLUT_SYNC_QUERY_KEY });
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? `Activate failed (${err.status})` : "Activate failed",
+      ),
+  });
+
+  const triggerSync = useMutation({
+    mutationFn: () => adsolutApi.triggerSync(),
+    onSuccess: () => {
+      toast.success("Sync queued — will run within 2 seconds");
+      // Audit log + sync-state will refresh on the SignalR push when the
+      // tick lands; nothing to invalidate here yet.
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? `Sync request failed (${err.status})` : "Sync request failed",
+      ),
   });
 
   const copyRedirect = async (url: string) => {
@@ -387,7 +442,7 @@ export function AdsolutIntegrationPage() {
         </header>
 
         <div className="space-y-3">
-          {(["Adsolut.Environment", "Adsolut.ClientId", "Adsolut.Scopes"] as const).map((key) => {
+          {(["Adsolut.Environment", "Adsolut.ClientId"] as const).map((key) => {
             const entry = findEntry(settingsList.data, key);
             if (!entry) return null;
             return (
@@ -398,6 +453,12 @@ export function AdsolutIntegrationPage() {
               />
             );
           })}
+
+          <AdsolutScopesPicker
+            entry={findEntry(settingsList.data, "Adsolut.Scopes")}
+            queryKey={ADSOLUT_SETTINGS_QUERY_KEY}
+            needsReconnect={s.scopesNeedReconnect}
+          />
 
           <div className="flex items-center justify-between gap-3 rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2">
             <div className="min-w-0 flex-1">
@@ -454,6 +515,174 @@ export function AdsolutIntegrationPage() {
           </div>
         </div>
       </section>
+
+      {/* v0.0.26 — Dossier picker. Only relevant once the integration is
+          connected. The admin must explicitly activate one Adsolut
+          administration before sync ticks do real work; the worker skips
+          ticks while administrationId is null. */}
+      {isConnectedState && (
+        <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+          <header className="mb-4 space-y-1">
+            <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
+              Dossier
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Pick which Adsolut administration this servicedesk install syncs against.
+              Activating a dossier registers this integration with Wolters Kluwer; the
+              disconnect flow deactivates it again so it does not keep generating billable
+              activity at WK after the install stops using it.
+            </p>
+          </header>
+
+          {administrations.isLoading ? (
+            <Skeleton className="h-10 w-full" />
+          ) : administrations.isError ? (
+            <div className="rounded-md border border-rose-400/30 bg-rose-500/[0.08] px-3 py-2 text-xs text-rose-200">
+              Could not list dossiers — refresh-token may be expired. Try Test refresh first.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {s.administrationId ? (
+                <div className="rounded-md border border-emerald-400/30 bg-emerald-500/[0.06] px-3 py-2 text-xs text-emerald-200">
+                  Active dossier:{" "}
+                  <span className="font-mono">
+                    {administrations.data?.items.find((a) => a.id === s.administrationId)?.name ??
+                      s.administrationId}
+                  </span>
+                  {(() => {
+                    const found = administrations.data?.items.find(
+                      (a) => a.id === s.administrationId,
+                    );
+                    return found?.code ? (
+                      <span className="ml-2 text-emerald-300/70">({found.code})</span>
+                    ) : null;
+                  })()}
+                </div>
+              ) : (
+                <div className="rounded-md border border-amber-400/30 bg-amber-500/[0.08] px-3 py-2 text-xs text-amber-200">
+                  No dossier picked yet — sync ticks are paused. Choose one below to start
+                  pulling Customers from Adsolut.
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Select
+                  value={dossierPick || s.administrationId || ""}
+                  onValueChange={(value) => setDossierPick(value)}
+                >
+                  <SelectTrigger className="min-w-[16rem] flex-1">
+                    <SelectValue placeholder="Select a dossier…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(administrations.data?.items ?? []).map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name}
+                        {a.code ? ` (${a.code})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    dossierPick && selectAdministration.mutate(dossierPick)
+                  }
+                  disabled={
+                    !dossierPick ||
+                    dossierPick === s.administrationId ||
+                    selectAdministration.isPending
+                  }
+                >
+                  {selectAdministration.isPending ? "Activating…" : "Activate dossier"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* v0.0.26 — Sync panel. Counters + last-tick timestamps + a "Sync now"
+          button so admins do not have to wait the full interval after
+          changing a toggle. */}
+      {isConnectedState && s.administrationId && (
+        <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+          <header className="mb-4 flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
+                Sync
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                One-way Adsolut → servicedesk pull of Companies. Conflict tie-breaker is
+                last-write-wins: a local edit made after the Adsolut row's lastModified is
+                preserved until Adsolut updates again.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => triggerSync.mutate()}
+              disabled={triggerSync.isPending}
+            >
+              <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+              {triggerSync.isPending ? "Queueing…" : "Sync now"}
+            </Button>
+          </header>
+
+          <dl className="mb-4 grid grid-cols-1 gap-y-2 text-xs sm:grid-cols-2">
+            <dt className="text-muted-foreground/70">Last delta sync</dt>
+            <dd className="text-foreground">{formatDate(syncState.data?.lastDeltaSyncUtc)}</dd>
+            <dt className="text-muted-foreground/70">Last full sync</dt>
+            <dd className="text-foreground">{formatDate(syncState.data?.lastFullSyncUtc)}</dd>
+            <dt className="text-muted-foreground/70">Companies seen (last tick)</dt>
+            <dd className="text-foreground tabular-nums">
+              {syncState.data?.companiesSeen ?? 0}
+            </dd>
+            <dt className="text-muted-foreground/70">Companies upserted (last tick)</dt>
+            <dd className="text-foreground tabular-nums">
+              {syncState.data?.companiesUpserted ?? 0}
+            </dd>
+            <dt className="text-muted-foreground/70">Skipped — local edit newer</dt>
+            <dd className="text-foreground tabular-nums">
+              {syncState.data?.companiesSkippedLoserInConflict ?? 0}
+            </dd>
+            {syncState.data?.lastError && (
+              <>
+                <dt className="text-muted-foreground/70">Last error</dt>
+                <dd className="text-rose-300">
+                  {syncState.data.lastError}
+                  {syncState.data.lastErrorUtc && (
+                    <span className="ml-2 text-muted-foreground/60">
+                      ({formatDate(syncState.data.lastErrorUtc)})
+                    </span>
+                  )}
+                </dd>
+              </>
+            )}
+          </dl>
+
+          <div className="space-y-2">
+            {(
+              [
+                "Adsolut.Sync.IntervalMinutes",
+                "Adsolut.Sync.Pull.Companies.Update",
+                "Adsolut.Sync.Pull.Companies.Create",
+                "Adsolut.Sync.IncludeSuppliers",
+                "Adsolut.Sync.LinkCompanyDomainsFromEmail",
+              ] as const
+            ).map((key) => {
+              const entry = findEntry(settingsList.data, key);
+              if (!entry) return null;
+              return (
+                <SettingField
+                  key={key}
+                  entry={entry}
+                  queryKey={ADSOLUT_SETTINGS_QUERY_KEY}
+                />
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Audit log — operational call history */}
       <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">

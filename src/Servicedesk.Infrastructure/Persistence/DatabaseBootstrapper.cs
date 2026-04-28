@@ -1620,6 +1620,54 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_integration_audit_outcome_utc
             ON integration_audit (outcome, utc DESC)
             WHERE outcome <> 'ok';
+
+        -- v0.0.26 — Adsolut Companies pull. Two columns on companies that
+        -- track the Adsolut linkage (adsolut_id is the canonical FK once
+        -- the first sync linked the row; adsolut_last_modified mirrors
+        -- the Adsolut-side timestamp so the worker can tell whether the
+        -- upstream row advanced since the last tick). The sparse unique
+        -- index keeps the FK reversible without forcing every legacy
+        -- company row to carry an adsolut_id.
+        ALTER TABLE companies
+            ADD COLUMN IF NOT EXISTS adsolut_id            UUID         NULL,
+            ADD COLUMN IF NOT EXISTS adsolut_last_modified TIMESTAMPTZ  NULL;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_companies_adsolut_id
+            ON companies (adsolut_id) WHERE adsolut_id IS NOT NULL;
+
+        -- One Adsolut administration (dossier) per servicedesk install. The
+        -- column stays NULL between connect and dossier-pick so the UI can
+        -- prompt the admin to choose; the sync worker skips ticks while it
+        -- is NULL.
+        ALTER TABLE adsolut_connection
+            ADD COLUMN IF NOT EXISTS administration_id UUID NULL;
+
+        -- Snapshot of Settings.Adsolut.Scopes at the moment the admin last
+        -- completed an authorize-callback. The current setting can drift
+        -- afterwards (admin edits the picker without reconnecting); the
+        -- /status endpoint compares this column against the current value
+        -- and surfaces a "Reconnect required" pill when they differ. Only
+        -- written on successful callback — refresh-token rotation does not
+        -- mint new scopes, so the value persists across refreshes.
+        ALTER TABLE adsolut_connection
+            ADD COLUMN IF NOT EXISTS scopes_at_authorize TEXT NULL;
+
+        -- Singleton sync-state row. Not joined into adsolut_connection
+        -- because the connection row resets on disconnect (and we want the
+        -- sync cursor to survive reconnects against the same dossier),
+        -- and because lumping operational counters into the auth-state row
+        -- would mix concerns the UI surfaces in different sections.
+        CREATE TABLE IF NOT EXISTS adsolut_sync_state (
+            id                                  INTEGER     PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+            last_full_sync_utc                  TIMESTAMPTZ NULL,
+            last_delta_sync_utc                 TIMESTAMPTZ NULL,
+            last_error                          TEXT        NULL,
+            last_error_utc                      TIMESTAMPTZ NULL,
+            companies_seen                      INTEGER     NOT NULL DEFAULT 0,
+            companies_upserted                  INTEGER     NOT NULL DEFAULT 0,
+            companies_skipped_loser_in_conflict INTEGER     NOT NULL DEFAULT 0,
+            updated_utc                         TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
         """;
 
     private readonly NpgsqlDataSource _dataSource;

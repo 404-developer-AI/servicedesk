@@ -149,6 +149,7 @@ rapport.md
 SECURITY-AUDIT-*.md
 TRIGGERS.md
 Adsolut.md
+Adsolut.openapi.json
 
 # Brand-asset source-staging (multi-resolution originals). The bundled
 # copies the app actually serves live under src/Servicedesk.Web/src/assets/.

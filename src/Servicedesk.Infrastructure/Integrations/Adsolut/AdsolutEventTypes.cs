@@ -71,4 +71,33 @@ public static class AdsolutEventTypes
     /// or transient failure, error = invalid_grant / sliding window
     /// elapsed.
     public const string HealthcheckTick = "healthcheck.tick";
+
+    // ---- v0.0.26 Companies pull ---------------------------------------
+
+    /// GET /adm/v1/administrations — list dossiers the authorized user owns.
+    public const string AdministrationsList = "administrations.list";
+
+    /// POST /adm/v1/administrations/{id}/integrations — activate the
+    /// integration on the chosen dossier. Without this every Accounting
+    /// API call returns empty (per WK docs).
+    public const string AdministrationsActivate = "administrations.activate";
+
+    /// DELETE /adm/v1/administrations/{id}/integrations — fired on
+    /// disconnect. Leaving the integration active has financial impact
+    /// per WK docs, so this runs before tokens get wiped.
+    public const string AdministrationsDeactivate = "administrations.deactivate";
+
+    /// GET /acc/v1/customers — paginated list, optionally with
+    /// ?ModifiedSince= for delta-sync. Each page is one audit row so a
+    /// slow page is independently visible.
+    public const string CustomersList = "customers.list";
+
+    /// GET /acc/v1/suppliers — only used when the IncludeSuppliers toggle
+    /// is on. Same pagination + delta-sync mechanics as customers.
+    public const string SuppliersList = "suppliers.list";
+
+    /// One sync-worker tick summary. Carries the totals (seen / upserted /
+    /// skipped) + duration + outcome so admins can see whether the last
+    /// tick did real work or was a noop.
+    public const string SyncTick = "sync.tick";
 }

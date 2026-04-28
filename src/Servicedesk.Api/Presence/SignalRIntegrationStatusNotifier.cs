@@ -19,4 +19,8 @@ public sealed class SignalRIntegrationStatusNotifier : IIntegrationStatusNotifie
     public Task NotifyStatusChangedAsync(string integration, string state, CancellationToken ct)
         => _hub.Clients.Group(IntegrationsHub.IntegrationsGroup)
             .SendAsync("IntegrationStatusUpdated", integration, state, ct);
+
+    public Task NotifySyncCompletedAsync(string integration, CancellationToken ct)
+        => _hub.Clients.Group(IntegrationsHub.IntegrationsGroup)
+            .SendAsync("IntegrationSyncCompleted", integration, ct);
 }

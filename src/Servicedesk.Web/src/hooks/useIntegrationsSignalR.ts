@@ -45,7 +45,21 @@ export function useIntegrationsSignalR() {
       });
     };
 
+    // v0.0.26 — sync-tick completion. Same convention as the status push,
+    // but invalidates the per-integration sync-state query so the admin
+    // panel refreshes its counters + last-sync timestamps without waiting
+    // for the next user navigation.
+    const handleSyncCompleted = (integration: string) => {
+      queryClient.invalidateQueries({
+        queryKey: ["integrations", integration, "sync"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["integrations", integration, "audit"],
+      });
+    };
+
     hub.on("IntegrationStatusUpdated", handleStatusUpdated);
+    hub.on("IntegrationSyncCompleted", handleSyncCompleted);
 
     async function start() {
       if (hub.state === HubConnectionState.Disconnected) {
@@ -60,6 +74,7 @@ export function useIntegrationsSignalR() {
 
     return () => {
       hub.off("IntegrationStatusUpdated", handleStatusUpdated);
+      hub.off("IntegrationSyncCompleted", handleSyncCompleted);
     };
   }, [queryClient]);
 }

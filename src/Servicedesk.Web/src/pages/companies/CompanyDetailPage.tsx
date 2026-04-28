@@ -131,6 +131,23 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
                   inactive
                 </Badge>
               )}
+              {company.adsolutId && (
+                <Badge
+                  className="border border-purple-400/30 bg-purple-500/[0.08] text-[10px] font-normal text-purple-200"
+                  title={
+                    company.adsolutLastModified
+                      ? `Adsolut lastModified: ${new Date(company.adsolutLastModified).toLocaleString()}`
+                      : "Synced from Adsolut"
+                  }
+                >
+                  Synced from Adsolut
+                  {company.adsolutLastModified && (
+                    <span className="ml-1 text-purple-300/70">
+                      · {new Date(company.adsolutLastModified).toLocaleDateString()}
+                    </span>
+                  )}
+                </Badge>
+              )}
             </div>
           </div>
         </div>

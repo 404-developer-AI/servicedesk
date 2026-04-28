@@ -82,7 +82,7 @@ public sealed class AdsolutAuthService : IAdsolutAuthService
         string? actorRole = null,
         CancellationToken ct = default)
     {
-        var (env, clientId, clientSecret, _) = await ReadConfigAsync(ct);
+        var (env, clientId, clientSecret, scopes) = await ReadConfigAsync(ct);
         if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret))
         {
             return new AdsolutCallbackResult.Rejected(
@@ -138,6 +138,13 @@ public sealed class AdsolutAuthService : IAdsolutAuthService
         await _secrets.SetAsync(ProtectedSecretKeys.AdsolutRefreshToken, token.RefreshToken, ct);
 
         var nowUtc = DateTime.UtcNow;
+
+        // Carry the existing administration_id forward across reconnect — a
+        // re-authorize against the same dossier should not erase the picked
+        // dossier id. ScopesAtAuthorize, by contrast, is *replaced* with the
+        // current Settings.Adsolut.Scopes value because the new RT was just
+        // minted with that exact scope list.
+        var existing = await _connections.GetAsync(ct);
         var connection = new AdsolutConnection(
             AuthorizedSubject: subject,
             AuthorizedEmail: email,
@@ -146,7 +153,9 @@ public sealed class AdsolutAuthService : IAdsolutAuthService
             AccessTokenExpiresUtc: nowUtc.AddSeconds(SafeExpiresIn(token.ExpiresIn)),
             LastRefreshError: null,
             LastRefreshErrorUtc: null,
-            UpdatedUtc: nowUtc);
+            UpdatedUtc: nowUtc,
+            AdministrationId: existing?.AdministrationId,
+            ScopesAtAuthorize: scopes);
         await _connections.SaveAsync(connection, ct);
 
         return new AdsolutCallbackResult.Success(subject ?? string.Empty, email);
@@ -232,6 +241,11 @@ public sealed class AdsolutAuthService : IAdsolutAuthService
         var (subject, email) = TryDecodeIdToken(token.IdToken);
 
         var existing = await _connections.GetAsync(ct);
+        // Refresh must preserve fields that authorize-time owns: the
+        // administration_id (chosen dossier) and the scopes_at_authorize
+        // snapshot (the scope list bound to this RT). Both are unchanged
+        // by a refresh — overwriting them with null would wipe the
+        // dossier-pick and break the "Reconnect required" detection.
         var connection = new AdsolutConnection(
             AuthorizedSubject: subject ?? existing?.AuthorizedSubject,
             AuthorizedEmail: email ?? existing?.AuthorizedEmail,
@@ -240,7 +254,9 @@ public sealed class AdsolutAuthService : IAdsolutAuthService
             AccessTokenExpiresUtc: expiresUtc,
             LastRefreshError: null,
             LastRefreshErrorUtc: null,
-            UpdatedUtc: nowUtc);
+            UpdatedUtc: nowUtc,
+            AdministrationId: existing?.AdministrationId,
+            ScopesAtAuthorize: existing?.ScopesAtAuthorize);
         await _connections.SaveAsync(connection, ct);
 
         return new AdsolutRefreshResult(token.AccessToken, expiresUtc);

@@ -515,6 +515,13 @@ export type Company = {
   alertOnCreate: boolean;
   alertOnOpen: boolean;
   alertOnOpenMode: "session" | "every";
+  /// v0.0.26 — populated when the company is linked to an Adsolut customer.
+  /// Null on locally-created rows or installs without the integration.
+  adsolutId: string | null;
+  /// Last lastModified timestamp seen on the matching Adsolut row. Used by
+  /// the per-company "Synced from Adsolut" pill to render "synced X ago"
+  /// without an extra round-trip.
+  adsolutLastModified: string | null;
 };
 
 export type CompanyInput = {

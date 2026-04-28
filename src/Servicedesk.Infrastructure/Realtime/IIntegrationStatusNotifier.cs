@@ -11,11 +11,21 @@ namespace Servicedesk.Infrastructure.Realtime;
 public interface IIntegrationStatusNotifier
 {
     Task NotifyStatusChangedAsync(string integration, string state, CancellationToken ct);
+
+    /// v0.0.26 — fired when the Adsolut sync worker finishes a tick (any
+    /// outcome). The SPA listens on this to refetch its /sync panel
+    /// without waiting for a status-flip. Payload is intentionally
+    /// minimal: integration key only — the SPA fetches the full counters
+    /// from /api/admin/integrations/adsolut/sync.
+    Task NotifySyncCompletedAsync(string integration, CancellationToken ct);
 }
 
 /// No-op fallback used when SignalR is not wired (unit tests, offline jobs).
 public sealed class NullIntegrationStatusNotifier : IIntegrationStatusNotifier
 {
     public Task NotifyStatusChangedAsync(string integration, string state, CancellationToken ct)
+        => Task.CompletedTask;
+
+    public Task NotifySyncCompletedAsync(string integration, CancellationToken ct)
         => Task.CompletedTask;
 }

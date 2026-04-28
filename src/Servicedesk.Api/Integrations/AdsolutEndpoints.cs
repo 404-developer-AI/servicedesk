@@ -42,6 +42,14 @@ public static class AdsolutEndpoints
 
         admin.MapGet("/audit", GetAuditLog).WithName("GetAdsolutAuditLog").WithOpenApi();
 
+        // v0.0.26 — Companies pull. The dossier picker (admin chooses
+        // which Adsolut administration to sync) and the on-demand
+        // "Sync now" + sync-state surface for the UI.
+        admin.MapGet("/administrations", ListAdministrations).WithName("ListAdsolutAdministrations").WithOpenApi();
+        admin.MapPost("/administration", SelectAdministration).WithName("SelectAdsolutAdministration").WithOpenApi();
+        admin.MapGet("/sync", GetSyncState).WithName("GetAdsolutSyncState").WithOpenApi();
+        admin.MapPost("/sync", TriggerSyncNow).WithName("TriggerAdsolutSyncNow").WithOpenApi();
+
         // Anonymous — see header comment. Validation happens via the
         // tamper-evident intent cookie + the upstream code exchange.
         app.MapGet(CallbackPath, HandleCallback)
@@ -74,6 +82,14 @@ public static class AdsolutEndpoints
 
         var state = await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, ct);
 
+        // v0.0.26 (post-feature) — surface whether the saved Settings.Adsolut.Scopes
+        // string differs from the scope-list bound to the current refresh
+        // token. True = admin saved new scopes via the picker but did not
+        // reconnect yet; the next API call will fail with insufficient_scope.
+        // Set-equality (order-insensitive, whitespace-collapsed) so a cosmetic
+        // re-arrangement does not flag a healthy connection.
+        var scopesNeedReconnect = ScopesDiffer(scopes, connection?.ScopesAtAuthorize);
+
         return Results.Ok(new
         {
             state,
@@ -89,8 +105,30 @@ public static class AdsolutEndpoints
             accessTokenExpiresUtc = connection?.AccessTokenExpiresUtc,
             lastRefreshError = connection?.LastRefreshError,
             lastRefreshErrorUtc = connection?.LastRefreshErrorUtc,
+            administrationId = connection?.AdministrationId,
+            scopesAtAuthorize = connection?.ScopesAtAuthorize,
+            scopesNeedReconnect,
         });
     }
+
+    /// True when the saved Settings.Adsolut.Scopes string does not match the
+    /// scope set bound to the current refresh token. Returns false when there
+    /// is no connection yet (<paramref name="atAuthorize"/> is null) — the
+    /// regular not_connected pill covers that case. Comparison is by token
+    /// set, not raw string, so an admin re-saving the same scopes in a new
+    /// order does not flag a healthy connection.
+    private static bool ScopesDiffer(string? saved, string? atAuthorize)
+    {
+        if (string.IsNullOrWhiteSpace(atAuthorize)) return false;
+        var savedSet = TokenizeScopes(saved);
+        var atAuthSet = TokenizeScopes(atAuthorize);
+        return !savedSet.SetEquals(atAuthSet);
+    }
+
+    private static HashSet<string> TokenizeScopes(string? raw) =>
+        new((raw ?? string.Empty)
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            StringComparer.Ordinal);
 
     // ---- /authorize -----------------------------------------------------
 
@@ -241,13 +279,39 @@ public static class AdsolutEndpoints
     private static async Task<IResult> Disconnect(
         HttpContext http,
         IAdsolutAuthService auth,
+        IAdsolutAdministrationsClient adminClient,
+        IAdsolutAccessTokenProvider tokens,
         IAuditLogger audit,
         ISettingsService settings,
         IProtectedSecretStore secrets,
         IAdsolutConnectionStore connections,
         IIntegrationStatusNotifier statusNotifier,
+        ILoggerFactory loggerFactory,
         CancellationToken ct)
     {
+        // v0.0.26 — deactivate the integration on the chosen Adsolut
+        // administration BEFORE wiping the tokens. WK docs warn that
+        // leaving an integration active has financial impact for the
+        // customer; doing this after Disconnect would have no token to
+        // call with. Best-effort: a transport failure here must not
+        // block the local disconnect, otherwise a stuck WK endpoint
+        // would orphan a refresh token forever.
+        var connection = await connections.GetAsync(ct);
+        if (connection?.AdministrationId is Guid adminId)
+        {
+            try
+            {
+                await adminClient.DeactivateAsync(adminId, ct);
+            }
+            catch (AdsolutApiException ex)
+            {
+                loggerFactory.CreateLogger("AdsolutEndpoints").LogWarning(ex,
+                    "Adsolut deactivate-on-disconnect failed for administration {AdministrationId}; continuing with local disconnect.",
+                    adminId);
+            }
+        }
+        tokens.Invalidate();
+
         await auth.DisconnectAsync(ct);
 
         var (actor, role) = ActorContext.Resolve(http);
@@ -399,6 +463,146 @@ public static class AdsolutEndpoints
             nextCursor = page.NextCursor,
         });
     }
+
+    // ---- v0.0.26 administrations + sync --------------------------------
+
+    private static async Task<IResult> ListAdministrations(
+        IAdsolutAdministrationsClient adminClient,
+        IAdsolutConnectionStore connections,
+        CancellationToken ct)
+    {
+        var connection = await connections.GetAsync(ct);
+        if (connection is null)
+        {
+            return Results.BadRequest(new { error = "not_connected" });
+        }
+        try
+        {
+            var items = await adminClient.ListAsync(ct);
+            return Results.Ok(new
+            {
+                items = items.Select(a => new
+                {
+                    id = a.Id,
+                    name = a.Name,
+                    code = a.Code,
+                }),
+                selectedId = connection.AdministrationId,
+            });
+        }
+        catch (AdsolutApiException ex)
+        {
+            return Results.Json(new
+            {
+                error = "upstream_error",
+                httpStatus = ex.HttpStatus,
+                upstreamErrorCode = ex.UpstreamErrorCode,
+                message = ex.Message,
+            }, statusCode: 502);
+        }
+    }
+
+    private static async Task<IResult> SelectAdministration(
+        [FromBody] SelectAdministrationRequest req,
+        HttpContext http,
+        IAdsolutAdministrationsClient adminClient,
+        IAdsolutConnectionStore connections,
+        IAuditLogger audit,
+        ISettingsService settings,
+        IProtectedSecretStore secrets,
+        IIntegrationStatusNotifier statusNotifier,
+        CancellationToken ct)
+    {
+        if (req.AdministrationId == Guid.Empty)
+        {
+            return Results.BadRequest(new { error = "missing_administration_id" });
+        }
+        var connection = await connections.GetAsync(ct);
+        if (connection is null)
+        {
+            return Results.BadRequest(new { error = "not_connected" });
+        }
+
+        try
+        {
+            await adminClient.ActivateAsync(req.AdministrationId, ct);
+        }
+        catch (AdsolutApiException ex)
+        {
+            return Results.Json(new
+            {
+                error = "activate_failed",
+                httpStatus = ex.HttpStatus,
+                upstreamErrorCode = ex.UpstreamErrorCode,
+                message = ex.Message,
+            }, statusCode: 502);
+        }
+
+        await connections.SaveAsync(connection with { AdministrationId = req.AdministrationId }, ct);
+
+        var (actor, role) = ActorContext.Resolve(http);
+        await audit.LogAsync(new AuditEvent(
+            EventType: "integration.adsolut.administration.selected",
+            Actor: actor,
+            ActorRole: role,
+            ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString(),
+            Payload: new { administrationId = req.AdministrationId }), ct);
+        await statusNotifier.NotifyStatusChangedAsync(
+            AdsolutEventTypes.Integration,
+            await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, ct),
+            ct);
+        return Results.Ok(new { administrationId = req.AdministrationId });
+    }
+
+    private static async Task<IResult> GetSyncState(
+        IAdsolutSyncStateStore syncState,
+        CancellationToken ct)
+    {
+        var state = await syncState.GetAsync(ct);
+        return Results.Ok(state is null
+            ? new
+            {
+                lastFullSyncUtc = (DateTime?)null,
+                lastDeltaSyncUtc = (DateTime?)null,
+                lastError = (string?)null,
+                lastErrorUtc = (DateTime?)null,
+                companiesSeen = 0,
+                companiesUpserted = 0,
+                companiesSkippedLoserInConflict = 0,
+                updatedUtc = (DateTime?)null,
+            }
+            : new
+            {
+                lastFullSyncUtc = state.LastFullSyncUtc,
+                lastDeltaSyncUtc = state.LastDeltaSyncUtc,
+                lastError = state.LastError,
+                lastErrorUtc = state.LastErrorUtc,
+                companiesSeen = state.CompaniesSeen,
+                companiesUpserted = state.CompaniesUpserted,
+                companiesSkippedLoserInConflict = state.CompaniesSkippedLoserInConflict,
+                updatedUtc = (DateTime?)state.UpdatedUtc,
+            });
+    }
+
+    private static async Task<IResult> TriggerSyncNow(
+        HttpContext http,
+        IAdsolutSyncWorkerSignal signal,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        signal.RequestImmediateRun();
+        var (actor, role) = ActorContext.Resolve(http);
+        await audit.LogAsync(new AuditEvent(
+            EventType: "integration.adsolut.sync.requested",
+            Actor: actor,
+            ActorRole: role,
+            ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString()), ct);
+        return Results.Accepted();
+    }
+
+    public sealed record SelectAdministrationRequest([property: Required] Guid AdministrationId);
 
     // ---- helpers --------------------------------------------------------
 
