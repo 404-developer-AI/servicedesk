@@ -76,7 +76,28 @@ public static class BusinessDayPendingCalculator
                 candidate.AddDays(1), workingDays, holidays);
         }
 
-        return TimeZoneInfo.ConvertTimeToUtc(candidate, tz);
+        // DST forward jump: the local wakeAtLocal might land in the
+        // skipped hour (e.g. 02:30 on the spring-forward Sunday).
+        // Walk minute-by-minute up to one hour, which is the maximum
+        // gap that any IANA zone introduces. Beyond that the schedule
+        // is malformed; bail loud so the run-history shows "DST gap".
+        candidate = ResolveOutOfDstGap(candidate, tz);
+        return TimeZoneInfo.ConvertTimeToUtc(
+            DateTime.SpecifyKind(candidate, DateTimeKind.Unspecified), tz);
+    }
+
+    private static DateTime ResolveOutOfDstGap(DateTime candidate, TimeZoneInfo tz)
+    {
+        if (!tz.IsInvalidTime(DateTime.SpecifyKind(candidate, DateTimeKind.Unspecified)))
+            return candidate;
+        for (var i = 1; i <= 60; i++)
+        {
+            var bumped = candidate.AddMinutes(i);
+            if (!tz.IsInvalidTime(DateTime.SpecifyKind(bumped, DateTimeKind.Unspecified)))
+                return bumped;
+        }
+        throw new InvalidOperationException(
+            $"Wake-up moment {candidate:O} is in a DST gap for timezone '{tz.Id}' that exceeds 60 minutes; cannot resolve.");
     }
 
     private static DateTime AdvanceToNextBusinessDay(
@@ -103,9 +124,26 @@ public static class BusinessDayPendingCalculator
         return workingDays.Contains((int)localDate.DayOfWeek);
     }
 
+    /// Bail loud on a malformed schema timezone — silently falling back
+    /// to UTC would land the wake-up at the wrong hour without the
+    /// admin noticing. The resolver in SetPendingTillResolver wraps
+    /// this with a try/catch and surfaces the exception message into
+    /// the trigger run-history so the admin sees the typo.
     private static TimeZoneInfo ResolveTimezone(string id)
     {
+        if (string.IsNullOrWhiteSpace(id))
+            throw new InvalidOperationException(
+                "Business-hours schedule has no timezone configured.");
         try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
-        catch { return TimeZoneInfo.Utc; }
+        catch (TimeZoneNotFoundException)
+        {
+            throw new InvalidOperationException(
+                $"Business-hours schedule timezone '{id}' is not a recognised IANA id.");
+        }
+        catch (InvalidTimeZoneException)
+        {
+            throw new InvalidOperationException(
+                $"Business-hours schedule timezone '{id}' is malformed.");
+        }
     }
 }

@@ -68,7 +68,21 @@ public static class TriggerValidator
         var condError = ValidateConditionsJson(conditionsJson);
         if (condError is not null) return ValidationResult.Fail(condError);
 
-        var actError = ValidateActionsJson(actionsJson);
+        // Time-activator triggers scan ALL tickets every tick — an empty
+        // root AND matches everything, which turns a single misconfigured
+        // escalation rule into a fan-out across the entire ticket table.
+        // Force the admin to narrow the scope (queue, status, priority,
+        // …) before saving. Reminder/escalation are caught here because
+        // both walk a SQL candidate scan; action-activator triggers are
+        // exempt — they're scoped to one ticket per mutation already.
+        if (activatorKind == "time" && IsEmptyRootGroup(conditionsJson))
+        {
+            return ValidationResult.Fail(
+                "time-activator triggers must include at least one condition " +
+                $"(empty root '{activatorKind}:{activatorMode}' would fire on every ticket the candidate scan returns).");
+        }
+
+        var actError = ValidateActionsJson(actionsJson, timezone);
         if (actError is not null) return ValidationResult.Fail(actError);
 
         if (!string.IsNullOrWhiteSpace(locale))
@@ -174,6 +188,28 @@ public static class TriggerValidator
         return ValidationResult.Ok();
     }
 
+    /// True when the conditions JSON is a group whose <c>items</c> array
+    /// is empty — i.e. the matcher would short-circuit to "true" on every
+    /// node it visits. Malformed JSON returns false (the structural
+    /// validator above is responsible for those errors).
+    private static bool IsEmptyRootGroup(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return false;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return false;
+            return root.TryGetProperty("items", out var items)
+                && items.ValueKind == JsonValueKind.Array
+                && items.GetArrayLength() == 0;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
     private static string? ValidateConditionsJson(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -223,7 +259,7 @@ public static class TriggerValidator
         return null;
     }
 
-    private static string? ValidateActionsJson(string json)
+    private static string? ValidateActionsJson(string json, string? triggerTimezone)
     {
         if (string.IsNullOrWhiteSpace(json))
             return "Actions JSON is required (use [] for no actions).";
@@ -246,7 +282,7 @@ public static class TriggerValidator
                 if (!ActionKinds.Contains(kindStr))
                     return $"Action #{idx}: kind '{kindStr}' is not registered. Allowed: {string.Join(", ", ActionKinds)}.";
 
-                var payloadError = ValidateActionPayload(kindStr, action);
+                var payloadError = ValidateActionPayload(kindStr, action, triggerTimezone);
                 if (payloadError is not null) return $"Action #{idx} ({kindStr}): {payloadError}";
 
                 idx++;
@@ -263,7 +299,7 @@ public static class TriggerValidator
     /// does so admins get a save-time error instead of a silent-fail
     /// trigger_run row at evaluation. Keep these in sync with the
     /// matching <see cref="ITriggerActionHandler"/> implementations.
-    private static string? ValidateActionPayload(string kind, JsonElement action)
+    private static string? ValidateActionPayload(string kind, JsonElement action, string? triggerTimezone)
     {
         switch (kind)
         {
@@ -279,7 +315,7 @@ public static class TriggerValidator
                 // discrimination stays meaningful.
                 return RequireGuidOrNull(action, "user_id");
             case "set_pending_till":
-                return ValidateSetPendingTill(action);
+                return ValidateSetPendingTill(action, triggerTimezone);
             case "add_internal_note":
             case "add_public_note":
                 if (HasNonEmptyString(action, "body_html") || HasNonEmptyString(action, "body_text"))
@@ -300,7 +336,7 @@ public static class TriggerValidator
         }
     }
 
-    private static string? ValidateSetPendingTill(JsonElement action)
+    private static string? ValidateSetPendingTill(JsonElement action, string? triggerTimezone)
     {
         var hasClear = action.TryGetProperty("clear", out var clearEl)
             && clearEl.ValueKind == JsonValueKind.True;
@@ -309,10 +345,13 @@ public static class TriggerValidator
         if (HasNonEmptyString(action, "absolute"))
         {
             var raw = action.GetProperty("absolute").GetString();
-            if (!DateTime.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
-                    System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal,
-                    out _))
-                return $"'absolute' is not a parseable timestamp: '{raw}'.";
+            // Delegate to the handler's parser so save-time validation
+            // and runtime resolution can never disagree on whether a
+            // string is a valid absolute timestamp or how a naive value
+            // (no Z / +HH:MM suffix) is interpreted relative to the
+            // trigger's timezone — including DST-gap rejection.
+            var (_, error) = SetPendingTillResolver.ParseAbsolute(raw, triggerTimezone);
+            if (error is not null) return error.Replace("Action 'absolute'", "'absolute'");
             return ValidateNextTriggerId(action);
         }
 

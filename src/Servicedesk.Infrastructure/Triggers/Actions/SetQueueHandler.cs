@@ -17,10 +17,7 @@ internal sealed class SetQueueHandler : ITriggerActionHandler
 
         var outcome = await _mutator.ChangeFieldAsync(
             ctx.TicketId,
-            columnName: "queue_id",
-            lookupTable: "queues",
-            lookupColumn: "name",
-            eventType: "QueueChange",
+            SystemFieldDescriptor.Queue,
             currentValue: ctx.Ticket.QueueId,
             newValue: newQueueId,
             triggerId: ctx.TriggerId,

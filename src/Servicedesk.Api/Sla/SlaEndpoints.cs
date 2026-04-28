@@ -49,7 +49,10 @@ public static class SlaEndpoints
             [FromBody] BusinessHoursInput req, ISlaRepository repo, HttpContext http, IAuditLogger audit, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(req.Name)) return Results.BadRequest(new { error = "Name is required." });
-            var id = await repo.CreateSchemaAsync(req.Name.Trim(), req.Timezone ?? "Europe/Brussels", req.CountryCode ?? "", req.IsDefault, ct);
+            var resolvedTz = req.Timezone ?? "Europe/Brussels";
+            if (!IsKnownTimezone(resolvedTz))
+                return Results.BadRequest(new { error = $"Timezone '{resolvedTz}' is not a recognised IANA id." });
+            var id = await repo.CreateSchemaAsync(req.Name.Trim(), resolvedTz, req.CountryCode ?? "", req.IsDefault, ct);
             if (req.Slots is not null) await repo.SetSlotsAsync(id, req.Slots.Select(s => (s.DayOfWeek, s.StartMinute, s.EndMinute)).ToList(), ct);
             await LogAsync(audit, http, "sla.business_hours.created", id.ToString(), req);
             return Results.Created($"/api/sla/business-hours/{id}", await repo.GetSchemaAsync(id, ct));
@@ -60,7 +63,10 @@ public static class SlaEndpoints
         {
             var existing = await repo.GetSchemaAsync(id, ct);
             if (existing is null) return Results.NotFound();
-            await repo.UpdateSchemaAsync(id, req.Name.Trim(), req.Timezone ?? existing.Timezone, req.CountryCode ?? existing.CountryCode, req.IsDefault, ct);
+            var resolvedTz = req.Timezone ?? existing.Timezone;
+            if (!IsKnownTimezone(resolvedTz))
+                return Results.BadRequest(new { error = $"Timezone '{resolvedTz}' is not a recognised IANA id." });
+            await repo.UpdateSchemaAsync(id, req.Name.Trim(), resolvedTz, req.CountryCode ?? existing.CountryCode, req.IsDefault, ct);
             if (req.Slots is not null) await repo.SetSlotsAsync(id, req.Slots.Select(s => (s.DayOfWeek, s.StartMinute, s.EndMinute)).ToList(), ct);
             await LogAsync(audit, http, "sla.business_hours.updated", id.ToString(), req);
             return Results.Ok(await repo.GetSchemaAsync(id, ct));
@@ -73,6 +79,14 @@ public static class SlaEndpoints
             await LogAsync(audit, http, "sla.business_hours.deleted", id.ToString(), null);
             return Results.NoContent();
         });
+    }
+
+    private static bool IsKnownTimezone(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return false;
+        try { _ = TimeZoneInfo.FindSystemTimeZoneById(id); return true; }
+        catch (TimeZoneNotFoundException) { return false; }
+        catch (InvalidTimeZoneException) { return false; }
     }
 
     // ---------- Holidays ----------

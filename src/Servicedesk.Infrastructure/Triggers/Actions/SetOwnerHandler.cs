@@ -19,10 +19,7 @@ internal sealed class SetOwnerHandler : ITriggerActionHandler
 
         var outcome = await _mutator.ChangeFieldAsync(
             ctx.TicketId,
-            columnName: "assignee_user_id",
-            lookupTable: "users",
-            lookupColumn: "email",
-            eventType: "AssignmentChange",
+            SystemFieldDescriptor.Owner,
             currentValue: ctx.Ticket.AssigneeUserId,
             newValue: newUserId,
             triggerId: ctx.TriggerId,

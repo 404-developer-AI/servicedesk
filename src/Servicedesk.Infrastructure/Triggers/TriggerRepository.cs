@@ -138,6 +138,7 @@ public sealed class TriggerRepository : ITriggerRepository
                 locale         = @Locale,
                 timezone       = @Timezone,
                 note           = @Note,
+                is_seed        = FALSE,
                 updated_utc    = now()
             WHERE id = @id
             RETURNING id                  AS Id,
@@ -268,17 +269,22 @@ public sealed class TriggerRepository : ITriggerRepository
     {
         // Two streams unioned:
         //
-        // (A) Chained tickets — pending_till_next_trigger_id is set. The
-        //     scheduler fires ONLY that trigger for that ticket on this
+        // (A) Chained tickets — pending_till_next_trigger_id is set AND
+        //     the target trigger is currently active. The scheduler
+        //     fires ONLY that trigger for that ticket on this
         //     pending-cycle; other reminder triggers skip the ticket
         //     until the pointer clears (handled in TriggerService after
         //     the chained run). This is the user-facing "when this
         //     specific pending-till elapses, run trigger Y" feature.
         //
-        // (B) Wide reminder scan — tickets without a pointer follow the
-        //     original Blok 5 behaviour: cross-join against every active
-        //     time:reminder trigger, conditions are evaluated by the
-        //     matcher per-pair downstream.
+        // (B) Wide reminder scan — tickets without a pointer, OR with a
+        //     pointer to an INACTIVE trigger, fall back to the cross-
+        //     join behaviour: every active time:reminder trigger is
+        //     evaluated. Without the inactive-fallback, deactivating a
+        //     chain target leaves any in-flight tickets pointing at it
+        //     stranded — neither branch matches, pending_till_utc never
+        //     clears, no reminder ever fires. Re-activating the trigger
+        //     restores the chained branch automatically.
         //
         // Both streams share the same dedup predicate (NOT EXISTS against
         // applied/failed run rows past the boundary) so a chained trigger
@@ -315,7 +321,14 @@ public sealed class TriggerRepository : ITriggerRepository
                 WHERE t.is_deleted = FALSE
                   AND t.pending_till_utc IS NOT NULL
                   AND t.pending_till_utc <= now()
-                  AND t.pending_till_next_trigger_id IS NULL
+                  AND (
+                        t.pending_till_next_trigger_id IS NULL
+                        OR NOT EXISTS (
+                            SELECT 1 FROM triggers tr_target
+                            WHERE tr_target.id = t.pending_till_next_trigger_id
+                              AND tr_target.is_active = TRUE
+                        )
+                  )
                   AND tr.is_active = TRUE
                   AND tr.activator_kind = 'time'
                   AND tr.activator_mode = 'reminder'

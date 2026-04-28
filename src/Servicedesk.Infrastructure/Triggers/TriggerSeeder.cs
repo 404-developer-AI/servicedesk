@@ -13,8 +13,14 @@ namespace Servicedesk.Infrastructure.Triggers;
 /// facing behaviour out of the box. Admins flip the switch + tweak the
 /// body to their tone.
 ///
-/// Idempotency: <c>ON CONFLICT (name) DO NOTHING</c>. The unique-name
-/// constraint on the triggers table is the natural seed key.
+/// Idempotency + upgradability: rows the seeder owns carry
+/// <c>is_seed = TRUE</c>; on every boot we INSERT … ON CONFLICT
+/// (name) DO UPDATE that refreshes <c>conditions</c> and <c>actions</c>
+/// when (and only when) <c>is_seed</c> is still TRUE. The admin's first
+/// edit through the API flips the flag to FALSE, after which the
+/// seeder no longer touches the row even if the canonical content
+/// changes in a later release. New installs receive whatever shape the
+/// current build ships.
 ///
 /// The "010 - " prefix follows the alphabetical-evaluation-order
 /// convention (Zammad MVP convention from <c>ROADMAP.md</c> / Blok 2):
@@ -56,12 +62,17 @@ public sealed class TriggerSeeder : IHostedService
     private static readonly string Sql = $$"""
         INSERT INTO triggers
             (name, description, is_active, activator_kind, activator_mode,
-             conditions, actions, locale, timezone, note)
+             conditions, actions, locale, timezone, note, is_seed)
         VALUES
             (@Name, @Description, FALSE, 'action', 'always',
              @Conditions::jsonb, @Actions::jsonb,
-             NULL, NULL, '')
-        ON CONFLICT (name) DO NOTHING
+             NULL, NULL, '', TRUE)
+        ON CONFLICT (name) DO UPDATE SET
+            description = EXCLUDED.description,
+            conditions  = EXCLUDED.conditions,
+            actions     = EXCLUDED.actions,
+            updated_utc = now()
+            WHERE triggers.is_seed = TRUE
         """;
 
     private readonly NpgsqlDataSource _dataSource;

@@ -112,10 +112,9 @@ public sealed class TriggerSchedulerWorker : BackgroundService
         foreach (var c in reminders)
         {
             if (ct.IsCancellationRequested) return;
-            var outcome = await triggerService.EvaluateScheduledAsync(
+            var result = await triggerService.EvaluateScheduledAsync(
                 c.TriggerId, c.TicketId, c.BoundaryUtc, "reminder", ct);
-            if (c.IsChainedReminder
-                && (outcome == TriggerRunOutcome.Applied || outcome == TriggerRunOutcome.Failed))
+            if (c.IsChainedReminder && result.ChainShouldClear)
             {
                 await mutator.ClearChainedReminderStateAsync(
                     c.TicketId, c.TriggerId, c.BoundaryUtc, ct);

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Xml;
 using Servicedesk.Infrastructure.Sla;
 
@@ -42,7 +43,14 @@ internal sealed class SetPendingTillHandler : ITriggerActionHandler
         if (parseError is not null) return TriggerActionResult.Failed(Kind, parseError);
         var target = parsed!.Value;
 
-        if (target <= ctx.UtcNow)
+        // Read the wall clock here, not from ctx.UtcNow — ctx.UtcNow is
+        // captured at trigger-pass start and a slow earlier action in the
+        // same trigger (e.g. send_mail with seconds of Graph latency) can
+        // make a small relative offset land in the past by the time we
+        // get here. The resolver uses the same fresh-now for relative /
+        // businessDays so this check stays a defensive guard against
+        // absolute timestamps that were already historical at parse time.
+        if (target <= DateTime.UtcNow)
             return TriggerActionResult.NoOp(Kind, new { reason = "Target time is in the past; not setting pending-till.", targetUtc = target });
 
         var (nextTriggerId, nextError) = SetPendingTillResolver.ResolveNextTriggerId(actionJson);
@@ -74,15 +82,7 @@ internal static class SetPendingTillResolver
     {
         if (actionJson.TryGetProperty("absolute", out var absEl) && absEl.ValueKind == JsonValueKind.String)
         {
-            var raw = absEl.GetString();
-            if (string.IsNullOrWhiteSpace(raw)
-                || !DateTime.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
-                    System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal,
-                    out var parsed))
-            {
-                return (null, $"Action 'absolute' is not a parseable timestamp: '{raw}'.");
-            }
-            return (DateTime.SpecifyKind(parsed, DateTimeKind.Utc), null);
+            return ParseAbsolute(absEl.GetString(), ctx);
         }
 
         if (actionJson.TryGetProperty("relative", out var relEl) && relEl.ValueKind == JsonValueKind.String)
@@ -96,7 +96,11 @@ internal static class SetPendingTillResolver
             {
                 return (null, $"Action 'relative' is not a valid ISO-8601 duration: '{raw}'.");
             }
-            return (ctx.UtcNow + offset, null);
+            // Anchor on a fresh wall-clock read rather than ctx.UtcNow:
+            // a slow earlier action in the same trigger can age ctx.UtcNow
+            // by seconds, which silently turns a small relative offset
+            // (PT1S, PT5S) into a past target → NoOp.
+            return (DateTime.UtcNow + offset, null);
         }
 
         if (actionJson.TryGetProperty("businessDays", out var bdEl) && bdEl.ValueKind == JsonValueKind.Number)
@@ -119,8 +123,12 @@ internal static class SetPendingTillResolver
 
             try
             {
+                // Same rationale as the relative branch — base the
+                // calendar walk on a fresh wall-clock read so a slow
+                // earlier action doesn't shift the resolved target into
+                // yesterday's working day.
                 return (Actions.BusinessDayPendingCalculator.Resolve(
-                    ctx.UtcNow, businessDays, wakeAt, schema), null);
+                    DateTime.UtcNow, businessDays, wakeAt, schema), null);
             }
             catch (InvalidOperationException ex)
             {
@@ -145,6 +153,73 @@ internal static class SetPendingTillResolver
         if (!Guid.TryParse(raw, out var parsed))
             return (null, $"Action 'nextTriggerId' is not a valid UUID: '{raw}'.");
         return (parsed, null);
+    }
+
+    /// Distinguishes "2026-04-30T08:00:00" (naive — interpret in the
+    /// trigger's timezone) from "2026-04-30T08:00:00Z" /
+    /// "2026-04-30T08:00:00+02:00" (offset-aware — already an absolute
+    /// moment). Naive without a trigger timezone falls back to UTC so
+    /// existing seeded triggers stay backwards-compatible.
+    private static readonly Regex HasOffsetSuffix = new(
+        @"(?:[Zz]|[+-]\d{2}:?\d{2})\s*$",
+        RegexOptions.Compiled);
+
+    internal static (DateTime? Target, string? Error) ParseAbsolute(
+        string? raw, TriggerEvaluationContext ctx)
+        => ParseAbsolute(raw, ctx.RenderContext?.DefaultTimeZoneId);
+
+    /// Variant used by <see cref="TriggerValidator"/> at write-time, when
+    /// only the trigger's persisted timezone string is available (no
+    /// render-context yet). Keeping a single implementation guarantees
+    /// the runtime handler and the save-time validator agree on which
+    /// strings are valid <c>absolute</c> timestamps and how naive ones
+    /// are interpreted — without this, an admin can save a value the
+    /// validator accepts as UTC and watch the runtime resolve it shifted
+    /// by the trigger's timezone offset.
+    internal static (DateTime? Target, string? Error) ParseAbsolute(
+        string? raw, string? tzId)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return (null, "Action 'absolute' is empty.");
+
+        if (HasOffsetSuffix.IsMatch(raw))
+        {
+            if (!DateTimeOffset.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None, out var dto))
+            {
+                return (null, $"Action 'absolute' is not a parseable timestamp: '{raw}'.");
+            }
+            return (dto.UtcDateTime, null);
+        }
+
+        // Naive — wall-clock in the trigger's timezone (or UTC fallback
+        // when no timezone is set on the trigger).
+        if (!DateTime.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var parsed)
+            || parsed.Kind != DateTimeKind.Unspecified)
+        {
+            return (null, $"Action 'absolute' is not a parseable timestamp: '{raw}'.");
+        }
+
+        if (string.IsNullOrWhiteSpace(tzId))
+            return (DateTime.SpecifyKind(parsed, DateTimeKind.Utc), null);
+
+        TimeZoneInfo tz;
+        try { tz = TimeZoneInfo.FindSystemTimeZoneById(tzId); }
+        catch (TimeZoneNotFoundException)
+        {
+            return (DateTime.SpecifyKind(parsed, DateTimeKind.Utc), null);
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return (DateTime.SpecifyKind(parsed, DateTimeKind.Utc), null);
+        }
+
+        if (tz.IsInvalidTime(parsed))
+            return (null, $"Action 'absolute' '{raw}' is in the DST gap for {tz.Id}.");
+
+        var unspecified = DateTime.SpecifyKind(parsed, DateTimeKind.Unspecified);
+        return (TimeZoneInfo.ConvertTimeToUtc(unspecified, tz), null);
     }
 
     private static bool TryParseTimeOfDay(string? s, out TimeSpan ts)

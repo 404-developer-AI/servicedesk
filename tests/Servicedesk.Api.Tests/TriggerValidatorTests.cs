@@ -128,14 +128,34 @@ public class TriggerValidatorTests
     [Fact]
     public void Time_escalation_warning_pair_is_accepted()
     {
+        // time-activator triggers need at least one condition since
+        // v0.0.24 batch 3 — empty trees would fire the candidate scan
+        // on every open ticket. Use the simplest narrowing condition
+        // that still exercises the activator-pair acceptance path.
+        const string conditions =
+            "{\"op\":\"AND\",\"items\":[{\"field\":\"ticket.status\",\"operator\":\"is\",\"value\":\"Open\"}]}";
         var r = TriggerValidator.Validate(
             "020 - sla warning",
             activatorKind: "time",
             activatorMode: "escalation_warning",
-            "{\"op\":\"AND\",\"items\":[]}", "[]",
+            conditions, "[]",
             locale: null,
             timezone: null);
         Assert.True(r.IsValid, r.Error);
+    }
+
+    [Fact]
+    public void Time_activator_rejects_empty_root_conditions()
+    {
+        var r = TriggerValidator.Validate(
+            "020 - sla warning",
+            activatorKind: "time",
+            activatorMode: "escalation",
+            "{\"op\":\"AND\",\"items\":[]}", "[]",
+            locale: null,
+            timezone: null);
+        Assert.False(r.IsValid);
+        Assert.Contains("at least one condition", r.Error);
     }
 
     [Fact]

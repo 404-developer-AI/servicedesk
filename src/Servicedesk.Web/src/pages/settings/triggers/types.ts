@@ -56,10 +56,29 @@ export type TriggerAction =
       to: string;
       subject: string;
       body_html: string;
-      include_triggering_attachments?: boolean;
-    };
+    }
+  // Sentinel for actions whose `kind` this editor build doesn't know
+  // about (e.g. a future kind saved by a newer frontend or hand-
+  // written JSON). Carries the original payload verbatim so the admin
+  // doesn't lose work; rendered read-only in the editor and rejected
+  // by the BE validator on save until the admin removes or replaces
+  // the entry.
+  | { kind: "__unknown"; original_kind: string; raw: Record<string, unknown> };
 
-export const ACTION_KIND_LABELS: Record<TriggerAction["kind"], string> = {
+export const KNOWN_ACTION_KINDS = [
+  "set_queue",
+  "set_priority",
+  "set_status",
+  "set_owner",
+  "set_pending_till",
+  "add_internal_note",
+  "add_public_note",
+  "send_mail",
+] as const;
+
+export type KnownActionKind = (typeof KNOWN_ACTION_KINDS)[number];
+
+export const ACTION_KIND_LABELS: Record<KnownActionKind, string> = {
   set_queue: "Set queue",
   set_priority: "Set priority",
   set_status: "Set status",
@@ -70,7 +89,7 @@ export const ACTION_KIND_LABELS: Record<TriggerAction["kind"], string> = {
   send_mail: "Send mail",
 };
 
-export function blankActionForKind(kind: TriggerAction["kind"]): TriggerAction {
+export function blankActionForKind(kind: KnownActionKind): TriggerAction {
   switch (kind) {
     case "set_queue": return { kind, queue_id: "" };
     case "set_priority": return { kind, priority_id: "" };
@@ -85,7 +104,6 @@ export function blankActionForKind(kind: TriggerAction["kind"]): TriggerAction {
         to: "customer",
         subject: "",
         body_html: "",
-        include_triggering_attachments: false,
       };
   }
 }
@@ -96,6 +114,7 @@ export function blankActionForKind(kind: TriggerAction["kind"]): TriggerAction {
 /// four input shapes under a `mode` discriminator while the handler
 /// reads top-level `absolute` / `relative` / `businessDays` / `clear`.
 export function actionToBackend(action: TriggerAction): Record<string, unknown> {
+  if (action.kind === "__unknown") return action.raw;
   if (action.kind !== "set_pending_till") return action as unknown as Record<string, unknown>;
   if (action.mode === "clear") return { kind: "set_pending_till", clear: true };
   const chain = action.next_trigger_id
@@ -115,10 +134,23 @@ export function actionToBackend(action: TriggerAction): Record<string, unknown> 
 }
 
 /// Reverse of `actionToBackend`. Other kinds round-trip; set_pending_till
-/// is detected by the presence of one of the four BE keys.
+/// is detected by the presence of one of the four BE keys. Anything we
+/// don't recognise is wrapped as `__unknown` so the editor can warn the
+/// admin instead of silently coercing the entry to a different kind.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function actionFromBackend(raw: any): TriggerAction {
-  if (raw?.kind !== "set_pending_till") return raw as TriggerAction;
+  if (!raw || typeof raw !== "object") {
+    return { kind: "__unknown", original_kind: "(invalid)", raw: {} };
+  }
+  if (typeof raw.kind !== "string"
+      || !(KNOWN_ACTION_KINDS as readonly string[]).includes(raw.kind)) {
+    return {
+      kind: "__unknown",
+      original_kind: typeof raw.kind === "string" ? raw.kind : "(missing)",
+      raw,
+    };
+  }
+  if (raw.kind !== "set_pending_till") return raw as TriggerAction;
   if (raw.clear === true) return { kind: "set_pending_till", mode: "clear" };
   const chain: { next_trigger_id?: string | null } = typeof raw.nextTriggerId === "string"
     ? { next_trigger_id: raw.nextTriggerId }

@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Net.Mail;
 using System.Security.Cryptography;
 using System.Text;
@@ -28,7 +27,6 @@ namespace Servicedesk.Infrastructure.Triggers.Actions;
 /// back through <see cref="MailMessageRepository"/> the usual way.
 internal sealed class SendMailHandler : ITriggerActionHandler
 {
-    private static readonly Regex AnyTicketTag = new(@"\[#\d+\]", RegexOptions.Compiled);
     private static readonly Regex TagTrim = new("<[^>]+>", RegexOptions.Compiled);
     private static readonly Regex WhitespaceTrim = new(@"\s+", RegexOptions.Compiled);
 
@@ -271,7 +269,10 @@ internal sealed class SendMailHandler : ITriggerActionHandler
         sb.Append('|');
         sb.Append(subject.Trim());
         sb.Append('|');
-        sb.Append(bodyHtml.Length.ToString(CultureInfo.InvariantCulture));
+        // Hash the full body, not just its length: two distinct messages
+        // with identical recipients + subject + length must not collapse
+        // into the same dedup key.
+        sb.Append(bodyHtml ?? string.Empty);
         var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(sb.ToString()));
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
@@ -280,7 +281,11 @@ internal sealed class SendMailHandler : ITriggerActionHandler
     {
         var clean = (subject ?? string.Empty).Trim();
         var tag = $"[#{ticketNumber}]";
-        if (AnyTicketTag.IsMatch(clean)) return clean;
+        // Match the CURRENT ticket's tag only. A stray "[#1234]" from an
+        // unrelated forwarded/quoted thread must not block us from
+        // appending our own tag — otherwise the new outbound mail would
+        // never carry the ticket pointer this conversation belongs to.
+        if (clean.Contains(tag, StringComparison.Ordinal)) return clean;
         return string.IsNullOrEmpty(clean) ? tag : $"{clean} {tag}";
     }
 
@@ -303,10 +308,42 @@ internal sealed class SendMailHandler : ITriggerActionHandler
     private static string? FirstNonEmpty(string? a, string? b)
         => !string.IsNullOrWhiteSpace(a) ? a : (!string.IsNullOrWhiteSpace(b) ? b : null);
 
+    /// Anchors and images carry meaningful payload that disappears under
+    /// a naive tag-strip. We surface the href and alt-text inline so the
+    /// derived plain-text body — which lands in <c>mail_messages.body_text</c>
+    /// and the timeline event — keeps the link context for an agent
+    /// reading the run history without round-tripping to the HTML.
+    private static readonly Regex AnchorTag = new(
+        @"<a\b[^>]*?\bhref\s*=\s*(?:""([^""]*)""|'([^']*)')[^>]*>(.*?)</a\s*>",
+        RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
+    private static readonly Regex ImgTag = new(
+        @"<img\b[^>]*?\balt\s*=\s*(?:""([^""]*)""|'([^']*)')[^>]*/?>",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private static string HtmlToText(string html)
     {
         if (string.IsNullOrEmpty(html)) return string.Empty;
-        var stripped = TagTrim.Replace(html, " ");
+        var withLinks = AnchorTag.Replace(html, static m =>
+        {
+            var href = (m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value).Trim();
+            var inner = m.Groups[3].Value;
+            // Strip nested tags inside the anchor so the label survives
+            // as plain text. The outer TagTrim pass would have done the
+            // same, but stripping here lets us compare label-vs-href to
+            // avoid "https://x (https://x)"-style duplication.
+            var label = TagTrim.Replace(inner, " ").Trim();
+            label = WhitespaceTrim.Replace(label, " ").Trim();
+            if (string.IsNullOrEmpty(href)) return label;
+            if (string.IsNullOrEmpty(label) || string.Equals(label, href, StringComparison.OrdinalIgnoreCase))
+                return href;
+            return $"{label} ({href})";
+        });
+        var withImages = ImgTag.Replace(withLinks, static m =>
+        {
+            var alt = (m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value).Trim();
+            return string.IsNullOrEmpty(alt) ? string.Empty : $"[{alt}]";
+        });
+        var stripped = TagTrim.Replace(withImages, " ");
         var decoded = System.Net.WebUtility.HtmlDecode(stripped);
         return WhitespaceTrim.Replace(decoded, " ").Trim();
     }

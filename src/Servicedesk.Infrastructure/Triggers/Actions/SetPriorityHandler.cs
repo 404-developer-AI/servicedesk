@@ -17,10 +17,7 @@ internal sealed class SetPriorityHandler : ITriggerActionHandler
 
         var outcome = await _mutator.ChangeFieldAsync(
             ctx.TicketId,
-            columnName: "priority_id",
-            lookupTable: "priorities",
-            lookupColumn: "name",
-            eventType: "PriorityChange",
+            SystemFieldDescriptor.Priority,
             currentValue: ctx.Ticket.PriorityId,
             newValue: newPriorityId,
             triggerId: ctx.TriggerId,

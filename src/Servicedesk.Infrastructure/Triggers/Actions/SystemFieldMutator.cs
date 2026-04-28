@@ -25,10 +25,7 @@ internal sealed class SystemFieldMutator
 
     public async Task<FieldChangeOutcome> ChangeFieldAsync(
         Guid ticketId,
-        string columnName,
-        string lookupTable,
-        string lookupColumn,
-        string eventType,
+        SystemFieldDescriptor field,
         Guid? currentValue,
         Guid? newValue,
         Guid triggerId,
@@ -40,36 +37,35 @@ internal sealed class SystemFieldMutator
         // pass a non-null value and will fail their own TryReadGuid check
         // before they ever reach here, so the NOT-NULL columns stay safe.
         if (currentValue == newValue)
-            return FieldChangeOutcome.AlreadyAtTarget(columnName);
+            return FieldChangeOutcome.AlreadyAtTarget(field.ColumnName);
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
 
         var fromName = currentValue.HasValue
             ? await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
-                $"SELECT {lookupColumn} FROM {lookupTable} WHERE id = @id",
+                field.LookupSql,
                 new { id = currentValue.Value }, tx, cancellationToken: ct))
             : null;
         string? toName = null;
         if (newValue.HasValue)
         {
             toName = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
-                $"SELECT {lookupColumn} FROM {lookupTable} WHERE id = @id",
+                field.LookupSql,
                 new { id = newValue.Value }, tx, cancellationToken: ct));
             if (toName is null)
             {
                 await tx.RollbackAsync(ct);
-                return FieldChangeOutcome.TargetNotFound(columnName, newValue.Value);
+                return FieldChangeOutcome.TargetNotFound(field.ColumnName, newValue.Value);
             }
         }
 
-        var updateSql = $"UPDATE tickets SET {columnName} = @newValue, updated_utc = now() WHERE id = @ticketId AND is_deleted = FALSE";
-        var rows = await conn.ExecuteAsync(new CommandDefinition(updateSql,
+        var rows = await conn.ExecuteAsync(new CommandDefinition(field.UpdateSql,
             new { newValue, ticketId }, tx, cancellationToken: ct));
         if (rows == 0)
         {
             await tx.RollbackAsync(ct);
-            return FieldChangeOutcome.TicketGone(columnName);
+            return FieldChangeOutcome.TicketGone(field.ColumnName);
         }
 
         var metadata = TriggerEventMetadata.FieldChange(
@@ -80,7 +76,7 @@ internal sealed class SystemFieldMutator
             INSERT INTO ticket_events (ticket_id, event_type, author_user_id, metadata, is_internal)
             VALUES (@ticketId, @eventType, NULL, @metadata::jsonb, FALSE)
             """,
-            new { ticketId, eventType, metadata }, tx, cancellationToken: ct));
+            new { ticketId, eventType = field.EventType, metadata }, tx, cancellationToken: ct));
 
         await tx.CommitAsync(ct);
 
@@ -89,7 +85,7 @@ internal sealed class SystemFieldMutator
         // and queue/priority changes pick up the new schedule.
         await _sla.OnTicketFieldsChangedAsync(ticketId, ct);
 
-        return FieldChangeOutcome.Applied(columnName, currentValue, newValue, fromName, toName);
+        return FieldChangeOutcome.Applied(field.ColumnName, currentValue, newValue, fromName, toName);
     }
 
     public async Task<FieldChangeOutcome> ChangeStatusAsync(
@@ -274,4 +270,44 @@ internal enum FieldChangeStatus
     Applied,
     NoOp,
     Failed,
+}
+
+/// Whitelist of <see cref="SystemFieldMutator.ChangeFieldAsync"/>
+/// targets. Each instance carries pre-built SQL fragments so the
+/// mutator never interpolates a runtime string into a query — the
+/// only interpolation is over compile-time constants on this type.
+/// Adding a new field requires a new static member here, which is
+/// the explicit code-review checkpoint.
+internal sealed class SystemFieldDescriptor
+{
+    public string ColumnName { get; }
+    public string LookupSql { get; }
+    public string UpdateSql { get; }
+    public string EventType { get; }
+
+    private SystemFieldDescriptor(string columnName, string lookupSql, string updateSql, string eventType)
+    {
+        ColumnName = columnName;
+        LookupSql = lookupSql;
+        UpdateSql = updateSql;
+        EventType = eventType;
+    }
+
+    public static readonly SystemFieldDescriptor Queue = new(
+        columnName: "queue_id",
+        lookupSql: "SELECT name FROM queues WHERE id = @id",
+        updateSql: "UPDATE tickets SET queue_id = @newValue, updated_utc = now() WHERE id = @ticketId AND is_deleted = FALSE",
+        eventType: "QueueChange");
+
+    public static readonly SystemFieldDescriptor Priority = new(
+        columnName: "priority_id",
+        lookupSql: "SELECT name FROM priorities WHERE id = @id",
+        updateSql: "UPDATE tickets SET priority_id = @newValue, updated_utc = now() WHERE id = @ticketId AND is_deleted = FALSE",
+        eventType: "PriorityChange");
+
+    public static readonly SystemFieldDescriptor Owner = new(
+        columnName: "assignee_user_id",
+        lookupSql: "SELECT email FROM users WHERE id = @id",
+        updateSql: "UPDATE tickets SET assignee_user_id = @newValue, updated_utc = now() WHERE id = @ticketId AND is_deleted = FALSE",
+        eventType: "AssignmentChange");
 }

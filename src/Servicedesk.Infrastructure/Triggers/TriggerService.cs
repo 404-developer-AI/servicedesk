@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure.Audit;
@@ -61,8 +62,7 @@ public sealed class TriggerService : ITriggerService
         TriggerChangeSet changeSet,
         CancellationToken ct)
     {
-        var maxChain = await _settings.GetAsync<int>(SettingKeys.Triggers.MaxChainPerMutation, ct);
-        if (maxChain <= 0) maxChain = 10;
+        var maxChain = await GetMaxChainAsync(ct);
 
         if (_loopGuard.Depth >= maxChain)
         {
@@ -212,6 +212,63 @@ public sealed class TriggerService : ITriggerService
         return merged is null ? current : new TriggerChangeSet(merged, current.ArticleAdded);
     }
 
+    /// Caps any string in the per-action summary at this many characters
+    /// before persisting to <c>trigger_runs.applied_changes</c>. The
+    /// run-history page renders the JSON verbatim in a <c>&lt;pre&gt;</c>
+    /// tag; capping defends against a future handler that surfaces full
+    /// rendered mail bodies (or other long content) and turns the audit
+    /// row into a customer-PII record.
+    private const int RunDiffStringCharCap = 256;
+
+    private static string SerializeDiffWithCap(object diff)
+    {
+        var node = JsonSerializer.SerializeToNode(diff);
+        TruncateLongStringsInPlace(node);
+        return node?.ToJsonString() ?? "{}";
+    }
+
+    private static void TruncateLongStringsInPlace(JsonNode? node)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+                foreach (var kv in obj.ToList())
+                {
+                    if (kv.Value is JsonValue v && v.TryGetValue<string>(out var s)
+                        && s.Length > RunDiffStringCharCap)
+                    {
+                        obj[kv.Key] = JsonValue.Create(s.Substring(0, RunDiffStringCharCap) + "…");
+                    }
+                    else
+                    {
+                        TruncateLongStringsInPlace(kv.Value);
+                    }
+                }
+                break;
+            case JsonArray arr:
+                for (var i = 0; i < arr.Count; i++)
+                {
+                    var item = arr[i];
+                    if (item is JsonValue v && v.TryGetValue<string>(out var s)
+                        && s.Length > RunDiffStringCharCap)
+                    {
+                        arr[i] = JsonValue.Create(s.Substring(0, RunDiffStringCharCap) + "…");
+                    }
+                    else
+                    {
+                        TruncateLongStringsInPlace(item);
+                    }
+                }
+                break;
+        }
+    }
+
+    private async ValueTask<int> GetMaxChainAsync(CancellationToken ct)
+    {
+        var value = await _settings.GetAsync<int>(SettingKeys.Triggers.MaxChainPerMutation, ct);
+        return value > 0 ? value : 10;
+    }
+
     private static string? ActionKindToFieldKey(string kind) => kind switch
     {
         "set_queue" => TriggerFieldKeys.TicketQueueId,
@@ -225,7 +282,7 @@ public sealed class TriggerService : ITriggerService
         _ => null,
     };
 
-    public async Task<TriggerRunOutcome?> EvaluateScheduledAsync(
+    public async Task<TriggerScheduledRunResult> EvaluateScheduledAsync(
         Guid triggerId,
         Guid ticketId,
         DateTime boundaryUtc,
@@ -235,8 +292,7 @@ public sealed class TriggerService : ITriggerService
         // Loop guard still applies: a time-trigger that mutates the ticket
         // re-enters the action-kind evaluator via TicketEndpoints, and
         // that pass must respect the same per-mutation chain cap.
-        var maxChain = await _settings.GetAsync<int>(SettingKeys.Triggers.MaxChainPerMutation, ct);
-        if (maxChain <= 0) maxChain = 10;
+        var maxChain = await GetMaxChainAsync(ct);
 
         if (_loopGuard.Depth >= maxChain)
         {
@@ -246,7 +302,7 @@ public sealed class TriggerService : ITriggerService
             await SafeRecordAsync(new TriggerRunRecord(
                 triggerId, ticketId, TicketEventId: null,
                 TriggerRunOutcome.SkippedLoop, null, null, null), ct);
-            return TriggerRunOutcome.SkippedLoop;
+            return new TriggerScheduledRunResult(TriggerRunOutcome.SkippedLoop, ChainShouldClear: false);
         }
 
         using var scope = _loopGuard.Enter();
@@ -259,7 +315,7 @@ public sealed class TriggerService : ITriggerService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Trigger evaluator failed to load trigger {TriggerId}.", triggerId);
-            return null;
+            return new TriggerScheduledRunResult(null, ChainShouldClear: false);
         }
 
         if (trigger is null || !trigger.IsActive)
@@ -268,7 +324,7 @@ public sealed class TriggerService : ITriggerService
             // scan and the dispatch. No trigger_run row to write — there
             // is nothing left to attach it to.
             _logger.LogDebug("Scheduled trigger {TriggerId} no longer active; skipping.", triggerId);
-            return null;
+            return new TriggerScheduledRunResult(null, ChainShouldClear: false);
         }
 
         // Defensive activator-pair check — closes the gap where an admin
@@ -276,8 +332,9 @@ public sealed class TriggerService : ITriggerService
         // a chained reminder pointer that now resolves to an action-kind
         // trigger). Without this, the trigger's actions would fire
         // outside their designed activator path. We record Failed so the
-        // run-history surfaces the misconfiguration, then return Failed
-        // so the scheduler clears any chained pointer pointing here.
+        // run-history surfaces the misconfiguration; the chain pointer is
+        // intentionally NOT cleared so once the admin un-types the
+        // trigger back to time:reminder the chained ticket re-fires.
         if (trigger.ActivatorKind != "time" || trigger.ActivatorMode != expectedActivatorMode)
         {
             _logger.LogWarning(
@@ -288,14 +345,14 @@ public sealed class TriggerService : ITriggerService
                 TriggerRunOutcome.Failed, null,
                 "ActivatorMismatch",
                 $"Expected time:{expectedActivatorMode} but trigger is {trigger.ActivatorKind}:{trigger.ActivatorMode}."), ct);
-            return TriggerRunOutcome.Failed;
+            return new TriggerScheduledRunResult(TriggerRunOutcome.Failed, ChainShouldClear: false);
         }
 
         var detail = await _tickets.GetByIdAsync(ticketId, ct);
         if (detail is null)
         {
             _logger.LogWarning("Ticket {TicketId} disappeared before scheduled trigger evaluation.", ticketId);
-            return null;
+            return new TriggerScheduledRunResult(null, ChainShouldClear: false);
         }
 
         var (outcome, results) = await RunOneTriggerAsync(
@@ -312,7 +369,15 @@ public sealed class TriggerService : ITriggerService
             await SafeNotifyAsync(ticketId, ct);
         }
 
-        return outcome;
+        // Only release the chained-reminder pointer when the trigger
+        // actually applied. Failed outcomes (parse error, handler crash,
+        // missing taxonomy row, etc.) are surface signs that the admin
+        // needs to fix the configuration; if we cleared the chain on
+        // Failed the ticket would silently fall back to wide-scan and
+        // the admin's "after-this-fires, run X" intent would be lost
+        // the first time their JSON has a typo.
+        var shouldClear = outcome == TriggerRunOutcome.Applied;
+        return new TriggerScheduledRunResult(outcome, shouldClear);
     }
 
     public async Task<TriggerDryRunResult?> DryRunAsync(
@@ -459,7 +524,7 @@ public sealed class TriggerService : ITriggerService
             var outcome = hasFailures ? TriggerRunOutcome.Failed : TriggerRunOutcome.Applied;
 
             var diff = BuildDiff(trigger, results, scheduledBoundaryUtc);
-            var diffJson = JsonSerializer.Serialize(diff);
+            var diffJson = SerializeDiffWithCap(diff);
 
             await SafeRecordAsync(new TriggerRunRecord(
                 trigger.Id, ticket.Id, ticketEventId,

@@ -1518,6 +1518,11 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_triggers_active_name
             ON triggers (is_active, lower(name));
 
+        -- v0.0.24 batch 3: marker so the seeder can refresh content on
+        -- upgrade without overwriting admin tweaks. The first PUT/DELETE
+        -- by an admin clears the flag in the API layer.
+        ALTER TABLE triggers ADD COLUMN IF NOT EXISTS is_seed BOOLEAN NOT NULL DEFAULT FALSE;
+
         -- Append-only audit of every trigger evaluation. Rows are kept
         -- indefinitely in MVP; a retention sweep is added later if volume
         -- becomes a concern (1M tickets × N triggers can grow fast).

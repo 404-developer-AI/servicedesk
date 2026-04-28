@@ -317,17 +317,16 @@ public sealed class OutboundMailService : IOutboundMailService
         return OutboundMailResult.Ok(evt, mentionedIds.Count);
     }
 
-    private static readonly Regex AnyTicketTag = new(@"\[#\d+\]", RegexOptions.Compiled);
-
     private static string NormalizeSubject(string subject, long ticketNumber)
     {
         var clean = (subject ?? string.Empty).Trim();
         var tag = $"[#{ticketNumber}]";
-        // Already contains *any* ticket-tag — typically on replies where the
-        // customer's client carried our tag back in the Re: subject. Don't
-        // double-tag; don't rewrite an existing tag either (e.g. a merged
-        // conversation that still references the original ticket).
-        if (AnyTicketTag.IsMatch(clean)) return clean;
+        // Already contains the CURRENT ticket's tag — typically on replies
+        // where the customer's client carried our tag back in the Re:
+        // subject. Don't double-tag. A stray tag from an unrelated thread
+        // (forwarded conversation, copy/paste from another case) must not
+        // block us from appending the current ticket's pointer.
+        if (clean.Contains(tag, StringComparison.Ordinal)) return clean;
         return string.IsNullOrEmpty(clean) ? tag : $"{clean} {tag}";
     }
 

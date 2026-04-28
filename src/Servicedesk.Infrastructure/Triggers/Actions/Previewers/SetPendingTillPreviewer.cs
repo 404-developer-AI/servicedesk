@@ -28,7 +28,7 @@ internal sealed class SetPendingTillPreviewer : ITriggerActionPreviewer
         var (target, error) = await SetPendingTillResolver.ResolveAsync(actionJson, ctx, _slaRepository, ct);
         if (error is not null) return TriggerActionPreviewResult.Failed(Kind, error);
 
-        if (target!.Value <= ctx.UtcNow)
+        if (target!.Value <= DateTime.UtcNow)
         {
             return TriggerActionPreviewResult.WouldNoOp(Kind, new
             {

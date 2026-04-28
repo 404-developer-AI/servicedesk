@@ -41,13 +41,15 @@ public interface ITriggerService
     /// mismatch the evaluator writes a Failed run row and returns
     /// without invoking handlers.
     ///
-    /// Returns the outcome the evaluator persisted (or null when the
-    /// trigger or ticket disappeared mid-pass and no row was written).
-    /// The scheduler uses this to decide whether to clear chained-
-    /// reminder pointer state — chained reminders only release the
-    /// pointer on Applied/Failed so a SkippedNoMatch can re-evaluate
-    /// when the ticket changes shape.
-    Task<TriggerRunOutcome?> EvaluateScheduledAsync(
+    /// Returns the outcome the evaluator persisted plus a hint to the
+    /// scheduler about whether the chained-reminder pointer should be
+    /// cleared. <see cref="TriggerScheduledRunResult.Outcome"/> is null
+    /// when the trigger or ticket disappeared mid-pass and no row was
+    /// written. <see cref="TriggerScheduledRunResult.ChainShouldClear"/>
+    /// is false for parse-errors and other "config is broken, fix and
+    /// retry" failures so the admin's chained-reminder isn't silently
+    /// abandoned the moment the JSON has a typo.
+    Task<TriggerScheduledRunResult> EvaluateScheduledAsync(
         Guid triggerId,
         Guid ticketId,
         DateTime boundaryUtc,
@@ -71,3 +73,15 @@ public sealed record TriggerDryRunResult(
     bool Matched,
     string? FailureReason,
     IReadOnlyList<TriggerActionPreviewResult> Actions);
+
+/// Outcome of <see cref="ITriggerService.EvaluateScheduledAsync"/>.
+/// <see cref="ChainShouldClear"/> is true when the chained-reminder
+/// pointer + pending_till on the ticket are safe to wipe — i.e. the
+/// trigger ran to completion (Applied) or hit a non-recoverable handler
+/// failure that would loop indefinitely if we kept the pointer. It is
+/// false for parse-errors, missing-trigger races, and any other
+/// "transient or admin-fixable" path where the chain should survive
+/// until the admin intervenes.
+public readonly record struct TriggerScheduledRunResult(
+    TriggerRunOutcome? Outcome,
+    bool ChainShouldClear);

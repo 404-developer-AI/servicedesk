@@ -29,10 +29,11 @@ public class TriggerSchedulerTests
         var matcher = new FakeMatcher(matches: true);
         var service = BuildService(repo, dispatcher, matcher, new FakeTicketRepo());
 
-        var outcome = await service.EvaluateScheduledAsync(
+        var result = await service.EvaluateScheduledAsync(
             trigger.Id, Guid.NewGuid(), DateTime.UtcNow, "reminder", CancellationToken.None);
 
-        Assert.Null(outcome);
+        Assert.Null(result.Outcome);
+        Assert.False(result.ChainShouldClear);
         Assert.Empty(repo.Recorded);
         Assert.Equal(0, dispatcher.Calls);
     }
@@ -48,10 +49,11 @@ public class TriggerSchedulerTests
         var tickets = new FakeTicketRepo(); // returns null
         var service = BuildService(repo, new FakeDispatcher(), new FakeMatcher(true), tickets);
 
-        var outcome = await service.EvaluateScheduledAsync(
+        var result = await service.EvaluateScheduledAsync(
             trigger.Id, Guid.NewGuid(), DateTime.UtcNow, "reminder", CancellationToken.None);
 
-        Assert.Null(outcome);
+        Assert.Null(result.Outcome);
+        Assert.False(result.ChainShouldClear);
         Assert.Empty(repo.Recorded);
     }
 
@@ -71,10 +73,11 @@ public class TriggerSchedulerTests
         var matcher = new FakeMatcher(matches: false);
         var service = BuildService(repo, dispatcher, matcher, tickets);
 
-        var outcome = await service.EvaluateScheduledAsync(
+        var result = await service.EvaluateScheduledAsync(
             trigger.Id, ticketId, DateTime.UtcNow, "reminder", CancellationToken.None);
 
-        Assert.Equal(TriggerRunOutcome.SkippedNoMatch, outcome);
+        Assert.Equal(TriggerRunOutcome.SkippedNoMatch, result.Outcome);
+        Assert.False(result.ChainShouldClear);
         var record = Assert.Single(repo.Recorded);
         Assert.Equal(TriggerRunOutcome.SkippedNoMatch, record.Outcome);
         Assert.Null(record.AppliedChangesJson);
@@ -96,10 +99,14 @@ public class TriggerSchedulerTests
         var service = BuildService(repo, dispatcher, matcher, tickets);
 
         var boundary = new DateTime(2026, 4, 27, 12, 0, 0, DateTimeKind.Utc);
-        var outcome = await service.EvaluateScheduledAsync(
+        var result = await service.EvaluateScheduledAsync(
             trigger.Id, ticketId, boundary, "reminder", CancellationToken.None);
 
-        Assert.Equal(TriggerRunOutcome.Applied, outcome);
+        Assert.Equal(TriggerRunOutcome.Applied, result.Outcome);
+        // Applied is the only outcome that releases the chained-reminder
+        // pointer — Failed leaves it intact so a config bug doesn't lose
+        // the admin's chain.
+        Assert.True(result.ChainShouldClear);
         var record = Assert.Single(repo.Recorded);
         Assert.Equal(TriggerRunOutcome.Applied, record.Outcome);
         Assert.NotNull(record.AppliedChangesJson);
@@ -111,7 +118,7 @@ public class TriggerSchedulerTests
     }
 
     [Fact]
-    public async Task Dispatcher_failure_records_failed_outcome()
+    public async Task Dispatcher_failure_records_failed_outcome_and_keeps_chain()
     {
         var ticketId = Guid.NewGuid();
         var trigger = MakeTrigger();
@@ -124,10 +131,14 @@ public class TriggerSchedulerTests
         var matcher = new FakeMatcher(matches: true);
         var service = BuildService(repo, dispatcher, matcher, tickets);
 
-        var outcome = await service.EvaluateScheduledAsync(
+        var result = await service.EvaluateScheduledAsync(
             trigger.Id, ticketId, DateTime.UtcNow, "reminder", CancellationToken.None);
 
-        Assert.Equal(TriggerRunOutcome.Failed, outcome);
+        Assert.Equal(TriggerRunOutcome.Failed, result.Outcome);
+        // A handler failure is "fix the config and try again" — the
+        // chained-reminder pointer must survive so the ticket re-fires
+        // once the admin sorts it out.
+        Assert.False(result.ChainShouldClear);
         var record = Assert.Single(repo.Recorded);
         Assert.Equal(TriggerRunOutcome.Failed, record.Outcome);
     }
@@ -151,10 +162,13 @@ public class TriggerSchedulerTests
         var matcher = new FakeMatcher(matches: true);
         var service = BuildService(repo, dispatcher, matcher, tickets);
 
-        var outcome = await service.EvaluateScheduledAsync(
+        var result = await service.EvaluateScheduledAsync(
             trigger.Id, ticketId, DateTime.UtcNow, "reminder", CancellationToken.None);
 
-        Assert.Equal(TriggerRunOutcome.Failed, outcome);
+        Assert.Equal(TriggerRunOutcome.Failed, result.Outcome);
+        // Re-typing the trigger is admin-fixable, so the chain should
+        // survive until the admin types it back.
+        Assert.False(result.ChainShouldClear);
         var record = Assert.Single(repo.Recorded);
         Assert.Equal(TriggerRunOutcome.Failed, record.Outcome);
         Assert.Equal("ActivatorMismatch", record.ErrorClass);

@@ -19,7 +19,6 @@ import { ConditionsEditor } from "./ConditionsEditor";
 import { ActionsEditor } from "./ActionsEditor";
 import { TestRunner } from "./TestRunner";
 import {
-  blankActionForKind,
   isExpertConditions,
   parseActions,
   parseConditions,
@@ -127,17 +126,9 @@ function EditorBody({
     const parsed = parseConditions(d.conditionsJson);
     setConditions(parsed);
     setExpert(isExpertConditions(parsed));
-    const parsedActions = parseActions(d.actionsJson);
-    // Coerce unknown kinds to a noop action so the editor doesn't crash —
-    // the validator will block save until the admin replaces or removes
-    // the unknown entry.
-    setActions(
-      parsedActions.map((a): TriggerAction =>
-        metadata.actionKinds.includes(a.kind)
-          ? (a as TriggerAction)
-          : blankActionForKind("set_priority"),
-      ),
-    );
+    // parseActions wraps any unrecognised entry as `__unknown` so the
+    // admin can see + remove it instead of silently losing the payload.
+    setActions(parseActions(d.actionsJson));
   }
 
   const save = useMutation({

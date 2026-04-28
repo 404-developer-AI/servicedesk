@@ -9,7 +9,9 @@ import {
 } from "@/components/ui/popover";
 import {
   ACTION_KIND_LABELS,
+  KNOWN_ACTION_KINDS,
   blankActionForKind,
+  type KnownActionKind,
   type TriggerAction,
 } from "./types";
 import {
@@ -34,16 +36,7 @@ type Props = {
   variables: TriggerTemplateVariable[];
 };
 
-const ACTION_KINDS: TriggerAction["kind"][] = [
-  "set_queue",
-  "set_priority",
-  "set_status",
-  "set_owner",
-  "set_pending_till",
-  "add_internal_note",
-  "add_public_note",
-  "send_mail",
-];
+const ACTION_KINDS: KnownActionKind[] = [...KNOWN_ACTION_KINDS];
 
 /// Renders the per-trigger actions list. Each entry is a typed action
 /// block with its own inline form fragment — picking <c>set_priority</c>
@@ -69,7 +62,7 @@ export function ActionsEditor({ value, onChange, taxonomies, variables }: Props)
     [next[idx], next[target]] = [next[target], next[idx]];
     onChange(next);
   }
-  function add(kind: TriggerAction["kind"]) {
+  function add(kind: KnownActionKind) {
     onChange([...value, blankActionForKind(kind)]);
   }
 
@@ -99,7 +92,7 @@ export function ActionsEditor({ value, onChange, taxonomies, variables }: Props)
   );
 }
 
-function AddActionMenu({ onAdd }: { onAdd: (kind: TriggerAction["kind"]) => void }) {
+function AddActionMenu({ onAdd }: { onAdd: (kind: KnownActionKind) => void }) {
   const [open, setOpen] = React.useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -144,14 +137,28 @@ function ActionCard({
   taxonomies: Props["taxonomies"];
   variables: TriggerTemplateVariable[];
 }) {
+  const isUnknown = action.kind === "__unknown";
+  const label = isUnknown
+    ? `Unknown action: ${(action as { original_kind: string }).original_kind}`
+    : ACTION_KIND_LABELS[action.kind as KnownActionKind];
   return (
-    <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] px-4 py-3">
+    <div className={cn(
+      "rounded-lg border px-4 py-3",
+      isUnknown
+        ? "border-amber-400/30 bg-amber-400/[0.04]"
+        : "border-white/[0.08] bg-white/[0.02]",
+    )}>
       <header className="mb-3 flex items-center gap-2">
         <span className="text-muted-foreground/50">
           <GripVertical className="h-4 w-4" />
         </span>
-        <span className="rounded-md border border-violet-400/30 bg-violet-400/10 px-2 py-0.5 text-[11px] font-medium text-violet-200">
-          {idx + 1}. {ACTION_KIND_LABELS[action.kind]}
+        <span className={cn(
+          "rounded-md border px-2 py-0.5 text-[11px] font-medium",
+          isUnknown
+            ? "border-amber-400/40 bg-amber-400/10 text-amber-200"
+            : "border-violet-400/30 bg-violet-400/10 text-violet-200",
+        )}>
+          {idx + 1}. {label}
         </span>
         <div className="ml-auto flex items-center gap-1">
           <Button
@@ -201,6 +208,17 @@ function ActionForm({
   variables: TriggerTemplateVariable[];
 }) {
   switch (action.kind) {
+    case "__unknown":
+      return (
+        <div className="space-y-2">
+          <p className="text-xs text-amber-200/80">
+            This action's kind is not recognised by this editor build. Save will be rejected by the server until you remove or replace the entry. The original payload is preserved below.
+          </p>
+          <pre className="rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] font-mono text-muted-foreground/80 overflow-x-auto">
+            {JSON.stringify(action.raw, null, 2)}
+          </pre>
+        </div>
+      );
     case "set_queue":
       return (
         <FieldRow label="Queue">
