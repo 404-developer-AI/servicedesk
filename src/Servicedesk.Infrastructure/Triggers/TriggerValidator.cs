@@ -87,8 +87,20 @@ public static class TriggerValidator
 
         if (!string.IsNullOrWhiteSpace(locale))
         {
-            try { _ = System.Globalization.CultureInfo.GetCultureInfo(locale); }
-            catch (System.Globalization.CultureNotFoundException)
+            // Cross-platform locale check. Windows NLS throws on unknown
+            // names; .NET on Linux uses ICU which happily fabricates a
+            // "custom culture" for any BCP-47-shaped string and never
+            // throws — so a typo like "english" or "this-is-not-a-locale"
+            // would slip past a try/catch on GetCultureInfo. The
+            // CustomCulture LCID sentinel (0x1000 / 4096) is set by
+            // both runtimes when the name doesn't resolve to a known
+            // culture, which gives us one rejection path that fires on
+            // both platforms.
+            const int CustomCultureLcid = 0x1000;
+            System.Globalization.CultureInfo? culture = null;
+            try { culture = System.Globalization.CultureInfo.GetCultureInfo(locale); }
+            catch (System.Globalization.CultureNotFoundException) { }
+            if (culture is null || culture.LCID == CustomCultureLcid)
             {
                 return ValidationResult.Fail($"Locale '{locale}' is not a recognised culture.");
             }
