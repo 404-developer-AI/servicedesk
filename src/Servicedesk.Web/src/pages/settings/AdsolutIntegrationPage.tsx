@@ -679,9 +679,10 @@ export function AdsolutIntegrationPage() {
                 Sync
               </h2>
               <p className="text-xs text-muted-foreground">
-                One-way Adsolut → servicedesk pull of Companies. Conflict tie-breaker is
-                last-write-wins: a local edit made after the Adsolut row's lastModified is
-                preserved until Adsolut updates again.
+                Bidirectional Adsolut ↔ servicedesk Companies sync. Pull and Push toggles are
+                independent — an admin can keep updates flowing in both directions while never
+                creating new rows on either side. All gating-toggles default OFF and are reset
+                to OFF on every (re)connect; opt in once you've verified the dossier mapping.
               </p>
             </div>
             <Button
@@ -726,26 +727,127 @@ export function AdsolutIntegrationPage() {
             )}
           </dl>
 
-          <div className="space-y-2">
-            {(
-              [
-                "Adsolut.Sync.IntervalMinutes",
-                "Adsolut.Sync.Pull.Companies.Update",
-                "Adsolut.Sync.Pull.Companies.Create",
-                "Adsolut.Sync.IncludeSuppliers",
-                "Adsolut.Sync.LinkCompanyDomainsFromEmail",
-              ] as const
-            ).map((key) => {
-              const entry = findEntry(settingsList.data, key);
-              if (!entry) return null;
-              return (
-                <SettingField
-                  key={key}
-                  entry={entry}
-                  queryKey={ADSOLUT_SETTINGS_QUERY_KEY}
-                />
-              );
-            })}
+          <div className="space-y-5">
+            <div className="space-y-2">
+              {(
+                ["Adsolut.Sync.IntervalMinutes"] as const
+              ).map((key) => {
+                const entry = findEntry(settingsList.data, key);
+                if (!entry) return null;
+                return (
+                  <SettingField
+                    key={key}
+                    entry={entry}
+                    queryKey={ADSOLUT_SETTINGS_QUERY_KEY}
+                  />
+                );
+              })}
+            </div>
+
+            <div>
+              <h3 className="mb-2 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
+                Pull · Adsolut → servicedesk
+              </h3>
+              <div className="space-y-2">
+                {(
+                  [
+                    "Adsolut.Sync.Pull.Companies.Update",
+                    "Adsolut.Sync.Pull.Companies.Create",
+                  ] as const
+                ).map((key) => {
+                  const entry = findEntry(settingsList.data, key);
+                  if (!entry) return null;
+                  return (
+                    <SettingField
+                      key={key}
+                      entry={entry}
+                      queryKey={ADSOLUT_SETTINGS_QUERY_KEY}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <h3 className="mb-2 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
+                Push · Servicedesk → Adsolut
+              </h3>
+              <div className="space-y-2">
+                {(
+                  [
+                    "Adsolut.Push.UpdateExistingCustomers",
+                    "Adsolut.Push.CreateNewCustomers",
+                  ] as const
+                ).map((key) => {
+                  const entry = findEntry(settingsList.data, key);
+                  if (!entry) return null;
+                  return (
+                    <SettingField
+                      key={key}
+                      entry={entry}
+                      queryKey={ADSOLUT_SETTINGS_QUERY_KEY}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Suppliers — placeholder for v0.0.28. The IncludeSuppliers toggle and
+                the two push-toggles are seeded so the v0.0.28 unlock is a code flip,
+                not a schema migration. The backend force-ignores them in v0.0.27. */}
+            <div>
+              <h3 className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
+                Suppliers
+                <span className="rounded-full border border-amber-400/30 bg-amber-500/[0.08] px-2 py-0.5 text-[9px] uppercase tracking-wider text-amber-200">
+                  In development
+                </span>
+              </h3>
+              <p className="mb-2 text-xs text-muted-foreground/70">
+                Bidirectional Suppliers sync is targeted for the next release. These toggles
+                are visible but the worker ignores them until v0.0.28 lands.
+              </p>
+              <div className="space-y-2 opacity-60">
+                {(
+                  [
+                    "Adsolut.Sync.IncludeSuppliers",
+                    "Adsolut.Push.UpdateExistingSuppliers",
+                    "Adsolut.Push.CreateNewSuppliers",
+                  ] as const
+                ).map((key) => {
+                  const entry = findEntry(settingsList.data, key);
+                  if (!entry) return null;
+                  return (
+                    <SettingField
+                      key={key}
+                      entry={entry}
+                      queryKey={ADSOLUT_SETTINGS_QUERY_KEY}
+                      readOnly
+                    />
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <h3 className="mb-2 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
+                Behavior
+              </h3>
+              <div className="space-y-2">
+                {(
+                  ["Adsolut.Sync.LinkCompanyDomainsFromEmail"] as const
+                ).map((key) => {
+                  const entry = findEntry(settingsList.data, key);
+                  if (!entry) return null;
+                  return (
+                    <SettingField
+                      key={key}
+                      entry={entry}
+                      queryKey={ADSOLUT_SETTINGS_QUERY_KEY}
+                    />
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </section>
       )}

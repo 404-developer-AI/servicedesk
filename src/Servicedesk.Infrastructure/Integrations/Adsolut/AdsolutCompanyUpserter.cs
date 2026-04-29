@@ -6,13 +6,21 @@ namespace Servicedesk.Infrastructure.Integrations.Adsolut;
 /// One row from the local <c>companies</c> table — the minimum set of
 /// columns the upsert decision-logic needs from a candidate match. Lifted
 /// out of <see cref="AdsolutCompanyUpserter"/> so the pure decision
-/// function can be unit-tested without a Postgres connection.
-public sealed record AdsolutCompanyMatchRow(Guid Id, DateTime UpdatedUtc, Guid? AdsolutId);
+/// function can be unit-tested without a Postgres connection. v0.0.27
+/// adds <see cref="AdsolutSyncedHash"/> so the no-op guard can compare
+/// the inbound row's canonical hash against the last-known-synced hash
+/// without re-reading the row.
+public sealed record AdsolutCompanyMatchRow(
+    Guid Id,
+    DateTime UpdatedUtc,
+    Guid? AdsolutId,
+    byte[]? AdsolutSyncedHash = null);
 
 /// Output of <see cref="AdsolutCompanyUpserter.Decide"/>. Drives whether
 /// the storage layer issues an UPDATE, an INSERT, or a no-op skip. The
 /// <c>Match</c> is non-null exactly when the outcome is Updated /
-/// SkippedLocalNewer / SkippedUpdateToggleOff (i.e. a row exists locally).
+/// SkippedLocalNewer / SkippedUpdateToggleOff / SkippedNoChange (i.e. a
+/// row exists locally).
 public sealed record AdsolutUpsertDecision(
     AdsolutUpsertOutcome Outcome,
     AdsolutCompanyMatchRow? Match);
@@ -20,13 +28,15 @@ public sealed record AdsolutUpsertDecision(
 public sealed class AdsolutCompanyUpserter : IAdsolutCompanyUpserter
 {
     /// Pure decision: given the local row that matched (or null if none)
-    /// + the Adsolut-side customer + the per-tick toggles, decide what
-    /// the storage layer should do. Lifted out of the SQL path so the
-    /// match-precedence + conflict + toggle interaction is unit-testable.
+    /// + the Adsolut-side customer + the per-tick toggles + the inbound
+    /// row's canonical hash, decide what the storage layer should do.
+    /// Lifted out of the SQL path so the match-precedence + conflict +
+    /// toggle interaction + hash-no-op are unit-testable.
     public static AdsolutUpsertDecision Decide(
         AdsolutCompanyMatchRow? match,
         AdsolutCustomer customer,
-        AdsolutSyncOptions options)
+        AdsolutSyncOptions options,
+        byte[] inboundHash)
     {
         if (match is not null)
         {
@@ -40,6 +50,15 @@ public sealed class AdsolutCompanyUpserter : IAdsolutCompanyUpserter
             {
                 return new AdsolutUpsertDecision(AdsolutUpsertOutcome.SkippedUpdateToggleOff, match);
             }
+            // v0.0.27 inbound no-op guard: the canonical hash of the
+            // mirrored field-set equals the hash we stored on the last
+            // successful sync — any UPDATE here would be byte-for-byte
+            // identical, so skip it. Closes the echo-pull loop on the
+            // inbound side.
+            if (match.AdsolutSyncedHash is { } stored && ByteEquals(stored, inboundHash))
+            {
+                return new AdsolutUpsertDecision(AdsolutUpsertOutcome.SkippedNoChange, match);
+            }
             return new AdsolutUpsertDecision(AdsolutUpsertOutcome.Updated, match);
         }
 
@@ -48,6 +67,16 @@ public sealed class AdsolutCompanyUpserter : IAdsolutCompanyUpserter
                 ? AdsolutUpsertOutcome.Created
                 : AdsolutUpsertOutcome.SkippedCreateToggleOff,
             null);
+    }
+
+    private static bool ByteEquals(byte[] a, byte[] b)
+    {
+        if (a.Length != b.Length) return false;
+        for (var i = 0; i < a.Length; i++)
+        {
+            if (a[i] != b[i]) return false;
+        }
+        return true;
     }
 
 
@@ -68,7 +97,7 @@ public sealed class AdsolutCompanyUpserter : IAdsolutCompanyUpserter
         // Step 1 — match by adsolut_id (already linked).
         var matched = await conn.QueryFirstOrDefaultAsync<AdsolutCompanyMatchRow>(new CommandDefinition(
             """
-            SELECT id AS Id, updated_utc AS UpdatedUtc, adsolut_id AS AdsolutId
+            SELECT id AS Id, updated_utc AS UpdatedUtc, adsolut_id AS AdsolutId, adsolut_synced_hash AS AdsolutSyncedHash
             FROM companies
             WHERE adsolut_id = @AdsolutId
             LIMIT 1
@@ -83,7 +112,7 @@ public sealed class AdsolutCompanyUpserter : IAdsolutCompanyUpserter
         {
             matched = await conn.QueryFirstOrDefaultAsync<AdsolutCompanyMatchRow>(new CommandDefinition(
                 """
-                SELECT id AS Id, updated_utc AS UpdatedUtc, adsolut_id AS AdsolutId
+                SELECT id AS Id, updated_utc AS UpdatedUtc, adsolut_id AS AdsolutId, adsolut_synced_hash AS AdsolutSyncedHash
                 FROM companies
                 WHERE code = @Code AND adsolut_id IS NULL
                 LIMIT 1
@@ -92,8 +121,6 @@ public sealed class AdsolutCompanyUpserter : IAdsolutCompanyUpserter
                 cancellationToken: ct));
         }
 
-        var decision = Decide(matched, customer, options);
-
         var combinedAddress = string.IsNullOrEmpty(customer.AddressLine2)
             ? customer.AddressLine1
             : customer.AddressLine1;
@@ -101,15 +128,36 @@ public sealed class AdsolutCompanyUpserter : IAdsolutCompanyUpserter
         var combinedVat = CombineVat(customer.CountryPrefixVatNumber, customer.VatNumber);
         var lastModified = customer.LastModified?.UtcDateTime;
 
+        // Compute the canonical hash of the inbound row once — Decide
+        // uses it for the no-op guard, the storage path persists it.
+        var inboundHash = AdsolutCompanyHash.Compute(new AdsolutCompanyHashInput(
+            Name: customer.Name,
+            Code: customer.Code,
+            VatCombined: combinedVat,
+            AddressLine1: combinedAddress,
+            AddressLine2: line2,
+            PostalCode: customer.PostalCode,
+            City: customer.City,
+            Country: customer.Country,
+            Phone: customer.Phone,
+            Email: customer.Email));
+
+        var decision = Decide(matched, customer, options, inboundHash);
+
         if (decision.Outcome == AdsolutUpsertOutcome.SkippedLocalNewer ||
             decision.Outcome == AdsolutUpsertOutcome.SkippedUpdateToggleOff ||
-            decision.Outcome == AdsolutUpsertOutcome.SkippedCreateToggleOff)
+            decision.Outcome == AdsolutUpsertOutcome.SkippedCreateToggleOff ||
+            decision.Outcome == AdsolutUpsertOutcome.SkippedNoChange)
         {
             return decision.Outcome;
         }
 
         if (decision.Outcome == AdsolutUpsertOutcome.Updated)
         {
+            // updated_utc is anchored on Adsolut's lastModified (not now())
+            // so the next push-tak scan does not re-trigger on an inbound
+            // update we just absorbed. Fallback to now() in the rare case
+            // Adsolut returned a row without a lastModified value.
             await conn.ExecuteAsync(new CommandDefinition(
                 """
                 UPDATE companies SET
@@ -124,8 +172,11 @@ public sealed class AdsolutCompanyUpserter : IAdsolutCompanyUpserter
                     vat_number            = @VatNumber,
                     code                  = COALESCE(@Code, code),
                     adsolut_id            = @AdsolutId,
+                    adsolut_number        = @AdsolutNumber,
+                    adsolut_alpha_code    = @AdsolutAlphaCode,
                     adsolut_last_modified = @AdsolutLastModified,
-                    updated_utc           = now()
+                    adsolut_synced_hash   = @AdsolutSyncedHash,
+                    updated_utc           = COALESCE(@AdsolutLastModified, now())
                 WHERE id = @Id
                 """,
                 new
@@ -142,7 +193,10 @@ public sealed class AdsolutCompanyUpserter : IAdsolutCompanyUpserter
                     VatNumber = NotNull(combinedVat),
                     Code = NormalizeCode(customer.Code),
                     AdsolutId = customer.Id,
+                    AdsolutNumber = customer.Number,
+                    AdsolutAlphaCode = customer.AlphaCode,
                     AdsolutLastModified = lastModified,
+                    AdsolutSyncedHash = inboundHash,
                 },
                 cancellationToken: ct));
             await TryLinkDomainAsync(conn, decision.Match!.Id, customer.Email, options, ct);
@@ -163,14 +217,17 @@ public sealed class AdsolutCompanyUpserter : IAdsolutCompanyUpserter
                 address_line1, address_line2, city, postal_code, country,
                 is_active, code, short_name, vat_number,
                 alert_text, alert_on_create, alert_on_open, alert_on_open_mode,
-                email, adsolut_id, adsolut_last_modified
+                email, adsolut_id, adsolut_number, adsolut_alpha_code,
+                adsolut_last_modified, adsolut_synced_hash, updated_utc
             )
             VALUES (
                 @Name, '', '', @Phone,
                 @AddressLine1, @AddressLine2, @City, @PostalCode, @Country,
                 TRUE, @Code, '', @VatNumber,
                 '', FALSE, FALSE, 'session',
-                @Email, @AdsolutId, @AdsolutLastModified
+                @Email, @AdsolutId, @AdsolutNumber, @AdsolutAlphaCode,
+                @AdsolutLastModified, @AdsolutSyncedHash,
+                COALESCE(@AdsolutLastModified, now())
             )
             RETURNING id
             """,
@@ -187,7 +244,10 @@ public sealed class AdsolutCompanyUpserter : IAdsolutCompanyUpserter
                 VatNumber = NotNull(combinedVat),
                 Email = NotNull(customer.Email),
                 AdsolutId = customer.Id,
+                AdsolutNumber = customer.Number,
+                AdsolutAlphaCode = customer.AlphaCode,
                 AdsolutLastModified = lastModified,
+                AdsolutSyncedHash = inboundHash,
             },
             cancellationToken: ct));
         await TryLinkDomainAsync(conn, newId, customer.Email, options, ct);

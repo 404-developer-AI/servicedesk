@@ -73,7 +73,13 @@ export function CompanyEditDialog({ open, company, onClose }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        {form && <CompanyFormFields form={form} setForm={setForm as React.Dispatch<React.SetStateAction<CompanyInput>>} />}
+        {form && (
+          <CompanyFormFields
+            form={form}
+            setForm={setForm as React.Dispatch<React.SetStateAction<CompanyInput>>}
+            adsolutLinked={Boolean(company?.adsolutId)}
+          />
+        )}
 
         <DialogFooter className="flex items-center justify-between gap-3 sm:justify-between">
           {company && (

@@ -136,11 +136,14 @@ public static class SettingKeys
         /// controls how early we surface "reconnect soon" to the admin.
         public const string RefreshWarnDays = "Adsolut.RefreshWarnDays";
 
-        // v0.0.26 — Companies pull (Adsolut → Servicedesk). Worker tick
-        // cadence and per-direction toggles. All toggles default ON for
-        // pull because v0.0.26 ships pull-only and admins who connect want
-        // their address book filled. Suppliers stay OFF by default — typical
-        // helpdesks care about debtors, not vendors.
+        // Companies pull (Adsolut → Servicedesk). Worker tick cadence and
+        // per-direction toggles. Sync-gating semantics (v0.0.27): every
+        // toggle that *gates* whether sync runs at all defaults OFF and
+        // gets force-reset to OFF on every (re)connect — so a fresh install
+        // is silent until the admin explicitly opts in, and a reconnect can
+        // never spring a surprise sync against a new dossier. Behaviour-
+        // modifier toggles (LinkCompanyDomainsFromEmail) stay default ON
+        // and are NOT touched on reconnect.
         public const string SyncIntervalMinutes = "Adsolut.Sync.IntervalMinutes";
         public const string SyncPullCompaniesUpdate = "Adsolut.Sync.Pull.Companies.Update";
         public const string SyncPullCompaniesCreate = "Adsolut.Sync.Pull.Companies.Create";
@@ -150,8 +153,22 @@ public static class SettingKeys
         /// customer's email and inserts it into <c>company_domains</c> so
         /// inbound mail from the same domain auto-links to the company. The
         /// existing <see cref="Mail.AutoLinkDomainBlacklist"/> still applies
-        /// — freemail / public domains never land here.
+        /// — freemail / public domains never land here. Behaviour-modifier
+        /// toggle: default ON, not reset on reconnect.
         public const string SyncLinkCompanyDomains = "Adsolut.Sync.LinkCompanyDomainsFromEmail";
+
+        // v0.0.27 — Companies push (Servicedesk → Adsolut, customers-only).
+        // Update + Create are independent gating-toggles: an admin can have
+        // updates pushing without create-from-SD ever firing. Both default
+        // OFF and get force-reset to OFF on every (re)connect. The two
+        // supplier toggles are seeded as a placeholder for the v0.0.28
+        // bidirectional-suppliers branch — UI surfaces them disabled with
+        // an "In development" badge, and the SyncWorker force-ignores them
+        // even if a SQL-side override is attempted.
+        public const string PushUpdateExistingCustomers = "Adsolut.Push.UpdateExistingCustomers";
+        public const string PushCreateNewCustomers = "Adsolut.Push.CreateNewCustomers";
+        public const string PushUpdateExistingSuppliers = "Adsolut.Push.UpdateExistingSuppliers";
+        public const string PushCreateNewSuppliers = "Adsolut.Push.CreateNewSuppliers";
 
         /// Base URL of the Adsolut API (Administrations + Accounting share
         /// the same host). Documented at api.adsolut.com for production;
@@ -437,26 +454,36 @@ public static class SettingDefaults
         new SettingDefault(SettingKeys.Adsolut.ClientId, "", "string", "Adsolut",
             "Client ID provisioned by Wolters Kluwer for this servicedesk install. Paired with the client secret stored separately in the protected-secrets store. Both fields plus a registered redirect URI matching <PublicBaseUrl>/api/integrations/adsolut/callback must exist before the Connect button activates."),
         new SettingDefault(SettingKeys.Adsolut.Scopes,
-            "openid offline_access profile WK.BE.Administrations WK.BE.Accounting.Read",
+            "openid offline_access profile WK.BE.Administrations WK.BE.Accounting.Read WK.BE.Accounting.Write",
             "string", "Adsolut",
-            "Space-separated OAuth2 scopes appended to the authorize request. The default covers the v0.0.26 Companies-pull flow (openid + offline_access for tokens, WK.BE.Administrations to enumerate dossiers + activate the integration, WK.BE.Accounting.Read to list customers/suppliers). Existing installs that connected on the v0.0.25 narrow scopes ('openid offline_access') keep their current value here on upgrade; disconnect + reconnect to get the new scopes onto the refresh token. Add WK.BE.Accounting.Write later when v0.0.27 (Companies push) lands."),
+            "Space-separated OAuth2 scopes appended to the authorize request. The v0.0.27 default covers both directions of the Companies sync (Read for the pull, Write for the push). Existing installs upgrading from v0.0.26 get WK.BE.Accounting.Write appended automatically by a one-shot data-migration; the saved scope set will then differ from the scope set bound to the active refresh token, which makes the 'Reconnect required' pill fire. Reconnect to mint a fresh RT with the write scope — without it every PUT/POST against /customers comes back as 403."),
         new SettingDefault(SettingKeys.Adsolut.RefreshWarnDays, "7", "int", "Adsolut",
             "Days before the refresh-token's sliding 1-month window expires the Health page flips the Adsolut card to Warning so the admin has time to test or reconnect. The 30-day window itself is enforced by Wolters Kluwer and not configurable from our side."),
 
-        // v0.0.26 — Companies pull worker. Defaults tuned for "low load on
-        // Adsolut, fresh-enough address book": tick every 60 minutes, both
-        // pull toggles ON so a connected install actually fills with data,
-        // suppliers OFF so debtors-only helpdesks don't import vendor noise.
+        // Companies pull worker (v0.0.26 baseline, v0.0.27 default flip).
+        // Sync-gating toggles default OFF — a fresh install must be silent
+        // until the admin explicitly opts in. The reset-on-connect hook in
+        // AdsolutAuthService.CompleteCallbackAsync force-resets these to
+        // false on every successful (re)connect, so re-authorising against
+        // a new dossier cannot accidentally start syncing inherited toggles.
         new SettingDefault(SettingKeys.Adsolut.SyncIntervalMinutes, "60", "int", "Adsolut",
             "How often (minutes) the Adsolut sync worker ticks. Each tick pulls Customers (and Suppliers if enabled) from the active administration using a delta-sync (?ModifiedSince=lastSuccessfulSync&OrderBy=lastModified). Floor 5 — set lower and the worker silently clamps. Default 60 is well below Adsolut's lastModified granularity and keeps Wolters Kluwer load minimal."),
-        new SettingDefault(SettingKeys.Adsolut.SyncPullCompaniesUpdate, "true", "bool", "Adsolut",
-            "When true, an Adsolut customer whose lastModified advanced overwrites the matched servicedesk Company on every sync tick. Match precedence: companies.adsolut_id (already linked) → companies.code (first link) → new row. Conflict tie-breaker: latest timestamp wins (companies.updated_utc vs Adsolut.lastModified) — local edits made after the Adsolut row's lastModified are preserved until Adsolut updates again. Turn off to import once and freeze."),
-        new SettingDefault(SettingKeys.Adsolut.SyncPullCompaniesCreate, "true", "bool", "Adsolut",
-            "When true, an Adsolut customer with no matching servicedesk Company (no adsolut_id link, no code match) is inserted as a new Company on the next sync tick. Turn off to keep the address book curated by hand and only refresh existing rows."),
+        new SettingDefault(SettingKeys.Adsolut.SyncPullCompaniesUpdate, "false", "bool", "Adsolut",
+            "When true, an Adsolut customer whose lastModified advanced overwrites the matched servicedesk Company on every sync tick. Match precedence: companies.adsolut_id (already linked) → companies.code (first link) → new row. Conflict tie-breaker: latest timestamp wins (companies.updated_utc vs Adsolut.lastModified) — local edits made after the Adsolut row's lastModified are preserved until Adsolut updates again. Default off + force-reset on every (re)connect so a fresh / re-linked install is silent until the admin opts in."),
+        new SettingDefault(SettingKeys.Adsolut.SyncPullCompaniesCreate, "false", "bool", "Adsolut",
+            "When true, an Adsolut customer with no matching servicedesk Company (no adsolut_id link, no code match) is inserted as a new Company on the next sync tick. Default off + force-reset on every (re)connect — turn on after spot-checking a few existing rows. Turn back off to keep the address book curated by hand and only refresh existing rows."),
         new SettingDefault(SettingKeys.Adsolut.SyncIncludeSuppliers, "false", "bool", "Adsolut",
-            "When true, the sync worker also pulls Suppliers (crediteurs) from Adsolut alongside Customers. Off by default because a helpdesk address book is debtors-first and most installs don't want utility/software vendor counterparties imported. The pull-update / pull-create toggles above apply to suppliers too when this is enabled."),
+            "When true, the sync worker also pulls Suppliers (crediteurs) from Adsolut alongside Customers. v0.0.27: 'In development' — backend force-ignores this even if turned on, UI shows the toggle disabled. Off by default because a helpdesk address book is debtors-first and most installs don't want utility/software vendor counterparties imported. The pull-update / pull-create toggles above will apply to suppliers too once this is unlocked in v0.0.28."),
         new SettingDefault(SettingKeys.Adsolut.SyncLinkCompanyDomains, "true", "bool", "Adsolut",
-            "When true, the sync worker derives a domain from each Adsolut customer's email field (e.g. info@acme.com → acme.com) and inserts it into company_domains so inbound mail from acme.com auto-links to that company. The Mail.AutoLinkDomainBlacklist (gmail.com, outlook.com, …) is respected — freemail domains are never linked. Idempotent: a domain already claimed by another company is silently skipped (UNIQUE constraint). Adsolut itself has no website field, so this is the only way to populate the auto-link table from sync."),
+            "When true, the sync worker derives a domain from each Adsolut customer's email field (e.g. info@acme.com → acme.com) and inserts it into company_domains so inbound mail from acme.com auto-links to that company. The Mail.AutoLinkDomainBlacklist (gmail.com, outlook.com, …) is respected — freemail domains are never linked. Idempotent: a domain already claimed by another company is silently skipped (UNIQUE constraint). Adsolut itself has no website field, so this is the only way to populate the auto-link table from sync. Behaviour-modifier toggle: default ON and NOT reset on reconnect, so turning sync back on later does not silently disable domain auto-link."),
+        new SettingDefault(SettingKeys.Adsolut.PushUpdateExistingCustomers, "false", "bool", "Adsolut",
+            "When true, the sync worker pushes local edits on Adsolut-linked Companies back to Adsolut (PUT /customers/{id}) on the next tick. Push-tak only fires when the local row is strictly newer than the last pulled lastModified AND the canonical hash differs from the last-synced hash (so an echo-pull right after a push is a no-op). Independent of the create-toggle below: an admin can have updates pushing without ever pushing brand-new rows. Default off + force-reset on every (re)connect."),
+        new SettingDefault(SettingKeys.Adsolut.PushCreateNewCustomers, "false", "bool", "Adsolut",
+            "When true, the sync worker creates Adsolut customers from local Companies that have no adsolut_id yet (POST /customers). Independent of the update-toggle above: an admin can keep updates pushing while never auto-creating fresh rows in Adsolut. Default off + force-reset on every (re)connect — flip on deliberately after confirming the address book is the source of truth."),
+        new SettingDefault(SettingKeys.Adsolut.PushUpdateExistingSuppliers, "false", "bool", "Adsolut",
+            "v0.0.27 placeholder: pushing updates on linked Suppliers is in development. Backend force-ignores this; UI shows the toggle disabled with an 'In development' badge. Stays as a setting row so the v0.0.28 unlock is just a code-flip, not a schema migration."),
+        new SettingDefault(SettingKeys.Adsolut.PushCreateNewSuppliers, "false", "bool", "Adsolut",
+            "v0.0.27 placeholder: creating new Suppliers in Adsolut from SD is in development. Backend force-ignores this; UI shows the toggle disabled with an 'In development' badge. Stays as a setting row so the v0.0.28 unlock is just a code-flip, not a schema migration."),
         new SettingDefault(SettingKeys.Adsolut.ApiBaseUrl, "https://api.adsolut.com", "string", "Adsolut",
             "Base URL of the Adsolut API. The Administrations service lives under /adm/v1, the Accounting service under /acc/v1. Default targets api.adsolut.com (production); no UAT mirror is documented today but the value is exposed so a future change can swap it without a code release. Trailing slashes are normalised."),
 

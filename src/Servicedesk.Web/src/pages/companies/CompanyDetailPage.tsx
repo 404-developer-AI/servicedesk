@@ -223,7 +223,7 @@ function OverviewTab({ company }: { company: Company }) {
 
   return (
     <section className="glass-card space-y-5 p-5">
-      <CompanyFormFields form={form} setForm={setForm} />
+      <CompanyFormFields form={form} setForm={setForm} adsolutLinked={Boolean(company.adsolutId)} />
       <div className="flex justify-end">
         <Button onClick={() => save.mutate()} disabled={save.isPending}>
           {save.isPending ? "Saving…" : "Save changes"}

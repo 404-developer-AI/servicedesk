@@ -16,6 +16,12 @@ public enum AdsolutUpsertOutcome
     SkippedUpdateToggleOff,
     /// No match exists and the create-toggle is OFF.
     SkippedCreateToggleOff,
+    /// v0.0.27 — match exists, update-toggle ON, but the inbound row hashes
+    /// identically to the locally stored <c>adsolut_synced_hash</c>. This is
+    /// the inbound half of the loop-preventie: an echo-pull right after a
+    /// successful push must not produce another UPDATE (no SignalR
+    /// broadcast, no audit-ruis, no advance of <c>updated_utc</c>).
+    SkippedNoChange,
 }
 
 /// One transaction's worth of toggles + cursor — captured at the start of

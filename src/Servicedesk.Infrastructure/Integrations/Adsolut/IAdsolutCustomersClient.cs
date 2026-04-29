@@ -11,6 +11,8 @@ public sealed record AdsolutCustomer(
     Guid Id,
     string Name,
     string? Code,
+    string? AlphaCode,
+    string? Number,
     string Email,
     string Phone,
     string MobilePhone,

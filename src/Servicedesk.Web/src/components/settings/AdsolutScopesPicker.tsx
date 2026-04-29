@@ -45,7 +45,14 @@ const SCOPE_CATALOG: readonly ScopeCatalogEntry[] = [
     name: "WK.BE.Accounting.Read",
     label: "Accounting (read)",
     description:
-      "Lists Customers, Suppliers and other Accounting data. Required for the v0.0.26 Companies pull.",
+      "Lists Customers, Suppliers and other Accounting data. Required for the Companies pull (v0.0.26+).",
+    group: "required",
+  },
+  {
+    name: "WK.BE.Accounting.Write",
+    label: "Accounting (write)",
+    description:
+      "Required for the v0.0.27 Companies push (POST/PUT /customers). Without it the push-tak comes back with 403 from Wolters Kluwer on every write attempt. Promoted from optional to required in v0.0.27 — installs upgrading from v0.0.26 get this scope appended automatically and need to reconnect to bind it to a fresh refresh token.",
     group: "required",
   },
   {
@@ -54,13 +61,6 @@ const SCOPE_CATALOG: readonly ScopeCatalogEntry[] = [
     description:
       "Lets the id_token carry the authorizing user's display name + email. Cosmetic — you'll see 'Connected as <subject>' instead of '<email>' without it.",
     group: "recommended",
-  },
-  {
-    name: "WK.BE.Accounting.Write",
-    label: "Accounting (write)",
-    description:
-      "Required when v0.0.27 (Servicedesk → Adsolut Companies push) ships. Off by default until then — granting it on a pull-only install widens the blast-radius of a leaked refresh token without benefit.",
-    group: "optional",
   },
 ] as const;
 
@@ -202,7 +202,7 @@ export function AdsolutScopesPicker({ entry, queryKey, needsReconnect }: Props) 
         <div className="space-y-4 px-4 py-4">
           <ScopeGroup
             title="Required"
-            subtitle="Always granted; needed for v0.0.26 connect + Companies pull."
+            subtitle="Always granted; needed for v0.0.27 bidirectional Companies sync."
             entries={grouped.required}
             checked={checked}
             disabled
@@ -215,13 +215,15 @@ export function AdsolutScopesPicker({ entry, queryKey, needsReconnect }: Props) 
             checked={checked}
             onToggle={toggle}
           />
-          <ScopeGroup
-            title="Optional"
-            subtitle="Default off. Forward-compat for upcoming versions."
-            entries={grouped.optional}
-            checked={checked}
-            onToggle={toggle}
-          />
+          {grouped.optional.length > 0 && (
+            <ScopeGroup
+              title="Optional"
+              subtitle="Default off. Forward-compat for upcoming versions."
+              entries={grouped.optional}
+              checked={checked}
+              onToggle={toggle}
+            />
+          )}
 
           {unknown.length > 0 && (
             <div className="rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-xs">

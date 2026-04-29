@@ -187,6 +187,8 @@ public sealed class AdsolutCustomersClient : IAdsolutCustomersClient
                 Id: id,
                 Name: TryGetString(el, "name") ?? string.Empty,
                 Code: TryGetString(el, "code"),
+                AlphaCode: TryGetString(el, "alphaCode"),
+                Number: TryGetString(el, "number"),
                 Email: TryGetString(el, "email") ?? string.Empty,
                 Phone: TryGetString(el, "phone") ?? string.Empty,
                 MobilePhone: TryGetString(el, "mobilePhone") ?? string.Empty,

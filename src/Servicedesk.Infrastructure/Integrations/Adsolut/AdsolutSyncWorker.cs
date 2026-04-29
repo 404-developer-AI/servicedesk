@@ -118,6 +118,7 @@ public sealed class AdsolutSyncWorker : BackgroundService
         var stateStore = sp.GetRequiredService<IAdsolutSyncStateStore>();
         var customers = sp.GetRequiredService<IAdsolutCustomersClient>();
         var upserter = sp.GetRequiredService<IAdsolutCompanyUpserter>();
+        var pusher = sp.GetRequiredService<IAdsolutCompanyPusher>();
         var auditLog = sp.GetRequiredService<IIntegrationAuditLogger>();
         var notifier = sp.GetRequiredService<IIntegrationStatusNotifier>();
 
@@ -161,7 +162,15 @@ public sealed class AdsolutSyncWorker : BackgroundService
 
         var pullUpdate = await settings.GetAsync<bool>(SettingKeys.Adsolut.SyncPullCompaniesUpdate, ct);
         var pullCreate = await settings.GetAsync<bool>(SettingKeys.Adsolut.SyncPullCompaniesCreate, ct);
-        var includeSuppliers = await settings.GetAsync<bool>(SettingKeys.Adsolut.SyncIncludeSuppliers, ct);
+        // v0.0.27 — IncludeSuppliers is backend-force OFF until the v0.0.28
+        // bidirectional-suppliers branch lands. Even if the setting row is
+        // flipped to true (UI lock circumvented, SQL override, default
+        // change in a fork), the worker ignores it. The setting stays in
+        // place so the UI can show the toggle as "In development".
+        _ = await settings.GetAsync<bool>(SettingKeys.Adsolut.SyncIncludeSuppliers, ct);
+        var includeSuppliers = false;
+        var pushUpdate = await settings.GetAsync<bool>(SettingKeys.Adsolut.PushUpdateExistingCustomers, ct);
+        var pushCreate = await settings.GetAsync<bool>(SettingKeys.Adsolut.PushCreateNewCustomers, ct);
         var linkDomains = await settings.GetAsync<bool>(SettingKeys.Adsolut.SyncLinkCompanyDomains, ct);
         // Load the freemail blacklist once per tick (same source the
         // mail-ingest auto-linker uses, so the two paths can never disagree
@@ -171,6 +180,7 @@ public sealed class AdsolutSyncWorker : BackgroundService
             pullUpdate, pullCreate,
             LinkCompanyDomainsFromEmail: linkDomains,
             FreemailBlacklist: freemailBlacklist);
+        var pushOptions = new AdsolutPushOptions(pushUpdate, pushCreate);
 
         var existingState = await stateStore.GetAsync(ct);
         // Snap the cursor BEFORE making any upstream calls so a slow page
@@ -190,6 +200,16 @@ public sealed class AdsolutSyncWorker : BackgroundService
             if (includeSuppliers)
             {
                 await PullEndpointAsync(customers.ListSuppliersAsync, administrationId, modifiedSince, options, upserter, counts, ct);
+            }
+
+            // v0.0.27 push-tak — runs after the pull pass so any inbound
+            // updates we just absorbed are visible (and protected by the
+            // hash-no-op guard) before we evaluate drift candidates. Both
+            // toggles default OFF — most ticks short-circuit at the
+            // LoadCandidatesAsync gate without a SQL round-trip.
+            if (pushOptions.PushUpdateEnabled || pushOptions.PushCreateEnabled)
+            {
+                await PushTakAsync(pusher, administrationId, pushOptions, counts, ct);
             }
         }
         catch (AdsolutApiException ex)
@@ -234,6 +254,14 @@ public sealed class AdsolutSyncWorker : BackgroundService
                 updated = counts.Updated,
                 skippedLocalNewer = counts.SkippedLocalNewer,
                 skippedToggleOff = counts.SkippedToggleOff,
+                skippedNoChange = counts.SkippedNoChange,
+                pushSeen = counts.PushSeen,
+                pushCreated = counts.PushCreated,
+                pushUpdated = counts.PushUpdated,
+                pushSkippedNoChange = counts.PushSkippedNoChange,
+                pushSkippedNoLocalChange = counts.PushSkippedNoLocalChange,
+                pushSkippedToggleOff = counts.PushSkippedToggleOff,
+                pushSkippedMissingAdsolutNumber = counts.PushSkippedMissingAdsolutNumber,
                 durationMs = (int)stopwatch.ElapsedMilliseconds,
                 modifiedSince,
             }), ct);
@@ -250,6 +278,63 @@ public sealed class AdsolutSyncWorker : BackgroundService
             AdsolutEventTypes.Integration,
             await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, stateStore, ct),
             ct);
+    }
+
+    /// v0.0.27 push-tak — read drift candidates from companies, run each
+    /// through the pusher. Cap rows per tick to keep the WK API load
+    /// predictable; a backlog from "first push after admin opt-in" gets
+    /// chunked across ticks instead of a single 10K-row burst. Per-row
+    /// AdsolutApiException is swallowed-with-audit so a bad row doesn't
+    /// block the rest of the batch — the pusher already wrote the
+    /// integration_audit row.
+    private async Task PushTakAsync(
+        IAdsolutCompanyPusher pusher,
+        Guid administrationId,
+        AdsolutPushOptions options,
+        AdsolutSyncCounters counts,
+        CancellationToken ct)
+    {
+        const int PerTickCap = 200;
+        var candidates = await pusher.LoadCandidatesAsync(options, PerTickCap, ct);
+        foreach (var candidate in candidates)
+        {
+            counts.PushSeen++;
+            try
+            {
+                var outcome = await pusher.PushOneAsync(administrationId, candidate, options, ct);
+                switch (outcome)
+                {
+                    case AdsolutPushOutcome.Created:
+                        counts.PushCreated++;
+                        break;
+                    case AdsolutPushOutcome.Updated:
+                        counts.PushUpdated++;
+                        break;
+                    case AdsolutPushOutcome.SkippedNoChange:
+                        counts.PushSkippedNoChange++;
+                        break;
+                    case AdsolutPushOutcome.SkippedNoLocalChange:
+                        counts.PushSkippedNoLocalChange++;
+                        break;
+                    case AdsolutPushOutcome.SkippedUpdateToggleOff:
+                    case AdsolutPushOutcome.SkippedCreateToggleOff:
+                        counts.PushSkippedToggleOff++;
+                        break;
+                    case AdsolutPushOutcome.SkippedMissingAdsolutNumber:
+                        counts.PushSkippedMissingAdsolutNumber++;
+                        break;
+                }
+            }
+            catch (AdsolutApiException ex)
+            {
+                // Per-row failure already wrote a Warn/Error row via the
+                // invoker. Log at info-level so the worker output stays
+                // legible — we still continue with the next candidate.
+                _logger.LogInformation(
+                    "Adsolut push of company {CompanyId} failed: {Status} {Code}",
+                    candidate.Id, ex.HttpStatus, ex.UpstreamErrorCode);
+            }
+        }
     }
 
     private static async Task PullEndpointAsync(
@@ -292,6 +377,9 @@ public sealed class AdsolutSyncWorker : BackgroundService
                     case AdsolutUpsertOutcome.SkippedCreateToggleOff:
                         counts.SkippedToggleOff++;
                         break;
+                    case AdsolutUpsertOutcome.SkippedNoChange:
+                        counts.SkippedNoChange++;
+                        break;
                 }
             }
 
@@ -307,11 +395,22 @@ public sealed class AdsolutSyncWorker : BackgroundService
 
     private sealed class AdsolutSyncCounters
     {
+        // Pull-tak.
         public int Seen;
         public int Upserted;
         public int Updated;
         public int Created;
         public int SkippedLocalNewer;
         public int SkippedToggleOff;
+        public int SkippedNoChange;
+
+        // Push-tak (v0.0.27).
+        public int PushSeen;
+        public int PushCreated;
+        public int PushUpdated;
+        public int PushSkippedNoChange;
+        public int PushSkippedNoLocalChange;
+        public int PushSkippedToggleOff;
+        public int PushSkippedMissingAdsolutNumber;
     }
 }

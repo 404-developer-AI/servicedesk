@@ -107,4 +107,21 @@ public static class AdsolutEventTypes
     /// CustomersList / SuppliersList ticks so audit filters can separate
     /// diagnostic noise from operational sync traffic.
     public const string DebugLookup = "debug.lookup";
+
+    // ---- v0.0.27 Companies push (Servicedesk → Adsolut) ----------------
+
+    /// POST /acc/v1/customers — push-tak created a new customer in the
+    /// active dossier. One audit row per row pushed; admins can spot a
+    /// burst of creations from the integrations audit page.
+    public const string CustomersCreate = "customers.create";
+
+    /// PUT /acc/v1/customers/{id} — push-tak applied a local edit to an
+    /// already-linked customer. One row per push.
+    public const string CustomersUpdate = "customers.update";
+
+    /// GET /acc/v1/customers/{id} — read-back fallback the write-client
+    /// uses when POST/PUT response body did not carry a lastModified. Kept
+    /// distinct from CustomersList because filters on "list vs. by-id"
+    /// are easier to read in the audit table.
+    public const string CustomersGet = "customers.get";
 }

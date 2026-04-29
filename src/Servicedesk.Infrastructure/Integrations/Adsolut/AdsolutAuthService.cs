@@ -158,7 +158,44 @@ public sealed class AdsolutAuthService : IAdsolutAuthService
             ScopesAtAuthorize: scopes);
         await _connections.SaveAsync(connection, ct);
 
+        // v0.0.27 reset-on-connect-hook. Force every gating-toggle back to
+        // OFF so a re-authorize against a new dossier (or against the same
+        // dossier after a long break) cannot accidentally start syncing
+        // with stale toggle state. The behaviour-modifier toggle
+        // (LinkCompanyDomainsFromEmail) is intentionally NOT reset — its
+        // default is ON and an admin who turned it off does not want it
+        // silently flipped back on by a refresh-token rotation.
+        await ResetGatingTogglesAsync(actorId, actorRole, ct);
+
         return new AdsolutCallbackResult.Success(subject ?? string.Empty, email);
+    }
+
+    /// Force-resets every Adsolut sync-gating toggle to OFF. Called from
+    /// <see cref="CompleteCallbackAsync"/> after a successful authorize so
+    /// reconnects always start from a known-silent baseline. Audit-logged
+    /// via the regular <see cref="ISettingsService"/> path so each individual
+    /// flip lands in <c>audit_log</c> with the connecting admin as actor.
+    private async Task ResetGatingTogglesAsync(
+        string? actorId,
+        string? actorRole,
+        CancellationToken ct)
+    {
+        var actor = string.IsNullOrWhiteSpace(actorId) ? "system" : actorId!;
+        var role = string.IsNullOrWhiteSpace(actorRole) ? "system" : actorRole!;
+        string[] gatingKeys =
+        {
+            SettingKeys.Adsolut.SyncPullCompaniesUpdate,
+            SettingKeys.Adsolut.SyncPullCompaniesCreate,
+            SettingKeys.Adsolut.SyncIncludeSuppliers,
+            SettingKeys.Adsolut.PushUpdateExistingCustomers,
+            SettingKeys.Adsolut.PushCreateNewCustomers,
+            SettingKeys.Adsolut.PushUpdateExistingSuppliers,
+            SettingKeys.Adsolut.PushCreateNewSuppliers,
+        };
+        foreach (var key in gatingKeys)
+        {
+            await _settings.SetAsync(key, false, actor, role, ct);
+        }
     }
 
     // ---- /refresh -------------------------------------------------------

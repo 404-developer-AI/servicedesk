@@ -1689,6 +1689,21 @@ public sealed class DatabaseBootstrapper : IHostedService
         ALTER TABLE companies
             ADD COLUMN IF NOT EXISTS adsolut_synced_hash BYTEA NULL;
 
+        -- v0.0.27 (push fix) — Adsolut's write-shape (UpdateCustomerRequest /
+        -- AddCustomerRequest) carries `alphaCode` + `number` (klantnummer),
+        -- not the read-side `code` we already mirror. Both must round-trip
+        -- on PUT or WK rejects with `UpdateCustomerNumberNotValid` (it
+        -- treats an absent `number` as "clear klantnummer" which is
+        -- forbidden after creation). We mirror both here so the push-tak
+        -- can echo them back unchanged. Pull-side populates them on the
+        -- next tick after this column was added; rows that haven't seen a
+        -- pull-tick since the column appeared stay NULL — the push-tak
+        -- skips a row with NULL adsolut_number on update to avoid the
+        -- WK rejection (next pull fixes it).
+        ALTER TABLE companies
+            ADD COLUMN IF NOT EXISTS adsolut_number      TEXT NULL,
+            ADD COLUMN IF NOT EXISTS adsolut_alpha_code  TEXT NULL;
+
         -- One-shot data migrations (non-idempotent in nature, so they need
         -- a marker rather than relying on IF NOT EXISTS). The schema-side
         -- ALTERs above stay idempotent; this table tracks the rare
@@ -1730,6 +1745,36 @@ public sealed class DatabaseBootstrapper : IHostedService
                   AND updated_utc - adsolut_last_modified <= INTERVAL '1 minute';
                 INSERT INTO data_migrations (name)
                     VALUES ('v0_0_27_align_pull_touched_updated_utc');
+            END IF;
+        END $do$;
+
+        -- v0.0.27 — bestaande installs die op de v0.0.26-scope-lijst zaten
+        -- ('openid offline_access profile WK.BE.Administrations
+        -- WK.BE.Accounting.Read') krijgen WK.BE.Accounting.Write erbij,
+        -- anders komt elke push-tak PUT/POST terug als 403 vanuit Wolters
+        -- Kluwer. Niet idempotent qua effect (we schrijven settings.value),
+        -- dus achter een data_migrations marker. De saved scope-string zal
+        -- na deze append verschillen van scopes_at_authorize op de actieve
+        -- connectie → de "Reconnect required"-pill in de UI fire'd
+        -- automatisch zodra de admin de pagina opent.
+        --
+        -- We raken alleen de Adsolut.Scopes-rij aan, alleen wanneer de
+        -- scope nog ontbreekt, en preserveren de bestaande spaties +
+        -- volgorde door eenvoudig te concateneren.
+        DO $do$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM data_migrations
+                WHERE name = 'v0_0_27_add_accounting_write_scope'
+            ) THEN
+                UPDATE settings
+                SET value = btrim(value || ' WK.BE.Accounting.Write'),
+                    updated_utc = now()
+                WHERE key = 'Adsolut.Scopes'
+                  AND value IS NOT NULL
+                  AND value NOT LIKE '%WK.BE.Accounting.Write%';
+                INSERT INTO data_migrations (name)
+                    VALUES ('v0_0_27_add_accounting_write_scope');
             END IF;
         END $do$;
         """;

@@ -7,20 +7,35 @@ import type { CompanyInput } from "@/lib/ticket-api";
 /// Shared edit-form for companies. Used by the Overview-tab on
 /// `/companies/:id` and by the `CompanyEditDialog` that opens from the
 /// ticket-side-panel. Pure render + setter — the caller owns the form
-/// state and the save mutation.
+/// state and the save mutation. When <c>adsolutLinked</c> is true, the
+/// customer-code field is locked: Adsolut treats <c>code</c> as a
+/// non-mutable identifier (per the v0.0.27 spec — push-tak does not
+/// include code in PUT bodies), so editing it here would silently drift
+/// out of sync.
 export function CompanyFormFields({
   form,
   setForm,
+  adsolutLinked = false,
 }: {
   form: CompanyInput;
   setForm: Dispatch<SetStateAction<CompanyInput>>;
+  adsolutLinked?: boolean;
 }) {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Customer code *" required>
+        <Field
+          label="Customer code *"
+          required
+          hint={
+            adsolutLinked
+              ? "Locked while linked to Adsolut — code is immutable upstream."
+              : undefined
+          }
+        >
           <Input
             value={form.code}
+            disabled={adsolutLinked}
             onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
           />
         </Field>
@@ -127,10 +142,12 @@ export function CompanyFormFields({
 export function Field({
   label,
   required,
+  hint,
   children,
 }: {
   label: string;
   required?: boolean;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -140,6 +157,9 @@ export function Field({
         {required && <span className="ml-0.5 text-destructive">*</span>}
       </span>
       {children}
+      {hint && (
+        <span className="text-[11px] text-muted-foreground/60">{hint}</span>
+      )}
     </label>
   );
 }
