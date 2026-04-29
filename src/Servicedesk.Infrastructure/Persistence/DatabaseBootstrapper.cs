@@ -1675,6 +1675,63 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- updates last_error_utc) flips it back to amber automatically.
         ALTER TABLE adsolut_sync_state
             ADD COLUMN IF NOT EXISTS acknowledged_utc TIMESTAMPTZ NULL;
+
+        -- v0.0.27 (push prep) — companies.adsolut_synced_hash carries the
+        -- SHA-256 of the field-set we mirror to/from Adsolut (name, code,
+        -- combined VAT, address-blok, phone, email). Set on every successful
+        -- pull-update by AdsolutCompanyUpserter and on every successful push
+        -- by the v0.0.27 push-tak. Acts as the no-op guard: when the inbound
+        -- row hashes to the same value the local row already has, no UPDATE
+        -- happens (no SignalR broadcast, no audit-ruis); when the local row
+        -- hashes to the same value as adsolut_synced_hash, no PUT happens
+        -- (closes the echo-pull loop). NULL until the first sync tick after
+        -- this column was added.
+        ALTER TABLE companies
+            ADD COLUMN IF NOT EXISTS adsolut_synced_hash BYTEA NULL;
+
+        -- One-shot data migrations (non-idempotent in nature, so they need
+        -- a marker rather than relying on IF NOT EXISTS). The schema-side
+        -- ALTERs above stay idempotent; this table tracks the rare
+        -- one-time UPDATEs that align historical data after a behavioural
+        -- change.
+        CREATE TABLE IF NOT EXISTS data_migrations (
+            name        TEXT        PRIMARY KEY,
+            applied_utc TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        -- v0.0.27 (push prep) — eenmalige aligning van updated_utc met
+        -- adsolut_last_modified voor companies-rijen die puur door eerdere
+        -- pulls werden geraakt. Vóór v0.0.27 zette de upserter
+        -- updated_utc = now() bij elke pull-update; dat patroon
+        -- markeerde elke gepullde rij als "lokaal nieuwer" en zou de v0.0.27
+        -- push-selector valse positieven laten oppikken zodra hij live gaat.
+        --
+        -- Conservatieve gates voorkomen dat een echte agent-edit per ongeluk
+        -- wordt platgetrokken:
+        --  1) adsolut_id IS NOT NULL   — alleen Adsolut-gelinkte rijen
+        --  2) adsolut_last_modified IS NOT NULL
+        --  3) updated_utc > adsolut_last_modified
+        --  4) gap <= 1 minute          — agent-edits >1 min ná de pull
+        --                                blijven onaangeraakt
+        --
+        -- Eén keer uitvoeren via data_migrations marker; volgende restarts
+        -- zien hetzelfde marker en slaan over.
+        DO $do$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM data_migrations
+                WHERE name = 'v0_0_27_align_pull_touched_updated_utc'
+            ) THEN
+                UPDATE companies
+                SET updated_utc = adsolut_last_modified
+                WHERE adsolut_id IS NOT NULL
+                  AND adsolut_last_modified IS NOT NULL
+                  AND updated_utc > adsolut_last_modified
+                  AND updated_utc - adsolut_last_modified <= INTERVAL '1 minute';
+                INSERT INTO data_migrations (name)
+                    VALUES ('v0_0_27_align_pull_touched_updated_utc');
+            END IF;
+        END $do$;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

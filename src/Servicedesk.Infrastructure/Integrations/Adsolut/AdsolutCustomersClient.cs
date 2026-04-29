@@ -1,16 +1,21 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace Servicedesk.Infrastructure.Integrations.Adsolut;
 
 public sealed class AdsolutCustomersClient : IAdsolutCustomersClient
 {
     private readonly AdsolutHttpInvoker _invoker;
+    private readonly ILogger<AdsolutCustomersClient> _logger;
 
-    public AdsolutCustomersClient(AdsolutHttpInvoker invoker)
+    public AdsolutCustomersClient(
+        AdsolutHttpInvoker invoker,
+        ILogger<AdsolutCustomersClient> logger)
     {
         _invoker = invoker;
+        _logger = logger;
     }
 
     public Task<AdsolutPagedResult<AdsolutCustomer>> ListCustomersAsync(
@@ -62,7 +67,7 @@ public sealed class AdsolutCustomersClient : IAdsolutCustomersClient
         // `/adm/{administrationId}/...`. The full URL is the concatenation —
         // earlier 404s were missing the `/acc/v1` segment.
         var url = $"{baseUrl}/acc/v1/adm/{administrationId}/{resource}{query}";
-        return await _invoker.SendAsync(
+        var parsed = await _invoker.SendAsync(
             eventType: eventType,
             buildRequest: () => new HttpRequestMessage(HttpMethod.Get, url),
             parseSuccess: async (response, c) =>
@@ -78,13 +83,41 @@ public sealed class AdsolutCustomersClient : IAdsolutCustomersClient
                 modifiedSince = modifiedSince?.UtcDateTime,
             },
             ct: ct);
+
+        // v0.0.27 strict-parse canary — Adsolut's empirically observed shape
+        // is ISO 8601 with explicit `+00:00` offset (verified against the
+        // production dossier). If they ever switch to offset-less serialisation
+        // we want to know fast: the existing parser falls back to
+        // AssumeUniversal which would silently absorb a 1-2 hour skew that
+        // breaks the v0.0.27 push-loop preventie. One log-warning per page
+        // is cheap visibility without spamming the audit table.
+        if (parsed.OffsetlessLastModifiedCount > 0)
+        {
+            _logger.LogWarning(
+                "Adsolut {Resource} page {Page} returned {Count} offset-less lastModified values; parser falls back to AssumeUniversal. Review WK serialisation immediately.",
+                resource,
+                safePage,
+                parsed.OffsetlessLastModifiedCount);
+        }
+
+        return parsed.Page;
     }
 
-    private static AdsolutPagedResult<AdsolutCustomer> ParseCustomersPage(string body)
+    /// Internal wrapper around <see cref="AdsolutPagedResult{T}"/> that
+    /// carries the strict-parse canary count alongside the page. Public API
+    /// (<see cref="IAdsolutCustomersClient"/>) only sees the page; the count
+    /// stays in this client where the warning is emitted.
+    private readonly record struct PageWithCanary(
+        AdsolutPagedResult<AdsolutCustomer> Page,
+        int OffsetlessLastModifiedCount);
+
+    private static PageWithCanary ParseCustomersPage(string body)
     {
         if (string.IsNullOrWhiteSpace(body))
         {
-            return new AdsolutPagedResult<AdsolutCustomer>(0, 0, 0, Array.Empty<AdsolutCustomer>());
+            return new PageWithCanary(
+                new AdsolutPagedResult<AdsolutCustomer>(0, 0, 0, Array.Empty<AdsolutCustomer>()),
+                0);
         }
 
         using var doc = JsonDocument.Parse(body);
@@ -94,28 +127,43 @@ public sealed class AdsolutCustomersClient : IAdsolutCustomersClient
         // shape or a bare array (legacy/test fixtures).
         if (root.ValueKind == JsonValueKind.Array)
         {
-            var bare = ParseItems(root);
-            return new AdsolutPagedResult<AdsolutCustomer>(1, bare.Count, 1, bare);
+            var (bare, bareOffsetless) = ParseItems(root);
+            return new PageWithCanary(
+                new AdsolutPagedResult<AdsolutCustomer>(1, bare.Count, 1, bare),
+                bareOffsetless);
         }
 
         if (root.ValueKind != JsonValueKind.Object)
         {
-            return new AdsolutPagedResult<AdsolutCustomer>(0, 0, 0, Array.Empty<AdsolutCustomer>());
+            return new PageWithCanary(
+                new AdsolutPagedResult<AdsolutCustomer>(0, 0, 0, Array.Empty<AdsolutCustomer>()),
+                0);
         }
 
-        var items = root.TryGetProperty("items", out var itemsEl) && itemsEl.ValueKind == JsonValueKind.Array
-            ? ParseItems(itemsEl)
-            : (IReadOnlyList<AdsolutCustomer>)Array.Empty<AdsolutCustomer>();
+        IReadOnlyList<AdsolutCustomer> items;
+        int offsetlessCount;
+        if (root.TryGetProperty("items", out var itemsEl) && itemsEl.ValueKind == JsonValueKind.Array)
+        {
+            (items, offsetlessCount) = ParseItems(itemsEl);
+        }
+        else
+        {
+            items = Array.Empty<AdsolutCustomer>();
+            offsetlessCount = 0;
+        }
 
         var currentPage = TryGetInt(root, "currentPage", 1);
         var totalItems = TryGetInt(root, "totalItems", items.Count);
         var totalPages = TryGetInt(root, "totalPages", currentPage);
-        return new AdsolutPagedResult<AdsolutCustomer>(currentPage, totalItems, totalPages, items);
+        return new PageWithCanary(
+            new AdsolutPagedResult<AdsolutCustomer>(currentPage, totalItems, totalPages, items),
+            offsetlessCount);
     }
 
-    private static List<AdsolutCustomer> ParseItems(JsonElement array)
+    private static (List<AdsolutCustomer> Items, int OffsetlessCount) ParseItems(JsonElement array)
     {
         var list = new List<AdsolutCustomer>(array.GetArrayLength());
+        var offsetlessCount = 0;
         foreach (var el in array.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
@@ -132,6 +180,9 @@ public sealed class AdsolutCustomersClient : IAdsolutCustomersClient
                 : $"{streetName} {streetNumber}".Trim();
             var line2 = string.IsNullOrEmpty(boxNumber) ? string.Empty : $"Bus {boxNumber}";
 
+            var (lastModified, wasOffsetless) = TryGetDateTimeOffset(el, "lastModified");
+            if (wasOffsetless) offsetlessCount++;
+
             list.Add(new AdsolutCustomer(
                 Id: id,
                 Name: TryGetString(el, "name") ?? string.Empty,
@@ -146,9 +197,9 @@ public sealed class AdsolutCustomersClient : IAdsolutCustomersClient
                 Country: TryGetString(el, "country") ?? string.Empty,
                 VatNumber: TryGetString(el, "vatNumber") ?? string.Empty,
                 CountryPrefixVatNumber: TryGetString(el, "countryPrefixVatNumber") ?? string.Empty,
-                LastModified: TryGetDateTimeOffset(el, "lastModified")));
+                LastModified: lastModified));
         }
-        return list;
+        return (list, offsetlessCount);
     }
 
     private static int TryGetInt(JsonElement el, string name, int fallback)
@@ -178,13 +229,35 @@ public sealed class AdsolutCustomersClient : IAdsolutCustomersClient
         };
     }
 
-    private static DateTimeOffset? TryGetDateTimeOffset(JsonElement el, string name)
+    private static (DateTimeOffset? Value, bool WasOffsetless) TryGetDateTimeOffset(JsonElement el, string name)
     {
-        if (!el.TryGetProperty(name, out var prop) || prop.ValueKind != JsonValueKind.String) return null;
+        if (!el.TryGetProperty(name, out var prop) || prop.ValueKind != JsonValueKind.String)
+        {
+            return (null, false);
+        }
         var raw = prop.GetString();
-        if (string.IsNullOrEmpty(raw)) return null;
+        if (string.IsNullOrEmpty(raw)) return (null, false);
+
+        var offsetless = LooksOffsetless(raw);
         return DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var dto)
-            ? dto.ToUniversalTime()
-            : null;
+            ? (dto.ToUniversalTime(), offsetless)
+            : (null, offsetless);
+    }
+
+    /// True when an ISO 8601 datetime string lacks an explicit offset suffix
+    /// (no trailing 'Z', no '+HH:MM' / '+HHMM' / '-HH:MM' / '-HHMM' tail).
+    /// Such a string parses with DateTimeStyles.AssumeUniversal as UTC, but
+    /// if WK actually means Brussels-local that introduces silent 1-2h skew.
+    /// Public for unit-testability.
+    public static bool LooksOffsetless(string raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return false;
+        // Trailing 'Z' → UTC offset.
+        if (raw[^1] == 'Z') return false;
+        // Trailing '+HH:MM' or '-HH:MM' (length >= 6, char at [^6] is sign).
+        if (raw.Length >= 6 && (raw[^6] == '+' || raw[^6] == '-') && raw[^3] == ':') return false;
+        // Trailing '+HHMM' or '-HHMM' (length >= 5, char at [^5] is sign).
+        if (raw.Length >= 5 && (raw[^5] == '+' || raw[^5] == '-')) return false;
+        return true;
     }
 }
