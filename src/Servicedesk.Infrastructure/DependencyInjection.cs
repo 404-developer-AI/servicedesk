@@ -139,6 +139,7 @@ public static class DependencyInjection
         services.AddSingleton<ICertRenewalTrigger, FileSignalCertRenewalTrigger>();
         services.AddSingleton<ISecurityActivitySnapshot, InMemorySecurityActivitySnapshot>();
         services.AddSingleton<IHealthAggregator, HealthAggregator>();
+        services.AddSingleton<IIntegrationsHealthAggregator, IntegrationsHealthAggregator>();
         services.AddSingleton<IHealthSubsystemReset, HealthSubsystemReset>();
         // Default to the no-op notifiers; the Api project overrides these
         // with the SignalR-backed implementations.

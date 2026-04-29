@@ -50,6 +50,8 @@ public static class AdsolutEndpoints
         admin.MapGet("/sync", GetSyncState).WithName("GetAdsolutSyncState").WithOpenApi();
         admin.MapPost("/sync", TriggerSyncNow).WithName("TriggerAdsolutSyncNow").WithOpenApi();
 
+        admin.MapGet("/debug/lookup", DebugLookup).WithName("AdsolutDebugLookup").WithOpenApi();
+
         // Anonymous — see header comment. Validation happens via the
         // tamper-evident intent cookie + the upstream code exchange.
         app.MapGet(CallbackPath, HandleCallback)
@@ -68,6 +70,7 @@ public static class AdsolutEndpoints
         ISettingsService settings,
         IProtectedSecretStore secrets,
         IAdsolutConnectionStore connections,
+        IAdsolutSyncStateStore syncStateStore,
         HttpContext http,
         CancellationToken ct)
     {
@@ -80,7 +83,7 @@ public static class AdsolutEndpoints
         var publicBase = await ResolvePublicBaseAsync(http, settings, ct);
         var redirectUri = publicBase + CallbackPath;
 
-        var state = await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, ct);
+        var state = await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, syncStateStore, ct);
 
         // v0.0.26 (post-feature) — surface whether the saved Settings.Adsolut.Scopes
         // string differs from the scope-list bound to the current refresh
@@ -179,6 +182,7 @@ public static class AdsolutEndpoints
         ISettingsService settings,
         IProtectedSecretStore secrets,
         IAdsolutConnectionStore connections,
+        IAdsolutSyncStateStore syncStateStore,
         IAuditLogger audit,
         IIntegrationStatusNotifier statusNotifier,
         IDataProtectionProvider dataProtection,
@@ -255,7 +259,7 @@ public static class AdsolutEndpoints
                     }), ct);
                 await statusNotifier.NotifyStatusChangedAsync(
                     AdsolutEventTypes.Integration,
-                    await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, ct),
+                    await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, syncStateStore, ct),
                     ct);
                 return RedirectToSpa(publicBase, "connected");
 
@@ -285,6 +289,7 @@ public static class AdsolutEndpoints
         ISettingsService settings,
         IProtectedSecretStore secrets,
         IAdsolutConnectionStore connections,
+        IAdsolutSyncStateStore syncStateStore,
         IIntegrationStatusNotifier statusNotifier,
         ILoggerFactory loggerFactory,
         CancellationToken ct)
@@ -323,7 +328,7 @@ public static class AdsolutEndpoints
             UserAgent: http.Request.Headers.UserAgent.ToString()), ct);
         await statusNotifier.NotifyStatusChangedAsync(
             AdsolutEventTypes.Integration,
-            await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, ct),
+            await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, syncStateStore, ct),
             ct);
         return Results.NoContent();
     }
@@ -384,6 +389,7 @@ public static class AdsolutEndpoints
         IAuditLogger audit,
         ISettingsService settings,
         IAdsolutConnectionStore connections,
+        IAdsolutSyncStateStore syncStateStore,
         IIntegrationStatusNotifier statusNotifier,
         CancellationToken ct)
     {
@@ -402,7 +408,7 @@ public static class AdsolutEndpoints
             Payload: new { configured = true }), ct);
         await statusNotifier.NotifyStatusChangedAsync(
             AdsolutEventTypes.Integration,
-            await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, ct),
+            await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, syncStateStore, ct),
             ct);
         return Results.NoContent();
     }
@@ -413,6 +419,7 @@ public static class AdsolutEndpoints
         IAuditLogger audit,
         ISettingsService settings,
         IAdsolutConnectionStore connections,
+        IAdsolutSyncStateStore syncStateStore,
         IIntegrationStatusNotifier statusNotifier,
         CancellationToken ct)
     {
@@ -428,7 +435,7 @@ public static class AdsolutEndpoints
             Payload: new { configured = false }), ct);
         await statusNotifier.NotifyStatusChangedAsync(
             AdsolutEventTypes.Integration,
-            await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, ct),
+            await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, syncStateStore, ct),
             ct);
         return Results.NoContent();
     }
@@ -507,6 +514,7 @@ public static class AdsolutEndpoints
         HttpContext http,
         IAdsolutAdministrationsClient adminClient,
         IAdsolutConnectionStore connections,
+        IAdsolutSyncStateStore syncStateStore,
         IAuditLogger audit,
         ISettingsService settings,
         IProtectedSecretStore secrets,
@@ -550,16 +558,22 @@ public static class AdsolutEndpoints
             Payload: new { administrationId = req.AdministrationId }), ct);
         await statusNotifier.NotifyStatusChangedAsync(
             AdsolutEventTypes.Integration,
-            await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, ct),
+            await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, syncStateStore, ct),
             ct);
         return Results.Ok(new { administrationId = req.AdministrationId });
     }
 
     private static async Task<IResult> GetSyncState(
         IAdsolutSyncStateStore syncState,
+        ISettingsService settings,
         CancellationToken ct)
     {
         var state = await syncState.GetAsync(ct);
+        var intervalMinutes = await settings.GetAsync<int>(SettingKeys.Adsolut.SyncIntervalMinutes, ct);
+        if (intervalMinutes <= 0) intervalMinutes = 5;
+        var nextSyncUtc = Servicedesk.Infrastructure.Health.IntegrationsHealthAggregator
+            .ComputeNextSyncUtc(state?.LastDeltaSyncUtc, intervalMinutes);
+
         return Results.Ok(state is null
             ? new
             {
@@ -571,6 +585,8 @@ public static class AdsolutEndpoints
                 companiesUpserted = 0,
                 companiesSkippedLoserInConflict = 0,
                 updatedUtc = (DateTime?)null,
+                nextSyncUtc,
+                intervalMinutes,
             }
             : new
             {
@@ -582,6 +598,8 @@ public static class AdsolutEndpoints
                 companiesUpserted = state.CompaniesUpserted,
                 companiesSkippedLoserInConflict = state.CompaniesSkippedLoserInConflict,
                 updatedUtc = (DateTime?)state.UpdatedUtc,
+                nextSyncUtc = (DateTime?)nextSyncUtc,
+                intervalMinutes,
             });
     }
 
@@ -603,6 +621,96 @@ public static class AdsolutEndpoints
     }
 
     public sealed record SelectAdministrationRequest([property: Required] Guid AdministrationId);
+
+    // ---- /debug/lookup --------------------------------------------------
+    //
+    // Diagnostic-only: lets an admin probe Adsolut's /customers or /suppliers
+    // list-endpoint with a Code= filter from the settings UI and inspect the
+    // raw JSON response. Useful for confirming what fields WK actually sends
+    // for a specific relation before we wire them into the upserter. We do
+    // NOT proxy arbitrary paths — kind is a fixed enum and only the Code
+    // filter is forwarded — so this cannot become a generic "any-API" hole.
+
+    private static readonly HashSet<string> AllowedDebugKinds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "customer",
+        "supplier",
+    };
+
+    private static async Task<IResult> DebugLookup(
+        string? kind,
+        string? code,
+        IAdsolutConnectionStore connections,
+        AdsolutHttpInvoker invoker,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(kind) || !AllowedDebugKinds.Contains(kind))
+        {
+            return Results.BadRequest(new { error = "invalid_kind", message = "kind must be 'customer' or 'supplier'." });
+        }
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            return Results.BadRequest(new { error = "missing_code" });
+        }
+        var trimmed = code.Trim();
+        if (trimmed.Length > 32)
+        {
+            return Results.BadRequest(new { error = "invalid_code", message = "code must be 32 characters or fewer." });
+        }
+        // Restrict to the alphabet Adsolut uses for relation codes (and a
+        // few common separators). Keeps the upstream URL trivially safe and
+        // blocks "code=&Limit=999" style escape attempts.
+        foreach (var ch in trimmed)
+        {
+            if (!(char.IsLetterOrDigit(ch) || ch == '-' || ch == '_' || ch == '.' || ch == '/'))
+            {
+                return Results.BadRequest(new { error = "invalid_code", message = "code may contain letters, digits, '-', '_', '.', '/' only." });
+            }
+        }
+
+        var connection = await connections.GetAsync(ct);
+        if (connection is null)
+        {
+            return Results.BadRequest(new { error = "not_connected" });
+        }
+        if (connection.AdministrationId is not Guid administrationId)
+        {
+            return Results.BadRequest(new { error = "no_administration", message = "Activate a dossier first." });
+        }
+
+        var resource = string.Equals(kind, "supplier", StringComparison.OrdinalIgnoreCase) ? "suppliers" : "customers";
+        var baseUrl = await invoker.ResolveBaseUrlAsync(ct);
+        var url = $"{baseUrl}/acc/v1/adm/{administrationId}/{resource}?Code={Uri.EscapeDataString(trimmed)}&Limit=10";
+
+        try
+        {
+            var raw = await invoker.SendRawAsync(
+                eventType: AdsolutEventTypes.DebugLookup,
+                buildRequest: () => new HttpRequestMessage(HttpMethod.Get, url),
+                auditPayload: new { kind = resource, code = trimmed, administrationId },
+                ct: ct);
+            return Results.Ok(new
+            {
+                status = raw.Status,
+                requestUrl = raw.RequestUrl,
+                upstreamErrorCode = raw.UpstreamErrorCode,
+                body = raw.Body,
+            });
+        }
+        catch (AdsolutApiException ex)
+        {
+            // Refresh / transport failure — no upstream body to show. Surface
+            // it in the same envelope so the UI does not need a second code
+            // path; status 0 signals "never reached Adsolut".
+            return Results.Ok(new
+            {
+                status = ex.HttpStatus ?? 0,
+                requestUrl = url,
+                upstreamErrorCode = ex.UpstreamErrorCode ?? "transport_or_refresh_failed",
+                body = ex.Message,
+            });
+        }
+    }
 
     // ---- helpers --------------------------------------------------------
 

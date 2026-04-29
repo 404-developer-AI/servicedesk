@@ -100,4 +100,11 @@ public static class AdsolutEventTypes
     /// skipped) + duration + outcome so admins can see whether the last
     /// tick did real work or was a noop.
     public const string SyncTick = "sync.tick";
+
+    /// Admin-triggered raw-API probe from the Adsolut settings page debug
+    /// card. Hits /customers or /suppliers with a Code= filter; the response
+    /// body is shown back to the admin verbatim. Distinct from the regular
+    /// CustomersList / SuppliersList ticks so audit filters can separate
+    /// diagnostic noise from operational sync traffic.
+    public const string DebugLookup = "debug.lookup";
 }

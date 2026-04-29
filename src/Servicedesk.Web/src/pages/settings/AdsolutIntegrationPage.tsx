@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Copy, Plug, RefreshCw } from "lucide-react";
+import { ArrowLeft, Copy, Plug, RefreshCw, Search } from "lucide-react";
 import {
   ApiError,
   adsolutApi,
   settingsApi,
+  type AdsolutDebugKind,
+  type AdsolutDebugLookupResponse,
   type AdsolutState,
   type SettingEntry,
 } from "@/lib/api";
@@ -48,6 +50,11 @@ const STATE_LABEL: Record<AdsolutState, { tone: string; text: string; dot: strin
     tone: "border-emerald-400/30 bg-emerald-500/10 text-emerald-300",
     text: "Connected",
     dot: "bg-emerald-400",
+  },
+  sync_failing: {
+    tone: "border-amber-400/30 bg-amber-500/[0.08] text-amber-200",
+    text: "Sync failing",
+    dot: "bg-amber-400",
   },
   refresh_failed: {
     tone: "border-rose-400/40 bg-rose-500/10 text-rose-300",
@@ -124,7 +131,9 @@ export function AdsolutIntegrationPage() {
   // calling the Administrations API while the integration is in
   // not_configured / not_connected state (it would just 401).
   const isConnectedState =
-    status.data?.state === "connected" || status.data?.state === "refresh_failed";
+    status.data?.state === "connected" ||
+    status.data?.state === "refresh_failed" ||
+    status.data?.state === "sync_failing";
   const administrations = useQuery({
     queryKey: ADSOLUT_ADMIN_QUERY_KEY,
     queryFn: () => adsolutApi.listAdministrations(),
@@ -139,6 +148,9 @@ export function AdsolutIntegrationPage() {
   const [secretValue, setSecretValue] = useState("");
   const [refreshOutcome, setRefreshOutcome] = useState<string | null>(null);
   const [dossierPick, setDossierPick] = useState<string>("");
+  const [debugKind, setDebugKind] = useState<AdsolutDebugKind>("customer");
+  const [debugCode, setDebugCode] = useState<string>("");
+  const [debugResult, setDebugResult] = useState<AdsolutDebugLookupResponse | null>(null);
 
   // Surface the post-callback ?status= query param as a toast, then strip it
   // from the URL so a refresh doesn't fire it again.
@@ -245,6 +257,17 @@ export function AdsolutIntegrationPage() {
       ),
   });
 
+  const debugLookup = useMutation({
+    mutationFn: () => adsolutApi.debugLookup(debugKind, debugCode.trim()),
+    onSuccess: (r) => setDebugResult(r),
+    onError: (err) => {
+      setDebugResult(null);
+      toast.error(
+        err instanceof ApiError ? `Lookup failed (${err.status})` : "Lookup failed",
+      );
+    },
+  });
+
   const copyRedirect = async (url: string) => {
     try {
       await navigator.clipboard.writeText(url);
@@ -253,6 +276,39 @@ export function AdsolutIntegrationPage() {
       toast.error("Could not copy — copy it manually");
     }
   };
+
+  const copyDebugBody = async (body: string) => {
+    try {
+      await navigator.clipboard.writeText(body);
+      toast.success("Response copied");
+    } catch {
+      toast.error("Could not copy — select the JSON manually");
+    }
+  };
+
+  // Pretty-print the upstream body when it parses as JSON, fall back to the
+  // raw string verbatim. The status pill is independent of parse success —
+  // a 200 with an HTML error page should still show as 200 with the HTML.
+  const debugFormattedBody = useMemo(() => {
+    if (!debugResult?.body) return "";
+    try {
+      return JSON.stringify(JSON.parse(debugResult.body), null, 2);
+    } catch {
+      return debugResult.body;
+    }
+  }, [debugResult?.body]);
+
+  const debugStatusTone = (() => {
+    if (!debugResult) return "";
+    const s = debugResult.status;
+    if (s === 0) return "border-rose-400/40 bg-rose-500/10 text-rose-300";
+    if (s >= 200 && s < 300) return "border-emerald-400/30 bg-emerald-500/10 text-emerald-300";
+    if (s >= 400 && s < 500) return "border-amber-400/30 bg-amber-500/[0.08] text-amber-200";
+    return "border-rose-400/40 bg-rose-500/10 text-rose-300";
+  })();
+
+  const debugCanLookup =
+    debugCode.trim().length > 0 && debugCode.trim().length <= 32 && !debugLookup.isPending;
 
   const slidingExpiryDays = useMemo(() => {
     const d = status.data?.lastRefreshedUtc;
@@ -275,7 +331,8 @@ export function AdsolutIntegrationPage() {
   }
 
   const stateBadge = STATE_LABEL[s.state];
-  const isConnected = s.state === "connected" || s.state === "refresh_failed";
+  const isConnected =
+    s.state === "connected" || s.state === "refresh_failed" || s.state === "sync_failing";
   const canConnect = s.clientIdConfigured && s.clientSecretConfigured;
 
   return (
@@ -364,6 +421,17 @@ export function AdsolutIntegrationPage() {
                   ? `${slidingExpiryDays} day${slidingExpiryDays === 1 ? "" : "s"} left (sliding 1-month)`
                   : "Expired — admin must reconnect"}
             </dd>
+            {syncState.data?.nextSyncUtc && s.administrationId ? (
+              <>
+                <dt className="text-muted-foreground/70">Next sync</dt>
+                <dd className="text-foreground">
+                  {formatDate(syncState.data.nextSyncUtc)}
+                  <span className="ml-2 text-muted-foreground/60">
+                    (every {syncState.data.intervalMinutes} min)
+                  </span>
+                </dd>
+              </>
+            ) : null}
             {s.lastRefreshError && (
               <>
                 <dt className="text-muted-foreground/70">Last refresh error</dt>
@@ -393,7 +461,6 @@ export function AdsolutIntegrationPage() {
               <Button
                 onClick={() => startConnect.mutate()}
                 disabled={!canConnect || startConnect.isPending}
-                variant="secondary"
               >
                 {startConnect.isPending ? "Redirecting…" : "Reconnect"}
               </Button>
@@ -619,7 +686,6 @@ export function AdsolutIntegrationPage() {
             </div>
             <Button
               size="sm"
-              variant="secondary"
               onClick={() => triggerSync.mutate()}
               disabled={triggerSync.isPending}
             >
@@ -681,6 +747,110 @@ export function AdsolutIntegrationPage() {
               );
             })}
           </div>
+        </section>
+      )}
+
+      {/* API debug — admin probe for /customers or /suppliers by Code. Only
+          useful once a dossier is active because Adsolut returns nothing
+          without one. Strict whitelist on the backend means this card cannot
+          be turned into a generic API proxy. */}
+      {isConnectedState && s.administrationId && (
+        <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+          <header className="mb-4 space-y-1">
+            <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
+              API debug
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Probe Adsolut's customers or suppliers list-endpoint by relation code and
+              inspect the raw JSON response, including fields the sync worker does not
+              currently persist. Each call lands in the audit log as{" "}
+              <span className="font-mono">debug.lookup</span>.
+            </p>
+          </header>
+
+          <div className="flex flex-wrap items-end gap-2">
+            <div
+              role="tablist"
+              aria-label="Lookup kind"
+              className="inline-flex rounded-md border border-white/[0.08] bg-white/[0.03] p-0.5 text-xs"
+            >
+              {(["customer", "supplier"] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  role="tab"
+                  aria-selected={debugKind === k}
+                  onClick={() => setDebugKind(k)}
+                  className={cn(
+                    "rounded px-3 py-1 capitalize transition-colors",
+                    debugKind === k
+                      ? "bg-white/[0.08] text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {k}
+                </button>
+              ))}
+            </div>
+            <Input
+              value={debugCode}
+              onChange={(e) => setDebugCode(e.target.value)}
+              placeholder="Relation code (e.g. 998)"
+              maxLength={32}
+              className="max-w-xs"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && debugCanLookup) {
+                  e.preventDefault();
+                  debugLookup.mutate();
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              onClick={() => debugLookup.mutate()}
+              disabled={!debugCanLookup}
+            >
+              <Search className="mr-1.5 h-3.5 w-3.5" />
+              {debugLookup.isPending ? "Looking up…" : "Lookup"}
+            </Button>
+          </div>
+
+          {debugResult && (
+            <div className="mt-4 space-y-2">
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5",
+                    debugStatusTone,
+                  )}
+                >
+                  {debugResult.status === 0 ? "no response" : `HTTP ${debugResult.status}`}
+                </span>
+                {debugResult.upstreamErrorCode && (
+                  <span className="rounded border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+                    {debugResult.upstreamErrorCode}
+                  </span>
+                )}
+                <code className="truncate text-[11px] text-muted-foreground/80">
+                  GET {debugResult.requestUrl}
+                </code>
+              </div>
+              <div className="relative">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => copyDebugBody(debugFormattedBody)}
+                  aria-label="Copy response body"
+                  className="absolute right-2 top-2 h-7 w-7 p-0"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+                <pre className="max-h-[28rem] overflow-auto rounded-md border border-white/[0.06] bg-black/30 p-3 pr-10 font-mono text-[11px] leading-relaxed text-foreground/90">
+                  {debugFormattedBody || "(empty body)"}
+                </pre>
+              </div>
+            </div>
+          )}
         </section>
       )}
 

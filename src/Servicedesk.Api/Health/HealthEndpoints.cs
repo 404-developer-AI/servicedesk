@@ -2,9 +2,11 @@ using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Health;
 using System.Security.Claims;
+using Servicedesk.Infrastructure.Integrations.Adsolut;
 using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Polling;
 using Servicedesk.Infrastructure.Observability;
+using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Storage;
 
 namespace Servicedesk.Api.Health;
@@ -18,10 +20,20 @@ public static class HealthEndpoints
 {
     public static IEndpointRouteBuilder MapHealthEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/system/health", async (IHealthAggregator agg, CancellationToken ct) =>
+        app.MapGet("/api/system/health", async (
+            IHealthAggregator agg,
+            IIntegrationsHealthAggregator integrations,
+            CancellationToken ct) =>
         {
             var report = await agg.CollectAsync(ct);
-            return Results.Ok(new { status = report.Status.ToString() });
+            var integrationsReport = await integrations.CollectAsync(ct);
+            // Roll the integrations rollup into the public pill so that a
+            // sync-failing integration also flips the dashboard header from
+            // "All systems OK" to "Attention needed".
+            var rollup = report.Status > integrationsReport.Rollup
+                ? report.Status
+                : integrationsReport.Rollup;
+            return Results.Ok(new { status = rollup.ToString() });
         })
         .WithName("GetSystemHealth").WithOpenApi();
 
@@ -53,6 +65,78 @@ public static class HealthEndpoints
             });
         })
         .WithName("GetAdminHealth").WithOpenApi();
+
+        admin.MapGet("/integrations", async (
+            IIntegrationsHealthAggregator integrations,
+            CancellationToken ct) =>
+        {
+            var report = await integrations.CollectAsync(ct);
+            return Results.Ok(new
+            {
+                status = report.Rollup.ToString(),
+                integrations = report.Integrations.Select(i => new
+                {
+                    key = i.Key,
+                    name = i.Name,
+                    logoKey = i.LogoKey,
+                    status = i.Rollup.ToString(),
+                    checks = i.Checks.Select(c => new
+                    {
+                        key = c.Key,
+                        label = c.Label,
+                        status = c.Status.ToString(),
+                        summary = c.Summary,
+                        details = c.Details.Select(d => new { label = d.Label, value = d.Value }),
+                        actions = c.Actions.Select(a => new
+                        {
+                            key = a.Key,
+                            label = a.Label,
+                            endpoint = a.Endpoint,
+                            confirmMessage = a.ConfirmMessage,
+                        }),
+                    }),
+                    actions = i.Actions.Select(a => new
+                    {
+                        key = a.Key,
+                        label = a.Label,
+                        endpoint = a.Endpoint,
+                        confirmMessage = a.ConfirmMessage,
+                    }),
+                }),
+            });
+        })
+        .WithName("GetIntegrationsHealth").WithOpenApi();
+
+        admin.MapPost("/integrations/adsolut/sync/ack", async (
+            HttpContext http,
+            IAdsolutSyncStateStore syncState,
+            IAdsolutConnectionStore connections,
+            Servicedesk.Infrastructure.Settings.ISettingsService settings,
+            Servicedesk.Infrastructure.Secrets.IProtectedSecretStore secrets,
+            IIntegrationStatusNotifier statusNotifier,
+            IAuditLogger audit,
+            CancellationToken ct) =>
+        {
+            await syncState.AcknowledgeAsync(ct);
+            var (actor, role) = ActorContext.Resolve(http);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "health.integrations.adsolut.sync.ack",
+                Actor: actor,
+                ActorRole: role,
+                Target: "adsolut-sync",
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: null), ct);
+            // Re-resolve the integration state and broadcast — the SignalR
+            // push flips the integration tile + Adsolut detail pill back to
+            // green within seconds without a manual refresh.
+            await statusNotifier.NotifyStatusChangedAsync(
+                AdsolutEventTypes.Integration,
+                await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, syncState, ct),
+                ct);
+            return Results.NoContent();
+        })
+        .WithName("AcknowledgeAdsolutSync").WithOpenApi();
 
         admin.MapPost("/mail-polling/queues/{queueId:guid}/reset", async (
             Guid queueId,

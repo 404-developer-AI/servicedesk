@@ -25,9 +25,26 @@ public sealed class AdsolutSyncStateStore : IAdsolutSyncStateStore
                 companies_seen                      AS CompaniesSeen,
                 companies_upserted                  AS CompaniesUpserted,
                 companies_skipped_loser_in_conflict AS CompaniesSkippedLoserInConflict,
-                updated_utc                         AS UpdatedUtc
+                updated_utc                         AS UpdatedUtc,
+                acknowledged_utc                    AS AcknowledgedUtc
             FROM adsolut_sync_state
             WHERE id = 1
+            """,
+            cancellationToken: ct));
+    }
+
+    public async Task AcknowledgeAsync(CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        // INSERT-on-empty so the very first acknowledge (no tick has run yet)
+        // still creates the singleton row instead of silently no-op'ing.
+        await conn.ExecuteAsync(new CommandDefinition(
+            """
+            INSERT INTO adsolut_sync_state (id, acknowledged_utc, updated_utc)
+            VALUES (1, now(), now())
+            ON CONFLICT (id) DO UPDATE SET
+                acknowledged_utc = now(),
+                updated_utc      = now()
             """,
             cancellationToken: ct));
     }

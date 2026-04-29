@@ -239,6 +239,17 @@ public sealed class AdsolutSyncWorker : BackgroundService
             }), ct);
 
         await notifier.NotifySyncCompletedAsync(AdsolutEventTypes.Integration, ct);
+
+        // Push the resolved integration state so the dashboard health pill
+        // and the integration tile flip without waiting on the next
+        // healthcheck tick. The resolver reads the sync-state we just wrote
+        // (LastError = errorMessage), so a tick_exception immediately
+        // transitions the UI to sync_failing — and the next clean tick
+        // transitions it back to connected.
+        await notifier.NotifyStatusChangedAsync(
+            AdsolutEventTypes.Integration,
+            await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, stateStore, ct),
+            ct);
     }
 
     private static async Task PullEndpointAsync(

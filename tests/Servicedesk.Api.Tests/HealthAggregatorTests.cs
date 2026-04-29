@@ -2,13 +2,11 @@ using Microsoft.Extensions.Options;
 using Servicedesk.Domain.Taxonomy;
 using Servicedesk.Infrastructure.Health;
 using Servicedesk.Infrastructure.Health.SecurityActivity;
-using Servicedesk.Infrastructure.Integrations.Adsolut;
 using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Polling;
 using Servicedesk.Infrastructure.Observability;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Secrets;
-using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Storage;
 using Xunit;
 
@@ -409,9 +407,7 @@ public sealed class HealthAggregatorTests
             tlsCert ?? new StubTlsCertReader(null),
             certRenewal ?? new StubCertRenewalTrigger(null),
             Options.Create(tlsOptions ?? new TlsCertHealthOptions()),
-            securityActivity ?? new InMemorySecurityActivitySnapshot(),
-            new StubAdsolutConnections(),
-            new StubSettingsService());
+            securityActivity ?? new InMemorySecurityActivitySnapshot());
 
     private sealed class StubIncidentLog : IIncidentLog
     {
@@ -522,19 +518,4 @@ public sealed class HealthAggregatorTests
         public Task<DeleteResult> DeleteCategoryAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
     }
 
-    private sealed class StubAdsolutConnections : IAdsolutConnectionStore
-    {
-        public Task<AdsolutConnection?> GetAsync(CancellationToken ct = default) => Task.FromResult<AdsolutConnection?>(null);
-        public Task SaveAsync(AdsolutConnection connection, CancellationToken ct = default) => Task.CompletedTask;
-        public Task DeleteAsync(CancellationToken ct = default) => Task.CompletedTask;
-    }
-
-    private sealed class StubSettingsService : ISettingsService
-    {
-        public Task EnsureDefaultsAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<T> GetAsync<T>(string key, CancellationToken cancellationToken = default) => Task.FromResult(default(T)!);
-        public Task SetAsync<T>(string key, T value, string actor, string actorRole, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<IReadOnlyList<SettingEntry>> ListAsync(string? category = null, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<SettingEntry>>(Array.Empty<SettingEntry>());
-    }
 }

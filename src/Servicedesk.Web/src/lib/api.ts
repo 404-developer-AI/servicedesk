@@ -140,6 +140,22 @@ export type HealthReport = {
   subsystems: SubsystemHealth[];
 };
 
+export type IntegrationHealth = {
+  key: string;
+  name: string;
+  logoKey: string;
+  status: HealthStatus;
+  checks: SubsystemHealth[];
+  /// Tile-level actions (e.g. Sync now) — distinct from per-check actions.
+  /// The dashboard tile renders these centred next to the integration row.
+  actions: HealthAction[];
+};
+
+export type IntegrationsHealthReport = {
+  status: HealthStatus;
+  integrations: IntegrationHealth[];
+};
+
 export const systemApi = {
   version: () => request<SystemVersion>("GET", "/api/system/version"),
   time: () => request<SystemTime>("GET", "/api/system/time"),
@@ -183,6 +199,11 @@ export const healthApi = {
       "POST",
       `/api/admin/health/incidents/ack-subsystem/${encodeURIComponent(subsystem)}`,
     ),
+};
+
+export const integrationsHealthApi = {
+  get: () =>
+    request<IntegrationsHealthReport>("GET", "/api/admin/health/integrations"),
 };
 
 export const auditApi = {
@@ -393,7 +414,11 @@ export type AdsolutState =
   | "not_configured"
   | "not_connected"
   | "connected"
-  | "refresh_failed";
+  | "refresh_failed"
+  // OAuth healthy but the most recent sync.tick recorded an error. UI shows
+  // an amber "Sync failing" pill and points the admin at the audit log; no
+  // reconnect is required (different from refresh_failed).
+  | "sync_failing";
 
 export type AdsolutStatus = {
   state: AdsolutState;
@@ -440,6 +465,10 @@ export type AdsolutSyncState = {
   companiesUpserted: number;
   companiesSkippedLoserInConflict: number;
   updatedUtc: string | null;
+  // Estimated wall-clock for the next worker tick. Computed server-side
+  // from lastDeltaSyncUtc + intervalMinutes — never trust the client clock.
+  nextSyncUtc: string | null;
+  intervalMinutes: number;
 };
 
 export type AdsolutSecretStatus = { configured: boolean };
@@ -471,6 +500,15 @@ export type IntegrationAuditEntry = {
 export type IntegrationAuditPage = {
   items: IntegrationAuditEntry[];
   nextCursor: number | null;
+};
+
+export type AdsolutDebugKind = "customer" | "supplier";
+
+export type AdsolutDebugLookupResponse = {
+  status: number;
+  requestUrl: string;
+  upstreamErrorCode: string | null;
+  body: string;
 };
 
 export const adsolutApi = {
@@ -521,6 +559,13 @@ export const adsolutApi = {
     request<AdsolutSyncState>("GET", "/api/admin/integrations/adsolut/sync"),
   triggerSync: () =>
     request<void>("POST", "/api/admin/integrations/adsolut/sync"),
+  debugLookup: (kind: AdsolutDebugKind, code: string) => {
+    const qs = new URLSearchParams({ kind, code });
+    return request<AdsolutDebugLookupResponse>(
+      "GET",
+      `/api/admin/integrations/adsolut/debug/lookup?${qs.toString()}`,
+    );
+  },
 };
 
 // ---- Mail attachment diagnostics ----

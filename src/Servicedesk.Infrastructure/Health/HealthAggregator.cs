@@ -1,12 +1,10 @@
 using Microsoft.Extensions.Options;
 using Servicedesk.Infrastructure.Health.SecurityActivity;
-using Servicedesk.Infrastructure.Integrations.Adsolut;
 using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Polling;
 using Servicedesk.Infrastructure.Observability;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Secrets;
-using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Storage;
 
 namespace Servicedesk.Infrastructure.Health;
@@ -31,12 +29,6 @@ public sealed class HealthAggregator : IHealthAggregator
     // intervening success flips to Critical.
     private const int BlobStoreCriticalThreshold = 3;
 
-    // Adsolut sliding-window length set by Wolters Kluwer. Not exposed as a
-    // setting because changing our perception of it would silently mask a
-    // real expiry — the only user-tunable knob is RefreshWarnDays (when to
-    // start warning *before* this 30-day mark).
-    private static readonly TimeSpan AdsolutRefreshWindow = TimeSpan.FromDays(30);
-
     private readonly IMailPollStateRepository _pollState;
     private readonly ITaxonomyRepository _taxonomy;
     private readonly IProtectedSecretStore _secrets;
@@ -47,8 +39,6 @@ public sealed class HealthAggregator : IHealthAggregator
     private readonly ICertRenewalTrigger _certRenewal;
     private readonly IOptions<TlsCertHealthOptions> _tlsOptions;
     private readonly ISecurityActivitySnapshot _securityActivity;
-    private readonly IAdsolutConnectionStore _adsolutConnections;
-    private readonly ISettingsService _settings;
 
     public HealthAggregator(
         IMailPollStateRepository pollState,
@@ -60,9 +50,7 @@ public sealed class HealthAggregator : IHealthAggregator
         ITlsCertReader tlsCert,
         ICertRenewalTrigger certRenewal,
         IOptions<TlsCertHealthOptions> tlsOptions,
-        ISecurityActivitySnapshot securityActivity,
-        IAdsolutConnectionStore adsolutConnections,
-        ISettingsService settings)
+        ISecurityActivitySnapshot securityActivity)
     {
         _pollState = pollState;
         _taxonomy = taxonomy;
@@ -74,14 +62,16 @@ public sealed class HealthAggregator : IHealthAggregator
         _certRenewal = certRenewal;
         _tlsOptions = tlsOptions;
         _securityActivity = securityActivity;
-        _adsolutConnections = adsolutConnections;
-        _settings = settings;
     }
 
     public async Task<HealthReport> CollectAsync(CancellationToken ct)
     {
         var openIncidents = await _incidents.GetOpenBySubsystemAsync(ct);
 
+        // v0.0.27: Adsolut moved out of System health into its own
+        // IntegrationsHealthAggregator + dashboard tile. The roll-up below
+        // covers core platform subsystems only; the dashboard pill merges
+        // both aggregators.
         var subsystems = new List<SubsystemHealth>
         {
             ApplyIncidents(await BuildMailPollingAsync(ct), openIncidents),
@@ -91,12 +81,6 @@ public sealed class HealthAggregator : IHealthAggregator
             ApplyIncidents(BuildTlsCert(), openIncidents),
             ApplyIncidents(BuildSecurityActivity(), openIncidents),
         };
-
-        // Optional subsystems: append only when relevant. Keeps the Health
-        // page from growing a "monitoring disabled" row for every external
-        // integration that hasn't been wired up yet.
-        var adsolut = await BuildAdsolutAsync(ct);
-        if (adsolut is not null) subsystems.Add(ApplyIncidents(adsolut, openIncidents));
 
         var rollup = subsystems.Aggregate(HealthStatus.Ok,
             (acc, s) => s.Status > acc ? s.Status : acc);
@@ -517,127 +501,4 @@ public sealed class HealthAggregator : IHealthAggregator
             Actions: Array.Empty<HealthAction>());
     }
 
-    /// Adsolut OAuth integration. Returns <c>null</c> when the integration
-    /// has not been configured (no client_id + secret) so the Health page
-    /// stays clean for installs that don't use it. Once configured the card
-    /// always shows: Ok when connected and the sliding-month window is
-    /// healthy, Warning when the window is approaching expiry or a recent
-    /// refresh failed, Critical when the refresh token has been revoked
-    /// (invalid_grant) or the window has actually elapsed.
-    private async Task<SubsystemHealth?> BuildAdsolutAsync(CancellationToken ct)
-    {
-        var clientId = (await _settings.GetAsync<string>(SettingKeys.Adsolut.ClientId, ct) ?? string.Empty).Trim();
-        var hasClientSecret = await _secrets.HasAsync(ProtectedSecretKeys.AdsolutClientSecret, ct);
-        if (string.IsNullOrEmpty(clientId) || !hasClientSecret)
-        {
-            return null;
-        }
-
-        var hasRefreshToken = await _secrets.HasAsync(ProtectedSecretKeys.AdsolutRefreshToken, ct);
-        var connection = await _adsolutConnections.GetAsync(ct);
-        var warnDays = await _settings.GetAsync<int>(SettingKeys.Adsolut.RefreshWarnDays, ct);
-        if (warnDays <= 0) warnDays = 7;
-
-        var details = new List<HealthDetail>();
-        var actions = new List<HealthAction>();
-        HealthStatus status;
-        string summary;
-
-        if (!hasRefreshToken)
-        {
-            status = HealthStatus.Warning;
-            summary = "Configured but not connected — admin still needs to authorize via Settings → Integrations.";
-            details.Add(new HealthDetail("State", "Configured, awaiting first authorization."));
-            return new SubsystemHealth(
-                Key: "adsolut-integration",
-                Label: "Adsolut integration",
-                Status: status,
-                Summary: summary,
-                Details: details,
-                Actions: actions);
-        }
-
-        // From here on we have a refresh token. Compute sliding-window
-        // remaining vs. the configurable warn threshold.
-        DateTime? slidingExpiry = connection?.LastRefreshedUtc + AdsolutRefreshWindow;
-        double? daysLeft = slidingExpiry is null
-            ? null
-            : (slidingExpiry.Value - DateTime.UtcNow).TotalDays;
-        int? daysLeftRounded = daysLeft is null ? null : (int)Math.Floor(daysLeft.Value);
-
-        var lastError = connection?.LastRefreshError;
-        var lastErrorIsGrant = string.Equals(lastError, "invalid_grant", StringComparison.Ordinal);
-
-        if (lastErrorIsGrant)
-        {
-            status = HealthStatus.Critical;
-            summary = "Refresh token revoked — admin must reconnect via Settings → Integrations.";
-        }
-        else if (daysLeft is not null && daysLeft.Value <= 0)
-        {
-            status = HealthStatus.Critical;
-            summary = "Refresh window has expired — admin must reconnect.";
-        }
-        else if (daysLeft is not null && daysLeft.Value <= warnDays)
-        {
-            status = HealthStatus.Warning;
-            summary = $"Refresh window expires in {daysLeftRounded} day(s) — run Test refresh or reconnect soon.";
-        }
-        else if (!string.IsNullOrEmpty(lastError))
-        {
-            status = HealthStatus.Warning;
-            summary = "A recent refresh failed; the connection still has a valid token but should be retested.";
-        }
-        else
-        {
-            status = HealthStatus.Ok;
-            summary = daysLeftRounded is not null
-                ? $"Connected, refresh window has {daysLeftRounded} day(s) left."
-                : "Connected.";
-        }
-
-        details.Add(new HealthDetail(
-            "Authorized as",
-            connection?.AuthorizedEmail ?? connection?.AuthorizedSubject ?? "(unknown subject)"));
-        if (connection?.AuthorizedUtc is { } authorized)
-        {
-            details.Add(new HealthDetail("Authorized at", authorized.ToString("u")));
-        }
-        if (connection?.LastRefreshedUtc is { } lastRefreshed)
-        {
-            details.Add(new HealthDetail("Last refreshed", lastRefreshed.ToString("u")));
-        }
-        if (slidingExpiry is { } exp)
-        {
-            details.Add(new HealthDetail(
-                "Refresh window expires",
-                $"{exp:u} ({(daysLeftRounded is null ? "?" : daysLeftRounded.ToString())} day(s))"));
-        }
-        if (!string.IsNullOrEmpty(lastError))
-        {
-            var when = connection?.LastRefreshErrorUtc is { } errTs ? errTs.ToString("u") : "(unknown time)";
-            details.Add(new HealthDetail("Last refresh error", $"{lastError} at {when}"));
-        }
-
-        // Action button mirrors the per-page "Test refresh" — a single
-        // POST that exercises the whole token-rotation path. Skipped when
-        // we already know the RT is revoked: clicking it would just
-        // produce another invalid_grant.
-        if (!lastErrorIsGrant)
-        {
-            actions.Add(new HealthAction(
-                Key: "test-adsolut-refresh",
-                Label: "Test refresh",
-                Endpoint: "/api/admin/integrations/adsolut/refresh",
-                ConfirmMessage: null));
-        }
-
-        return new SubsystemHealth(
-            Key: "adsolut-integration",
-            Label: "Adsolut integration",
-            Status: status,
-            Summary: summary,
-            Details: details,
-            Actions: actions);
-    }
 }

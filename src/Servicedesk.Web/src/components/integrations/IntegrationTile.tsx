@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-export type IntegrationStatus = "online" | "error" | "not-configured";
+export type IntegrationStatus = "online" | "warning" | "error" | "not-configured";
 
 const STATUS_STYLES: Record<
   IntegrationStatus,
@@ -10,6 +10,11 @@ const STATUS_STYLES: Record<
     pill: "border-emerald-400/30 bg-emerald-500/10 text-emerald-300",
     dot: "bg-emerald-400",
     label: "Online",
+  },
+  warning: {
+    pill: "border-amber-400/30 bg-amber-500/[0.08] text-amber-200",
+    dot: "bg-amber-400",
+    label: "Warning",
   },
   error: {
     pill: "border-rose-400/40 bg-rose-500/10 text-rose-300",

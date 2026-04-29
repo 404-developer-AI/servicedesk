@@ -112,6 +112,7 @@ public sealed class IntegrationsHealthcheckWorker : BackgroundService
         var settings = sp.GetRequiredService<ISettingsService>();
         var secrets = sp.GetRequiredService<IProtectedSecretStore>();
         var connections = sp.GetRequiredService<IAdsolutConnectionStore>();
+        var syncStateStore = sp.GetRequiredService<IAdsolutSyncStateStore>();
         var auth = sp.GetRequiredService<IAdsolutAuthService>();
         var auditLog = sp.GetRequiredService<IIntegrationAuditLogger>();
         var notifier = sp.GetRequiredService<IIntegrationStatusNotifier>();
@@ -147,7 +148,6 @@ public sealed class IntegrationsHealthcheckWorker : BackgroundService
 
         IntegrationAuditOutcome outcome;
         string? errorCode = null;
-        string resolvedState;
 
         if (shouldActiveProbe)
         {
@@ -155,37 +155,50 @@ public sealed class IntegrationsHealthcheckWorker : BackgroundService
             {
                 await auth.RefreshAccessTokenAsync(source: "healthcheck", ct: ct);
                 outcome = IntegrationAuditOutcome.Ok;
-                resolvedState = "connected";
             }
             catch (AdsolutRefreshException ex)
             {
                 errorCode = ex.UpstreamErrorCode ?? "refresh_failed";
-                if (ex.RequiresReconnect)
-                {
-                    outcome = IntegrationAuditOutcome.Error;
-                    resolvedState = "refresh_failed";
-                }
-                else
-                {
+                outcome = ex.RequiresReconnect
+                    ? IntegrationAuditOutcome.Error
                     // Transient — Wolters Kluwer 5xx, network blip — the
                     // RT is still believed-good. Surface as Warn so the
                     // admin can see the bump without the Critical klaxon.
-                    outcome = IntegrationAuditOutcome.Warn;
-                    resolvedState = connection?.LastRefreshError is null ? "connected" : "refresh_failed";
-                }
+                    : IntegrationAuditOutcome.Warn;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Adsolut healthcheck active probe threw an unexpected exception.");
                 errorCode = "probe_exception";
                 outcome = IntegrationAuditOutcome.Warn;
-                resolvedState = connection?.LastRefreshError is null ? "connected" : "refresh_failed";
             }
         }
         else
         {
-            // Passive read of cached state.
-            (outcome, resolvedState) = ResolvePassiveState(hasRefreshToken, connection);
+            // Passive read of cached state — outcome maps from the resolver
+            // string after we compute it below.
+            outcome = IntegrationAuditOutcome.Ok;
+        }
+
+        // Centralised resolver — reads the freshly-mutated connection state
+        // (post-probe) AND the sync-state.LastError, so a tick_exception in
+        // the sync worker downgrades the health to sync_failing instead of
+        // the OAuth probe overwriting it back to connected.
+        var resolvedState = await AdsolutStateResolver.ComputeAsync(
+            settings, secrets, connections, syncStateStore, ct);
+
+        // Map state → audit outcome for the passive path. The active-probe
+        // path already set outcome from probe success; only override here
+        // when the probe was Ok but the resolver downgraded for sync health.
+        if (outcome == IntegrationAuditOutcome.Ok)
+        {
+            outcome = resolvedState switch
+            {
+                AdsolutStateResolver.RefreshFailed => IntegrationAuditOutcome.Error,
+                AdsolutStateResolver.SyncFailing => IntegrationAuditOutcome.Warn,
+                AdsolutStateResolver.NotConnected => IntegrationAuditOutcome.Warn,
+                _ => IntegrationAuditOutcome.Ok,
+            };
         }
 
         await auditLog.LogAsync(new IntegrationAuditEvent(
@@ -211,30 +224,6 @@ public sealed class IntegrationsHealthcheckWorker : BackgroundService
             _lastBroadcast[AdsolutEventTypes.Integration] = resolvedState;
             await notifier.NotifyStatusChangedAsync(AdsolutEventTypes.Integration, resolvedState, ct);
         }
-    }
-
-    private static (IntegrationAuditOutcome Outcome, string State) ResolvePassiveState(
-        bool hasRefreshToken,
-        AdsolutConnection? connection)
-    {
-        if (!hasRefreshToken)
-        {
-            return (IntegrationAuditOutcome.Warn, "not_connected");
-        }
-
-        if (IsTerminalRefreshError(connection?.LastRefreshError))
-        {
-            return (IntegrationAuditOutcome.Error, "refresh_failed");
-        }
-
-        if (connection?.LastRefreshError is not null)
-        {
-            // Transient error noted on the row but not invalid_grant.
-            // The integration may still self-heal on the next refresh.
-            return (IntegrationAuditOutcome.Warn, "refresh_failed");
-        }
-
-        return (IntegrationAuditOutcome.Ok, "connected");
     }
 
     private static bool IsTerminalRefreshError(string? errorCode)

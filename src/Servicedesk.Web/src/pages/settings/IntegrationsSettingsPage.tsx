@@ -16,6 +16,8 @@ function tileStatusFor(state: AdsolutState | undefined): IntegrationStatus {
   switch (state) {
     case "connected":
       return "online";
+    case "sync_failing":
+      return "warning";
     case "refresh_failed":
       return "error";
     default:
@@ -42,7 +44,11 @@ export function IntegrationsSettingsPage() {
   // are placeholders that always read "not_configured" so they never tip
   // this counter. Once a second integration goes live, OR them in here.
   const adsolutTileStatus = tileStatusFor(adsolutStatus.data?.state);
-  const connectedCount = adsolutTileStatus === "online" ? 1 : 0;
+  // "Connected" for the counter = OAuth is healthy. A sync_failing tile
+  // still counts because the connection itself works; only the data pull
+  // is degraded, which the amber pill on the tile already communicates.
+  const connectedCount =
+    adsolutTileStatus === "online" || adsolutTileStatus === "warning" ? 1 : 0;
   const totalCount = 3;
   const noneConfigured = connectedCount === 0;
 

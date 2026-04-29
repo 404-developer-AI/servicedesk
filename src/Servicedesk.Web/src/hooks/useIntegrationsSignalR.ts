@@ -43,6 +43,10 @@ export function useIntegrationsSignalR() {
       queryClient.invalidateQueries({
         queryKey: ["integrations", integration, "status"],
       });
+      // v0.0.27 — also nudge the dashboard tile + the public health pill so
+      // a status flip refreshes both views in lockstep.
+      queryClient.invalidateQueries({ queryKey: ["admin", "integrations-health"] });
+      queryClient.invalidateQueries({ queryKey: ["system", "health"] });
     };
 
     // v0.0.26 — sync-tick completion. Same convention as the status push,
@@ -56,6 +60,11 @@ export function useIntegrationsSignalR() {
       queryClient.invalidateQueries({
         queryKey: ["integrations", integration, "audit"],
       });
+      // The sync row on the dashboard tile reads its data from the
+      // integrations-health endpoint — invalidate that too so a tick that
+      // either failed or recovered shows up immediately.
+      queryClient.invalidateQueries({ queryKey: ["admin", "integrations-health"] });
+      queryClient.invalidateQueries({ queryKey: ["system", "health"] });
     };
 
     hub.on("IntegrationStatusUpdated", handleStatusUpdated);

@@ -14,10 +14,19 @@ public sealed class AdsolutSyncState
     public int CompaniesUpserted { get; set; }
     public int CompaniesSkippedLoserInConflict { get; set; }
     public DateTime UpdatedUtc { get; set; }
+    /// Set by the admin "Acknowledge" action on the integrations health
+    /// tile. Sync-health is considered cleared as long as
+    /// <c>AcknowledgedUtc &gt;= LastErrorUtc</c>; the next failed tick
+    /// pushes LastErrorUtc forward and undoes the acknowledgement.
+    public DateTime? AcknowledgedUtc { get; set; }
 }
 
 public interface IAdsolutSyncStateStore
 {
     Task<AdsolutSyncState?> GetAsync(CancellationToken ct = default);
     Task SaveAsync(AdsolutSyncState state, CancellationToken ct = default);
+    /// Stamps <c>acknowledged_utc = now()</c> on the singleton row, leaving
+    /// every other column untouched. Idempotent — repeated calls just
+    /// advance the timestamp.
+    Task AcknowledgeAsync(CancellationToken ct = default);
 }

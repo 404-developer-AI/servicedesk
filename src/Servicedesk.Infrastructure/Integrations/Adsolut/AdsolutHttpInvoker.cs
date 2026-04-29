@@ -187,6 +187,118 @@ public sealed class AdsolutHttpInvoker
             httpStatus: 401);
     }
 
+    /// Diagnostic variant of <see cref="SendAsync"/> for the admin debug
+    /// surface — returns the raw response (status + url + body) on every
+    /// outcome instead of throwing on non-2xx, so an admin can inspect
+    /// what Adsolut actually returned even for 4xx/5xx. Still does the
+    /// bearer-attach + once-on-401 retry + audit row, just with the body
+    /// surfaced instead of swallowed. Refresh failures still bubble up
+    /// because there is no useful body to show in that case.
+    public async Task<AdsolutRawResponse> SendRawAsync(
+        string eventType,
+        Func<HttpRequestMessage> buildRequest,
+        object? auditPayload = null,
+        CancellationToken ct = default)
+    {
+        for (var attempt = 1; attempt <= 2; attempt++)
+        {
+            using var request = buildRequest();
+            string endpoint = request.RequestUri?.ToString() ?? string.Empty;
+
+            string token;
+            try
+            {
+                token = await _tokens.GetAccessTokenAsync(ct);
+            }
+            catch (AdsolutRefreshException ex)
+            {
+                await _audit.LogAsync(new IntegrationAuditEvent(
+                    Integration: AdsolutEventTypes.Integration,
+                    EventType: eventType,
+                    Outcome: IntegrationAuditOutcome.Error,
+                    Endpoint: endpoint,
+                    HttpStatus: null,
+                    LatencyMs: 0,
+                    ErrorCode: ex.UpstreamErrorCode ?? "refresh_failed",
+                    Payload: new { auditPayload, message = ex.Message, requiresReconnect = ex.RequiresReconnect }), ct);
+                throw new AdsolutApiException(
+                    "Adsolut refresh failed before API call: " + ex.Message,
+                    ex.RequiresReconnect ? (int?)401 : null,
+                    ex.UpstreamErrorCode);
+            }
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            request.Headers.Accept.ParseAdd("application/json");
+
+            var http = _httpClientFactory.CreateClient(HttpClientName);
+            var stopwatch = Stopwatch.StartNew();
+            HttpResponseMessage response;
+            try
+            {
+                response = await http.SendAsync(request, ct);
+            }
+            catch (HttpRequestException ex)
+            {
+                stopwatch.Stop();
+                await _audit.LogAsync(new IntegrationAuditEvent(
+                    Integration: AdsolutEventTypes.Integration,
+                    EventType: eventType,
+                    Outcome: IntegrationAuditOutcome.Warn,
+                    Endpoint: endpoint,
+                    HttpStatus: null,
+                    LatencyMs: (int)stopwatch.ElapsedMilliseconds,
+                    ErrorCode: "transport_error",
+                    Payload: new { auditPayload, message = ex.Message }), ct);
+                throw new AdsolutApiException("Transport error talking to Adsolut: " + ex.Message, ex);
+            }
+            stopwatch.Stop();
+            try
+            {
+                var status = (int)response.StatusCode;
+
+                if (response.StatusCode == HttpStatusCode.Unauthorized && attempt == 1)
+                {
+                    _tokens.Invalidate();
+                    await _audit.LogAsync(new IntegrationAuditEvent(
+                        Integration: AdsolutEventTypes.Integration,
+                        EventType: eventType,
+                        Outcome: IntegrationAuditOutcome.Warn,
+                        Endpoint: endpoint,
+                        HttpStatus: status,
+                        LatencyMs: (int)stopwatch.ElapsedMilliseconds,
+                        ErrorCode: "unauthorized_retry",
+                        Payload: new { auditPayload, attempt }), ct);
+                    continue;
+                }
+
+                var body = await SafeReadBodyAsync(response, ct);
+                var outcome = response.IsSuccessStatusCode
+                    ? IntegrationAuditOutcome.Ok
+                    : (response.StatusCode == HttpStatusCode.TooManyRequests || status >= 500
+                        ? IntegrationAuditOutcome.Warn
+                        : IntegrationAuditOutcome.Error);
+                var upstreamCode = response.IsSuccessStatusCode ? null : TryParseErrorCode(body);
+                await _audit.LogAsync(new IntegrationAuditEvent(
+                    Integration: AdsolutEventTypes.Integration,
+                    EventType: eventType,
+                    Outcome: outcome,
+                    Endpoint: endpoint,
+                    HttpStatus: status,
+                    LatencyMs: (int)stopwatch.ElapsedMilliseconds,
+                    ErrorCode: response.IsSuccessStatusCode ? null : (upstreamCode ?? $"http_{status}"),
+                    Payload: new { auditPayload, snippet = Truncate(body, 256) }), ct);
+                return new AdsolutRawResponse(status, endpoint, body, upstreamCode);
+            }
+            finally
+            {
+                response.Dispose();
+            }
+        }
+
+        throw new AdsolutApiException(
+            "Adsolut rejected the access token twice in a row.",
+            httpStatus: 401);
+    }
+
     private static async Task<string> SafeReadBodyAsync(HttpResponseMessage response, CancellationToken ct)
     {
         try { return await response.Content.ReadAsStringAsync(ct); }
@@ -218,3 +330,11 @@ public sealed class AdsolutHttpInvoker
     private static string Truncate(string s, int max) =>
         string.IsNullOrEmpty(s) || s.Length <= max ? s : s[..max] + "…";
 }
+
+/// Wrapper for the diagnostic <see cref="AdsolutHttpInvoker.SendRawAsync"/>
+/// path. Carries the upstream HTTP status, the URL that was actually called,
+/// the raw response body verbatim and (when the body parsed as a JSON error
+/// envelope) the lifted error code. The body is intentionally a string and
+/// not a parsed JsonDocument so the admin sees exactly what WK sent — bytes,
+/// formatting and all.
+public sealed record AdsolutRawResponse(int Status, string RequestUrl, string Body, string? UpstreamErrorCode);

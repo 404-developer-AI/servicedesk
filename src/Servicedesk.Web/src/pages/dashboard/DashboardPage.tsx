@@ -1,5 +1,6 @@
 import { HealthPill } from "@/components/health/HealthPill";
 import { AvgPickupTile } from "@/components/dashboard/AvgPickupTile";
+import { IntegrationsHealthTile } from "@/components/dashboard/IntegrationsHealthTile";
 import { SystemHealthTile } from "@/components/dashboard/SystemHealthTile";
 import { useCurrentRole } from "@/hooks/useCurrentRole";
 
@@ -17,6 +18,7 @@ export function DashboardPage() {
         <AvgPickupTile />
         {isAdmin ? <SystemHealthTile /> : null}
       </div>
+      {isAdmin ? <IntegrationsHealthTile /> : null}
     </div>
   );
 }

@@ -1668,6 +1668,13 @@ public sealed class DatabaseBootstrapper : IHostedService
             companies_skipped_loser_in_conflict INTEGER     NOT NULL DEFAULT 0,
             updated_utc                         TIMESTAMPTZ NOT NULL DEFAULT now()
         );
+
+        -- v0.0.27 — admin "Acknowledge" timestamp for the integrations
+        -- health card. The Sync check on /dashboard goes back to green once
+        -- acknowledged_utc >= last_error_utc; the next failed tick (which
+        -- updates last_error_utc) flips it back to amber automatically.
+        ALTER TABLE adsolut_sync_state
+            ADD COLUMN IF NOT EXISTS acknowledged_utc TIMESTAMPTZ NULL;
         """;
 
     private readonly NpgsqlDataSource _dataSource;
