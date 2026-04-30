@@ -511,6 +511,30 @@ export type AdsolutDebugLookupResponse = {
   body: string;
 };
 
+export type AdsolutDebugPutPreview = {
+  getStatus: number;
+  getRequestUrl: string;
+  upstreamErrorCode: string | null;
+  getBody: string;
+  putUrl: string;
+  putBody: string | null;
+  putBuildError: string | null;
+};
+
+export type AdsolutDebugPutResponse = {
+  status: number;
+  requestUrl: string;
+  upstreamErrorCode: string | null;
+  body: string;
+};
+
+export type AdsolutDebugAccessToken = {
+  accessToken: string;
+  accessTokenExpiresUtc: string | null;
+  baseUrl: string;
+  administrationId: string | null;
+};
+
 export const adsolutApi = {
   status: () =>
     request<AdsolutStatus>("GET", "/api/admin/integrations/adsolut/status"),
@@ -566,6 +590,24 @@ export const adsolutApi = {
       `/api/admin/integrations/adsolut/debug/lookup?${qs.toString()}`,
     );
   },
+  debugPutPreview: (customerId: string) => {
+    const qs = new URLSearchParams({ customerId });
+    return request<AdsolutDebugPutPreview>(
+      "GET",
+      `/api/admin/integrations/adsolut/debug/put-preview?${qs.toString()}`,
+    );
+  },
+  debugCustomerPut: (customerId: string, body: string) =>
+    request<AdsolutDebugPutResponse>(
+      "POST",
+      "/api/admin/integrations/adsolut/debug/put",
+      { customerId, body },
+    ),
+  debugAccessToken: () =>
+    request<AdsolutDebugAccessToken>(
+      "GET",
+      "/api/admin/integrations/adsolut/debug/access-token",
+    ),
 };
 
 // ---- Mail attachment diagnostics ----

@@ -2,13 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Copy, Plug, RefreshCw, Search } from "lucide-react";
+import { ArrowLeft, Copy, Eye, EyeOff, KeyRound, Plug, RefreshCw, Search, Send, Wand2 } from "lucide-react";
 import {
   ApiError,
   adsolutApi,
   settingsApi,
+  type AdsolutDebugAccessToken,
   type AdsolutDebugKind,
   type AdsolutDebugLookupResponse,
+  type AdsolutDebugPutPreview,
+  type AdsolutDebugPutResponse,
   type AdsolutState,
   type SettingEntry,
 } from "@/lib/api";
@@ -26,7 +29,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SettingField } from "@/components/settings/SettingField";
 import { AdsolutScopesPicker } from "@/components/settings/AdsolutScopesPicker";
 import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditLog";
-import { useIntegrationsSignalR } from "@/hooks/useIntegrationsSignalR";
 import { cn } from "@/lib/utils";
 
 const ADSOLUT_SETTINGS_QUERY_KEY = ["settings", "list", "Adsolut"] as const;
@@ -110,9 +112,6 @@ function clearStatusFromUrl() {
 
 export function AdsolutIntegrationPage() {
   const qc = useQueryClient();
-  // Live status pushes — a connect/disconnect/refresh-failed transition
-  // on another tab flips this page's badges within seconds.
-  useIntegrationsSignalR();
 
   const status = useQuery({
     queryKey: ADSOLUT_STATUS_QUERY_KEY,
@@ -151,6 +150,18 @@ export function AdsolutIntegrationPage() {
   const [debugKind, setDebugKind] = useState<AdsolutDebugKind>("customer");
   const [debugCode, setDebugCode] = useState<string>("");
   const [debugResult, setDebugResult] = useState<AdsolutDebugLookupResponse | null>(null);
+
+  // PUT-debug card — separate from the lookup card so an in-progress edit
+  // is not lost when the admin runs another lookup.
+  const [putCustomerId, setPutCustomerId] = useState<string>("");
+  const [putPreview, setPutPreview] = useState<AdsolutDebugPutPreview | null>(null);
+  const [putBodyDraft, setPutBodyDraft] = useState<string>("");
+  const [putResult, setPutResult] = useState<AdsolutDebugPutResponse | null>(null);
+
+  // External-client (Postman / curl) card — token never persists in
+  // localStorage / sessionStorage; lives only in this component's memory.
+  const [externalToken, setExternalToken] = useState<AdsolutDebugAccessToken | null>(null);
+  const [externalTokenVisible, setExternalTokenVisible] = useState(false);
 
   // Surface the post-callback ?status= query param as a toast, then strip it
   // from the URL so a refresh doesn't fire it again.
@@ -268,6 +279,62 @@ export function AdsolutIntegrationPage() {
     },
   });
 
+  const buildPutPreview = useMutation({
+    mutationFn: () => adsolutApi.debugPutPreview(putCustomerId.trim()),
+    onSuccess: (r) => {
+      setPutPreview(r);
+      // Pre-fill the editor only on a successful build. Leaves any in-
+      // flight edit intact when the GET fails (so a 404 doesn't wipe
+      // a body the admin was already crafting from a previous customer).
+      if (r.putBody) {
+        setPutBodyDraft(r.putBody);
+      }
+      setPutResult(null);
+    },
+    onError: (err) => {
+      toast.error(
+        err instanceof ApiError ? `Preview failed (${err.status})` : "Preview failed",
+      );
+    },
+  });
+
+  const sendCustomerPut = useMutation({
+    mutationFn: () => adsolutApi.debugCustomerPut(putCustomerId.trim(), putBodyDraft),
+    onSuccess: (r) => {
+      setPutResult(r);
+      if (r.status >= 200 && r.status < 300) {
+        toast.success(`PUT succeeded — HTTP ${r.status}`);
+      } else if (r.status === 0) {
+        toast.error(`PUT failed — no response`);
+      } else {
+        toast.error(`PUT returned HTTP ${r.status}`);
+      }
+    },
+    onError: (err) => {
+      setPutResult(null);
+      toast.error(
+        err instanceof ApiError ? `PUT failed (${err.status})` : "PUT failed",
+      );
+    },
+  });
+
+  const fetchAccessToken = useMutation({
+    mutationFn: () => adsolutApi.debugAccessToken(),
+    onSuccess: (r) => {
+      setExternalToken(r);
+      setExternalTokenVisible(true);
+    },
+    onError: (err) => {
+      setExternalToken(null);
+      setExternalTokenVisible(false);
+      toast.error(
+        err instanceof ApiError
+          ? `Token export failed (${err.status})`
+          : "Token export failed",
+      );
+    },
+  });
+
   const copyRedirect = async (url: string) => {
     try {
       await navigator.clipboard.writeText(url);
@@ -309,6 +376,95 @@ export function AdsolutIntegrationPage() {
 
   const debugCanLookup =
     debugCode.trim().length > 0 && debugCode.trim().length <= 32 && !debugLookup.isPending;
+
+  const isUuid = (v: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim());
+
+  const putCanBuild = isUuid(putCustomerId) && !buildPutPreview.isPending;
+  const putBodyParses = useMemo(() => {
+    if (!putBodyDraft.trim()) return false;
+    try {
+      JSON.parse(putBodyDraft);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [putBodyDraft]);
+  const putCanSend =
+    isUuid(putCustomerId) && putBodyDraft.trim().length > 0 && putBodyParses && !sendCustomerPut.isPending;
+
+  const putGetStatusTone = (() => {
+    if (!putPreview) return "";
+    const s = putPreview.getStatus;
+    if (s === 0) return "border-rose-400/40 bg-rose-500/10 text-rose-300";
+    if (s >= 200 && s < 300) return "border-emerald-400/30 bg-emerald-500/10 text-emerald-300";
+    if (s >= 400 && s < 500) return "border-amber-400/30 bg-amber-500/[0.08] text-amber-200";
+    return "border-rose-400/40 bg-rose-500/10 text-rose-300";
+  })();
+  const putResultStatusTone = (() => {
+    if (!putResult) return "";
+    const s = putResult.status;
+    if (s === 0) return "border-rose-400/40 bg-rose-500/10 text-rose-300";
+    if (s >= 200 && s < 300) return "border-emerald-400/30 bg-emerald-500/10 text-emerald-300";
+    if (s >= 400 && s < 500) return "border-amber-400/30 bg-amber-500/[0.08] text-amber-200";
+    return "border-rose-400/40 bg-rose-500/10 text-rose-300";
+  })();
+  const putGetFormatted = useMemo(() => {
+    if (!putPreview?.getBody) return "";
+    try {
+      return JSON.stringify(JSON.parse(putPreview.getBody), null, 2);
+    } catch {
+      return putPreview.getBody;
+    }
+  }, [putPreview?.getBody]);
+  const putResultFormatted = useMemo(() => {
+    if (!putResult?.body) return "";
+    try {
+      return JSON.stringify(JSON.parse(putResult.body), null, 2);
+    } catch {
+      return putResult.body;
+    }
+  }, [putResult?.body]);
+
+  const resetPutBodyToComputed = () => {
+    if (putPreview?.putBody) {
+      setPutBodyDraft(putPreview.putBody);
+    }
+  };
+
+  const formatPutBodyDraft = () => {
+    try {
+      setPutBodyDraft(JSON.stringify(JSON.parse(putBodyDraft), null, 2));
+    } catch {
+      toast.error("Body is not valid JSON — cannot format");
+    }
+  };
+
+  const externalTokenMinutesLeft = useMemo(() => {
+    if (!externalToken?.accessTokenExpiresUtc) return null;
+    const t = new Date(externalToken.accessTokenExpiresUtc).getTime();
+    if (Number.isNaN(t)) return null;
+    return Math.round((t - Date.now()) / 60000);
+  }, [externalToken?.accessTokenExpiresUtc]);
+
+  const copyExternalToken = async () => {
+    if (!externalToken) return;
+    try {
+      await navigator.clipboard.writeText(externalToken.accessToken);
+      toast.success("Access token copied");
+    } catch {
+      toast.error("Could not copy — select the token manually");
+    }
+  };
+
+  const copyPlain = async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(`${label} copied`);
+    } catch {
+      toast.error("Could not copy — select the value manually");
+    }
+  };
 
   const slidingExpiryDays = useMemo(() => {
     const d = status.data?.lastRefreshedUtc;
@@ -951,6 +1107,384 @@ export function AdsolutIntegrationPage() {
                   {debugFormattedBody || "(empty body)"}
                 </pre>
               </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* PUT debug — Postman-lite for /customers/{id}. Build the canonical
+          PUT body from the upstream GET, optionally edit it in-place, then
+          send. Each call lands in the audit log as debug.put_preview /
+          debug.customer_put. */}
+      {isConnectedState && s.administrationId && (
+        <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+          <header className="mb-4 space-y-1">
+            <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
+              PUT debug · customers
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Build the PUT body our pusher would send for a single customer, edit it
+              in place if needed, then send the PUT to Adsolut. Use the Lookup card
+              above to find the customer's <span className="font-mono">id</span>{" "}
+              (UUID) — paste that here. The body is sent verbatim as written below;
+              this bypasses the SD-managed overlay so the admin owns the bytes.
+            </p>
+          </header>
+
+          <div className="flex flex-wrap items-end gap-2">
+            <Input
+              value={putCustomerId}
+              onChange={(e) => setPutCustomerId(e.target.value)}
+              placeholder="Customer id (UUID, e.g. c04146fc-48ce-4f59-928a-1aad4d3bbbf9)"
+              className="max-w-md font-mono text-[12px]"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && putCanBuild) {
+                  e.preventDefault();
+                  buildPutPreview.mutate();
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              onClick={() => buildPutPreview.mutate()}
+              disabled={!putCanBuild}
+            >
+              <Wand2 className="mr-1.5 h-3.5 w-3.5" />
+              {buildPutPreview.isPending ? "Building…" : "Build PUT body"}
+            </Button>
+          </div>
+
+          {putCustomerId.trim().length > 0 && !isUuid(putCustomerId) && (
+            <p className="mt-2 text-[11px] text-amber-300">
+              Customer id must be a UUID.
+            </p>
+          )}
+
+          {putPreview && (
+            <div className="mt-4 space-y-4">
+              {/* GET status + raw upstream body */}
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-muted-foreground/70">Upstream GET:</span>
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5",
+                      putGetStatusTone,
+                    )}
+                  >
+                    {putPreview.getStatus === 0 ? "no response" : `HTTP ${putPreview.getStatus}`}
+                  </span>
+                  {putPreview.upstreamErrorCode && (
+                    <span className="rounded border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+                      {putPreview.upstreamErrorCode}
+                    </span>
+                  )}
+                  <code className="truncate text-[11px] text-muted-foreground/80">
+                    GET {putPreview.getRequestUrl}
+                  </code>
+                </div>
+                <div className="relative">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => copyDebugBody(putGetFormatted)}
+                    aria-label="Copy GET response body"
+                    className="absolute right-2 top-2 h-7 w-7 p-0"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                  <pre className="max-h-[20rem] overflow-auto rounded-md border border-white/[0.06] bg-black/30 p-3 pr-10 font-mono text-[11px] leading-relaxed text-foreground/90">
+                    {putGetFormatted || "(empty body)"}
+                  </pre>
+                </div>
+              </div>
+
+              {/* Computed PUT body editor */}
+              {putPreview.putBody !== null ? (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-muted-foreground/70">Body to PUT:</span>
+                    <code className="truncate text-[11px] text-muted-foreground/80">
+                      PUT {putPreview.putUrl}
+                    </code>
+                    <span className="ml-auto flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={formatPutBodyDraft}
+                        disabled={!putBodyDraft.trim()}
+                        className="h-7 text-[11px]"
+                      >
+                        Format
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={resetPutBodyToComputed}
+                        disabled={!putPreview?.putBody || putBodyDraft === putPreview.putBody}
+                        className="h-7 text-[11px]"
+                      >
+                        Reset
+                      </Button>
+                      {!putBodyParses && putBodyDraft.trim().length > 0 && (
+                        <span className="text-[11px] text-amber-300">Invalid JSON</span>
+                      )}
+                    </span>
+                  </div>
+                  <textarea
+                    value={putBodyDraft}
+                    onChange={(e) => setPutBodyDraft(e.target.value)}
+                    spellCheck={false}
+                    className={cn(
+                      "block w-full resize-y rounded-md border bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-foreground/90 focus:outline-none focus:ring-1 focus:ring-primary/40",
+                      putBodyParses || putBodyDraft.trim().length === 0
+                        ? "border-white/[0.06]"
+                        : "border-amber-400/40",
+                    )}
+                    rows={20}
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => sendCustomerPut.mutate()}
+                      disabled={!putCanSend}
+                    >
+                      <Send className="mr-1.5 h-3.5 w-3.5" />
+                      {sendCustomerPut.isPending ? "Sending…" : "Send PUT"}
+                    </Button>
+                    <span className="text-[11px] text-muted-foreground">
+                      Mutates the upstream customer immediately. Audited as{" "}
+                      <span className="font-mono">debug.customer_put</span>.
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-md border border-amber-400/30 bg-amber-500/[0.08] px-3 py-2 text-[11px] text-amber-200">
+                  No PUT body produced — the upstream GET did not return a parseable
+                  customer object.
+                  {putPreview.putBuildError && (
+                    <span className="ml-1 font-mono">({putPreview.putBuildError})</span>
+                  )}
+                </div>
+              )}
+
+              {/* PUT result (after Send) */}
+              {putResult && (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-muted-foreground/70">Upstream PUT:</span>
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5",
+                        putResultStatusTone,
+                      )}
+                    >
+                      {putResult.status === 0 ? "no response" : `HTTP ${putResult.status}`}
+                    </span>
+                    {putResult.upstreamErrorCode && (
+                      <span className="rounded border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+                        {putResult.upstreamErrorCode}
+                      </span>
+                    )}
+                    <code className="truncate text-[11px] text-muted-foreground/80">
+                      PUT {putResult.requestUrl}
+                    </code>
+                  </div>
+                  <div className="relative">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => copyDebugBody(putResultFormatted)}
+                      aria-label="Copy PUT response body"
+                      className="absolute right-2 top-2 h-7 w-7 p-0"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                    <pre className="max-h-[20rem] overflow-auto rounded-md border border-white/[0.06] bg-black/30 p-3 pr-10 font-mono text-[11px] leading-relaxed text-foreground/90">
+                      {putResultFormatted || "(empty body)"}
+                    </pre>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* External client — Postman / curl bring-your-own-debugger card.
+          Reveals the current access token + base URL + administration id
+          so an admin can paste them into a local debug tool for one-off
+          API exploration without going through our wrappers. Token has
+          ~1h validity; the same button re-fetches when expired. Each
+          reveal is audited in the security audit_log. */}
+      {isConnectedState && (
+        <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+          <header className="mb-4 space-y-1">
+            <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
+              External client (Postman / curl)
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Reveal the current access token to use Adsolut's API directly from
+              Postman or curl. Token validity is ~1 hour — click again when it
+              expires. Each reveal is recorded in the security audit log as{" "}
+              <span className="font-mono">integration.adsolut.access_token.exported</span>{" "}
+              so a leaked token can be traced back to who exported it.
+            </p>
+          </header>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => fetchAccessToken.mutate()}
+              disabled={fetchAccessToken.isPending}
+            >
+              <KeyRound className="mr-1.5 h-3.5 w-3.5" />
+              {fetchAccessToken.isPending
+                ? "Fetching…"
+                : externalToken
+                  ? "Refresh access token"
+                  : "Reveal access token"}
+            </Button>
+            {externalToken && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setExternalToken(null);
+                  setExternalTokenVisible(false);
+                }}
+                className="text-muted-foreground"
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+
+          {externalToken && (
+            <div className="mt-4 space-y-3">
+              {/* Token row — eye-toggle to hide for shoulder-surfing safety,
+                  copy button for paste-into-Postman. */}
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-[11px] text-muted-foreground/70">
+                  <span>Authorization: Bearer</span>
+                  {externalTokenMinutesLeft !== null && (
+                    <span
+                      className={cn(
+                        "rounded-full border px-2 py-0.5 text-[10px]",
+                        externalTokenMinutesLeft > 5
+                          ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-300"
+                          : externalTokenMinutesLeft > 0
+                            ? "border-amber-400/30 bg-amber-500/[0.08] text-amber-200"
+                            : "border-rose-400/40 bg-rose-500/10 text-rose-300",
+                      )}
+                    >
+                      {externalTokenMinutesLeft > 0
+                        ? `expires in ${externalTokenMinutesLeft} min`
+                        : "expired — refresh"}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 truncate rounded-md border border-white/[0.06] bg-black/30 px-3 py-2 font-mono text-[11px] text-foreground/90">
+                    {externalTokenVisible
+                      ? externalToken.accessToken
+                      : "•".repeat(64)}
+                  </code>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setExternalTokenVisible((v) => !v)}
+                    className="h-9 w-9 shrink-0 p-0"
+                    aria-label={externalTokenVisible ? "Hide token" : "Show token"}
+                  >
+                    {externalTokenVisible ? (
+                      <EyeOff className="h-3.5 w-3.5" />
+                    ) : (
+                      <Eye className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={copyExternalToken}
+                    className="h-9 w-9 shrink-0 p-0"
+                    aria-label="Copy access token"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+
+              {/* Base URL + admin id — the other two pieces a Postman request needs. */}
+              <dl className="grid grid-cols-1 gap-y-2 text-xs sm:grid-cols-[140px_1fr]">
+                <dt className="text-muted-foreground/70">API base URL</dt>
+                <dd className="flex items-center gap-2">
+                  <code className="flex-1 truncate rounded-md border border-white/[0.06] bg-black/30 px-2 py-1 font-mono text-[11px] text-foreground/90">
+                    {externalToken.baseUrl || "(not configured)"}
+                  </code>
+                  {externalToken.baseUrl && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => copyPlain(externalToken.baseUrl, "Base URL")}
+                      className="h-7 w-7 shrink-0 p-0"
+                      aria-label="Copy base URL"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </dd>
+                <dt className="text-muted-foreground/70">Administration id</dt>
+                <dd className="flex items-center gap-2">
+                  <code className="flex-1 truncate rounded-md border border-white/[0.06] bg-black/30 px-2 py-1 font-mono text-[11px] text-foreground/90">
+                    {externalToken.administrationId ?? "(no dossier active)"}
+                  </code>
+                  {externalToken.administrationId && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() =>
+                        copyPlain(externalToken.administrationId!, "Administration id")
+                      }
+                      className="h-7 w-7 shrink-0 p-0"
+                      aria-label="Copy administration id"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </dd>
+              </dl>
+
+              {/* One concrete example so the admin doesn't have to look up
+                  the URL pattern. Customers list is the safest GET to start
+                  with — any 200 here proves the token + admin id are wired
+                  correctly. */}
+              {externalToken.baseUrl && externalToken.administrationId && (
+                <div className="space-y-1">
+                  <div className="text-[11px] text-muted-foreground/70">
+                    Example — list first 10 customers
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 truncate rounded-md border border-white/[0.06] bg-black/30 px-2 py-1 font-mono text-[11px] text-foreground/90">
+                      GET {externalToken.baseUrl}/acc/v1/adm/{externalToken.administrationId}/customers?Limit=10
+                    </code>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() =>
+                        copyPlain(
+                          `${externalToken.baseUrl}/acc/v1/adm/${externalToken.administrationId}/customers?Limit=10`,
+                          "Example URL",
+                        )
+                      }
+                      className="h-7 w-7 shrink-0 p-0"
+                      aria-label="Copy example URL"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </section>

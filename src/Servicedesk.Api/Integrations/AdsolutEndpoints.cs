@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.DataProtection;
@@ -51,6 +52,10 @@ public static class AdsolutEndpoints
         admin.MapPost("/sync", TriggerSyncNow).WithName("TriggerAdsolutSyncNow").WithOpenApi();
 
         admin.MapGet("/debug/lookup", DebugLookup).WithName("AdsolutDebugLookup").WithOpenApi();
+        admin.MapGet("/debug/put-preview", DebugPutPreview).WithName("AdsolutDebugPutPreview").WithOpenApi();
+        admin.MapPost("/debug/put", DebugPutCustomer).WithName("AdsolutDebugPutCustomer").WithOpenApi();
+        admin.MapGet("/debug/access-token", DebugAccessToken).WithName("AdsolutDebugAccessToken").WithOpenApi()
+            .RequireRateLimiting("auth");
 
         // Anonymous — see header comment. Validation happens via the
         // tamper-evident intent cookie + the upstream code exchange.
@@ -710,6 +715,262 @@ public static class AdsolutEndpoints
                 body = ex.Message,
             });
         }
+    }
+
+    // ---- /debug/put-preview + /debug/put ------------------------------
+    //
+    // Postman-lite for the customers PUT path. The preview endpoint does
+    // a single GET on /customers/{id} and runs the response through
+    // AdsolutCustomersWriteClient.BuildUpdateBody(getJson, overlay: null,
+    // customerId) so the admin sees the exact body the pusher would
+    // produce for a no-edit round-trip. They can then optionally edit
+    // that body in-browser and POST it back via /debug/put, which forwards
+    // it verbatim as the request body of a PUT to /customers/{id}.
+    //
+    // Why two endpoints instead of one preview-and-send: the admin must
+    // be able to see + (optionally) tweak the body before any mutation
+    // hits Adsolut. A single round-trip would either skip the review step
+    // or force an "are you sure?" dialog, neither matching the Postman-
+    // workflow intent.
+    //
+    // Scope guard: the URL path id is the only mutable surface; everything
+    // else is admin-gated and audited as debug.put_preview / debug.customer_put.
+    // The supplied PUT body is sent verbatim — the admin owns the contract
+    // they are testing.
+
+    private static async Task<IResult> DebugPutPreview(
+        Guid customerId,
+        IAdsolutConnectionStore connections,
+        AdsolutHttpInvoker invoker,
+        CancellationToken ct)
+    {
+        if (customerId == Guid.Empty)
+        {
+            return Results.BadRequest(new { error = "missing_customer_id" });
+        }
+
+        var connection = await connections.GetAsync(ct);
+        if (connection is null)
+        {
+            return Results.BadRequest(new { error = "not_connected" });
+        }
+        if (connection.AdministrationId is not Guid administrationId)
+        {
+            return Results.BadRequest(new { error = "no_administration", message = "Activate a dossier first." });
+        }
+
+        var baseUrl = await invoker.ResolveBaseUrlAsync(ct);
+        var url = $"{baseUrl}/acc/v1/adm/{administrationId}/customers/{customerId}";
+
+        AdsolutRawResponse raw;
+        try
+        {
+            raw = await invoker.SendRawAsync(
+                eventType: AdsolutEventTypes.DebugPutPreview,
+                buildRequest: () => new HttpRequestMessage(HttpMethod.Get, url),
+                auditPayload: new { customerId, administrationId },
+                ct: ct);
+        }
+        catch (AdsolutApiException ex)
+        {
+            return Results.Ok(new
+            {
+                getStatus = ex.HttpStatus ?? 0,
+                getRequestUrl = url,
+                upstreamErrorCode = ex.UpstreamErrorCode ?? "transport_or_refresh_failed",
+                getBody = ex.Message,
+                putUrl = url,
+                putBody = (string?)null,
+                putBuildError = (string?)null,
+            });
+        }
+
+        // Only attempt to derive the PUT body when the GET succeeded with
+        // a parseable JSON payload. A 4xx/5xx body from Adsolut is usually
+        // an error envelope and feeding it into BuildUpdateBody would just
+        // throw; surface the failure cleanly so the UI can show "GET
+        // failed, no PUT body to preview".
+        string? putBody = null;
+        string? putBuildError = null;
+        if (raw.Status is >= 200 and < 300 && !string.IsNullOrWhiteSpace(raw.Body))
+        {
+            try
+            {
+                putBody = AdsolutCustomersWriteClient.BuildUpdateBody(raw.Body, overlay: null, customerId);
+            }
+            catch (AdsolutApiException ex)
+            {
+                putBuildError = ex.Message;
+            }
+            catch (Exception ex)
+            {
+                putBuildError = $"build_failed: {ex.Message}";
+            }
+        }
+
+        return Results.Ok(new
+        {
+            getStatus = raw.Status,
+            getRequestUrl = raw.RequestUrl,
+            upstreamErrorCode = raw.UpstreamErrorCode,
+            getBody = raw.Body,
+            putUrl = url,
+            putBody,
+            putBuildError,
+        });
+    }
+
+    public sealed record DebugPutRequest(
+        [property: Required] Guid CustomerId,
+        [property: Required] string Body);
+
+    private static async Task<IResult> DebugPutCustomer(
+        [FromBody] DebugPutRequest request,
+        IAdsolutConnectionStore connections,
+        AdsolutHttpInvoker invoker,
+        CancellationToken ct)
+    {
+        if (request is null || request.CustomerId == Guid.Empty)
+        {
+            return Results.BadRequest(new { error = "missing_customer_id" });
+        }
+        if (string.IsNullOrWhiteSpace(request.Body))
+        {
+            return Results.BadRequest(new { error = "missing_body" });
+        }
+
+        // Defensive parse so a malformed paste doesn't slip through and
+        // hit Adsolut as application/json with garbage; their error
+        // surface for that case is hostile to debug.
+        try
+        {
+            using var _ = JsonDocument.Parse(request.Body);
+        }
+        catch (JsonException ex)
+        {
+            return Results.BadRequest(new { error = "invalid_json", message = ex.Message });
+        }
+
+        var connection = await connections.GetAsync(ct);
+        if (connection is null)
+        {
+            return Results.BadRequest(new { error = "not_connected" });
+        }
+        if (connection.AdministrationId is not Guid administrationId)
+        {
+            return Results.BadRequest(new { error = "no_administration", message = "Activate a dossier first." });
+        }
+
+        var baseUrl = await invoker.ResolveBaseUrlAsync(ct);
+        var url = $"{baseUrl}/acc/v1/adm/{administrationId}/customers/{request.CustomerId}";
+
+        try
+        {
+            var raw = await invoker.SendRawAsync(
+                eventType: AdsolutEventTypes.DebugCustomerPut,
+                buildRequest: () => new HttpRequestMessage(HttpMethod.Put, url)
+                {
+                    Content = new StringContent(request.Body, Encoding.UTF8, "application/json"),
+                },
+                auditPayload: new { customerId = request.CustomerId, administrationId, bodyBytes = request.Body.Length },
+                ct: ct);
+            return Results.Ok(new
+            {
+                status = raw.Status,
+                requestUrl = raw.RequestUrl,
+                upstreamErrorCode = raw.UpstreamErrorCode,
+                body = raw.Body,
+            });
+        }
+        catch (AdsolutApiException ex)
+        {
+            return Results.Ok(new
+            {
+                status = ex.HttpStatus ?? 0,
+                requestUrl = url,
+                upstreamErrorCode = ex.UpstreamErrorCode ?? "transport_or_refresh_failed",
+                body = ex.Message,
+            });
+        }
+    }
+
+    // ---- /debug/access-token -------------------------------------------
+    //
+    // Reveals the current access token so an admin can paste it into a
+    // local debug tool (Postman, curl, etc.) for one-off API exploration.
+    // Token validity is bounded by the WK access-token lifetime (~1 hour);
+    // the admin re-fetches when it expires by clicking the same button.
+    //
+    // Security:
+    //   - Admin-only (group middleware) + rate-limited under the "auth"
+    //     policy so brute-force enumeration of the audit_log via repeated
+    //     calls is bounded.
+    //   - Token value never lands in the audit payload — only the fact of
+    //     export plus the access-token expiry. A leaked token can still be
+    //     traced back to who exported it via the ClientIp + Actor + the
+    //     expiry-window match.
+    //   - Token is returned in the JSON body only; not echoed to logs,
+    //     headers, or any cache layer. The Servicedesk dev-tools instinct
+    //     is to grep network responses for tokens, so the response uses a
+    //     boring property name (`accessToken`) and Cache-Control: no-store.
+
+    private static async Task<IResult> DebugAccessToken(
+        HttpContext http,
+        IAdsolutAccessTokenProvider tokens,
+        IAdsolutConnectionStore connections,
+        ISettingsService settings,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        var connection = await connections.GetAsync(ct);
+        if (connection is null)
+        {
+            return Results.BadRequest(new { error = "not_connected" });
+        }
+
+        string token;
+        try
+        {
+            token = await tokens.GetAccessTokenAsync(ct);
+        }
+        catch (AdsolutRefreshException ex)
+        {
+            return Results.BadRequest(new
+            {
+                error = "refresh_failed",
+                upstreamErrorCode = ex.UpstreamErrorCode,
+                message = ex.Message,
+            });
+        }
+
+        var baseUrl = (await settings.GetAsync<string>(SettingKeys.Adsolut.ApiBaseUrl, ct) ?? string.Empty).TrimEnd('/');
+
+        var (actor, role) = ActorContext.Resolve(http);
+        await audit.LogAsync(new AuditEvent(
+            EventType: AdsolutEventTypes.AccessTokenExported,
+            Actor: actor,
+            ActorRole: role,
+            ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString(),
+            Payload: new
+            {
+                accessTokenExpiresUtc = connection.AccessTokenExpiresUtc,
+                administrationId = connection.AdministrationId,
+            }), ct);
+
+        // Cache-Control: no-store so an intermediate proxy cannot cache
+        // the token. Should never matter behind our auth-cookie + HTTPS,
+        // but defence in depth is cheap.
+        http.Response.Headers["Cache-Control"] = "no-store";
+        http.Response.Headers["Pragma"] = "no-cache";
+
+        return Results.Ok(new
+        {
+            accessToken = token,
+            accessTokenExpiresUtc = connection.AccessTokenExpiresUtc,
+            baseUrl,
+            administrationId = connection.AdministrationId,
+        });
     }
 
     // ---- helpers --------------------------------------------------------

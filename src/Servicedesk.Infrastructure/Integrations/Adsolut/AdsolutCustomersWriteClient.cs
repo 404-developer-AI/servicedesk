@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 
 namespace Servicedesk.Infrastructure.Integrations.Adsolut;
@@ -79,7 +80,30 @@ public sealed class AdsolutCustomersWriteClient : IAdsolutCustomersWriteClient
     {
         var baseUrl = await _invoker.ResolveBaseUrlAsync(ct);
         var url = $"{baseUrl}/acc/v1/adm/{administrationId}/customers/{customerId}";
-        var body = SerializePayload(payload, includeId: customerId);
+
+        // PUT-as-replace fix (live-test bug, v0.0.27): WK treats every absent
+        // optional field as "set to null/default" — pushing only our managed
+        // subset wiped country, dueDays, dueDate, bankAccounts, languageIsoCode,
+        // financialDiscount*, remindersEnabled on the upstream row. Read-modify-
+        // write avoids it: GET the current state, transform from the GET shape
+        // (nested {id} objects, `bankAccounts`) into the UpdateCustomerRequest
+        // shape (flat *Id strings, `bankAccountLines`), overlay our managed
+        // fields, PUT back the full body. Cost: 2× HTTP per update — fine inside
+        // the per-tick cap of 200. CreateCustomerAsync stays single-shot because
+        // a brand-new row has nothing to preserve.
+        var existingJson = await _invoker.SendAsync(
+            eventType: AdsolutEventTypes.CustomersGet,
+            buildRequest: () => new HttpRequestMessage(HttpMethod.Get, url),
+            parseSuccess: async (response, c) => await response.Content.ReadAsStringAsync(c),
+            auditPayload: new
+            {
+                administrationId,
+                customerId,
+                source = "pre_update_overlay",
+            },
+            ct: ct);
+
+        var body = BuildUpdateBody(existingJson, payload, customerId);
 
         var parsed = await _invoker.SendAsync(
             eventType: AdsolutEventTypes.CustomersUpdate,
@@ -183,6 +207,303 @@ public sealed class AdsolutCustomersWriteClient : IAdsolutCustomersWriteClient
             writer.WriteEndObject();
         }
         return Encoding.UTF8.GetString(ms.ToArray());
+    }
+
+    /// Build the PUT body in the canonical <c>UpdateCustomerRequest</c> shape.
+    /// We start from an explicitly-enumerated template (every slot the schema
+    /// defines, in the documented order), fill each slot from the GET response
+    /// (with the necessary read-vs-write transformations), then overlay our
+    /// SD-managed fields with the no-op-on-equal regel.
+    ///
+    /// Why "template-then-fill" instead of "GET-then-strip":
+    /// <list type="bullet">
+    /// <item>Guarantees we never leak a GET-only field into the PUT body
+    /// (<c>code</c> / <c>id</c> / <c>lastModified</c> / <c>links</c> /
+    /// <c>contacts</c> / <c>postingRuleLines</c> / <c>currency</c>). Even
+    /// if WK ever adds a new read-only field, our PUT body stays clean by
+    /// construction.</item>
+    /// <item>Guarantees every <c>UpdateCustomerRequest</c> slot is present
+    /// in the body (with a sensible default if the GET didn't have it),
+    /// so WK's import pipeline doesn't branch into a "field-absent" path
+    /// that may have its own bugs (the Adsolut AccountingHarbour
+    /// <c>POCollection.Populate</c> stale-DataRow exception, observed
+    /// 2026-04-30, looks consistent with this hypothesis).</item>
+    /// <item>Read-vs-write transformations stay localized: nested <c>{id}</c>
+    /// objects from GET (<c>country</c>, <c>vatSpecification</c>,
+    /// <c>vatPercentage</c>) become flat <c>countryId</c> / <c>vatSpecificationId</c> /
+    /// <c>vatPercentageId</c>; the <c>bankAccounts</c> array becomes
+    /// <c>bankAccountLines</c> (item shape identical).</item>
+    /// </list>
+    /// After the template is filled, the SD-managed overlay only writes a
+    /// field when its payload value differs semantically from what WK had
+    /// (trim + null≡"" comparison; address compared as recombined full line).
+    /// That keeps a no-op push from bumping WK's <c>lastModified</c>.
+    ///
+    /// <paramref name="overlay"/> may be <c>null</c> — in that case the
+    /// returned body is the canonical PUT shape filled purely from the GET
+    /// (no SD-managed overrides). Used by the admin debug PUT-preview tool
+    /// to show "what we'd send if we PUT this row right now without any
+    /// local edits", which is the same body our pusher would produce when
+    /// the local copy is already in sync. The <c>customerId</c> parameter
+    /// is kept on the signature for symmetry with the URL path id and to
+    /// document who the body belongs to.
+    public static string BuildUpdateBody(
+        string existingJson,
+        AdsolutCustomerWritePayload? overlay,
+        Guid customerId)
+    {
+        JsonNode? rootNode;
+        try
+        {
+            rootNode = JsonNode.Parse(existingJson);
+        }
+        catch (JsonException ex)
+        {
+            throw new AdsolutApiException(
+                "Adsolut customer GET (pre-update overlay) returned a non-JSON body: " + ex.Message,
+                httpStatus: null,
+                upstreamErrorCode: "pre_update_overlay_bad_json");
+        }
+        if (rootNode is not JsonObject src)
+        {
+            throw new AdsolutApiException(
+                "Adsolut customer GET (pre-update overlay) returned a non-object body.",
+                httpStatus: null,
+                upstreamErrorCode: "pre_update_overlay_bad_shape");
+        }
+
+        // Build the canonical UpdateCustomerRequest template. Every field the
+        // schema defines gets a slot here, in the documented order. Values
+        // come from GET via the helpers below (which preserve nulls / apply
+        // the read-vs-write transformations).
+        var dst = new JsonObject
+        {
+            ["alphaCode"] = ReadStringValueOrNull(src, "alphaCode"),
+            ["number"] = ReadStringValueOrNull(src, "number"),
+            ["dueDays"] = ReadIntValueOrDefault(src, "dueDays", 0),
+            ["dueDate"] = ReadStringValueOrDefault(src, "dueDate", "NotSpecified"),
+            ["name"] = ReadStringValueOrDefault(src, "name", string.Empty),
+            ["fax"] = ReadStringValueOrNull(src, "fax"),
+            ["phone"] = ReadStringValueOrNull(src, "phone"),
+            ["mobilePhone"] = ReadStringValueOrNull(src, "mobilePhone"),
+            ["email"] = ReadStringValueOrNull(src, "email"),
+            ["postalCode"] = ReadStringValueOrNull(src, "postalCode"),
+            ["city"] = ReadStringValueOrNull(src, "city"),
+            ["streetName"] = ReadStringValueOrNull(src, "streetName"),
+            ["streetNumber"] = ReadStringValueOrNull(src, "streetNumber"),
+            ["boxNumber"] = ReadStringValueOrNull(src, "boxNumber"),
+            ["countryId"] = ReadNestedIdOrNull(src, "country"),
+            ["vatNumber"] = ReadStringValueOrNull(src, "vatNumber"),
+            ["countryPrefixVatNumber"] = ReadStringValueOrDefault(src, "countryPrefixVatNumber", string.Empty),
+            ["vatSpecificationId"] = ReadNestedIdOrNull(src, "vatSpecification"),
+            ["vatPercentageId"] = ReadNestedIdOrNull(src, "vatPercentage"),
+            // GET (CustomerDetailResponse) does not expose `active`; PUT
+            // requires it as non-nullable bool. Default true: every customer
+            // we have a GET for is by definition still listed by WK, which
+            // for v0.0.27 means active. The eventual deactivate-from-SD
+            // story (out of scope for this version) will need an admin
+            // setting to flip this default.
+            ["active"] = true,
+            ["bankAccountLines"] = ReadBankAccountLines(src),
+            ["externalId"] = ReadStringValueOrNull(src, "externalId"),
+            ["languageIsoCode"] = ReadStringValueOrNull(src, "languageIsoCode"),
+            ["financialDiscountPercentage"] = ReadDecimalValueOrNull(src, "financialDiscountPercentage"),
+            ["financialDiscountDays"] = ReadIntValueOrNull(src, "financialDiscountDays"),
+            ["remindersEnabled"] = ReadBoolValueOrDefault(src, "remindersEnabled", true),
+            ["remarks"] = ReadStringValueOrNull(src, "remarks"),
+        };
+
+        // Overlay SD-managed fields with no-op-on-equal regel — see
+        // OverlayString / OverlayIdentifier / OverlayAddress for details.
+        // Skipped entirely when overlay is null (debug preview path).
+        if (overlay is not null)
+        {
+            OverlayString(dst, "name", overlay.Name);
+            OverlayIdentifier(dst, "alphaCode", overlay.AlphaCode);
+            OverlayIdentifier(dst, "number", overlay.Number);
+            OverlayString(dst, "email", overlay.Email);
+            OverlayString(dst, "phone", overlay.Phone);
+            OverlayString(dst, "postalCode", overlay.PostalCode);
+            OverlayString(dst, "city", overlay.City);
+            OverlayString(dst, "vatNumber", overlay.VatNumber);
+            OverlayString(dst, "countryPrefixVatNumber", overlay.CountryPrefixVatNumber);
+            OverlayAddress(dst, overlay.StreetName, overlay.StreetNumber, overlay.BoxNumber);
+        }
+
+        return dst.ToJsonString();
+    }
+
+    private static JsonNode? ReadStringValueOrNull(JsonObject src, string key)
+    {
+        var s = ReadStringValue(src, key);
+        return s is null ? null : JsonValue.Create(s);
+    }
+
+    private static JsonNode? ReadStringValueOrDefault(JsonObject src, string key, string fallback)
+    {
+        var s = ReadStringValue(src, key);
+        return JsonValue.Create(s ?? fallback);
+    }
+
+    private static JsonNode? ReadNestedIdOrNull(JsonObject src, string key)
+    {
+        if (src.TryGetPropertyValue(key, out var value) &&
+            value is JsonObject inner &&
+            inner.TryGetPropertyValue("id", out var idValue) &&
+            idValue is JsonValue iv &&
+            iv.TryGetValue<string>(out var s) &&
+            !string.IsNullOrEmpty(s))
+        {
+            return JsonValue.Create(s);
+        }
+        return null;
+    }
+
+    private static JsonNode ReadIntValueOrDefault(JsonObject src, string key, int fallback)
+    {
+        if (src.TryGetPropertyValue(key, out var v) && v is JsonValue jv &&
+            jv.TryGetValue<int>(out var i))
+        {
+            return JsonValue.Create(i);
+        }
+        return JsonValue.Create(fallback);
+    }
+
+    private static JsonNode? ReadIntValueOrNull(JsonObject src, string key)
+    {
+        if (src.TryGetPropertyValue(key, out var v) && v is JsonValue jv &&
+            jv.TryGetValue<int>(out var i))
+        {
+            return JsonValue.Create(i);
+        }
+        return null;
+    }
+
+    private static JsonNode? ReadDecimalValueOrNull(JsonObject src, string key)
+    {
+        if (src.TryGetPropertyValue(key, out var v) && v is JsonValue jv)
+        {
+            if (jv.TryGetValue<decimal>(out var d)) return JsonValue.Create(d);
+            if (jv.TryGetValue<double>(out var dd)) return JsonValue.Create(dd);
+            if (jv.TryGetValue<int>(out var i)) return JsonValue.Create(i);
+        }
+        return null;
+    }
+
+    private static JsonNode ReadBoolValueOrDefault(JsonObject src, string key, bool fallback)
+    {
+        if (src.TryGetPropertyValue(key, out var v) && v is JsonValue jv &&
+            jv.TryGetValue<bool>(out var b))
+        {
+            return JsonValue.Create(b);
+        }
+        return JsonValue.Create(fallback);
+    }
+
+    private static JsonArray ReadBankAccountLines(JsonObject src)
+    {
+        // GET response uses `bankAccounts`; PUT shape uses `bankAccountLines`.
+        // Item schema (default, iban, bicCode) is identical between the two.
+        var lines = new JsonArray();
+        if (src["bankAccounts"] is JsonArray banks)
+        {
+            foreach (var b in banks)
+            {
+                if (b is JsonObject bo)
+                {
+                    var copy = new JsonObject
+                    {
+                        ["default"] = ReadBoolValueOrDefault(bo, "default", false),
+                        ["iban"] = ReadStringValueOrDefault(bo, "iban", string.Empty),
+                        ["bicCode"] = ReadStringValueOrNull(bo, "bicCode"),
+                    };
+                    lines.Add(copy);
+                }
+            }
+        }
+        return lines;
+    }
+
+    /// Overwrite <paramref name="key"/> in <paramref name="dst"/> with
+    /// <paramref name="payloadValue"/> only when the payload value is
+    /// semantically different from what's already there. "Semantically equal"
+    /// means trimmed-and-null-treated-as-empty equality — this catches both
+    /// `null` vs `""` (which the SD pusher loves to introduce) and accidental
+    /// trailing-whitespace differences. When equal, the existing GET value
+    /// (which CopyIfPresent put there earlier) stays untouched, so the PUT
+    /// reads identical to what WK already has and doesn't bump lastModified.
+    private static void OverlayString(JsonObject dst, string key, string? payloadValue)
+    {
+        var existing = ReadStringValue(dst, key);
+        if (SemanticallyEqual(payloadValue, existing)) return;
+        dst[key] = payloadValue ?? string.Empty;
+    }
+
+    /// Variant for `alphaCode` / `number`: immutable upstream identifiers.
+    /// Only overlay when the payload carries a value (so a local row that
+    /// pre-dates the column being populated doesn't blank WK's value) AND
+    /// when that value semantically differs from what WK already has (so
+    /// echoing back the same identifier is a no-op).
+    private static void OverlayIdentifier(JsonObject dst, string key, string? payloadValue)
+    {
+        if (string.IsNullOrEmpty(payloadValue)) return;
+        var existing = ReadStringValue(dst, key);
+        if (SemanticallyEqual(payloadValue, existing)) return;
+        dst[key] = payloadValue;
+    }
+
+    /// Address overlay treats <c>streetName</c> + <c>streetNumber</c> +
+    /// <c>boxNumber</c> as one logical field. The SD push-side splits a
+    /// joined address line via a trailing-digit heuristic that doesn't
+    /// match how Adsolut users distribute the parts, so a per-field compare
+    /// would always look "changed". Instead we recombine both sides into
+    /// a canonical full address string and only overlay all three fields
+    /// when those strings differ. When equal we leave WK's distribution
+    /// (whatever it is — full street incl. number on streetName, or split,
+    /// or whatever a human typed in Adsolut) untouched.
+    private static void OverlayAddress(
+        JsonObject dst, string? streetName, string? streetNumber, string? boxNumber)
+    {
+        var existingLine = RecombineAddress(
+            ReadStringValue(dst, "streetName"),
+            ReadStringValue(dst, "streetNumber"),
+            ReadStringValue(dst, "boxNumber"));
+        var payloadLine = RecombineAddress(streetName, streetNumber, boxNumber);
+        if (string.Equals(existingLine, payloadLine, StringComparison.OrdinalIgnoreCase)) return;
+
+        dst["streetName"] = streetName ?? string.Empty;
+        dst["streetNumber"] = streetNumber ?? string.Empty;
+        dst["boxNumber"] = boxNumber ?? string.Empty;
+    }
+
+    private static string RecombineAddress(string? streetName, string? streetNumber, string? boxNumber)
+    {
+        var sn = (streetName ?? string.Empty).Trim();
+        var num = (streetNumber ?? string.Empty).Trim();
+        var box = (boxNumber ?? string.Empty).Trim();
+        var line = sn;
+        if (num.Length > 0)
+        {
+            line = line.Length == 0 ? num : line + " " + num;
+        }
+        if (box.Length > 0)
+        {
+            line = line.Length == 0 ? "bus " + box : line + " bus " + box;
+        }
+        return line;
+    }
+
+    private static string? ReadStringValue(JsonObject obj, string key)
+    {
+        if (!obj.TryGetPropertyValue(key, out var v) || v is null) return null;
+        return v is JsonValue jv && jv.TryGetValue<string>(out var s) ? s : null;
+    }
+
+    private static bool SemanticallyEqual(string? a, string? b)
+    {
+        var pa = (a ?? string.Empty).Trim();
+        var pb = (b ?? string.Empty).Trim();
+        return pa == pb;
     }
 
     /// Parse the body of a POST/PUT/GET on /customers. Tolerates both the
