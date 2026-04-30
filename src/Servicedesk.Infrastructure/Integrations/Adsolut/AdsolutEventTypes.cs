@@ -41,6 +41,15 @@ public static class AdsolutEventTypes
     /// inert until a new secret arrives.
     public const string ClientSecretDeleted = "integration.adsolut.client_secret.deleted";
 
+    /// Admin clicked "Reveal access token" in the External client card.
+    /// Records the export so a forensic trail exists if the token ever
+    /// leaks from a Postman workspace. Payload carries the actor + the
+    /// access-token expiry; the token value itself is NEVER written to
+    /// the audit payload — only the fact of export. Lands in audit_log
+    /// (security trail), not integration_audit, because no outbound HTTP
+    /// happens — this is purely a credential disclosure event.
+    public const string AccessTokenExported = "integration.adsolut.access_token.exported";
+
     // ---- integration_audit event types ---------------------------------
     //
     // The constants below land in integration_audit (operational log),
@@ -124,4 +133,19 @@ public static class AdsolutEventTypes
     /// distinct from CustomersList because filters on "list vs. by-id"
     /// are easier to read in the audit table.
     public const string CustomersGet = "customers.get";
+
+    /// Admin-triggered debug GET on /customers/{id} from the settings page
+    /// PUT-preview card. The response body is shown back to the admin
+    /// verbatim and (separately) transformed into the canonical PUT body
+    /// so they can review and edit before sending. Distinct from
+    /// CustomersGet so operational read-back traffic is not drowned out
+    /// by debug noise.
+    public const string DebugPutPreview = "debug.put_preview";
+
+    /// Admin-triggered debug PUT on /customers/{id} from the settings page
+    /// PUT-preview card. The body is supplied verbatim by the admin (after
+    /// optional in-browser editing) and forwarded to Adsolut without any
+    /// SD-managed overlay. Distinct from CustomersUpdate so push-traffic
+    /// stays separable from one-off admin probes.
+    public const string DebugCustomerPut = "debug.customer_put";
 }
