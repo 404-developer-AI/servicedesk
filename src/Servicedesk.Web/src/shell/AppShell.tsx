@@ -7,11 +7,18 @@ import { MaintenanceBanner } from "@/components/maintenance/MaintenanceBanner";
 import { useSecondarySidebarStore } from "@/stores/useSecondarySidebarStore";
 import { usePresenceConnection } from "@/hooks/usePresence";
 import { useNotificationSignalR } from "@/hooks/useNotificationSignalR";
+import { useIntegrationsSignalR } from "@/hooks/useIntegrationsSignalR";
 import { useWorkspaceAutoSave } from "@/hooks/useWorkspaceAutoSave";
 import { settingsApi } from "@/lib/api";
 
 export function AppShell() {
   usePresenceConnection();
+  // Hoisted to shell-level so the IntegrationsHub handlers stay registered
+  // for the entire authenticated session — page-level callers would tear
+  // down their handlers on navigation, leaving the singleton connection
+  // open with zero handlers and producing "no client method found"
+  // warnings every time the server pushed a sync-tick or status flip.
+  useIntegrationsSignalR();
   useWorkspaceAutoSave();
 
   // Pull the popup-duration from settings so the toast-duration is admin-

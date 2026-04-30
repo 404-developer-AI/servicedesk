@@ -12,7 +12,6 @@ import {
   type IntegrationHealth,
   type SubsystemHealth,
 } from "@/lib/api";
-import { useIntegrationsSignalR } from "@/hooks/useIntegrationsSignalR";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -60,10 +59,6 @@ const DETAIL_ROUTES: Record<string, string> = {
 /// nothing when the backend reports an empty integrations list, so a vanilla
 /// install does not show an empty card.
 export function IntegrationsHealthTile() {
-  // Reuse the shared SignalR subscription so a tick / status flip pushes
-  // straight into this tile via the invalidation in useIntegrationsSignalR.
-  useIntegrationsSignalR();
-
   const query = useQuery({
     queryKey: QUERY_KEY,
     queryFn: () => integrationsHealthApi.get(),

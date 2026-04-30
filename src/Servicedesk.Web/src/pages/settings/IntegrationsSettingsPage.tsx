@@ -6,7 +6,6 @@ import {
   IntegrationTile,
   type IntegrationStatus,
 } from "@/components/integrations/IntegrationTile";
-import { useIntegrationsSignalR } from "@/hooks/useIntegrationsSignalR";
 import { adsolutApi, type AdsolutState } from "@/lib/api";
 import adsolutLogo from "@/assets/integrations/adsolut.ico";
 import trmmLogo from "@/assets/integrations/trmm.png";
@@ -27,10 +26,6 @@ function tileStatusFor(state: AdsolutState | undefined): IntegrationStatus {
 
 export function IntegrationsSettingsPage() {
   const navigate = useNavigate();
-  // Subscribe to /hubs/integrations push events so a connect / disconnect
-  // / refresh-failure on another tab flips the tile here within seconds
-  // instead of waiting for the 30-second poll fallback.
-  useIntegrationsSignalR();
 
   const adsolutStatus = useQuery({
     queryKey: ["integrations", "adsolut", "status"] as const,
