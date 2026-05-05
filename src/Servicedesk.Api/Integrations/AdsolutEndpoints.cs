@@ -51,6 +51,15 @@ public static class AdsolutEndpoints
         admin.MapGet("/sync", GetSyncState).WithName("GetAdsolutSyncState").WithOpenApi();
         admin.MapPost("/sync", TriggerSyncNow).WithName("TriggerAdsolutSyncNow").WithOpenApi();
 
+        // v0.0.28 — manual "Resync contacts" admin escape valve. Triggered
+        // from the company-detail page when an admin doesn't want to wait
+        // for the slow reconcile loop (default 24h). Respects the contacts
+        // pull-toggles — flipping them off then clicking resync is a no-op
+        // by design.
+        admin.MapPost("/companies/{companyId:guid}/resync-contacts", ResyncCompanyContacts)
+            .WithName("ResyncAdsolutCompanyContacts")
+            .WithOpenApi();
+
         admin.MapGet("/debug/lookup", DebugLookup).WithName("AdsolutDebugLookup").WithOpenApi();
         admin.MapGet("/debug/put-preview", DebugPutPreview).WithName("AdsolutDebugPutPreview").WithOpenApi();
         admin.MapPost("/debug/put", DebugPutCustomer).WithName("AdsolutDebugPutCustomer").WithOpenApi();
@@ -623,6 +632,72 @@ public static class AdsolutEndpoints
             ClientIp: http.Connection.RemoteIpAddress?.ToString(),
             UserAgent: http.Request.Headers.UserAgent.ToString()), ct);
         return Results.Accepted();
+    }
+
+    /// v0.0.28 — manual contacts resync for one company. Looks up the
+    /// company's <c>adsolut_id</c>, fetches the full contacts list from
+    /// the active dossier, runs the upserter + reconcile pass against it.
+    /// Returns the same counters shape the reconcile worker writes to its
+    /// audit row, plus the company's adsolut id so the UI can show "synced
+    /// against UUID xxxx".
+    private static async Task<IResult> ResyncCompanyContacts(
+        Guid companyId,
+        HttpContext http,
+        ISettingsService settings,
+        IAdsolutContactsReconciler reconciler,
+        IIntegrationAuditLogger integrationAudit,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        var pullUpdate = await settings.GetAsync<bool>(SettingKeys.Adsolut.SyncPullContactsUpdate, ct);
+        var pullCreate = await settings.GetAsync<bool>(SettingKeys.Adsolut.SyncPullContactsCreate, ct);
+        var options = new AdsolutContactsSyncOptions(pullUpdate, pullCreate);
+
+        var (actor, role) = ActorContext.Resolve(http);
+
+        // Audit-log the request itself before doing the work, so even a
+        // hung/failed run leaves a forensic trail of who clicked.
+        await integrationAudit.LogAsync(new IntegrationAuditEvent(
+            Integration: AdsolutEventTypes.Integration,
+            EventType: AdsolutEventTypes.ContactsResyncRequested,
+            Outcome: IntegrationAuditOutcome.Ok,
+            ActorId: actor,
+            ActorRole: role,
+            Payload: new { companyId, pullUpdate, pullCreate }), ct);
+        await audit.LogAsync(new AuditEvent(
+            EventType: "integration.adsolut.contacts.resync_requested",
+            Actor: actor,
+            ActorRole: role,
+            Target: companyId.ToString(),
+            ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString()), ct);
+
+        var result = await reconciler.ReconcileCompanyAsync(companyId, options, ct);
+        if (result is null)
+        {
+            return Results.NotFound(new
+            {
+                error = "company_not_linked",
+                message = "Company is not linked to Adsolut, the integration is not connected, or no dossier is selected.",
+            });
+        }
+
+        return Results.Ok(new
+        {
+            companyId,
+            pullUpdate,
+            pullCreate,
+            result.CompaniesScanned,
+            result.ContactsSeen,
+            result.ContactsCreated,
+            result.ContactsUpdated,
+            result.ContactsSkippedNoChange,
+            result.ContactsSkippedLocalNewer,
+            result.ContactsSkippedToggleOff,
+            result.ContactsSkippedNoEmail,
+            result.ContactsSkippedLinkConflict,
+            result.LinksReconciled,
+        });
     }
 
     public sealed record SelectAdministrationRequest([property: Required] Guid AdministrationId);

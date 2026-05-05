@@ -85,6 +85,7 @@ public sealed class ContactLookupService : IContactLookupService
             LastName: last,
             Email: email,
             Phone: string.Empty,
+            MobilePhone: string.Empty,
             JobTitle: string.Empty,
             IsActive: true,
             CreatedUtc: now,

@@ -149,6 +149,21 @@ public static class SettingKeys
         public const string SyncPullCompaniesCreate = "Adsolut.Sync.Pull.Companies.Create";
         public const string SyncIncludeSuppliers = "Adsolut.Sync.IncludeSuppliers";
 
+        // v0.0.28 — Contacts pull (Adsolut → SD). Same gating discipline as
+        // the Companies pull: default OFF, force-reset to OFF on every
+        // (re)connect so a fresh install / new dossier is silent until the
+        // admin explicitly opts in.
+        public const string SyncPullContactsUpdate = "Adsolut.Sync.Pull.Contacts.Update";
+        public const string SyncPullContactsCreate = "Adsolut.Sync.Pull.Contacts.Create";
+
+        /// Cadence (hours) of the slow contacts-reconcile loop. Walks every
+        /// Adsolut-linked SD company, refetches the full contacts list and
+        /// reconciles state against SD. Catches active-flips (Adsolut does
+        /// not bump <c>customer.lastModified</c> on a contact's true↔false
+        /// flip) and hard-deletes that the fast delta-loop missed. Floor 1
+        /// hour to keep load on Wolters Kluwer predictable.
+        public const string SyncContactsReconcileIntervalHours = "Adsolut.Sync.Contacts.ReconcileIntervalHours";
+
         /// When true, the sync worker derives a domain from each Adsolut
         /// customer's email and inserts it into <c>company_domains</c> so
         /// inbound mail from the same domain auto-links to the company. The
@@ -476,6 +491,15 @@ public static class SettingDefaults
             "When true, the sync worker also pulls Suppliers (crediteurs) from Adsolut alongside Customers. v0.0.27: 'In development' — backend force-ignores this even if turned on, UI shows the toggle disabled. Off by default because a helpdesk address book is debtors-first and most installs don't want utility/software vendor counterparties imported. The pull-update / pull-create toggles above will apply to suppliers too once this is unlocked in v0.0.28."),
         new SettingDefault(SettingKeys.Adsolut.SyncLinkCompanyDomains, "true", "bool", "Adsolut",
             "When true, the sync worker derives a domain from each Adsolut customer's email field (e.g. info@acme.com → acme.com) and inserts it into company_domains so inbound mail from acme.com auto-links to that company. The Mail.AutoLinkDomainBlacklist (gmail.com, outlook.com, …) is respected — freemail domains are never linked. Idempotent: a domain already claimed by another company is silently skipped (UNIQUE constraint). Adsolut itself has no website field, so this is the only way to populate the auto-link table from sync. Behaviour-modifier toggle: default ON and NOT reset on reconnect, so turning sync back on later does not silently disable domain auto-link."),
+
+        // v0.0.28 — Contacts pull. Sync-gating: default OFF, force-reset on
+        // (re)connect (same discipline as the Companies pull toggles).
+        new SettingDefault(SettingKeys.Adsolut.SyncPullContactsUpdate, "false", "bool", "Adsolut",
+            "When true, an Adsolut customer-contact whose lastModified advanced overwrites the matched SD contact + link on every sync tick. Match-key is the email (CITEXT, case-insensitive). Three Adsolut rows on three different customers with the same email are bundled into one SD contact + three contact_companies links; per-link state (UUID, active, lastModified, hash) is always synced, contact-level fields (first_name, last_name, phone, mobile_phone) follow LWW across all linked Adsolut rows. Default off + force-reset on every (re)connect."),
+        new SettingDefault(SettingKeys.Adsolut.SyncPullContactsCreate, "false", "bool", "Adsolut",
+            "When true, an Adsolut customer-contact with no matching SD contact (no email match, no UUID match) is inserted as a new contacts row + contact_companies link on the next tick. Adsolut contacts without an email are skipped + audit-logged regardless of this toggle (SD's email-keyed schema can't host them). Default off + force-reset on every (re)connect."),
+        new SettingDefault(SettingKeys.Adsolut.SyncContactsReconcileIntervalHours, "24", "int", "Adsolut",
+            "Hours between slow contacts-reconcile passes. Each pass walks every Adsolut-linked SD company and re-fetches the full contacts list to reconcile state — catches active-flips (Adsolut does not bump customer.lastModified on a contact's true↔false flip) and hard-deletes the fast delta-loop missed. Floor 1 hour so an over-eager admin can't accidentally hammer Wolters Kluwer with full sweeps. Default 24h."),
         new SettingDefault(SettingKeys.Adsolut.PushUpdateExistingCustomers, "false", "bool", "Adsolut",
             "When true, the sync worker pushes local edits on Adsolut-linked Companies back to Adsolut (PUT /customers/{id}) on the next tick. Push-tak only fires when the local row is strictly newer than the last pulled lastModified AND the canonical hash differs from the last-synced hash (so an echo-pull right after a push is a no-op). Independent of the create-toggle below: an admin can have updates pushing without ever pushing brand-new rows. Default off + force-reset on every (re)connect."),
         new SettingDefault(SettingKeys.Adsolut.PushCreateNewCustomers, "false", "bool", "Adsolut",

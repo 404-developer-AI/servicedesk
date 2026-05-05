@@ -1,7 +1,9 @@
 using System.Diagnostics;
+using Dapper;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Mail.Ingest;
 using Servicedesk.Infrastructure.Realtime;
@@ -119,6 +121,9 @@ public sealed class AdsolutSyncWorker : BackgroundService
         var customers = sp.GetRequiredService<IAdsolutCustomersClient>();
         var upserter = sp.GetRequiredService<IAdsolutCompanyUpserter>();
         var pusher = sp.GetRequiredService<IAdsolutCompanyPusher>();
+        var contactsClient = sp.GetRequiredService<IAdsolutContactsClient>();
+        var contactUpserter = sp.GetRequiredService<IAdsolutContactUpserter>();
+        var dataSource = sp.GetRequiredService<NpgsqlDataSource>();
         var auditLog = sp.GetRequiredService<IIntegrationAuditLogger>();
         var notifier = sp.GetRequiredService<IIntegrationStatusNotifier>();
 
@@ -172,6 +177,11 @@ public sealed class AdsolutSyncWorker : BackgroundService
         var pushUpdate = await settings.GetAsync<bool>(SettingKeys.Adsolut.PushUpdateExistingCustomers, ct);
         var pushCreate = await settings.GetAsync<bool>(SettingKeys.Adsolut.PushCreateNewCustomers, ct);
         var linkDomains = await settings.GetAsync<bool>(SettingKeys.Adsolut.SyncLinkCompanyDomains, ct);
+        // v0.0.28 — Contacts pull toggles. Independent of the companies-pull
+        // toggles: an admin can be opted in to pulling contact updates while
+        // never accepting new contact rows from Adsolut, or vice versa.
+        var pullContactsUpdate = await settings.GetAsync<bool>(SettingKeys.Adsolut.SyncPullContactsUpdate, ct);
+        var pullContactsCreate = await settings.GetAsync<bool>(SettingKeys.Adsolut.SyncPullContactsCreate, ct);
         // Load the freemail blacklist once per tick (same source the
         // mail-ingest auto-linker uses, so the two paths can never disagree
         // on which domains count as freemail).
@@ -181,6 +191,7 @@ public sealed class AdsolutSyncWorker : BackgroundService
             LinkCompanyDomainsFromEmail: linkDomains,
             FreemailBlacklist: freemailBlacklist);
         var pushOptions = new AdsolutPushOptions(pushUpdate, pushCreate);
+        var contactsOptions = new AdsolutContactsSyncOptions(pullContactsUpdate, pullContactsCreate);
 
         var existingState = await stateStore.GetAsync(ct);
         // Snap the cursor BEFORE making any upstream calls so a slow page
@@ -196,11 +207,38 @@ public sealed class AdsolutSyncWorker : BackgroundService
 
         try
         {
-            await PullEndpointAsync(customers.ListCustomersAsync, administrationId, modifiedSince, options, upserter, counts, ct);
+            // v0.0.28 — collect Adsolut customer-UUIDs as we page through.
+            // The contacts-pass uses these to look up SD companyIds in one
+            // bulk SELECT instead of per-row round-trips, AND it stays
+            // accurate even when companies-update toggle is OFF (in which
+            // case the upserter doesn't bump adsolut_last_modified).
+            var seenCustomerIds = new List<Guid>();
+            await PullEndpointAsync(customers.ListCustomersAsync, administrationId, modifiedSince, options, upserter, counts, seenCustomerIds, ct);
             if (includeSuppliers)
             {
-                await PullEndpointAsync(customers.ListSuppliersAsync, administrationId, modifiedSince, options, upserter, counts, ct);
+                // Suppliers branch is force-OFF in v0.0.28; this loop body
+                // is unreachable in practice but kept symmetric with the
+                // customers branch so the v0.0.x supplier-unlock is a
+                // one-line code-flip.
+                await PullEndpointAsync(customers.ListSuppliersAsync, administrationId, modifiedSince, options, upserter, counts, null, ct);
             }
+
+            // v0.0.28 contacts pull-tak. Only fires when at least one of the
+            // contacts toggles is on; otherwise short-circuits without
+            // touching WK. The reconcile pass at the end of each company
+            // catches hard-deletes (UUID disappeared from the fresh list)
+            // even when the active flag itself wasn't flipped.
+            if (contactsOptions.PullUpdateEnabled || contactsOptions.PullCreateEnabled)
+            {
+                await PullContactsAsync(
+                    dataSource, contactsClient, contactUpserter,
+                    administrationId, contactsOptions, seenCustomerIds, counts, ct);
+            }
+
+            // Note: PullContactsAsync swallows per-row exceptions so an
+            // individual contact failure logs + counts but doesn't abort
+            // the tick. The companies pull-tak doesn't have that yet —
+            // a row exception there still propagates to the outer catch.
 
             // v0.0.27 push-tak — runs after the pull pass so any inbound
             // updates we just absorbed are visible (and protected by the
@@ -262,6 +300,17 @@ public sealed class AdsolutSyncWorker : BackgroundService
                 pushSkippedNoLocalChange = counts.PushSkippedNoLocalChange,
                 pushSkippedToggleOff = counts.PushSkippedToggleOff,
                 pushSkippedMissingAdsolutNumber = counts.PushSkippedMissingAdsolutNumber,
+                contactsCustomersTouched = counts.ContactsCustomersTouched,
+                contactsSeen = counts.ContactsSeen,
+                contactsCreated = counts.ContactsCreated,
+                contactsUpdated = counts.ContactsUpdated,
+                contactsSkippedNoChange = counts.ContactsSkippedNoChange,
+                contactsSkippedToggleOff = counts.ContactsSkippedToggleOff,
+                contactsSkippedLocalNewer = counts.ContactsSkippedLocalNewer,
+                contactsSkippedNoEmail = counts.ContactsSkippedNoEmail,
+                contactsSkippedLinkConflict = counts.ContactsSkippedLinkConflict,
+                contactsReconcileFlipped = counts.ContactsReconcileFlipped,
+                contactsFailed = counts.ContactsFailed,
                 durationMs = (int)stopwatch.ElapsedMilliseconds,
                 modifiedSince,
             }), ct);
@@ -344,6 +393,7 @@ public sealed class AdsolutSyncWorker : BackgroundService
         AdsolutSyncOptions options,
         IAdsolutCompanyUpserter upserter,
         AdsolutSyncCounters counts,
+        List<Guid>? seenAdsolutIds,
         CancellationToken ct)
     {
         const int Limit = 100;
@@ -359,6 +409,7 @@ public sealed class AdsolutSyncWorker : BackgroundService
             foreach (var customer in pageResult.Items)
             {
                 counts.Seen++;
+                seenAdsolutIds?.Add(customer.Id);
                 var outcome = await upserter.UpsertAsync(customer, options, ct);
                 switch (outcome)
                 {
@@ -393,6 +444,141 @@ public sealed class AdsolutSyncWorker : BackgroundService
         while (page <= totalPages);
     }
 
+    /// v0.0.28 contacts pull-tak. For each Adsolut customer the customers-tak
+    /// just touched (whose customer.lastModified advanced this tick), fetch
+    /// the full contacts list and upsert. The contacts sub-resource has no
+    /// pagination and no ModifiedSince filter — every call returns the
+    /// complete set, but each customer only gets called when its own stamp
+    /// moved, so the load stays bounded by the delta.
+    /// <para>
+    /// Hard-delete catch-up rides on this same pass: <see cref="IAdsolutContactUpserter.ReconcileMissingLinksAsync"/>
+    /// flips every link whose UUID is no longer in the fresh response set.
+    /// Active-flip catch-up — where Adsolut does not bump
+    /// <c>customer.lastModified</c> — is handled by the slower reconcile
+    /// loop (separate worker, runs on
+    /// <c>Adsolut.Sync.Contacts.ReconcileIntervalHours</c>).
+    /// </para>
+    private async Task PullContactsAsync(
+        NpgsqlDataSource dataSource,
+        IAdsolutContactsClient contactsClient,
+        IAdsolutContactUpserter contactUpserter,
+        Guid administrationId,
+        AdsolutContactsSyncOptions contactsOptions,
+        IReadOnlyCollection<Guid> seenAdsolutIds,
+        AdsolutSyncCounters counts,
+        CancellationToken ct)
+    {
+        if (seenAdsolutIds.Count == 0) return;
+
+        // One bulk SELECT — pair every seen Adsolut UUID with its SD
+        // companyId. Filtered to is_active=TRUE so soft-deleted companies
+        // don't pull contacts (they're out of helpdesk scope).
+        var pairs = await LoadCompanyPairsAsync(dataSource, seenAdsolutIds, ct);
+        if (pairs.Count == 0) return;
+
+        foreach (var pair in pairs)
+        {
+            var freshContacts = await contactsClient.ListCustomerContactsAsync(
+                administrationId, pair.AdsolutId, ct);
+            counts.ContactsCustomersTouched++;
+
+            foreach (var inbound in freshContacts)
+            {
+                counts.ContactsSeen++;
+                try
+                {
+                    var outcome = await contactUpserter.UpsertAsync(pair.CompanyId, inbound, contactsOptions, ct);
+                    switch (outcome)
+                    {
+                        case AdsolutContactUpsertOutcome.Updated:
+                            counts.ContactsUpdated++;
+                            break;
+                        case AdsolutContactUpsertOutcome.Created:
+                            counts.ContactsCreated++;
+                            break;
+                        case AdsolutContactUpsertOutcome.SkippedNoChange:
+                            counts.ContactsSkippedNoChange++;
+                            break;
+                        case AdsolutContactUpsertOutcome.SkippedLocalNewer:
+                            counts.ContactsSkippedLocalNewer++;
+                            break;
+                        case AdsolutContactUpsertOutcome.SkippedUpdateToggleOff:
+                        case AdsolutContactUpsertOutcome.SkippedCreateToggleOff:
+                            counts.ContactsSkippedToggleOff++;
+                            break;
+                        case AdsolutContactUpsertOutcome.SkippedNoEmail:
+                            counts.ContactsSkippedNoEmail++;
+                            break;
+                        case AdsolutContactUpsertOutcome.SkippedLinkCompanyMismatch:
+                            counts.ContactsSkippedLinkConflict++;
+                            break;
+                    }
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // Per-row try/catch so one bad contact doesn't crash
+                    // the whole tick (cursor stays put → next tick retries
+                    // everything from before, the fast loop never makes
+                    // forward progress). Log + count + continue. Pattern
+                    // borrowed from PushTakAsync's per-candidate handling.
+                    counts.ContactsFailed++;
+                    _logger.LogWarning(ex,
+                        "Adsolut contact upsert failed: company {CompanyId}, adsolut contact {AdsolutId}, email {Email}.",
+                        pair.CompanyId, inbound.Id, inbound.Email);
+                }
+            }
+
+            // Hard-delete catch-up: any link with a UUID that's no longer
+            // in the fresh list flips inactive. Cheap when nothing changed
+            // (UPDATE with WHERE filter selects zero rows).
+            try
+            {
+                var freshIds = freshContacts.Select(c => c.Id).ToArray();
+                counts.ContactsReconcileFlipped += await contactUpserter.ReconcileMissingLinksAsync(
+                    pair.CompanyId, freshIds, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Adsolut contact reconcile-missing failed for company {CompanyId} ({AdsolutId}).",
+                    pair.CompanyId, pair.AdsolutId);
+            }
+        }
+    }
+
+    private sealed class CompanyAdsolutPair
+    {
+        public Guid CompanyId { get; set; }
+        public Guid AdsolutId { get; set; }
+    }
+
+    private static async Task<IReadOnlyList<CompanyAdsolutPair>> LoadCompanyPairsAsync(
+        NpgsqlDataSource dataSource,
+        IReadOnlyCollection<Guid> adsolutIds,
+        CancellationToken ct)
+    {
+        await using var conn = await dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<CompanyAdsolutPair>(new CommandDefinition(
+            """
+            SELECT id         AS CompanyId,
+                   adsolut_id AS AdsolutId
+            FROM companies
+            WHERE is_active = TRUE
+              AND adsolut_id = ANY(@Ids)
+            """,
+            new { Ids = adsolutIds.ToArray() },
+            cancellationToken: ct));
+        return rows.AsList();
+    }
+
     private sealed class AdsolutSyncCounters
     {
         // Pull-tak.
@@ -412,5 +598,18 @@ public sealed class AdsolutSyncWorker : BackgroundService
         public int PushSkippedNoLocalChange;
         public int PushSkippedToggleOff;
         public int PushSkippedMissingAdsolutNumber;
+
+        // Contacts pull-tak (v0.0.28).
+        public int ContactsCustomersTouched;
+        public int ContactsSeen;
+        public int ContactsCreated;
+        public int ContactsUpdated;
+        public int ContactsSkippedNoChange;
+        public int ContactsSkippedToggleOff;
+        public int ContactsSkippedLocalNewer;
+        public int ContactsSkippedNoEmail;
+        public int ContactsSkippedLinkConflict;
+        public int ContactsReconcileFlipped;
+        public int ContactsFailed;
     }
 }

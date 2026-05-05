@@ -105,12 +105,16 @@ public static class DependencyInjection
         services.AddSingleton<IAdsolutAdministrationsClient, AdsolutAdministrationsClient>();
         services.AddSingleton<IAdsolutCustomersClient, AdsolutCustomersClient>();
         services.AddSingleton<IAdsolutCustomersWriteClient, AdsolutCustomersWriteClient>();
+        services.AddSingleton<IAdsolutContactsClient, AdsolutContactsClient>();
         services.AddSingleton<IAdsolutSyncStateStore, AdsolutSyncStateStore>();
         services.AddSingleton<IAdsolutCompanyUpserter, AdsolutCompanyUpserter>();
+        services.AddSingleton<IAdsolutContactUpserter, AdsolutContactUpserter>();
         services.AddSingleton<IAdsolutCompanyPusher, AdsolutCompanyPusher>();
+        services.AddSingleton<IAdsolutContactsReconciler, AdsolutContactsReconciler>();
         services.AddSingleton<IAdsolutSyncWorkerSignal, AdsolutSyncWorkerSignal>();
         services.AddHttpClient(AdsolutHttpInvoker.HttpClientName);
         services.AddHostedService<AdsolutSyncWorker>();
+        services.AddHostedService<AdsolutContactsReconcileWorker>();
 
         // Healthcheck-BackgroundService writes integration_audit rows and
         // pushes resolved status over SignalR. The notifier defaults to

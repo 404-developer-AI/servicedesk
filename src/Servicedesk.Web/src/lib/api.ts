@@ -608,6 +608,33 @@ export const adsolutApi = {
       "GET",
       "/api/admin/integrations/adsolut/debug/access-token",
     ),
+  /// v0.0.28 — manual contacts resync for one company. Returns the per-tick
+  /// counters from the reconciler so the UI can show "Synced 4 contacts,
+  /// 1 created, 0 reconciled" inline. Returns null when the company is not
+  /// linked to Adsolut, the integration isn't connected, or no dossier is
+  /// selected (server returns 404 in those cases — the API helper rethrows
+  /// as ApiError so the caller can handle it).
+  resyncCompanyContacts: (companyId: string) =>
+    request<AdsolutContactsResyncResult>(
+      "POST",
+      `/api/admin/integrations/adsolut/companies/${companyId}/resync-contacts`,
+    ),
+};
+
+export type AdsolutContactsResyncResult = {
+  companyId: string;
+  pullUpdate: boolean;
+  pullCreate: boolean;
+  companiesScanned: number;
+  contactsSeen: number;
+  contactsCreated: number;
+  contactsUpdated: number;
+  contactsSkippedNoChange: number;
+  contactsSkippedLocalNewer: number;
+  contactsSkippedToggleOff: number;
+  contactsSkippedNoEmail: number;
+  contactsSkippedLinkConflict: number;
+  linksReconciled: number;
 };
 
 // ---- Mail attachment diagnostics ----

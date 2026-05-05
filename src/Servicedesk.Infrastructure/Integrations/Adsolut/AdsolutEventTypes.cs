@@ -148,4 +148,29 @@ public static class AdsolutEventTypes
     /// SD-managed overlay. Distinct from CustomersUpdate so push-traffic
     /// stays separable from one-off admin probes.
     public const string DebugCustomerPut = "debug.customer_put";
+
+    // ---- v0.0.28 Contacts pull (Adsolut → SD) -------------------------
+
+    /// GET /acc/v1/adm/{adm}/customers/{customer}/contacts — full contacts
+    /// list for one customer. The sub-resource has no pagination and no
+    /// ModifiedSince filter, so each call returns the complete set; the
+    /// sync worker only fires it for customers whose own lastModified
+    /// advanced this tick (or for the slower reconcile-pass).
+    public const string CustomerContactsList = "customer_contacts.list";
+
+    /// GET /acc/v1/adm/{adm}/suppliers/{supplier}/contacts — same as
+    /// CustomerContactsList for the supplier branch. Only fires when the
+    /// IncludeSuppliers toggle is on (force-OFF in v0.0.28).
+    public const string SupplierContactsList = "supplier_contacts.list";
+
+    /// One contacts-reconcile tick — slower walk of every Adsolut-linked
+    /// customer that catches active-flips (no lastModified bump from
+    /// Adsolut) and hard-deletes that the fast delta-loop missed. Outcome
+    /// summary lands in integration_audit alongside the regular sync.tick.
+    public const string ContactsReconcileTick = "contacts_reconcile.tick";
+
+    /// Admin-triggered manual "Resync contacts for this company" from the
+    /// company-detail page. One audit row per click so an admin can see
+    /// who triggered an out-of-band probe.
+    public const string ContactsResyncRequested = "contacts_resync.requested";
 }

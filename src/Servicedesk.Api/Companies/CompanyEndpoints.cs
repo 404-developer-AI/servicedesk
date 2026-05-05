@@ -349,9 +349,17 @@ public static class CompanyEndpoints
             // with the given role" — the repo does this atomically in one
             // transaction.
             var created = await repo.CreateContactAsync(new Contact(
-                Guid.Empty, req.CompanyRole ?? "Member",
-                req.FirstName ?? "", req.LastName ?? "", req.Email!.Trim().ToLowerInvariant(),
-                req.Phone ?? "", req.JobTitle ?? "", IsActive: true, now, now), req.CompanyId, role, ct);
+                Id: Guid.Empty,
+                CompanyRole: req.CompanyRole ?? "Member",
+                FirstName: req.FirstName ?? "",
+                LastName: req.LastName ?? "",
+                Email: req.Email!.Trim().ToLowerInvariant(),
+                Phone: req.Phone ?? "",
+                MobilePhone: req.MobilePhone ?? "",
+                JobTitle: req.JobTitle ?? "",
+                IsActive: true,
+                CreatedUtc: now,
+                UpdatedUtc: now), req.CompanyId, role, ct);
             await AuditWrite(audit, http, "contact.created", created.Id.ToString(), new { created.Email, companyId = req.CompanyId, role = req.CompanyId is null ? null : role });
             return Results.Created($"/api/contacts/{created.Id}", created);
         }).WithName("CreateContact").WithOpenApi();
@@ -370,6 +378,7 @@ public static class CompanyEndpoints
                 LastName = req.LastName ?? existing.LastName,
                 Email = req.Email!.Trim().ToLowerInvariant(),
                 Phone = req.Phone ?? existing.Phone,
+                MobilePhone = req.MobilePhone ?? existing.MobilePhone,
                 JobTitle = req.JobTitle ?? existing.JobTitle,
                 IsActive = req.IsActive ?? existing.IsActive,
             };
@@ -448,6 +457,7 @@ public static class CompanyEndpoints
         string? FirstName,
         string? LastName,
         string? Phone,
+        string? MobilePhone,
         string? JobTitle,
         bool? IsActive);
 

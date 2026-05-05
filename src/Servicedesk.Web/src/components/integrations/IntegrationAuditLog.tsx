@@ -49,12 +49,16 @@ type Props = {
 export function IntegrationAuditLog({ integration }: Props) {
   // useInfiniteQuery handles cursor walking. The tag includes integration so
   // the cache is partitioned per integration once Zammad / TRMM go live.
+  // First page caps at 20 rows to keep the panel focused on the latest
+  // activity; the existing "Load older entries" button below the table
+  // walks the cursor forward in 20-row chunks.
+  const PAGE_SIZE = 20;
   const query = useInfiniteQuery<IntegrationAuditPage, Error>({
     queryKey: ["integrations", integration, "audit"] as const,
     initialPageParam: null as number | null,
     queryFn: ({ pageParam }) => {
       if (integration === "adsolut") {
-        return adsolutApi.auditLog(pageParam as number | null);
+        return adsolutApi.auditLog(pageParam as number | null, PAGE_SIZE);
       }
       throw new Error(`Unsupported integration: ${integration}`);
     },

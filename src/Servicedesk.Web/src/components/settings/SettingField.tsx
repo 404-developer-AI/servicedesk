@@ -1,8 +1,15 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Info } from "lucide-react";
 import { settingsApi, type SettingEntry } from "@/lib/api";
 import { Input } from "@/components/ui/input";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 function ToggleSwitch({
@@ -76,11 +83,43 @@ export function SettingField({ entry, queryKey, label, hint, readOnly }: Props) 
     save.mutate(next);
   };
 
+  // Description-on-hover: the verbose hint paragraph used to render
+  // inline as muted-grey text under the label, which made dense settings
+  // panels (Adsolut integration, mail, …) feel noisy. We keep the copy
+  // available — server-managed via SettingDefault.description, so it
+  // stays editable without touching this file — but only show it on
+  // hover of the small Info-icon next to the label.
+  const description = hint ?? entry.description;
+  const hasDescription = !!description && description.trim().length > 0;
+
   return (
     <div className="flex items-start justify-between gap-4 py-3 border-b border-white/[0.04] last:border-b-0">
       <div className="min-w-0 flex-1 space-y-1">
-        <p className="text-sm font-medium text-foreground">{label ?? entry.key}</p>
-        <p className="text-xs text-muted-foreground">{hint ?? entry.description}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm font-medium text-foreground">{label ?? entry.key}</p>
+          {hasDescription && (
+            <TooltipProvider delayDuration={150}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Show description"
+                    className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/40 transition-colors hover:text-muted-foreground/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    <Info className="h-3 w-3" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="right"
+                  align="start"
+                  className="max-w-sm whitespace-normal border border-white/10 bg-zinc-900/95 text-xs leading-relaxed text-muted-foreground shadow-xl backdrop-blur"
+                >
+                  {description}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+        </div>
         <p className="text-[10px] uppercase tracking-wider text-muted-foreground/40 font-mono">
           {entry.key}
         </p>
