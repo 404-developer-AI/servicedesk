@@ -414,6 +414,9 @@ export type Contact = {
   lastName: string;
   email: string;
   phone: string;
+  /// v0.0.28 — mirrors the Adsolut `mobilePhone` field. Empty string when
+  /// not set; renders as a hidden row in the contact-detail UI.
+  mobilePhone: string;
   jobTitle: string;
   isActive: boolean;
   createdUtc: string;
@@ -431,6 +434,7 @@ export type ContactListItem = {
   lastName: string;
   email: string;
   phone: string;
+  mobilePhone: string;
   jobTitle: string;
   isActive: boolean;
   createdUtc: string;
@@ -489,6 +493,7 @@ export type ContactInput = {
   firstName?: string;
   lastName?: string;
   phone?: string;
+  mobilePhone?: string;
   jobTitle?: string;
   isActive?: boolean;
 };

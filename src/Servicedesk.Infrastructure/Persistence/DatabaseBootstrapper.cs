@@ -1777,6 +1777,59 @@ public sealed class DatabaseBootstrapper : IHostedService
                     VALUES ('v0_0_27_add_accounting_write_scope');
             END IF;
         END $do$;
+
+        -- ===================================================================
+        -- v0.0.28 — Adsolut Contacts pull (Adsolut → SD)
+        --
+        -- Adsolut models one contact-row per customer-relationship: three
+        -- "Wendies" on customers A/B/C live as three different UUIDs with
+        -- their own lastModified + active. SD's contacts.email is CITEXT
+        -- NOT NULL UNIQUE, so the same person across three customers is one
+        -- contacts row + three contact_companies links. The per-link Adsolut
+        -- state lives on contact_companies, not contacts:
+        --
+        --   adsolut_contact_id    — Adsolut's UUID for THIS link/relationship.
+        --                           Partial-unique where NOT NULL so two
+        --                           links can never claim the same UUID.
+        --   adsolut_last_modified — UTC timestamp from Adsolut. Drives the
+        --                           per-link LWW conflict tie-breaker (the
+        --                           link with the highest stamp wins for
+        --                           the contact-level fields first/last/
+        --                           phone/mobile_phone).
+        --   adsolut_active        — true / false from Adsolut. contacts.is_
+        --                           active is derived: TRUE iff ≥1 link is
+        --                           active OR no Adsolut links exist (pure
+        --                           SD-side contact).
+        --   adsolut_synced_hash   — SHA-256 over the four mirrored fields.
+        --                           No-op guard against echo-pull (and the
+        --                           v0.0.29 push) the same way companies'
+        --                           adsolut_synced_hash works.
+        --
+        -- contacts.mobile_phone is the new column for Adsolut's mobilePhone
+        -- field. Existing rows back-fill to '' which is fine — the contact
+        -- detail page renders both phone fields side by side and an empty
+        -- value is hidden in the UI.
+        -- ===================================================================
+        ALTER TABLE contacts
+            ADD COLUMN IF NOT EXISTS mobile_phone TEXT NOT NULL DEFAULT '';
+
+        ALTER TABLE contact_companies
+            ADD COLUMN IF NOT EXISTS adsolut_contact_id    UUID         NULL,
+            ADD COLUMN IF NOT EXISTS adsolut_last_modified TIMESTAMPTZ  NULL,
+            ADD COLUMN IF NOT EXISTS adsolut_active        BOOLEAN      NULL,
+            ADD COLUMN IF NOT EXISTS adsolut_synced_hash   BYTEA        NULL;
+
+        -- Sparse unique index — only enforced where the column is populated.
+        -- A pure-SD link (never touched by Adsolut sync) keeps the column
+        -- NULL and is exempt; the index size stays tiny on installs with a
+        -- mix of imported + manually-added contacts.
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_contact_companies_adsolut_contact_id
+            ON contact_companies (adsolut_contact_id) WHERE adsolut_contact_id IS NOT NULL;
+
+        -- Reconcile-loop hot-path: "all Adsolut-linked contact_companies for
+        -- this company". Partial index keeps NULL-link rows out of the scan.
+        CREATE INDEX IF NOT EXISTS ix_contact_companies_company_adsolut
+            ON contact_companies (company_id) WHERE adsolut_contact_id IS NOT NULL;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

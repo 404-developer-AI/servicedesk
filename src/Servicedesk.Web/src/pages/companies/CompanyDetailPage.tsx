@@ -2,8 +2,8 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { ArrowLeft, Bell, Building2, Pencil, Plus, Trash2, UserPlus } from "lucide-react";
-import { ApiError } from "@/lib/api";
+import { ArrowLeft, Bell, Building2, Pencil, Plus, RefreshCw, Trash2, UserPlus } from "lucide-react";
+import { adsolutApi, ApiError } from "@/lib/api";
 import { authStore } from "@/auth/authStore";
 import {
   companyApi,
@@ -180,7 +180,13 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
       </nav>
 
       {tab === "overview" && <OverviewTab company={company} />}
-      {tab === "contacts" && <ContactsTab companyId={companyId} />}
+      {tab === "contacts" && (
+        <ContactsTab
+          companyId={companyId}
+          adsolutId={company.adsolutId ?? null}
+          isAdmin={isAdmin}
+        />
+      )}
       {tab === "domains" && isAdmin && (
         <DomainsTab companyId={companyId} domains={domains} />
       )}
@@ -234,7 +240,15 @@ function OverviewTab({ company }: { company: Company }) {
 }
 
 // ---- Contacts tab ----
-function ContactsTab({ companyId }: { companyId: string }) {
+function ContactsTab({
+  companyId,
+  adsolutId,
+  isAdmin,
+}: {
+  companyId: string;
+  adsolutId: string | null;
+  isAdmin: boolean;
+}) {
   const qc = useQueryClient();
   const [linking, setLinking] = useState(false);
   const [linkQuery, setLinkQuery] = useState("");
@@ -327,11 +341,55 @@ function ContactsTab({ companyId }: { companyId: string }) {
     setRole.mutate({ contactId: contact.id, role: nextRole });
   };
 
+  // v0.0.28 — manual Adsolut contacts resync. Only shown to admins on
+  // companies that have a linked Adsolut customer. Respects the contacts
+  // pull-toggles server-side; flipping them off then clicking is a
+  // documented no-op. The toast surfaces the per-call counters so an
+  // admin can see immediately whether the call did real work.
+  const adsolutResync = useMutation({
+    mutationFn: () => adsolutApi.resyncCompanyContacts(companyId),
+    onSuccess: (r) => {
+      invalidate();
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+      const summary =
+        r.contactsSeen === 0
+          ? "No contacts in Adsolut for this company."
+          : `Synced ${r.contactsSeen} contact${r.contactsSeen === 1 ? "" : "s"}` +
+            ` · ${r.contactsCreated} created · ${r.contactsUpdated} updated` +
+            ` · ${r.linksReconciled} reconciled`;
+      const togglesOff = !r.pullUpdate && !r.pullCreate;
+      if (togglesOff) {
+        toast.warning("Both pull-toggles are OFF — no rows changed.");
+      } else {
+        toast.success(summary);
+      }
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.status === 404) {
+        toast.error("Company is not linked to Adsolut, or the integration isn't connected.");
+      } else {
+        toast.error("Resync failed");
+      }
+    },
+  });
+
   return (
     <section className="glass-card space-y-3 p-5">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium text-foreground">Linked contacts</h2>
         <div className="flex gap-1">
+          {isAdmin && adsolutId && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => adsolutResync.mutate()}
+              disabled={adsolutResync.isPending}
+              title="Pull the latest contacts list for this company from Adsolut and reconcile state."
+            >
+              <RefreshCw className={cn("mr-1 h-3.5 w-3.5", adsolutResync.isPending && "animate-spin")} />
+              {adsolutResync.isPending ? "Resyncing…" : "Resync from Adsolut"}
+            </Button>
+          )}
           <Button size="sm" variant="ghost" onClick={() => setLinking((v) => !v)}>
             <Plus className="mr-1 h-3.5 w-3.5" />
             Link contact

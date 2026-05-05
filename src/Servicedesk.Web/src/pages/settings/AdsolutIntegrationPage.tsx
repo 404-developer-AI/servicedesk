@@ -909,6 +909,9 @@ export function AdsolutIntegrationPage() {
                   [
                     "Adsolut.Sync.Pull.Companies.Update",
                     "Adsolut.Sync.Pull.Companies.Create",
+                    "Adsolut.Sync.Pull.Contacts.Update",
+                    "Adsolut.Sync.Pull.Contacts.Create",
+                    "Adsolut.Sync.Contacts.ReconcileIntervalHours",
                   ] as const
                 ).map((key) => {
                   const entry = findEntry(settingsList.data, key);

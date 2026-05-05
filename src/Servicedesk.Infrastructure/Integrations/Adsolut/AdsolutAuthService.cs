@@ -186,6 +186,8 @@ public sealed class AdsolutAuthService : IAdsolutAuthService
         {
             SettingKeys.Adsolut.SyncPullCompaniesUpdate,
             SettingKeys.Adsolut.SyncPullCompaniesCreate,
+            SettingKeys.Adsolut.SyncPullContactsUpdate,
+            SettingKeys.Adsolut.SyncPullContactsCreate,
             SettingKeys.Adsolut.SyncIncludeSuppliers,
             SettingKeys.Adsolut.PushUpdateExistingCustomers,
             SettingKeys.Adsolut.PushCreateNewCustomers,

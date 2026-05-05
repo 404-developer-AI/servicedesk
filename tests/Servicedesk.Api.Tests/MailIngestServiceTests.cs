@@ -426,7 +426,7 @@ public sealed class MailIngestServiceTests
         public int ResolveCalls { get; private set; }
 
         public Task<Contact> EnsureByEmailAsync(string email, string displayName, CancellationToken ct)
-            => Task.FromResult(new Contact(Guid.NewGuid(), "Member", displayName, "", email, "", "", true, DateTime.UtcNow, DateTime.UtcNow));
+            => Task.FromResult(new Contact(Guid.NewGuid(), "Member", displayName, "", email, "", "", "", true, DateTime.UtcNow, DateTime.UtcNow));
 
         public Task<CompanyResolution> ResolveCompanyForNewTicketAsync(Guid contactId, CancellationToken ct)
         {

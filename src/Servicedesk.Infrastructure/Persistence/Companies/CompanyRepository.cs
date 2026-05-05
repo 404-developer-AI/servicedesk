@@ -26,6 +26,7 @@ public sealed class CompanyRepository : ICompanyRepository
         contacts.id AS Id, contacts.company_role AS CompanyRole,
         contacts.first_name AS FirstName, contacts.last_name AS LastName,
         contacts.email AS Email, contacts.phone AS Phone,
+        contacts.mobile_phone AS MobilePhone,
         contacts.job_title AS JobTitle, contacts.is_active AS IsActive,
         contacts.created_utc AS CreatedUtc, contacts.updated_utc AS UpdatedUtc,
         (SELECT ccp.company_id FROM contact_companies ccp
@@ -291,7 +292,9 @@ public sealed class CompanyRepository : ICompanyRepository
         var sql = $"""
             SELECT c.id AS Id, c.company_role AS CompanyRole,
                    c.first_name AS FirstName, c.last_name AS LastName,
-                   c.email AS Email, c.phone AS Phone, c.job_title AS JobTitle,
+                   c.email AS Email, c.phone AS Phone,
+                   c.mobile_phone AS MobilePhone,
+                   c.job_title AS JobTitle,
                    c.is_active AS IsActive,
                    c.created_utc AS CreatedUtc, c.updated_utc AS UpdatedUtc,
                    (SELECT cp.company_id FROM contact_companies cp
@@ -329,7 +332,7 @@ public sealed class CompanyRepository : ICompanyRepository
         var total = rows.Count > 0 ? (int)rows[0].TotalHits : 0;
         var items = rows.Select(r => new ContactListItem(
             r.Id, r.CompanyRole, r.FirstName, r.LastName, r.Email, r.Phone,
-            r.JobTitle, r.IsActive, r.CreatedUtc, r.UpdatedUtc,
+            r.MobilePhone, r.JobTitle, r.IsActive, r.CreatedUtc, r.UpdatedUtc,
             r.PrimaryCompanyId, r.PrimaryCompanyName, r.PrimaryCompanyCode,
             r.PrimaryCompanyShortName, r.PrimaryCompanyIsActive,
             r.ExtraLinkCount, r.LastTicketUpdatedUtc)).ToList();
@@ -343,6 +346,7 @@ public sealed class CompanyRepository : ICompanyRepository
         string LastName,
         string Email,
         string Phone,
+        string MobilePhone,
         string JobTitle,
         bool IsActive,
         DateTime CreatedUtc,
@@ -355,6 +359,13 @@ public sealed class CompanyRepository : ICompanyRepository
         int ExtraLinkCount,
         DateTime? LastTicketUpdatedUtc,
         long TotalHits);
+
+    // ContactOverviewRow's positional ordering matters: Dapper materialises
+    // a positional record by matching SQL columns IN ORDER against the
+    // record's constructor parameters. The SELECT below MUST emit columns
+    // in exactly the same order. Same constraint applies to Domain.Contact
+    // (mobile_phone right after phone) — that's why ContactCols above places
+    // mobile_phone immediately after phone.
 
     public async Task<Contact?> GetContactAsync(Guid id, CancellationToken ct)
     {
@@ -379,8 +390,8 @@ public sealed class CompanyRepository : ICompanyRepository
         // company-link row must commit together so mail intake never leaves
         // a dangling contact without the association it thought it got.
         const string insertContact = """
-            INSERT INTO contacts (company_role, first_name, last_name, email, phone, job_title, is_active)
-            VALUES (@CompanyRole, @FirstName, @LastName, @Email, @Phone, @JobTitle, @IsActive)
+            INSERT INTO contacts (company_role, first_name, last_name, email, phone, mobile_phone, job_title, is_active)
+            VALUES (@CompanyRole, @FirstName, @LastName, @Email, @Phone, @MobilePhone, @JobTitle, @IsActive)
             RETURNING id
             """;
         const string insertLink = """
@@ -410,7 +421,8 @@ public sealed class CompanyRepository : ICompanyRepository
         var sql = $"""
             UPDATE contacts SET company_role = @CompanyRole,
                                 first_name = @FirstName, last_name = @LastName, email = @Email,
-                                phone = @Phone, job_title = @JobTitle, is_active = @IsActive,
+                                phone = @Phone, mobile_phone = @MobilePhone,
+                                job_title = @JobTitle, is_active = @IsActive,
                                 updated_utc = now()
             WHERE id = @Id
             RETURNING {ContactCols}

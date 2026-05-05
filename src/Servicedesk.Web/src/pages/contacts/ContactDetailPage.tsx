@@ -184,6 +184,7 @@ function ContactEditCard({ contact }: { contact: Contact }) {
     firstName: contact.firstName,
     lastName: contact.lastName,
     phone: contact.phone,
+    mobilePhone: contact.mobilePhone,
     jobTitle: contact.jobTitle,
     isActive: contact.isActive,
   }));
@@ -195,6 +196,7 @@ function ContactEditCard({ contact }: { contact: Contact }) {
         firstName: contact.firstName,
         lastName: contact.lastName,
         phone: contact.phone,
+        mobilePhone: contact.mobilePhone,
         jobTitle: contact.jobTitle,
         isActive: contact.isActive,
       });
@@ -261,13 +263,19 @@ function ContactEditCard({ contact }: { contact: Contact }) {
                 onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
               />
             </Field>
-            <Field label="Job title">
+            <Field label="Mobile phone">
               <Input
-                value={form.jobTitle ?? ""}
-                onChange={(e) => setForm((f) => ({ ...f, jobTitle: e.target.value }))}
+                value={form.mobilePhone ?? ""}
+                onChange={(e) => setForm((f) => ({ ...f, mobilePhone: e.target.value }))}
               />
             </Field>
           </div>
+          <Field label="Job title">
+            <Input
+              value={form.jobTitle ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, jobTitle: e.target.value }))}
+            />
+          </Field>
           <label className="flex items-center justify-between gap-3 text-sm">
             <span>Active</span>
             <Switch
@@ -289,6 +297,7 @@ function ContactEditCard({ contact }: { contact: Contact }) {
           <DefinitionRow label="First name" value={contact.firstName} />
           <DefinitionRow label="Last name" value={contact.lastName} />
           <DefinitionRow label="Phone" value={contact.phone} />
+          <DefinitionRow label="Mobile phone" value={contact.mobilePhone} />
           <DefinitionRow label="Job title" value={contact.jobTitle} />
           <DefinitionRow
             label="Member role"
