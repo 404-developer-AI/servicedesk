@@ -1,10 +1,11 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { CheckCircle2, AlertTriangle, Plug, RefreshCw } from "lucide-react";
+import { ArrowRight, CheckCircle2, AlertTriangle, Plug, RefreshCw } from "lucide-react";
 import {
   ApiError,
+  adsolutApi,
   healthApi,
   integrationsHealthApi,
   type HealthAction,
@@ -108,45 +109,166 @@ function IntegrationRow({ integration }: { integration: IntegrationHealth }) {
   const detailRoute = DETAIL_ROUTES[integration.key];
 
   return (
-    <li className="grid grid-cols-1 items-center gap-3 py-3 sm:grid-cols-[10rem_1fr_1fr_auto]">
-      <button
-        type="button"
-        onClick={() => detailRoute && void navigate({ to: detailRoute })}
-        disabled={!detailRoute}
-        className={cn(
-          "flex items-center gap-2.5 rounded-md px-1 py-0.5 text-left transition-colors",
-          detailRoute && "hover:bg-white/[0.03]",
-          !detailRoute && "cursor-default",
-        )}
-      >
-        {logoSrc ? (
-          <img
-            src={logoSrc}
-            alt=""
-            aria-hidden="true"
-            draggable={false}
-            className="h-8 w-8 select-none rounded-sm object-contain"
-          />
-        ) : (
-          <div className="h-8 w-8 rounded-sm border border-white/10 bg-white/[0.03]" />
-        )}
-        <span className="text-sm font-medium text-foreground">{integration.name}</span>
-      </button>
+    <li className="space-y-2 py-3">
+      <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-[10rem_1fr_1fr_auto]">
+        <button
+          type="button"
+          onClick={() => detailRoute && void navigate({ to: detailRoute })}
+          disabled={!detailRoute}
+          className={cn(
+            "flex items-center gap-2.5 rounded-md px-1 py-0.5 text-left transition-colors",
+            detailRoute && "hover:bg-white/[0.03]",
+            !detailRoute && "cursor-default",
+          )}
+        >
+          {logoSrc ? (
+            <img
+              src={logoSrc}
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+              className="h-8 w-8 select-none rounded-sm object-contain"
+            />
+          ) : (
+            <div className="h-8 w-8 rounded-sm border border-white/10 bg-white/[0.03]" />
+          )}
+          <span className="text-sm font-medium text-foreground">{integration.name}</span>
+        </button>
 
-      {integration.checks.map((c) => (
-        <CheckCell key={c.key} integrationKey={integration.key} check={c} />
-      ))}
-
-      {/* Tile-level actions, vertically centred at the end of the row. The
-          fixed `auto` track keeps the column tight so the check cells
-          claim the remaining width. Empty when the integration has no
-          tile actions (e.g. not yet authorised). */}
-      <div className="flex items-center justify-end self-center">
-        {integration.actions.map((a) => (
-          <TileActionButton key={a.key} action={a} />
+        {integration.checks.map((c) => (
+          <CheckCell key={c.key} integrationKey={integration.key} check={c} />
         ))}
+
+        {/* Tile-level actions, vertically centred at the end of the row. The
+            fixed `auto` track keeps the column tight so the check cells
+            claim the remaining width. Empty when the integration has no
+            tile actions (e.g. not yet authorised). */}
+        <div className="flex items-center justify-end self-center">
+          {integration.actions.map((a) => (
+            <TileActionButton key={a.key} action={a} />
+          ))}
+        </div>
       </div>
+
+      {/* v0.0.30 — compact sync-coverage strip under the Adsolut row when
+          the integration is configured. Hidden when the connection check
+          is not OK (no point showing gap counts when the connection itself
+          is broken — the connection-cell already calls out the bigger
+          problem). */}
+      {integration.key === "adsolut" && integration.status !== "Critical" ? (
+        <AdsolutCoverageStrip />
+      ) : null}
     </li>
+  );
+}
+
+/// Compact coverage row anchored under the Adsolut integration on the
+/// dashboard. Renders a green "Fully covered" pill when every bucket is
+/// zero, or a strip of amber chips with the per-bucket counts otherwise.
+/// Click-through navigates to the deep-linked coverage page. Drift counts
+/// are intentionally NOT toggle-suppressed here — the dashboard view is
+/// always-honest about the universe; the settings tile handles the
+/// "push-tak resolves it within one tick" courtesy hide.
+function AdsolutCoverageStrip() {
+  const counts = useQuery({
+    queryKey: ["integrations", "adsolut", "coverage"] as const,
+    queryFn: () => adsolutApi.coverageCounts(),
+    // Same 30s cadence as the parent tile so a missed SignalR push still
+    // refreshes within one minute.
+    refetchInterval: 30_000,
+  });
+
+  if (counts.isLoading || !counts.data) return null;
+
+  const c = counts.data;
+  const total =
+    c.companiesSdOnly +
+    c.companiesDrift +
+    c.contactLinksUnsynced +
+    c.contactLinksDrift +
+    c.contactsPureSd;
+
+  type Cell = {
+    label: string;
+    value: number;
+    bucket: { tab: "companies" | "contacts"; bucket: string };
+  };
+  const cells: Cell[] = [
+    {
+      label: "SD-only",
+      value: c.companiesSdOnly,
+      bucket: { tab: "companies", bucket: "sd-only" },
+    },
+    {
+      label: "drift",
+      value: c.companiesDrift,
+      bucket: { tab: "companies", bucket: "drift" },
+    },
+    {
+      label: "links unsynced",
+      value: c.contactLinksUnsynced,
+      bucket: { tab: "contacts", bucket: "links-unsynced" },
+    },
+    {
+      label: "links drift",
+      value: c.contactLinksDrift,
+      bucket: { tab: "contacts", bucket: "links-drift" },
+    },
+    {
+      label: "pure SD",
+      value: c.contactsPureSd,
+      bucket: { tab: "contacts", bucket: "pure-sd" },
+    },
+  ];
+
+  return (
+    <div className="ml-[2.625rem] flex flex-wrap items-center gap-2 text-[11px]">
+      <span className="text-muted-foreground/70">Sync coverage</span>
+      {total === 0 ? (
+        <Link
+          to="/settings/integrations/adsolut/coverage"
+          search={{ tab: "companies", bucket: undefined, search: undefined, page: undefined }}
+          className="inline-flex items-center gap-1 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 text-emerald-300 hover:bg-emerald-500/15"
+        >
+          <CheckCircle2 className="h-3 w-3" />
+          Fully covered
+        </Link>
+      ) : (
+        <>
+          {cells
+            .filter((cell) => cell.value > 0)
+            .map((cell) => (
+              <Link
+                key={cell.label}
+                to="/settings/integrations/adsolut/coverage"
+                search={{
+                  tab: cell.bucket.tab,
+                  bucket: cell.bucket.bucket,
+                  search: undefined,
+                  page: undefined,
+                }}
+                className="inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-500/[0.08] px-2 py-0.5 text-amber-200 hover:bg-amber-500/[0.15]"
+              >
+                <span className="tabular-nums font-medium">{cell.value}</span>
+                <span>{cell.label}</span>
+              </Link>
+            ))}
+          <Link
+            to="/settings/integrations/adsolut/coverage"
+            search={{
+              tab: "companies",
+              bucket: undefined,
+              search: undefined,
+              page: undefined,
+            }}
+            className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+          >
+            View
+            <ArrowRight className="h-3 w-3" />
+          </Link>
+        </>
+      )}
+    </div>
   );
 }
 

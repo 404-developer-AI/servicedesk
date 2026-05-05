@@ -60,6 +60,11 @@ export function useIntegrationsSignalR() {
       queryClient.invalidateQueries({
         queryKey: ["integrations", integration, "audit"],
       });
+      // v0.0.30 — coverage tile + overview page run off the same push;
+      // invalidate so post-tick gap counts reflect the latest state.
+      queryClient.invalidateQueries({
+        queryKey: ["integrations", integration, "coverage"],
+      });
       // The sync row on the dashboard tile reads its data from the
       // integrations-health endpoint — invalidate that too so a tick that
       // either failed or recovered shows up immediately.

@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Copy, Eye, EyeOff, KeyRound, Plug, RefreshCw, Search, Send, Wand2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, Copy, Eye, EyeOff, KeyRound, Plug, RefreshCw, Search, Send, Wand2 } from "lucide-react";
 import {
   ApiError,
   adsolutApi,
   settingsApi,
+  type AdsolutCoverageCounts,
   type AdsolutDebugAccessToken,
   type AdsolutDebugKind,
   type AdsolutDebugLookupResponse,
@@ -36,6 +37,7 @@ const ADSOLUT_STATUS_QUERY_KEY = ["integrations", "adsolut", "status"] as const;
 const ADSOLUT_SECRET_QUERY_KEY = ["integrations", "adsolut", "secret"] as const;
 const ADSOLUT_ADMIN_QUERY_KEY = ["integrations", "adsolut", "administrations"] as const;
 const ADSOLUT_SYNC_QUERY_KEY = ["integrations", "adsolut", "sync"] as const;
+const ADSOLUT_COVERAGE_QUERY_KEY = ["integrations", "adsolut", "coverage"] as const;
 
 const STATE_LABEL: Record<AdsolutState, { tone: string; text: string; dot: string }> = {
   not_configured: {
@@ -141,6 +143,14 @@ export function AdsolutIntegrationPage() {
   const syncState = useQuery({
     queryKey: ADSOLUT_SYNC_QUERY_KEY,
     queryFn: () => adsolutApi.syncState(),
+    enabled: isConnectedState,
+  });
+  // v0.0.30 — coverage tile counts. Refreshes via SignalR
+  // (IntegrationSyncCompleted invalidates the coverage queryKey) so an
+  // admin sees gap counts move after each sync tick without a navigation.
+  const coverage = useQuery({
+    queryKey: ADSOLUT_COVERAGE_QUERY_KEY,
+    queryFn: () => adsolutApi.coverageCounts(),
     enabled: isConnectedState,
   });
 
@@ -883,6 +893,23 @@ export function AdsolutIntegrationPage() {
             )}
           </dl>
 
+          {/* v0.0.30 — Sync coverage tile. Five raw bucket counts; the two
+              drift counts are conditionally suppressed when the relevant
+              push-toggle is ON, because in that case the push-tak resolves
+              the gap within one tick and the row would just bounce. */}
+          <CoverageTile
+            counts={coverage.data}
+            isLoading={coverage.isLoading}
+            pushUpdateOn={
+              findEntry(settingsList.data, "Adsolut.Push.UpdateExistingCustomers")?.value ===
+              "true"
+            }
+            pushContactsUpdateOn={
+              findEntry(settingsList.data, "Adsolut.Sync.Push.Contacts.Update")?.value ===
+              "true"
+            }
+          />
+
           <div className="space-y-5">
             <div className="space-y-2">
               {(
@@ -1495,7 +1522,7 @@ export function AdsolutIntegrationPage() {
         </section>
       )}
 
-      {/* Audit log — operational call history */}
+      {/* Audit log — operational call history (placeholder marker) */}
       <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
         <header className="mb-4 space-y-1">
           <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
@@ -1510,6 +1537,152 @@ export function AdsolutIntegrationPage() {
         </header>
         <IntegrationAuditLog integration="adsolut" />
       </section>
+    </div>
+  );
+}
+
+type CoverageTileProps = {
+  counts: AdsolutCoverageCounts | undefined;
+  isLoading: boolean;
+  pushUpdateOn: boolean;
+  pushContactsUpdateOn: boolean;
+};
+
+/// v0.0.30 — surfaces the five gap-buckets between SD's local universe
+/// and Adsolut. Each bucket renders as a click-through "View →" amber pill
+/// when non-zero, or rolls into a "Fully covered" green rest-state when
+/// every category is zero. Drift counts are suppressed when the relevant
+/// push-toggle is ON because the push-tak resolves them within one tick;
+/// the rest are visible regardless of toggles so an admin can see what
+/// would *not* sync if they were to turn the toggles on.
+function CoverageTile({
+  counts,
+  isLoading,
+  pushUpdateOn,
+  pushContactsUpdateOn,
+}: CoverageTileProps) {
+  if (isLoading || !counts) {
+    return (
+      <div className="rounded-md border border-white/[0.06] bg-white/[0.02] p-4">
+        <div className="mb-2 text-xs font-medium uppercase tracking-widest text-muted-foreground/70">
+          Sync coverage
+        </div>
+        <Skeleton className="h-6 w-32" />
+      </div>
+    );
+  }
+
+  // Drift buckets are suppressed when the relevant push-update toggle is
+  // ON; in that case the push-tak resolves within one tick. The other
+  // buckets stay visible regardless because the push-tak doesn't auto-link
+  // pre-existing rows, and pure-SD contacts will never appear upstream
+  // unless an admin links them by hand.
+  const companiesDriftDisplay = pushUpdateOn ? 0 : counts.companiesDrift;
+  const contactLinksDriftDisplay = pushContactsUpdateOn ? 0 : counts.contactLinksDrift;
+
+  type CellSearch = {
+    tab: "companies" | "contacts";
+    bucket: string;
+    search: undefined;
+    page: undefined;
+  };
+  const cells: Array<{
+    label: string;
+    count: number;
+    search: CellSearch;
+    hint?: string;
+  }> = [
+    {
+      label: "Companies — SD only",
+      count: counts.companiesSdOnly,
+      search: { tab: "companies", bucket: "sd-only", search: undefined, page: undefined },
+    },
+    {
+      label: "Companies — drift",
+      count: companiesDriftDisplay,
+      search: { tab: "companies", bucket: "drift", search: undefined, page: undefined },
+      hint: pushUpdateOn ? "Resolved by push-tak (toggle ON)" : undefined,
+    },
+    {
+      label: "Contact-links — unsynced",
+      count: counts.contactLinksUnsynced,
+      search: { tab: "contacts", bucket: "links-unsynced", search: undefined, page: undefined },
+    },
+    {
+      label: "Contact-links — drift",
+      count: contactLinksDriftDisplay,
+      search: { tab: "contacts", bucket: "links-drift", search: undefined, page: undefined },
+      hint: pushContactsUpdateOn ? "Resolved by push-tak (toggle ON)" : undefined,
+    },
+    {
+      label: "Contacts — pure SD",
+      count: counts.contactsPureSd,
+      search: { tab: "contacts", bucket: "pure-sd", search: undefined, page: undefined },
+    },
+  ];
+
+  const totalGaps = cells.reduce((sum, c) => sum + c.count, 0);
+
+  return (
+    <div className="rounded-md border border-white/[0.06] bg-white/[0.02] p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground/70">
+          Sync coverage
+        </div>
+        {totalGaps === 0 ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] text-emerald-300">
+            <CheckCircle2 className="h-3 w-3" />
+            Fully covered
+          </span>
+        ) : (
+          <Link
+            to="/settings/integrations/adsolut/coverage"
+            search={{
+              tab: "companies",
+              bucket: undefined,
+              search: undefined,
+              page: undefined,
+            }}
+            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+          >
+            Open coverage page
+            <ArrowRight className="h-3 w-3" />
+          </Link>
+        )}
+      </div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {cells.map((c) => (
+          <Link
+            key={c.label}
+            to="/settings/integrations/adsolut/coverage"
+            search={c.search}
+            className={cn(
+              "group flex items-center justify-between rounded-md border px-3 py-2 transition-colors",
+              c.count === 0
+                ? "border-white/[0.06] bg-white/[0.02] text-muted-foreground/70 hover:text-muted-foreground"
+                : "border-amber-400/30 bg-amber-500/[0.06] text-amber-200 hover:bg-amber-500/[0.10]",
+            )}
+          >
+            <span className="flex flex-col">
+              <span className="text-[11px]">{c.label}</span>
+              {c.hint && (
+                <span className="text-[10px] text-muted-foreground/60">{c.hint}</span>
+              )}
+            </span>
+            <span className="flex items-center gap-1.5 tabular-nums">
+              <span className="text-sm font-medium">{c.count}</span>
+              <ArrowRight
+                className={cn(
+                  "h-3 w-3",
+                  c.count === 0
+                    ? "opacity-0 group-hover:opacity-30"
+                    : "opacity-50 group-hover:opacity-90",
+                )}
+              />
+            </span>
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }

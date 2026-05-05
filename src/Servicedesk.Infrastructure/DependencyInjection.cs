@@ -113,6 +113,7 @@ public static class DependencyInjection
         services.AddSingleton<IAdsolutCompanyPusher, AdsolutCompanyPusher>();
         services.AddSingleton<IAdsolutContactPusher, AdsolutContactPusher>();
         services.AddSingleton<IAdsolutContactsReconciler, AdsolutContactsReconciler>();
+        services.AddSingleton<IAdsolutCoverageQuery, AdsolutCoverageQuery>();
         services.AddSingleton<IAdsolutSyncWorkerSignal, AdsolutSyncWorkerSignal>();
         services.AddHttpClient(AdsolutHttpInvoker.HttpClientName);
         services.AddHostedService<AdsolutSyncWorker>();

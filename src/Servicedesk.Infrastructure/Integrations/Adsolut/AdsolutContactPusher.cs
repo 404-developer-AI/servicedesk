@@ -165,6 +165,43 @@ public sealed class AdsolutContactPusher : IAdsolutContactPusher
         return rows.AsList();
     }
 
+    public async Task<AdsolutContactPushCandidate?> LoadCandidateByLinkIdAsync(
+        Guid linkId,
+        CancellationToken ct = default)
+    {
+        // Single-row variant of LoadCandidatesAsync used by the coverage
+        // page's per-row Force-sync action. Same hard rule on
+        // companies.adsolut_id IS NOT NULL — a link whose company hasn't
+        // been linked to Adsolut yet is not a candidate, even by manual
+        // trigger; the admin must link the company first.
+        const string sql = """
+            SELECT
+                cc.id                    AS LinkId,
+                cc.contact_id            AS ContactId,
+                cc.company_id            AS CompanyId,
+                co.adsolut_id            AS CompanyAdsolutId,
+                cc.adsolut_contact_id    AS AdsolutContactId,
+                c.first_name             AS FirstName,
+                c.last_name              AS LastName,
+                c.email                  AS Email,
+                c.phone                  AS Phone,
+                c.mobile_phone           AS MobilePhone,
+                c.updated_utc            AS ContactUpdatedUtc,
+                cc.adsolut_last_modified AS AdsolutLastModified,
+                cc.adsolut_synced_hash   AS AdsolutSyncedHash
+            FROM contact_companies cc
+            JOIN contacts  c  ON c.id  = cc.contact_id
+            JOIN companies co ON co.id = cc.company_id
+            WHERE cc.id = @Id
+              AND c.is_active = TRUE
+              AND co.is_active = TRUE
+              AND co.adsolut_id IS NOT NULL
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.QuerySingleOrDefaultAsync<AdsolutContactPushCandidate>(
+            new CommandDefinition(sql, new { Id = linkId }, cancellationToken: ct));
+    }
+
     public async Task<AdsolutContactPushOutcome> PushOneAsync(
         Guid administrationId,
         AdsolutContactPushCandidate candidate,
@@ -179,8 +216,34 @@ public sealed class AdsolutContactPusher : IAdsolutContactPusher
 
         var decision = Decide(candidate, options, hash);
 
-        if (decision.Outcome == AdsolutContactPushOutcome.SkippedNoChange ||
-            decision.Outcome == AdsolutContactPushOutcome.SkippedNoLocalChange ||
+        if (decision.Outcome == AdsolutContactPushOutcome.SkippedNoChange)
+        {
+            // Hash-equal but the underlying contact's updated_utc moved
+            // (typically an edit on a non-mirrored field — job_title or a
+            // company-link change bumps contacts.updated_utc but does not
+            // shift our four-field hash). Without this anchor the SQL drift
+            // query in v0.0.30 coverage keeps reporting the link forever,
+            // and the regular push-tak re-loads it every tick, starving
+            // real drift behind it under the per-tick cap of 200. Anchor
+            // adsolut_last_modified to c.updated_utc so both surfaces go
+            // silent on this row; no upstream call needed because the
+            // mirrored state is already proven equal by the hash.
+            await using var anchorConn = await _dataSource.OpenConnectionAsync(ct);
+            await anchorConn.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE contact_companies cc
+                   SET adsolut_last_modified = c.updated_utc
+                  FROM contacts c
+                 WHERE cc.id = @LinkId
+                   AND c.id = cc.contact_id
+                   AND c.updated_utc > cc.adsolut_last_modified
+                """,
+                new { LinkId = candidate.LinkId },
+                cancellationToken: ct));
+            return decision.Outcome;
+        }
+
+        if (decision.Outcome == AdsolutContactPushOutcome.SkippedNoLocalChange ||
             decision.Outcome == AdsolutContactPushOutcome.SkippedUpdateToggleOff ||
             decision.Outcome == AdsolutContactPushOutcome.SkippedCreateToggleOff ||
             decision.Outcome == AdsolutContactPushOutcome.SkippedNoEmail)

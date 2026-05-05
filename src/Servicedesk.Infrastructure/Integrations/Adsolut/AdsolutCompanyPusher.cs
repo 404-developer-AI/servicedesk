@@ -201,6 +201,41 @@ public sealed class AdsolutCompanyPusher : IAdsolutCompanyPusher
         return rows.AsList();
     }
 
+    public async Task<AdsolutCompanyPushCandidate?> LoadCandidateByIdAsync(
+        Guid companyId,
+        CancellationToken ct = default)
+    {
+        // Same projection as LoadCandidatesAsync — single-row variant the
+        // coverage-page Force-sync action calls. Filters on is_active so a
+        // soft-deleted row returns null instead of being silently pushed
+        // back into Adsolut.
+        const string sql = """
+            SELECT
+                id                    AS Id,
+                name                  AS Name,
+                code                  AS Code,
+                email                 AS Email,
+                phone                 AS Phone,
+                address_line1         AS AddressLine1,
+                address_line2         AS AddressLine2,
+                postal_code           AS PostalCode,
+                city                  AS City,
+                country               AS Country,
+                vat_number            AS VatNumber,
+                adsolut_id            AS AdsolutId,
+                adsolut_number        AS AdsolutNumber,
+                adsolut_alpha_code    AS AdsolutAlphaCode,
+                adsolut_last_modified AS AdsolutLastModified,
+                adsolut_synced_hash   AS AdsolutSyncedHash,
+                updated_utc           AS UpdatedUtc
+            FROM companies
+            WHERE id = @Id AND is_active = TRUE
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.QuerySingleOrDefaultAsync<AdsolutCompanyPushCandidate>(
+            new CommandDefinition(sql, new { Id = companyId }, cancellationToken: ct));
+    }
+
     public async Task<AdsolutPushOutcome> PushOneAsync(
         Guid administrationId,
         AdsolutCompanyPushCandidate candidate,
@@ -225,11 +260,41 @@ public sealed class AdsolutCompanyPusher : IAdsolutCompanyPusher
 
         var decision = Decide(candidate, options, hash);
 
-        if (decision.Outcome == AdsolutPushOutcome.SkippedNoChange ||
-            decision.Outcome == AdsolutPushOutcome.SkippedNoLocalChange ||
-            decision.Outcome == AdsolutPushOutcome.SkippedUpdateToggleOff ||
-            decision.Outcome == AdsolutPushOutcome.SkippedCreateToggleOff)
+        if (decision.Outcome == AdsolutPushOutcome.SkippedNoChange)
         {
+            // Hash-equal but updated_utc moved (typically an edit on a
+            // non-mirrored field — short_name, alert_text, alert_on_*,
+            // is_active are all tracked but not in the canonical hash).
+            // Without this anchor the v0.0.30 SQL drift query in coverage
+            // keeps reporting the row forever, and the regular push-tak
+            // re-loads it every tick, starving real drift behind it under
+            // the per-tick cap. Anchor adsolut_last_modified to updated_utc
+            // so both surfaces go silent; no upstream call needed because
+            // the mirrored state is already proven equal by the hash.
+            await using var anchorConn = await _dataSource.OpenConnectionAsync(ct);
+            await anchorConn.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE companies
+                   SET adsolut_last_modified = updated_utc
+                 WHERE id = @Id
+                   AND updated_utc > adsolut_last_modified
+                """,
+                new { Id = candidate.Id },
+                cancellationToken: ct));
+            return decision.Outcome;
+        }
+
+        if (decision.Outcome == AdsolutPushOutcome.SkippedNoLocalChange ||
+            decision.Outcome == AdsolutPushOutcome.SkippedUpdateToggleOff ||
+            decision.Outcome == AdsolutPushOutcome.SkippedCreateToggleOff ||
+            decision.Outcome == AdsolutPushOutcome.SkippedMissingAdsolutNumber)
+        {
+            // SkippedMissingAdsolutNumber is a linked-row outcome that was
+            // missing from the skip-list pre-v0.0.30; without this gate it
+            // would fall through to the CREATE branch and POST a fresh
+            // customer to Adsolut. Never tripped in practice (every linked
+            // row gets adsolut_number after one pull tick), but defensively
+            // wrong — pinned here so a future Decide tweak can't surprise.
             return decision.Outcome;
         }
 

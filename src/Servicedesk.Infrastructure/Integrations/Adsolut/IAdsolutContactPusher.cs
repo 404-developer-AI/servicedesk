@@ -119,4 +119,12 @@ public interface IAdsolutContactPusher
         AdsolutContactsPushOptions options,
         int limit,
         CancellationToken ct = default);
+
+    /// v0.0.30 — load a single link by <c>contact_companies.id</c> so the
+    /// coverage page's "Force sync" action can target one specific row
+    /// outside the per-tick cap. Returns null when the link is missing,
+    /// soft-deleted, or its parent company is not linked to Adsolut.
+    Task<AdsolutContactPushCandidate?> LoadCandidateByLinkIdAsync(
+        Guid linkId,
+        CancellationToken ct = default);
 }
