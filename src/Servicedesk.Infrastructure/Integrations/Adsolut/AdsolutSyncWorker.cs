@@ -124,6 +124,7 @@ public sealed class AdsolutSyncWorker : BackgroundService
         var contactsClient = sp.GetRequiredService<IAdsolutContactsClient>();
         var contactUpserter = sp.GetRequiredService<IAdsolutContactUpserter>();
         var contactPusher = sp.GetRequiredService<IAdsolutContactPusher>();
+        var coverage = sp.GetRequiredService<IAdsolutCoverageQuery>();
         var dataSource = sp.GetRequiredService<NpgsqlDataSource>();
         var auditLog = sp.GetRequiredService<IIntegrationAuditLogger>();
         var notifier = sp.GetRequiredService<IIntegrationStatusNotifier>();
@@ -247,6 +248,33 @@ public sealed class AdsolutSyncWorker : BackgroundService
             // the tick. The companies pull-tak doesn't have that yet —
             // a row exception there still propagates to the outer catch.
 
+            // v0.0.30 — snapshot the universe BEFORE push runs so the tick
+            // summary surfaces honest visibility counters (backlog + SQL-
+            // filtered-by-toggle-off) regardless of which toggles were on.
+            // Two extra round-trips per tick; both COUNT(*)s are indexed
+            // and cheap. See Adsolut.md → v0.0.30 visibility section.
+            var coverageCounts = await coverage.GetCountsAsync(ct);
+            counts.CoverageCompaniesSdOnly = coverageCounts.CompaniesSdOnly;
+            counts.CoverageCompaniesDrift = coverageCounts.CompaniesDrift;
+            counts.CoverageContactLinksUnsynced = coverageCounts.ContactLinksUnsynced;
+            counts.CoverageContactLinksDrift = coverageCounts.ContactLinksDrift;
+            counts.CoverageContactsPureSd = coverageCounts.ContactsPureSd;
+
+            // SQL-filtered visibility: how many candidates the off-toggles
+            // suppressed. Without this, an admin with toggles OFF sees the
+            // tick summary as "0 skipped" even when the gap pile up — the
+            // tile still shows the gap, but the audit log should be honest
+            // too (lessons-learned: a daily audit-scan must not require
+            // cross-referencing two surfaces to spot drift).
+            counts.PushSqlFilteredByUpdateOff =
+                pushOptions.PushUpdateEnabled ? 0 : coverageCounts.CompaniesDrift;
+            counts.PushSqlFilteredByCreateOff =
+                pushOptions.PushCreateEnabled ? 0 : coverageCounts.CompaniesSdOnly;
+            counts.ContactsPushSqlFilteredByUpdateOff =
+                contactsPushOptions.PushUpdateEnabled ? 0 : coverageCounts.ContactLinksDrift;
+            counts.ContactsPushSqlFilteredByCreateOff =
+                contactsPushOptions.PushCreateEnabled ? 0 : coverageCounts.ContactLinksUnsynced;
+
             // v0.0.27 push-tak — runs after the pull pass so any inbound
             // updates we just absorbed are visible (and protected by the
             // hash-no-op guard) before we evaluate drift candidates. Both
@@ -256,6 +284,14 @@ public sealed class AdsolutSyncWorker : BackgroundService
             {
                 await PushTakAsync(pusher, administrationId, pushOptions, counts, ct);
             }
+            // Backlog visibility: rows the per-tick LIMIT capped, given the
+            // toggles. Computed even when the push-tak short-circuited so
+            // a "first push after opt-in" backlog is plain visible at zero
+            // before opt-in too.
+            var companiesEligible =
+                (pushOptions.PushUpdateEnabled ? coverageCounts.CompaniesDrift : 0) +
+                (pushOptions.PushCreateEnabled ? coverageCounts.CompaniesSdOnly : 0);
+            counts.PushBacklogRemaining = Math.Max(0, companiesEligible - counts.PushSeen);
 
             // v0.0.29 contacts push-tak — same ordering rationale as the
             // companies push: runs after the contacts-pull so any inbound
@@ -266,6 +302,10 @@ public sealed class AdsolutSyncWorker : BackgroundService
             {
                 await PushContactsAsync(contactPusher, administrationId, contactsPushOptions, counts, ct);
             }
+            var contactsEligible =
+                (contactsPushOptions.PushUpdateEnabled ? coverageCounts.ContactLinksDrift : 0) +
+                (contactsPushOptions.PushCreateEnabled ? coverageCounts.ContactLinksUnsynced : 0);
+            counts.ContactsPushBacklogRemaining = Math.Max(0, contactsEligible - counts.ContactsPushSeen);
         }
         catch (AdsolutApiException ex)
         {
@@ -336,6 +376,18 @@ public sealed class AdsolutSyncWorker : BackgroundService
                 contactsPushSkippedToggleOff = counts.ContactsPushSkippedToggleOff,
                 contactsPushSkippedNoEmail = counts.ContactsPushSkippedNoEmail,
                 contactsPushFailed = counts.ContactsPushFailed,
+                // v0.0.30 — backlog + SQL-filter visibility counters.
+                pushBacklogRemaining = counts.PushBacklogRemaining,
+                pushSqlFilteredByUpdateOff = counts.PushSqlFilteredByUpdateOff,
+                pushSqlFilteredByCreateOff = counts.PushSqlFilteredByCreateOff,
+                contactsPushBacklogRemaining = counts.ContactsPushBacklogRemaining,
+                contactsPushSqlFilteredByUpdateOff = counts.ContactsPushSqlFilteredByUpdateOff,
+                contactsPushSqlFilteredByCreateOff = counts.ContactsPushSqlFilteredByCreateOff,
+                coverageCompaniesSdOnly = counts.CoverageCompaniesSdOnly,
+                coverageCompaniesDrift = counts.CoverageCompaniesDrift,
+                coverageContactLinksUnsynced = counts.CoverageContactLinksUnsynced,
+                coverageContactLinksDrift = counts.CoverageContactLinksDrift,
+                coverageContactsPureSd = counts.CoverageContactsPureSd,
                 durationMs = (int)stopwatch.ElapsedMilliseconds,
                 modifiedSince,
             }), ct);
@@ -711,5 +763,21 @@ public sealed class AdsolutSyncWorker : BackgroundService
         public int ContactsPushSkippedToggleOff;
         public int ContactsPushSkippedNoEmail;
         public int ContactsPushFailed;
+
+        // v0.0.30 visibility — backlog + SQL-filter-by-toggle-off, plus
+        // a snapshot of the coverage tile's raw bucket counts so an admin
+        // can read the audit-row standalone without cross-referencing the
+        // settings page.
+        public int PushBacklogRemaining;
+        public int PushSqlFilteredByUpdateOff;
+        public int PushSqlFilteredByCreateOff;
+        public int ContactsPushBacklogRemaining;
+        public int ContactsPushSqlFilteredByUpdateOff;
+        public int ContactsPushSqlFilteredByCreateOff;
+        public int CoverageCompaniesSdOnly;
+        public int CoverageCompaniesDrift;
+        public int CoverageContactLinksUnsynced;
+        public int CoverageContactLinksDrift;
+        public int CoverageContactsPureSd;
     }
 }

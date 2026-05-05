@@ -196,4 +196,25 @@ public static class AdsolutEventTypes
     /// CustomerContactsList (full-list pull) so audit filters separate
     /// per-contact reads from list reads.
     public const string CustomerContactsGet = "customer_contacts.get";
+
+    // ---- v0.0.30 Sync coverage admin actions --------------------------
+
+    /// Admin manually linked an SD company to an existing Adsolut customer
+    /// UUID via the coverage page. One audit row per click; payload
+    /// carries the SD companyId + Adsolut UUID + lastModified so the
+    /// admin can spot a wrong-row-linked mistake later.
+    public const string CoverageLinkCompany = "coverage.link.company";
+
+    /// Admin manually linked a contact-company link row to an existing
+    /// Adsolut customer-contact UUID via the coverage page.
+    public const string CoverageLinkContact = "coverage.link.contact";
+
+    /// Admin manually triggered a force-push of one company from the
+    /// coverage page (drift bucket). Bypasses the push toggle but still
+    /// respects hash-no-op + no-drift gates.
+    public const string CoverageForcePushCompany = "coverage.force_push.company";
+
+    /// Admin manually triggered a force-push of one contact-link from
+    /// the coverage page.
+    public const string CoverageForcePushContact = "coverage.force_push.contact";
 }

@@ -619,6 +619,114 @@ export const adsolutApi = {
       "POST",
       `/api/admin/integrations/adsolut/companies/${companyId}/resync-contacts`,
     ),
+  /// v0.0.30 — Sync coverage tile + page.
+  coverageCounts: () =>
+    request<AdsolutCoverageCounts>(
+      "GET",
+      "/api/admin/integrations/adsolut/coverage",
+    ),
+  coverageCompanies: (
+    bucket: AdsolutCoverageCompaniesBucket,
+    search: string,
+    page: number,
+    pageSize: number,
+  ) => {
+    const qs = new URLSearchParams({
+      bucket,
+      page: String(page),
+      pageSize: String(pageSize),
+    });
+    if (search.trim().length > 0) qs.set("search", search.trim());
+    return request<AdsolutCoveragePage<AdsolutCoverageCompanyRow>>(
+      "GET",
+      `/api/admin/integrations/adsolut/coverage/companies?${qs.toString()}`,
+    );
+  },
+  coverageContacts: (
+    bucket: AdsolutCoverageContactsBucket,
+    search: string,
+    page: number,
+    pageSize: number,
+  ) => {
+    const qs = new URLSearchParams({
+      bucket,
+      page: String(page),
+      pageSize: String(pageSize),
+    });
+    if (search.trim().length > 0) qs.set("search", search.trim());
+    return request<AdsolutCoveragePage<AdsolutCoverageContactRow>>(
+      "GET",
+      `/api/admin/integrations/adsolut/coverage/contacts?${qs.toString()}`,
+    );
+  },
+  coverageLinkCompany: (companyId: string, adsolutId: string, lastModified: string | null) =>
+    request<{ ok: boolean }>(
+      "POST",
+      `/api/admin/integrations/adsolut/coverage/link/company/${companyId}`,
+      { adsolutId, lastModified },
+    ),
+  coverageLinkContact: (linkId: string, adsolutContactId: string, lastModified: string | null) =>
+    request<{ ok: boolean }>(
+      "POST",
+      `/api/admin/integrations/adsolut/coverage/link/contact/${linkId}`,
+      { adsolutContactId, lastModified },
+    ),
+  coverageForcePushCompany: (companyId: string) =>
+    request<{ outcome: string }>(
+      "POST",
+      `/api/admin/integrations/adsolut/coverage/force-push/company/${companyId}`,
+    ),
+  coverageForcePushContact: (linkId: string) =>
+    request<{ outcome: string }>(
+      "POST",
+      `/api/admin/integrations/adsolut/coverage/force-push/contact/${linkId}`,
+    ),
+};
+
+export type AdsolutCoverageCounts = {
+  companiesSdOnly: number;
+  companiesDrift: number;
+  contactLinksUnsynced: number;
+  contactLinksDrift: number;
+  contactsPureSd: number;
+};
+
+export type AdsolutCoverageCompaniesBucket = "sd-only" | "drift";
+export type AdsolutCoverageContactsBucket =
+  | "links-unsynced"
+  | "links-drift"
+  | "pure-sd";
+
+export type AdsolutCoverageCompanyRow = {
+  id: string;
+  name: string;
+  code: string | null;
+  email: string | null;
+  adsolutId: string | null;
+  adsolutNumber: string | null;
+  adsolutLastModified: string | null;
+  updatedUtc: string;
+};
+
+export type AdsolutCoverageContactRow = {
+  linkId: string | null;
+  contactId: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  companyId: string | null;
+  companyName: string | null;
+  companyAdsolutId: string | null;
+  adsolutContactId: string | null;
+  adsolutLastModified: string | null;
+  contactUpdatedUtc: string;
+};
+
+export type AdsolutCoveragePage<T> = {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
 };
 
 export type AdsolutContactsResyncResult = {

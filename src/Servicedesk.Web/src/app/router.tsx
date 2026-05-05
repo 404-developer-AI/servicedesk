@@ -17,6 +17,7 @@ import { GeneralSettingsPage } from "@/pages/settings/GeneralSettingsPage";
 import { HealthSettingsPage } from "@/pages/settings/HealthSettingsPage";
 import { IntegrationsSettingsPage } from "@/pages/settings/IntegrationsSettingsPage";
 import { AdsolutIntegrationPage } from "@/pages/settings/AdsolutIntegrationPage";
+import { AdsolutCoveragePage } from "@/pages/settings/AdsolutCoveragePage";
 import { MailSettingsPage } from "@/pages/settings/MailSettingsPage";
 import { MailDiagnosticsPage } from "@/pages/settings/MailDiagnosticsPage";
 import { SlaSettingsPage } from "@/pages/settings/SlaSettingsPage";
@@ -316,6 +317,29 @@ const settingsAdsolutIntegrationRoute = createRoute({
   component: AdsolutIntegrationPage,
 });
 
+// v0.0.30 — coverage overview page. URL-state filter (tab + bucket) keeps
+// deep-links from the tile + back/forward navigation honest. All four
+// keys are optional; the route component derives sensible defaults.
+type AdsolutCoverageSearch = {
+  tab?: "companies" | "contacts";
+  bucket?: string;
+  search?: string;
+  page?: number;
+};
+const settingsAdsolutCoverageRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "integrations/adsolut/coverage",
+  validateSearch: (raw: Record<string, unknown>): AdsolutCoverageSearch => ({
+    tab: raw.tab === "contacts" ? "contacts" : raw.tab === "companies" ? "companies" : undefined,
+    bucket: typeof raw.bucket === "string" ? raw.bucket : undefined,
+    search: typeof raw.search === "string" ? raw.search : undefined,
+    page: typeof raw.page === "string"
+      ? Number(raw.page)
+      : (raw.page as number | undefined),
+  }),
+  component: AdsolutCoveragePage,
+});
+
 const settingsAuditRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "audit",
@@ -434,6 +458,7 @@ const routeTree = rootRoute.addChildren([
     settingsTriggerRunsRoute,
     settingsIntegrationsRoute,
     settingsAdsolutIntegrationRoute,
+    settingsAdsolutCoverageRoute,
     settingsTicketsRoute,
     settingsCompaniesRoute,
     settingsContactsRoute,

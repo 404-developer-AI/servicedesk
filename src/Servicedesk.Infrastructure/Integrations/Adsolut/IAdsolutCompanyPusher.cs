@@ -85,4 +85,12 @@ public interface IAdsolutCompanyPusher
         AdsolutPushOptions options,
         int limit,
         CancellationToken ct = default);
+
+    /// v0.0.30 — load a single row by SD company id so the coverage page's
+    /// "Force sync" action can target one specific row outside the regular
+    /// candidate-set + cap. Returns null when the row does not exist or
+    /// is soft-deleted.
+    Task<AdsolutCompanyPushCandidate?> LoadCandidateByIdAsync(
+        Guid companyId,
+        CancellationToken ct = default);
 }
