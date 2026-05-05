@@ -936,6 +936,8 @@ export function AdsolutIntegrationPage() {
                   [
                     "Adsolut.Push.UpdateExistingCustomers",
                     "Adsolut.Push.CreateNewCustomers",
+                    "Adsolut.Sync.Push.Contacts.Update",
+                    "Adsolut.Sync.Push.Contacts.Create",
                   ] as const
                 ).map((key) => {
                   const entry = findEntry(settingsList.data, key);

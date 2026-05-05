@@ -173,4 +173,27 @@ public static class AdsolutEventTypes
     /// company-detail page. One audit row per click so an admin can see
     /// who triggered an out-of-band probe.
     public const string ContactsResyncRequested = "contacts_resync.requested";
+
+    // ---- v0.0.29 Contacts push (Servicedesk → Adsolut) ----------------
+
+    /// POST /acc/v1/adm/{adm}/customers/{customer}/contacts — push-tak
+    /// created a new contact under an existing Adsolut customer. One row
+    /// per row pushed; admins can spot a burst of creations from the
+    /// integrations audit page.
+    public const string CustomerContactsCreate = "customer_contacts.create";
+
+    /// PUT /acc/v1/adm/{adm}/customers/{customer}/contacts/{contact} —
+    /// push-tak applied a local edit on one of the four mirrored fields
+    /// (first_name, last_name, phone, mobile_phone) to an already-linked
+    /// contact. One row per push.
+    public const string CustomerContactsUpdate = "customer_contacts.update";
+
+    /// GET /acc/v1/adm/{adm}/customers/{customer}/contacts/{contact} —
+    /// read-back fallback the contacts write-client uses on POST/PUT
+    /// because both write responses lack a lastModified, plus the
+    /// pre-update overlay GET that lets the PUT body be a true no-op
+    /// when nothing changed semantically. Distinct from the
+    /// CustomerContactsList (full-list pull) so audit filters separate
+    /// per-contact reads from list reads.
+    public const string CustomerContactsGet = "customer_contacts.get";
 }

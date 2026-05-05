@@ -193,6 +193,8 @@ public sealed class AdsolutAuthService : IAdsolutAuthService
             SettingKeys.Adsolut.PushCreateNewCustomers,
             SettingKeys.Adsolut.PushUpdateExistingSuppliers,
             SettingKeys.Adsolut.PushCreateNewSuppliers,
+            SettingKeys.Adsolut.SyncPushContactsUpdate,
+            SettingKeys.Adsolut.SyncPushContactsCreate,
         };
         foreach (var key in gatingKeys)
         {

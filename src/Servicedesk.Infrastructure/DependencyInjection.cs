@@ -106,10 +106,12 @@ public static class DependencyInjection
         services.AddSingleton<IAdsolutCustomersClient, AdsolutCustomersClient>();
         services.AddSingleton<IAdsolutCustomersWriteClient, AdsolutCustomersWriteClient>();
         services.AddSingleton<IAdsolutContactsClient, AdsolutContactsClient>();
+        services.AddSingleton<IAdsolutContactsWriteClient, AdsolutContactsWriteClient>();
         services.AddSingleton<IAdsolutSyncStateStore, AdsolutSyncStateStore>();
         services.AddSingleton<IAdsolutCompanyUpserter, AdsolutCompanyUpserter>();
         services.AddSingleton<IAdsolutContactUpserter, AdsolutContactUpserter>();
         services.AddSingleton<IAdsolutCompanyPusher, AdsolutCompanyPusher>();
+        services.AddSingleton<IAdsolutContactPusher, AdsolutContactPusher>();
         services.AddSingleton<IAdsolutContactsReconciler, AdsolutContactsReconciler>();
         services.AddSingleton<IAdsolutSyncWorkerSignal, AdsolutSyncWorkerSignal>();
         services.AddHttpClient(AdsolutHttpInvoker.HttpClientName);
