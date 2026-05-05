@@ -246,7 +246,7 @@ public sealed class ContactLookupServiceTests
     private static Contact NewContact(string email) => new(
         Id: Guid.NewGuid(), CompanyRole: "Member",
         FirstName: "Jan", LastName: "Janssen",
-        Email: email, Phone: "", JobTitle: "",
+        Email: email, Phone: "", MobilePhone: "", JobTitle: "",
         IsActive: true, CreatedUtc: DateTime.UtcNow, UpdatedUtc: DateTime.UtcNow);
 
     private static ContactLookupService Build(
