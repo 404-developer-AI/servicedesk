@@ -185,6 +185,16 @@ public static class SettingKeys
         public const string PushUpdateExistingSuppliers = "Adsolut.Push.UpdateExistingSuppliers";
         public const string PushCreateNewSuppliers = "Adsolut.Push.CreateNewSuppliers";
 
+        // v0.0.29 — Contacts push (Servicedesk → Adsolut, customers-only).
+        // Mirror of the v0.0.28 contacts pull-toggles. Same gating discipline
+        // as the Companies push: default OFF, force-reset to OFF on every
+        // (re)connect. Update + Create are independent. Hard rule (enforced
+        // in AdsolutContactPusher.LoadCandidatesAsync): never push a contact
+        // whose parent company has no adsolut_id — Adsolut has no concept of
+        // a free-floating contact.
+        public const string SyncPushContactsUpdate = "Adsolut.Sync.Push.Contacts.Update";
+        public const string SyncPushContactsCreate = "Adsolut.Sync.Push.Contacts.Create";
+
         /// Base URL of the Adsolut API (Administrations + Accounting share
         /// the same host). Documented at api.adsolut.com for production;
         /// no UAT mirror is documented today, but a future change can swap
@@ -508,6 +518,13 @@ public static class SettingDefaults
             "v0.0.27 placeholder: pushing updates on linked Suppliers is in development. Backend force-ignores this; UI shows the toggle disabled with an 'In development' badge. Stays as a setting row so the v0.0.28 unlock is just a code-flip, not a schema migration."),
         new SettingDefault(SettingKeys.Adsolut.PushCreateNewSuppliers, "false", "bool", "Adsolut",
             "v0.0.27 placeholder: creating new Suppliers in Adsolut from SD is in development. Backend force-ignores this; UI shows the toggle disabled with an 'In development' badge. Stays as a setting row so the v0.0.28 unlock is just a code-flip, not a schema migration."),
+
+        // v0.0.29 — Contacts push (SD → Adsolut, customers-only).
+        new SettingDefault(SettingKeys.Adsolut.SyncPushContactsUpdate, "false", "bool", "Adsolut",
+            "When true, the sync worker pushes local edits on the four mirrored contact fields (first_name, last_name, phone, mobile_phone) back to Adsolut (PUT /customers/{customer}/contacts/{contact}) on the next tick. Push-tak only fires when the contact's local updated_utc is strictly newer than the per-link adsolut_last_modified AND the canonical hash differs from the last-synced hash (so an echo-pull right after a push is a no-op). Hard rule: contacts whose parent company has no adsolut_id are never pushed — Adsolut has no concept of a free-floating contact. Default off + force-reset on every (re)connect."),
+        new SettingDefault(SettingKeys.Adsolut.SyncPushContactsCreate, "false", "bool", "Adsolut",
+            "When true, the sync worker creates Adsolut customer-contacts from SD contact_companies links that have no adsolut_contact_id yet (POST /customers/{customer}/contacts), provided the parent company is already Adsolut-linked. Independent of the update-toggle: an admin can have updates pushing while never auto-creating fresh rows in Adsolut. Default off + force-reset on every (re)connect."),
+
         new SettingDefault(SettingKeys.Adsolut.ApiBaseUrl, "https://api.adsolut.com", "string", "Adsolut",
             "Base URL of the Adsolut API. The Administrations service lives under /adm/v1, the Accounting service under /acc/v1. Default targets api.adsolut.com (production); no UAT mirror is documented today but the value is exposed so a future change can swap it without a code release. Trailing slashes are normalised."),
 

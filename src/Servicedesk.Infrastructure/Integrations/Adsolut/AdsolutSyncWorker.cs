@@ -123,6 +123,7 @@ public sealed class AdsolutSyncWorker : BackgroundService
         var pusher = sp.GetRequiredService<IAdsolutCompanyPusher>();
         var contactsClient = sp.GetRequiredService<IAdsolutContactsClient>();
         var contactUpserter = sp.GetRequiredService<IAdsolutContactUpserter>();
+        var contactPusher = sp.GetRequiredService<IAdsolutContactPusher>();
         var dataSource = sp.GetRequiredService<NpgsqlDataSource>();
         var auditLog = sp.GetRequiredService<IIntegrationAuditLogger>();
         var notifier = sp.GetRequiredService<IIntegrationStatusNotifier>();
@@ -182,6 +183,11 @@ public sealed class AdsolutSyncWorker : BackgroundService
         // never accepting new contact rows from Adsolut, or vice versa.
         var pullContactsUpdate = await settings.GetAsync<bool>(SettingKeys.Adsolut.SyncPullContactsUpdate, ct);
         var pullContactsCreate = await settings.GetAsync<bool>(SettingKeys.Adsolut.SyncPullContactsCreate, ct);
+        // v0.0.29 — Contacts push toggles. Independent of the contacts-pull
+        // toggles: an admin can opt in to pushing local edits to Adsolut
+        // while never accepting inbound contact updates, or vice versa.
+        var pushContactsUpdate = await settings.GetAsync<bool>(SettingKeys.Adsolut.SyncPushContactsUpdate, ct);
+        var pushContactsCreate = await settings.GetAsync<bool>(SettingKeys.Adsolut.SyncPushContactsCreate, ct);
         // Load the freemail blacklist once per tick (same source the
         // mail-ingest auto-linker uses, so the two paths can never disagree
         // on which domains count as freemail).
@@ -192,6 +198,7 @@ public sealed class AdsolutSyncWorker : BackgroundService
             FreemailBlacklist: freemailBlacklist);
         var pushOptions = new AdsolutPushOptions(pushUpdate, pushCreate);
         var contactsOptions = new AdsolutContactsSyncOptions(pullContactsUpdate, pullContactsCreate);
+        var contactsPushOptions = new AdsolutContactsPushOptions(pushContactsUpdate, pushContactsCreate);
 
         var existingState = await stateStore.GetAsync(ct);
         // Snap the cursor BEFORE making any upstream calls so a slow page
@@ -248,6 +255,16 @@ public sealed class AdsolutSyncWorker : BackgroundService
             if (pushOptions.PushUpdateEnabled || pushOptions.PushCreateEnabled)
             {
                 await PushTakAsync(pusher, administrationId, pushOptions, counts, ct);
+            }
+
+            // v0.0.29 contacts push-tak — same ordering rationale as the
+            // companies push: runs after the contacts-pull so any inbound
+            // updates absorbed this tick are reflected in the per-link
+            // hash before we evaluate outbound drift. Both toggles default
+            // OFF; most ticks short-circuit before any SQL.
+            if (contactsPushOptions.PushUpdateEnabled || contactsPushOptions.PushCreateEnabled)
+            {
+                await PushContactsAsync(contactPusher, administrationId, contactsPushOptions, counts, ct);
             }
         }
         catch (AdsolutApiException ex)
@@ -311,6 +328,14 @@ public sealed class AdsolutSyncWorker : BackgroundService
                 contactsSkippedLinkConflict = counts.ContactsSkippedLinkConflict,
                 contactsReconcileFlipped = counts.ContactsReconcileFlipped,
                 contactsFailed = counts.ContactsFailed,
+                contactsPushSeen = counts.ContactsPushSeen,
+                contactsPushCreated = counts.ContactsPushCreated,
+                contactsPushUpdated = counts.ContactsPushUpdated,
+                contactsPushSkippedNoChange = counts.ContactsPushSkippedNoChange,
+                contactsPushSkippedNoLocalChange = counts.ContactsPushSkippedNoLocalChange,
+                contactsPushSkippedToggleOff = counts.ContactsPushSkippedToggleOff,
+                contactsPushSkippedNoEmail = counts.ContactsPushSkippedNoEmail,
+                contactsPushFailed = counts.ContactsPushFailed,
                 durationMs = (int)stopwatch.ElapsedMilliseconds,
                 modifiedSince,
             }), ct);
@@ -382,6 +407,71 @@ public sealed class AdsolutSyncWorker : BackgroundService
                 _logger.LogInformation(
                     "Adsolut push of company {CompanyId} failed: {Status} {Code}",
                     candidate.Id, ex.HttpStatus, ex.UpstreamErrorCode);
+            }
+        }
+    }
+
+    /// v0.0.29 contacts push-tak — counterpart to <see cref="PushTakAsync"/>
+    /// for contact_companies links. Per-row try/catch so one bad row
+    /// doesn't crash the whole tick (lessons-learned from v0.0.28: the
+    /// cursor must keep advancing, otherwise the install never makes
+    /// forward progress).
+    private async Task PushContactsAsync(
+        IAdsolutContactPusher pusher,
+        Guid administrationId,
+        AdsolutContactsPushOptions options,
+        AdsolutSyncCounters counts,
+        CancellationToken ct)
+    {
+        const int PerTickCap = 200;
+        var candidates = await pusher.LoadCandidatesAsync(options, PerTickCap, ct);
+        foreach (var candidate in candidates)
+        {
+            counts.ContactsPushSeen++;
+            try
+            {
+                var outcome = await pusher.PushOneAsync(administrationId, candidate, options, ct);
+                switch (outcome)
+                {
+                    case AdsolutContactPushOutcome.Created:
+                        counts.ContactsPushCreated++;
+                        break;
+                    case AdsolutContactPushOutcome.Updated:
+                        counts.ContactsPushUpdated++;
+                        break;
+                    case AdsolutContactPushOutcome.SkippedNoChange:
+                        counts.ContactsPushSkippedNoChange++;
+                        break;
+                    case AdsolutContactPushOutcome.SkippedNoLocalChange:
+                        counts.ContactsPushSkippedNoLocalChange++;
+                        break;
+                    case AdsolutContactPushOutcome.SkippedUpdateToggleOff:
+                    case AdsolutContactPushOutcome.SkippedCreateToggleOff:
+                        counts.ContactsPushSkippedToggleOff++;
+                        break;
+                    case AdsolutContactPushOutcome.SkippedNoEmail:
+                        counts.ContactsPushSkippedNoEmail++;
+                        break;
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (AdsolutApiException ex)
+            {
+                counts.ContactsPushFailed++;
+                _logger.LogInformation(
+                    "Adsolut push of contact-link {LinkId} (contact {ContactId}, company {CompanyId}) failed: {Status} {Code}",
+                    candidate.LinkId, candidate.ContactId, candidate.CompanyId,
+                    ex.HttpStatus, ex.UpstreamErrorCode);
+            }
+            catch (Exception ex)
+            {
+                counts.ContactsPushFailed++;
+                _logger.LogWarning(ex,
+                    "Adsolut contact push threw an unexpected exception: link {LinkId}, contact {ContactId}, company {CompanyId}.",
+                    candidate.LinkId, candidate.ContactId, candidate.CompanyId);
             }
         }
     }
@@ -611,5 +701,15 @@ public sealed class AdsolutSyncWorker : BackgroundService
         public int ContactsSkippedLinkConflict;
         public int ContactsReconcileFlipped;
         public int ContactsFailed;
+
+        // Contacts push-tak (v0.0.29).
+        public int ContactsPushSeen;
+        public int ContactsPushCreated;
+        public int ContactsPushUpdated;
+        public int ContactsPushSkippedNoChange;
+        public int ContactsPushSkippedNoLocalChange;
+        public int ContactsPushSkippedToggleOff;
+        public int ContactsPushSkippedNoEmail;
+        public int ContactsPushFailed;
     }
 }
