@@ -1830,6 +1830,212 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- this company". Partial index keeps NULL-link rows out of the scan.
         CREATE INDEX IF NOT EXISTS ix_contact_companies_company_adsolut
             ON contact_companies (company_id) WHERE adsolut_contact_id IS NOT NULL;
+
+        -- ===================================================================
+        -- v0.0.31 — Knowledge Base (standalone, agent-internal)
+        --
+        -- Singleton config row in knowledge_base, supported locales in
+        -- kb_locales (nl-BE seeded active, en-US seeded inactive secondary),
+        -- recursive section tree (kb_sections) with per-locale labels in
+        -- kb_section_translations, and articles with explicit status enum
+        -- (Draft|Internal|Published|Archived) + featured flag + private
+        -- editor_notes in kb_articles. Per-locale title/body live in
+        -- kb_article_translations; body_html is sanitized server-side
+        -- before write and body_text (the HTML-stripped form) drives the
+        -- generated tsvector search_vector.
+        --
+        -- Status is an enum, not a triple of nullable timestamps:
+        -- last_status_changed_utc + last_status_changed_by_user_id capture
+        -- the last flip; full historical flips live in audit_log via
+        -- kb.article.status.changed events. publish_at / archive_at are
+        -- reserved columns for a future KbScheduleWorker; both stay NULL
+        -- in v0.0.31.
+        --
+        -- Attachments hergebruiken het bestaande blob-pipeline-pattern via
+        -- owner_kind='KbArticle'. Geen separate KB-attachment-tabel.
+        --
+        -- FTS-config: 'simple' + lower() (mirrors the existing pattern in
+        -- mail_messages.search_vector — unaccent() is STABLE and cannot
+        -- live in a STORED generated column on this install layout).
+        -- ===================================================================
+
+        -- Extend the existing attachments owner-kind whitelist to include
+        -- KbArticle. Constraint is dropped + re-added so the SQL stays
+        -- idempotent across upgrades from older schemas.
+        ALTER TABLE attachments DROP CONSTRAINT IF EXISTS chk_attachments_owner_kind;
+        ALTER TABLE attachments ADD CONSTRAINT chk_attachments_owner_kind
+            CHECK (owner_kind IN ('Mail','Ticket','User','KbArticle'));
+
+        CREATE TABLE IF NOT EXISTS kb_locales (
+            code            TEXT        PRIMARY KEY,
+            display_name    TEXT        NOT NULL,
+            is_active       BOOLEAN     NOT NULL DEFAULT TRUE,
+            sort_order      INTEGER     NOT NULL DEFAULT 0,
+            CONSTRAINT chk_kb_locales_code_format
+                CHECK (code ~ '^[a-z]{2,3}(-[A-Z][a-zA-Z]+)?(-[A-Z]{2})?$')
+        );
+
+        INSERT INTO kb_locales (code, display_name, is_active, sort_order) VALUES
+            ('nl-BE', 'Nederlands (België)', TRUE,  0),
+            ('en-US', 'English (United States)', FALSE, 1)
+            ON CONFLICT (code) DO NOTHING;
+
+        CREATE TABLE IF NOT EXISTS knowledge_base (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            is_active           BOOLEAN     NOT NULL DEFAULT TRUE,
+            default_locale_code TEXT        NOT NULL DEFAULT 'nl-BE'
+                                            REFERENCES kb_locales(code) ON UPDATE CASCADE,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        -- Singleton enforcement: at most one row, ever. The ON ((TRUE))
+        -- expression yields the same key for every row, so a second insert
+        -- always conflicts. The seed below inserts the single row only when
+        -- the table is empty.
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_knowledge_base_singleton
+            ON knowledge_base ((TRUE));
+
+        INSERT INTO knowledge_base (default_locale_code)
+            SELECT 'nl-BE'
+            WHERE NOT EXISTS (SELECT 1 FROM knowledge_base);
+
+        CREATE TABLE IF NOT EXISTS kb_sections (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            parent_section_id   UUID        NULL REFERENCES kb_sections(id) ON DELETE RESTRICT,
+            slug                CITEXT      NOT NULL,
+            icon_name           TEXT        NULL,
+            position            INTEGER     NOT NULL DEFAULT 0,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            created_by_user_id  UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            updated_by_user_id  UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            CONSTRAINT chk_kb_sections_slug_format
+                CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+            CONSTRAINT chk_kb_sections_no_self_parent
+                CHECK (parent_section_id IS NULL OR parent_section_id <> id)
+        );
+
+        -- Slug-uniqueness within siblings. PostgreSQL treats NULL <> NULL in
+        -- composite UNIQUE constraints, so two partial unique indexes are
+        -- needed: one for root-level sections (parent_section_id IS NULL),
+        -- one for child sections. Multi-level cycles are caught at the API
+        -- layer in the section-move endpoint.
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_kb_sections_root_slug
+            ON kb_sections (slug) WHERE parent_section_id IS NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_kb_sections_child_slug
+            ON kb_sections (parent_section_id, slug) WHERE parent_section_id IS NOT NULL;
+
+        CREATE INDEX IF NOT EXISTS ix_kb_sections_parent_position
+            ON kb_sections (parent_section_id, position);
+
+        CREATE TABLE IF NOT EXISTS kb_section_translations (
+            id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            section_id      UUID        NOT NULL REFERENCES kb_sections(id) ON DELETE CASCADE,
+            locale_code     TEXT        NOT NULL REFERENCES kb_locales(code) ON UPDATE CASCADE,
+            title           TEXT        NOT NULL,
+            description     TEXT        NULL,
+            created_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT chk_kb_section_translations_title_len
+                CHECK (length(title) BETWEEN 1 AND 250),
+            CONSTRAINT chk_kb_section_translations_description_len
+                CHECK (description IS NULL OR length(description) <= 1000),
+            CONSTRAINT ux_kb_section_translations_section_locale
+                UNIQUE (section_id, locale_code)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_kb_section_translations_section
+            ON kb_section_translations (section_id);
+
+        CREATE TABLE IF NOT EXISTS kb_articles (
+            id                              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            section_id                      UUID        NOT NULL REFERENCES kb_sections(id) ON DELETE RESTRICT,
+            slug                            CITEXT      NOT NULL,
+            status                          TEXT        NOT NULL DEFAULT 'Draft',
+            is_featured                     BOOLEAN     NOT NULL DEFAULT FALSE,
+            editor_notes                    TEXT        NULL,
+            position                        INTEGER     NOT NULL DEFAULT 0,
+            publish_at                      TIMESTAMPTZ NULL,
+            archive_at                      TIMESTAMPTZ NULL,
+            last_status_changed_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_status_changed_by_user_id  UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            created_utc                     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc                     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            created_by_user_id              UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            updated_by_user_id              UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            CONSTRAINT chk_kb_articles_status
+                CHECK (status IN ('Draft','Internal','Published','Archived')),
+            CONSTRAINT chk_kb_articles_slug_format
+                CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+            CONSTRAINT ux_kb_articles_section_slug
+                UNIQUE (section_id, slug)
+        );
+
+        -- Listing hot path: articles per section, status-filtered, ordered
+        -- by position. Archived rows are excluded so the index stays small
+        -- on installs that accumulate retired articles.
+        CREATE INDEX IF NOT EXISTS ix_kb_articles_section_status_position
+            ON kb_articles (section_id, status, position) WHERE status <> 'Archived';
+
+        -- Featured-tile on /kb landing.
+        CREATE INDEX IF NOT EXISTS ix_kb_articles_featured
+            ON kb_articles (updated_utc DESC) WHERE is_featured AND status = 'Published';
+
+        -- Reserved for a future KbScheduleWorker (publish_at / archive_at
+        -- automatic flips). publish_at is intentionally NULL in v0.0.31; the
+        -- partial index has effectively zero rows so the cost is negligible.
+        CREATE INDEX IF NOT EXISTS ix_kb_articles_publish_at_pending
+            ON kb_articles (publish_at)
+            WHERE publish_at IS NOT NULL AND status = 'Draft';
+
+        -- Trigram fuzzy match on slug for typeahead-style lookups.
+        CREATE INDEX IF NOT EXISTS ix_kb_articles_slug_trgm
+            ON kb_articles USING GIN ((lower(slug::text)) gin_trgm_ops);
+
+        CREATE TABLE IF NOT EXISTS kb_article_translations (
+            id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            article_id      UUID        NOT NULL REFERENCES kb_articles(id) ON DELETE CASCADE,
+            locale_code     TEXT        NOT NULL REFERENCES kb_locales(code) ON UPDATE CASCADE,
+            title           TEXT        NOT NULL,
+            body_html       TEXT        NOT NULL DEFAULT '',
+            body_text       TEXT        NOT NULL DEFAULT '',
+            search_vector   TSVECTOR    GENERATED ALWAYS AS (
+                                setweight(to_tsvector('simple', lower(coalesce(title, ''))), 'A') ||
+                                setweight(to_tsvector('simple', lower(coalesce(body_text, ''))), 'B')
+                            ) STORED,
+            created_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT chk_kb_article_translations_title_len
+                CHECK (length(title) BETWEEN 1 AND 250),
+            CONSTRAINT ux_kb_article_translations_article_locale
+                UNIQUE (article_id, locale_code)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_kb_article_translations_search_vector
+            ON kb_article_translations USING GIN (search_vector);
+        CREATE INDEX IF NOT EXISTS ix_kb_article_translations_title_trgm
+            ON kb_article_translations USING GIN ((lower(title)) gin_trgm_ops);
+        CREATE INDEX IF NOT EXISTS ix_kb_article_translations_article
+            ON kb_article_translations (article_id);
+
+        -- Seed a single root section "General" so a fresh install lands on
+        -- a non-empty /kb landing page. Admin renames or deletes as needed.
+        DO $do$
+        DECLARE
+            v_section_id        UUID;
+            v_default_locale    TEXT;
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM kb_sections) THEN
+                SELECT default_locale_code INTO v_default_locale FROM knowledge_base LIMIT 1;
+                INSERT INTO kb_sections (slug, position) VALUES ('general', 0)
+                    RETURNING id INTO v_section_id;
+                INSERT INTO kb_section_translations (section_id, locale_code, title, description)
+                    VALUES (v_section_id, COALESCE(v_default_locale, 'nl-BE'),
+                            'General',
+                            'Default section seeded on install. Rename or remove as you organise the knowledge base.');
+            END IF;
+        END $do$;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

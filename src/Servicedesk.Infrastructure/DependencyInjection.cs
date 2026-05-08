@@ -163,6 +163,14 @@ public static class DependencyInjection
         services.AddSingleton<IMailMessageRepository, MailMessageRepository>();
         services.AddSingleton<IAttachmentRepository, AttachmentRepository>();
         services.AddSingleton<IAttachmentJobRepository, AttachmentJobRepository>();
+
+        // Knowledge Base (v0.0.31). Sanitizer is stateless — single instance
+        // shared across requests. Repos follow the existing data-access
+        // pattern (NpgsqlDataSource + Dapper, registered as singletons).
+        services.AddSingleton<KnowledgeBase.IKbHtmlSanitizer, KnowledgeBase.KbHtmlSanitizer>();
+        services.AddSingleton<Persistence.KnowledgeBase.IKbConfigRepository, Persistence.KnowledgeBase.KbConfigRepository>();
+        services.AddSingleton<Persistence.KnowledgeBase.IKbSectionRepository, Persistence.KnowledgeBase.KbSectionRepository>();
+        services.AddSingleton<Persistence.KnowledgeBase.IKbArticleRepository, Persistence.KnowledgeBase.KbArticleRepository>();
         services.AddSingleton<IMailAttachmentDiagnostics, MailAttachmentDiagnostics>();
         services.AddSingleton<IMailTimelineEnricher, MailTimelineEnricher>();
         services.AddSingleton<IMailFinalizer, MailFinalizer>();
