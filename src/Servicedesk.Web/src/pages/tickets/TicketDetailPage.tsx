@@ -12,6 +12,7 @@ import {
   markAlertSeen,
 } from "@/components/CompanyAlertDialog";
 import { TicketCompanyAssignmentDialog } from "@/components/TicketCompanyAssignmentDialog";
+import { SearchContextBar } from "@/components/SearchContextBar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { useRecentTicketsStore } from "@/stores/useRecentTicketsStore";
@@ -594,6 +595,7 @@ function TicketDetailBody({
     <div className="flex gap-6 pt-3 h-[calc(100vh-0.75rem)] overflow-hidden">
       {/* Left column — header + description static, activity scrolls, reply pinned bottom */}
       <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
+        <SearchContextBar ticketId={ticketId} />
         {/* Static: ticket number + subject on one line, with SLA pills + PDF inline */}
         <div className="shrink-0 pb-4">
           <div className="flex items-start gap-3">

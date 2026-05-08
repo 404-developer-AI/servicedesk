@@ -120,7 +120,7 @@ export function SearchPage() {
 
             <ul className="divide-y divide-white/5 rounded-xl border border-white/10 bg-white/[0.02]">
               {group.hits.map((hit) => (
-                <HitRow key={`${hit.kind}:${hit.entityId}`} hit={hit} />
+                <HitRow key={`${hit.kind}:${hit.entityId}`} hit={hit} query={q} />
               ))}
             </ul>
 
@@ -149,16 +149,27 @@ export function SearchPage() {
   );
 }
 
-function HitRow({ hit }: { hit: SearchHit }) {
+function HitRow({ hit, query }: { hit: SearchHit; query: string }) {
   const navigate = useNavigate();
   const requester = hit.meta?.requester;
   const company = hit.meta?.company;
   const subtitle = [requester, company].filter(Boolean).join(" · ");
 
+  function go() {
+    if (hit.kind === "tickets") {
+      navigate({
+        to: hitHref(hit) as string,
+        search: { from: "search", q: query } as never,
+      });
+    } else {
+      navigate({ to: hitHref(hit) as string });
+    }
+  }
+
   return (
     <li
       className="cursor-pointer px-4 py-3 transition-colors hover:bg-white/5"
-      onClick={() => navigate({ to: hitHref(hit) as string })}
+      onClick={go}
     >
       <div className="flex items-baseline gap-2">
         <span className="truncate font-medium">{hit.title}</span>

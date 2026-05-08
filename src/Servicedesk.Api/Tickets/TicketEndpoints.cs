@@ -37,7 +37,7 @@ public static class TicketEndpoints
 
         group.MapGet("/", async (
             Guid? queueId, Guid? statusId, Guid? priorityId, Guid? assigneeUserId,
-            Guid? requesterContactId, string? search, bool? openOnly,
+            Guid? requesterContactId, Guid? companyId, string? search, bool? openOnly, bool? openFirst,
             string? sortField, string? sortDirection, bool? priorityFloat, int? offset,
             DateTime? cursorUpdatedUtc, Guid? cursorId, int? limit,
             HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess, CancellationToken ct) =>
@@ -59,7 +59,8 @@ public static class TicketEndpoints
             var q = new TicketQuery(
                 QueueId: queueId, StatusId: statusId, PriorityId: priorityId,
                 AssigneeUserId: assigneeUserId, RequesterContactId: requesterContactId,
-                Search: search, OpenOnly: openOnly ?? false,
+                RequesterCompanyId: companyId,
+                Search: search, OpenOnly: openOnly ?? false, OpenFirst: openFirst ?? false,
                 SortField: sortField, SortDirection: sortDirection,
                 PriorityFloat: priorityFloat ?? false, Offset: offset,
                 CursorUpdatedUtc: cursorUpdatedUtc, CursorId: cursorId,

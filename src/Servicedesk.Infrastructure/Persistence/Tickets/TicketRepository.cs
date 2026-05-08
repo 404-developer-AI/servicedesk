@@ -102,6 +102,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         if (query.PriorityId.HasValue) sql.Append(" AND t.priority_id = @PriorityId");
         if (query.AssigneeUserId.HasValue) sql.Append(" AND t.assignee_user_id = @AssigneeUserId");
         if (query.RequesterContactId.HasValue) sql.Append(" AND t.requester_contact_id = @RequesterContactId");
+        if (query.RequesterCompanyId.HasValue) sql.Append(" AND t.company_id = @RequesterCompanyId");
         if (query.OpenOnly) sql.Append(" AND s.state_category NOT IN ('Resolved','Closed')");
 
         // Queue-access enforcement: restrict to only the queues the caller
@@ -111,7 +112,16 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
 
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
-            sql.Append(" AND (t.search_vector @@ plainto_tsquery('simple', @Search) OR t.number::text = @SearchRaw)");
+            // Subject (tickets.search_vector) OR exact ticket number OR body
+            // (ticket_event_search.search_vector — sidecar fed by trigger).
+            // The body-EXISTS rides the GIN index on tes.search_vector so it
+            // stays fast even on large datasets.
+            sql.Append(" AND (");
+            sql.Append("t.search_vector @@ plainto_tsquery('simple', @Search)");
+            sql.Append(" OR t.number::text = @SearchRaw");
+            sql.Append(" OR EXISTS (SELECT 1 FROM ticket_event_search tes");
+            sql.Append(" WHERE tes.ticket_id = t.id AND tes.search_vector @@ plainto_tsquery('simple', @Search))");
+            sql.Append(")");
         }
 
         // Visibility enforcement. Never trust client-supplied scope — this is
@@ -136,10 +146,12 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                 break;
         }
 
-        // Determine if we need offset-based pagination (dynamic sort or priority float).
+        // Determine if we need offset-based pagination (dynamic sort, priority
+        // float, or open-first bucket sort — the latter can't ride the
+        // (updated_utc, id) keyset cursor since the bucket key splits the order).
         var hasDynamicSort = query.SortField is not null
             && !string.Equals(query.SortField, "updatedUtc", StringComparison.OrdinalIgnoreCase);
-        var useOffset = hasDynamicSort || query.PriorityFloat;
+        var useOffset = hasDynamicSort || query.PriorityFloat || query.OpenFirst;
 
         if (useOffset)
         {
@@ -154,32 +166,27 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             }
         }
 
-        // Build ORDER BY
+        // Build ORDER BY. Open-first prepends a bucket key so resolved/closed
+        // tickets always sort below open ones, regardless of secondary sort.
+        var orderClauses = new List<string>();
+        if (query.OpenFirst)
+            orderClauses.Add("(CASE WHEN s.state_category IN ('Resolved','Closed') THEN 1 ELSE 0 END) ASC");
         if (query.PriorityFloat)
         {
-            sql.Append(" ORDER BY (CASE WHEN p.is_default THEN 1 ELSE 0 END)");
-            sql.Append(", CASE WHEN NOT p.is_default THEN p.level END ASC");
+            orderClauses.Add("(CASE WHEN p.is_default THEN 1 ELSE 0 END)");
+            orderClauses.Add("CASE WHEN NOT p.is_default THEN p.level END ASC");
         }
-        else
-        {
-            sql.Append(" ORDER BY");
-        }
-
         if (query.SortField is not null && SortFieldMap.TryGetValue(query.SortField, out var sortColumn))
         {
             var dir = string.Equals(query.SortDirection, "asc", StringComparison.OrdinalIgnoreCase) ? "ASC" : "DESC";
-            sql.Append(query.PriorityFloat ? $", {sortColumn} {dir}" : $" {sortColumn} {dir}");
-        }
-        else if (!query.PriorityFloat)
-        {
-            sql.Append(" t.updated_utc DESC");
+            orderClauses.Add($"{sortColumn} {dir}");
         }
         else
         {
-            sql.Append(", t.updated_utc DESC");
+            orderClauses.Add("t.updated_utc DESC");
         }
-
-        sql.Append(", t.id DESC");
+        orderClauses.Add("t.id DESC");
+        sql.Append(" ORDER BY ").Append(string.Join(", ", orderClauses));
 
         var limit = Math.Clamp(query.Limit, 1, 500);
         sql.Append(" LIMIT @Limit");
@@ -193,6 +200,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             query.PriorityId,
             query.AssigneeUserId,
             query.RequesterContactId,
+            query.RequesterCompanyId,
             Search = query.Search ?? "",
             SearchRaw = query.Search ?? "",
             ViewerContactId = viewerUserId ?? Guid.Empty,

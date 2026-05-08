@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Command } from "cmdk";
 import { useNavigate } from "@tanstack/react-router";
 import { Search } from "lucide-react";
@@ -16,17 +17,47 @@ const DEBOUNCE_MS = 150;
 export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) {
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const anchorRef = useRef<HTMLDivElement | null>(null);
   const { user } = useAuth();
 
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
   const [debounced, setDebounced] = useState("");
+  const [anchorRect, setAnchorRect] = useState<{ left: number; top: number; width: number } | null>(null);
 
   // Debounce the query so we don't flood the backend on every keystroke.
   useEffect(() => {
     const t = setTimeout(() => setDebounced(value), DEBOUNCE_MS);
     return () => clearTimeout(t);
   }, [value]);
+
+  // The dropdown lives in a portal so it can extend past the sidebar's
+  // `overflow-hidden`, which would otherwise clip it to the sidebar width.
+  // Recompute its position whenever the panel opens or the layout shifts.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const DROPDOWN_WIDTH = 640;
+    const GAP = 6;
+    const SCREEN_PADDING = 12;
+    const update = () => {
+      const el = anchorRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const desiredWidth = Math.min(DROPDOWN_WIDTH, window.innerWidth - SCREEN_PADDING * 2);
+      let left = rect.left;
+      if (left + desiredWidth > window.innerWidth - SCREEN_PADDING) {
+        left = Math.max(SCREEN_PADDING, window.innerWidth - SCREEN_PADDING - desiredWidth);
+      }
+      setAnchorRect({ left, top: rect.bottom + GAP, width: desiredWidth });
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open]);
 
   // Global Ctrl+K / Cmd+K.
   useEffect(() => {
@@ -73,7 +104,13 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
   }
 
   function goHit(hit: SearchHit) {
-    resetAndNavigate(hitHref(hit));
+    // Only ticket hits get the search-context pill — for contacts / companies
+    // / KB / settings the navigation goes to a richer destination already.
+    if (hit.kind === "tickets") {
+      resetAndNavigate(hitHref(hit), { from: "search", q: query });
+    } else {
+      resetAndNavigate(hitHref(hit));
+    }
   }
 
   const groupsOrdered = (data?.groups ?? [])
@@ -101,6 +138,7 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
     <div className="relative w-full" data-testid="global-search">
       <Command shouldFilter={false} className="relative">
         <div
+          ref={anchorRef}
           className={cn(
             "flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2",
             "ring-1 ring-inset ring-white/5 transition focus-within:ring-white/20",
@@ -123,10 +161,16 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
           </kbd>
         </div>
 
-        {open && (
+        {open && anchorRect && createPortal(
           <div
+            style={{
+              position: "fixed",
+              left: anchorRect.left,
+              top: anchorRect.top,
+              width: anchorRect.width,
+            }}
             className={cn(
-              "absolute left-0 top-[calc(100%+6px)] z-50 w-[min(480px,90vw)] overflow-hidden rounded-xl border border-white/10 bg-background/95 shadow-2xl backdrop-blur",
+              "z-50 overflow-hidden rounded-xl border border-white/10 bg-background/95 shadow-2xl backdrop-blur",
               "ring-1 ring-inset ring-white/5",
             )}
             onMouseDown={(e) => e.preventDefault()}
@@ -206,7 +250,8 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
                 </>
               )}
             </Command.List>
-          </div>
+          </div>,
+          document.body,
         )}
       </Command>
     </div>

@@ -35,6 +35,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { ContactFormDialog } from "@/components/ContactFormDialog";
 import { CompanyFormFields, companyToInput } from "@/components/CompanyFormFields";
+import { EntityTicketsList } from "@/components/EntityTicketsList";
 import { cn } from "@/lib/utils";
 
 const ROLE_BADGE: Record<ContactCompanyRole, { label: string; className: string }> = {
@@ -52,7 +53,7 @@ const ROLE_BADGE: Record<ContactCompanyRole, { label: string; className: string 
   },
 };
 
-type TabKey = "overview" | "contacts" | "domains";
+type TabKey = "overview" | "contacts" | "tickets" | "domains";
 
 export function CompanyDetailPage({ companyId }: { companyId: string }) {
   const role = authStore.get().user?.role ?? null;
@@ -78,6 +79,7 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
   const tabs: { key: TabKey; label: string; visible: boolean }[] = [
     { key: "overview", label: "Overview", visible: true },
     { key: "contacts", label: "Contacts", visible: true },
+    { key: "tickets", label: "Tickets", visible: true },
     { key: "domains", label: "Domains", visible: isAdmin },
   ];
 
@@ -187,6 +189,7 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
           isAdmin={isAdmin}
         />
       )}
+      {tab === "tickets" && <EntityTicketsList companyId={companyId} />}
       {tab === "domains" && isAdmin && (
         <DomainsTab companyId={companyId} domains={domains} />
       )}
