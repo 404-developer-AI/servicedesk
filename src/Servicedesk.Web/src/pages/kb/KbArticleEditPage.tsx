@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Save, Send, Archive } from "lucide-react";
+import { Save, Send, Archive, ImageOff } from "lucide-react";
 import { toast } from "sonner";
 import {
   kbApi,
@@ -157,6 +157,16 @@ export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
             className="h-12 text-lg"
           />
 
+          {isCreate && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-300/30 bg-amber-300/[0.06] px-3 py-2 text-xs text-amber-200">
+              <ImageOff className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <div>
+                <span className="font-medium">Image uploads are unavailable until the draft is saved.</span>{" "}
+                Click <span className="font-medium">Create draft</span> on the right to enable paste, drag-and-drop,
+                and the paperclip button.
+              </div>
+            </div>
+          )}
           <div className="glass-card overflow-hidden">
             <RichTextEditor
               content={bodyHtml}
@@ -166,7 +176,10 @@ export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
               maxHeight="60vh"
               onUploadFile={async (file) => {
                 if (isCreate) {
-                  toast.info("Save the draft first to attach images.");
+                  toast.warning(
+                    "Save the draft first — images are attached to an existing article.",
+                    { duration: 6000 },
+                  );
                   return null;
                 }
                 try {
