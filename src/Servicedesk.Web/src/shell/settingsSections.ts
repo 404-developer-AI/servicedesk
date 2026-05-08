@@ -1,5 +1,6 @@
 import {
   Activity,
+  BookOpen,
   Building2,
   ClipboardList,
   Contact,
@@ -121,6 +122,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       "If-this-then-that automation — auto-route by sender, auto-reply on new tickets, escalate on SLA breach.",
     icon: Zap,
+  },
+  {
+    slug: "knowledge-base",
+    label: "Knowledge Base",
+    description:
+      "KB-level config: active toggle, default locale, supported locales and the section tree that articles live in.",
+    icon: BookOpen,
   },
   {
     slug: "mail-diagnostics",
