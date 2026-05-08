@@ -52,9 +52,9 @@ export const NAV_ITEMS: readonly NavItem[] = [
     label: "Knowledge Base",
     to: "/kb",
     icon: BookOpen,
-    roles: ["Customer", "Agent", "Admin"],
-    comingIn: "v0.0.11",
-    description: "Articles and runbooks with full-text search and inline suggestions.",
+    roles: ["Agent", "Admin"],
+    comingIn: "",
+    description: "Internal articles and runbooks with full-text search.",
     section: "main",
   },
   // Profile is reachable from the header avatar dropdown (top-right) and via
