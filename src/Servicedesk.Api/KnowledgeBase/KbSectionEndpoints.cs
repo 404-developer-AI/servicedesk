@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
 using Servicedesk.Domain.KnowledgeBase;
 using Servicedesk.Infrastructure.Audit;
+using Servicedesk.Infrastructure.KnowledgeBase;
 using Servicedesk.Infrastructure.Persistence.KnowledgeBase;
 
 namespace Servicedesk.Api.KnowledgeBase;
@@ -52,18 +53,17 @@ public static class KbSectionEndpoints
             IKbConfigRepository configs, IKbSectionRepository sections,
             IAuditLogger audit, CancellationToken ct) =>
         {
-            if (string.IsNullOrWhiteSpace(req.Slug))
-                return Results.BadRequest(new { error = "Slug is required." });
             if (string.IsNullOrWhiteSpace(req.Title))
                 return Results.BadRequest(new { error = "Title is required." });
 
-            var slug = req.Slug.Trim().ToLowerInvariant();
-            if (!IsValidSlug(slug))
+            // Slug is auto-generated from the title; sibling-clashes get a
+            // -2/-3/… suffix transparently. The legacy admin-supplied slug
+            // path stays available so an existing client that sends an
+            // explicit slug keeps working — the override is validated and
+            // checked for clashes the same way.
+            var slug = await ResolveSectionSlugAsync(req.Slug, req.Title, req.ParentSectionId, sections, ct);
+            if (slug is null)
                 return Results.BadRequest(new { error = "Slug must be lowercase ASCII letters/digits separated by single hyphens." });
-
-            // Sibling-slug clash → 409 to mirror DB constraint behaviour.
-            if (await sections.GetSectionBySlugAsync(req.ParentSectionId, slug, ct) is not null)
-                return Results.Conflict(new { error = "A sibling section already uses this slug." });
 
             var actorUserId = ActorContext.GetUserId(http);
             var created = await sections.CreateSectionAsync(
@@ -89,17 +89,25 @@ public static class KbSectionEndpoints
             var existing = await sections.GetSectionAsync(id, ct);
             if (existing is null) return Results.NotFound();
 
+            // Slugs are auto-managed: a missing slug on update means "keep
+            // the existing one" (URL stability). An explicit override is
+            // still accepted from older clients but validated + clash-checked.
+            string slug;
             if (string.IsNullOrWhiteSpace(req.Slug))
-                return Results.BadRequest(new { error = "Slug is required." });
-            var slug = req.Slug.Trim().ToLowerInvariant();
-            if (!IsValidSlug(slug))
-                return Results.BadRequest(new { error = "Slug must be lowercase ASCII letters/digits separated by single hyphens." });
-
-            if (!string.Equals(slug, existing.Slug, StringComparison.OrdinalIgnoreCase))
             {
-                var clash = await sections.GetSectionBySlugAsync(existing.ParentSectionId, slug, ct);
-                if (clash is not null && clash.Id != id)
-                    return Results.Conflict(new { error = "A sibling section already uses this slug." });
+                slug = existing.Slug;
+            }
+            else
+            {
+                slug = req.Slug.Trim().ToLowerInvariant();
+                if (!IsValidSlug(slug))
+                    return Results.BadRequest(new { error = "Slug must be lowercase ASCII letters/digits separated by single hyphens." });
+                if (!string.Equals(slug, existing.Slug, StringComparison.OrdinalIgnoreCase))
+                {
+                    var clash = await sections.GetSectionBySlugAsync(existing.ParentSectionId, slug, ct);
+                    if (clash is not null && clash.Id != id)
+                        return Results.Conflict(new { error = "A sibling section already uses this slug." });
+                }
             }
 
             var actorUserId = ActorContext.GetUserId(http);
@@ -164,6 +172,37 @@ public static class KbSectionEndpoints
 
     private static bool IsValidSlug(string slug) =>
         global::System.Text.RegularExpressions.Regex.IsMatch(slug, "^[a-z0-9]+(-[a-z0-9]+)*$");
+
+    /// Produce a sibling-unique slug for a new section. Returns `null` only
+    /// when an explicitly-supplied slug fails the format check; an empty/
+    /// missing slug always derives one from the title.
+    private static async Task<string?> ResolveSectionSlugAsync(
+        string? requestedSlug,
+        string title,
+        Guid? parentSectionId,
+        IKbSectionRepository sections,
+        CancellationToken ct)
+    {
+        string baseSlug;
+        if (!string.IsNullOrWhiteSpace(requestedSlug))
+        {
+            baseSlug = requestedSlug.Trim().ToLowerInvariant();
+            if (!IsValidSlug(baseSlug)) return null;
+        }
+        else
+        {
+            baseSlug = KbSlugGenerator.Slugify(title);
+        }
+
+        var candidate = baseSlug;
+        var suffix = 2;
+        while (await sections.GetSectionBySlugAsync(parentSectionId, candidate, ct) is not null)
+        {
+            candidate = $"{baseSlug}-{suffix++}";
+            if (suffix > 100) return baseSlug; // give up; let the DB UNIQUE catch the rare race
+        }
+        return candidate;
+    }
 
     private static string? NormalizeIcon(string? icon)
         => string.IsNullOrWhiteSpace(icon) ? null : icon.Trim();

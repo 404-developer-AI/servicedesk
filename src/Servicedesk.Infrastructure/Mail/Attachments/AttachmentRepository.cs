@@ -98,6 +98,22 @@ public sealed class AttachmentRepository : IAttachmentRepository
             new CommandDefinition(sql, input, cancellationToken: ct));
     }
 
+    public async Task<Guid> CreateForKbArticleAsync(NewKbArticleAttachment input, CancellationToken ct)
+    {
+        const string sql = """
+            INSERT INTO attachments
+                (content_hash, size_bytes, mime_type, original_filename,
+                 owner_kind, owner_id, is_inline, content_id, processing_state)
+            VALUES
+                (@ContentHash, @SizeBytes, @MimeType, @OriginalFilename,
+                 'KbArticle', @ArticleId, FALSE, NULL, 'Ready')
+            RETURNING id
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.ExecuteScalarAsync<Guid>(
+            new CommandDefinition(sql, input, cancellationToken: ct));
+    }
+
     public async Task<int> ReassignToEventAsync(IReadOnlyList<Guid> attachmentIds, Guid ticketId, long eventId, CancellationToken ct)
     {
         if (attachmentIds.Count == 0) return 0;

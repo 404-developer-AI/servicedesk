@@ -376,6 +376,7 @@ app.MapHealthEndpoints();
 app.MapKbConfigEndpoints();
 app.MapKbSectionEndpoints();
 app.MapKbArticleEndpoints();
+app.MapKbAttachmentEndpoints();
 app.MapViewEndpoints();
 app.MapQueueAccessEndpoints();
 app.MapViewGroupEndpoints();

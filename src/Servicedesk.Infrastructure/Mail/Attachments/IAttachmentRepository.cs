@@ -50,6 +50,13 @@ public interface IAttachmentRepository
     /// <paramref name="ticketEventId"/> so the timeline-enricher can locate
     /// outbound-mail attachments via either side of the join.
     Task<int> ReassignToMailAsync(IReadOnlyList<AttachmentReassignToMail> assignments, Guid ticketId, Guid mailMessageId, long ticketEventId, CancellationToken ct);
+
+    /// Insert a fully-stored attachment owned by a knowledge-base article.
+    /// Mirrors <see cref="CreateUploadedAsync"/> but stamps
+    /// <c>owner_kind='KbArticle'</c> + <c>owner_id=articleId</c>. KB
+    /// attachments don't move between owners (no Mail/event re-assignment),
+    /// so they land Ready and stay Ready until the article is hard-deleted.
+    Task<Guid> CreateForKbArticleAsync(NewKbArticleAttachment input, CancellationToken ct);
 }
 
 public sealed record AttachmentRow(
@@ -67,6 +74,13 @@ public sealed record AttachmentRow(
 
 public sealed record NewUploadedAttachment(
     Guid TicketId,
+    string ContentHash,
+    long SizeBytes,
+    string MimeType,
+    string OriginalFilename);
+
+public sealed record NewKbArticleAttachment(
+    Guid ArticleId,
     string ContentHash,
     long SizeBytes,
     string MimeType,

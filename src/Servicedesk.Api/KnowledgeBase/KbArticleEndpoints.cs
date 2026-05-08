@@ -75,13 +75,14 @@ public static class KbArticleEndpoints
                 return Results.BadRequest(new { error = "SectionId is required." });
             if (await sections.GetSectionAsync(req.SectionId, ct) is null)
                 return Results.BadRequest(new { error = "Section not found." });
-            if (string.IsNullOrWhiteSpace(req.Slug))
-                return Results.BadRequest(new { error = "Slug is required." });
             if (string.IsNullOrWhiteSpace(req.Title))
                 return Results.BadRequest(new { error = "Title is required." });
 
-            var slug = req.Slug.Trim().ToLowerInvariant();
-            if (!IsValidSlug(slug))
+            // Slug is auto-derived from the title with -2/-3/… clash-suffix
+            // for siblings within the same section. An explicit slug from
+            // an older client is still accepted but validated + clash-checked.
+            var slug = await ResolveArticleSlugAsync(req.Slug, req.Title, req.SectionId, articles, ct);
+            if (slug is null)
                 return Results.BadRequest(new { error = "Slug must be lowercase ASCII letters/digits separated by single hyphens." });
 
             var actorUserId = ActorContext.GetUserId(http);
@@ -123,9 +124,16 @@ public static class KbArticleEndpoints
                 await sections.GetSectionAsync(sectionId, ct) is null)
                 return Results.BadRequest(new { error = "Target section not found." });
 
-            var slug = string.IsNullOrWhiteSpace(req.Slug) ? existing.Slug : req.Slug.Trim().ToLowerInvariant();
-            if (!IsValidSlug(slug))
-                return Results.BadRequest(new { error = "Slug must be lowercase ASCII letters/digits separated by single hyphens." });
+            // Slug is auto-managed: omitted slug means "keep the existing
+            // one" (URL stability across title edits). An explicit override
+            // is still accepted but format-validated.
+            var slug = existing.Slug;
+            if (!string.IsNullOrWhiteSpace(req.Slug))
+            {
+                slug = req.Slug.Trim().ToLowerInvariant();
+                if (!IsValidSlug(slug))
+                    return Results.BadRequest(new { error = "Slug must be lowercase ASCII letters/digits separated by single hyphens." });
+            }
 
             var actorUserId = ActorContext.GetUserId(http);
             var updated = await articles.UpdateArticleAsync(
@@ -268,6 +276,35 @@ public static class KbArticleEndpoints
 
     private static bool IsValidSlug(string slug) =>
         global::System.Text.RegularExpressions.Regex.IsMatch(slug, "^[a-z0-9]+(-[a-z0-9]+)*$");
+
+    /// Resolve a clash-free slug for a new article. Empty/missing input
+    /// derives from the title; an explicit override is validated. The
+    /// suffix loop walks `-2`, `-3`, … until it finds an unused slot or
+    /// gives up at 100 (the DB UNIQUE catches the residual race).
+    private static async Task<string?> ResolveArticleSlugAsync(
+        string? requestedSlug, string title, Guid sectionId,
+        IKbArticleRepository articles, CancellationToken ct)
+    {
+        string baseSlug;
+        if (!string.IsNullOrWhiteSpace(requestedSlug))
+        {
+            baseSlug = requestedSlug.Trim().ToLowerInvariant();
+            if (!IsValidSlug(baseSlug)) return null;
+        }
+        else
+        {
+            baseSlug = KbSlugGenerator.Slugify(title);
+        }
+
+        var candidate = baseSlug;
+        var suffix = 2;
+        while (await articles.ArticleSlugExistsInSectionAsync(sectionId, candidate, ct))
+        {
+            candidate = $"{baseSlug}-{suffix++}";
+            if (suffix > 100) return baseSlug;
+        }
+        return candidate;
+    }
 
     private static string? NormalizeNotes(string? notes)
         => string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
