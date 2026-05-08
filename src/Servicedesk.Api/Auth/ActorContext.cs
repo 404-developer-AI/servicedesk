@@ -17,4 +17,11 @@ public static class ActorContext
         var role = user.FindFirst(ClaimTypes.Role)?.Value ?? "anon";
         return (email ?? name ?? id ?? "anon", role);
     }
+
+    /// Strict variant: parse the NameIdentifier claim as a Guid. Throws if
+    /// the call is reached without an authenticated user — endpoints behind
+    /// <c>RequireAgent</c>/<c>RequireAdmin</c> never see that case, so the
+    /// throw acts as a defensive contract rather than a user-facing error.
+    public static Guid GetUserId(HttpContext httpContext) =>
+        Guid.Parse(httpContext.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
 }
