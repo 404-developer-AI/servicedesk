@@ -12,6 +12,7 @@ public static class SearchSourceKind
     public const string IntakeTemplates = "intake-templates";
     public const string IntakeSubmissions = "intake-submissions";
     public const string Triggers = "triggers";
+    public const string KbArticles = "kb-articles";
 }
 
 /// A single request to the search façade. <see cref="Type"/> is null for

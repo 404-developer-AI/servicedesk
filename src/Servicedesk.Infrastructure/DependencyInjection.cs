@@ -191,10 +191,12 @@ public static class DependencyInjection
         services.AddSingleton<ContactSearchSource>();
         services.AddSingleton<CompanySearchSource>();
         services.AddSingleton<SettingsSearchSource>();
+        services.AddSingleton<KbArticleSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<TicketSearchSource>()));
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<ContactSearchSource>()));
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<CompanySearchSource>()));
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<SettingsSearchSource>()));
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<KbArticleSearchSource>()));
         services.AddSingleton<ISearchService, SearchService>();
 
         services.AddSingleton<ISlaRepository, SlaRepository>();
