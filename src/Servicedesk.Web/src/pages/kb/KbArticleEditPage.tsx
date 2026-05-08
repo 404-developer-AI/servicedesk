@@ -11,6 +11,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useCurrentRole } from "@/hooks/useCurrentRole";
 import { RichTextEditor } from "@/components/RichTextEditor";
 
@@ -46,7 +53,6 @@ export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
   });
 
   const [sectionId, setSectionId] = useState<string>("");
-  const [slug, setSlug] = useState("");
   const [title, setTitle] = useState("");
   const [bodyHtml, setBodyHtml] = useState("");
   const [editorNotes, setEditorNotes] = useState("");
@@ -61,7 +67,6 @@ export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
     }
     if (existing?.article) {
       setSectionId(existing.article.sectionId);
-      setSlug(existing.article.slug);
       setEditorNotes(existing.article.editorNotes ?? "");
     }
     if (existing?.translation) {
@@ -80,7 +85,6 @@ export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
     mutationFn: () =>
       kbApi.createArticle({
         sectionId,
-        slug: slug || undefined,
         title,
         bodyHtml,
         editorNotes: editorNotes || null,
@@ -97,7 +101,6 @@ export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
     mutationFn: () =>
       kbApi.updateArticle(articleId!, {
         sectionId,
-        slug: slug || undefined,
         title,
         bodyHtml,
         editorNotes: editorNotes || null,
@@ -158,9 +161,29 @@ export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
             <RichTextEditor
               content={bodyHtml}
               onChange={setBodyHtml}
-              placeholder="Write the article body. Headings, lists, code, and links are supported."
+              placeholder="Write the article body. Headings, lists, code, links, and images are supported."
               minHeight="320px"
               maxHeight="60vh"
+              onUploadFile={async (file) => {
+                if (isCreate) {
+                  toast.info("Save the draft first to attach images.");
+                  return null;
+                }
+                try {
+                  const meta = await kbApi.uploadAttachment(articleId!, file);
+                  return {
+                    id: meta.id,
+                    url: meta.url,
+                    mimeType: meta.mimeType,
+                    size: meta.size,
+                    filename: meta.filename,
+                  };
+                } catch (err) {
+                  const e = err as Error & { payload?: { error?: string } };
+                  toast.error(e.payload?.error ?? "Upload failed.");
+                  return null;
+                }
+              }}
             />
           </div>
 
@@ -180,33 +203,21 @@ export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
 
         <aside className="flex flex-col gap-4">
           <div className="glass-card flex flex-col gap-3 p-5">
-            <label className="space-y-1 text-xs">
+            <div className="space-y-1 text-xs">
               <span className="uppercase tracking-wider text-muted-foreground">Section</span>
-              <select
-                value={sectionId}
-                onChange={(e) => setSectionId(e.target.value)}
-                className="h-9 w-full rounded-md border border-white/10 bg-white/[0.03] px-2 text-sm text-foreground focus:border-white/20 focus:outline-none"
-              >
-                <option value="" disabled>Select a section…</option>
-                {sectionOptions.map((opt) => (
-                  <option key={opt.id} value={opt.id}>
-                    {opt.indent}{opt.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1 text-xs">
-              <span className="uppercase tracking-wider text-muted-foreground">Slug</span>
-              <Input
-                value={slug}
-                onChange={(e) => setSlug(e.target.value.toLowerCase())}
-                placeholder="auto-from-title-on-save"
-                className="font-mono text-xs"
-              />
-              <span className="text-[10px] text-muted-foreground">
-                Lowercase letters/digits separated by hyphens. Leave empty to keep the existing slug.
-              </span>
-            </label>
+              <Select value={sectionId} onValueChange={setSectionId}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Select a section…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {sectionOptions.map((opt) => (
+                    <SelectItem key={opt.id} value={opt.id}>
+                      {opt.indent}{opt.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
             <div className="border-t border-white/5 pt-3">
               <Button

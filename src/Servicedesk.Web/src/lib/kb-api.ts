@@ -263,4 +263,38 @@ export const kbApi = {
     request<KbArticle>("POST", `/api/kb/articles/${id}/move`, body),
   deleteArticle: (id: string, hard = false) =>
     request<void>("DELETE", `/api/kb/articles/${id}${hard ? "?hard=true" : ""}`),
+
+  /// Upload an inline image (or any non-HTML attachment) for an article.
+  /// Returned shape matches TicketAttachmentMeta so the shared
+  /// RichTextEditor can route paste/drag/drop/paperclip flows through one
+  /// callback regardless of context. Multipart upload — uses raw fetch so
+  /// the server-side MIME-sniffer sees the actual bytes.
+  uploadAttachment: async (
+    articleId: string,
+    file: File,
+  ): Promise<{ id: string; url: string; mimeType: string; size: number; filename: string }> => {
+    const csrf = document.cookie
+      .split("; ")
+      .find((c) => c.startsWith("XSRF-TOKEN="))
+      ?.split("=")[1];
+    const fd = new FormData();
+    fd.append("file", file, file.name);
+    const res = await fetch(`/api/kb/articles/${articleId}/attachments`, {
+      method: "POST",
+      credentials: "include",
+      headers: csrf ? { "X-XSRF-TOKEN": decodeURIComponent(csrf) } : undefined,
+      body: fd,
+    });
+    if (!res.ok) {
+      let payload: unknown = null;
+      try { payload = await res.json(); } catch { /* ignore */ }
+      const err = new Error(`Upload failed: ${res.status}`) as Error & {
+        status?: number; payload?: unknown;
+      };
+      err.status = res.status;
+      err.payload = payload;
+      throw err;
+    }
+    return res.json();
+  },
 };

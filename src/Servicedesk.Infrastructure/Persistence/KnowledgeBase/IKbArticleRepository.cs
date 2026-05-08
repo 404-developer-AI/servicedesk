@@ -27,6 +27,11 @@ public interface IKbArticleRepository
     Task<KbArticleTranslation?> GetTranslationAsync(Guid articleId, string localeCode, CancellationToken ct);
     Task<KbArticleTranslation> UpsertTranslationAsync(
         Guid articleId, string localeCode, string title, string bodyHtml, string bodyText, CancellationToken ct);
+
+    /// True if an article with this slug already exists in the given
+    /// section. Used by the create endpoint to derive a clash-free slug
+    /// before committing the row.
+    Task<bool> ArticleSlugExistsInSectionAsync(Guid sectionId, string slug, CancellationToken ct);
 }
 
 public sealed record KbArticleListPage(

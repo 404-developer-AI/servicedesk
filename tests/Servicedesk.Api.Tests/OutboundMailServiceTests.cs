@@ -393,6 +393,7 @@ public sealed class OutboundMailServiceTests
             foreach (var a in assignments) MailReassignments.Add((a, ticketId, mailMessageId, ticketEventId));
             return Task.FromResult(assignments.Count);
         }
+        public Task<Guid> CreateForKbArticleAsync(NewKbArticleAttachment input, CancellationToken ct) => throw new NotImplementedException();
     }
 
     private sealed class StubBlobs : IBlobStore

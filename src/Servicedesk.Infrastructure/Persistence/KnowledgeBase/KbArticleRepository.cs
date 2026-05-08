@@ -277,6 +277,19 @@ public sealed class KbArticleRepository : IKbArticleRepository
             sql, new { articleId, localeCode }, cancellationToken: ct));
     }
 
+    public async Task<bool> ArticleSlugExistsInSectionAsync(Guid sectionId, string slug, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT EXISTS (
+                SELECT 1 FROM kb_articles
+                 WHERE section_id = @sectionId AND slug = @slug
+            )
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
+            sql, new { sectionId, slug }, cancellationToken: ct));
+    }
+
     public async Task<KbArticleTranslation> UpsertTranslationAsync(
         Guid articleId, string localeCode, string title, string bodyHtml, string bodyText, CancellationToken ct)
     {

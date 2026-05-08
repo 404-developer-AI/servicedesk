@@ -14,6 +14,13 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -131,22 +138,23 @@ function ConfigCard({
           <Switch checked={isActive} onCheckedChange={setIsActive} />
           <span>{isActive ? "KB is active" : "KB is paused"}</span>
         </label>
-        <label className="flex flex-col gap-1 text-xs">
+        <div className="flex flex-col gap-1 text-xs">
           <span className="uppercase tracking-wider text-muted-foreground">Default locale</span>
-          <select
-            value={defaultLocaleCode}
-            onChange={(e) => setDefaultLocaleCode(e.target.value)}
-            className="h-9 min-w-[200px] rounded-md border border-white/10 bg-white/[0.03] px-2 text-sm text-foreground focus:border-white/20 focus:outline-none"
-          >
-            {locales
-              .filter((l) => l.isActive)
-              .map((l) => (
-                <option key={l.code} value={l.code}>
-                  {l.displayName} ({l.code})
-                </option>
-              ))}
-          </select>
-        </label>
+          <Select value={defaultLocaleCode} onValueChange={setDefaultLocaleCode}>
+            <SelectTrigger className="h-9 min-w-[220px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {locales
+                .filter((l) => l.isActive)
+                .map((l) => (
+                  <SelectItem key={l.code} value={l.code}>
+                    {l.displayName} ({l.code})
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="ml-auto">
           <Button onClick={() => save.mutate()} disabled={!dirty || save.isPending}>
             Save
@@ -419,16 +427,17 @@ function SectionDialog({
   onSaved: () => void;
 }) {
   const isNew = initial === null;
-  const [parentSectionId, setParentSectionId] = useState<string>(initial?.parentSectionId ?? "");
-  const [slug, setSlug] = useState(initial?.slug ?? "");
+  // The literal "" stands in for "no parent" because shadcn Select rejects
+  // an empty-string value. We map "__root" ↔ null at the API boundary.
+  const ROOT_SENTINEL = "__root";
+  const [parentValue, setParentValue] = useState<string>(initial?.parentSectionId ?? ROOT_SENTINEL);
   const [title, setTitle] = useState(initial?.title ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
 
   const save = useMutation({
     mutationFn: () => {
       const body = {
-        parentSectionId: parentSectionId || null,
-        slug,
+        parentSectionId: parentValue === ROOT_SENTINEL ? null : parentValue,
         title,
         description: description || null,
       };
@@ -459,31 +468,26 @@ function SectionDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <label className="block space-y-1 text-xs">
+          <div className="space-y-1 text-xs">
             <span className="uppercase tracking-wider text-muted-foreground">Parent</span>
-            <select
-              value={parentSectionId}
-              onChange={(e) => setParentSectionId(e.target.value)}
-              className="h-9 w-full rounded-md border border-white/10 bg-white/[0.03] px-2 text-sm text-foreground focus:border-white/20 focus:outline-none"
-            >
-              <option value="">— Root —</option>
-              {parentOptions.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {"—".repeat(p.depth)} {p.title}
-                </option>
-              ))}
-            </select>
-          </label>
+            <Select value={parentValue} onValueChange={setParentValue}>
+              <SelectTrigger className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ROOT_SENTINEL}>— Root —</SelectItem>
+                {parentOptions.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.depth > 0 ? "—".repeat(p.depth) + " " : ""}{p.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <Input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Section title"
-          />
-          <Input
-            value={slug}
-            onChange={(e) => setSlug(e.target.value.toLowerCase())}
-            placeholder="section-slug"
-            className="font-mono text-xs"
           />
           <textarea
             value={description}
@@ -497,7 +501,7 @@ function SectionDialog({
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button
             onClick={() => save.mutate()}
-            disabled={title.trim().length === 0 || slug.trim().length === 0 || save.isPending}
+            disabled={title.trim().length === 0 || save.isPending}
           >
             Save
           </Button>
