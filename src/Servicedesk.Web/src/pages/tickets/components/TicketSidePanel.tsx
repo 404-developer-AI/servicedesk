@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { agentQueueApi, taxonomyApi } from "@/lib/api";
+import { agentQueueApi, settingsApi, taxonomyApi } from "@/lib/api";
 import { useServerTime, toServerLocal, formatUtcSuffix } from "@/hooks/useServerTime";
 import { AgentPicker } from "@/components/AgentPicker";
 import { ContactFormDialog } from "@/components/ContactFormDialog";
@@ -260,6 +260,28 @@ function StatusTab({
   onUpdate: (fields: TicketFieldUpdate) => Promise<void>;
   onRequestMerge: () => void;
 }) {
+  // Pulsing "Contact not linked" warning. Only renders when (a) the admin
+  // has the toggle on and (b) the requester has zero current company links.
+  const { data: warningSetting } = useQuery({
+    queryKey: ["settings", "tickets-warnings"],
+    queryFn: () => settingsApi.list("Tickets"),
+    staleTime: 60_000,
+  });
+  const showContactNotLinkedSetting = React.useMemo(
+    () =>
+      warningSetting?.find((e) => e.key === "Tickets.ShowContactNotLinkedWarning")?.value ===
+      "true",
+    [warningSetting],
+  );
+  const { data: requesterLinks } = useQuery({
+    queryKey: ["contact-companies", ticket.requesterContactId],
+    queryFn: () => contactApi.listCompanies(ticket.requesterContactId),
+    staleTime: 60_000,
+    enabled: showContactNotLinkedSetting && !!ticket.requesterContactId,
+  });
+  const showContactNotLinked =
+    showContactNotLinkedSetting && (requesterLinks?.length ?? null) === 0;
+
   const { data: queues } = useQuery({
     queryKey: ["accessible-queues"],
     queryFn: agentQueueApi.list,
@@ -290,6 +312,21 @@ function StatusTab({
 
   return (
     <>
+      {showContactNotLinked && (
+        <div
+          className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-200 animate-pulse"
+          title="The requester is not linked to any company. Open the Contact tab to add a company link."
+        >
+          <span
+            aria-hidden
+            className="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]"
+          />
+          <div className="min-w-0">
+            <div className="font-medium">Contact not linked</div>
+            <div className="text-[11px] text-amber-300/80">Please link to a company</div>
+          </div>
+        </div>
+      )}
       <div>
         <FieldLabel>Status</FieldLabel>
         <div className="relative">

@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   ApiError,
   graphAdminApi,
+  settingsApi,
   taxonomyApi,
   STATE_CATEGORIES,
   type Category,
@@ -17,6 +18,7 @@ import {
   type StatusInput,
   type StatusStateCategory,
 } from "@/lib/api";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,7 +40,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-type TabKey = "queues" | "priorities" | "statuses" | "categories";
+type TabKey = "queues" | "priorities" | "statuses" | "categories" | "warnings";
 
 const TABS: { key: TabKey; label: string; description: string }[] = [
   {
@@ -64,6 +66,12 @@ const TABS: { key: TabKey; label: string; description: string }[] = [
     label: "Categories",
     description:
       "Topic taxonomy used to classify the kind of work a ticket represents. Optional on tickets.",
+  },
+  {
+    key: "warnings",
+    label: "Warnings",
+    description:
+      "Visual alerts that surface in the ticket side panel when something needs attention.",
   },
 ];
 
@@ -112,8 +120,89 @@ export function TicketsSettingsPage() {
         {tab === "priorities" && <PrioritiesTab />}
         {tab === "statuses" && <StatusesTab />}
         {tab === "categories" && <CategoriesTab />}
+        {tab === "warnings" && <WarningsTab />}
       </div>
     </div>
+  );
+}
+
+function WarningsTab() {
+  const qc = useQueryClient();
+  const { data: entries, isLoading } = useQuery({
+    queryKey: ["settings", "tickets-warnings"],
+    queryFn: () => settingsApi.list("Tickets"),
+    staleTime: 60_000,
+  });
+
+  const showContactNotLinked = useMemo(
+    () =>
+      entries?.find((e) => e.key === "Tickets.ShowContactNotLinkedWarning")?.value === "true",
+    [entries],
+  );
+
+  const update = useMutation({
+    mutationFn: ({ key, value }: { key: string; value: string }) =>
+      settingsApi.update(key, value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "tickets-warnings"] });
+      toast.success("Setting updated");
+    },
+    onError: () => toast.error("Could not update setting"),
+  });
+
+  return (
+    <section className="glass-card p-5">
+      <div className="space-y-1">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+          Side-panel warnings
+        </h2>
+        <p className="text-xs text-muted-foreground/70">
+          Each toggle turns a single visual cue on or off in the ticket side panel.
+        </p>
+      </div>
+      <div className="mt-4 space-y-3">
+        <ToggleRow
+          label="Contact not linked to a company"
+          description="Pulses an amber pill at the top of the Status tab when the requester has no current company links."
+          checked={!!showContactNotLinked}
+          disabled={isLoading || update.isPending}
+          onCheckedChange={(v) =>
+            update.mutate({
+              key: "Tickets.ShowContactNotLinkedWarning",
+              value: v ? "true" : "false",
+            })
+          }
+        />
+      </div>
+    </section>
+  );
+}
+
+function ToggleRow({
+  label,
+  description,
+  checked,
+  disabled,
+  onCheckedChange,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  disabled?: boolean;
+  onCheckedChange: (v: boolean) => void;
+}) {
+  return (
+    <label className="flex items-start justify-between gap-4 rounded-md border border-white/5 bg-white/[0.02] px-3 py-2.5">
+      <div className="min-w-0 space-y-0.5">
+        <div className="text-sm font-medium text-foreground">{label}</div>
+        <div className="text-xs text-muted-foreground">{description}</div>
+      </div>
+      <Switch
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={onCheckedChange}
+      />
+    </label>
   );
 }
 

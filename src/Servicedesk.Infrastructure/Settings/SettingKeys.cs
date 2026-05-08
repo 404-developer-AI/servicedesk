@@ -48,6 +48,8 @@ public static class SettingKeys
         public const string SystemTicketsQueueSlug = "Tickets.SystemTicketsQueueSlug";
 
         public const string DefaultColumnLayout = "Tickets.DefaultColumnLayout";
+
+        public const string ShowContactNotLinkedWarning = "Tickets.ShowContactNotLinkedWarning";
     }
 
     public static class Storage
@@ -407,6 +409,8 @@ public static class SettingDefaults
             "number,subject,requester,companyName,queueName,statusName,priorityName,assigneeEmail,updatedUtc",
             "string", "Tickets",
             "Comma-separated column IDs shown by default in the ticket list for new users."),
+        new SettingDefault(SettingKeys.Tickets.ShowContactNotLinkedWarning, "true", "bool", "Tickets",
+            "Show a pulsing 'Contact not linked' warning in the ticket side panel when the requester has no current company links."),
 
         // Storage — ADR-001 (v0.0.8). Keys only; runtime consumers land in later steps.
         new SettingDefault(SettingKeys.Storage.BlobRoot, "/var/lib/servicedesk/blobs", "string", "Storage",
