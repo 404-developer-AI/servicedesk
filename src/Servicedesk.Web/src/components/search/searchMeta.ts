@@ -6,6 +6,7 @@ import type { SearchHit } from "@/lib/api";
 
 export type SearchKind =
   | "tickets"
+  | "kb-articles"
   | "contacts"
   | "companies"
   | "settings"
@@ -16,6 +17,7 @@ export type SearchKind =
 
 export const KIND_LABELS: Record<string, string> = {
   tickets: "Tickets",
+  "kb-articles": "Knowledge Base",
   contacts: "Contacten",
   companies: "Bedrijven",
   settings: "Settings",
@@ -26,6 +28,7 @@ export const KIND_LABELS: Record<string, string> = {
 
 export const KIND_ORDER: string[] = [
   "tickets",
+  "kb-articles",
   "contacts",
   "companies",
   "settings",
@@ -62,6 +65,8 @@ export function hitHref(hit: SearchHit): string {
     }
     case "triggers":
       return `/settings/triggers/${hit.entityId}`;
+    case "kb-articles":
+      return `/kb/articles/${hit.entityId}`;
     default:
       return "#";
   }
