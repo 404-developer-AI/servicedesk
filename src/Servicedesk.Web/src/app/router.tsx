@@ -8,7 +8,6 @@ import {
 } from "@tanstack/react-router";
 import { AppShell } from "@/shell/AppShell";
 import { StubPage } from "@/shell/StubPage";
-import { findNavItem } from "@/shell/navItems";
 import type { Role } from "@/lib/roles";
 import { authStore } from "@/auth/authStore";
 import { DashboardPage } from "@/pages/dashboard/DashboardPage";
@@ -44,6 +43,10 @@ import { TicketDetailPage } from "@/pages/tickets/TicketDetailPage";
 import { TicketComposePage } from "@/pages/tickets/TicketComposePage";
 import { SlaLogPage } from "@/pages/sla/SlaLogPage";
 import { SearchPage } from "@/pages/search/SearchPage";
+import { KbHomePage } from "@/pages/kb/KbHomePage";
+import { KbSectionPage } from "@/pages/kb/KbSectionPage";
+import { KbArticlePage } from "@/pages/kb/KbArticlePage";
+import { KbArticleEditPage } from "@/pages/kb/KbArticleEditPage";
 
 // The router reads the "current role" outside of React here (for the
 // beforeLoad gate). The auth store is populated by bootstrapAuth() in
@@ -118,25 +121,8 @@ const rootRoute = createRootRoute({
   ),
 });
 
-function stubForPath(path: string) {
-  const item = findNavItem(path);
-  if (!item) {
-    return (
-      <StubPage
-        title="Not found"
-        description="This page does not exist."
-        comingIn=""
-      />
-    );
-  }
-  return (
-    <StubPage
-      title={item.label}
-      description={item.description}
-      comingIn={item.comingIn}
-    />
-  );
-}
+// stubForPath was used by the v0.0.x KB placeholder before the real KB routes
+// landed; kept around in case future placeholders need it. Inline if revived.
 
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -208,11 +194,60 @@ const slaLogRoute = createRoute({
   component: SlaLogPage,
 });
 
+// Standalone Knowledge Base. Customers have no access in v0.0.31; the
+// public-portal tier lands in v0.1.x with its own slug-based routing.
 const kbRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/kb",
-  beforeLoad: anyAuthenticatedGate(),
-  component: () => stubForPath("/kb"),
+  beforeLoad: authGate(["Agent", "Admin"]),
+  component: KbHomePage,
+});
+
+const kbSectionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/kb/sections/$sectionId",
+  beforeLoad: authGate(["Agent", "Admin"]),
+  component: function KbSectionRoute() {
+    const { sectionId } = kbSectionRoute.useParams();
+    return <KbSectionPage sectionId={sectionId} />;
+  },
+});
+
+const kbArticleRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/kb/articles/$articleId",
+  beforeLoad: authGate(["Agent", "Admin"]),
+  component: function KbArticleRoute() {
+    const { articleId } = kbArticleRoute.useParams();
+    return <KbArticlePage articleId={articleId} />;
+  },
+});
+
+const kbArticleEditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/kb/articles/$articleId/edit",
+  beforeLoad: authGate(["Agent", "Admin"]),
+  component: function KbArticleEditRoute() {
+    const { articleId } = kbArticleEditRoute.useParams();
+    return <KbArticleEditPage articleId={articleId} />;
+  },
+});
+
+// New-article path uses ?sectionId=… so the editor pre-selects the
+// originating section. URL-state is preferred over component-state so the
+// page survives a refresh / shared link without losing context.
+type KbNewArticleSearch = { sectionId?: string };
+const kbArticleNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/kb/articles/new",
+  beforeLoad: authGate(["Agent", "Admin"]),
+  validateSearch: (raw: Record<string, unknown>): KbNewArticleSearch => ({
+    sectionId: typeof raw.sectionId === "string" ? raw.sectionId : undefined,
+  }),
+  component: function KbNewArticleRoute() {
+    const search = kbArticleNewRoute.useSearch();
+    return <KbArticleEditPage articleId={null} initialSectionId={search.sectionId} />;
+  },
 });
 
 const profileRoute = createRoute({
@@ -445,6 +480,10 @@ const routeTree = rootRoute.addChildren([
   searchRoute,
   slaLogRoute,
   kbRoute,
+  kbSectionRoute,
+  kbArticleNewRoute,
+  kbArticleRoute,
+  kbArticleEditRoute,
   profileRoute,
   profileMentionsRoute,
   settingsRoute.addChildren([
