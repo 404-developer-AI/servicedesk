@@ -31,6 +31,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AddContactLinkDialog } from "@/components/AddContactLinkDialog";
+import { EntityTicketsList } from "@/components/EntityTicketsList";
 import {
   Dialog,
   DialogContent,
@@ -61,6 +62,8 @@ const ROLE_BADGE: Record<ContactCompanyRole, { label: string; className: string 
 
 type Props = { contactId: string };
 
+type TabKey = "overview" | "tickets" | "history";
+
 // Agents reach this page via the ticket side-panel or global search, but
 // the contacts overview (/settings/contacts) is admin-only — so the "Back"
 // link target depends on the viewer's role. Admins return to the overview;
@@ -89,6 +92,7 @@ export function ContactDetailPage({ contactId }: Props) {
   const { user } = useAuth();
   const isAdmin = user?.role === "Admin";
   const backLabel = isAdmin ? "Back to contacts" : "Back";
+  const [tab, setTab] = React.useState<TabKey>("overview");
 
   const { data: contact, isLoading } = useQuery({
     queryKey: ["contact", contactId],
@@ -103,6 +107,7 @@ export function ContactDetailPage({ contactId }: Props) {
   const { data: audit, isLoading: loadingAudit } = useQuery({
     queryKey: ["contact-audit", contactId],
     queryFn: () => contactApi.audit(contactId, undefined, 50),
+    enabled: tab === "history",
   });
 
   if (isLoading) {
@@ -162,16 +167,46 @@ export function ContactDetailPage({ contactId }: Props) {
         </div>
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-[2fr_3fr]">
-        <ContactEditCard contact={contact} />
-        <CompanyLinksCard
-          contactId={contact.id}
-          companies={companies ?? []}
-          loading={loadingCompanies}
-        />
-      </div>
+      <nav className="glass-card flex flex-wrap gap-1 p-1">
+        {(
+          [
+            { key: "overview", label: "Overview" },
+            { key: "tickets", label: "Tickets" },
+            { key: "history", label: "History" },
+          ] as { key: TabKey; label: string }[]
+        ).map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setTab(t.key)}
+            className={cn(
+              "flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors",
+              tab === t.key
+                ? "bg-white/[0.08] text-foreground shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
+                : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
 
-      <AuditHistoryCard audit={audit?.items ?? []} loading={loadingAudit} />
+      {tab === "overview" && (
+        <div className="grid gap-6 lg:grid-cols-[2fr_3fr]">
+          <ContactEditCard contact={contact} />
+          <CompanyLinksCard
+            contactId={contact.id}
+            companies={companies ?? []}
+            loading={loadingCompanies}
+          />
+        </div>
+      )}
+
+      {tab === "tickets" && <EntityTicketsList requesterContactId={contact.id} />}
+
+      {tab === "history" && (
+        <AuditHistoryCard audit={audit?.items ?? []} loading={loadingAudit} />
+      )}
     </div>
   );
 }

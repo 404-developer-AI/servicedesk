@@ -273,8 +273,10 @@ export type TicketListQuery = {
   priorityId?: string;
   assigneeUserId?: string;
   requesterContactId?: string;
+  companyId?: string;
   search?: string;
   openOnly?: boolean;
+  openFirst?: boolean;
   sortField?: string;
   sortDirection?: string;
   priorityFloat?: boolean;
@@ -614,8 +616,10 @@ export const ticketApi = {
       params.set("assigneeUserId", query.assigneeUserId);
     if (query.requesterContactId)
       params.set("requesterContactId", query.requesterContactId);
+    if (query.companyId) params.set("companyId", query.companyId);
     if (query.search) params.set("search", query.search);
     if (query.openOnly) params.set("openOnly", "true");
+    if (query.openFirst) params.set("openFirst", "true");
     if (query.sortField) params.set("sortField", query.sortField);
     if (query.sortDirection) params.set("sortDirection", query.sortDirection);
     if (query.priorityFloat) params.set("priorityFloat", "true");
