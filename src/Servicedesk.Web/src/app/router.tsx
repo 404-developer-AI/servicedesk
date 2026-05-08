@@ -47,6 +47,7 @@ import { KbHomePage } from "@/pages/kb/KbHomePage";
 import { KbSectionPage } from "@/pages/kb/KbSectionPage";
 import { KbArticlePage } from "@/pages/kb/KbArticlePage";
 import { KbArticleEditPage } from "@/pages/kb/KbArticleEditPage";
+import { KnowledgeBaseSettingsPage } from "@/pages/settings/KnowledgeBaseSettingsPage";
 
 // The router reads the "current role" outside of React here (for the
 // beforeLoad gate). The auth store is populated by bootstrapAuth() in
@@ -320,6 +321,12 @@ const settingsTriggersRoute = createRoute({
   component: TriggersSettingsPage,
 });
 
+const settingsKnowledgeBaseRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "knowledge-base",
+  component: KnowledgeBaseSettingsPage,
+});
+
 // Deep-link from global search and run-history "edit" button. Renders the
 // list page with the editor pre-opened on the requested trigger.
 const settingsTriggerDetailRoute = createRoute({
@@ -495,6 +502,7 @@ const routeTree = rootRoute.addChildren([
     settingsTriggersRoute,
     settingsTriggerDetailRoute,
     settingsTriggerRunsRoute,
+    settingsKnowledgeBaseRoute,
     settingsIntegrationsRoute,
     settingsAdsolutIntegrationRoute,
     settingsAdsolutCoverageRoute,
