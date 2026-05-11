@@ -125,6 +125,10 @@ builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.ISecurityAlert
 // every connected admin via a dedicated IntegrationsHub.
 builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.IIntegrationStatusNotifier,
     Servicedesk.Api.Presence.SignalRIntegrationStatusNotifier>();
+// v0.0.34 commit C — Telavox call-popup polling worker pushes per-agent
+// call events via the dedicated TelavoxCallHub.
+builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.ITelavoxCallNotifier,
+    Servicedesk.Api.Presence.SignalRTelavoxCallNotifier>();
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -390,6 +394,7 @@ app.MapDevBenchmarkEndpoints(app.Environment);
 app.MapHub<TicketPresenceHub>("/hubs/presence");
 app.MapHub<UserNotificationHub>("/hubs/notifications");
 app.MapHub<IntegrationsHub>("/hubs/integrations");
+app.MapHub<TelavoxCallHub>("/hubs/telavox-calls");
 
 // Deep-link fallback for the SPA. The regex excludes /api/* and /hubs/* so an
 // unknown API route still returns 404 (JSON client) instead of HTML.
