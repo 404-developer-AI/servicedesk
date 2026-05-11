@@ -124,12 +124,18 @@ public static class DependencyInjection
         // Telavox call-popup integration (v0.0.34). PAPI partner-token is
         // shared install-wide; CAPI tokens are auto-provisioned per linked
         // agent via /api/admin/integrations/telavox/agents/{userId}/provision
-        // and stored in protected_secrets. The polling worker that consumes
-        // them lands in v0.0.34 commit C.
+        // and stored in protected_secrets. The polling worker (commit C)
+        // reads telavox_agent_links + telavox_call_state, runs each link
+        // through the pure transition module, and broadcasts via
+        // ITelavoxCallNotifier — defaulted to the null implementation; the
+        // Api project overrides it with the SignalR-backed pusher.
         services.AddSingleton<ITelavoxApiClient, TelavoxApiClient>();
         services.AddSingleton<ITelavoxAgentLinkStore, TelavoxAgentLinkStore>();
+        services.AddSingleton<ITelavoxCallStateStore, TelavoxCallStateStore>();
         services.AddSingleton<ITelavoxProvisioningService, TelavoxProvisioningService>();
+        services.AddSingleton<Realtime.ITelavoxCallNotifier, Realtime.NullTelavoxCallNotifier>();
         services.AddHttpClient(TelavoxApiClient.HttpClientName);
+        services.AddHostedService<TelavoxPollingWorker>();
 
         // Healthcheck-BackgroundService writes integration_audit rows and
         // pushes resolved status over SignalR. The notifier defaults to
