@@ -13,7 +13,7 @@ public sealed class ContactSearchSourceTests
     [Fact]
     public void Customer_principal_is_not_available()
     {
-        var src = new Infrastructure.Search.ContactSearchSource(null!);
+        var src = new Infrastructure.Search.ContactSearchSource(null!, null!);
         var principal = new SearchPrincipal(Guid.NewGuid(), "Customer", null);
 
         Assert.False(src.IsAvailableFor(principal));
@@ -22,7 +22,7 @@ public sealed class ContactSearchSourceTests
     [Fact]
     public void Agent_and_admin_principals_are_available()
     {
-        var src = new Infrastructure.Search.ContactSearchSource(null!);
+        var src = new Infrastructure.Search.ContactSearchSource(null!, null!);
         var agent = new SearchPrincipal(Guid.NewGuid(), "Agent", Array.Empty<Guid>());
         var admin = new SearchPrincipal(Guid.NewGuid(), "Admin", null);
 
@@ -35,7 +35,7 @@ public sealed class ContactSearchSourceTests
     {
         // Passing null! as data source proves the customer branch short-circuits:
         // if SearchAsync tried to open a connection it would NRE here.
-        var src = new Infrastructure.Search.ContactSearchSource(null!);
+        var src = new Infrastructure.Search.ContactSearchSource(null!, null!);
         var principal = new SearchPrincipal(Guid.NewGuid(), "Customer", null);
 
         var result = await src.SearchAsync(
@@ -50,7 +50,7 @@ public sealed class ContactSearchSourceTests
     [Fact]
     public async Task Empty_query_returns_empty_group_without_hitting_db()
     {
-        var src = new Infrastructure.Search.ContactSearchSource(null!);
+        var src = new Infrastructure.Search.ContactSearchSource(null!, null!);
         var principal = new SearchPrincipal(Guid.NewGuid(), "Admin", null);
 
         var result = await src.SearchAsync(
@@ -58,5 +58,21 @@ public sealed class ContactSearchSourceTests
 
         Assert.Empty(result.Hits);
         Assert.Equal(0, result.TotalInGroup);
+    }
+
+    [Theory]
+    [InlineData("+32498123456",     true)]
+    [InlineData("+1 212 555 1234",  true)]
+    [InlineData("0498 12 34 56",    true)]
+    [InlineData("0498123456",       true)]
+    [InlineData("alice",            false)]
+    [InlineData("alice@example.com", false)]
+    [InlineData("32498",            false)]   // 5 digits, below threshold
+    [InlineData("",                 false)]
+    [InlineData("   ",              false)]
+    [InlineData("john doe",         true)]    // 8 chars, no @ — fuzzy gate lets this in; normalizer will reject as invalid
+    public void LooksLikePhone_gates_phone_branch(string input, bool expected)
+    {
+        Assert.Equal(expected, Infrastructure.Search.ContactSearchSource.LooksLikePhone(input));
     }
 }

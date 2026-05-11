@@ -204,6 +204,62 @@ public static class SettingKeys
         public const string ApiBaseUrl = "Adsolut.ApiBaseUrl";
     }
 
+    /// Telavox call-popup integration (v0.0.34). Single-install model: one
+    /// PAPI partner-token covers the whole servicedesk, per-agent CAPI
+    /// tokens are auto-provisioned only after an admin has manually linked
+    /// a Telavox-extension to an SD user via the integration page. The
+    /// connector reads call-state only — no click-to-call, no presence-push,
+    /// no status-writes back to Telavox. CAPI-user provisioning is the
+    /// single exception (setup-time write).
+    public static class Telavox
+    {
+        /// Master kill-switch. When false the polling worker is dormant, the
+        /// integration page still loads for setup but no API calls are made.
+        /// Default off so a fresh install is silent until an admin explicitly
+        /// opts in (same discipline as Adsolut sync toggles).
+        public const string Enabled = "Telavox.Enabled";
+
+        /// Telavox PAPI partner customer-id. Discovered by the
+        /// /test-connection action (GET /customers via PAPI) and pinned by
+        /// the admin from the dropdown — never typed by hand. The matching
+        /// PAPI partner-token lives in protected_secrets under
+        /// Telavox.PartnerToken.
+        public const string PartnerCustomerId = "Telavox.PartnerCustomerId";
+
+        /// How often (seconds) each agent's CAPI poll fires. Default 2 is
+        /// the agent-snap target; raise on installs with many concurrent
+        /// agents if Telavox-side load complains. Clamped to [1, 30] on
+        /// read.
+        public const string PollIntervalSeconds = "Telavox.PollIntervalSeconds";
+
+        /// Default ISO-3166 alpha-2 country code for phone-number parsing
+        /// when a contact's phone field has no leading + (e.g. "0498 12 34
+        /// 56" → +32498123456 when country=BE). Picked once per install
+        /// since Servicedesk targets one customer per install. Changing
+        /// after launch does NOT re-normalise existing rows; admins flip
+        /// the backfill toggle to re-run normalisation if needed.
+        public const string DefaultCountryCode = "Telavox.DefaultCountryCode";
+
+        /// Which call-state transition fires the popup. Default 'answered'
+        /// means the popup appears only after the agent has picked up
+        /// (RINGING → ANSWERED on the agent's own extension), so a missed
+        /// call or a ring-and-hangup doesn't spam the UI. Future modes
+        /// ('ringing', 'either') can be wired without a schema change.
+        public const string PopupTriggerMode = "Telavox.PopupTriggerMode";
+
+        // Working-hours window — keeps the worker from polling Telavox
+        // 24/7 on an install where agents are only available office hours.
+        // Stored as server-time HH:mm strings so a clock-change doesn't
+        // reinterpret the window. The day-mask is seven booleans (Mon..Sun)
+        // joined as a comma list, e.g. "true,true,true,true,true,false,false".
+        public const string PollWindowStart = "Telavox.PollWindow.Start";
+        public const string PollWindowEnd = "Telavox.PollWindow.End";
+        public const string PollWindowDays = "Telavox.PollWindow.Days";
+        /// When true the worker fully sleeps outside the window; when false
+        /// it falls back to a slow (60s) tick so very-late calls still pop.
+        public const string PollWindowSleepOutsideHours = "Telavox.PollWindow.SleepOutsideHours";
+    }
+
     /// Generic integration-framework knobs shared by every connector. The
     /// per-integration tunables (Adsolut.*, Graph.*) stay in their own
     /// section; this group only carries the cross-cutting ones.
@@ -531,6 +587,31 @@ public static class SettingDefaults
 
         new SettingDefault(SettingKeys.Adsolut.ApiBaseUrl, "https://api.adsolut.com", "string", "Adsolut",
             "Base URL of the Adsolut API. The Administrations service lives under /adm/v1, the Accounting service under /acc/v1. Default targets api.adsolut.com (production); no UAT mirror is documented today but the value is exposed so a future change can swap it without a code release. Trailing slashes are normalised."),
+
+        // Telavox — v0.0.34 call-popup integration. Sync-gating discipline:
+        // Enabled defaults OFF so a fresh install is silent until an admin
+        // pastes the partner-token + picks the customer-id. Phone parsing
+        // and the working-hours window pick reasonable BE-tuned defaults
+        // so the integration page only really needs the two secrets +
+        // per-agent mappings to be useful.
+        new SettingDefault(SettingKeys.Telavox.Enabled, "false", "bool", "Telavox",
+            "Master kill-switch. When true and the partner-token + customer-id are set, the polling worker ticks once per agent every PollIntervalSeconds (inside the working-hours window) and pushes IncomingCallAnswered SignalR events. Off by default so the integration page is visible for setup without firing any API call."),
+        new SettingDefault(SettingKeys.Telavox.PartnerCustomerId, "", "string", "Telavox",
+            "Telavox PAPI partner customer-id. Don't type this by hand — the integration page's Test connection action calls PAPI /customers with the saved partner-token and lets the admin pick the right id from the dropdown. Empty = the integration is unconfigured even if the partner-token is set."),
+        new SettingDefault(SettingKeys.Telavox.PollIntervalSeconds, "2", "int", "Telavox",
+            "Per-agent CAPI poll cadence in seconds. Default 2 is agent-snap fast; raise on installs with many concurrent agents if Telavox-side load complains. Clamped to [1, 30] on read. Outside the working-hours window the worker falls back to a slow tick (or sleeps fully, per PollWindow.SleepOutsideHours)."),
+        new SettingDefault(SettingKeys.Telavox.DefaultCountryCode, "BE", "string", "Telavox",
+            "ISO-3166 alpha-2 country used to parse phone-numbers without an international prefix (e.g. '0498 12 34 56' → +32498123456 when set to BE). One value per install — the SD targets one customer per install so a single default is fine. Changing this does NOT retroactively re-normalise existing rows."),
+        new SettingDefault(SettingKeys.Telavox.PopupTriggerMode, "answered", "string", "Telavox",
+            "Which CAPI call-state transition fires the popup on the matched agent. 'answered' (default) waits for RINGING → ANSWERED on the agent's own extension, so a missed call or a quick ring-and-hangup never noise the UI. Future modes ('ringing', 'either') can be wired without a schema change."),
+        new SettingDefault(SettingKeys.Telavox.PollWindowStart, "08:00", "string", "Telavox",
+            "Server-time start of the daily polling window (HH:mm, 24h). Inside the window each linked agent ticks every PollIntervalSeconds; outside it the worker either sleeps or falls back to a 60s slow-tick. Set Start = End to disable the window (always-on polling)."),
+        new SettingDefault(SettingKeys.Telavox.PollWindowEnd, "18:00", "string", "Telavox",
+            "Server-time end of the daily polling window (HH:mm, 24h). See PollWindow.Start. Crossing midnight is supported (e.g. 22:00–06:00 night-shift) — the worker interprets End < Start as 'window wraps midnight'."),
+        new SettingDefault(SettingKeys.Telavox.PollWindowDays, "true,true,true,true,true,false,false", "string", "Telavox",
+            "Day-mask for the polling window: seven comma-separated booleans Mon..Sun. Default is workweek Mon-Fri. Outside the listed days the worker treats the install as out-of-hours regardless of the time-window."),
+        new SettingDefault(SettingKeys.Telavox.PollWindowSleepOutsideHours, "true", "bool", "Telavox",
+            "When true (default) the worker fully sleeps outside the working-hours window — no Telavox calls at all. When false it falls back to a 60s slow-tick so very-late calls still surface a popup, at the cost of round-the-clock Telavox-side load. Flip off only if your agents take calls outside the configured hours."),
 
         // Integrations — v0.0.25 healthcheck framework. Cross-integration
         // knobs only; per-connector specifics live under their own

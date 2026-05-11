@@ -2036,6 +2036,64 @@ public sealed class DatabaseBootstrapper : IHostedService
                             'Default section seeded on install. Rename or remove as you organise the knowledge base.');
             END IF;
         END $do$;
+
+        -- ===================================================================
+        -- v0.0.34 — Telavox call-popup integration
+        -- ===================================================================
+        -- E.164-normalised mirrors of phone / mobile_phone. Populated on
+        -- every contact write through ContactPhoneNormalizer; existing rows
+        -- backfilled lazily by ContactPhoneBackfillService after this
+        -- bootstrap. Empty string when the input couldn't be parsed (kept
+        -- as '' rather than NULL so phone-search just doesn't hit on
+        -- garbage input, no JOIN special-casing).
+        ALTER TABLE contacts
+            ADD COLUMN IF NOT EXISTS phone_e164         TEXT NOT NULL DEFAULT '',
+            ADD COLUMN IF NOT EXISTS mobile_phone_e164  TEXT NOT NULL DEFAULT '';
+
+        -- Partial indices: only rows with a parsed E.164 number contribute,
+        -- so the index stays compact and an incoming-call phone lookup is
+        -- a single equality probe (no LIKE, no trgm).
+        CREATE INDEX IF NOT EXISTS ix_contacts_phone_e164
+            ON contacts (phone_e164)
+            WHERE phone_e164 <> '';
+        CREATE INDEX IF NOT EXISTS ix_contacts_mobile_phone_e164
+            ON contacts (mobile_phone_e164)
+            WHERE mobile_phone_e164 <> '';
+
+        -- SD-user ↔ Telavox-extension mapping. One row per linked agent;
+        -- admins create/remove via the Telavox integration page. The
+        -- per-agent CAPI token itself lives in protected_secrets under
+        -- Telavox.AgentCapiToken.{user_id} (encrypted via DataProtection);
+        -- this table only keeps the non-secret bookkeeping the worker and
+        -- the UI need. ON DELETE CASCADE so de-provisioning a user wipes
+        -- the link, the protected secret is cleared in code alongside.
+        CREATE TABLE IF NOT EXISTS telavox_agent_links (
+            id                      UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id                 UUID        NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+            telavox_extension       TEXT        NOT NULL,
+            telavox_user_id         TEXT        NOT NULL,
+            capi_user_email         TEXT        NOT NULL,
+            provisioned_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_poll_utc           TIMESTAMPTZ NULL,
+            last_poll_error         TEXT        NULL,
+            consecutive_errors      INT         NOT NULL DEFAULT 0,
+            created_utc             TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc             TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_telavox_agent_links_extension
+            ON telavox_agent_links (telavox_extension);
+
+        -- Per-agent transition-detection state. The popup fires on
+        -- RINGING→ANSWERED on the agent's own extension; last_call_id +
+        -- last_state form the baseline the next poll tick compares against
+        -- so a long-running ANSWERED call doesn't re-trigger every tick.
+        CREATE TABLE IF NOT EXISTS telavox_call_state (
+            user_id         UUID        PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            last_call_id    TEXT        NULL,
+            last_state      TEXT        NULL,
+            last_seen_utc   TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
         """;
 
     private readonly NpgsqlDataSource _dataSource;
