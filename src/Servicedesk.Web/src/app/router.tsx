@@ -17,6 +17,7 @@ import { HealthSettingsPage } from "@/pages/settings/HealthSettingsPage";
 import { IntegrationsSettingsPage } from "@/pages/settings/IntegrationsSettingsPage";
 import { AdsolutIntegrationPage } from "@/pages/settings/AdsolutIntegrationPage";
 import { AdsolutCoveragePage } from "@/pages/settings/AdsolutCoveragePage";
+import { TelavoxIntegrationPage } from "@/pages/settings/TelavoxIntegrationPage";
 import { MailSettingsPage } from "@/pages/settings/MailSettingsPage";
 import { MailDiagnosticsPage } from "@/pages/settings/MailDiagnosticsPage";
 import { SlaSettingsPage } from "@/pages/settings/SlaSettingsPage";
@@ -359,6 +360,15 @@ const settingsAdsolutIntegrationRoute = createRoute({
   component: AdsolutIntegrationPage,
 });
 
+// v0.0.34 — Telavox call-popup integration. Admin-only; route sits next to
+// /settings/integrations/adsolut so both detail pages share the same
+// breadcrumb back to /settings/integrations.
+const settingsTelavoxIntegrationRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "integrations/telavox",
+  component: TelavoxIntegrationPage,
+});
+
 // v0.0.30 — coverage overview page. URL-state filter (tab + bucket) keeps
 // deep-links from the tile + back/forward navigation honest. All four
 // keys are optional; the route component derives sensible defaults.
@@ -506,6 +516,7 @@ const routeTree = rootRoute.addChildren([
     settingsIntegrationsRoute,
     settingsAdsolutIntegrationRoute,
     settingsAdsolutCoverageRoute,
+    settingsTelavoxIntegrationRoute,
     settingsTicketsRoute,
     settingsCompaniesRoute,
     settingsContactsRoute,

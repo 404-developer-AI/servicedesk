@@ -781,6 +781,14 @@ export const adminUserApi = {
     request<void>("DELETE", `/api/admin/users/${userId}`),
 };
 
+export type ContactPhoneLookupResponse = {
+  /// Server-normalised E.164 form of the supplied phone. `null` when the
+  /// input could not be parsed against the install's default country —
+  /// the popup uses that as the "unknown caller" signal.
+  phoneE164: string | null;
+  items: Contact[];
+};
+
 export const contactApi = {
   list: (search?: string, companyId?: string) => {
     const params = new URLSearchParams();
@@ -788,6 +796,16 @@ export const contactApi = {
     if (companyId) params.set("companyId", companyId);
     const qs = params.toString();
     return request<Contact[]>("GET", `/api/contacts${qs ? `?${qs}` : ""}`);
+  },
+  /// v0.0.34 — backs the Telavox call-popup. Server normalises the raw
+  /// CAPI `From` number to E.164 using the install-wide DefaultCountryCode
+  /// and matches against `phone_e164` / `mobile_phone_e164`.
+  lookupByPhone: (phone: string, limit = 10) => {
+    const params = new URLSearchParams({ phone, limit: String(limit) });
+    return request<ContactPhoneLookupResponse>(
+      "GET",
+      `/api/contacts/lookup-by-phone?${params.toString()}`,
+    );
   },
   browse: (query: ContactBrowseQuery = {}) => {
     const params = new URLSearchParams();
