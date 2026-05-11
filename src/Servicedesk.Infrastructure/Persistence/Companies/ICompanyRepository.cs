@@ -23,6 +23,11 @@ public interface ICompanyRepository
     /// Lists distinct contacts that have at least one link (any role) to the
     /// given company, or — when companyId is null — every contact.
     Task<IReadOnlyList<Contact>> ListContactsAsync(Guid? companyId, string? search, CancellationToken ct);
+    /// Phone-keyed lookup for the call-popup. Matches the given E.164 string
+    /// against <c>phone_e164</c> OR <c>mobile_phone_e164</c>; both columns
+    /// are indexed. Empty input returns no rows. Caller must pass an already-
+    /// normalised E.164 string — partial / raw user input must not reach here.
+    Task<IReadOnlyList<Contact>> LookupContactsByPhoneE164Async(string phoneE164, int limit, CancellationToken ct);
     /// Paginated + enriched overview for the dedicated `/contacts` page.
     /// <paramref name="role"/> accepts "primary"/"secondary"/"supplier"/"none"
     /// (the "none" branch filters contacts with zero links); null means any.

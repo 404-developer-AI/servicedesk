@@ -4,10 +4,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Sidebar } from "@/shell/Sidebar";
 import { CriticalBanner } from "@/components/health/CriticalBanner";
 import { MaintenanceBanner } from "@/components/maintenance/MaintenanceBanner";
+import { IncomingCallPopup } from "@/components/integrations/IncomingCallPopup";
 import { useSecondarySidebarStore } from "@/stores/useSecondarySidebarStore";
 import { usePresenceConnection } from "@/hooks/usePresence";
 import { useNotificationSignalR } from "@/hooks/useNotificationSignalR";
 import { useIntegrationsSignalR } from "@/hooks/useIntegrationsSignalR";
+import { useTelavoxCallStream } from "@/hooks/useTelavoxCallStream";
 import { useWorkspaceAutoSave } from "@/hooks/useWorkspaceAutoSave";
 import { settingsApi } from "@/lib/api";
 
@@ -19,6 +21,10 @@ export function AppShell() {
   // open with zero handlers and producing "no client method found"
   // warnings every time the server pushed a sync-tick or status flip.
   useIntegrationsSignalR();
+  // v0.0.34 — Telavox call-popup stream. Internally role-gates so the
+  // WebSocket only opens for Agent/Admin sessions; the hub itself enforces
+  // the same policy server-side.
+  useTelavoxCallStream();
   useWorkspaceAutoSave();
 
   // Pull the popup-duration from settings so the toast-duration is admin-
@@ -46,6 +52,7 @@ export function AppShell() {
         </main>
       </div>
       <Toaster theme="dark" position="bottom-right" />
+      <IncomingCallPopup />
     </div>
   );
 }

@@ -745,6 +745,97 @@ export type AdsolutContactsResyncResult = {
   linksReconciled: number;
 };
 
+// ---- Telavox call-popup integration (v0.0.34) ----
+
+export type TelavoxConnectionState =
+  | "Disabled"
+  | "NotConfigured"
+  | "NoCustomerSelected"
+  | "Ready"
+  | "Active";
+
+export type TelavoxStatus = {
+  state: TelavoxConnectionState;
+  enabled: boolean;
+  partnerTokenConfigured: boolean;
+  partnerCustomerId: string | null;
+  linkedAgentCount: number;
+};
+
+export type TelavoxCustomer = { id: string; name: string };
+
+export type TelavoxExtension = {
+  id: string;
+  number: string;
+  name: string;
+  userEmail: string | null;
+};
+
+export type TelavoxExtensionsResponse = {
+  customerId: string;
+  items: TelavoxExtension[];
+};
+
+export type TelavoxAgentLink = {
+  userId: string;
+  userEmail: string;
+  userRole: string;
+  telavoxExtension: string;
+  telavoxUserId: string;
+  capiUserEmail: string;
+  provisionedUtc: string;
+  lastPollUtc: string | null;
+  lastPollError: string | null;
+  consecutiveErrors: number;
+};
+
+export type TelavoxSecretStatus = { configured: boolean };
+
+export const telavoxAdminApi = {
+  status: () =>
+    request<TelavoxStatus>("GET", "/api/admin/integrations/telavox/status"),
+  secretStatus: () =>
+    request<TelavoxSecretStatus>("GET", "/api/admin/integrations/telavox/secret"),
+  setSecret: (value: string) =>
+    request<void>("PUT", "/api/admin/integrations/telavox/secret", { value }),
+  deleteSecret: () =>
+    request<void>("DELETE", "/api/admin/integrations/telavox/secret"),
+  setCustomerId: (customerId: string) =>
+    request<{ customerId: string }>(
+      "PUT",
+      "/api/admin/integrations/telavox/customer",
+      { customerId },
+    ),
+  clearCustomerId: () =>
+    request<void>("DELETE", "/api/admin/integrations/telavox/customer"),
+  testConnection: () =>
+    request<{ customers: TelavoxCustomer[] }>(
+      "POST",
+      "/api/admin/integrations/telavox/test-connection",
+    ),
+  listExtensions: () =>
+    request<TelavoxExtensionsResponse>(
+      "GET",
+      "/api/admin/integrations/telavox/extensions",
+    ),
+  listAgentLinks: () =>
+    request<{ items: TelavoxAgentLink[] }>(
+      "GET",
+      "/api/admin/integrations/telavox/agents",
+    ),
+  provisionAgent: (userId: string, extension: string) =>
+    request<TelavoxAgentLink>(
+      "POST",
+      `/api/admin/integrations/telavox/agents/${userId}/provision`,
+      { extension },
+    ),
+  revokeAgent: (userId: string) =>
+    request<void>(
+      "DELETE",
+      `/api/admin/integrations/telavox/agents/${userId}/provision`,
+    ),
+};
+
 // ---- Mail attachment diagnostics ----
 
 export type MailAttachmentJobDiagnostic = {

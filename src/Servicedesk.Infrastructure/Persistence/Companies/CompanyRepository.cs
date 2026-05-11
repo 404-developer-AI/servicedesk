@@ -236,6 +236,28 @@ public sealed class CompanyRepository : ICompanyRepository
             new { companyId, search = $"%{search}%" }, cancellationToken: ct))).ToList();
     }
 
+    public async Task<IReadOnlyList<Contact>> LookupContactsByPhoneE164Async(
+        string phoneE164, int limit, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(phoneE164)) return Array.Empty<Contact>();
+        // Hard cap so a misused caller can't pull the whole table. The
+        // call-popup only renders a handful at a time; everything beyond
+        // ~10 means the data is dirty and the agent needs the contact list,
+        // not a longer popup.
+        var safeLimit = Math.Clamp(limit, 1, 25);
+        var sql = $"""
+            SELECT {ContactCols}
+              FROM contacts
+             WHERE is_active = TRUE
+               AND (phone_e164 = @phoneE164 OR mobile_phone_e164 = @phoneE164)
+             ORDER BY last_name, first_name
+             LIMIT {safeLimit}
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return (await conn.QueryAsync<Contact>(new CommandDefinition(
+                sql, new { phoneE164 }, cancellationToken: ct))).ToList();
+    }
+
     public async Task<ContactOverviewPage> ListContactsOverviewAsync(
         string? search, Guid? companyId, string? role, bool includeInactive,
         string? sort, int page, int pageSize, CancellationToken ct)

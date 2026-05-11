@@ -268,6 +268,30 @@ public static class CompanyEndpoints
             Results.Ok(await repo.ListContactsAsync(companyId, search, ct)))
             .WithName("ListContacts").WithOpenApi();
 
+        // v0.0.34 — phone-keyed lookup for the Telavox call-popup. The
+        // caller passes a raw "From" number from CAPI; the server normalises
+        // to E.164 using the install-wide DefaultCountryCode so a typo'd
+        // phone-column on a stored contact does not affect the match (we
+        // only ever compare the canonical column). Returns 0–N rows.
+        contactGroup.MapGet("/lookup-by-phone", async (
+            string? phone, int? limit,
+            ICompanyRepository repo,
+            Servicedesk.Infrastructure.Phones.IContactPhoneNormalizer normalizer,
+            CancellationToken ct) =>
+        {
+            var e164 = await normalizer.NormalizeAsync(phone, ct);
+            // Empty E.164 means "unparseable / out-of-region number" — we
+            // intentionally don't fall back to a digits-only LIKE-search to
+            // avoid accidental cross-contact bleed (e.g. 1234 matching every
+            // number ending in 1234). The caller surfaces "unknown number".
+            if (e164.Length == 0)
+            {
+                return Results.Ok(new { phoneE164 = (string?)null, items = Array.Empty<Contact>() });
+            }
+            var items = await repo.LookupContactsByPhoneE164Async(e164, limit ?? 10, ct);
+            return Results.Ok(new { phoneE164 = e164, items });
+        }).WithName("LookupContactsByPhone").WithOpenApi();
+
         // Paginated + enriched overview for the dedicated `/contacts` page.
         // Separate from `GET /api/contacts` so the existing picker/typeahead
         // callers (ContactPicker, link-search, ticket company-assignment

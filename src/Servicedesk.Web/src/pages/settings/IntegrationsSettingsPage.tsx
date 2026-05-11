@@ -6,8 +6,14 @@ import {
   IntegrationTile,
   type IntegrationStatus,
 } from "@/components/integrations/IntegrationTile";
-import { adsolutApi, type AdsolutState } from "@/lib/api";
+import {
+  adsolutApi,
+  telavoxAdminApi,
+  type AdsolutState,
+  type TelavoxConnectionState,
+} from "@/lib/api";
 import adsolutLogo from "@/assets/integrations/adsolut.ico";
+import telavoxLogo from "@/assets/integrations/telavox.svg";
 import trmmLogo from "@/assets/integrations/trmm.png";
 import zammadLogo from "@/assets/integrations/zammad.svg";
 
@@ -24,6 +30,21 @@ function tileStatusFor(state: AdsolutState | undefined): IntegrationStatus {
   }
 }
 
+function telavoxTileStatus(
+  state: TelavoxConnectionState | undefined,
+): IntegrationStatus {
+  switch (state) {
+    case "Active":
+      return "online";
+    case "Ready":
+    case "NoCustomerSelected":
+    case "NotConfigured":
+      return "warning";
+    default:
+      return "not-configured";
+  }
+}
+
 export function IntegrationsSettingsPage() {
   const navigate = useNavigate();
 
@@ -33,19 +54,23 @@ export function IntegrationsSettingsPage() {
     // Slightly stale data is fine — the detail page re-queries on mount.
     staleTime: 30_000,
   });
+  const telavoxStatus = useQuery({
+    queryKey: ["integrations", "telavox", "status"] as const,
+    queryFn: () => telavoxAdminApi.status(),
+    staleTime: 30_000,
+  });
 
-  // Connected = any integration that has actually completed its connect
-  // flow. Today only Adsolut has a real backend; Tactical RMM + Zammad
-  // are placeholders that always read "not_configured" so they never tip
-  // this counter. Once a second integration goes live, OR them in here.
   const adsolutTileStatus = tileStatusFor(adsolutStatus.data?.state);
-  // "Connected" for the counter = OAuth is healthy. A sync_failing tile
-  // still counts because the connection itself works; only the data pull
-  // is degraded, which the amber pill on the tile already communicates.
-  const connectedCount =
-    adsolutTileStatus === "online" || adsolutTileStatus === "warning" ? 1 : 0;
-  const totalCount = 3;
-  const noneConfigured = connectedCount === 0;
+  const telavoxStatusTile = telavoxTileStatus(telavoxStatus.data?.state);
+  // "Connected" for the counter = the integration has at least started
+  // configuration. Tactical RMM + Zammad stay placeholders that always
+  // read "not-configured", so they don't tip the counter.
+  const tilesConfigured = [adsolutTileStatus, telavoxStatusTile].filter(
+    (s) => s === "online" || s === "warning",
+  ).length;
+  const totalCount = 4;
+  const noneConfigured = tilesConfigured === 0;
+  const connectedCount = tilesConfigured;
 
   return (
     <div className="flex flex-col gap-6">
@@ -104,6 +129,13 @@ export function IntegrationsSettingsPage() {
           variant="icon"
           status={adsolutTileStatus}
           onClick={() => navigate({ to: "/settings/integrations/adsolut" })}
+        />
+        <IntegrationTile
+          name="Telavox"
+          logo={telavoxLogo}
+          variant="icon"
+          status={telavoxStatusTile}
+          onClick={() => navigate({ to: "/settings/integrations/telavox" })}
         />
         <IntegrationTile name="Tactical RMM" logo={trmmLogo} variant="icon" status="not-configured" />
         <IntegrationTile name="Zammad Servicedesk" logo={zammadLogo} variant="icon" status="not-configured" />
