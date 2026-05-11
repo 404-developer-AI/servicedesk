@@ -23,6 +23,16 @@ public interface ITelavoxProvisioningService
     Task<TelavoxAgentLink> ProvisionAgentAsync(
         TelavoxProvisionAgentRequest request, CancellationToken ct = default);
 
+    /// Manual fallback for installs where PAPI api-user creation is not
+    /// available — admin pastes a CAPI bearer-token they minted via the
+    /// Telavox webapp directly. Side-effects: write to protected_secrets,
+    /// insert/update <c>telavox_agent_links</c>. No PAPI call is made.
+    /// <see cref="TelavoxAgentLink.TelavoxUserId"/> is set to the sentinel
+    /// <c>"manual"</c> on the resulting row so <see cref="RevokeAgentAsync"/>
+    /// knows to skip the upstream DELETE.
+    Task<TelavoxAgentLink> ProvisionAgentManualAsync(
+        TelavoxProvisionAgentManualRequest request, CancellationToken ct = default);
+
     /// Reverses <see cref="ProvisionAgentAsync"/>. Writes an
     /// <see cref="Servicedesk.Infrastructure.Audit.AuditEvent"/> row tagged
     /// with the supplied actor — every privileged action must audit. A
@@ -52,5 +62,17 @@ public sealed record TelavoxProvisioningInput(
 public sealed record TelavoxProvisionAgentRequest(
     Guid UserId,
     string TelavoxExtension,
+    string Actor,
+    string ActorRole);
+
+/// Manual-link variant — admin paste'd CAPI bearer-token replaces the
+/// PAPI mint round-trip. The token is treated as an opaque secret; the
+/// provisioning service writes it verbatim to protected_secrets and
+/// performs no validation against Telavox before storing (the polling
+/// worker is the first thing that finds out if the token is bad).
+public sealed record TelavoxProvisionAgentManualRequest(
+    Guid UserId,
+    string TelavoxExtension,
+    string CapiToken,
     string Actor,
     string ActorRole);

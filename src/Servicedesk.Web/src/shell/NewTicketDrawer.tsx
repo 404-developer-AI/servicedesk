@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -125,8 +125,45 @@ function TaxonomySelect({
   );
 }
 
-export function NewTicketDrawer({ children }: { children: ReactNode }) {
+export function NewTicketDrawer({
+  children,
+  initialContactId,
+  onOpenChange,
+}: {
+  children: ReactNode;
+  /// When set, the drawer pre-fills the requester field with this contact
+  /// id on every open. Used by the Telavox call-popup so an agent who
+  /// presses "Create ticket" lands on a half-filled form with the caller
+  /// already selected. Each open re-applies the pre-fill so re-using the
+  /// trigger after a cancelled ticket doesn't surprise the agent with an
+  /// empty requester slot.
+  initialContactId?: string;
+  /// Fires when the drawer transitions between open and closed. Callers
+  /// use this when the trigger lives inside another transient surface
+  /// (e.g. the incoming-call popup) and they need to keep that surface
+  /// alive until the drawer is gone — closing the surface synchronously
+  /// in the click handler would unmount the drawer's React tree.
+  onOpenChange?: (open: boolean) => void;
+}) {
   const [open, setOpen] = useState(false);
+
+  // Bridge open-state changes to the optional callback. We use a ref to
+  // avoid stale closures without forcing the effect to re-run on every
+  // callback identity change. The initial false fire is intentional — a
+  // first-render notification with the current state is consistent with
+  // Radix-style onOpenChange callers and is a no-op in practice.
+  const onOpenChangeRef = useRef(onOpenChange);
+  useEffect(() => {
+    onOpenChangeRef.current = onOpenChange;
+  });
+  const initialOpenFireRef = useRef(true);
+  useEffect(() => {
+    if (initialOpenFireRef.current) {
+      initialOpenFireRef.current = false;
+      return;
+    }
+    onOpenChangeRef.current?.(open);
+  }, [open]);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -186,6 +223,36 @@ export function NewTicketDrawer({ children }: { children: ReactNode }) {
     },
   });
 
+  // Track the previous `open` so we can do a single full-reset on the
+  // false → true transition. setValue inside a useEffect was unreliable
+  // here because Vaul's portal mounts the Controller after the effect
+  // runs the first time, and Controller's first render captured the
+  // pre-setValue value. reset() is the idiomatic RHF way to seed the
+  // entire form when "opening" — a Controller mounting later picks up
+  // the freshly-written _formValues. Stays a ref (not a state) so we
+  // don't double-render on the transition.
+  const previousOpenRef = useRef(false);
+  useEffect(() => {
+    const wasOpen = previousOpenRef.current;
+    previousOpenRef.current = open;
+    if (open && !wasOpen) {
+      reset({
+        subject: "",
+        bodyHtml: "",
+        requesterContactId: initialContactId ?? "",
+        queueId: "",
+        statusId: defaultStatusId || "",
+        priorityId: defaultPriorityId || "",
+        categoryId: "",
+        assigneeUserId: null,
+      });
+    }
+  });
+
+  // Taxonomy defaults (priority / status) can arrive AFTER the drawer is
+  // already open if the agent clicked the trigger before the first
+  // taxonomy fetch resolved. Patch them in via setValue so we don't
+  // clobber a subject/body the user has already typed.
   useEffect(() => {
     if (!open) return;
     if (defaultPriorityId) setValue("priorityId", defaultPriorityId);

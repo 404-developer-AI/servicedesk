@@ -226,11 +226,22 @@ public static class SettingKeys
         /// Telavox.PartnerToken.
         public const string PartnerCustomerId = "Telavox.PartnerCustomerId";
 
-        /// How often (seconds) each agent's CAPI poll fires. Default 2 is
-        /// the agent-snap target; raise on installs with many concurrent
-        /// agents if Telavox-side load complains. Clamped to [1, 30] on
-        /// read.
+        /// Idle CAPI poll cadence (seconds) — how often each linked agent
+        /// is checked while no call is on the line. Default 10. The worker
+        /// switches to the faster <see cref="RingingPollIntervalSeconds"/>
+        /// the moment any agent's last-seen state is ringing, so the
+        /// pickup-edge that fires the popup is caught quickly. Clamped to
+        /// [2, 60] on read.
         public const string PollIntervalSeconds = "Telavox.PollIntervalSeconds";
+
+        /// Ringing CAPI poll cadence (seconds) — used as soon as any
+        /// linked agent's last-seen state is ringing/alerting, until the
+        /// call is picked up or dropped. Default 1 so the answered-edge
+        /// transition (the popup trigger in the default
+        /// <see cref="PopupTriggerMode"/>) lands within a second of the
+        /// actual pickup. Clamped to [1, 10] on read; should be &lt;= the
+        /// idle interval.
+        public const string RingingPollIntervalSeconds = "Telavox.RingingPollIntervalSeconds";
 
         /// Default ISO-3166 alpha-2 country code for phone-number parsing
         /// when a contact's phone field has no leading + (e.g. "0498 12 34
@@ -259,22 +270,31 @@ public static class SettingKeys
         /// it falls back to a slow (60s) tick so very-late calls still pop.
         public const string PollWindowSleepOutsideHours = "Telavox.PollWindow.SleepOutsideHours";
 
-        /// Base URL of the Telavox API. Both PAPI (partner-side, paths
-        /// under /papi/v1) and CAPI (per-agent, paths under /origo/api/v1)
-        /// share the same host. Default targets api.telavox.se; exposed as
-        /// a setting so an install on a regional cluster (e.g. -.no, -.fi)
-        /// can swap without a code change. Trailing slash is normalised.
-        public const string ApiBaseUrl = "Telavox.ApiBaseUrl";
+        /// Base URL of the Telavox PAPI (partner API). Paths the client
+        /// appends live under <c>/partner2/api/papi/v1/...</c>. Default
+        /// targets <c>partner.telavox.se</c> per the published PAPI swagger
+        /// (host + basePath fields); exposed as a setting so a regional or
+        /// future PAPI host can be swapped without a code change. Trailing
+        /// slashes are normalised.
+        public const string PapiBaseUrl = "Telavox.PapiBaseUrl";
 
-        /// Email-domain suffix appended to the synthetic api-user address
-        /// the provisioning service mints for each linked agent. Telavox
-        /// uses the email as the primary-key for the api-user; the SD-side
-        /// address is purely an identifier (no mail is ever delivered to
-        /// it). Default <c>servicedesk.local</c> works for the common case
-        /// where Telavox does not RFC-validate the TLD; swap to a real
-        /// install-owned subdomain or to <c>invalid</c> (RFC 6761 reserved)
-        /// if your Telavox tenant rejects <c>.local</c>.
-        public const string CapiUserEmailDomain = "Telavox.CapiUserEmailDomain";
+        /// Base URL of the Telavox CAPI (per-agent / customer-side API).
+        /// Paths the worker appends live under <c>/api/capi/v1/...</c>.
+        /// Default targets <c>home.telavox.se</c> per the published CAPI
+        /// swagger. Distinct host from PAPI — the two APIs are NOT served
+        /// from the same domain, which the v0.0.34 commit B-C code wrongly
+        /// assumed.
+        public const string CapiBaseUrl = "Telavox.CapiBaseUrl";
+
+        /// Coalesce window (seconds) for the per-tick poll-summary row the
+        /// worker writes to <c>integration_audit</c>. Without coalescing the
+        /// worker writes one summary row per <see cref="PollIntervalSeconds"/>
+        /// — at the default 2s cadence that's ~30 rows/minute even on a
+        /// silent install. Default 300 (5 minutes) keeps the audit-log
+        /// browsable without losing real-time fidelity: any tick with a
+        /// fired popup or a per-agent failure flushes immediately, so the
+        /// admin still sees those events in real time.
+        public const string AuditSummaryIntervalSeconds = "Telavox.AuditSummaryIntervalSeconds";
     }
 
     /// Generic integration-framework knobs shared by every connector. The
@@ -298,6 +318,15 @@ public static class SettingKeys
         /// keeps the WK call-budget tiny while still flagging revocations
         /// within half a day.
         public const string HealthcheckActiveProbeHours = "Integrations.Healthcheck.ActiveProbeHours";
+
+        /// Retention window (hours) for the high-volume operational rows in
+        /// <c>integration_audit</c> — today the Telavox per-tick poll
+        /// summary and the Adsolut healthcheck heartbeat. Admin-action
+        /// rows (token updated, agent provisioned, …) and rare PAPI calls
+        /// (customers list, api-user create/delete, …) are NEVER swept —
+        /// only event-types explicitly on the firehose-list in code. The
+        /// sweep runs piggyback on the healthcheck worker. Default 24h.
+        public const string AuditRetentionHours = "Integrations.AuditRetentionHours";
     }
 
     public static class Sla
@@ -615,8 +644,10 @@ public static class SettingDefaults
             "Master kill-switch. When true and the partner-token + customer-id are set, the polling worker ticks once per agent every PollIntervalSeconds (inside the working-hours window) and pushes IncomingCallAnswered SignalR events. Off by default so the integration page is visible for setup without firing any API call."),
         new SettingDefault(SettingKeys.Telavox.PartnerCustomerId, "", "string", "Telavox",
             "Telavox PAPI partner customer-id. Don't type this by hand — the integration page's Test connection action calls PAPI /customers with the saved partner-token and lets the admin pick the right id from the dropdown. Empty = the integration is unconfigured even if the partner-token is set."),
-        new SettingDefault(SettingKeys.Telavox.PollIntervalSeconds, "2", "int", "Telavox",
-            "Per-agent CAPI poll cadence in seconds. Default 2 is agent-snap fast; raise on installs with many concurrent agents if Telavox-side load complains. Clamped to [1, 30] on read. Outside the working-hours window the worker falls back to a slow tick (or sleeps fully, per PollWindow.SleepOutsideHours)."),
+        new SettingDefault(SettingKeys.Telavox.PollIntervalSeconds, "10", "int", "Telavox",
+            "Idle CAPI poll cadence in seconds — how often each linked agent is checked while no call is on the line. Default 10 keeps Telavox-side load minimal on quiet installs. The worker switches to RingingPollIntervalSeconds the moment any agent's last-seen state is ringing/alerting, so the answered-edge that fires the popup is still caught quickly. Clamped to [2, 60] on read. Outside the working-hours window the worker falls back to a slow tick (or sleeps fully, per PollWindow.SleepOutsideHours)."),
+        new SettingDefault(SettingKeys.Telavox.RingingPollIntervalSeconds, "1", "int", "Telavox",
+            "Ringing CAPI poll cadence in seconds — used as soon as any linked agent is currently ringing/alerting, until that call is picked up or dropped. Default 1 so the answered-edge transition (the popup trigger in the default PopupTriggerMode) lands within a second of the actual pickup. Clamped to [1, 10] on read; should be <= the idle interval. Raise to 2-3 if Telavox-side load complains during heavy call hours."),
         new SettingDefault(SettingKeys.Telavox.DefaultCountryCode, "BE", "string", "Telavox",
             "ISO-3166 alpha-2 country used to parse phone-numbers without an international prefix (e.g. '0498 12 34 56' → +32498123456 when set to BE). One value per install — the SD targets one customer per install so a single default is fine. Changing this does NOT retroactively re-normalise existing rows."),
         new SettingDefault(SettingKeys.Telavox.PopupTriggerMode, "answered", "string", "Telavox",
@@ -629,10 +660,12 @@ public static class SettingDefaults
             "Day-mask for the polling window: seven comma-separated booleans Mon..Sun. Default is workweek Mon-Fri. Outside the listed days the worker treats the install as out-of-hours regardless of the time-window."),
         new SettingDefault(SettingKeys.Telavox.PollWindowSleepOutsideHours, "true", "bool", "Telavox",
             "When true (default) the worker fully sleeps outside the working-hours window — no Telavox calls at all. When false it falls back to a 60s slow-tick so very-late calls still surface a popup, at the cost of round-the-clock Telavox-side load. Flip off only if your agents take calls outside the configured hours."),
-        new SettingDefault(SettingKeys.Telavox.ApiBaseUrl, "https://api.telavox.se", "string", "Telavox",
-            "Base URL of the Telavox API host. PAPI (partner-token, install-wide) and CAPI (per-agent token) both target this host under /papi/v1 and /origo/api/v1 respectively. Default api.telavox.se covers the primary cluster; swap for a regional cluster (.no, .fi, …) if your partner-token was issued there. Trailing slashes are normalised."),
-        new SettingDefault(SettingKeys.Telavox.CapiUserEmailDomain, "servicedesk.local", "string", "Telavox",
-            "Email-domain suffix used for the synthetic api-user address minted by Telavox provisioning. The full address is sd-capi-<userId>-<epoch>@<this>. Telavox treats the email as a primary-key, never as a deliverable mailbox; the suffix matters only if your Telavox tenant rejects the default. Swap to a real install-owned subdomain (e.g. capi.acme.example.com) or to RFC 6761 'invalid' if validation issues arise."),
+        new SettingDefault(SettingKeys.Telavox.PapiBaseUrl, "https://partner.telavox.se", "string", "Telavox",
+            "Base URL of the Telavox PAPI (partner API) host. Endpoints the SD client appends live under /partner2/api/papi/v1/... — matches the host + basePath fields of the published PAPI swagger. Trailing slashes are normalised. Swap only if your partner-token was issued for a non-default regional PAPI host."),
+        new SettingDefault(SettingKeys.Telavox.CapiBaseUrl, "https://home.telavox.se", "string", "Telavox",
+            "Base URL of the Telavox CAPI (customer / per-agent API) host. Endpoints the SD worker appends live under /api/capi/v1/... — matches the host + basePath of the published CAPI swagger. Distinct from the PAPI host; the two APIs are not served from the same domain."),
+        new SettingDefault(SettingKeys.Telavox.AuditSummaryIntervalSeconds, "300", "int", "Telavox",
+            "Coalesce window (seconds) for the per-tick poll-summary row the worker writes to integration_audit. Without coalescing the worker writes one row per PollIntervalSeconds — at the default 2s cadence that's ~30 rows/min even on a silent install. Default 300 (5 minutes) keeps the audit-log browsable; any tick with a fired popup or a per-agent failure flushes immediately so admins still see those events in real time. Floor 30s."),
 
         // Integrations — v0.0.25 healthcheck framework. Cross-integration
         // knobs only; per-connector specifics live under their own
@@ -643,6 +676,8 @@ public static class SettingDefaults
             "How often (seconds) the integrations healthcheck worker ticks. Each tick reads connection state for every configured integration, writes a heartbeat row to integration_audit, and pushes the resolved status to admins over SignalR. Floor 60 — set lower and the worker silently clamps. Default 300 = a 5-minute heartbeat which is well below the SPA's 30-second poll fallback."),
         new SettingDefault(SettingKeys.Integrations.HealthcheckActiveProbeHours, "12", "int", "Integrations",
             "Hours between active refresh probes by the healthcheck worker. An active probe calls the upstream token endpoint to verify the refresh token still works (catches a revoked RT before the admin finds out via a failing API call). Default 12 keeps Wolters Kluwer load minimal while still surfacing revocation within half a day. Floor 1 hour."),
+        new SettingDefault(SettingKeys.Integrations.AuditRetentionHours, "24", "int", "Integrations",
+            "Retention window (hours) for the high-volume operational rows in integration_audit — the Telavox per-tick poll summary (capi.calls.poll) and the Adsolut healthcheck heartbeat (healthcheck.tick). Admin-action rows (partner-token updated, agent provisioned/revoked, …) and rare PAPI calls (customers list, api-user create/delete, …) are NEVER swept. The sweep runs once per healthcheck tick. Default 24 (one day). Floor 1 hour."),
 
 
         // Search — v0.0.8 step 8. Tunables for the global search dropdown

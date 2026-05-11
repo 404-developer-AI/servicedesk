@@ -51,8 +51,22 @@ public static class TelavoxEndpoints
         admin.MapGet("/agents", ListAgentLinks).WithName("ListTelavoxAgentLinks").WithOpenApi();
         admin.MapPost("/agents/{userId:guid}/provision", ProvisionAgent)
             .WithName("ProvisionTelavoxAgent").WithOpenApi();
+        // Manual-link fallback for installs where PAPI api-user creation
+        // is not available — admin pastes a CAPI bearer-token they minted
+        // via the Telavox webapp directly. Separate route so the audit
+        // trail can distinguish PAPI-minted from admin-pasted links.
+        admin.MapPost("/agents/{userId:guid}/provision-manual", ProvisionAgentManual)
+            .WithName("ProvisionTelavoxAgentManual").WithOpenApi();
         admin.MapDelete("/agents/{userId:guid}/provision", RevokeAgent)
             .WithName("RevokeTelavoxAgent").WithOpenApi();
+
+        // integration_audit reader. Mirrors the Adsolut /audit surface so
+        // the SPA's existing IntegrationAuditLog component can render
+        // Telavox PAPI/CAPI rows alongside the Adsolut sync log. Without
+        // this an admin staring at a 502 on /test-connection has no way
+        // to see the upstream error code the client already wrote into
+        // the table.
+        admin.MapGet("/audit", GetAuditLog).WithName("GetTelavoxAuditLog").WithOpenApi();
 
         return app;
     }
@@ -165,7 +179,7 @@ public static class TelavoxEndpoints
             return Results.BadRequest(new
             {
                 error = "invalid_customer_id",
-                message = "Customer ID must be 1–64 characters of letters, digits, '-', '_' or '.'.",
+                message = "Customer ID must be 1–64 characters with no whitespace, slashes, quotes or URL-special chars.",
             });
         }
 
@@ -312,7 +326,7 @@ public static class TelavoxEndpoints
                     userRole = ur.RoleName,
                     telavoxExtension = r.TelavoxExtension,
                     telavoxUserId = r.TelavoxUserId,
-                    capiUserEmail = r.CapiUserEmail,
+                    capiUserName = r.CapiUserName,
                     provisionedUtc = r.ProvisionedUtc,
                     lastPollUtc = r.LastPollUtc,
                     lastPollError = r.LastPollError,
@@ -342,7 +356,7 @@ public static class TelavoxEndpoints
             return Results.BadRequest(new
             {
                 error = "invalid_extension",
-                message = "Extension must be 1–64 characters of letters, digits, '-', '_' or '.'.",
+                message = "Extension must be 1–64 characters with no whitespace, slashes, quotes or URL-special chars.",
             });
         }
 
@@ -356,7 +370,7 @@ public static class TelavoxEndpoints
                 userId = link.UserId,
                 telavoxExtension = link.TelavoxExtension,
                 telavoxUserId = link.TelavoxUserId,
-                capiUserEmail = link.CapiUserEmail,
+                capiUserName = link.CapiUserName,
                 provisionedUtc = link.ProvisionedUtc,
             });
         }
@@ -373,6 +387,71 @@ public static class TelavoxEndpoints
                 upstreamErrorCode = ex.UpstreamErrorCode,
                 message = ex.Message,
             }, statusCode: 502);
+        }
+    }
+
+    public sealed record ProvisionAgentManualBody(
+        [property: Required] string Extension,
+        [property: Required] string CapiToken);
+
+    private static async Task<IResult> ProvisionAgentManual(
+        Guid userId,
+        [FromBody] ProvisionAgentManualBody body,
+        HttpContext http,
+        ITelavoxProvisioningService provisioning,
+        CancellationToken ct)
+    {
+        if (body is null
+            || string.IsNullOrWhiteSpace(body.Extension)
+            || string.IsNullOrWhiteSpace(body.CapiToken))
+        {
+            return Results.BadRequest(new
+            {
+                error = "missing_field",
+                message = "Extension and CapiToken are both required.",
+            });
+        }
+        var trimmedExt = body.Extension.Trim();
+        if (trimmedExt.Length > 64 || !IsAllowedIdentifierShape(trimmedExt))
+        {
+            return Results.BadRequest(new
+            {
+                error = "invalid_extension",
+                message = "Extension must be 1–64 characters with no whitespace, slashes, quotes or URL-special chars.",
+            });
+        }
+        // Defensive: a paste with a stray newline or whitespace would be
+        // valid as a bearer in principle (servers trim before validation)
+        // but is almost always a paste-mistake. Cap length so we don't
+        // store megabytes of accidental Word-document content.
+        var trimmedToken = body.CapiToken.Trim();
+        if (trimmedToken.Length == 0 || trimmedToken.Length > 4096)
+        {
+            return Results.BadRequest(new
+            {
+                error = "invalid_token",
+                message = "CAPI token is empty or exceeds 4096 characters.",
+            });
+        }
+
+        var (actor, role) = ActorContext.Resolve(http);
+        try
+        {
+            var link = await provisioning.ProvisionAgentManualAsync(
+                new TelavoxProvisionAgentManualRequest(
+                    userId, trimmedExt, trimmedToken, actor, role), ct);
+            return Results.Ok(new
+            {
+                userId = link.UserId,
+                telavoxExtension = link.TelavoxExtension,
+                telavoxUserId = link.TelavoxUserId,
+                capiUserName = link.CapiUserName,
+                provisionedUtc = link.ProvisionedUtc,
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { error = "provision_blocked", message = ex.Message });
         }
     }
 
@@ -405,19 +484,70 @@ public static class TelavoxEndpoints
         }
     }
 
+    // ---- /audit ---------------------------------------------------------
+
+    private static async Task<IResult> GetAuditLog(
+        IIntegrationAuditQuery audit,
+        long? cursor,
+        int? limit,
+        CancellationToken ct)
+    {
+        // 50 default keeps the table on the detail page legible without
+        // scrolling; the cursor lets the UI walk older rows on demand.
+        var page = await audit.ListAsync(TelavoxEventTypes.Integration, cursor, limit ?? 50, ct);
+        return Results.Ok(new
+        {
+            items = page.Items.Select(e => new
+            {
+                id = e.Id,
+                utc = e.Utc,
+                eventType = e.EventType,
+                outcome = e.Outcome,
+                endpoint = e.Endpoint,
+                httpStatus = e.HttpStatus,
+                latencyMs = e.LatencyMs,
+                actorId = e.ActorId,
+                actorRole = e.ActorRole,
+                errorCode = e.ErrorCode,
+                payload = e.PayloadJson,
+            }),
+            nextCursor = page.NextCursor,
+        });
+    }
+
     /// Charset gate shared by the <c>PartnerCustomerId</c> setter and the
     /// per-agent <c>Extension</c> body. Both fields are stored verbatim
-    /// and later URL-segment-encoded into PAPI paths
-    /// (<c>/customers/{id}/api-users/{email}</c>); restricting to a
-    /// conservative letters+digits+<c>-_.</c> alphabet keeps the upstream
-    /// URL trivially safe and blocks paste-mistakes containing slashes,
-    /// quotes or whitespace before they reach Telavox.
+    /// and later URL-segment-encoded via <see cref="Uri.EscapeDataString"/>
+    /// into PAPI paths. The gate is defense-in-depth on top of the URL
+    /// encoding — it rejects the obviously dangerous characters
+    /// (path separators, whitespace, quotes, control chars) so a
+    /// paste-mistake or a hostile token can't sneak past, but accepts the
+    /// wider character set Telavox actually uses in its opaque keys
+    /// (e.g. <c>:</c>, <c>@</c>, <c>+</c> in api-user keys derived from
+    /// email-like primary-keys).
     private static bool IsAllowedIdentifierShape(string s)
     {
         if (s.Length == 0) return false;
         foreach (var c in s)
         {
-            if (!(char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.')) return false;
+            if (char.IsControl(c) || char.IsWhiteSpace(c)) return false;
+            switch (c)
+            {
+                case '/':
+                case '\\':
+                case '?':
+                case '#':
+                case '&':
+                case '=':
+                case '"':
+                case '\'':
+                case '<':
+                case '>':
+                case '|':
+                case '`':
+                case '%':
+                    return false;
+            }
         }
         return true;
     }

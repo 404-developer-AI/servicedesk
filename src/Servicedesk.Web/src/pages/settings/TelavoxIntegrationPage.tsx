@@ -6,6 +6,7 @@ import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
+  History,
   KeyRound,
   Link as LinkIcon,
   Phone,
@@ -36,7 +37,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { SettingField } from "@/components/settings/SettingField";
+import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditLog";
 import { cn } from "@/lib/utils";
 
 const STATUS_QK = ["integrations", "telavox", "status"] as const;
@@ -402,7 +412,14 @@ export function TelavoxIntegrationPage() {
             <FieldOrSkeleton
               entry={findEntry(settingsList.data, "Telavox.PollIntervalSeconds")}
               queryKey={SETTINGS_QK}
-              label="Poll interval (seconds)"
+              label="Idle poll interval (seconds)"
+              hint="How often each linked agent is checked when no call is ringing. Default 10. Range 2–60. Lower = faster ring detection but more Telavox-side load on quiet installs."
+            />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Telavox.RingingPollIntervalSeconds")}
+              queryKey={SETTINGS_QK}
+              label="Ringing poll interval (seconds)"
+              hint="Cadence while any linked agent is ringing — used until the call is picked up or dropped. Default 1 so the answered-edge that fires the popup lands within a second of the actual pickup. Range 1–10; should be ≤ idle interval."
             />
             <FieldOrSkeleton
               entry={findEntry(settingsList.data, "Telavox.DefaultCountryCode")}
@@ -428,6 +445,21 @@ export function TelavoxIntegrationPage() {
             />
           </>
         )}
+      </section>
+
+      {/* ---- Integration audit log -------------------------------- */}
+      <section className="space-y-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-5">
+        <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+          <History className="h-4 w-4 text-muted-foreground" />
+          Audit log
+        </div>
+        <p className="text-xs text-muted-foreground/70">
+          Every outbound Telavox PAPI / CAPI call writes a row here with
+          latency, HTTP status and upstream error code. The first place to
+          look when a "Test connection" returns 502 or the popup stops
+          firing for a mapped agent.
+        </p>
+        <IntegrationAuditLog integration="telavox" />
       </section>
     </div>
   );
@@ -498,10 +530,49 @@ function AgentMappingSection({
       qc.invalidateQueries({ queryKey: AGENTS_QK });
       qc.invalidateQueries({ queryKey: STATUS_QK });
     },
-    onError: (err) =>
+    onError: (err) => {
+      // Backend distinguishes 400 (config/validation), 502 (upstream
+      // PAPI). Surface the server's structured `message` so the admin
+      // sees e.g. "User is not active" or "extension must be ..." instead
+      // of a generic "Link failed (400)".
+      const upstream = apiErrorMessage(err);
+      const status = err instanceof ApiError ? err.status : null;
       toast.error(
-        err instanceof ApiError ? `Link failed (${err.status})` : "Link failed",
-      ),
+        upstream
+          ? `Link failed: ${upstream}`
+          : status
+            ? `Link failed (HTTP ${status})`
+            : "Link failed",
+      );
+    },
+  });
+
+  const provisionManual = useMutation({
+    mutationFn: ({
+      userId,
+      extension,
+      capiToken,
+    }: {
+      userId: string;
+      extension: string;
+      capiToken: string;
+    }) => telavoxAdminApi.provisionAgentManual(userId, extension, capiToken),
+    onSuccess: () => {
+      toast.success("Agent linked (manual token)");
+      qc.invalidateQueries({ queryKey: AGENTS_QK });
+      qc.invalidateQueries({ queryKey: STATUS_QK });
+    },
+    onError: (err) => {
+      const upstream = apiErrorMessage(err);
+      const status = err instanceof ApiError ? err.status : null;
+      toast.error(
+        upstream
+          ? `Manual link failed: ${upstream}`
+          : status
+            ? `Manual link failed (HTTP ${status})`
+            : "Manual link failed",
+      );
+    },
   });
 
   const revoke = useMutation({
@@ -552,8 +623,15 @@ function AgentMappingSection({
                 onLink={(extension) =>
                   provision.mutate({ userId: u.id, extension })
                 }
+                onLinkManual={(extension, capiToken) =>
+                  provisionManual.mutate({ userId: u.id, extension, capiToken })
+                }
                 onUnlink={() => revoke.mutate(u.id)}
-                busy={provision.isPending || revoke.isPending}
+                busy={
+                  provision.isPending ||
+                  provisionManual.isPending ||
+                  revoke.isPending
+                }
               />
             );
           })}
@@ -569,6 +647,7 @@ function AgentMappingRow({
   extensions,
   extensionsLoading,
   onLink,
+  onLinkManual,
   onUnlink,
   busy,
 }: {
@@ -577,16 +656,19 @@ function AgentMappingRow({
   extensions: TelavoxExtension[];
   extensionsLoading: boolean;
   onLink: (extension: string) => void;
+  onLinkManual: (extension: string, capiToken: string) => void;
   onUnlink: () => void;
   busy: boolean;
 }) {
   const [pick, setPick] = useState<string>(link?.telavoxExtension ?? "");
+  const [manualOpen, setManualOpen] = useState(false);
 
   useEffect(() => {
     if (link?.telavoxExtension) setPick(link.telavoxExtension);
   }, [link?.telavoxExtension]);
 
   const hasError = !!link?.lastPollError;
+  const isManualLink = link?.telavoxUserId === "manual";
 
   return (
     <div className="flex items-center justify-between gap-3 py-3">
@@ -594,6 +676,11 @@ function AgentMappingRow({
         <p className="truncate text-sm font-medium text-foreground">{user.email}</p>
         <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50">
           {user.roleName}
+          {isManualLink ? (
+            <span className="ml-1.5 inline-flex items-center rounded border border-amber-400/30 bg-amber-500/[0.08] px-1.5 py-0 text-[9px] tracking-wider text-amber-200">
+              manual
+            </span>
+          ) : null}
           {link && hasError ? (
             <>
               {" · "}
@@ -624,8 +711,11 @@ function AgentMappingRow({
           </SelectTrigger>
           <SelectContent>
             {extensions.map((e) => (
-              <SelectItem key={e.id} value={e.number}>
-                <span className="font-mono">{e.number}</span>
+              // value = extension KEY (e.id) — CAPI's
+              // /v1/extensions/{extension}/calls takes the key as path-
+              // param. The dialable number is just for display.
+              <SelectItem key={e.id} value={e.id}>
+                <span className="font-mono">{e.number || e.id}</span>
                 {e.name ? (
                   <span className="ml-2 text-xs text-muted-foreground">{e.name}</span>
                 ) : null}
@@ -644,16 +734,143 @@ function AgentMappingRow({
             <Unlink className="mr-1 h-3 w-3" /> Unlink
           </Button>
         ) : (
+          <>
+            <Button
+              size="sm"
+              className="h-8"
+              disabled={busy || !pick}
+              onClick={() => onLink(pick)}
+            >
+              Link
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 text-muted-foreground hover:text-foreground"
+              disabled={busy || !pick}
+              onClick={() => setManualOpen(true)}
+              title="Use a CAPI token minted from the Telavox webapp instead of the auto-provision flow."
+            >
+              Manual…
+            </Button>
+          </>
+        )}
+      </div>
+
+      <ManualLinkDialog
+        open={manualOpen}
+        onOpenChange={setManualOpen}
+        extension={pick}
+        extensionLabel={
+          extensions.find((e) => e.id === pick)?.number ?? pick
+        }
+        userEmail={user.email}
+        onConfirm={(token) => {
+          onLinkManual(pick, token);
+          setManualOpen(false);
+        }}
+        busy={busy}
+      />
+    </div>
+  );
+}
+
+function ManualLinkDialog({
+  open,
+  onOpenChange,
+  extension,
+  extensionLabel,
+  userEmail,
+  onConfirm,
+  busy,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  extension: string;
+  extensionLabel: string;
+  userEmail: string;
+  onConfirm: (token: string) => void;
+  busy: boolean;
+}) {
+  const [token, setToken] = useState("");
+
+  // Clear the paste-buffer every time the dialog opens so a previous
+  // attempt's token doesn't linger in component state when the admin
+  // opens the dialog for a different agent.
+  useEffect(() => {
+    if (open) setToken("");
+  }, [open]);
+
+  const canSubmit = token.trim().length > 0 && extension.length > 0 && !busy;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Link with manual CAPI token</DialogTitle>
+          <DialogDescription>
+            Use this when the auto-provision flow returns a Telavox error
+            (typically because PAPI api-user creation is not enabled on
+            your account). Paste a CAPI bearer token minted from the
+            Telavox webapp by the agent themselves — the polling worker
+            will use it verbatim to read the extension's ongoing calls.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 text-xs">
+          <div className="space-y-1">
+            <p className="text-muted-foreground/70">Agent</p>
+            <p className="font-mono text-foreground">{userEmail}</p>
+          </div>
+          <div className="space-y-1">
+            <p className="text-muted-foreground/70">Extension</p>
+            <p className="font-mono text-foreground">
+              {extensionLabel || extension || "—"}
+            </p>
+            <p className="text-[10px] text-muted-foreground/50">
+              (key: {extension || "none selected"})
+            </p>
+          </div>
+          <div className="space-y-1">
+            <label className="text-muted-foreground/70" htmlFor="manual-capi-token">
+              CAPI bearer token
+            </label>
+            <Input
+              id="manual-capi-token"
+              type="password"
+              autoComplete="off"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="Paste the bearer string here…"
+              className="bg-white/[0.03] font-mono text-xs"
+            />
+            <p className="text-[10px] text-muted-foreground/50">
+              Stored encrypted (DataProtection key-ring); never written to
+              logs or audit payloads. Invalidating the token must be done
+              in the Telavox webapp — SD's revoke is local-only for
+              manual links.
+            </p>
+          </div>
+        </div>
+
+        <DialogFooter>
           <Button
             size="sm"
-            className="h-8"
-            disabled={busy || !pick}
-            onClick={() => onLink(pick)}
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+            disabled={busy}
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            disabled={!canSubmit}
+            onClick={() => onConfirm(token.trim())}
           >
             Link
           </Button>
-        )}
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

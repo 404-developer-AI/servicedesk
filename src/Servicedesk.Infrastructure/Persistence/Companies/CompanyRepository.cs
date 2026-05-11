@@ -236,25 +236,54 @@ public sealed class CompanyRepository : ICompanyRepository
             new { companyId, search = $"%{search}%" }, cancellationToken: ct))).ToList();
     }
 
-    public async Task<IReadOnlyList<Contact>> LookupContactsByPhoneE164Async(
+    public async Task<IReadOnlyList<ContactPhoneLookupRow>> LookupContactsByPhoneE164Async(
         string phoneE164, int limit, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(phoneE164)) return Array.Empty<Contact>();
+        if (string.IsNullOrWhiteSpace(phoneE164)) return Array.Empty<ContactPhoneLookupRow>();
         // Hard cap so a misused caller can't pull the whole table. The
         // call-popup only renders a handful at a time; everything beyond
         // ~10 means the data is dirty and the agent needs the contact list,
         // not a longer popup.
         var safeLimit = Math.Clamp(limit, 1, 25);
+        // LATERAL pick of the contact's "best" company link in one round-
+        // trip. Priority is primary > secondary > supplier; ties (impossible
+        // because of the unique partial index for primary, very rare for
+        // the others) tie-break on company name so the result stays stable
+        // across calls. Sub-query is index-covered by
+        // ix_contact_companies_contact_role.
         var sql = $"""
-            SELECT {ContactCols}
+            SELECT contacts.id AS Id, contacts.company_role AS CompanyRole,
+                   contacts.first_name AS FirstName, contacts.last_name AS LastName,
+                   contacts.email AS Email, contacts.phone AS Phone,
+                   contacts.mobile_phone AS MobilePhone,
+                   contacts.job_title AS JobTitle, contacts.is_active AS IsActive,
+                   contacts.created_utc AS CreatedUtc, contacts.updated_utc AS UpdatedUtc,
+                   (SELECT ccp.company_id FROM contact_companies ccp
+                      WHERE ccp.contact_id = contacts.id AND ccp.role = 'primary' LIMIT 1) AS PrimaryCompanyId,
+                   link.company_id   AS LinkedCompanyId,
+                   link.company_name AS LinkedCompanyName,
+                   link.role         AS LinkedCompanyRole
               FROM contacts
-             WHERE is_active = TRUE
-               AND (phone_e164 = @phoneE164 OR mobile_phone_e164 = @phoneE164)
-             ORDER BY last_name, first_name
+              LEFT JOIN LATERAL (
+                SELECT cc.company_id, cc.role, co.name AS company_name
+                  FROM contact_companies cc
+                  JOIN companies co ON co.id = cc.company_id
+                 WHERE cc.contact_id = contacts.id
+                 ORDER BY CASE cc.role
+                            WHEN 'primary' THEN 1
+                            WHEN 'secondary' THEN 2
+                            WHEN 'supplier' THEN 3
+                            ELSE 4 END,
+                          co.name
+                 LIMIT 1
+              ) link ON TRUE
+             WHERE contacts.is_active = TRUE
+               AND (contacts.phone_e164 = @phoneE164 OR contacts.mobile_phone_e164 = @phoneE164)
+             ORDER BY contacts.last_name, contacts.first_name
              LIMIT {safeLimit}
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        return (await conn.QueryAsync<Contact>(new CommandDefinition(
+        return (await conn.QueryAsync<ContactPhoneLookupRow>(new CommandDefinition(
                 sql, new { phoneE164 }, cancellationToken: ct))).ToList();
     }
 

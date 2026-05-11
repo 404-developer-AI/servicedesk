@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import adsolutLogo from "@/assets/integrations/adsolut.ico";
+import telavoxLogo from "@/assets/integrations/telavox.svg";
 
 const QUERY_KEY = ["admin", "integrations-health"] as const;
 
@@ -49,10 +50,12 @@ const STATUS_STYLES: Record<
 // asset URLs. New connectors register here when their tile lands.
 const LOGOS: Record<string, string> = {
   adsolut: adsolutLogo,
+  telavox: telavoxLogo,
 };
 
 const DETAIL_ROUTES: Record<string, string> = {
   adsolut: "/settings/integrations/adsolut",
+  telavox: "/settings/integrations/telavox",
 };
 
 /// Admin-only dashboard tile. Shows a compact roll-up of every configured

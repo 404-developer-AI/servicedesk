@@ -28,19 +28,36 @@ public sealed class TelavoxApiClientParseTests
     }
 
     [Fact]
-    public void ParseCustomers_bare_array_parses_id_and_name()
+    public void ParseCustomers_bare_array_parses_key_and_name()
     {
+        // PAPI swagger CustomerDto: identifier lives under `key`,
+        // example "customer-123". Pre-D the parser looked for `id` only
+        // and silently dropped every row.
         var body = """
         [
-          { "id": "cust-1", "name": "Acme NV" },
-          { "id": "cust-2", "name": "Globex" }
+          { "key": "customer-1", "name": "Acme NV" },
+          { "key": "customer-2", "name": "Globex" }
         ]
         """;
         var list = TelavoxApiClient.ParseCustomers(body);
         Assert.Equal(2, list.Count);
-        Assert.Equal("cust-1", list[0].Id);
+        Assert.Equal("customer-1", list[0].Id);
         Assert.Equal("Acme NV", list[0].Name);
-        Assert.Equal("cust-2", list[1].Id);
+        Assert.Equal("customer-2", list[1].Id);
+    }
+
+    [Fact]
+    public void ParseCustomers_falls_back_to_id_when_key_missing()
+    {
+        // Defensive fallback so a partner-environment variant with the
+        // older `id` field still populates the dropdown. Never preferred
+        // over `key`.
+        var body = """
+        [ { "id": "cust-legacy", "name": "Legacy Customer" } ]
+        """;
+        var list = TelavoxApiClient.ParseCustomers(body);
+        Assert.Single(list);
+        Assert.Equal("cust-legacy", list[0].Id);
     }
 
     [Fact]
@@ -49,7 +66,7 @@ public sealed class TelavoxApiClientParseTests
         var body = """
         {
           "currentPage": 1,
-          "items": [ { "id": "cust-1", "name": "Acme" } ]
+          "items": [ { "key": "customer-1", "name": "Acme" } ]
         }
         """;
         var list = TelavoxApiClient.ParseCustomers(body);
@@ -60,41 +77,26 @@ public sealed class TelavoxApiClientParseTests
     [Fact]
     public void ParseCustomers_data_envelope_also_accepted()
     {
-        // Some Telavox responses wrap under "data" rather than "items".
         var body = """
-        { "data": [ { "id": "cust-3", "name": "Initech" } ] }
+        { "data": [ { "key": "customer-3", "name": "Initech" } ] }
         """;
         var list = TelavoxApiClient.ParseCustomers(body);
         Assert.Single(list);
-        Assert.Equal("cust-3", list[0].Id);
+        Assert.Equal("customer-3", list[0].Id);
     }
 
     [Fact]
-    public void ParseCustomers_numeric_id_is_stringified()
-    {
-        // Defensive: Telavox sometimes returns integer ids on the partner
-        // API. We normalise to a string so the SD-side settings/dropdown
-        // can use one type.
-        var body = """
-        [ { "id": 4711, "name": "Acme" } ]
-        """;
-        var list = TelavoxApiClient.ParseCustomers(body);
-        Assert.Single(list);
-        Assert.Equal("4711", list[0].Id);
-    }
-
-    [Fact]
-    public void ParseCustomers_row_without_id_is_skipped()
+    public void ParseCustomers_row_without_key_or_id_is_skipped()
     {
         var body = """
         [
-          { "name": "Missing ID" },
-          { "id": "cust-1", "name": "Real" }
+          { "name": "Missing key" },
+          { "key": "customer-1", "name": "Real" }
         ]
         """;
         var list = TelavoxApiClient.ParseCustomers(body);
         Assert.Single(list);
-        Assert.Equal("cust-1", list[0].Id);
+        Assert.Equal("customer-1", list[0].Id);
     }
 
     [Fact]
@@ -109,40 +111,63 @@ public sealed class TelavoxApiClientParseTests
     // ---- ParseExtensions ----
 
     [Fact]
-    public void ParseExtensions_canonical_shape_is_parsed()
+    public void ParseExtensions_canonical_papi_shape_is_parsed()
     {
+        // PAPI swagger ExtensionDto: identifier under `key`, dialable
+        // number lives under fixedNumber.e164Number / mobileNumber.e164Number,
+        // email is flat (no nested user). The key is what the CAPI
+        // /v1/extensions/{extension}/calls path-param takes — NOT the
+        // dialable number.
         var body = """
         [
           {
-            "id": "ext-100",
-            "number": "100",
+            "key": "extension-100",
             "name": "Reception",
-            "userEmail": "reception@example.be"
+            "email": "reception@example.be",
+            "fixedNumber": { "key": "phone-1", "e164Number": "+3290011100" }
           },
           {
-            "id": "ext-101",
-            "number": "101",
-            "user": { "email": "alice@example.be" }
+            "key": "extension-101",
+            "name": "Alice",
+            "email": "alice@example.be",
+            "mobileNumber": { "key": "phone-2", "e164Number": "+32498123456" }
           }
         ]
         """;
         var list = TelavoxApiClient.ParseExtensions(body);
         Assert.Equal(2, list.Count);
-        Assert.Equal("100", list[0].Number);
+        Assert.Equal("extension-100", list[0].Id);
+        Assert.Equal("+3290011100", list[0].Number);
         Assert.Equal("Reception", list[0].Name);
         Assert.Equal("reception@example.be", list[0].UserEmail);
-        Assert.Null(list[1].Name);
-        Assert.Equal("alice@example.be", list[1].UserEmail);
+        Assert.Equal("extension-101", list[1].Id);
+        Assert.Equal("+32498123456", list[1].Number);
     }
 
     [Fact]
-    public void ParseExtensions_falls_back_to_extension_field_for_number()
+    public void ParseExtensions_prefers_fixedNumber_over_mobileNumber()
     {
-        // Some shapes use "extension" instead of "number" for the dialable
-        // value. The parser accepts both so the SD dropdown shows a label
-        // regardless of which Telavox shape the install sees.
+        // When both are present the fixed (desk) number is the more
+        // recognisable label for an admin.
         var body = """
-        [ { "id": "ext-1", "extension": "201" } ]
+        [ {
+          "key": "extension-200",
+          "fixedNumber": { "e164Number": "+3290022200" },
+          "mobileNumber": { "e164Number": "+32498200200" }
+        } ]
+        """;
+        var list = TelavoxApiClient.ParseExtensions(body);
+        Assert.Single(list);
+        Assert.Equal("+3290022200", list[0].Number);
+    }
+
+    [Fact]
+    public void ParseExtensions_falls_back_to_legacy_number_field()
+    {
+        // Defensive: a non-canonical environment might still expose a
+        // flat "number" field; we accept it so the dropdown isn't empty.
+        var body = """
+        [ { "key": "extension-1", "number": "201" } ]
         """;
         var list = TelavoxApiClient.ParseExtensions(body);
         Assert.Single(list);
@@ -150,10 +175,10 @@ public sealed class TelavoxApiClientParseTests
     }
 
     [Fact]
-    public void ParseExtensions_missing_number_becomes_empty_string()
+    public void ParseExtensions_no_phone_numbers_yields_empty_string()
     {
         var body = """
-        [ { "id": "ext-x", "name": "Orphan" } ]
+        [ { "key": "extension-x", "name": "Orphan" } ]
         """;
         var list = TelavoxApiClient.ParseExtensions(body);
         Assert.Single(list);
@@ -161,59 +186,84 @@ public sealed class TelavoxApiClientParseTests
         Assert.Equal("Orphan", list[0].Name);
     }
 
-    // ---- ParseCreateApiUserResponse ----
+    // ---- ParseApiUserKey (POST /api-users response) ----
 
     [Fact]
-    public void ParseCreateApiUserResponse_canonical_shape_lifts_three_fields()
+    public void ParseApiUserKey_canonical_shape_lifts_key()
     {
+        // PAPI swagger: ApiUserDto carries `key`, `name`, `tokens[]`, `links[]`.
+        // We only need the key — the bearer-token comes from the second
+        // POST in the two-step flow.
         var body = """
         {
-          "email": "sd-capi-aaa@servicedesk.local",
-          "userId": "tlvx-9001",
-          "token": "ey.SHARP.SECRET"
+          "key": "apiUser-9001",
+          "name": "sd-agent-abc-1234567890",
+          "tokens": [],
+          "links": []
         }
         """;
-        var r = TelavoxApiClient.ParseCreateApiUserResponse(body);
-        Assert.Equal("sd-capi-aaa@servicedesk.local", r.Email);
-        Assert.Equal("tlvx-9001", r.UserId);
-        Assert.Equal("ey.SHARP.SECRET", r.Token);
+        Assert.Equal("apiUser-9001", TelavoxApiClient.ParseApiUserKey(body));
     }
 
     [Fact]
-    public void ParseCreateApiUserResponse_accepts_id_instead_of_userId()
+    public void ParseApiUserKey_missing_key_returns_empty()
     {
-        // Defensive: PAPI variants observed in docs use "id" instead of
-        // "userId" for the api-user primary-key. Parser accepts both.
+        // No key → empty string. The client layer turns that into a
+        // structured TelavoxApiException so the admin sees "did not carry
+        // a key field" rather than a NullReferenceException.
         var body = """
-        { "email": "x@y.z", "id": "tlvx-1", "token": "ABC" }
+        { "name": "sd-agent-noop" }
         """;
-        var r = TelavoxApiClient.ParseCreateApiUserResponse(body);
-        Assert.Equal("tlvx-1", r.UserId);
-        Assert.Equal("ABC", r.Token);
+        Assert.Equal(string.Empty, TelavoxApiClient.ParseApiUserKey(body));
     }
 
     [Fact]
-    public void ParseCreateApiUserResponse_accepts_apiToken_alias()
+    public void ParseApiUserKey_empty_or_garbage_returns_empty()
     {
+        Assert.Equal(string.Empty, TelavoxApiClient.ParseApiUserKey(string.Empty));
+        Assert.Equal(string.Empty, TelavoxApiClient.ParseApiUserKey("  "));
+        Assert.Equal(string.Empty, TelavoxApiClient.ParseApiUserKey("not json"));
+        Assert.Equal(string.Empty, TelavoxApiClient.ParseApiUserKey("[1,2,3]"));
+    }
+
+    // ---- ParseCapiTokenBearer (POST /api-users/{key}/tokens response) ----
+
+    [Fact]
+    public void ParseCapiTokenBearer_canonical_shape_lifts_bearerToken()
+    {
+        // PAPI swagger: CapiTokenDto carries `key`, `bearerToken`,
+        // `invalidationDate`, `links[]`. Bearer is what the worker
+        // attaches to every CAPI request.
         var body = """
-        { "email": "x@y.z", "userId": "1", "apiToken": "PAYLOAD" }
+        {
+          "key": "apiToken-abcd",
+          "bearerToken": "ey.SHARP.SECRET",
+          "invalidationDate": "2027-01-01T00:00:00"
+        }
         """;
-        Assert.Equal("PAYLOAD", TelavoxApiClient.ParseCreateApiUserResponse(body).Token);
+        Assert.Equal("ey.SHARP.SECRET", TelavoxApiClient.ParseCapiTokenBearer(body));
     }
 
     [Fact]
-    public void ParseCreateApiUserResponse_empty_body_returns_blank_record()
+    public void ParseCapiTokenBearer_missing_field_returns_empty()
     {
-        // The TelavoxApiClient layer asserts a non-empty token before
-        // returning, so an empty body here surfaces in the calling site
-        // as a TelavoxApiException rather than silently succeeding.
-        var r = TelavoxApiClient.ParseCreateApiUserResponse(string.Empty);
-        Assert.Equal(string.Empty, r.Email);
-        Assert.Equal(string.Empty, r.UserId);
-        Assert.Equal(string.Empty, r.Token);
+        // Same belt-and-braces as ParseApiUserKey: empty triggers the
+        // structured 502-style error rather than letting an empty bearer
+        // slip into protected_secrets.
+        var body = """
+        { "key": "apiToken-noop" }
+        """;
+        Assert.Equal(string.Empty, TelavoxApiClient.ParseCapiTokenBearer(body));
     }
 
-    // ---- ParseCurrentCall ----
+    [Fact]
+    public void ParseCapiTokenBearer_empty_or_garbage_returns_empty()
+    {
+        Assert.Equal(string.Empty, TelavoxApiClient.ParseCapiTokenBearer(string.Empty));
+        Assert.Equal(string.Empty, TelavoxApiClient.ParseCapiTokenBearer("not-json"));
+    }
+
+    // ---- ParseCurrentCall (CAPI OngoingCallDto[]) ----
 
     [Fact]
     public void ParseCurrentCall_empty_body_returns_null()
@@ -229,70 +279,112 @@ public sealed class TelavoxApiClientParseTests
     }
 
     [Fact]
-    public void ParseCurrentCall_bare_array_picks_first_call()
+    public void ParseCurrentCall_canonical_capi_shape_is_parsed()
     {
+        // CAPI swagger OngoingCallDto: { callerId, callDirection, lineStatus }.
+        // No callId — the parser synthesises one from callerId so the
+        // state-machine can dedup same-call ticks. State is lower-cased
+        // verbatim so transition rules can match the CAPI vocab.
         var body = """
         [
           {
-            "id": "call-abc",
-            "state": "answered",
-            "from": "+32498123456",
-            "to": "+3290011111",
-            "startTime": "2026-05-11T09:00:00+00:00"
+            "callerId": "0032473584015",
+            "callDirection": "incoming",
+            "lineStatus": "ringing"
           }
         ]
         """;
         var call = TelavoxApiClient.ParseCurrentCall(body);
         Assert.NotNull(call);
-        Assert.Equal("call-abc", call!.CallId);
-        // States are uppercased so the worker can compare without
-        // case-folding on every tick.
-        Assert.Equal("ANSWERED", call.State);
-        Assert.Equal("+32498123456", call.FromNumber);
-        Assert.Equal("+3290011111", call.ToNumber);
-        Assert.NotNull(call.StartUtc);
-        Assert.Equal(
-            new DateTimeOffset(2026, 5, 11, 9, 0, 0, TimeSpan.Zero),
-            call.StartUtc!.Value);
-    }
-
-    [Fact]
-    public void ParseCurrentCall_envelope_under_calls_works()
-    {
-        var body = """
-        {
-          "calls": [
-            { "callId": "c1", "state": "RINGING", "from": "+32498000001" }
-          ]
-        }
-        """;
-        var call = TelavoxApiClient.ParseCurrentCall(body);
-        Assert.NotNull(call);
-        Assert.Equal("c1", call!.CallId);
-        Assert.Equal("RINGING", call.State);
+        Assert.Equal("0032473584015", call!.CallId);
+        Assert.Equal("ringing", call.State);
+        Assert.Equal("0032473584015", call.FromNumber);
         Assert.Null(call.ToNumber);
+        Assert.Null(call.StartUtc);
     }
 
     [Fact]
-    public void ParseCurrentCall_falls_back_to_fromNumber_and_callee_aliases()
+    public void ParseCurrentCall_duplicate_rows_during_ringing_pick_first()
     {
+        // Empirically CAPI returns one row per terminal/device — the same
+        // call surfaces 2-3 times during ringing. The state-machine
+        // debounces same-state ticks; we just take the first valid row so
+        // the worker stays simple.
         var body = """
         [
-          { "id": "c-2", "state": "ANSWERED", "fromNumber": "+32498222222", "callee": "+3290011111" }
+          { "callerId": "0032473584015", "callDirection": "incoming", "lineStatus": "ringing" },
+          { "callerId": "0032473584015", "callDirection": "incoming", "lineStatus": "ringing" }
         ]
         """;
         var call = TelavoxApiClient.ParseCurrentCall(body);
         Assert.NotNull(call);
-        Assert.Equal("+32498222222", call!.FromNumber);
-        Assert.Equal("+3290011111", call.ToNumber);
+        Assert.Equal("ringing", call!.State);
     }
 
     [Fact]
-    public void ParseCurrentCall_row_without_id_or_callId_is_skipped()
+    public void ParseCurrentCall_answered_call_has_up_lineStatus()
     {
         var body = """
-        [ { "state": "ringing", "from": "x" } ]
+        [ { "callerId": "0032473584015", "callDirection": "incoming", "lineStatus": "up" } ]
+        """;
+        var call = TelavoxApiClient.ParseCurrentCall(body);
+        Assert.NotNull(call);
+        Assert.Equal("up", call!.State);
+    }
+
+    [Fact]
+    public void ParseCurrentCall_outgoing_call_is_skipped()
+    {
+        // The popup is inbound-only: the agent placed the outbound call,
+        // they already know the callee. Outbound rows must not fire.
+        var body = """
+        [ { "callerId": "0032473584015", "callDirection": "outgoing", "lineStatus": "up" } ]
         """;
         Assert.Null(TelavoxApiClient.ParseCurrentCall(body));
+    }
+
+    [Fact]
+    public void ParseCurrentCall_down_lineStatus_is_skipped()
+    {
+        // "down" is the terminal state — CAPI keeps returning the row for
+        // a tick after hangup. Skipping it lets the worker treat it as
+        // "no active call" and clear the baseline cleanly.
+        var body = """
+        [ { "callerId": "0032473584015", "callDirection": "incoming", "lineStatus": "down" } ]
+        """;
+        Assert.Null(TelavoxApiClient.ParseCurrentCall(body));
+    }
+
+    [Fact]
+    public void ParseCurrentCall_row_without_callerId_is_skipped()
+    {
+        var body = """
+        [ { "callDirection": "incoming", "lineStatus": "ringing" } ]
+        """;
+        Assert.Null(TelavoxApiClient.ParseCurrentCall(body));
+    }
+
+    [Fact]
+    public void ParseCurrentCall_envelope_under_items_or_data_still_accepted()
+    {
+        // Defensive: if Telavox ever wraps the array we still parse it,
+        // so a tenant-side schema change doesn't silently break the popup.
+        var itemsBody = """
+        { "items": [ { "callerId": "0032111", "callDirection": "incoming", "lineStatus": "ringing" } ] }
+        """;
+        var call = TelavoxApiClient.ParseCurrentCall(itemsBody);
+        Assert.NotNull(call);
+        Assert.Equal("0032111", call!.CallId);
+
+        var dataBody = """
+        { "data": [ { "callerId": "0032222", "callDirection": "incoming", "lineStatus": "ringing" } ] }
+        """;
+        Assert.Equal("0032222", TelavoxApiClient.ParseCurrentCall(dataBody)?.CallId);
+    }
+
+    [Fact]
+    public void ParseCurrentCall_malformed_json_returns_null_not_throws()
+    {
+        Assert.Null(TelavoxApiClient.ParseCurrentCall("not-json"));
     }
 }
