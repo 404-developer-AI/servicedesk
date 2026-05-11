@@ -20,6 +20,7 @@ using Servicedesk.Infrastructure.Health.SecurityActivity;
 using Servicedesk.Infrastructure.IntakeForms;
 using Servicedesk.Infrastructure.Integrations;
 using Servicedesk.Infrastructure.Integrations.Adsolut;
+using Servicedesk.Infrastructure.Integrations.Telavox;
 using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Mail.Ingest;
@@ -119,6 +120,16 @@ public static class DependencyInjection
         services.AddHttpClient(AdsolutHttpInvoker.HttpClientName);
         services.AddHostedService<AdsolutSyncWorker>();
         services.AddHostedService<AdsolutContactsReconcileWorker>();
+
+        // Telavox call-popup integration (v0.0.34). PAPI partner-token is
+        // shared install-wide; CAPI tokens are auto-provisioned per linked
+        // agent via /api/admin/integrations/telavox/agents/{userId}/provision
+        // and stored in protected_secrets. The polling worker that consumes
+        // them lands in v0.0.34 commit C.
+        services.AddSingleton<ITelavoxApiClient, TelavoxApiClient>();
+        services.AddSingleton<ITelavoxAgentLinkStore, TelavoxAgentLinkStore>();
+        services.AddSingleton<ITelavoxProvisioningService, TelavoxProvisioningService>();
+        services.AddHttpClient(TelavoxApiClient.HttpClientName);
 
         // Healthcheck-BackgroundService writes integration_audit rows and
         // pushes resolved status over SignalR. The notifier defaults to
