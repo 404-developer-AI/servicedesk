@@ -79,11 +79,32 @@ export type RecoveryCodesResponse = { recoveryCodes: string[] };
 export class ApiError extends Error {
   readonly status: number;
   readonly url: string;
-  constructor(status: number, url: string, message: string) {
+  /// Parsed JSON body of the error response, when present. Most endpoints
+  /// return `{ error, message, ... }` on non-2xx; surfacing it here lets
+  /// callers show the upstream detail without each one re-reading the
+  /// response stream (which is already consumed by the time the error is
+  /// thrown). `null` when the body was empty / not JSON.
+  readonly body: unknown;
+  constructor(status: number, url: string, message: string, body: unknown = null) {
     super(message);
     this.status = status;
     this.url = url;
+    this.body = body;
   }
+}
+
+/// Pulls a human-readable message out of an ApiError body if the server
+/// returned `{ message: "..." }` or `{ error: "..." }`. Returns `null`
+/// when neither is present — callers fall back to the generic
+/// "Operation failed (HTTP N)" string in that case.
+export function apiErrorMessage(err: unknown): string | null {
+  if (!(err instanceof ApiError) || err.body === null || typeof err.body !== "object") {
+    return null;
+  }
+  const b = err.body as Record<string, unknown>;
+  if (typeof b.message === "string" && b.message.length > 0) return b.message;
+  if (typeof b.error === "string" && b.error.length > 0) return b.error;
+  return null;
 }
 
 async function request<T>(
@@ -106,7 +127,19 @@ async function request<T>(
     ...init,
   });
   if (!res.ok) {
-    throw new ApiError(res.status, url, `${url} → ${res.status} ${res.statusText}`);
+    // Best-effort: read the body so callers can show upstream error
+    // detail (Telavox 502 envelopes carry the actual PAPI error code +
+    // message under `{ message, upstreamErrorCode, httpStatus }`).
+    // Parse failures are silently dropped — the ApiError still carries
+    // status + url so the generic fallback path works.
+    let parsed: unknown = null;
+    try {
+      const text = await res.text();
+      if (text.length > 0) parsed = JSON.parse(text);
+    } catch {
+      // ignore — body wasn't JSON
+    }
+    throw new ApiError(res.status, url, `${url} → ${res.status} ${res.statusText}`, parsed);
   }
   if (res.status === 204) {
     return undefined as T;

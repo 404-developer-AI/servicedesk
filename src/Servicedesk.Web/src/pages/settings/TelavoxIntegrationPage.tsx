@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import {
   ApiError,
+  apiErrorMessage,
   settingsApi,
   telavoxAdminApi,
   type SettingEntry,
@@ -155,12 +156,21 @@ export function TelavoxIntegrationPage() {
         toast.success(`Token works — ${r.customers.length} customer(s) found`);
       }
     },
-    onError: (err) =>
+    onError: (err) => {
+      // The backend wraps PAPI errors as 502 with an envelope carrying the
+      // real upstream message + error code. Surface that verbatim so the
+      // admin sees "invalid_credentials" or "no route to host" instead of
+      // a generic "Test failed (502)" that gives no diagnostic value.
+      const upstream = apiErrorMessage(err);
+      const status = err instanceof ApiError ? err.status : null;
       toast.error(
-        err instanceof ApiError
-          ? `Test failed (${err.status})`
-          : "Test failed — check the token",
-      ),
+        upstream
+          ? `Test failed: ${upstream}`
+          : status
+            ? `Test failed (HTTP ${status})`
+            : "Test failed — check the token and partner URL",
+      );
+    },
   });
 
   const pinCustomer = useMutation({
