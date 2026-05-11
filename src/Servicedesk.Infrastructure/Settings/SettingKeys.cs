@@ -258,6 +258,23 @@ public static class SettingKeys
         /// When true the worker fully sleeps outside the window; when false
         /// it falls back to a slow (60s) tick so very-late calls still pop.
         public const string PollWindowSleepOutsideHours = "Telavox.PollWindow.SleepOutsideHours";
+
+        /// Base URL of the Telavox API. Both PAPI (partner-side, paths
+        /// under /papi/v1) and CAPI (per-agent, paths under /origo/api/v1)
+        /// share the same host. Default targets api.telavox.se; exposed as
+        /// a setting so an install on a regional cluster (e.g. -.no, -.fi)
+        /// can swap without a code change. Trailing slash is normalised.
+        public const string ApiBaseUrl = "Telavox.ApiBaseUrl";
+
+        /// Email-domain suffix appended to the synthetic api-user address
+        /// the provisioning service mints for each linked agent. Telavox
+        /// uses the email as the primary-key for the api-user; the SD-side
+        /// address is purely an identifier (no mail is ever delivered to
+        /// it). Default <c>servicedesk.local</c> works for the common case
+        /// where Telavox does not RFC-validate the TLD; swap to a real
+        /// install-owned subdomain or to <c>invalid</c> (RFC 6761 reserved)
+        /// if your Telavox tenant rejects <c>.local</c>.
+        public const string CapiUserEmailDomain = "Telavox.CapiUserEmailDomain";
     }
 
     /// Generic integration-framework knobs shared by every connector. The
@@ -612,6 +629,10 @@ public static class SettingDefaults
             "Day-mask for the polling window: seven comma-separated booleans Mon..Sun. Default is workweek Mon-Fri. Outside the listed days the worker treats the install as out-of-hours regardless of the time-window."),
         new SettingDefault(SettingKeys.Telavox.PollWindowSleepOutsideHours, "true", "bool", "Telavox",
             "When true (default) the worker fully sleeps outside the working-hours window — no Telavox calls at all. When false it falls back to a 60s slow-tick so very-late calls still surface a popup, at the cost of round-the-clock Telavox-side load. Flip off only if your agents take calls outside the configured hours."),
+        new SettingDefault(SettingKeys.Telavox.ApiBaseUrl, "https://api.telavox.se", "string", "Telavox",
+            "Base URL of the Telavox API host. PAPI (partner-token, install-wide) and CAPI (per-agent token) both target this host under /papi/v1 and /origo/api/v1 respectively. Default api.telavox.se covers the primary cluster; swap for a regional cluster (.no, .fi, …) if your partner-token was issued there. Trailing slashes are normalised."),
+        new SettingDefault(SettingKeys.Telavox.CapiUserEmailDomain, "servicedesk.local", "string", "Telavox",
+            "Email-domain suffix used for the synthetic api-user address minted by Telavox provisioning. The full address is sd-capi-<userId>-<epoch>@<this>. Telavox treats the email as a primary-key, never as a deliverable mailbox; the suffix matters only if your Telavox tenant rejects the default. Swap to a real install-owned subdomain (e.g. capi.acme.example.com) or to RFC 6761 'invalid' if validation issues arise."),
 
         // Integrations — v0.0.25 healthcheck framework. Cross-integration
         // knobs only; per-connector specifics live under their own

@@ -371,6 +371,7 @@ app.MapTriggerEndpoints();
 app.MapIntakeFormEndpoints();
 app.MapGraphAdminEndpoints();
 app.MapAdsolutEndpoints();
+app.MapTelavoxEndpoints();
 app.MapAdminMailDiagnosticsEndpoints();
 app.MapHealthEndpoints();
 app.MapKbConfigEndpoints();
