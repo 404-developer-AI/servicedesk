@@ -2,6 +2,7 @@ using Dapper;
 using Npgsql;
 using Servicedesk.Domain.Companies;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
+using Servicedesk.Infrastructure.Phones;
 
 namespace Servicedesk.Infrastructure.Persistence.Companies;
 
@@ -39,10 +40,12 @@ public sealed class CompanyRepository : ICompanyRepository
         """;
 
     private readonly NpgsqlDataSource _dataSource;
+    private readonly IContactPhoneNormalizer _phoneNormalizer;
 
-    public CompanyRepository(NpgsqlDataSource dataSource)
+    public CompanyRepository(NpgsqlDataSource dataSource, IContactPhoneNormalizer phoneNormalizer)
     {
         _dataSource = dataSource;
+        _phoneNormalizer = phoneNormalizer;
     }
 
     public async Task<IReadOnlyList<Company>> ListCompaniesAsync(string? search, bool includeInactive, CancellationToken ct)
@@ -389,9 +392,18 @@ public sealed class CompanyRepository : ICompanyRepository
         // Single connection, explicit transaction: the contact row and its
         // company-link row must commit together so mail intake never leaves
         // a dangling contact without the association it thought it got.
+        // phone_e164 / mobile_phone_e164 are derived from phone / mobile_phone
+        // here so call-popup phone-search hits the row from day one — no
+        // dependence on the lazy backfill picking it up later.
         const string insertContact = """
-            INSERT INTO contacts (company_role, first_name, last_name, email, phone, mobile_phone, job_title, is_active)
-            VALUES (@CompanyRole, @FirstName, @LastName, @Email, @Phone, @MobilePhone, @JobTitle, @IsActive)
+            INSERT INTO contacts (
+                company_role, first_name, last_name, email,
+                phone, mobile_phone, phone_e164, mobile_phone_e164,
+                job_title, is_active)
+            VALUES (
+                @CompanyRole, @FirstName, @LastName, @Email,
+                @Phone, @MobilePhone, @PhoneE164, @MobilePhoneE164,
+                @JobTitle, @IsActive)
             RETURNING id
             """;
         const string insertLink = """
@@ -399,9 +411,19 @@ public sealed class CompanyRepository : ICompanyRepository
             VALUES (@contactId, @companyId, @role)
             """;
 
+        var (phoneE164, mobileE164) = await _phoneNormalizer.NormalizePairAsync(c.Phone, c.MobilePhone, ct);
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
-        var newId = await conn.QuerySingleAsync<Guid>(new CommandDefinition(insertContact, c, tx, cancellationToken: ct));
+        var newId = await conn.QuerySingleAsync<Guid>(new CommandDefinition(insertContact,
+            new
+            {
+                c.CompanyRole, c.FirstName, c.LastName, c.Email,
+                c.Phone, c.MobilePhone,
+                PhoneE164 = phoneE164,
+                MobilePhoneE164 = mobileE164,
+                c.JobTitle, c.IsActive,
+            },
+            tx, cancellationToken: ct));
         if (companyId.HasValue)
         {
             await conn.ExecuteAsync(new CommandDefinition(insertLink,
@@ -418,17 +440,29 @@ public sealed class CompanyRepository : ICompanyRepository
 
     public async Task<Contact?> UpdateContactAsync(Guid id, Contact p, CancellationToken ct)
     {
+        var (phoneE164, mobileE164) = await _phoneNormalizer.NormalizePairAsync(p.Phone, p.MobilePhone, ct);
         var sql = $"""
             UPDATE contacts SET company_role = @CompanyRole,
                                 first_name = @FirstName, last_name = @LastName, email = @Email,
                                 phone = @Phone, mobile_phone = @MobilePhone,
+                                phone_e164 = @PhoneE164, mobile_phone_e164 = @MobilePhoneE164,
                                 job_title = @JobTitle, is_active = @IsActive,
                                 updated_utc = now()
             WHERE id = @Id
             RETURNING {ContactCols}
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        return await conn.QueryFirstOrDefaultAsync<Contact>(new CommandDefinition(sql, p with { Id = id }, cancellationToken: ct));
+        return await conn.QueryFirstOrDefaultAsync<Contact>(new CommandDefinition(sql,
+            new
+            {
+                Id = id,
+                p.CompanyRole, p.FirstName, p.LastName, p.Email,
+                p.Phone, p.MobilePhone,
+                PhoneE164 = phoneE164,
+                MobilePhoneE164 = mobileE164,
+                p.JobTitle, p.IsActive,
+            },
+            cancellationToken: ct));
     }
 
     public async Task<DeleteResult> DeleteContactAsync(Guid id, CancellationToken ct)

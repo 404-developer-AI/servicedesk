@@ -22,4 +22,18 @@ public static class ProtectedSecretKeys
     // on every refresh per the Adsolut docs.
     public const string AdsolutClientSecret = "Adsolut.ClientSecret";
     public const string AdsolutRefreshToken = "Adsolut.RefreshToken";
+
+    // Telavox integration (v0.0.34). The PAPI partner-token is a single
+    // install-wide credential, the CAPI tokens are per-agent and minted by
+    // POST /customers/{customer}/api-users after an admin manually links
+    // the SD-user to a Telavox-extension. CAPI keys are dynamic per user-id
+    // so they are built via AgentCapiToken(userId) rather than declared as
+    // a const.
+    public const string TelavoxPartnerToken = "Telavox.PartnerToken";
+
+    /// Encrypted-secret key for a per-agent Telavox CAPI token. Returns a
+    /// stable string built from the SD user-id so the protected_secrets
+    /// row can be located on every poll and cleared on de-provision.
+    public static string TelavoxAgentCapiToken(Guid userId) =>
+        $"Telavox.AgentCapiToken.{userId:D}";
 }

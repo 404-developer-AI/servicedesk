@@ -27,6 +27,7 @@ using Servicedesk.Infrastructure.Mail.Outbound;
 using Servicedesk.Infrastructure.Mail.Polling;
 using Servicedesk.Infrastructure.Notifications;
 using Servicedesk.Infrastructure.Observability;
+using Servicedesk.Infrastructure.Phones;
 using Servicedesk.Domain.Search;
 using Servicedesk.Infrastructure.Search;
 using Servicedesk.Infrastructure.Secrets;
@@ -128,6 +129,12 @@ public static class DependencyInjection
         services.AddHostedService<IntegrationsHealthcheckWorker>();
 
         services.AddSingleton<ITaxonomyRepository, TaxonomyRepository>();
+        // Phone-number normalisation (v0.0.34) — used on every contact
+        // write so phone_e164 / mobile_phone_e164 stay in sync, and by the
+        // ContactSearchSource phone-branch on lookup. Stateless beyond the
+        // settings-resolved default country code, registered as singleton.
+        services.AddSingleton<IContactPhoneNormalizer, ContactPhoneNormalizer>();
+
         services.AddSingleton<ICompanyRepository, CompanyRepository>();
         services.AddSingleton<ITicketRepository, TicketRepository>();
         services.AddSingleton<IViewRepository, ViewRepository>();
@@ -278,6 +285,11 @@ public static class DependencyInjection
 
         services.AddHostedService<DatabaseBootstrapper>();
         services.AddHostedService<SettingsSeeder>();
+        // Lazy E.164 backfill for contacts that existed before v0.0.34
+        // added the phone_e164 / mobile_phone_e164 columns. Runs after
+        // SettingsSeeder so Telavox.DefaultCountryCode is already in the
+        // settings table when the normaliser asks for it.
+        services.AddHostedService<ContactPhoneBackfillService>();
         services.AddHostedService<TaxonomySeeder>();
         services.AddHostedService<SlaSeeder>();
         services.AddHostedService<TriggerSeeder>();

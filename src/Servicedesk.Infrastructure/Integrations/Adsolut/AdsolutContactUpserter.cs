@@ -1,5 +1,6 @@
 using Dapper;
 using Npgsql;
+using Servicedesk.Infrastructure.Phones;
 
 namespace Servicedesk.Infrastructure.Integrations.Adsolut;
 
@@ -31,10 +32,12 @@ public sealed class AdsolutContactByEmailRow
 public sealed class AdsolutContactUpserter : IAdsolutContactUpserter
 {
     private readonly NpgsqlDataSource _dataSource;
+    private readonly IContactPhoneNormalizer _phoneNormalizer;
 
-    public AdsolutContactUpserter(NpgsqlDataSource dataSource)
+    public AdsolutContactUpserter(NpgsqlDataSource dataSource, IContactPhoneNormalizer phoneNormalizer)
     {
         _dataSource = dataSource;
+        _phoneNormalizer = phoneNormalizer;
     }
 
     public async Task<AdsolutContactUpsertOutcome> UpsertAsync(
@@ -201,14 +204,18 @@ public sealed class AdsolutContactUpserter : IAdsolutContactUpserter
             // conflicting row in the same transaction. Forcing a no-op
             // UPDATE in the conflict branch makes RETURNING the single
             // source of truth — no fallback path required.
+            var (insertPhoneE164, insertMobileE164) = await _phoneNormalizer.NormalizePairAsync(
+                contact.Phone, contact.MobilePhone, ct);
             finalContactId = await conn.QuerySingleAsync<Guid>(new CommandDefinition(
                 """
                 INSERT INTO contacts (
-                    company_role, first_name, last_name, email, phone, mobile_phone,
+                    company_role, first_name, last_name, email,
+                    phone, mobile_phone, phone_e164, mobile_phone_e164,
                     is_active, updated_utc
                 )
                 VALUES (
-                    'Member', @FirstName, @LastName, @Email, @Phone, @MobilePhone,
+                    'Member', @FirstName, @LastName, @Email,
+                    @Phone, @MobilePhone, @PhoneE164, @MobilePhoneE164,
                     @IsActive, COALESCE(@LastModified, now())
                 )
                 ON CONFLICT (email) DO UPDATE SET
@@ -222,6 +229,8 @@ public sealed class AdsolutContactUpserter : IAdsolutContactUpserter
                     Email = contact.Email,
                     Phone = contact.Phone ?? string.Empty,
                     MobilePhone = contact.MobilePhone ?? string.Empty,
+                    PhoneE164 = insertPhoneE164,
+                    MobilePhoneE164 = insertMobileE164,
                     IsActive = contact.Active,
                     LastModified = inboundLastMod,
                 },
@@ -253,14 +262,18 @@ public sealed class AdsolutContactUpserter : IAdsolutContactUpserter
 
                 if (inboundIsFreshest)
                 {
+                    var (updPhoneE164, updMobileE164) = await _phoneNormalizer.NormalizePairAsync(
+                        contact.Phone, contact.MobilePhone, ct);
                     await conn.ExecuteAsync(new CommandDefinition(
                         """
                         UPDATE contacts SET
-                            first_name   = @FirstName,
-                            last_name    = @LastName,
-                            phone        = @Phone,
-                            mobile_phone = @MobilePhone,
-                            updated_utc  = COALESCE(@LastModified, now())
+                            first_name        = @FirstName,
+                            last_name         = @LastName,
+                            phone             = @Phone,
+                            mobile_phone      = @MobilePhone,
+                            phone_e164        = @PhoneE164,
+                            mobile_phone_e164 = @MobilePhoneE164,
+                            updated_utc       = COALESCE(@LastModified, now())
                         WHERE id = @Id
                         """,
                         new
@@ -270,6 +283,8 @@ public sealed class AdsolutContactUpserter : IAdsolutContactUpserter
                             LastName = contact.LastName ?? string.Empty,
                             Phone = contact.Phone ?? string.Empty,
                             MobilePhone = contact.MobilePhone ?? string.Empty,
+                            PhoneE164 = updPhoneE164,
+                            MobilePhoneE164 = updMobileE164,
                             LastModified = inboundLastMod,
                         },
                         transaction: tx,
