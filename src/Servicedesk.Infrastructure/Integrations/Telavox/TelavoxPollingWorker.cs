@@ -49,6 +49,33 @@ public sealed class TelavoxPollingWorker : BackgroundService
     /// process-wide. 0 = idle, 1 = running.
     private int _running;
 
+    // ---- audit-summary coalescing -----------------------------------------
+    //
+    // The naive design — one integration_audit row per tick — would write
+    // ~30 rows/min on the default 2s cadence even on a silent install. We
+    // accumulate counters across ticks here and only flush a row when:
+    //
+    //   1. the configured Telavox.AuditSummaryIntervalSeconds elapsed
+    //      since the last flush, OR
+    //   2. the just-finished tick had something interesting to report
+    //      (a fired popup, a per-agent failure, a SignalR push failure).
+    //
+    // Failure-on-tick flush keeps real-time fidelity for admins watching
+    // the audit-log during a connectivity blip — the firehose suppression
+    // only swallows healthy-and-idle ticks. Field types match the existing
+    // payload shape so the audit-row schema doesn't change.
+    private readonly object _acc = new();
+    private int _accTicks;
+    private int _accPollsAttempted;
+    private int _accPollsSucceeded;
+    private int _accPollsFailed;
+    private int _accFiresEmitted;
+    private int _accFiresFailed;
+    private string? _accTriggerMode;
+    private IntegrationAuditOutcome _accWorstOutcome = IntegrationAuditOutcome.Ok;
+    private DateTime _accSinceUtc = DateTime.UtcNow;
+    private DateTime _accLastFlushUtc = DateTime.UtcNow;
+
     // Scale ceiling: at the default 2s PollIntervalSeconds and ~200ms
     // Telavox latency the per-tick budget is exhausted around 10 linked
     // agents. Beyond ~15 the overlap-guard above will start logging skip
@@ -125,11 +152,26 @@ public sealed class TelavoxPollingWorker : BackgroundService
             ?? string.Empty).Trim();
         if (customerId.Length == 0) return DisabledSkipDelaySeconds;
 
-        // Only read the poll-interval setting once we know we're actually
-        // going to poll — saves one DB hit in the disabled-skip path.
-        var pollInterval = Math.Clamp(
+        // Only read the poll-interval settings once we know we're actually
+        // going to poll — saves a couple of DB hits in the disabled-skip
+        // path. Two cadences:
+        //   - idle: when no linked agent is mid-ring. Default 10s.
+        //   - ringing: when any linked agent's last-seen state is ringing.
+        //     Default 1s so the answered-edge fires the popup within a
+        //     second of the actual pickup.
+        // The "any ringing" decision comes back from TickAsync's return
+        // value so the dispatcher here can pick the next-tick cadence
+        // without re-querying state.
+        var idleInterval = Math.Clamp(
             await settings.GetAsync<int>(SettingKeys.Telavox.PollIntervalSeconds, ct),
-            1, 30);
+            2, 60);
+        var ringingInterval = Math.Clamp(
+            await settings.GetAsync<int>(SettingKeys.Telavox.RingingPollIntervalSeconds, ct),
+            1, 10);
+        // Defensive: a misconfigured install where ringing > idle is silly
+        // — clamp ringing down so the active cadence is never slower than
+        // the idle cadence.
+        if (ringingInterval > idleInterval) ringingInterval = idleInterval;
 
         // Working-hours window. We evaluate in the configured display TZ
         // so an admin in Brussels running a UTC-host server sees their
@@ -145,9 +187,9 @@ public sealed class TelavoxPollingWorker : BackgroundService
         {
             var sleepFully = await settings.GetAsync<bool>(
                 SettingKeys.Telavox.PollWindowSleepOutsideHours, ct);
-            if (sleepFully) return pollInterval; // honour the cadence so settings-changes are picked up
+            if (sleepFully) return idleInterval; // honour the cadence so settings-changes are picked up
             // Slow-tick fallback. Use the larger of (configured, 60s).
-            return Math.Max(pollInterval, 60);
+            return Math.Max(idleInterval, 60);
         }
 
         if (System.Threading.Interlocked.CompareExchange(ref _running, 1, 0) != 0)
@@ -155,21 +197,26 @@ public sealed class TelavoxPollingWorker : BackgroundService
             _logger.LogWarning(
                 "Telavox poll tick skipped: previous tick still running. Raise {Setting} if this is persistent.",
                 SettingKeys.Telavox.PollIntervalSeconds);
-            return pollInterval;
+            return idleInterval;
         }
 
+        bool anyRinging;
         try
         {
-            await TickAsync(sp, ct);
+            anyRinging = await TickAsync(sp, ct);
         }
         finally
         {
             System.Threading.Interlocked.Exchange(ref _running, 0);
         }
-        return pollInterval;
+        return anyRinging ? ringingInterval : idleInterval;
     }
 
-    private async Task TickAsync(IServiceProvider sp, CancellationToken ct)
+    /// Returns whether any linked agent is currently in a ringing-like
+    /// state (after persisting baselines for this tick). The caller uses
+    /// the answer to pick the next-tick cadence — fast while ringing, slow
+    /// while everyone is idle or already on an established call.
+    private async Task<bool> TickAsync(IServiceProvider sp, CancellationToken ct)
     {
         var settings = sp.GetRequiredService<ISettingsService>();
         var secrets = sp.GetRequiredService<IProtectedSecretStore>();
@@ -180,7 +227,7 @@ public sealed class TelavoxPollingWorker : BackgroundService
         var integrationAudit = sp.GetRequiredService<IIntegrationAuditLogger>();
 
         var allLinks = await links.ListAsync(ct);
-        if (allLinks.Count == 0) return;
+        if (allLinks.Count == 0) return false;
 
         var triggerMode = (await settings.GetAsync<string>(SettingKeys.Telavox.PopupTriggerMode, ct)
             ?? TelavoxCallTransition.Answered).Trim();
@@ -191,6 +238,7 @@ public sealed class TelavoxPollingWorker : BackgroundService
         var pollsFailed = 0;
         var firesEmitted = 0;
         var firesFailed = 0;
+        var anyRinging = false;
         IntegrationAuditOutcome tickOutcome = IntegrationAuditOutcome.Ok;
 
         foreach (var link in allLinks)
@@ -215,7 +263,7 @@ public sealed class TelavoxPollingWorker : BackgroundService
 
             try
             {
-                var current = await apiClient.GetCurrentCallAsync(token, ct);
+                var current = await apiClient.GetCurrentCallAsync(link.TelavoxExtension, token, ct);
                 var prior = await callState.GetAsync(link.UserId, ct);
                 var decision = TelavoxCallTransition.Evaluate(
                     prior, current, triggerMode, link.UserId, DateTime.UtcNow);
@@ -229,6 +277,9 @@ public sealed class TelavoxPollingWorker : BackgroundService
                     decision.NewBaseline.LastState,
                     decision.NewBaseline.LastSeenUtc,
                     ct);
+
+                if (IsRingingState(decision.NewBaseline.LastState))
+                    anyRinging = true;
 
                 if (decision.ShouldFire && current is not null)
                 {
@@ -298,20 +349,132 @@ public sealed class TelavoxPollingWorker : BackgroundService
         }
         tickStart.Stop();
 
-        await integrationAudit.LogAsync(new IntegrationAuditEvent(
+        // Decide whether this tick's accumulated state warrants flushing
+        // a coalesced row. Pulled into a separate method so the field-
+        // touching is all under the same monitor and the ExecuteAsync loop
+        // can also flush on a pure idle tick (where TickAsync wouldn't run
+        // at all) once the time-trigger hits.
+        var interestingTick = firesEmitted > 0 || firesFailed > 0 || pollsFailed > 0;
+        var coalesceSeconds = Math.Max(30, await settings.GetAsync<int>(
+            SettingKeys.Telavox.AuditSummaryIntervalSeconds, ct));
+        await AccumulateAndMaybeFlushAsync(
+            integrationAudit,
+            pollsAttempted, pollsSucceeded, pollsFailed,
+            firesEmitted, firesFailed,
+            triggerMode, tickOutcome,
+            (int)tickStart.ElapsedMilliseconds,
+            anyRinging ? "ringing" : "idle",
+            interestingTick,
+            coalesceSeconds,
+            ct);
+        return anyRinging;
+    }
+
+    /// Tracks whether the per-tick baseline state means we should poll fast.
+    /// Matches the same set of values TelavoxCallTransition.IsRinging uses;
+    /// kept in sync by hand because that helper is private. Case-insensitive.
+    private static bool IsRingingState(string? state)
+    {
+        if (string.IsNullOrWhiteSpace(state)) return false;
+        var s = state.Trim();
+        return string.Equals(s, "ringing", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(s, "ring", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(s, "alerting", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// Adds the just-finished tick to the coalescing accumulator and
+    /// optionally flushes a single integration_audit row. <paramref
+    /// name="forceFlush"/> short-circuits the time-check so a tick with
+    /// fires/failures is surfaced immediately; otherwise the time-check
+    /// is the only flush-trigger.
+    private async Task AccumulateAndMaybeFlushAsync(
+        IIntegrationAuditLogger audit,
+        int pollsAttempted, int pollsSucceeded, int pollsFailed,
+        int firesEmitted, int firesFailed,
+        string triggerMode,
+        IntegrationAuditOutcome tickOutcome,
+        int lastTickLatencyMs,
+        string cadenceMode,
+        bool forceFlush,
+        int coalesceSeconds,
+        CancellationToken ct)
+    {
+        int ticks, pa, ps, pf, fe, ff;
+        string? mode;
+        IntegrationAuditOutcome outcome;
+        DateTime sinceUtc, nowUtc = DateTime.UtcNow;
+        bool shouldFlush;
+
+        lock (_acc)
+        {
+            _accTicks++;
+            _accPollsAttempted += pollsAttempted;
+            _accPollsSucceeded += pollsSucceeded;
+            _accPollsFailed += pollsFailed;
+            _accFiresEmitted += firesEmitted;
+            _accFiresFailed += firesFailed;
+            _accTriggerMode = triggerMode; // last-writer-wins; mode rarely flips
+            if (WorseThan(tickOutcome, _accWorstOutcome))
+                _accWorstOutcome = tickOutcome;
+
+            var elapsedSinceFlush = (nowUtc - _accLastFlushUtc).TotalSeconds;
+            shouldFlush = forceFlush || elapsedSinceFlush >= coalesceSeconds;
+            if (!shouldFlush) return;
+
+            ticks = _accTicks;
+            pa = _accPollsAttempted;
+            ps = _accPollsSucceeded;
+            pf = _accPollsFailed;
+            fe = _accFiresEmitted;
+            ff = _accFiresFailed;
+            mode = _accTriggerMode;
+            outcome = _accWorstOutcome;
+            sinceUtc = _accSinceUtc;
+
+            // Reset the accumulator window for the next coalesce.
+            _accTicks = 0;
+            _accPollsAttempted = 0;
+            _accPollsSucceeded = 0;
+            _accPollsFailed = 0;
+            _accFiresEmitted = 0;
+            _accFiresFailed = 0;
+            _accWorstOutcome = IntegrationAuditOutcome.Ok;
+            _accSinceUtc = nowUtc;
+            _accLastFlushUtc = nowUtc;
+        }
+
+        await audit.LogAsync(new IntegrationAuditEvent(
             Integration: TelavoxEventTypes.Integration,
             EventType: TelavoxEventTypes.AgentCallsPoll,
-            Outcome: tickOutcome,
-            LatencyMs: (int)tickStart.ElapsedMilliseconds,
+            Outcome: outcome,
+            LatencyMs: lastTickLatencyMs, // last tick's wall-time, useful as a recent-latency probe
             Payload: new
             {
-                pollsAttempted,
-                pollsSucceeded,
-                pollsFailed,
-                firesEmitted,
-                firesFailed,
-                triggerMode,
+                ticks,
+                pollsAttempted = pa,
+                pollsSucceeded = ps,
+                pollsFailed = pf,
+                firesEmitted = fe,
+                firesFailed = ff,
+                triggerMode = mode,
+                cadenceMode, // "idle" or "ringing" — most recent tick's mode
+                windowSinceUtc = sinceUtc,
+                windowSeconds = (int)(nowUtc - sinceUtc).TotalSeconds,
             }), ct);
+    }
+
+    /// Three-valued outcome ladder — Error > Warn > Ok. Used to compute the
+    /// "worst" outcome across all coalesced ticks so a single failing tick
+    /// inside a 5-minute window doesn't get masked by 149 healthy ones.
+    private static bool WorseThan(IntegrationAuditOutcome candidate, IntegrationAuditOutcome current)
+    {
+        static int Rank(IntegrationAuditOutcome o) => o switch
+        {
+            IntegrationAuditOutcome.Error => 2,
+            IntegrationAuditOutcome.Warn => 1,
+            _ => 0,
+        };
+        return Rank(candidate) > Rank(current);
     }
 
     private static TimeZoneInfo ResolveTimeZone(string id)

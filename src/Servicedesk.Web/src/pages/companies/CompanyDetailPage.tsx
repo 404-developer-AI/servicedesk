@@ -55,10 +55,22 @@ const ROLE_BADGE: Record<ContactCompanyRole, { label: string; className: string 
 
 type TabKey = "overview" | "contacts" | "tickets" | "domains";
 
+function readTabFromHash(): TabKey {
+  if (typeof window === "undefined") return "overview";
+  const raw = window.location.hash.replace(/^#/, "").toLowerCase();
+  return raw === "contacts" || raw === "tickets" || raw === "domains"
+    ? raw
+    : "overview";
+}
+
 export function CompanyDetailPage({ companyId }: { companyId: string }) {
   const role = authStore.get().user?.role ?? null;
   const isAdmin = role === "Admin";
-  const [tab, setTab] = useState<TabKey>("overview");
+  // Initial tab honours a `#tickets` / `#contacts` / `#domains` fragment so
+  // deep-links from elsewhere (the Telavox call-popup's "View company
+  // tickets" is the first caller) land on the right tab instead of
+  // bouncing through Overview.
+  const [tab, setTab] = useState<TabKey>(() => readTabFromHash());
 
   const { data, isLoading } = useQuery({
     queryKey: ["companies", "detail", companyId],

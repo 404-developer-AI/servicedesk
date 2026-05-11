@@ -64,6 +64,12 @@ type Props = { contactId: string };
 
 type TabKey = "overview" | "tickets" | "history";
 
+function readTabFromHash(): TabKey {
+  if (typeof window === "undefined") return "overview";
+  const raw = window.location.hash.replace(/^#/, "").toLowerCase();
+  return raw === "tickets" || raw === "history" ? raw : "overview";
+}
+
 // Agents reach this page via the ticket side-panel or global search, but
 // the contacts overview (/settings/contacts) is admin-only — so the "Back"
 // link target depends on the viewer's role. Admins return to the overview;
@@ -92,7 +98,12 @@ export function ContactDetailPage({ contactId }: Props) {
   const { user } = useAuth();
   const isAdmin = user?.role === "Admin";
   const backLabel = isAdmin ? "Back to contacts" : "Back";
-  const [tab, setTab] = React.useState<TabKey>("overview");
+  // Initial tab honours a `#tickets` / `#history` fragment so deep-links
+  // from elsewhere (the Telavox call-popup's "View tickets" button being
+  // the first caller) land on the right tab instead of bouncing through
+  // Overview. The hash is read once on mount — switching tabs afterwards
+  // is local state, no URL writeback, to keep the existing tab UX intact.
+  const [tab, setTab] = React.useState<TabKey>(() => readTabFromHash());
 
   const { data: contact, isLoading } = useQuery({
     queryKey: ["contact", contactId],

@@ -27,7 +27,10 @@ public interface ICompanyRepository
     /// against <c>phone_e164</c> OR <c>mobile_phone_e164</c>; both columns
     /// are indexed. Empty input returns no rows. Caller must pass an already-
     /// normalised E.164 string — partial / raw user input must not reach here.
-    Task<IReadOnlyList<Contact>> LookupContactsByPhoneE164Async(string phoneE164, int limit, CancellationToken ct);
+    /// Each row carries the contact's "best" company link (primary →
+    /// secondary → supplier priority) so the call-popup can render the
+    /// linked company without a second round-trip.
+    Task<IReadOnlyList<ContactPhoneLookupRow>> LookupContactsByPhoneE164Async(string phoneE164, int limit, CancellationToken ct);
     /// Paginated + enriched overview for the dedicated `/contacts` page.
     /// <paramref name="role"/> accepts "primary"/"secondary"/"supplier"/"none"
     /// (the "none" branch filters contacts with zero links); null means any.

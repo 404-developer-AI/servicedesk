@@ -113,15 +113,25 @@ public static class TelavoxCallTransition
         };
     }
 
-    /// Telavox uses uppercase strings but other PBX vocab varies; accept
-    /// both "RINGING" and "ALERTING" as the same logical state so a future
-    /// CAPI vocabulary tweak doesn't silently break the popup.
+    /// Maps the assorted state strings the CAPI <c>OngoingCallDto</c>
+    /// vocabulary uses (verified empirically against a live tenant:
+    /// <c>"ringing"</c>, <c>"up"</c>, <c>"down"</c>, <c>"dialing"</c>,
+    /// <c>"offhook"</c>, …) plus the uppercase forms my earlier draft
+    /// assumed. Matching is case-insensitive so a future CAPI vocab tweak
+    /// or a vendor variant doesn't silently break the popup.
     private static bool IsRinging(string? state) =>
-        string.Equals(state, "RINGING", StringComparison.Ordinal)
-        || string.Equals(state, "ALERTING", StringComparison.Ordinal);
+        EqualsAny(state, "ringing", "ring", "alerting");
 
     private static bool IsAnswered(string? state) =>
-        string.Equals(state, "ANSWERED", StringComparison.Ordinal)
-        || string.Equals(state, "CONNECTED", StringComparison.Ordinal)
-        || string.Equals(state, "ACTIVE", StringComparison.Ordinal);
+        EqualsAny(state, "up", "answered", "connected", "active");
+
+    private static bool EqualsAny(string? value, params string[] candidates)
+    {
+        if (value is null) return false;
+        foreach (var c in candidates)
+        {
+            if (string.Equals(value, c, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
 }

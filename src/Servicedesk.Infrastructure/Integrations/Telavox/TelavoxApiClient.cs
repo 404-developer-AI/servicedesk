@@ -53,11 +53,11 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
 
     public async Task<IReadOnlyList<TelavoxCustomer>> ListCustomersAsync(CancellationToken ct)
     {
-        var baseUrl = await ResolveBaseUrlAsync(ct);
+        var papiBase = await ResolvePapiBaseAsync(ct);
         var body = await SendWithPartnerTokenAsync(
             eventType: TelavoxEventTypes.CustomersList,
             method: HttpMethod.Get,
-            url: $"{baseUrl}/papi/v1/customers",
+            url: $"{papiBase}/partner2/api/papi/v1/customers",
             jsonBody: null,
             auditPayload: null,
             ct: ct);
@@ -69,11 +69,16 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
     {
         if (string.IsNullOrWhiteSpace(customerId))
             throw new ArgumentException("customerId is required", nameof(customerId));
-        var baseUrl = await ResolveBaseUrlAsync(ct);
+        var papiBase = await ResolvePapiBaseAsync(ct);
+        // PAPI surprise: /v1/customers/{customer}/extensions is a HATEOAS
+        // link-discovery stub that returns only a `links[]` array, never
+        // the actual extensions. The real list-endpoint is
+        // /extensions/users (returns ExtensionDto[]). Pre-D the worker hit
+        // the stub and silently got zero extensions in the dropdown.
         var body = await SendWithPartnerTokenAsync(
             eventType: TelavoxEventTypes.ExtensionsList,
             method: HttpMethod.Get,
-            url: $"{baseUrl}/papi/v1/customers/{Uri.EscapeDataString(customerId)}/extensions",
+            url: $"{papiBase}/partner2/api/papi/v1/customers/{Uri.EscapeDataString(customerId)}/extensions/users",
             jsonBody: null,
             auditPayload: new { customerId },
             ct: ct);
@@ -82,51 +87,95 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
 
     public async Task<TelavoxCreateApiUserResult> CreateApiUserAsync(
         string customerId,
-        string email,
-        string description,
+        string name,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(customerId))
             throw new ArgumentException("customerId is required", nameof(customerId));
-        if (string.IsNullOrWhiteSpace(email))
-            throw new ArgumentException("email is required", nameof(email));
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("name is required", nameof(name));
 
-        var baseUrl = await ResolveBaseUrlAsync(ct);
-        var payload = JsonSerializer.Serialize(new
-        {
-            email = email.Trim(),
-            description = string.IsNullOrWhiteSpace(description) ? null : description.Trim(),
-        });
-
-        var body = await SendWithPartnerTokenAsync(
+        var papiBase = await ResolvePapiBaseAsync(ct);
+        var trimmedName = name.Trim();
+        // PAPI expects the api-user name as a QUERY param, not a body —
+        // mismatch with v0.0.34 commit B which sent a JSON body and got
+        // a 404 even with a valid partner-token. The endpoint accepts no
+        // body; we still send the audit-payload so an admin can correlate
+        // the create-call with the audit row.
+        var createUrl = $"{papiBase}/partner2/api/papi/v1/customers/{Uri.EscapeDataString(customerId)}/api-users?name={Uri.EscapeDataString(trimmedName)}";
+        var createBody = await SendWithPartnerTokenAsync(
             eventType: TelavoxEventTypes.ApiUserCreate,
             method: HttpMethod.Post,
-            url: $"{baseUrl}/papi/v1/customers/{Uri.EscapeDataString(customerId)}/api-users",
-            jsonBody: payload,
-            // Email is the Telavox primary-key for the api-user, not a
-            // secret. Description is admin-supplied and forensically useful.
-            auditPayload: new { customerId, email = email.Trim() },
+            url: createUrl,
+            jsonBody: null,
+            auditPayload: new { customerId, name = trimmedName },
             ct: ct);
 
-        var result = ParseCreateApiUserResponse(body);
-        if (string.IsNullOrEmpty(result.Token))
+        var apiUserKey = ParseApiUserKey(createBody);
+        if (string.IsNullOrEmpty(apiUserKey))
         {
             throw new TelavoxApiException(
-                "Telavox accepted the api-user creation but the response body did not carry a token field.",
+                "Telavox accepted the api-user creation but the response body did not carry a key field.",
                 httpStatus: 200);
         }
-        return result;
+
+        // Step 2: mint a CAPI bearer-token bound to the api-user just
+        // created. If this fails, best-effort delete the partial upstream
+        // api-user so Telavox isn't left with an orphan, then surface the
+        // original exception to the caller.
+        string tokenBody;
+        try
+        {
+            tokenBody = await SendWithPartnerTokenAsync(
+                eventType: TelavoxEventTypes.ApiUserTokenCreate,
+                method: HttpMethod.Post,
+                url: $"{papiBase}/partner2/api/papi/v1/customers/{Uri.EscapeDataString(customerId)}/api-users/{Uri.EscapeDataString(apiUserKey)}/tokens",
+                jsonBody: null,
+                auditPayload: new { customerId, apiUserKey },
+                ct: ct);
+        }
+        catch
+        {
+            try { await DeleteApiUserAsync(customerId, apiUserKey, CancellationToken.None); }
+            catch (Exception rbEx)
+            {
+                _logger.LogWarning(rbEx,
+                    "Token-mint failure rollback of api-user {ApiUserKey} for customer {CustomerId} failed; admin must manually revoke it.",
+                    apiUserKey, customerId);
+            }
+            throw;
+        }
+
+        var bearer = ParseCapiTokenBearer(tokenBody);
+        if (string.IsNullOrEmpty(bearer))
+        {
+            // Same orphan-cleanup as the catch above: a 200 with an empty
+            // token body still leaves an api-user we can never bind to a
+            // bearer, so kill it before propagating.
+            try { await DeleteApiUserAsync(customerId, apiUserKey, CancellationToken.None); }
+            catch (Exception rbEx)
+            {
+                _logger.LogWarning(rbEx,
+                    "Empty-token-body rollback of api-user {ApiUserKey} for customer {CustomerId} failed.",
+                    apiUserKey, customerId);
+            }
+            throw new TelavoxApiException(
+                "Telavox accepted the token creation but the response body did not carry a bearerToken field.",
+                httpStatus: 200);
+        }
+
+        return new TelavoxCreateApiUserResult(Name: trimmedName, UserId: apiUserKey, Token: bearer);
     }
 
     public async Task DeleteApiUserAsync(
-        string customerId, string email, CancellationToken ct)
+        string customerId, string apiUserKey, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(customerId))
             throw new ArgumentException("customerId is required", nameof(customerId));
-        if (string.IsNullOrWhiteSpace(email))
-            throw new ArgumentException("email is required", nameof(email));
+        if (string.IsNullOrWhiteSpace(apiUserKey))
+            throw new ArgumentException("apiUserKey is required", nameof(apiUserKey));
 
-        var baseUrl = await ResolveBaseUrlAsync(ct);
+        var papiBase = await ResolvePapiBaseAsync(ct);
         // A 404 from Telavox is treated as success (already gone) so a
         // duplicate revoke or a manual cleanup in Telavox doesn't surface
         // as an admin-facing error. Other non-2xx surface normally.
@@ -135,41 +184,57 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
             await SendWithPartnerTokenAsync(
                 eventType: TelavoxEventTypes.ApiUserDelete,
                 method: HttpMethod.Delete,
-                url: $"{baseUrl}/papi/v1/customers/{Uri.EscapeDataString(customerId)}/api-users/{Uri.EscapeDataString(email)}",
+                url: $"{papiBase}/partner2/api/papi/v1/customers/{Uri.EscapeDataString(customerId)}/api-users/{Uri.EscapeDataString(apiUserKey)}",
                 jsonBody: null,
-                auditPayload: new { customerId, email },
+                auditPayload: new { customerId, apiUserKey },
                 ct: ct);
         }
         catch (TelavoxApiException ex) when (ex.HttpStatus == 404)
         {
             _logger.LogInformation(
-                "Telavox api-user {Email} for customer {CustomerId} was already gone (404); treating revoke as success.",
-                email, customerId);
+                "Telavox api-user {ApiUserKey} for customer {CustomerId} was already gone (404); treating revoke as success.",
+                apiUserKey, customerId);
         }
     }
 
     public async Task<TelavoxCall?> GetCurrentCallAsync(
-        string capiToken, CancellationToken ct)
+        string extension, string capiToken, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(extension))
+            throw new ArgumentException("extension is required", nameof(extension));
         if (string.IsNullOrWhiteSpace(capiToken))
             throw new ArgumentException("capiToken is required", nameof(capiToken));
 
-        var baseUrl = await ResolveBaseUrlAsync(ct);
+        var capiBase = await ResolveCapiBaseAsync(ct);
+        // suppressSuccessAudit: true — successful CAPI polls fire on the
+        // PollIntervalSeconds cadence (default 2s per agent). Writing a row
+        // per success would dwarf every other table in the install within
+        // a day. The polling worker already writes a coalesced tick-summary
+        // row carrying the aggregate counts; here we only keep failure rows
+        // so an admin can still spot auth/transport problems forensically.
         var body = await SendAsync(
             eventType: TelavoxEventTypes.AgentCallsPoll,
             method: HttpMethod.Get,
-            url: $"{baseUrl}/origo/api/v1/me/calls?state=active",
+            url: $"{capiBase}/api/capi/v1/extensions/{Uri.EscapeDataString(extension)}/calls",
             jsonBody: null,
             bearer: capiToken,
-            auditPayload: null,
+            auditPayload: new { extension },
+            suppressSuccessAudit: true,
             ct: ct);
         return ParseCurrentCall(body);
     }
 
-    private async Task<string> ResolveBaseUrlAsync(CancellationToken ct)
+    private async Task<string> ResolvePapiBaseAsync(CancellationToken ct)
     {
-        var raw = (await _settings.GetAsync<string>(SettingKeys.Telavox.ApiBaseUrl, ct) ?? string.Empty).Trim();
-        if (raw.Length == 0) raw = "https://api.telavox.se";
+        var raw = (await _settings.GetAsync<string>(SettingKeys.Telavox.PapiBaseUrl, ct) ?? string.Empty).Trim();
+        if (raw.Length == 0) raw = "https://partner.telavox.se";
+        return raw.TrimEnd('/');
+    }
+
+    private async Task<string> ResolveCapiBaseAsync(CancellationToken ct)
+    {
+        var raw = (await _settings.GetAsync<string>(SettingKeys.Telavox.CapiBaseUrl, ct) ?? string.Empty).Trim();
+        if (raw.Length == 0) raw = "https://home.telavox.se";
         return raw.TrimEnd('/');
     }
 
@@ -202,7 +267,7 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
                 httpStatus: null,
                 upstreamErrorCode: "partner_token_missing");
         }
-        return await SendAsync(eventType, method, url, jsonBody, token, auditPayload, ct);
+        return await SendAsync(eventType, method, url, jsonBody, token, auditPayload, suppressSuccessAudit: false, ct);
     }
 
     private async Task<string> SendAsync(
@@ -212,6 +277,7 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
         string? jsonBody,
         string bearer,
         object? auditPayload,
+        bool suppressSuccessAudit,
         CancellationToken ct)
     {
         using var request = new HttpRequestMessage(method, url);
@@ -251,14 +317,17 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
 
             if (response.IsSuccessStatusCode)
             {
-                await _audit.LogAsync(new IntegrationAuditEvent(
-                    Integration: TelavoxEventTypes.Integration,
-                    EventType: eventType,
-                    Outcome: IntegrationAuditOutcome.Ok,
-                    Endpoint: url,
-                    HttpStatus: status,
-                    LatencyMs: (int)stopwatch.ElapsedMilliseconds,
-                    Payload: auditPayload), ct);
+                if (!suppressSuccessAudit)
+                {
+                    await _audit.LogAsync(new IntegrationAuditEvent(
+                        Integration: TelavoxEventTypes.Integration,
+                        EventType: eventType,
+                        Outcome: IntegrationAuditOutcome.Ok,
+                        Endpoint: url,
+                        HttpStatus: status,
+                        LatencyMs: (int)stopwatch.ElapsedMilliseconds,
+                        Payload: auditPayload), ct);
+                }
                 return responseBody;
             }
 
@@ -338,13 +407,20 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
 
     internal static IReadOnlyList<TelavoxCustomer> ParseCustomers(string body)
     {
+        // PAPI swagger: CustomerDto carries the customer-id under `key`
+        // (example "customer-123"), with `name` separate. Pre-D this parser
+        // looked for `id` and skipped every row because no row had it.
         var array = TryRootArray(body);
         if (array is null) return Array.Empty<TelavoxCustomer>();
         var list = new List<TelavoxCustomer>(array.Value.GetArrayLength());
         foreach (var el in array.Value.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var id = TryGetStringId(el, "id");
+            var id = TryGetStringId(el, "key");
+            // Defensive fallback: accept `id` too, so a future PAPI schema
+            // rename or a partner-environment variant doesn't silently
+            // empty the dropdown the way v0.0.34 commit B did.
+            if (string.IsNullOrEmpty(id)) id = TryGetStringId(el, "id");
             if (string.IsNullOrEmpty(id)) continue;
             var name = TryGetString(el, "name") ?? string.Empty;
             list.Add(new TelavoxCustomer(id, name));
@@ -354,24 +430,32 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
 
     internal static IReadOnlyList<TelavoxExtension> ParseExtensions(string body)
     {
+        // PAPI swagger: ExtensionDto.key is the opaque extension identifier
+        // (example "extension-123") — that's what the CAPI path-param
+        // /api/capi/v1/extensions/{extension}/calls expects, not the
+        // dialable number. The dialable number lives under
+        // `fixedNumber.e164Number` (or `mobileNumber.e164Number`); we
+        // surface that as the "number" display so the admin recognises the
+        // row, but the value the link table stores is the key.
         var array = TryRootArray(body);
         if (array is null) return Array.Empty<TelavoxExtension>();
         var list = new List<TelavoxExtension>(array.Value.GetArrayLength());
         foreach (var el in array.Value.EnumerateArray())
         {
             if (el.ValueKind != JsonValueKind.Object) continue;
-            var id = TryGetStringId(el, "id");
+            var id = TryGetStringId(el, "key");
+            if (string.IsNullOrEmpty(id)) id = TryGetStringId(el, "id");
             if (string.IsNullOrEmpty(id)) continue;
-            // Telavox extensions can be referenced either by an opaque id or
-            // a human-readable number. Both are kept so the SD link table can
-            // store the number (what an admin sees) and the underlying id
-            // separately if Telavox ever splits the two.
-            var number = TryGetString(el, "number")
+
+            var number = TryReadE164(el, "fixedNumber")
+                ?? TryReadE164(el, "mobileNumber")
+                ?? TryGetString(el, "number")
                 ?? TryGetString(el, "extension")
                 ?? string.Empty;
             var name = TryGetString(el, "name");
-            // User-email may live under "user.email" or "userEmail".
-            var userEmail = TryGetString(el, "userEmail");
+            var userEmail = TryGetString(el, "email")
+                ?? TryGetString(el, "userEmail");
+            // Legacy nested shape (pre-PAPI swagger update): user.email.
             if (userEmail is null && el.TryGetProperty("user", out var user)
                 && user.ValueKind == JsonValueKind.Object)
             {
@@ -382,67 +466,111 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
         return list;
     }
 
-    /// Internal parser for POST /api-users responses. Public for tests.
-    /// Telavox responses observed in partner-docs carry `email`, `userId`
-    /// (or `id`) and `token`; we accept the variants without forcing one
-    /// specific shape.
-    internal static TelavoxCreateApiUserResult ParseCreateApiUserResponse(string body)
+    private static string? TryReadE164(JsonElement el, string propName)
     {
-        if (string.IsNullOrWhiteSpace(body))
-            return new TelavoxCreateApiUserResult(string.Empty, string.Empty, string.Empty);
-        using var doc = JsonDocument.Parse(body);
-        if (doc.RootElement.ValueKind != JsonValueKind.Object)
-            return new TelavoxCreateApiUserResult(string.Empty, string.Empty, string.Empty);
-        var root = doc.RootElement;
-        var email = TryGetString(root, "email") ?? string.Empty;
-        var userId = TryGetString(root, "userId")
-            ?? TryGetString(root, "id")
-            ?? string.Empty;
-        var token = TryGetString(root, "token")
-            ?? TryGetString(root, "apiToken")
-            ?? TryGetString(root, "accessToken")
-            ?? string.Empty;
-        return new TelavoxCreateApiUserResult(email, userId, token);
+        if (!el.TryGetProperty(propName, out var sub)) return null;
+        if (sub.ValueKind != JsonValueKind.Object) return null;
+        return TryGetString(sub, "e164Number");
     }
 
-    /// Parser for GET /me/calls?state=active. CAPI shape observed:
-    /// either a bare array (zero or many active calls) or an object
-    /// wrapping `calls`/`items`. We return the first active call (the UI
-    /// only ever pops one popup per agent at a time anyway).
+    /// Parses the response of POST /v1/customers/{customer}/api-users —
+    /// per PAPI swagger this is an <c>ApiUserDto</c> with a <c>key</c>
+    /// field (example "apiUser-123"). Empty string when the body is
+    /// missing the field or unparseable so the caller can surface a
+    /// structured error.
+    internal static string ParseApiUserKey(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return string.Empty;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return string.Empty;
+            return TryGetString(doc.RootElement, "key") ?? string.Empty;
+        }
+        catch (JsonException) { return string.Empty; }
+    }
+
+    /// Parses the response of POST /v1/customers/{customer}/api-users/{key}/tokens
+    /// — per PAPI swagger this is a <c>CapiTokenDto</c> with a
+    /// <c>bearerToken</c> field. Empty when missing / unparseable so the
+    /// caller can surface a structured error.
+    internal static string ParseCapiTokenBearer(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return string.Empty;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return string.Empty;
+            return TryGetString(doc.RootElement, "bearerToken") ?? string.Empty;
+        }
+        catch (JsonException) { return string.Empty; }
+    }
+
+    /// Parser for GET /api/capi/v1/extensions/{extension}/calls. The
+    /// real CAPI returns a bare JSON array of <c>OngoingCallDto</c>:
+    /// <c>[ { callerId, callDirection, lineStatus }, … ]</c>. No callId,
+    /// no startTime, no toNumber — the wire shape is intentionally narrow.
+    /// Empirically the same call surfaces multiple times during ringing
+    /// (one row per terminal/device); we pick the first <i>incoming</i>
+    /// row that isn't already terminated. Outbound calls are ignored —
+    /// the popup is for inbound only.
+    ///
+    /// Because there is no real callId, the synthetic <see cref="TelavoxCall.CallId"/>
+    /// is the <c>callerId</c> itself; the same caller is treated as the
+    /// same call for the duration of a single ring/answer cycle, which is
+    /// the granularity the state-machine actually needs. Two back-to-back
+    /// calls from the same number within seconds would dedupe — accepted
+    /// trade-off for v0.0.34, can be replaced with a server-side
+    /// (callerId + first-observed-utc) compound key in a follow-up if it
+    /// matters in practice.
     internal static TelavoxCall? ParseCurrentCall(string body)
     {
         if (string.IsNullOrWhiteSpace(body)) return null;
-        using var doc = JsonDocument.Parse(body);
-        JsonElement? array = doc.RootElement.ValueKind switch
+        try
         {
-            JsonValueKind.Array => doc.RootElement,
-            JsonValueKind.Object when doc.RootElement.TryGetProperty("calls", out var calls)
-                && calls.ValueKind == JsonValueKind.Array => calls,
-            JsonValueKind.Object when doc.RootElement.TryGetProperty("items", out var items)
-                && items.ValueKind == JsonValueKind.Array => items,
-            _ => (JsonElement?)null,
-        };
-        if (array is null) return null;
-        foreach (var el in array.Value.EnumerateArray())
-        {
-            if (el.ValueKind != JsonValueKind.Object) continue;
-            var id = TryGetString(el, "id")
-                ?? TryGetString(el, "callId")
-                ?? string.Empty;
-            if (string.IsNullOrEmpty(id)) continue;
-            var state = (TryGetString(el, "state") ?? string.Empty).ToUpperInvariant();
-            var fromNumber = TryGetString(el, "from")
-                ?? TryGetString(el, "fromNumber")
-                ?? TryGetString(el, "caller");
-            var toNumber = TryGetString(el, "to")
-                ?? TryGetString(el, "toNumber")
-                ?? TryGetString(el, "callee");
-            var startUtc = TryGetDateTimeOffset(el, "startTime")
-                ?? TryGetDateTimeOffset(el, "start")
-                ?? TryGetDateTimeOffset(el, "started");
-            return new TelavoxCall(id, state, fromNumber, toNumber, startUtc);
+            using var doc = JsonDocument.Parse(body);
+            // CAPI returns a bare array. Defensive: also accept an envelope
+            // shape (`{ items: [] }` / `{ data: [] }`) so a future API
+            // wrapping doesn't break the parser silently.
+            JsonElement? array = doc.RootElement.ValueKind switch
+            {
+                JsonValueKind.Array => doc.RootElement,
+                JsonValueKind.Object when doc.RootElement.TryGetProperty("items", out var items)
+                    && items.ValueKind == JsonValueKind.Array => items,
+                JsonValueKind.Object when doc.RootElement.TryGetProperty("data", out var data)
+                    && data.ValueKind == JsonValueKind.Array => data,
+                _ => (JsonElement?)null,
+            };
+            if (array is null) return null;
+            foreach (var el in array.Value.EnumerateArray())
+            {
+                if (el.ValueKind != JsonValueKind.Object) continue;
+
+                var callerId = TryGetString(el, "callerId");
+                if (string.IsNullOrEmpty(callerId)) continue;
+
+                var direction = (TryGetString(el, "callDirection") ?? string.Empty)
+                    .ToLowerInvariant();
+                // Outbound calls don't deserve a popup — the agent
+                // initiated them, they already know who's on the line.
+                if (direction == "outgoing") continue;
+
+                var lineStatus = (TryGetString(el, "lineStatus") ?? string.Empty)
+                    .ToLowerInvariant();
+                // Terminal states clear the baseline — same behaviour as a
+                // null `current` in the state-machine.
+                if (lineStatus == "down") continue;
+
+                return new TelavoxCall(
+                    CallId: callerId,
+                    State: lineStatus,
+                    FromNumber: callerId,
+                    ToNumber: null,
+                    StartUtc: null);
+            }
+            return null;
         }
-        return null;
+        catch (JsonException) { return null; }
     }
 
     private static JsonElement? TryRootArray(string body)

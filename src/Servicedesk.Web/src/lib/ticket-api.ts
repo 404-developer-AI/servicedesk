@@ -781,12 +781,23 @@ export const adminUserApi = {
     request<void>("DELETE", `/api/admin/users/${userId}`),
 };
 
+/// Row shape returned by the call-popup's phone-keyed lookup. Adds the
+/// contact's "best" company link (primary → secondary → supplier priority)
+/// on top of the flat Contact fields so the popup can render the linked
+/// company without a second round-trip. `linkedCompany*` are all null when
+/// the contact has no links at all.
+export type ContactPhoneLookupItem = Contact & {
+  linkedCompanyId: string | null;
+  linkedCompanyName: string | null;
+  linkedCompanyRole: ContactCompanyRole | null;
+};
+
 export type ContactPhoneLookupResponse = {
   /// Server-normalised E.164 form of the supplied phone. `null` when the
   /// input could not be parsed against the install's default country —
   /// the popup uses that as the "unknown caller" signal.
   phoneE164: string | null;
-  items: Contact[];
+  items: ContactPhoneLookupItem[];
 };
 
 export const contactApi = {

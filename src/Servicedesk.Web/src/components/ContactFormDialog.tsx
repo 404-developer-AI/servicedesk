@@ -33,6 +33,11 @@ type Props = {
   forCompanyId?: string;
   /// The contact to edit (mode='edit') or prefill defaults (mode='create').
   initial?: Contact | null;
+  /// Prefill just the phone field on a create-dialog without forcing the
+  /// caller to construct a Contact-shaped object. Used by the Telavox
+  /// incoming-call popup so "Create contact" lands with the caller's
+  /// number already filled in.
+  initialPhone?: string;
 };
 
 const ROLE_TILES: {
@@ -72,6 +77,7 @@ export function ContactFormDialog({
   onSaved,
   forCompanyId,
   initial,
+  initialPhone,
 }: Props) {
   const qc = useQueryClient();
   const [email, setEmail] = React.useState("");
@@ -100,12 +106,12 @@ export function ContactFormDialog({
     setEmail(initial?.email ?? "");
     setFirstName(initial?.firstName ?? "");
     setLastName(initial?.lastName ?? "");
-    setPhone(initial?.phone ?? "");
+    setPhone(initial?.phone ?? initialPhone ?? "");
     setJobTitle(initial?.jobTitle ?? "");
     setRole("primary");
     setPickedCompany(null);
     setError(null);
-  }, [open, initial]);
+  }, [open, initial, initialPhone]);
 
   const save = useMutation({
     mutationFn: async () => {

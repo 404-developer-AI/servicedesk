@@ -1,10 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Telavox">
-  <defs>
-    <linearGradient id="telavox-grad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#7c3aed" />
-      <stop offset="1" stop-color="#2563eb" />
-    </linearGradient>
-  </defs>
-  <rect x="6" y="6" width="52" height="52" rx="12" fill="url(#telavox-grad)" />
-  <path d="M22 18.5c-1.6 0-2.9 1.3-2.9 2.9 0 13.7 11.1 24.8 24.8 24.8 1.6 0 2.9-1.3 2.9-2.9v-5.4c0-1.3-.9-2.5-2.2-2.8l-5-1.2c-1.2-.3-2.4.2-3.1 1.2l-1.5 2.2c-4.3-2.1-7.8-5.6-9.9-9.9l2.2-1.5c1-.7 1.5-1.9 1.2-3.1l-1.2-5c-.3-1.3-1.5-2.2-2.8-2.2H22z" fill="#ffffff" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-15 -15 300.67 289.07" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Telavox">
+  <g transform="translate(0,259) scale(0.1,-0.1)" stroke="none">
+    <path fill="#2BC558" d="M429 2571 c-200 -63 -355 -221 -413 -423 -21 -72 -21 -243 -1 -321 53 -205 222 -374 435 -434 61 -17 120 -18 895 -18 924 0 893 -2 1030 68 216 111 349 340 330 574 -21 272 -183 476 -440 555 -56 17 -113 18 -920 17 -790 -1 -865 -2 -916 -18z"/>
+    <path fill="#FFFFFF" d="M1216 1194 c-241 -52 -438 -268 -464 -511 -18 -160 18 -310 103 -428 82 -116 176 -185 312 -231 102 -34 254 -34 368 1 282 86 459 367 417 661 -7 47 -22 107 -32 135 -111 280 -406 436 -704 373z"/>
+  </g>
 </svg>

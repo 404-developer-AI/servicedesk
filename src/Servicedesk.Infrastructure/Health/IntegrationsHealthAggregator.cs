@@ -1,4 +1,5 @@
 using Servicedesk.Infrastructure.Integrations.Adsolut;
+using Servicedesk.Infrastructure.Integrations.Telavox;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
 
@@ -53,17 +54,20 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
     private readonly ISettingsService _settings;
     private readonly IAdsolutConnectionStore _adsolutConnections;
     private readonly IAdsolutSyncStateStore _adsolutSyncState;
+    private readonly ITelavoxAgentLinkStore _telavoxLinks;
 
     public IntegrationsHealthAggregator(
         IProtectedSecretStore secrets,
         ISettingsService settings,
         IAdsolutConnectionStore adsolutConnections,
-        IAdsolutSyncStateStore adsolutSyncState)
+        IAdsolutSyncStateStore adsolutSyncState,
+        ITelavoxAgentLinkStore telavoxLinks)
     {
         _secrets = secrets;
         _settings = settings;
         _adsolutConnections = adsolutConnections;
         _adsolutSyncState = adsolutSyncState;
+        _telavoxLinks = telavoxLinks;
     }
 
     public async Task<IntegrationsHealthReport> CollectAsync(CancellationToken ct)
@@ -72,6 +76,9 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
 
         var adsolut = await BuildAdsolutAsync(ct);
         if (adsolut is not null) integrations.Add(adsolut);
+
+        var telavox = await BuildTelavoxAsync(ct);
+        if (telavox is not null) integrations.Add(telavox);
 
         var rollup = integrations.Aggregate(HealthStatus.Ok,
             (acc, i) => i.Rollup > acc ? i.Rollup : acc);
@@ -362,5 +369,192 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
         var safeInterval = Math.Max(1, intervalMinutes);
         if (lastDeltaUtc is null) return DateTime.UtcNow;
         return lastDeltaUtc.Value.AddMinutes(safeInterval);
+    }
+
+    // ---- Telavox -------------------------------------------------------
+
+    /// "Configured" definition mirrors <see cref="TelavoxPollingWorker"/>'s
+    /// gate: only when the integration is opt-in (Enabled), a partner-token
+    /// is stored and a customer-id is pinned do we surface the row at all.
+    /// Any of these three missing → tile hidden, exactly like the polling
+    /// worker silently skips. This keeps a freshly-installed instance from
+    /// showing an empty Telavox card.
+    private async Task<IntegrationHealth?> BuildTelavoxAsync(CancellationToken ct)
+    {
+        var enabled = await _settings.GetAsync<bool>(SettingKeys.Telavox.Enabled, ct);
+        var hasPartnerToken = await _secrets.HasAsync(ProtectedSecretKeys.TelavoxPartnerToken, ct);
+        var customerId = (await _settings.GetAsync<string>(SettingKeys.Telavox.PartnerCustomerId, ct)
+            ?? string.Empty).Trim();
+        if (!enabled || !hasPartnerToken || customerId.Length == 0)
+        {
+            return null;
+        }
+
+        // Idle interval is the slower of the two cadences; staleness is
+        // judged against that since a worker stuck between rings would
+        // still fall behind on the idle clock. Bounds mirror the worker's
+        // own clamp so the health-card and the worker agree on the range.
+        var pollInterval = Math.Clamp(
+            await _settings.GetAsync<int>(SettingKeys.Telavox.PollIntervalSeconds, ct),
+            2, 60);
+        var windowStart = await _settings.GetAsync<string>(SettingKeys.Telavox.PollWindowStart, ct);
+        var windowEnd = await _settings.GetAsync<string>(SettingKeys.Telavox.PollWindowEnd, ct);
+        var windowDays = await _settings.GetAsync<string>(SettingKeys.Telavox.PollWindowDays, ct);
+        var tzId = await _settings.GetAsync<string>(SettingKeys.App.TimeZone, ct);
+        var tz = ResolveTimeZone(tzId);
+        var nowLocal = TimeZoneInfo.ConvertTime(DateTime.UtcNow, tz);
+        var inWindow = TelavoxPollWindow.IsInPollWindow(nowLocal, windowStart, windowEnd, windowDays);
+
+        var links = await _telavoxLinks.ListAsync(ct);
+
+        var connectionCheck = BuildTelavoxConnectionCheck(customerId, inWindow, windowStart, windowEnd);
+        var pollingCheck = BuildTelavoxPollingCheck(links, pollInterval, inWindow);
+
+        var checks = new[] { connectionCheck, pollingCheck };
+        var rollup = checks.Aggregate(HealthStatus.Ok, (acc, c) => c.Status > acc ? c.Status : acc);
+
+        return new IntegrationHealth(
+            Key: "telavox",
+            Name: "Telavox",
+            LogoKey: "telavox",
+            Rollup: rollup,
+            Checks: checks,
+            Actions: Array.Empty<HealthAction>());
+    }
+
+    /// Connection check covers the static side: the pinned customer-id +
+    /// where the integration currently sits in its working-hours window. The
+    /// row is always Ok once all three credentials are present (we gate on
+    /// them above) — a token-revocation surfaces via a per-poll failure on
+    /// the Polling check, not here, so the two rows don't double-flip.
+    private static SubsystemHealth BuildTelavoxConnectionCheck(
+        string customerId, bool inWindow, string windowStart, string windowEnd)
+    {
+        var details = new List<HealthDetail>
+        {
+            new("Partner customer-id", customerId),
+            new("Working hours", $"{windowStart}–{windowEnd}"),
+            new("Window state", inWindow ? "Inside working hours" : "Outside working hours"),
+        };
+        var summary = inWindow
+            ? "Configured, polling inside working hours."
+            : "Configured, currently outside working hours — polling is paused or slowed.";
+        return new SubsystemHealth(
+            Key: "telavox-connection",
+            Label: "Connection",
+            Status: HealthStatus.Ok,
+            Summary: summary,
+            Details: details,
+            Actions: Array.Empty<HealthAction>());
+    }
+
+    /// Polling check rolls the per-link operational counters into one row:
+    /// agents linked, last successful poll age, and any agents currently
+    /// stuck on consecutive errors. We deliberately don't fire Warning for
+    /// "no agents linked" — that's a valid steady-state for a fresh setup
+    /// while the admin still maps Telavox extensions to SD users.
+    private static SubsystemHealth BuildTelavoxPollingCheck(
+        IReadOnlyList<TelavoxAgentLink> links,
+        int pollIntervalSeconds,
+        bool inWindow)
+    {
+        var details = new List<HealthDetail>
+        {
+            new("Agents linked", links.Count.ToString()),
+            new("Poll interval", $"{pollIntervalSeconds} second(s)"),
+        };
+
+        if (links.Count == 0)
+        {
+            return new SubsystemHealth(
+                Key: "telavox-polling",
+                Label: "Polling",
+                Status: HealthStatus.Ok,
+                Summary: "Configured — no agents linked yet. Link agents on the integration page to start polling.",
+                Details: details,
+                Actions: Array.Empty<HealthAction>());
+        }
+
+        var errorLinks = links.Where(l => l.ConsecutiveErrors > 0).ToList();
+        var lastPoll = links.Where(l => l.LastPollUtc is not null).Max(l => l.LastPollUtc);
+        var anyPolled = lastPoll is not null;
+
+        // "Stale" only matters when the worker should be actively polling
+        // right now (inside the working-hours window). Outside hours the
+        // gap is expected — flipping the row to Warning then would noise
+        // the dashboard for the whole evening.
+        var staleThreshold = TimeSpan.FromSeconds(Math.Max(pollIntervalSeconds * 4, 30));
+        var isStale = inWindow && anyPolled
+            && (DateTime.UtcNow - lastPoll!.Value) > staleThreshold;
+        var neverPolledInWindow = inWindow && !anyPolled;
+
+        HealthStatus status;
+        string summary;
+        if (errorLinks.Count == links.Count)
+        {
+            status = HealthStatus.Critical;
+            summary = $"All {links.Count} linked agent(s) failing — verify the partner-token and per-agent CAPI tokens.";
+        }
+        else if (errorLinks.Count > 0)
+        {
+            status = HealthStatus.Warning;
+            summary = $"{errorLinks.Count} of {links.Count} agent(s) failing — see the integration page for per-agent error codes.";
+        }
+        else if (isStale)
+        {
+            status = HealthStatus.Warning;
+            summary = $"Polling has stalled — last successful tick was {Math.Floor((DateTime.UtcNow - lastPoll!.Value).TotalSeconds)}s ago.";
+        }
+        else if (neverPolledInWindow)
+        {
+            status = HealthStatus.Ok;
+            summary = "Waiting for first poll tick…";
+        }
+        else if (!inWindow)
+        {
+            status = HealthStatus.Ok;
+            summary = $"{links.Count} agent(s) linked, polling paused outside working hours.";
+        }
+        else
+        {
+            status = HealthStatus.Ok;
+            summary = $"{links.Count} agent(s) linked, polling on schedule.";
+        }
+
+        if (lastPoll is { } lp)
+        {
+            details.Add(new HealthDetail("Last poll (any agent)", lp.ToString("u")));
+        }
+        if (errorLinks.Count > 0)
+        {
+            // Cap the list to avoid blowing up the tile on a many-agent
+            // install. The integration page carries the full per-agent
+            // detail; the dashboard row is a heads-up, not a panel.
+            var sample = string.Join(", ",
+                errorLinks.Take(3).Select(l => $"{l.TelavoxExtension} ({l.LastPollError ?? "error"})"));
+            if (errorLinks.Count > 3) sample += $" + {errorLinks.Count - 3} more";
+            details.Add(new HealthDetail("Failing agents", sample));
+        }
+
+        return new SubsystemHealth(
+            Key: "telavox-polling",
+            Label: "Polling",
+            Status: status,
+            Summary: summary,
+            Details: details,
+            Actions: Array.Empty<HealthAction>());
+    }
+
+    /// Same defensive resolver as <see cref="TelavoxPollingWorker"/> — keep
+    /// the two in sync so the tile and the worker agree about which
+    /// timezone the working-hours window is being evaluated in.
+    private static TimeZoneInfo ResolveTimeZone(string id)
+    {
+        if (!string.IsNullOrWhiteSpace(id))
+        {
+            try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
+            catch { /* Invalid IANA id — fall through. */ }
+        }
+        return TimeZoneInfo.Local;
     }
 }

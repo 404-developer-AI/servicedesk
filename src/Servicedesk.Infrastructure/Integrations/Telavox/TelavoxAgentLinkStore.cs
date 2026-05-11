@@ -17,12 +17,16 @@ public sealed class TelavoxAgentLinkStore : ITelavoxAgentLinkStore
 
     public async Task<IReadOnlyList<TelavoxAgentLink>> ListAsync(CancellationToken ct = default)
     {
+        // DB column is still named capi_user_email — see TelavoxAgentLink
+        // doc-comment. Post-D the value is a name, not an email; the
+        // column stays for backwards-compat with v0.0.34 commits B-C and
+        // a future migration can rename it without changing the consumer.
         const string sql = """
             SELECT id                  AS "Id",
                    user_id             AS "UserId",
                    telavox_extension   AS "TelavoxExtension",
                    telavox_user_id     AS "TelavoxUserId",
-                   capi_user_email     AS "CapiUserEmail",
+                   capi_user_email     AS "CapiUserName",
                    provisioned_utc     AS "ProvisionedUtc",
                    last_poll_utc       AS "LastPollUtc",
                    last_poll_error     AS "LastPollError",
@@ -42,7 +46,7 @@ public sealed class TelavoxAgentLinkStore : ITelavoxAgentLinkStore
                    user_id             AS "UserId",
                    telavox_extension   AS "TelavoxExtension",
                    telavox_user_id     AS "TelavoxUserId",
-                   capi_user_email     AS "CapiUserEmail",
+                   capi_user_email     AS "CapiUserName",
                    provisioned_utc     AS "ProvisionedUtc",
                    last_poll_utc       AS "LastPollUtc",
                    last_poll_error     AS "LastPollError",
@@ -68,7 +72,7 @@ public sealed class TelavoxAgentLinkStore : ITelavoxAgentLinkStore
                 provisioned_utc, last_poll_utc, last_poll_error, consecutive_errors,
                 created_utc, updated_utc)
             VALUES (
-                @UserId, @TelavoxExtension, @TelavoxUserId, @CapiUserEmail,
+                @UserId, @TelavoxExtension, @TelavoxUserId, @CapiUserName,
                 @ProvisionedUtc, @LastPollUtc, @LastPollError, @ConsecutiveErrors,
                 now(), now())
             ON CONFLICT (user_id) DO UPDATE SET
@@ -87,7 +91,7 @@ public sealed class TelavoxAgentLinkStore : ITelavoxAgentLinkStore
             link.UserId,
             link.TelavoxExtension,
             link.TelavoxUserId,
-            link.CapiUserEmail,
+            link.CapiUserName,
             link.ProvisionedUtc,
             link.LastPollUtc,
             link.LastPollError,
@@ -137,14 +141,14 @@ public sealed class TelavoxAgentLinkStore : ITelavoxAgentLinkStore
         public Guid UserId { get; set; }
         public string TelavoxExtension { get; set; } = string.Empty;
         public string TelavoxUserId { get; set; } = string.Empty;
-        public string CapiUserEmail { get; set; } = string.Empty;
+        public string CapiUserName { get; set; } = string.Empty;
         public DateTime ProvisionedUtc { get; set; }
         public DateTime? LastPollUtc { get; set; }
         public string? LastPollError { get; set; }
         public int ConsecutiveErrors { get; set; }
 
         public TelavoxAgentLink ToDomain() => new(
-            Id, UserId, TelavoxExtension, TelavoxUserId, CapiUserEmail,
+            Id, UserId, TelavoxExtension, TelavoxUserId, CapiUserName,
             ProvisionedUtc, LastPollUtc, LastPollError, ConsecutiveErrors);
     }
 }

@@ -117,6 +117,42 @@ public sealed class IntegrationAuditLogger : IIntegrationAuditLogger, IIntegrati
         }
         return new IntegrationAuditPage(rows, nextCursor);
     }
+
+    public async Task<int> DeleteOldByEventTypesAsync(
+        IReadOnlyCollection<string> eventTypes,
+        DateTime cutoffUtc,
+        CancellationToken cancellationToken = default)
+    {
+        if (eventTypes is null || eventTypes.Count == 0) return 0;
+
+        // Postgres treats `column = ANY(@array)` as the idiomatic IN-with-
+        // parameter pattern; passing a string[] keeps Dapper from splatting
+        // every event-type into its own parameter and lets the planner pick
+        // a single index range scan on (event_type, utc).
+        const string sql = """
+            DELETE FROM integration_audit
+             WHERE event_type = ANY(@EventTypes)
+               AND utc < @Cutoff
+            """;
+
+        try
+        {
+            await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+            return await connection.ExecuteAsync(new CommandDefinition(sql, new
+            {
+                EventTypes = eventTypes.ToArray(),
+                Cutoff = cutoffUtc,
+            }, cancellationToken: cancellationToken));
+        }
+        catch (Exception ex)
+        {
+            // Same swallow-and-log discipline as the writer: an audit-table
+            // sweep failure must never surface as a healthcheck failure.
+            _logger.LogError(ex, "integration_audit sweep failed for {EventTypes}",
+                string.Join(",", eventTypes));
+            return 0;
+        }
+    }
 }
 
 public interface IIntegrationAuditQuery

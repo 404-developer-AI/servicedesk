@@ -10,4 +10,15 @@ namespace Servicedesk.Infrastructure.Audit;
 public interface IIntegrationAuditLogger
 {
     Task LogAsync(IntegrationAuditEvent evt, CancellationToken cancellationToken = default);
+
+    /// Deletes rows whose <c>utc</c> is older than <paramref name="cutoffUtc"/>
+    /// and whose <c>event_type</c> matches one of <paramref name="eventTypes"/>.
+    /// Returns the row-count actually deleted so a caller can surface the
+    /// sweep result. Scoped intentionally narrow: admin-action and rare-PAPI
+    /// rows must NEVER be auto-deleted; only the firehose event-types
+    /// (poll-summary, healthcheck heartbeat) are passed in by the caller.
+    Task<int> DeleteOldByEventTypesAsync(
+        IReadOnlyCollection<string> eventTypes,
+        DateTime cutoffUtc,
+        CancellationToken cancellationToken = default);
 }

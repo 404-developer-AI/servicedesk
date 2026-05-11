@@ -815,7 +815,12 @@ export type TelavoxAgentLink = {
   userRole: string;
   telavoxExtension: string;
   telavoxUserId: string;
-  capiUserEmail: string;
+  /// PAPI api-user "name" the provisioning service minted for this agent.
+  /// Pre-D this field was called `capiUserEmail`; the PAPI swagger takes a
+  /// `?name=...` query param, not an email body, so the conceptual rename
+  /// followed in v0.0.34 post-D. The DB column is still
+  /// `telavox_agent_links.capi_user_email` for backwards compat.
+  capiUserName: string;
   provisionedUtc: string;
   lastPollUtc: string | null;
   lastPollError: string | null;
@@ -862,11 +867,30 @@ export const telavoxAdminApi = {
       `/api/admin/integrations/telavox/agents/${userId}/provision`,
       { extension },
     ),
+  /// Manual-link fallback for installs where PAPI api-user creation is
+  /// unavailable. Admin pastes a CAPI bearer-token they minted via the
+  /// Telavox webapp; SD stores it verbatim and uses it for per-agent
+  /// polling. No upstream call to mint or revoke.
+  provisionAgentManual: (userId: string, extension: string, capiToken: string) =>
+    request<TelavoxAgentLink>(
+      "POST",
+      `/api/admin/integrations/telavox/agents/${userId}/provision-manual`,
+      { extension, capiToken },
+    ),
   revokeAgent: (userId: string) =>
     request<void>(
       "DELETE",
       `/api/admin/integrations/telavox/agents/${userId}/provision`,
     ),
+  auditLog: (cursor: number | null, limit = 50) => {
+    const qs = new URLSearchParams();
+    if (cursor !== null) qs.set("cursor", String(cursor));
+    qs.set("limit", String(limit));
+    return request<IntegrationAuditPage>(
+      "GET",
+      `/api/admin/integrations/telavox/audit?${qs.toString()}`,
+    );
+  },
 };
 
 // ---- Mail attachment diagnostics ----

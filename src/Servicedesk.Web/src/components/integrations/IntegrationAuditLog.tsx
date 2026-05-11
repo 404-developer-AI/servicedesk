@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   adsolutApi,
+  telavoxAdminApi,
   type IntegrationAuditEntry,
   type IntegrationAuditOutcome,
   type IntegrationAuditPage,
@@ -42,8 +43,10 @@ function tryPretty(json: string): string {
 }
 
 type Props = {
-  /** Which integration to query. Today only `adsolut`; future-proof. */
-  integration: "adsolut";
+  /** Which integration to query. Each backend exposes its own /audit
+   * endpoint scoped to its `integration_audit.integration` column, so
+   * the dispatch lives here. */
+  integration: "adsolut" | "telavox";
 };
 
 export function IntegrationAuditLog({ integration }: Props) {
@@ -57,10 +60,13 @@ export function IntegrationAuditLog({ integration }: Props) {
     queryKey: ["integrations", integration, "audit"] as const,
     initialPageParam: null as number | null,
     queryFn: ({ pageParam }) => {
-      if (integration === "adsolut") {
-        return adsolutApi.auditLog(pageParam as number | null, PAGE_SIZE);
+      const cursor = pageParam as number | null;
+      switch (integration) {
+        case "adsolut":
+          return adsolutApi.auditLog(cursor, PAGE_SIZE);
+        case "telavox":
+          return telavoxAdminApi.auditLog(cursor, PAGE_SIZE);
       }
-      throw new Error(`Unsupported integration: ${integration}`);
     },
     getNextPageParam: (last) => last.nextCursor ?? null,
     staleTime: 15_000,

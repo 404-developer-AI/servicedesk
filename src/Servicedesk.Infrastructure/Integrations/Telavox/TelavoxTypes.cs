@@ -15,14 +15,23 @@ public sealed record TelavoxExtension(
     string? Name,
     string? UserEmail);
 
-/// Result of POST /papi/v1/customers/{customer}/api-users. Carries the
-/// CAPI token verbatim — the provisioning service immediately writes it to
-/// protected_secrets and forgets it; nothing else in the codebase holds the
-/// plaintext after that. UserId is the Telavox-side opaque identifier we
-/// store on telavox_agent_links so a future re-link can target the same
-/// underlying Telavox user.
+/// Result of the two-step PAPI provisioning flow:
+/// <list type="number">
+/// <item>POST <c>/v1/customers/{customer}/api-users?name=&lt;name&gt;</c> — creates
+/// the api-user shell, response carries the api-user <c>key</c>.</item>
+/// <item>POST <c>/v1/customers/{customer}/api-users/{key}/tokens</c> — mints a
+/// CAPI bearer-token, response carries <c>bearerToken</c>.</item>
+/// </list>
+/// <see cref="Name"/> is the human-readable label the PAPI was called with
+/// (Telavox does not RFC-validate it; we keep it for traceability and to
+/// surface in the agent-mapping UI). <see cref="UserId"/> is the
+/// Telavox-side api-user key (e.g. <c>apiUser-123</c>); it goes into
+/// <see cref="TelavoxAgentLink.TelavoxUserId"/> and is the path-param the
+/// DELETE flow targets on revoke. <see cref="Token"/> is the bearer the
+/// provisioning service immediately writes to <c>protected_secrets</c> and
+/// forgets — nothing else in the codebase holds the plaintext after that.
 public sealed record TelavoxCreateApiUserResult(
-    string Email,
+    string Name,
     string UserId,
     string Token);
 
@@ -40,16 +49,20 @@ public sealed record TelavoxCall(
     string? ToNumber,
     DateTimeOffset? StartUtc);
 
-/// One row of <c>telavox_agent_links</c>. The CapiUserEmail is the
-/// /papi/api-users primary-key Telavox uses to identify this token-bearer;
-/// it's stored alongside the secret-key so revocation can target the
-/// correct DELETE endpoint without a second PAPI call.
+/// One row of <c>telavox_agent_links</c>. <see cref="TelavoxUserId"/> is
+/// the PAPI api-user key (e.g. <c>apiUser-123</c>) returned by the create
+/// flow; this is the path-segment the DELETE endpoint takes on revoke.
+/// <see cref="CapiUserName"/> is the human-readable label the api-user was
+/// minted with — useful for cross-checking with the Telavox admin UI and
+/// for audit. The DB column is still named <c>capi_user_email</c> for
+/// backwards compat with v0.0.34 commit B, but post-D the value is a name,
+/// not an email (PAPI uses <c>?name=...</c> not an email body field).
 public sealed record TelavoxAgentLink(
     Guid Id,
     Guid UserId,
     string TelavoxExtension,
     string TelavoxUserId,
-    string CapiUserEmail,
+    string CapiUserName,
     DateTime ProvisionedUtc,
     DateTime? LastPollUtc,
     string? LastPollError,

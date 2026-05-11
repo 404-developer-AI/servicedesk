@@ -105,6 +105,51 @@ public sealed class IntegrationsHealthcheckWorker : BackgroundService
     private async Task TickAsync(IServiceProvider sp, CancellationToken ct)
     {
         await TickAdsolutAsync(sp, ct);
+        await SweepNoisyAuditAsync(sp, ct);
+    }
+
+    /// Firehose event-types pruned by the periodic retention sweep. ANY
+    /// addition here is a deliberate decision that those rows are
+    /// pure-volume operational noise — admin-action rows and rare-PAPI
+    /// rows MUST NOT be added.
+    private static readonly string[] NoisyAuditEventTypes =
+    {
+        Telavox.TelavoxEventTypes.AgentCallsPoll, // capi.calls.poll — 1 row per coalesce window per process
+        AdsolutEventTypes.HealthcheckTick,        // healthcheck.tick — 1 row per healthcheck interval
+    };
+
+    /// Deletes integration_audit rows older than the configured retention
+    /// window for the high-volume operational event-types. Runs once per
+    /// healthcheck tick (default cadence 5 min) — at that frequency the
+    /// table stays bounded even on an install with 10+ linked agents and
+    /// a very short coalesce window.
+    private async Task SweepNoisyAuditAsync(IServiceProvider sp, CancellationToken ct)
+    {
+        var settings = sp.GetRequiredService<ISettingsService>();
+        var auditLog = sp.GetRequiredService<IIntegrationAuditLogger>();
+
+        var retentionHours = Math.Max(1, await settings.GetAsync<int>(
+            SettingKeys.Integrations.AuditRetentionHours, ct));
+        var cutoff = DateTime.UtcNow - TimeSpan.FromHours(retentionHours);
+
+        try
+        {
+            var deleted = await auditLog.DeleteOldByEventTypesAsync(
+                NoisyAuditEventTypes, cutoff, ct);
+            if (deleted > 0)
+            {
+                _logger.LogInformation(
+                    "integration_audit retention sweep: deleted {Rows} rows older than {Hours}h",
+                    deleted, retentionHours);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Defensive — the logger swallows internally, but a settings
+            // read could throw before we ever get there. A retention-sweep
+            // failure must not cascade into the healthcheck status.
+            _logger.LogWarning(ex, "integration_audit retention sweep threw.");
+        }
     }
 
     private async Task TickAdsolutAsync(IServiceProvider sp, CancellationToken ct)

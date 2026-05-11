@@ -47,11 +47,19 @@ export function ContactPicker({
   })
 
   React.useEffect(() => {
-    if (value && !selectedContact) {
-      contactApi.list().then((all) => {
-        const found = all.find((c) => c.id === value)
-        if (found) setSelectedContact(found)
-      })
+    if (value && selectedContact?.id !== value) {
+      // Resolve the label via a direct get-by-id rather than scanning the
+      // first page of list(). Pre-filled contacts (e.g. the Telavox call
+      // popup's "Create ticket" with an arbitrary caller) often aren't on
+      // page 1, so list() leaves the trigger label empty even though the
+      // form field is set. get(id) is one round-trip and works regardless
+      // of pagination.
+      contactApi.get(value).then(
+        (c) => setSelectedContact(c),
+        () => {
+          /* ignore — picker just stays unresolved if the id is bad */
+        },
+      )
     }
     if (!value) setSelectedContact(null)
   }, [value, selectedContact])

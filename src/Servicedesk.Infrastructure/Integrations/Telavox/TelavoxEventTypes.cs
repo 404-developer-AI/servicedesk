@@ -38,6 +38,14 @@ public static class TelavoxEventTypes
     /// extension number so a wrong-extension mistake is traceable.
     public const string AgentProvisioned = "integration.telavox.agent.provisioned";
 
+    /// Admin used the manual-link fallback — pasted a CAPI token they
+    /// minted themselves in the Telavox webapp, bypassing the PAPI
+    /// api-user create flow. Distinct event so a forensic review can tell
+    /// PAPI-minted vs admin-pasted links apart (security posture
+    /// matters: manual tokens are out-of-band and can only be invalidated
+    /// from the Telavox webapp).
+    public const string AgentProvisionedManually = "integration.telavox.agent.provisioned_manual";
+
     /// Admin de-linked an SD user. Provisioning service has deleted the
     /// PAPI api-user, removed the protected_secrets row, and dropped the
     /// telavox_agent_links row.
@@ -54,12 +62,20 @@ public static class TelavoxEventTypes
     /// agent-mapping UI to populate the per-agent dropdown.
     public const string ExtensionsList = "papi.extensions.list";
 
-    /// POST /papi/v1/customers/{customer}/api-users — provision a fresh
-    /// CAPI token tied to one SD user. One row per click on "Link agent".
+    /// POST /v1/customers/{customer}/api-users — first leg of the
+    /// provisioning flow (creates the api-user shell). One row per click
+    /// on "Link agent".
     public const string ApiUserCreate = "papi.api_user.create";
 
-    /// DELETE /papi/v1/customers/{customer}/api-users/{email} — revoke
-    /// the CAPI token. Fired on de-link.
+    /// POST /v1/customers/{customer}/api-users/{api-user}/tokens — second
+    /// leg of the provisioning flow (mints the CAPI bearer-token tied to
+    /// the api-user just created). Audited separately from ApiUserCreate
+    /// so an admin diagnosing a half-provisioned state can see which leg
+    /// failed.
+    public const string ApiUserTokenCreate = "papi.api_user.token.create";
+
+    /// DELETE /v1/customers/{customer}/api-users/{api-user-key} — revoke
+    /// the api-user (and all its bearer-tokens). Fired on de-link.
     public const string ApiUserDelete = "papi.api_user.delete";
 
     /// CAPI poll tick — one outbound call per linked agent per

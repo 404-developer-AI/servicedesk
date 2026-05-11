@@ -67,3 +67,27 @@ public sealed record ContactOverviewPage(
     int Total,
     int Page,
     int PageSize);
+
+/// Row shape returned by the call-popup's phone-keyed lookup. Adds the
+/// "best" company link (primary → secondary → supplier priority) to the
+/// base contact so the popup can render the linked company name without
+/// a second round-trip. All three link fields are null when the contact
+/// has no links at all. Kept separate from <see cref="Contact"/> so the
+/// many other Contact consumers (picker, edit form, list) keep their
+/// flat shape.
+public sealed record ContactPhoneLookupRow(
+    Guid Id,
+    string CompanyRole,
+    string FirstName,
+    string LastName,
+    string Email,
+    string Phone,
+    string MobilePhone,
+    string JobTitle,
+    bool IsActive,
+    DateTime CreatedUtc,
+    DateTime UpdatedUtc,
+    Guid? PrimaryCompanyId,
+    Guid? LinkedCompanyId,
+    string? LinkedCompanyName,
+    string? LinkedCompanyRole);
