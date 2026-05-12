@@ -520,4 +520,10 @@ const FALLBACK_PREFS: TimesheetPreferences = {
   targetMinutesPerDay: 8 * 60,
   targetMinutesPerWeek: 40 * 60,
   workDays: [1, 2, 3, 4, 5],
+  // v0.0.36 — mirror the server-side defaults from SettingDefaults so the
+  // ~50ms loading window before /preferences resolves doesn't show absence-
+  // overshoot flags differently from the eventual real values.
+  maxAbsenceMinutesPerDay: 30,
+  officeStartMinutes: 8 * 60 + 30,
+  officeEndMinutes: 17 * 60,
 };
