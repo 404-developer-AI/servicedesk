@@ -54,6 +54,8 @@ export type AuthUserPayload = {
   role: Role;
   amr: string;
   twoFactorEnabled: boolean;
+  timesheetEnabled: boolean;
+  timesheetManager: boolean;
 };
 
 export type MeResponse = {

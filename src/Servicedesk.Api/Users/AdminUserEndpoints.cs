@@ -53,6 +53,18 @@ public static class AdminUserEndpoints
             .WithName("AdminUsersDelete")
             .WithOpenApi();
 
+        group.MapPut("/{id:guid}/timesheet-flags", UpdateTimesheetFlags)
+            .WithName("AdminUsersUpdateTimesheetFlags")
+            .WithOpenApi();
+
+        group.MapGet("/{id:guid}/timesheet-preferences", GetTimesheetPreferences)
+            .WithName("AdminUsersGetTimesheetPreferences")
+            .WithOpenApi();
+
+        group.MapPut("/{id:guid}/timesheet-preferences", UpdateTimesheetPreferences)
+            .WithName("AdminUsersUpdateTimesheetPreferences")
+            .WithOpenApi();
+
         return app;
     }
 
@@ -344,6 +356,118 @@ public static class AdminUserEndpoints
             DeleteResult.BlockedReferences blocked =>
                 Results.Conflict(new { error = "This user still has activity: " + string.Join("; ", blocked.Reasons) + ". Deactivate them instead." }),
             _ => Results.Problem("Unhandled delete result."),
+        };
+    }
+
+    // ---- timesheet feature flags (v0.0.35) ---------------------------------
+
+    public sealed record UpdateTimesheetFlagsRequest(bool Enabled, bool Manager);
+
+    private static async Task<IResult> UpdateTimesheetFlags(
+        Guid id,
+        [FromBody] UpdateTimesheetFlagsRequest request,
+        HttpContext httpContext,
+        IUserAdminService admin,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        var adminId = RequireUserId(httpContext);
+        if (adminId is null) return Results.Unauthorized();
+
+        var result = await admin.UpdateTimesheetFlagsAsync(
+            id, request.Enabled, request.Manager, adminId.Value, ct);
+        return result switch
+        {
+            UpdateTimesheetFlagsResult.Updated updated =>
+                await LogAndReturnAsync(httpContext, audit,
+                    AuthEventTypes.UserTimesheetFlagsChanged,
+                    target: updated.Row.Id.ToString(),
+                    payload: new
+                    {
+                        email = updated.Row.Email,
+                        timesheet_enabled = updated.Row.TimesheetEnabled,
+                        timesheet_manager = updated.Row.TimesheetManager,
+                    },
+                    body: updated.Row,
+                    statusCode: StatusCodes.Status200OK,
+                    ct: ct),
+            UpdateTimesheetFlagsResult.UserNotFound => Results.NotFound(),
+            UpdateTimesheetFlagsResult.CustomerNotAllowed =>
+                Results.Conflict(new { error = "Timesheet flags are only available for Agent and Admin accounts." }),
+            _ => Results.Problem("Unhandled timesheet-flags result."),
+        };
+    }
+
+    // ---- v0.0.35-E timesheet preferences (per-user override CRUD) ---------
+
+    public sealed record TimesheetPreferencesRequest(
+        int? DayStartMinutes,
+        int? TargetMinutesPerDay,
+        int? TargetMinutesPerWeek,
+        IReadOnlyList<int>? WorkDays,
+        int? MaxAbsenceMinutesPerDay,
+        int? OfficeStartMinutes,
+        int? OfficeEndMinutes);
+
+    private static async Task<IResult> GetTimesheetPreferences(
+        Guid id,
+        Servicedesk.Infrastructure.Timesheet.ITimesheetPreferencesService prefs,
+        CancellationToken ct)
+    {
+        var effective = await prefs.GetEffectiveAsync(id, ct);
+        var overrideValues = await prefs.GetOverrideAsync(id, ct);
+        // Return both: the override-fields show "what the admin has set"
+        // (with nulls where they're falling back), the effective bundle
+        // shows "what the user actually sees" once the merge applies.
+        return Results.Ok(new
+        {
+            effective,
+            @override = overrideValues ?? new Servicedesk.Infrastructure.Timesheet.TimesheetOverride(null, null, null, null, null, null, null),
+        });
+    }
+
+    private static async Task<IResult> UpdateTimesheetPreferences(
+        Guid id,
+        [FromBody] TimesheetPreferencesRequest request,
+        HttpContext httpContext,
+        Servicedesk.Infrastructure.Timesheet.ITimesheetPreferencesService prefs,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        var input = new Servicedesk.Infrastructure.Timesheet.TimesheetOverrideInput(
+            DayStartMinutes: request.DayStartMinutes,
+            TargetMinutesPerDay: request.TargetMinutesPerDay,
+            TargetMinutesPerWeek: request.TargetMinutesPerWeek,
+            WorkDays: request.WorkDays,
+            MaxAbsenceMinutesPerDay: request.MaxAbsenceMinutesPerDay,
+            OfficeStartMinutes: request.OfficeStartMinutes,
+            OfficeEndMinutes: request.OfficeEndMinutes);
+
+        var result = await prefs.UpdateOverrideAsync(id, input, ct);
+        return result switch
+        {
+            Servicedesk.Infrastructure.Timesheet.UpdateOverrideResult.Updated upd =>
+                await LogAndReturnAsync(httpContext, audit,
+                    AuthEventTypes.UserTimesheetPreferencesChanged,
+                    target: id.ToString(),
+                    payload: new
+                    {
+                        user_id = id,
+                        day_start_minutes = upd.Override.DayStartMinutes,
+                        target_minutes_per_day = upd.Override.TargetMinutesPerDay,
+                        target_minutes_per_week = upd.Override.TargetMinutesPerWeek,
+                        work_days = upd.Override.WorkDays,
+                        max_absence_minutes_per_day = upd.Override.MaxAbsenceMinutesPerDay,
+                        office_start_minutes = upd.Override.OfficeStartMinutes,
+                        office_end_minutes = upd.Override.OfficeEndMinutes,
+                    },
+                    body: upd.Override,
+                    statusCode: StatusCodes.Status200OK,
+                    ct: ct),
+            Servicedesk.Infrastructure.Timesheet.UpdateOverrideResult.UserNotFound => Results.NotFound(),
+            Servicedesk.Infrastructure.Timesheet.UpdateOverrideResult.ValidationFailed v =>
+                Results.UnprocessableEntity(new { errors = v.Errors }),
+            _ => Results.Problem("Unhandled timesheet-preferences result."),
         };
     }
 

@@ -195,6 +195,19 @@ public static class DependencyInjection
         services.AddSingleton<Persistence.KnowledgeBase.IKbConfigRepository, Persistence.KnowledgeBase.KbConfigRepository>();
         services.AddSingleton<Persistence.KnowledgeBase.IKbSectionRepository, Persistence.KnowledgeBase.KbSectionRepository>();
         services.AddSingleton<Persistence.KnowledgeBase.IKbArticleRepository, Persistence.KnowledgeBase.KbArticleRepository>();
+
+        // Timesheet (v0.0.35). TaskService caches the catalogue (rarely
+        // changes); EntryService is uncached because each agent's daily
+        // grid is hit once per page-load and writes invalidate it
+        // implicitly via the next read.
+        services.AddSingleton<Timesheet.ITimesheetTaskService, Timesheet.TimesheetTaskService>();
+        services.AddSingleton<Timesheet.ITimesheetEntryService, Timesheet.TimesheetEntryService>();
+        services.AddSingleton<Timesheet.IManagerTimesheetService, Timesheet.ManagerTimesheetService>();
+        services.AddSingleton<Timesheet.ITimesheetPreferencesService, Timesheet.TimesheetPreferencesService>();
+        services.AddSingleton<Timesheet.ITicketTimesheetService, Timesheet.TicketTimesheetService>();
+        // Default to the no-op notifier; the Api project overrides this
+        // with the SignalR-backed implementation.
+        services.AddSingleton<Realtime.ITimesheetEntryNotifier, Realtime.NullTimesheetEntryNotifier>();
         services.AddSingleton<IMailAttachmentDiagnostics, MailAttachmentDiagnostics>();
         services.AddSingleton<IMailTimelineEnricher, MailTimelineEnricher>();
         services.AddSingleton<IMailFinalizer, MailFinalizer>();
@@ -299,6 +312,12 @@ public static class DependencyInjection
         // again by the ScopedSearchSource decorator.
         services.AddSingleton<TriggerSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<TriggerSearchSource>()));
+
+        // Timesheet search-source (v0.0.35 commit H). Customer sees zero
+        // hits; Agent/Admin see entries scoped by the timesheet_manager
+        // flag (read per-query from the users row).
+        services.AddSingleton<TimesheetSearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<TimesheetSearchSource>()));
 
         services.AddHostedService<DatabaseBootstrapper>();
         services.AddHostedService<SettingsSeeder>();

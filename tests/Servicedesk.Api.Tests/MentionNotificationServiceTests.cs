@@ -231,6 +231,7 @@ public sealed class MentionNotificationServiceTests
         public Task UpdatePasswordHashAsync(Guid userId, string newHash, CancellationToken ct = default) => Task.CompletedTask;
         public Task RecordSuccessfulLoginAsync(Guid userId, CancellationToken ct = default) => Task.CompletedTask;
         public Task<bool> RecordFailedLoginAsync(Guid userId, int maxAttempts, int windowSeconds, int lockoutDurationSeconds, CancellationToken ct = default) => Task.FromResult(false);
+        public Task<TimesheetFlags> GetTimesheetFlagsAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(TimesheetFlags.None);
     }
 
     private sealed class StubTaxonomy : ITaxonomyRepository

@@ -421,6 +421,70 @@ public static class SettingKeys
         public const string EscalationWarningMinutes = "Triggers.EscalationWarningMinutes";
     }
 
+    /// v0.0.35-E — Timesheet globals. Default start-tijd / dag-target /
+    /// week-target / werkdagen apply to every Timesheet user that has not
+    /// set a per-user override on their <c>users</c>-row. The per-user
+    /// overrides live in <c>timesheet_*</c> columns on <c>users</c> and
+    /// are NULL when the global default should win.
+    public static class Timesheet
+    {
+        /// Local minute-of-day used as the "start" pre-fill on the first
+        /// new entry of a day (Tab 1). The agent's first row defaults to
+        /// this value; subsequent rows pre-fill from the previous row's
+        /// end-time. Stored as minutes-since-midnight to match the entry
+        /// schema (which also stores time as minutes). Default 510 = 08:30.
+        public const string DefaultDayStartMinutes = "Timesheet.DefaultDayStartMinutes";
+
+        /// Target work-minutes per work-day for the Tab-3 grid colour
+        /// comparison. Default 480 (8h). Absence-minutes count toward the
+        /// target, so a full Verlof-day is shown as "on target" rather
+        /// than "8h short".
+        public const string DefaultTargetMinutesPerDay = "Timesheet.DefaultTargetMinutesPerDay";
+
+        /// Target work-minutes per ISO-week for the week-subtotal row in
+        /// Tab 3. Default 2400 (40h).
+        public const string DefaultTargetMinutesPerWeek = "Timesheet.DefaultTargetMinutesPerWeek";
+
+        /// Set of weekdays counted as work-days, CSV of ISO weekday
+        /// numbers (1=Mon..7=Sun). Drives the "Not filled" red badge for
+        /// missing days in Tab 3. Default "1,2,3,4,5" (Mon–Fri).
+        public const string DefaultWorkDays = "Timesheet.DefaultWorkDays";
+
+        /// v0.0.36 — daily ceiling on absence-task minutes before the
+        /// week is marked as "target not met". A task that has the
+        /// `is_absence` flag set (e.g. Verlof, Ziek, Overig) counts
+        /// against this ceiling; once any day in the ISO-week exceeds
+        /// it the entire week flips to red regardless of total minutes.
+        /// 0 = no ceiling (the previous behaviour). Default 30 min/day.
+        public const string DefaultMaxAbsenceMinutesPerDay = "Timesheet.DefaultMaxAbsenceMinutesPerDay";
+
+        /// v0.0.36 — office-hour window used by Tab 1 to flag row-to-row
+        /// gaps and overlaps. A mismatch is highlighted in red iff the
+        /// gap/overlap zone falls inside [start, end]. Stored as
+        /// minutes-since-midnight, same as the day-start setting. The
+        /// per-user override columns
+        /// (timesheet_office_start_minutes / _end_minutes) take precedence.
+        /// Default 510..1020 = 08:30..17:00.
+        public const string DefaultOfficeStartMinutes = "Timesheet.DefaultOfficeStartMinutes";
+        public const string DefaultOfficeEndMinutes   = "Timesheet.DefaultOfficeEndMinutes";
+
+        /// v0.0.35-F — HTML fragments used by the "Import registered time"
+        /// button on the ticket-reply editor. Header is emitted once before
+        /// the rows, row is repeated per entry with placeholders, footer is
+        /// emitted once after the rows with total placeholders.
+        ///
+        /// Row placeholders: {{date}}, {{start}}, {{end}}, {{duration}},
+        /// {{minutes}}, {{description}}, {{agent}}, {{task}}.
+        /// Footer placeholders: {{total_duration}}, {{total_minutes}},
+        /// {{total_hours}}, {{count}}.
+        ///
+        /// Row data is HTML-escaped before substitution; the templates
+        /// themselves are admin-controlled and emitted verbatim.
+        public const string ReplyHeaderHtml = "Timesheet.ReplyHeaderHtml";
+        public const string ReplyRowHtml = "Timesheet.ReplyRowHtml";
+        public const string ReplyFooterHtml = "Timesheet.ReplyFooterHtml";
+    }
+
     public static class Health
     {
         // Security-activity subsystem (v0.0.18). Samples the audit_log over a
@@ -819,5 +883,42 @@ public static class SettingDefaults
             "How often (seconds) the time-trigger scheduler scans for tickets whose pending-till or SLA deadline has elapsed. Lower values reduce latency but raise DB load; the floor is 15 seconds. The default of 60 mirrors a 1-minute tick which is fine-grained enough for any helpdesk SLA."),
         new SettingDefault(SettingKeys.Triggers.EscalationWarningMinutes, "30", "int", "Triggers",
             "How many minutes before the SLA deadline an 'escalation_warning' trigger fires (e.g. 30 = warn 30 minutes before breach). Has no effect on triggers using the 'reminder' or 'escalation' modes."),
+
+        // Timesheet — v0.0.35-E. Global defaults that drive the Tab-1
+        // start-prefill and the Tab-3 target colour-coding. Every Timesheet
+        // user starts on these values; an admin can override per user via
+        // the timesheet_* columns on users (NULL there = use these defaults).
+        new SettingDefault(SettingKeys.Timesheet.DefaultDayStartMinutes, "510", "int", "Timesheet",
+            "Start time pre-fill (minutes since midnight) for the first new row of a day on Tab 1. 510 = 08:30. Per-user overrides on the user-edit page take precedence; an empty per-user value falls back to this default."),
+        new SettingDefault(SettingKeys.Timesheet.DefaultTargetMinutesPerDay, "480", "int", "Timesheet",
+            "Target work-minutes per work-day used by the Tab-3 colour-coding (Under / On / Over). 480 = 8h. Absence-minutes count toward the target so a full Verlof-day shows as 'On target'."),
+        new SettingDefault(SettingKeys.Timesheet.DefaultTargetMinutesPerWeek, "2400", "int", "Timesheet",
+            "Target work-minutes per ISO-week used by the Tab-3 week-subtotal row. 2400 = 40h."),
+        new SettingDefault(SettingKeys.Timesheet.DefaultWorkDays, "1,2,3,4,5", "string", "Timesheet",
+            "Comma-separated ISO weekday numbers (1=Mon..7=Sun) counted as work-days. A day not in this set is shown muted in Tab 3 and never flagged as 'Not filled'. Default 1,2,3,4,5 (Mon–Fri)."),
+        new SettingDefault(SettingKeys.Timesheet.DefaultMaxAbsenceMinutesPerDay, "30", "int", "Timesheet",
+            "Daily ceiling on absence-task minutes (Verlof, Ziek, …) before the ISO-week is flagged 'target not met' in Tab 3, regardless of total time logged. 0 = no ceiling. Default 30 (≈2.5h per 5-day work week)."),
+        new SettingDefault(SettingKeys.Timesheet.DefaultOfficeStartMinutes, "510", "int", "Timesheet",
+            "Office-hours start (minutes since midnight). Tab 1 flags a row red when its start time doesn't connect to the previous row's end AND the mismatch falls inside the office window. 510 = 08:30."),
+        new SettingDefault(SettingKeys.Timesheet.DefaultOfficeEndMinutes, "1020", "int", "Timesheet",
+            "Office-hours end (minutes since midnight). 1020 = 17:00."),
+
+        // Timesheet reply-template — v0.0.35-F. The "Import registered time"
+        // button on the reply editor concatenates header + (row repeated) +
+        // footer with row placeholders substituted server-side. Defaults
+        // emit a clean HTML table with inline styles so it renders in any
+        // mail client without depending on the install's CSS.
+        new SettingDefault(SettingKeys.Timesheet.ReplyHeaderHtml,
+            "<p>Time logged on this ticket:</p>\n<table style=\"border-collapse:collapse;width:100%;font-family:Arial,Helvetica,sans-serif;font-size:13px;\"><thead><tr style=\"background:#f3f4f6;\"><th style=\"padding:6px 10px;text-align:left;border:1px solid #e5e7eb;\">Date</th><th style=\"padding:6px 10px;text-align:left;border:1px solid #e5e7eb;\">Start</th><th style=\"padding:6px 10px;text-align:left;border:1px solid #e5e7eb;\">End</th><th style=\"padding:6px 10px;text-align:left;border:1px solid #e5e7eb;\">Description</th><th style=\"padding:6px 10px;text-align:right;border:1px solid #e5e7eb;\">Duration</th></tr></thead><tbody>",
+            "string", "Timesheet",
+            "HTML emitted once at the top of the reply-template output. Default is the opening <table> with a header row. Admin-edit to match house style; row data is HTML-escaped at render time so a description cannot break out."),
+        new SettingDefault(SettingKeys.Timesheet.ReplyRowHtml,
+            "<tr><td style=\"padding:6px 10px;border:1px solid #e5e7eb;\">{{date}}</td><td style=\"padding:6px 10px;border:1px solid #e5e7eb;\">{{start}}</td><td style=\"padding:6px 10px;border:1px solid #e5e7eb;\">{{end}}</td><td style=\"padding:6px 10px;border:1px solid #e5e7eb;\">{{description}}</td><td style=\"padding:6px 10px;border:1px solid #e5e7eb;text-align:right;\">{{duration}}</td></tr>",
+            "string", "Timesheet",
+            "HTML emitted once per timesheet entry. Placeholders: {{date}}, {{start}}, {{end}}, {{duration}}, {{minutes}}, {{description}}, {{agent}}, {{task}}. All placeholder values are HTML-escaped before substitution."),
+        new SettingDefault(SettingKeys.Timesheet.ReplyFooterHtml,
+            "</tbody><tfoot><tr style=\"background:#f9fafb;font-weight:600;\"><td style=\"padding:6px 10px;border:1px solid #e5e7eb;\" colspan=\"4\">Total ({{count}} entries)</td><td style=\"padding:6px 10px;border:1px solid #e5e7eb;text-align:right;\">{{total_duration}}</td></tr></tfoot></table>",
+            "string", "Timesheet",
+            "HTML emitted once after the rows. Placeholders: {{total_duration}}, {{total_minutes}}, {{total_hours}}, {{count}}."),
     };
 }

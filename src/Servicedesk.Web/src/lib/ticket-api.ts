@@ -737,6 +737,8 @@ export type UserAdminRow = {
   twoFactorEnabled: boolean;
   createdUtc: string;
   lastLoginUtc: string | null;
+  timesheetEnabled: boolean;
+  timesheetManager: boolean;
 };
 
 export type M365PickerUser = {
@@ -779,7 +781,68 @@ export const adminUserApi = {
 
   remove: (userId: string) =>
     request<void>("DELETE", `/api/admin/users/${userId}`),
+
+  setTimesheetFlags: (
+    userId: string,
+    enabled: boolean,
+    manager: boolean,
+  ) =>
+    request<UserAdminRow>(
+      "PUT",
+      `/api/admin/users/${userId}/timesheet-flags`,
+      { enabled, manager },
+    ),
+
+  /// v0.0.35-E — per-user Timesheet preference overrides. Reads + writes
+  /// the four nullable columns on `users` (day start, day target, week
+  /// target, work-days). Each field is independently nullable; a null
+  /// means "fall back to the global default".
+  getTimesheetPreferences: (userId: string) =>
+    request<TimesheetUserPreferencesResponse>(
+      "GET",
+      `/api/admin/users/${userId}/timesheet-preferences`,
+    ),
+
+  setTimesheetPreferences: (
+    userId: string,
+    body: TimesheetOverrideBody,
+  ) =>
+    request<TimesheetOverridePayload>(
+      "PUT",
+      `/api/admin/users/${userId}/timesheet-preferences`,
+      body,
+    ),
 };
+
+export type TimesheetOverridePayload = {
+  dayStartMinutes: number | null;
+  targetMinutesPerDay: number | null;
+  targetMinutesPerWeek: number | null;
+  workDays: number[] | null;
+  /// v0.0.36 — daily ceiling on absence-task minutes before the ISO-week
+  /// is flagged 'target not met' on Tab 3. null = fall back to the global
+  /// default (Settings → Timesheet → Max absence per day).
+  maxAbsenceMinutesPerDay: number | null;
+  /// v0.0.36 — office-hour window used by Tab 1 to flag row-to-row gaps
+  /// and overlaps. null = fall back to global.
+  officeStartMinutes: number | null;
+  officeEndMinutes: number | null;
+};
+
+export type TimesheetUserPreferencesResponse = {
+  effective: {
+    dayStartMinutes: number;
+    targetMinutesPerDay: number;
+    targetMinutesPerWeek: number;
+    workDays: number[];
+    maxAbsenceMinutesPerDay: number;
+    officeStartMinutes: number;
+    officeEndMinutes: number;
+  };
+  override: TimesheetOverridePayload;
+};
+
+export type TimesheetOverrideBody = TimesheetOverridePayload;
 
 /// Row shape returned by the call-popup's phone-keyed lookup. Adds the
 /// contact's "best" company link (primary → secondary → supplier priority)

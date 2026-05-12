@@ -23,6 +23,7 @@ import { SlaPill } from "@/components/sla/SlaPill";
 import { TicketSidePanel } from "./components/TicketSidePanel";
 import { TicketTimeline } from "./components/TicketTimeline";
 import { PinnedEventsSummary } from "./components/PinnedEventsSummary";
+import { TicketTimesheetPanel } from "./components/TicketTimesheetPanel";
 import { AddNoteForm } from "./components/AddNoteForm";
 import { buildMailContext, flattenQueueMailboxes } from "./mailContext";
 import { InTicketSearchProvider, useInTicketSearch } from "./components/InTicketSearch";
@@ -663,6 +664,11 @@ function TicketDetailBody({
             />
           </div>
         )}
+
+        {/* v0.0.35-F — time-logged expand panel */}
+        <div className="shrink-0 pb-3">
+          <TicketTimesheetPanel ticketId={ticketId} />
+        </div>
 
         {/* Static: activity divider */}
         <div className="shrink-0 pb-3">

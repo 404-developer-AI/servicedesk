@@ -309,6 +309,7 @@ public static class AuthEndpoints
     private static async Task<IResult> Me(
         HttpContext httpContext,
         ITotpService totp,
+        IUserService users,
         CancellationToken ct)
     {
         var userIdClaim = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -320,9 +321,25 @@ public static class AuthEndpoints
         var role = httpContext.User.FindFirst(ClaimTypes.Role)?.Value ?? "";
         var amr = httpContext.User.FindFirst(SessionAuthenticationHandler.AmrClaimType)?.Value ?? AmrPassword;
         var twoFactorEnabled = await totp.IsEnabledAsync(userId, ct);
+
+        // v0.0.35 — surface the Timesheet feature flags so the frontend
+        // can decide whether to render the menu item without a second
+        // round-trip. Lives on IUserService so the test fakes don't
+        // need a real NpgsqlDataSource for the auth-endpoint surface.
+        var flags = await users.GetTimesheetFlagsAsync(userId, ct);
+
         return Results.Ok(new
         {
-            user = new { id = userId, email, role, amr, twoFactorEnabled },
+            user = new
+            {
+                id = userId,
+                email,
+                role,
+                amr,
+                twoFactorEnabled,
+                timesheetEnabled = flags.Enabled,
+                timesheetManager = flags.Manager,
+            },
             serverTimeUtc = DateTimeOffset.UtcNow,
         });
     }

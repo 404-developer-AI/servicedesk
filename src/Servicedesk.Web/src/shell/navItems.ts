@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   Inbox,
   BookOpen,
+  Clock,
   Settings,
   Timer,
   type LucideIcon,
@@ -55,6 +56,19 @@ export const NAV_ITEMS: readonly NavItem[] = [
     roles: ["Agent", "Admin"],
     comingIn: "",
     description: "Internal articles and runbooks with full-text search.",
+    section: "main",
+  },
+  // v0.0.35 — per-user feature flag (`timesheet_enabled` /
+  // `timesheet_manager`). The role gate stays on Agent+Admin; the actual
+  // visibility filter on the flag lives in Sidebar.tsx so a user without
+  // either flag never sees the item even though their role qualifies.
+  {
+    label: "Timesheet",
+    to: "/timesheet",
+    icon: Clock,
+    roles: ["Agent", "Admin"],
+    comingIn: "",
+    description: "Daily time registration — own entries, ticket-linked, with manager overview for opted-in users.",
     section: "main",
   },
   // Profile is reachable from the header avatar dropdown (top-right) and via

@@ -3,6 +3,7 @@ import {
   BookOpen,
   Building2,
   ClipboardList,
+  Clock,
   Contact,
   Eye,
   Mail,
@@ -129,6 +130,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       "KB-level config: active toggle, default locale, supported locales and the section tree that articles live in.",
     icon: BookOpen,
+  },
+  {
+    slug: "timesheet",
+    label: "Timesheet",
+    description:
+      "Global defaults for the registration grid (start time of a new day, daily and weekly targets, work-days set), the task catalogue agents pick from, and the reply-template HTML fragments. Timing defaults can be overridden per user from Users → row action → Timesheet overrides.",
+    icon: Clock,
   },
   {
     slug: "mail-diagnostics",

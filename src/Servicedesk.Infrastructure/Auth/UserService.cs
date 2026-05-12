@@ -59,6 +59,19 @@ public interface IUserService
         int windowSeconds,
         int lockoutDurationSeconds,
         CancellationToken ct = default);
+
+    /// v0.0.35 — surfaces the two per-user Timesheet feature flags so the
+    /// /auth/me endpoint can decide whether to render the menu item
+    /// without a second DB hit. Returns (false, false) when the user is
+    /// gone or has never had the flags set.
+    Task<TimesheetFlags> GetTimesheetFlagsAsync(Guid userId, CancellationToken ct = default);
+}
+
+/// Per-user Timesheet feature flags. Empty struct-y record so the call
+/// stays cheap and we don't allocate a class for two booleans.
+public readonly record struct TimesheetFlags(bool Enabled, bool Manager)
+{
+    public static TimesheetFlags None => default;
 }
 
 public sealed class UserService : IUserService
@@ -310,6 +323,27 @@ public sealed class UserService : IUserService
         return rows.ToList();
     }
 
+    public async Task<TimesheetFlags> GetTimesheetFlagsAsync(Guid userId, CancellationToken ct = default)
+    {
+        // Dapper + readonly record struct doesn't play nicely (see
+        // feedback memory: dapper_record_struct_null_bug). Read into a
+        // mutable holder, then project. Returns None for missing rows.
+        const string sql = """
+            SELECT timesheet_enabled AS Enabled,
+                   timesheet_manager AS Manager
+            FROM users WHERE id = @id
+            """;
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var row = await connection.QuerySingleOrDefaultAsync<TimesheetFlagsRow>(
+            new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
+        return row is null ? TimesheetFlags.None : new TimesheetFlags(row.Enabled, row.Manager);
+    }
+
+    private sealed class TimesheetFlagsRow
+    {
+        public bool Enabled { get; set; }
+        public bool Manager { get; set; }
+    }
 }
 
 public sealed record AgentUser(Guid Id, string Email, string RoleName);

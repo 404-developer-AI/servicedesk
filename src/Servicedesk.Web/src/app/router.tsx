@@ -49,6 +49,8 @@ import { KbSectionPage } from "@/pages/kb/KbSectionPage";
 import { KbArticlePage } from "@/pages/kb/KbArticlePage";
 import { KbArticleEditPage } from "@/pages/kb/KbArticleEditPage";
 import { KnowledgeBaseSettingsPage } from "@/pages/settings/KnowledgeBaseSettingsPage";
+import { TimesheetPage } from "@/pages/timesheet/TimesheetPage";
+import { TimesheetSettingsPage } from "@/pages/settings/TimesheetSettingsPage";
 
 // The router reads the "current role" outside of React here (for the
 // beforeLoad gate). The auth store is populated by bootstrapAuth() in
@@ -196,6 +198,19 @@ const slaLogRoute = createRoute({
   component: SlaLogPage,
 });
 
+// v0.0.35 — Timesheet feature. Role gate keeps customers out; the actual
+// "do they have the flag" check is in the sidebar visibility filter and
+// inside the page itself for Tab 2/3. A direct /timesheet visit by an
+// agent without the flag renders Tab 1 anyway — they just have no nav
+// item to reach it. We do not redirect because admins audit-debugging
+// "what does the page render for me without the flag" should work.
+const timesheetRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/timesheet",
+  beforeLoad: authGate(["Agent", "Admin"]),
+  component: TimesheetPage,
+});
+
 // Standalone Knowledge Base. Customers have no access in v0.0.31; the
 // public-portal tier lands in v0.1.x with its own slug-based routing.
 const kbRoute = createRoute({
@@ -326,6 +341,12 @@ const settingsKnowledgeBaseRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "knowledge-base",
   component: KnowledgeBaseSettingsPage,
+});
+
+const settingsTimesheetRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "timesheet",
+  component: TimesheetSettingsPage,
 });
 
 // Deep-link from global search and run-history "edit" button. Renders the
@@ -496,6 +517,7 @@ const routeTree = rootRoute.addChildren([
   contactDetailRoute,
   searchRoute,
   slaLogRoute,
+  timesheetRoute,
   kbRoute,
   kbSectionRoute,
   kbArticleNewRoute,
@@ -513,6 +535,7 @@ const routeTree = rootRoute.addChildren([
     settingsTriggerDetailRoute,
     settingsTriggerRunsRoute,
     settingsKnowledgeBaseRoute,
+    settingsTimesheetRoute,
     settingsIntegrationsRoute,
     settingsAdsolutIntegrationRoute,
     settingsAdsolutCoverageRoute,

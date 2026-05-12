@@ -41,7 +41,9 @@ public sealed class UserAdminService : IUserAdminService
                     u.is_active       AS IsActive,
                     (t.enabled IS TRUE) AS TwoFactorEnabled,
                     u.created_utc     AS CreatedUtc,
-                    u.last_login_utc  AS LastLoginUtc
+                    u.last_login_utc  AS LastLoginUtc,
+                    u.timesheet_enabled AS TimesheetEnabled,
+                    u.timesheet_manager AS TimesheetManager
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             ORDER BY u.created_utc ASC
@@ -63,7 +65,9 @@ public sealed class UserAdminService : IUserAdminService
                     u.is_active       AS IsActive,
                     (t.enabled IS TRUE) AS TwoFactorEnabled,
                     u.created_utc     AS CreatedUtc,
-                    u.last_login_utc  AS LastLoginUtc
+                    u.last_login_utc  AS LastLoginUtc,
+                    u.timesheet_enabled AS TimesheetEnabled,
+                    u.timesheet_manager AS TimesheetManager
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             WHERE u.id = @id
@@ -537,6 +541,55 @@ public sealed class UserAdminService : IUserAdminService
         await tx.CommitAsync(ct);
 
         return new DeleteResult.Deleted();
+    }
+
+    public async Task<UpdateTimesheetFlagsResult> UpdateTimesheetFlagsAsync(
+        Guid userId,
+        bool enabled,
+        bool manager,
+        Guid actingAdminId,
+        CancellationToken ct = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await connection.BeginTransactionAsync(ct);
+
+        var currentRole = await connection.ExecuteScalarAsync<string?>(
+            new CommandDefinition(
+                "SELECT role_name FROM users WHERE id = @id FOR UPDATE",
+                new { id = userId },
+                tx,
+                cancellationToken: ct));
+        if (currentRole is null)
+        {
+            await tx.RollbackAsync(ct);
+            return new UpdateTimesheetFlagsResult.UserNotFound();
+        }
+
+        // Customer accounts have no Timesheet UI; reject the mutation
+        // rather than silently writing flags that no UI surfaces.
+        if (string.Equals(currentRole, "Customer", StringComparison.Ordinal))
+        {
+            await tx.RollbackAsync(ct);
+            return new UpdateTimesheetFlagsResult.CustomerNotAllowed();
+        }
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE users SET
+                timesheet_enabled = @enabled,
+                timesheet_manager = @manager
+            WHERE id = @id
+            """,
+            new { id = userId, enabled, manager },
+            tx,
+            cancellationToken: ct));
+        await tx.CommitAsync(ct);
+        _ = actingAdminId;
+
+        var row = await GetByIdAsync(userId, ct);
+        return row is null
+            ? new UpdateTimesheetFlagsResult.UserNotFound()
+            : new UpdateTimesheetFlagsResult.Updated(row);
     }
 
     // ---- helpers -------------------------------------------------------

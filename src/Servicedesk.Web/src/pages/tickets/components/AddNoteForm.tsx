@@ -1,9 +1,10 @@
 import * as React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { MessageCircle, ExternalLink } from "lucide-react";
+import { MessageCircle, ExternalLink, Clock } from "lucide-react";
 import { ticketApi, userApi } from "@/lib/ticket-api";
 import { preferencesApi } from "@/lib/api";
+import { timesheetTicketApi } from "@/lib/timesheet-api";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
@@ -33,6 +34,14 @@ export function AddNoteForm({ ticketId, onSubmitted, mailContext, isPopup = fals
   const [initialContent] = React.useState(savedDraft?.bodyHtml ?? "");
   const [editorKey, setEditorKey] = React.useState(0);
   const [mentionedUserIds, setMentionedUserIds] = React.useState<string[]>([]);
+  // v0.0.35-F — handed by RichTextEditor.onEditorReady; used by the
+  // "Import registered time" button to insert pre-rendered HTML at the
+  // current selection. Local-ref instead of state because we don't need
+  // to re-render when the editor mounts.
+  const editorRef = React.useRef<{
+    chain: () => { focus: () => { insertContent: (html: string) => { run: () => void } } };
+  } | null>(null);
+  const [importing, setImporting] = React.useState(false);
   const queryClient = useQueryClient();
   const attachments = useAttachmentUploads(ticketId);
   const formRef = React.useRef<HTMLDivElement>(null);
@@ -264,7 +273,50 @@ export function AddNoteForm({ ticketId, onSubmitted, mailContext, isPopup = fals
         onUploadFile={attachments.upload}
         onMentionQuery={(q) => userApi.searchAgents(q)}
         onMentionsChange={setMentionedUserIds}
+        onEditorReady={(editor) => {
+          editorRef.current = editor as typeof editorRef.current;
+        }}
       />
+
+      {tab === "reply" && (
+        <div className="mt-2">
+          <button
+            type="button"
+            disabled={importing}
+            onClick={async () => {
+              if (importing) return;
+              setImporting(true);
+              try {
+                const { html } = await timesheetTicketApi.replyHtml(ticketId);
+                if (!html.trim()) {
+                  toast.info("No time logged on this ticket yet");
+                  return;
+                }
+                const editor = editorRef.current;
+                if (!editor) {
+                  toast.error("Editor not ready, try again");
+                  return;
+                }
+                editor.chain().focus().insertContent(html).run();
+                toast.success("Time entries inserted");
+              } catch {
+                toast.error("Failed to load time entries");
+              } finally {
+                setImporting(false);
+              }
+            }}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+              "border-violet-400/30 bg-violet-400/10 text-violet-200 hover:bg-violet-400/15",
+              importing && "opacity-50 cursor-not-allowed",
+            )}
+            title="Insert a summary of every timesheet entry on this ticket into the reply"
+          >
+            <Clock className="h-3.5 w-3.5" />
+            {importing ? "Loading…" : "Import registered time"}
+          </button>
+        </div>
+      )}
 
       <AttachmentTray items={attachments.items} onRemove={attachments.remove} />
 

@@ -18,8 +18,11 @@ import {
   Eye,
   EyeOff,
   Mail,
+  Clock,
+  Users as UsersIcon,
 } from "lucide-react";
 import { adminUserApi, type UserAdminRow, type M365PickerUser } from "@/lib/ticket-api";
+import { TimesheetOverridesDialog } from "@/pages/settings/TimesheetOverridesDialog";
 import { authApi } from "@/lib/api";
 import { useAuth } from "@/auth/authStore";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +74,7 @@ export function UsersSettingsPage() {
   const [addLocalOpen, setAddLocalOpen] = useState(false);
   const [upgradeTarget, setUpgradeTarget] = useState<UserAdminRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<UserAdminRow | null>(null);
+  const [timesheetTarget, setTimesheetTarget] = useState<UserAdminRow | null>(null);
 
   const [search, setSearch] = useState("");
   const filtered = useMemo(() => {
@@ -182,6 +186,7 @@ export function UsersSettingsPage() {
               m365Enabled={m365Enabled}
               onUpgrade={() => setUpgradeTarget(u)}
               onDelete={() => setDeleteTarget(u)}
+              onEditTimesheet={() => setTimesheetTarget(u)}
               onChanged={invalidate}
             />
           ))}
@@ -203,6 +208,11 @@ export function UsersSettingsPage() {
         open={addOpen}
         onOpenChange={setAddOpen}
         onAdded={invalidate}
+      />
+
+      <TimesheetOverridesDialog
+        target={timesheetTarget}
+        onOpenChange={(open) => !open && setTimesheetTarget(null)}
       />
 
       <UpgradeToM365Dialog
@@ -276,6 +286,7 @@ function UserRow({
   m365Enabled,
   onUpgrade,
   onDelete,
+  onEditTimesheet,
   onChanged,
 }: {
   user: UserAdminRow;
@@ -283,6 +294,7 @@ function UserRow({
   m365Enabled: boolean;
   onUpgrade: () => void;
   onDelete: () => void;
+  onEditTimesheet: () => void;
   onChanged: () => void;
 }) {
   const [mutationPending, setMutationPending] = useState(false);
@@ -381,6 +393,51 @@ function UserRow({
         }
       />
 
+      {user.role !== "Customer" && (
+        <>
+          <TimesheetFlagPill
+            label="Timesheet"
+            icon={<Clock className="h-3 w-3" />}
+            active={user.timesheetEnabled}
+            tone="sky"
+            disabled={mutationPending}
+            onToggle={() =>
+              runAction(
+                () =>
+                  adminUserApi.setTimesheetFlags(
+                    user.id,
+                    !user.timesheetEnabled,
+                    user.timesheetManager,
+                  ),
+                user.timesheetEnabled
+                  ? "Timesheet access revoked"
+                  : "Timesheet access granted",
+              )
+            }
+          />
+          <TimesheetFlagPill
+            label="TS manager"
+            icon={<UsersIcon className="h-3 w-3" />}
+            active={user.timesheetManager}
+            tone="violet"
+            disabled={mutationPending}
+            onToggle={() =>
+              runAction(
+                () =>
+                  adminUserApi.setTimesheetFlags(
+                    user.id,
+                    user.timesheetEnabled,
+                    !user.timesheetManager,
+                  ),
+                user.timesheetManager
+                  ? "Timesheet manager revoked"
+                  : "Timesheet manager granted",
+              )
+            }
+          />
+        </>
+      )}
+
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
@@ -410,6 +467,18 @@ function UserRow({
             >
               <ArrowUpCircle className="mr-2 h-4 w-4" />
               Upgrade to M365…
+            </DropdownMenuItem>
+          )}
+          {user.role !== "Customer" && (
+            <DropdownMenuItem
+              disabled={mutationPending}
+              onSelect={(e) => {
+                e.preventDefault();
+                onEditTimesheet();
+              }}
+            >
+              <Clock className="mr-2 h-4 w-4" />
+              Timesheet overrides…
             </DropdownMenuItem>
           )}
           <DropdownMenuSeparator />
@@ -507,6 +576,53 @@ function ActiveToggle({
         <Circle className="h-3 w-3" />
       )}
       {active ? "Active" : "Inactive"}
+    </button>
+  );
+}
+
+// ---- Timesheet flag pill (v0.0.35) ------------------------------------
+
+function TimesheetFlagPill({
+  label,
+  icon,
+  active,
+  tone,
+  disabled,
+  onToggle,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  active: boolean;
+  tone: "sky" | "violet";
+  disabled: boolean;
+  onToggle: () => void;
+}) {
+  // Two tones so the related pair reads as a group without colour-clashing
+  // with the existing Admin (amber) / Active (emerald) chips on the row.
+  const onClass =
+    tone === "sky"
+      ? "border-sky-400/40 bg-sky-400/15 text-sky-300 hover:bg-sky-400/20"
+      : "border-violet-400/40 bg-violet-400/15 text-violet-300 hover:bg-violet-400/20";
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onToggle}
+      title={
+        active
+          ? `Disable ${label.toLowerCase()}`
+          : `Enable ${label.toLowerCase()}`
+      }
+      className={cn(
+        "shrink-0 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+        "disabled:opacity-50 disabled:cursor-not-allowed",
+        active
+          ? onClass
+          : "border-white/[0.08] bg-white/[0.02] text-muted-foreground hover:bg-white/[0.05]",
+      )}
+    >
+      {icon}
+      {label}
     </button>
   );
 }

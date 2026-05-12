@@ -75,8 +75,17 @@ export function Sidebar() {
 
   const inView = !!activeViewId;
 
+  const { user } = useAuth();
   const items = allItems.filter((item) => {
     if (item.to === "/tickets" && (inView || (navSettings && !navSettings.showOpenTickets))) return false;
+    // v0.0.35 — Timesheet is per-user opt-in. Even with the right role,
+    // a user without `timesheet_enabled` or `timesheet_manager` should
+    // not see the menu item.
+    if (item.to === "/timesheet"
+        && !user?.timesheetEnabled
+        && !user?.timesheetManager) {
+      return false;
+    }
     return true;
   });
 
@@ -91,7 +100,6 @@ export function Sidebar() {
   const clock = time ? formatServerLocalClock(time) : "…";
   const date = time ? formatServerLocalDate(time) : "";
 
-  const { user } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
