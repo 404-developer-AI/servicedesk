@@ -77,6 +77,18 @@ public interface IUserAdminService
         Guid userId,
         Guid actingAdminId,
         CancellationToken ct = default);
+
+    /// v0.0.35 — flips the two timesheet-feature flags on the users row.
+    /// Customer accounts are rejected; the timesheet feature is agent /
+    /// admin only. Self-edit is allowed (an admin can opt themselves in
+    /// or out — the flags don't gate authentication, only feature
+    /// visibility, so there's no lockout risk).
+    Task<UpdateTimesheetFlagsResult> UpdateTimesheetFlagsAsync(
+        Guid userId,
+        bool enabled,
+        bool manager,
+        Guid actingAdminId,
+        CancellationToken ct = default);
 }
 
 /// Projection for the /settings/users table. Fields are whitelisted so a
@@ -91,7 +103,9 @@ public sealed record UserAdminRow(
     bool IsActive,
     bool TwoFactorEnabled,
     DateTime CreatedUtc,
-    DateTime? LastLoginUtc);
+    DateTime? LastLoginUtc,
+    bool TimesheetEnabled,
+    bool TimesheetManager);
 
 // ---- Result types ------------------------------------------------------
 
@@ -151,4 +165,11 @@ public abstract record DeleteResult
     public sealed record SelfDeleteForbidden : DeleteResult;
     public sealed record LastAdminForbidden : DeleteResult;
     public sealed record BlockedReferences(IReadOnlyList<string> Reasons) : DeleteResult;
+}
+
+public abstract record UpdateTimesheetFlagsResult
+{
+    public sealed record Updated(UserAdminRow Row) : UpdateTimesheetFlagsResult;
+    public sealed record UserNotFound : UpdateTimesheetFlagsResult;
+    public sealed record CustomerNotAllowed : UpdateTimesheetFlagsResult;
 }

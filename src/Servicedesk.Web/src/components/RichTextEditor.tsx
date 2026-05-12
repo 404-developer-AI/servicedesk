@@ -71,6 +71,11 @@ type RichTextEditorProps = {
   /// Called when the agent clicks an existing `::`-chip — the parent opens
   /// the prefill drawer for that instanceId.
   onIntakeChipClick?: (instanceId: string) => void;
+  /// v0.0.35-F — handed the live editor instance once it mounts so the
+  /// parent can drive imperative commands (e.g. inserting a pre-built HTML
+  /// block from a "Import registered time" button). Null is passed when
+  /// the editor is being torn down on unmount.
+  onEditorReady?: (editor: ReturnType<typeof useEditor> | null) => void;
 };
 
 type ToolbarButtonProps = {
@@ -121,6 +126,7 @@ export function RichTextEditor({
   onIntakeInsert,
   onLinkedFormsChange,
   onIntakeChipClick,
+  onEditorReady,
 }: RichTextEditorProps) {
   // Stash the latest upload callback in a ref so the editor extensions —
   // which see only the prop-snapshot at construction time — can still call
@@ -348,6 +354,16 @@ export function RichTextEditor({
       editor.commands.setContent(incoming);
     }
   }, [editor, content, editable]);
+
+  // v0.0.35-F — hand the live editor instance to the parent once it
+  // exists so it can drive imperative commands (e.g. insertContent from a
+  // "Import registered time" button). Notify with null on teardown to
+  // avoid stale references after the editor is destroyed.
+  useEffect(() => {
+    if (!onEditorReady) return;
+    onEditorReady(editor);
+    return () => onEditorReady(null);
+  }, [editor, onEditorReady]);
 
   const setLink = () => {
     if (!editor) return;

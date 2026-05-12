@@ -2094,6 +2094,205 @@ public sealed class DatabaseBootstrapper : IHostedService
             last_state      TEXT        NULL,
             last_seen_utc   TIMESTAMPTZ NOT NULL DEFAULT now()
         );
+
+        -- ===================================================================
+        -- v0.0.35 Timesheet — per-user feature flags. Two independent
+        -- booleans live directly on the users row (no new role beside
+        -- Customer/Agent/Admin):
+        --   timesheet_enabled  — may register own hours (Tab 1).
+        --   timesheet_manager  — may see Tab 2/3 and edit/delete others'
+        --                         entries. Independent of timesheet_enabled
+        --                         (a manager need not self-register).
+        -- Both default FALSE so an upgrade is silent — admins opt agents
+        -- in explicitly. Customer rows can carry the flags but the API
+        -- layer rejects the mutation for Customers.
+        -- ===================================================================
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS timesheet_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS timesheet_manager BOOLEAN NOT NULL DEFAULT FALSE;
+
+        -- v0.0.35-E — per-user Timesheet preference overrides. NULL means
+        -- "use the global default" from the settings table; a non-NULL
+        -- value overrides for this one user. Storing override-or-NULL
+        -- (instead of always-set) means: (a) an admin who hasn't customised
+        -- the user sees blank fields in the UI and (b) bumping the global
+        -- default cascades to every uncustomised user automatically.
+        --
+        -- timesheet_work_days is stored as a comma-separated list of ISO
+        -- weekday numbers (1=Mon..7=Sun). The CHECK keeps it parseable —
+        -- empty string is fine ("no work days"), otherwise only digits +
+        -- commas and only weekday numbers (1..7). A JSON array would be
+        -- more "typed" but adds a json_array_elements decode in every
+        -- read; CSV stays trivial.
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS timesheet_start_minutes              INT  NULL,
+            ADD COLUMN IF NOT EXISTS timesheet_target_day_minutes         INT  NULL,
+            ADD COLUMN IF NOT EXISTS timesheet_target_week_minutes        INT  NULL,
+            ADD COLUMN IF NOT EXISTS timesheet_work_days                  TEXT NULL,
+            -- v0.0.36 — daily ceiling on absence-task minutes before the
+            -- week is flagged as "target not met". 0 = no limit; the flag
+            -- effectively goes back to "only total time matters".
+            ADD COLUMN IF NOT EXISTS timesheet_max_absence_day_minutes    INT  NULL,
+            -- v0.0.36 — office-hour window. Tab 1 flags row-to-row gaps
+            -- and overlaps in red when the mismatch zone falls inside
+            -- this window. NULLs fall back to the global default.
+            ADD COLUMN IF NOT EXISTS timesheet_office_start_minutes       INT  NULL,
+            ADD COLUMN IF NOT EXISTS timesheet_office_end_minutes         INT  NULL;
+
+        DO $ts_user_prefs_constraints$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'ck_users_ts_start_minutes_range'
+            ) THEN
+                ALTER TABLE users
+                    ADD CONSTRAINT ck_users_ts_start_minutes_range
+                    CHECK (timesheet_start_minutes IS NULL
+                           OR (timesheet_start_minutes BETWEEN 0 AND 1440));
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'ck_users_ts_target_day_range'
+            ) THEN
+                ALTER TABLE users
+                    ADD CONSTRAINT ck_users_ts_target_day_range
+                    CHECK (timesheet_target_day_minutes IS NULL
+                           OR (timesheet_target_day_minutes BETWEEN 0 AND 1440));
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'ck_users_ts_target_week_range'
+            ) THEN
+                ALTER TABLE users
+                    ADD CONSTRAINT ck_users_ts_target_week_range
+                    CHECK (timesheet_target_week_minutes IS NULL
+                           OR (timesheet_target_week_minutes BETWEEN 0 AND 10080));
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'ck_users_ts_work_days_format'
+            ) THEN
+                ALTER TABLE users
+                    ADD CONSTRAINT ck_users_ts_work_days_format
+                    CHECK (timesheet_work_days IS NULL
+                           OR timesheet_work_days = ''
+                           OR timesheet_work_days ~ '^[1-7](,[1-7])*$');
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'ck_users_ts_max_absence_day_range'
+            ) THEN
+                ALTER TABLE users
+                    ADD CONSTRAINT ck_users_ts_max_absence_day_range
+                    CHECK (timesheet_max_absence_day_minutes IS NULL
+                           OR (timesheet_max_absence_day_minutes BETWEEN 0 AND 1440));
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'ck_users_ts_office_start_range'
+            ) THEN
+                ALTER TABLE users
+                    ADD CONSTRAINT ck_users_ts_office_start_range
+                    CHECK (timesheet_office_start_minutes IS NULL
+                           OR (timesheet_office_start_minutes BETWEEN 0 AND 1440));
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'ck_users_ts_office_end_range'
+            ) THEN
+                ALTER TABLE users
+                    ADD CONSTRAINT ck_users_ts_office_end_range
+                    CHECK (timesheet_office_end_minutes IS NULL
+                           OR (timesheet_office_end_minutes BETWEEN 0 AND 1440));
+            END IF;
+        END
+        $ts_user_prefs_constraints$;
+
+        -- ===================================================================
+        -- v0.0.35 Timesheet — task catalogue + per-user entries.
+        --
+        -- timesheet_tasks is an admin-managed catalogue (Settings →
+        -- Timesheet tasks). Each row carries two flags:
+        --   requires_ticket — agent must link a ticket to the entry.
+        --   is_absence      — entries on this task represent leave/sick
+        --                     time and roll up separately in Tab 3 so a
+        --                     verlof-dag doesn't look like a normal 8u-day.
+        -- A partial unique index forbids two ACTIVE tasks with the same
+        -- name (case-insensitive); archived rows are excluded so a name
+        -- can be reused after retirement.
+        --
+        -- timesheet_entries stores one row per agent registration. Time
+        -- is kept as `entry_date` (DATE) + `start_minutes`/`end_minutes`
+        -- (minutes since local midnight, 0..1440). We do NOT store an
+        -- absolute UTC timestamp for the work itself because the agent
+        -- enters "8:30 to 10:00" as a local-day concept; a UTC timestamp
+        -- would shift across DST transitions and be wrong for any agent
+        -- in a different zone than the server. Audit columns (`created_*`,
+        -- `updated_*`) DO use TIMESTAMPTZ — those are real events.
+        --
+        -- `minutes` is persisted (not GENERATED) so old PG versions don't
+        -- complain and roll-up queries stay index-friendly. A CHECK keeps
+        -- it in sync with end-start.
+        -- ===================================================================
+
+        CREATE TABLE IF NOT EXISTS timesheet_tasks (
+            id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            name            TEXT        NOT NULL,
+            requires_ticket BOOLEAN     NOT NULL DEFAULT TRUE,
+            is_absence      BOOLEAN     NOT NULL DEFAULT FALSE,
+            archived        BOOLEAN     NOT NULL DEFAULT FALSE,
+            sort_order      INT         NOT NULL DEFAULT 0,
+            created_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc     TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_timesheet_tasks_name_active
+            ON timesheet_tasks (lower(name)) WHERE archived = FALSE;
+
+        -- Default catalogue. Idempotent via the same lower(name) gate as
+        -- the unique index so admin renames/deletes survive a re-run.
+        INSERT INTO timesheet_tasks (name, requires_ticket, is_absence, sort_order)
+        SELECT v.name, v.requires_ticket, v.is_absence, v.sort_order
+        FROM (VALUES
+            ('Servicedesk',    TRUE,  FALSE, 10),
+            ('Project',        TRUE,  FALSE, 20),
+            ('Administratie',  FALSE, FALSE, 30),
+            ('Vergadering',    FALSE, FALSE, 40),
+            ('Verlof',         FALSE, TRUE,  50),
+            ('Ziek',           FALSE, TRUE,  60)
+        ) AS v(name, requires_ticket, is_absence, sort_order)
+        WHERE NOT EXISTS (
+            SELECT 1 FROM timesheet_tasks t
+            WHERE lower(t.name) = lower(v.name)
+        );
+
+        CREATE TABLE IF NOT EXISTS timesheet_entries (
+            id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id         UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            entry_date      DATE        NOT NULL,
+            start_minutes   INT         NOT NULL,
+            end_minutes     INT         NOT NULL,
+            minutes         INT         NOT NULL,
+            task_id         UUID        NOT NULL REFERENCES timesheet_tasks(id) ON DELETE RESTRICT,
+            ticket_id       UUID        NULL REFERENCES tickets(id) ON DELETE SET NULL,
+            description     TEXT        NOT NULL,
+            created_by      UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            created_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_by      UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            updated_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT ck_timesheet_entries_time_window
+                CHECK (start_minutes >= 0
+                       AND end_minutes <= 1440
+                       AND end_minutes > start_minutes
+                       AND minutes = end_minutes - start_minutes)
+        );
+        CREATE INDEX IF NOT EXISTS ix_timesheet_entries_user_date
+            ON timesheet_entries (user_id, entry_date);
+        CREATE INDEX IF NOT EXISTS ix_timesheet_entries_date_user
+            ON timesheet_entries (entry_date, user_id);
+        CREATE INDEX IF NOT EXISTS ix_timesheet_entries_ticket
+            ON timesheet_entries (ticket_id) WHERE ticket_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS ix_timesheet_entries_task
+            ON timesheet_entries (task_id);
+
+        -- v0.0.36 — billed/invoiced flag. The toggle UI is added in a later
+        -- iteration; for now the column is display-only in the manager grid
+        -- and the per-ticket "Time logged" panel so the column shape is
+        -- locked in and no second migration is needed when the toggle lands.
+        ALTER TABLE timesheet_entries
+            ADD COLUMN IF NOT EXISTS invoiced BOOLEAN NOT NULL DEFAULT FALSE;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

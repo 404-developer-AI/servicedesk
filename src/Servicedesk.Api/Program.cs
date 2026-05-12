@@ -12,6 +12,7 @@ using Servicedesk.Api.Health;
 using Servicedesk.Api.IntakeForms;
 using Servicedesk.Api.Integrations;
 using Servicedesk.Api.KnowledgeBase;
+using Servicedesk.Api.Timesheet;
 using Servicedesk.Api.Security;
 using Servicedesk.Api.System;
 using Servicedesk.Api.Taxonomy;
@@ -129,6 +130,11 @@ builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.IIntegrationSt
 // call events via the dedicated TelavoxCallHub.
 builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.ITelavoxCallNotifier,
     Servicedesk.Api.Presence.SignalRTelavoxCallNotifier>();
+// v0.0.35 commit H — timesheet entry CUD pushes to both the
+// timesheet-managers group (Tab 2 / Tab 3) and the ticket:{id} group
+// (TicketTimesheetPanel) via the existing TicketPresenceHub.
+builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.ITimesheetEntryNotifier,
+    Servicedesk.Api.Presence.SignalRTimesheetEntryNotifier>();
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -382,6 +388,10 @@ app.MapKbConfigEndpoints();
 app.MapKbSectionEndpoints();
 app.MapKbArticleEndpoints();
 app.MapKbAttachmentEndpoints();
+app.MapTimesheetTaskEndpoints();
+app.MapTimesheetEntryEndpoints();
+app.MapTimesheetManagerEndpoints();
+app.MapTicketTimesheetEndpoints();
 app.MapViewEndpoints();
 app.MapQueueAccessEndpoints();
 app.MapViewGroupEndpoints();

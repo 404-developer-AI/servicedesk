@@ -7,6 +7,11 @@ export type AuthUser = {
   role: Role;
   amr: string;
   twoFactorEnabled: boolean;
+  /// v0.0.35 — per-user Timesheet feature flags. Surface on /auth/me so
+  /// the sidebar can hide the Timesheet nav item without an extra
+  /// round-trip on every page load.
+  timesheetEnabled: boolean;
+  timesheetManager: boolean;
 };
 
 export type AuthState = {

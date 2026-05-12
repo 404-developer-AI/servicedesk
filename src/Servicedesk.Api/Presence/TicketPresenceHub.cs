@@ -119,6 +119,19 @@ public sealed class TicketPresenceHub : Hub
     }
 
     /// <summary>
+    /// Client-invoked join for the timesheet-manager broadcast group
+    /// (v0.0.35 commit H). The SPA calls this on mount when the
+    /// <c>/auth/me</c> payload reports <c>timesheetManager: true</c>. We
+    /// don't re-verify the flag here because the broadcast carries no
+    /// secrets — it's only a "stale, refetch" ping; the actual data
+    /// endpoints (<c>/api/timesheet/manager/*</c>) still enforce the
+    /// manager flag server-side. SignalR cleans the group membership up
+    /// automatically on disconnect.
+    /// </summary>
+    public Task JoinTimesheetManagers() =>
+        Groups.AddToGroupAsync(Context.ConnectionId, "timesheet-managers");
+
+    /// <summary>
     /// Client can request the full presence snapshot (e.g. on reconnect).
     /// Returns presence for all tickets that any connection is viewing or has recent.
     /// </summary>

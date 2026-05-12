@@ -1,0 +1,111 @@
+import { useState } from "react";
+import { Clock, Users as UsersIcon, CalendarRange } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import { useAuth } from "@/auth/authStore";
+import { useTimesheetManagerRealtime } from "@/hooks/useTimesheetRealtime";
+import { TimesheetTab1 } from "@/pages/timesheet/TimesheetTab1";
+import { TimesheetTab2 } from "@/pages/timesheet/TimesheetTab2";
+import { TimesheetTab3 } from "@/pages/timesheet/TimesheetTab3";
+
+type Tab = "day" | "manager" | "month";
+
+/// Top-level Timesheet page. Hosts three tabs:
+///   1. **My day** (Tab 1) — the agent's own daily registration. Always
+///      visible for users with `timesheet_enabled` or `timesheet_manager`.
+///   2. **Manager** (Tab 2) — manager-only overview across all users.
+///      Wires up in commit C; for v0.0.35-B it renders a coming-soon stub
+///      so the tab strip already has its final shape.
+///   3. **Month** (Tab 3) — manager-only month-per-agent rollup, ditto.
+///
+/// The tabs are role/flag-gated client-side AND the underlying APIs
+/// enforce the same scope on the server, so a non-manager that hand-picks
+/// the URL gets a 401/403, not silent access.
+export function TimesheetPage() {
+  const { user } = useAuth();
+  const isManager = !!user?.timesheetManager;
+  const [tab, setTab] = useState<Tab>("day");
+
+  // v0.0.35 commit H — live-refresh Tab 2 / Tab 3 on any mutation from
+  // another manager (or from an agent's Tab 1 save). Non-managers skip the
+  // join entirely.
+  useTimesheetManagerRealtime(isManager);
+
+  return (
+    <div className="flex min-h-0 w-full flex-1 flex-col gap-6">
+      <header className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-display-md font-semibold text-foreground">Timesheet</h1>
+          <p className="text-sm text-muted-foreground">
+            Register your time per day. Link each entry to a ticket or pick a
+            non-ticket task for absence, meetings or administration.
+          </p>
+        </div>
+        <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+          {isManager ? "Agent + manager" : "Own registration"}
+        </Badge>
+      </header>
+
+      <div className="glass-panel flex items-center gap-1 p-1">
+        <TabButton
+          active={tab === "day"}
+          onClick={() => setTab("day")}
+          icon={<Clock className="h-3.5 w-3.5" />}
+          label="My day"
+        />
+        <TabButton
+          active={tab === "manager"}
+          onClick={() => setTab("manager")}
+          icon={<UsersIcon className="h-3.5 w-3.5" />}
+          label="Manager"
+          disabled={!isManager}
+        />
+        <TabButton
+          active={tab === "month"}
+          onClick={() => setTab("month")}
+          icon={<CalendarRange className="h-3.5 w-3.5" />}
+          label="Month"
+          disabled={!isManager}
+        />
+      </div>
+
+      {tab === "day" && <TimesheetTab1 />}
+      {tab === "manager" && isManager && <TimesheetTab2 />}
+      {tab === "month" && isManager && <TimesheetTab3 />}
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  icon,
+  label,
+  disabled,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors",
+        active
+          ? "bg-white/[0.08] text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+          : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
+        disabled && "cursor-not-allowed opacity-40 hover:bg-transparent hover:text-muted-foreground",
+      )}
+      title={disabled ? "Requires Timesheet manager access" : undefined}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+

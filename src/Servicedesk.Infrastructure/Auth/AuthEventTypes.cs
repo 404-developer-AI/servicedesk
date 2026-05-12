@@ -39,4 +39,18 @@ public static class AuthEventTypes
     public const string UserActivated = "user.activated";
     public const string UserDeactivated = "user.deactivated";
     public const string UserDeleted = "user.deleted";
+
+    // v0.0.35 timesheet feature flags. Single combined event with the
+    // {enabled, manager} pair before/after in the payload, so a partial
+    // toggle (turn on enabled while leaving manager unchanged) still
+    // surfaces both fields in the audit row and an admin can reconstruct
+    // the full state from a single entry.
+    public const string UserTimesheetFlagsChanged = "user.timesheet_flags.changed";
+
+    // v0.0.35-E — per-user Timesheet preference overrides (day start,
+    // dag/week target, werkdagen). The payload carries the override fields
+    // post-write, with null entries indicating "fell back to the global
+    // default". Globals-changes are audited via the generic
+    // 'setting_changed' event on /api/settings.
+    public const string UserTimesheetPreferencesChanged = "user.timesheet_preferences.changed";
 }
