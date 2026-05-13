@@ -32,7 +32,7 @@ public static class TriggerValidator
     public static readonly IReadOnlySet<string> ActionKinds = new HashSet<string>(StringComparer.Ordinal)
     {
         "set_queue", "set_priority", "set_status", "set_owner", "set_pending_till",
-        "add_internal_note", "add_public_note",
+        "add_internal_note", "add_public_note", "repost_as_public_reply",
         "send_mail",
     };
 
@@ -333,6 +333,12 @@ public static class TriggerValidator
                 if (HasNonEmptyString(action, "body_html") || HasNonEmptyString(action, "body_text"))
                     return null;
                 return "requires non-empty 'body_html' or 'body_text'.";
+            case "repost_as_public_reply":
+                // Carries no admin-typed payload — the handler reads the
+                // triggering article's body verbatim. Surface a clean save
+                // even when admins send a stray {} so the editor doesn't
+                // need to special-case empty action JSON objects.
+                return null;
             case "send_mail":
                 if (!HasNonEmptyString(action, "to"))
                     return "requires non-empty 'to' (e.g. customer, owner-agent, queue-agents, address:foo@bar.com).";

@@ -12,6 +12,7 @@ using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.IntakeForms;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Triggers;
 
 namespace Servicedesk.Api.IntakeForms;
 
@@ -426,7 +427,7 @@ public static class IntakeFormEndpoints
             string token, [FromBody] PublicSubmitRequest req, HttpContext http,
             IIntakeFormTokenService tokenSvc, IIntakeFormRepository forms,
             ISettingsService settings, IHubContext<TicketPresenceHub> hub,
-            IAuditLogger audit, CancellationToken ct) =>
+            IAuditLogger audit, ITriggerService triggers, CancellationToken ct) =>
         {
             var hash = tokenSvc.HashForLookup(token);
             if (hash is null) return Results.NotFound();
@@ -471,6 +472,19 @@ public static class IntakeFormEndpoints
             var ticketIdStr = result.TicketId.ToString();
             await hub.Clients.Group($"ticket:{ticketIdStr}").SendAsync("TicketUpdated", ticketIdStr, ct);
             await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", ticketIdStr, ct);
+
+            // A customer just touched the ticket. Run the trigger evaluator
+            // with ArticleAdded=true so admins can write a Selective rule
+            // like `article.type = IntakeFormSubmitted` → set_status to
+            // route the ticket back into the agent queue. The event's
+            // author_contact_id is set to the ticket requester in the
+            // repo, so `article.sender = Customer` resolves too.
+            await triggers.EvaluateAsync(
+                ticketId: result.TicketId,
+                ticketEventId: result.SubmittedEventId,
+                activatorKind: TriggerActivatorKind.Action,
+                changeSet: TriggerChangeSet.ArticleOnly(),
+                ct: ct);
 
             return Results.Ok(new
             {

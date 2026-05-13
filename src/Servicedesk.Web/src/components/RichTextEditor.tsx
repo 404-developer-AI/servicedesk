@@ -71,6 +71,11 @@ type RichTextEditorProps = {
   /// Called when the agent clicks an existing `::`-chip — the parent opens
   /// the prefill drawer for that instanceId.
   onIntakeChipClick?: (instanceId: string) => void;
+  /// Resolved `{{token}}` → value map used to substitute placeholders the
+  /// moment a kind="template" item is picked through the :: suggestion.
+  /// Non-empty values replace their token (HTML-escaped); empty values
+  /// leave the raw `{{...}}` in place so the agent sees what's missing.
+  composeTokens?: Record<string, string>;
   /// v0.0.35-F — handed the live editor instance once it mounts so the
   /// parent can drive imperative commands (e.g. inserting a pre-built HTML
   /// block from a "Import registered time" button). Null is passed when
@@ -126,6 +131,7 @@ export function RichTextEditor({
   onIntakeInsert,
   onLinkedFormsChange,
   onIntakeChipClick,
+  composeTokens,
   onEditorReady,
 }: RichTextEditorProps) {
   // Stash the latest upload callback in a ref so the editor extensions —
@@ -163,8 +169,21 @@ export function RichTextEditor({
     intakeChipClickRef.current = onIntakeChipClick;
   }, [onIntakeChipClick]);
 
+  // Token map is read inside the Tiptap suggestion command — that closure
+  // captures props once, so we route it through a ref to stay live across
+  // parent re-renders (the resolved values arrive asynchronously after
+  // the editor has already mounted).
+  const composeTokensRef = useRef<typeof composeTokens>(composeTokens);
+  useEffect(() => {
+    composeTokensRef.current = composeTokens;
+  }, [composeTokens]);
+
   const extensions = [
-    StarterKit,
+    // StarterKit ships a default Link extension since Tiptap v3. We want
+    // autolink on and openOnClick off, so we disable StarterKit's copy and
+    // add our configured one below — otherwise Tiptap warns about the
+    // duplicate `link` extension name at every editor mount.
+    StarterKit.configure({ link: false }),
     Link.configure({
       autolink: true,
       openOnClick: false,
@@ -273,7 +292,7 @@ export function RichTextEditor({
         class: "sd-intake-mention",
         "data-intake-mention": "true",
       },
-      suggestion: buildIntakeSuggestion(intakeQueryRef, intakeInsertRef),
+      suggestion: buildIntakeSuggestion(intakeQueryRef, intakeInsertRef, composeTokensRef),
     });
 
     extensions.push(IntakeMention);
@@ -410,11 +429,16 @@ export function RichTextEditor({
         }
         .rte-content .ProseMirror ul {
           padding-left: 1.5em;
-          list-style: disc;
+          margin-left: 1em;
+          list-style: disc outside;
         }
         .rte-content .ProseMirror ol {
           padding-left: 1.5em;
-          list-style: decimal;
+          margin-left: 1em;
+          list-style: decimal outside;
+        }
+        .rte-content .ProseMirror li > p {
+          margin: 0;
         }
         .rte-content .ProseMirror a {
           color: hsl(265 89% 70%);
@@ -725,13 +749,24 @@ export function extractMentionIds(doc: unknown): string[] {
   return out;
 }
 
-/// Suggestion-plugin wiring for the `::` intake-form mention. Parallel
-/// shape to `buildMentionSuggestion` but swaps the trigger char, query
-/// source, and command callback. The command runs the caller's
-/// `onIntakeInsert` to create a Draft on the server, then patches the
-/// just-inserted node's `attrs.instanceId` once the id comes back. A
-/// failed create removes the chip — the mail should never leave with a
-/// placeholder whose draft was never committed.
+/// Suggestion-plugin wiring for the `::` mention. The picker mixes two
+/// kinds of items:
+///   - "intake"   → insert an intake-form chip + async draft-instance create
+///                  (legacy v0.0.19 flow; SendMailForm only)
+///   - "template" → insert the template's sanitised HTML body inline at the
+///                  trigger range, no chip, no roundtrip
+///
+/// The caller's `onIntakeQuery` decides which kinds to surface. Forms that
+/// only want templates simply return `kind: "template"` items; the chip
+/// pathway is dormant unless `onIntakeInsert` is also wired.
+///
+/// MentionNodeAttrs widened locally because we pass kind/bodyHtml through
+/// the command props — Tiptap's own type only knows id/label.
+type ComposeMentionProps = MentionNodeAttrs & {
+  kind?: "intake" | "template";
+  bodyHtml?: string;
+};
+
 function buildIntakeSuggestion(
   queryRef: React.MutableRefObject<
     ((query: string) => Promise<IntakeMentionItem[]>) | undefined
@@ -739,7 +774,10 @@ function buildIntakeSuggestion(
   insertRef: React.MutableRefObject<
     ((templateId: string) => Promise<string | null>) | undefined
   >,
-): Omit<SuggestionOptions<IntakeMentionItem, MentionNodeAttrs>, "editor"> {
+  composeTokensRef: React.MutableRefObject<
+    Record<string, string> | undefined
+  >,
+): Omit<SuggestionOptions<IntakeMentionItem, ComposeMentionProps>, "editor"> {
   return {
     char: "::",
     async items({ query }: { query: string }) {
@@ -751,18 +789,32 @@ function buildIntakeSuggestion(
         return [];
       }
     },
-    // Wrap the default suggestion command so we can chase the
-    // server roundtrip for draft-instance creation. Tiptap's
-    // extension-mention calls our override; we run its default insert
-    // first (so the chip is visible while the POST is in-flight) and
-    // then patch the node when the id resolves.
+    // Custom command — we ignore Tiptap's default insertContent for Mention
+    // and dispatch on item kind. Templates get insertContent(html); intake
+    // forms get the chip + async patch.
     command: ({ editor, range, props }: {
       editor: import("@tiptap/react").Editor;
       range: { from: number; to: number };
-      props: MentionNodeAttrs;
+      props: ComposeMentionProps;
     }) => {
-      const templateId = (props.id as string | null) ?? "";
+      const kind = props.kind ?? "intake";
+      const id = (props.id as string | null) ?? "";
       const label = (props.label as string | null) ?? "";
+
+      if (kind === "template") {
+        // Strip the `::query` range, then drop the template body in.
+        // Substitute every {{token}} that resolves to a non-empty value;
+        // unresolved (empty / unknown) tokens keep their raw placeholder
+        // so the agent can spot what still needs typing.
+        const raw = props.bodyHtml ?? "";
+        const rendered = substituteComposeTokens(raw, composeTokensRef.current);
+        editor
+          .chain()
+          .focus()
+          .insertContentAt(range, rendered)
+          .run();
+        return;
+      }
 
       editor
         .chain()
@@ -770,28 +822,28 @@ function buildIntakeSuggestion(
         .insertContentAt(range, [
           {
             type: "intakeMention",
-            attrs: { id: templateId, label, instanceId: null },
+            attrs: { id, label, instanceId: null },
           },
           { type: "text", text: " " },
         ])
         .run();
 
       const insert = insertRef.current;
-      if (!insert || !templateId) return;
+      if (!insert || !id) return;
 
       // Fire-and-forget. On success, walk the doc to find the chip we
       // just inserted (matched by templateId + null instanceId) and
       // patch it with the real instance id. On failure, remove the chip.
-      void insert(templateId)
+      void insert(id)
         .then((instanceId) => {
           if (!instanceId) {
-            removeChipByTemplateId(editor, templateId);
+            removeChipByTemplateId(editor, id);
             return;
           }
-          patchChipInstanceId(editor, templateId, instanceId);
+          patchChipInstanceId(editor, id, instanceId);
         })
         .catch(() => {
-          removeChipByTemplateId(editor, templateId);
+          removeChipByTemplateId(editor, id);
         });
     },
     render: () => {
@@ -799,13 +851,18 @@ function buildIntakeSuggestion(
       let popup: TippyInstance | null = null;
 
       return {
-        onStart: (props: SuggestionProps<IntakeMentionItem, MentionNodeAttrs>) => {
+        onStart: (props: SuggestionProps<IntakeMentionItem, ComposeMentionProps>) => {
           component = new ReactRenderer(IntakeMentionList, {
             props: {
               items: props.items,
               loading: false,
-              command: (attrs: { id: string; label: string }) =>
-                props.command(attrs),
+              command: (item: IntakeMentionItem) =>
+                props.command({
+                  id: item.id,
+                  label: item.name,
+                  kind: item.kind,
+                  bodyHtml: item.bodyHtml,
+                } as ComposeMentionProps),
             },
             editor: props.editor,
           });
@@ -823,12 +880,17 @@ function buildIntakeSuggestion(
             theme: "sd-mention",
           });
         },
-        onUpdate(props: SuggestionProps<IntakeMentionItem, MentionNodeAttrs>) {
+        onUpdate(props: SuggestionProps<IntakeMentionItem, ComposeMentionProps>) {
           component?.updateProps({
             items: props.items,
             loading: false,
-            command: (attrs: { id: string; label: string }) =>
-              props.command(attrs),
+            command: (item: IntakeMentionItem) =>
+              props.command({
+                id: item.id,
+                label: item.name,
+                kind: item.kind,
+                bodyHtml: item.bodyHtml,
+              } as ComposeMentionProps),
           });
           if (!props.clientRect) return;
           popup?.setProps({
@@ -851,6 +913,58 @@ function buildIntakeSuggestion(
       };
     },
   };
+}
+
+/// Replace every `{{token}}` in `html` whose resolved value in `tokens` is
+/// a non-empty string. The resolved value is HTML-escaped (templates are
+/// admin-authored HTML; runtime values are user-controlled strings — they
+/// must not be able to inject `<script>` or break attribute quoting).
+/// Tokens with an empty / missing value are left untouched so the agent
+/// sees the raw `{{...}}` and notices the gap.
+///
+/// Regex-based so we tolerate the whitespace variants Tiptap can introduce
+/// during paste (`{{ contact.firstName }}` etc.) and recognise the literal
+/// placeholder regardless of how the admin typed it. The inner pattern
+/// `[\w.]+` is strict on purpose — anything weirder than ASCII identifiers
+/// and dots is not a placeholder we ship.
+function substituteComposeTokens(
+  html: string,
+  tokens: Record<string, string> | undefined,
+): string {
+  if (!html) return html;
+  const out = html.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (match, name: string) => {
+    const canonical = `{{${name}}}`;
+    const value = tokens?.[canonical];
+    return value ? escapeHtml(value) : match;
+  });
+
+  // Diagnostic: surface unresolved placeholders during development so a
+  // missing resolve endpoint / stale backend is obvious in the console
+  // instead of silently shipping raw `{{...}}` into the editor.
+  if (import.meta.env?.DEV) {
+    const unresolved = out.match(/\{\{\s*[\w.]+\s*\}\}/g);
+    if (unresolved && unresolved.length > 0) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[ComposeTokens] Unresolved placeholders:",
+        unresolved,
+        tokens
+          ? `(tokens map keys: ${Object.keys(tokens).join(", ")})`
+          : "(tokens map missing — is /api/compose-templates/resolve reachable? Did the backend restart after the templates feature was added?)",
+      );
+    }
+  }
+
+  return out;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function patchChipInstanceId(

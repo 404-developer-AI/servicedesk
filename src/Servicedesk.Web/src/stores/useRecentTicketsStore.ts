@@ -10,11 +10,18 @@ export type RecentTicket = {
   id: string;
   number: number;
   subject: string;
+  // v0.0.37 — surfaced in the sidebar as a status-colored bar + icon
+  // tint so closed / WFQ / QFI rows stand out without re-opening.
+  // Optional because pre-v0.0.37 persisted entries don't have them;
+  // they re-populate the first time the ticket is viewed.
+  statusColor?: string;
+  statusName?: string;
+  statusStateCategory?: string;
 };
 
 type RecentTicketsState = {
   recentTickets: RecentTicket[];
-  /** Adds a ticket. If it already exists, keeps it in its current position. New tickets go to the end. */
+  /** Adds a ticket. If it already exists, refreshes the mutable fields (subject + status) in place. New tickets go to the end. */
   addTicket: (ticket: RecentTicket) => void;
   removeTicket: (id: string) => void;
   /** Move a ticket from one index to another. */
@@ -30,10 +37,21 @@ export const useRecentTicketsStore = create<RecentTicketsState>()(
         set((s) => {
           const exists = s.recentTickets.some((t) => t.id === ticket.id);
           if (exists) {
-            // Update subject in place (may have changed), keep position
+            // Refresh the mutable fields (subject + status snapshot) in
+            // place. Position is preserved so the user's manual ordering
+            // survives a re-open.
             return {
               recentTickets: s.recentTickets.map((t) =>
-                t.id === ticket.id ? { ...t, subject: ticket.subject } : t,
+                t.id === ticket.id
+                  ? {
+                      ...t,
+                      subject: ticket.subject,
+                      statusColor: ticket.statusColor ?? t.statusColor,
+                      statusName: ticket.statusName ?? t.statusName,
+                      statusStateCategory:
+                        ticket.statusStateCategory ?? t.statusStateCategory,
+                    }
+                  : t,
               ),
             };
           }

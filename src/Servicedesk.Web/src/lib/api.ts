@@ -1296,7 +1296,34 @@ export type TriggerListItem = {
   timezone: string | null;
   createdUtc: string;
   updatedUtc: string;
+  groupId: string | null;
+  sortOrder: number;
   runs: TriggerRunSummary;
+};
+
+export type TriggerGroup = {
+  id: string;
+  name: string;
+  color: string | null;
+  sortOrder: number;
+  createdUtc: string;
+  updatedUtc: string;
+};
+
+export type TriggerGroupInput = {
+  name: string;
+  color: string | null;
+};
+
+export type TriggerPlacement = {
+  id: string;
+  groupId: string | null;
+  sortOrder: number;
+};
+
+export type TriggerGroupPlacement = {
+  id: string;
+  sortOrder: number;
 };
 
 export type TriggerListResponse = {
@@ -1414,6 +1441,21 @@ export const triggerApi = {
   },
   dryRun: (id: string, ticketId: string) =>
     request<TriggerDryRunResult>("POST", `/api/admin/triggers/${id}/dry-run`, { ticketId }),
+  reorder: (items: TriggerPlacement[]) =>
+    request<void>("POST", "/api/admin/triggers/reorder", { items }),
+};
+
+export const triggerGroupApi = {
+  list: () =>
+    request<{ items: TriggerGroup[] }>("GET", "/api/admin/trigger-groups"),
+  create: (body: TriggerGroupInput) =>
+    request<TriggerGroup>("POST", "/api/admin/trigger-groups", body),
+  update: (id: string, body: TriggerGroupInput) =>
+    request<TriggerGroup>("PUT", `/api/admin/trigger-groups/${id}`, body),
+  remove: (id: string) =>
+    request<void>("DELETE", `/api/admin/trigger-groups/${id}`),
+  reorder: (items: TriggerGroupPlacement[]) =>
+    request<void>("POST", "/api/admin/trigger-groups/reorder", { items }),
 };
 
 export type AuthConfig = {

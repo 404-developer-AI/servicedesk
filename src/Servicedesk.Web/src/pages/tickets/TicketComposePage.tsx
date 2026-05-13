@@ -110,6 +110,7 @@ export function TicketComposePage({ ticketId }: { ticketId: string }) {
         <AddNoteForm
           key={ticketId}
           ticketId={ticketId}
+          queueId={ticket.queueId}
           mailContext={mailContext}
           isPopup
           onSubmitted={() => {

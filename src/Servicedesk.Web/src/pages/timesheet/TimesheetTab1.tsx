@@ -131,6 +131,11 @@ export function TimesheetTab1() {
     if (editingId !== null) return;
     if (draftRow !== null) return;
     if (tasks.length === 0) return;
+    // Wait until both queries settle. Without this guard the effect fires
+    // on first render with `entries = []` (data still in-flight), pinning
+    // Start to the day-start fallback even when the loaded rows have a
+    // later last-end. Same trap on date-switch when the queryKey changes.
+    if (entriesQuery.isLoading || prefsQuery.isLoading) return;
     const firstActiveTask = tasks.find((t) => !t.archived);
     if (!firstActiveTask) return;
     setDraftRow({
@@ -142,7 +147,16 @@ export function TimesheetTab1() {
       ticket: null,
       description: "",
     });
-  }, [editingId, draftRow, tasks, date, lastEnd, dayStartMinutes]);
+  }, [
+    editingId,
+    draftRow,
+    tasks,
+    date,
+    lastEnd,
+    dayStartMinutes,
+    entriesQuery.isLoading,
+    prefsQuery.isLoading,
+  ]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -266,6 +280,10 @@ export function TimesheetTab1() {
                 key={draftKey(draftRow)}
                 tasks={tasks}
                 draft={draftRow}
+                // Bumps whenever the entries list grows — re-triggers
+                // scrollIntoView so the draft stays visible after a save
+                // pushes a fresh row in above it.
+                scrollSignal={entries.length}
                 onCancel={() => setDraftRow(null)}
                 onSaved={(saved) => {
                   invalidate();
@@ -482,11 +500,13 @@ function toDraft(entry: TimesheetEntry): DraftRow {
 function EditableRow({
   tasks,
   draft,
+  scrollSignal,
   onCancel,
   onSaved,
 }: {
   tasks: TimesheetTask[];
   draft: DraftRow;
+  scrollSignal?: number;
   onCancel: () => void;
   // Receives the saved entry from the API response so the parent can
   // seed the next draft row's start = this row's end without waiting
@@ -496,18 +516,17 @@ function EditableRow({
 }) {
   const [row, setRow] = React.useState<DraftRow>(draft);
   const [errors, setErrors] = React.useState<Record<string, string>>({});
-  // Auto-scroll a freshly spawned draft into view. Without this, after a
-  // save the new draft lives below the last entry and the user has to
-  // hunt for it on long days. `block: "nearest"` is a no-op when the row
-  // is already on-screen, so it stays quiet for an empty day.
+  // Keep the auto-spawned draft visible on long days. Fires on mount
+  // (initial spawn) and whenever `scrollSignal` (= entries.length) ticks
+  // up — that second pass catches the post-save refetch which inserts a
+  // new row above the draft and otherwise pushes it under the viewport.
+  // `block: "nearest"` is a no-op when the row is already on-screen, so
+  // the effect stays quiet for short days and mid-typing tick re-renders.
   const trRef = React.useRef<HTMLTableRowElement | null>(null);
   React.useEffect(() => {
     if (row.mode !== "new") return;
     trRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    // Run only once per mount — the parent remounts via `key={draftKey}`
-    // after each save, so a fresh mount = a fresh draft to scroll to.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [row.mode, scrollSignal]);
 
   // Time inputs keep their raw text locally so partial input ("1", "12:",
   // "12:0") survives without parseHHMM nuking it to null mid-typing.

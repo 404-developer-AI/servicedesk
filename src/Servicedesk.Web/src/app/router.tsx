@@ -22,6 +22,7 @@ import { MailSettingsPage } from "@/pages/settings/MailSettingsPage";
 import { MailDiagnosticsPage } from "@/pages/settings/MailDiagnosticsPage";
 import { SlaSettingsPage } from "@/pages/settings/SlaSettingsPage";
 import { IntakeFormsSettingsPage } from "@/pages/settings/IntakeFormsSettingsPage";
+import { TemplatesSettingsPage } from "@/pages/settings/TemplatesSettingsPage";
 import { PublicIntakeFormPage } from "@/pages/intake/PublicIntakeFormPage";
 import { TicketsSettingsPage } from "@/pages/settings/TicketsSettingsPage";
 import { TriggersSettingsPage } from "@/pages/settings/TriggersSettingsPage";
@@ -331,6 +332,12 @@ const settingsIntakeFormsRoute = createRoute({
   component: IntakeFormsSettingsPage,
 });
 
+const settingsTemplatesRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "templates",
+  component: TemplatesSettingsPage,
+});
+
 const settingsTriggersRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "triggers",
@@ -531,6 +538,7 @@ const routeTree = rootRoute.addChildren([
     settingsMailRoute,
     settingsSlaRoute,
     settingsIntakeFormsRoute,
+    settingsTemplatesRoute,
     settingsTriggersRoute,
     settingsTriggerDetailRoute,
     settingsTriggerRunsRoute,

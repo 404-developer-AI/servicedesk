@@ -33,7 +33,9 @@ public sealed class TriggerRepository : ITriggerRepository
                    note                AS Note,
                    created_utc         AS CreatedUtc,
                    updated_utc         AS UpdatedUtc,
-                   created_by_user_id  AS CreatedByUserId
+                   created_by_user_id  AS CreatedByUserId,
+                   group_id            AS GroupId,
+                   sort_order          AS SortOrder
             FROM triggers
             WHERE is_active = TRUE
               AND activator_kind = @ActivatorKind
@@ -61,9 +63,11 @@ public sealed class TriggerRepository : ITriggerRepository
                    note                AS Note,
                    created_utc         AS CreatedUtc,
                    updated_utc         AS UpdatedUtc,
-                   created_by_user_id  AS CreatedByUserId
+                   created_by_user_id  AS CreatedByUserId,
+                   group_id            AS GroupId,
+                   sort_order          AS SortOrder
             FROM triggers
-            ORDER BY lower(name)
+            ORDER BY group_id NULLS FIRST, sort_order, lower(name)
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var rows = await conn.QueryAsync<TriggerRow>(new CommandDefinition(sql, cancellationToken: ct));
@@ -86,7 +90,9 @@ public sealed class TriggerRepository : ITriggerRepository
                    note                AS Note,
                    created_utc         AS CreatedUtc,
                    updated_utc         AS UpdatedUtc,
-                   created_by_user_id  AS CreatedByUserId
+                   created_by_user_id  AS CreatedByUserId,
+                   group_id            AS GroupId,
+                   sort_order          AS SortOrder
             FROM triggers
             WHERE id = @triggerId
             """;
@@ -97,14 +103,19 @@ public sealed class TriggerRepository : ITriggerRepository
 
     public async Task<TriggerRow> CreateAsync(NewTrigger row, CancellationToken ct)
     {
+        // New triggers land at the end of the Ungrouped section. Admins
+        // drag them into a group afterwards; sort_order is then
+        // overwritten by the bulk reorder endpoint.
         const string sql = """
             INSERT INTO triggers
                 (name, description, is_active, activator_kind, activator_mode,
-                 conditions, actions, locale, timezone, note, created_by_user_id)
+                 conditions, actions, locale, timezone, note, created_by_user_id,
+                 sort_order)
             VALUES
                 (@Name, @Description, @IsActive, @ActivatorKind, @ActivatorMode,
                  @ConditionsJson::jsonb, @ActionsJson::jsonb,
-                 @Locale, @Timezone, @Note, @CreatedByUserId)
+                 @Locale, @Timezone, @Note, @CreatedByUserId,
+                 COALESCE((SELECT MAX(sort_order) + 1 FROM triggers WHERE group_id IS NULL), 0))
             RETURNING id                  AS Id,
                       name                AS Name,
                       description         AS Description,
@@ -118,7 +129,9 @@ public sealed class TriggerRepository : ITriggerRepository
                       note                AS Note,
                       created_utc         AS CreatedUtc,
                       updated_utc         AS UpdatedUtc,
-                      created_by_user_id  AS CreatedByUserId
+                      created_by_user_id  AS CreatedByUserId,
+                      group_id            AS GroupId,
+                      sort_order          AS SortOrder
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.QuerySingleAsync<TriggerRow>(new CommandDefinition(sql, row, cancellationToken: ct));
@@ -154,7 +167,9 @@ public sealed class TriggerRepository : ITriggerRepository
                       note                AS Note,
                       created_utc         AS CreatedUtc,
                       updated_utc         AS UpdatedUtc,
-                      created_by_user_id  AS CreatedByUserId
+                      created_by_user_id  AS CreatedByUserId,
+                      group_id            AS GroupId,
+                      sort_order          AS SortOrder
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var parameters = new DynamicParameters(row);
@@ -183,6 +198,26 @@ public sealed class TriggerRepository : ITriggerRepository
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var rows = await conn.ExecuteAsync(new CommandDefinition(sql, new { id }, cancellationToken: ct));
         return rows > 0;
+    }
+
+    public async Task ReorderAsync(IReadOnlyList<TriggerPlacement> placements, CancellationToken ct)
+    {
+        if (placements.Count == 0) return;
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        const string sql = """
+            UPDATE triggers
+               SET group_id    = @GroupId,
+                   sort_order  = @SortOrder,
+                   updated_utc = now()
+             WHERE id = @Id
+            """;
+        foreach (var p in placements)
+        {
+            await conn.ExecuteAsync(new CommandDefinition(sql, p, tx, cancellationToken: ct));
+        }
+        await tx.CommitAsync(ct);
     }
 
     public async Task<IReadOnlyDictionary<Guid, TriggerRunSummary>> GetRunSummariesAsync(

@@ -11,6 +11,12 @@ public static class TriggerAuditEventTypes
     public const string Created = "trigger.created";
     public const string Updated = "trigger.updated";
     public const string Deleted = "trigger.deleted";
+    public const string Reordered = "trigger.reordered";
+
+    public const string GroupCreated = "trigger_group.created";
+    public const string GroupUpdated = "trigger_group.updated";
+    public const string GroupDeleted = "trigger_group.deleted";
+    public const string GroupReordered = "trigger_group.reordered";
 }
 
 /// Used as the <c>Actor</c> string when audit lines are written from the

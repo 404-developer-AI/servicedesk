@@ -8,8 +8,12 @@ import { ContactFormDialog } from "@/components/ContactFormDialog";
 import { AddContactLinkDialog } from "@/components/AddContactLinkDialog";
 import { SwitchRequesterDialog } from "@/components/SwitchRequesterDialog";
 import { MergeTicketDialog } from "@/components/MergeTicketDialog";
+import { LinkParentDialog } from "@/components/LinkParentDialog";
+import { NewTicketDrawer } from "@/shell/NewTicketDrawer";
 import { AddCompanyContactDialog } from "@/components/AddCompanyContactDialog";
 import { CompanyEditDialog } from "@/components/CompanyEditDialog";
+import { TaxonomySelect } from "@/components/TaxonomySelect";
+import { PendingTillField } from "@/components/PendingTillField";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type {
@@ -34,6 +38,7 @@ import {
   Building2,
   GitMerge,
   Globe,
+  Link2,
   Mail,
   Phone,
   MapPin,
@@ -42,6 +47,8 @@ import {
   Pin,
   PinOff,
   Plus,
+  PlusCircle,
+  Unlink,
   User,
   UserCog,
 } from "lucide-react";
@@ -52,12 +59,18 @@ type TicketSidePanelProps = {
   onRequestCompanyAssign?: () => void;
   pinned?: boolean;
   onTogglePin?: () => void;
+  /// Relationship strip — all of these come from the detail-response and
+  /// drive the "Relationships" block in the Status tab.
+  mergedIntoTicketNumber?: string | null;
+  mergedSourceTicketNumbers?: number[];
+  mergedByUserName?: string | null;
+  parentTicketNumber?: string | null;
+  parentLinkedByUserName?: string | null;
+  childTickets?: { id: string; number: string }[];
+  onUnlinkParent?: () => Promise<void> | void;
 };
 
 type TabId = "status" | "contact" | "company";
-
-const SELECT_CLASS =
-  "w-full h-9 px-2 text-sm rounded-md border border-white/10 bg-white/[0.04] text-foreground outline-none focus:border-primary/60 cursor-pointer";
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -87,16 +100,6 @@ function FieldRow({
   );
 }
 
-function ColorDot({ color }: { color: string }) {
-  return (
-    <span
-      className="inline-block w-2 h-2 rounded-full shrink-0"
-      style={{ backgroundColor: color || "#888" }}
-    />
-  );
-}
-
-
 function ServerDate({ iso }: { iso: string | null | undefined }) {
   const { time } = useServerTime();
   const offset = time?.offsetMinutes ?? 0;
@@ -109,14 +112,6 @@ function ServerDate({ iso }: { iso: string | null | undefined }) {
   );
 }
 
-function SourceBadge({ source }: { source: string }) {
-  return (
-    <span className="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border border-white/10 bg-white/[0.05] text-muted-foreground">
-      {source}
-    </span>
-  );
-}
-
 function EmptyState({ text }: { text: string }) {
   return (
     <div className="text-sm text-muted-foreground/60 italic py-4 text-center">
@@ -125,9 +120,38 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
-export function TicketSidePanel({ ticket, onUpdate, onRequestCompanyAssign, pinned = false, onTogglePin }: TicketSidePanelProps) {
+
+/// Filter a taxonomy list to active rows, but keep the ticket's current
+/// selection in the list (pinned to the front) when it has been
+/// deactivated — otherwise the <select> renders blank and the user
+/// can't save the ticket.
+function withInactiveCarveOut<T extends { id: string; isActive: boolean }>(
+  all: T[] | undefined,
+  current: T | undefined,
+): T[] {
+  if (!all) return [];
+  const active = all.filter((x) => x.isActive);
+  if (current && !current.isActive) return [current, ...active];
+  return active;
+}
+
+export function TicketSidePanel({
+  ticket,
+  onUpdate,
+  onRequestCompanyAssign,
+  pinned = false,
+  onTogglePin,
+  mergedIntoTicketNumber,
+  mergedSourceTicketNumbers,
+  mergedByUserName,
+  parentTicketNumber,
+  parentLinkedByUserName,
+  childTickets,
+  onUnlinkParent,
+}: TicketSidePanelProps) {
   const [activeTab, setActiveTab] = React.useState<TabId>("status");
   const [mergeOpen, setMergeOpen] = React.useState(false);
+  const [linkParentOpen, setLinkParentOpen] = React.useState(false);
 
   const { data: contact } = useQuery({
     queryKey: ["contact", ticket.requesterContactId],
@@ -222,6 +246,14 @@ export function TicketSidePanel({ ticket, onUpdate, onRequestCompanyAssign, pinn
             ticket={ticket}
             onUpdate={onUpdate}
             onRequestMerge={() => setMergeOpen(true)}
+            onRequestLinkParent={() => setLinkParentOpen(true)}
+            mergedIntoTicketNumber={mergedIntoTicketNumber ?? null}
+            mergedSourceTicketNumbers={mergedSourceTicketNumbers ?? []}
+            mergedByUserName={mergedByUserName ?? null}
+            parentTicketNumber={parentTicketNumber ?? null}
+            parentLinkedByUserName={parentLinkedByUserName ?? null}
+            childTickets={childTickets ?? []}
+            onUnlinkParent={onUnlinkParent}
           />
         )}
         {activeTab === "contact" && (
@@ -245,6 +277,11 @@ export function TicketSidePanel({ ticket, onUpdate, onRequestCompanyAssign, pinn
         source={ticket}
         onClose={() => setMergeOpen(false)}
       />
+      <LinkParentDialog
+        open={linkParentOpen}
+        source={ticket}
+        onClose={() => setLinkParentOpen(false)}
+      />
     </div>
   );
 }
@@ -255,10 +292,26 @@ function StatusTab({
   ticket,
   onUpdate,
   onRequestMerge,
+  onRequestLinkParent,
+  mergedIntoTicketNumber,
+  mergedSourceTicketNumbers,
+  mergedByUserName,
+  parentTicketNumber,
+  parentLinkedByUserName,
+  childTickets,
+  onUnlinkParent,
 }: {
   ticket: Ticket;
   onUpdate: (fields: TicketFieldUpdate) => Promise<void>;
   onRequestMerge: () => void;
+  onRequestLinkParent: () => void;
+  mergedIntoTicketNumber: string | null;
+  mergedSourceTicketNumbers: number[];
+  mergedByUserName: string | null;
+  parentTicketNumber: string | null;
+  parentLinkedByUserName: string | null;
+  childTickets: { id: string; number: string }[];
+  onUnlinkParent?: () => Promise<void> | void;
 }) {
   // Pulsing "Contact not linked" warning. Only renders when (a) the admin
   // has the toggle on and (b) the requester has zero current company links.
@@ -300,15 +353,34 @@ function StatusTab({
     staleTime: 300_000,
   });
 
-  const { data: categories } = useQuery({
-    queryKey: ["categories"],
-    queryFn: taxonomyApi.categories.list,
-    staleTime: 300_000,
-  });
-
   const currentStatus = statuses?.find((s) => s.id === ticket.statusId);
   const currentPriority = priorities?.find((p) => p.id === ticket.priorityId);
   const currentQueue = queues?.find((q) => q.id === ticket.queueId);
+
+  // Each dropdown shows only active rows, but pins the ticket's
+  // *current* selection to the front if an admin deactivated it after
+  // the ticket was last touched. Without the pin the <select> would
+  // render blank for legacy tickets and the user could no longer save.
+  // Inactive carve-outs are flagged with a "— inactive" suffix at the
+  // render site so the user knows why they can't pick that again later.
+  const statusOptions = React.useMemo(
+    () => withInactiveCarveOut(statuses, currentStatus),
+    [statuses, currentStatus],
+  );
+  const priorityOptions = React.useMemo(
+    () => withInactiveCarveOut(priorities, currentPriority),
+    [priorities, currentPriority],
+  );
+  const queueOptions = React.useMemo(
+    () => withInactiveCarveOut(queues, currentQueue),
+    [queues, currentQueue],
+  );
+
+  const hasMergeRelations =
+    !!mergedIntoTicketNumber || mergedSourceTicketNumbers.length > 0;
+  const hasParentRelation = !!parentTicketNumber || !!ticket.parentTicketId;
+  const hasChildren = childTickets.length > 0;
+  const showRelationships = hasMergeRelations || hasParentRelation || hasChildren;
 
   return (
     <>
@@ -329,88 +401,55 @@ function StatusTab({
       )}
       <div>
         <FieldLabel>Status</FieldLabel>
-        <div className="relative">
-          {currentStatus && (
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none z-10">
-              <ColorDot color={currentStatus.color} />
-            </span>
-          )}
-          <select
-            value={ticket.statusId}
-            onChange={(e) => onUpdate({ statusId: e.target.value })}
-            className={cn(SELECT_CLASS, currentStatus && "pl-6")}
-          >
-            {statuses?.map((s) => (
-              <option key={s.id} value={s.id} className="bg-background">
-                {s.name} ({s.stateCategory})
-              </option>
-            ))}
-          </select>
+        <TaxonomySelect
+          value={ticket.statusId}
+          onChange={(v) => onUpdate({ statusId: v })}
+          options={statusOptions.map((s) => ({
+            id: s.id,
+            name: s.name,
+            color: s.color,
+            badge: s.stateCategory,
+            suffix: !s.isActive ? "— inactive" : undefined,
+          }))}
+        />
+      </div>
+
+      {currentStatus?.stateCategory === "Pending" && (
+        <div>
+          <FieldLabel>Pending till</FieldLabel>
+          <PendingTillField
+            value={ticket.pendingTillUtc}
+            onCommit={(iso) => onUpdate({ pendingTillUtc: iso })}
+          />
         </div>
+      )}
+
+      <div>
+        <FieldLabel>Queue</FieldLabel>
+        <TaxonomySelect
+          value={ticket.queueId}
+          onChange={(v) => onUpdate({ queueId: v })}
+          options={queueOptions.map((q) => ({
+            id: q.id,
+            name: q.name,
+            color: q.color,
+            suffix: !q.isActive ? "— inactive" : undefined,
+          }))}
+        />
       </div>
 
       <div>
         <FieldLabel>Priority</FieldLabel>
-        <div className="relative">
-          {currentPriority && (
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none z-10">
-              <ColorDot color={currentPriority.color} />
-            </span>
-          )}
-          <select
-            value={ticket.priorityId}
-            onChange={(e) => onUpdate({ priorityId: e.target.value })}
-            className={cn(SELECT_CLASS, currentPriority && "pl-6")}
-          >
-            {priorities?.map((p) => (
-              <option key={p.id} value={p.id} className="bg-background">
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div>
-        <FieldLabel>Queue</FieldLabel>
-        <div className="relative">
-          {currentQueue && (
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none z-10">
-              <ColorDot color={currentQueue.color} />
-            </span>
-          )}
-          <select
-            value={ticket.queueId}
-            onChange={(e) => onUpdate({ queueId: e.target.value })}
-            className={cn(SELECT_CLASS, currentQueue && "pl-6")}
-          >
-            {queues?.map((q) => (
-              <option key={q.id} value={q.id} className="bg-background">
-                {q.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div>
-        <FieldLabel>Category</FieldLabel>
-        <select
-          value={ticket.categoryId ?? ""}
-          onChange={(e) =>
-            onUpdate({ categoryId: e.target.value || undefined })
-          }
-          className={SELECT_CLASS}
-        >
-          <option value="" className="bg-background">
-            None
-          </option>
-          {categories?.map((c) => (
-            <option key={c.id} value={c.id} className="bg-background">
-              {c.name}
-            </option>
-          ))}
-        </select>
+        <TaxonomySelect
+          value={ticket.priorityId}
+          onChange={(v) => onUpdate({ priorityId: v })}
+          options={priorityOptions.map((p) => ({
+            id: p.id,
+            name: p.name,
+            color: p.color,
+            suffix: !p.isActive ? "— inactive" : undefined,
+          }))}
+        />
       </div>
 
       <div>
@@ -420,6 +459,19 @@ function StatusTab({
           onChange={(userId) => onUpdate({ assigneeUserId: userId ?? undefined })}
         />
       </div>
+
+      <RelationshipsBlock
+        ticket={ticket}
+        mergedIntoTicketNumber={mergedIntoTicketNumber}
+        mergedSourceTicketNumbers={mergedSourceTicketNumbers}
+        mergedByUserName={mergedByUserName}
+        parentTicketNumber={parentTicketNumber}
+        parentLinkedByUserName={parentLinkedByUserName}
+        childTickets={childTickets}
+        showRelationships={showRelationships}
+        onRequestLinkParent={onRequestLinkParent}
+        onUnlinkParent={onUnlinkParent}
+      />
 
       {!ticket.mergedIntoTicketId && (
         <Button
@@ -434,30 +486,179 @@ function StatusTab({
         </Button>
       )}
 
-      <div className="border-t border-white/10" />
-
-      <div>
-        <FieldLabel>Created</FieldLabel>
-        <div className="text-sm text-foreground/80"><ServerDate iso={ticket.createdUtc} /></div>
-      </div>
-
-      <div>
-        <FieldLabel>Updated</FieldLabel>
-        <div className="text-sm text-foreground/80"><ServerDate iso={ticket.updatedUtc} /></div>
-      </div>
-
-      <div>
-        <FieldLabel>Due</FieldLabel>
-        <div className="text-sm text-foreground/80"><ServerDate iso={ticket.dueUtc} /></div>
-      </div>
-
-      <div>
-        <FieldLabel>Source</FieldLabel>
-        <SourceBadge source={ticket.source} />
-      </div>
-
       <TicketPresence ticketId={ticket.id} />
     </>
+  );
+}
+
+/* ─── Relationships block ─── */
+
+/// Consolidates every "this ticket is connected to another" snippet in
+/// one place: merged-into, merged-from, manual main/sub-ticket links,
+/// "Create linked ticket" entry-point. Renders nothing when no relations
+/// exist AND the ticket has no parent yet — keeps the side panel quiet
+/// for the common case while making the buttons one click away via the
+/// always-visible "Link to main ticket" / "Create linked ticket" entries
+/// when the merged ticket isn't already terminal.
+function RelationshipsBlock({
+  ticket,
+  mergedIntoTicketNumber,
+  mergedSourceTicketNumbers,
+  mergedByUserName,
+  parentTicketNumber,
+  parentLinkedByUserName,
+  childTickets,
+  showRelationships,
+  onRequestLinkParent,
+  onUnlinkParent,
+}: {
+  ticket: Ticket;
+  mergedIntoTicketNumber: string | null;
+  mergedSourceTicketNumbers: number[];
+  mergedByUserName: string | null;
+  parentTicketNumber: string | null;
+  parentLinkedByUserName: string | null;
+  childTickets: { id: string; number: string }[];
+  showRelationships: boolean;
+  onRequestLinkParent: () => void;
+  onUnlinkParent?: () => Promise<void> | void;
+}) {
+  // Merged tickets are frozen — hide the manual-link entry points so
+  // the agent doesn't try to set a parent on something that already
+  // redirects all activity to the merge target.
+  const isMerged = !!ticket.mergedIntoTicketId;
+  return (
+    <div className="space-y-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-2.5 py-2">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
+        Relationships
+      </div>
+
+      {mergedIntoTicketNumber && ticket.mergedIntoTicketId && (
+        <div className="flex items-start gap-2 text-xs text-foreground/80">
+          <GitMerge className="h-3.5 w-3.5 mt-0.5 text-muted-foreground/60 shrink-0" />
+          <div className="min-w-0">
+            <span className="text-muted-foreground/70">Merged into </span>
+            <Link
+              to="/tickets/$ticketId"
+              params={{ ticketId: ticket.mergedIntoTicketId }}
+              className="text-primary hover:underline font-medium"
+            >
+              #{mergedIntoTicketNumber}
+            </Link>
+            {mergedByUserName && (
+              <span className="text-muted-foreground/60"> · by {mergedByUserName}</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {mergedSourceTicketNumbers.length > 0 && (
+        <div className="flex items-start gap-2 text-xs text-foreground/80">
+          <GitMerge className="h-3.5 w-3.5 mt-0.5 text-muted-foreground/60 shrink-0 rotate-180" />
+          <div className="min-w-0">
+            <span className="text-muted-foreground/70">Merged from </span>
+            <span className="text-foreground/80">
+              {mergedSourceTicketNumbers.map((n, i) => (
+                <React.Fragment key={n}>
+                  {i > 0 && ", "}
+                  <span className="font-medium">#{n}</span>
+                </React.Fragment>
+              ))}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {parentTicketNumber && ticket.parentTicketId && (
+        <div className="flex items-start gap-2 text-xs text-foreground/80">
+          <Link2 className="h-3.5 w-3.5 mt-0.5 text-muted-foreground/60 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <span className="text-muted-foreground/70">Main ticket </span>
+            <Link
+              to="/tickets/$ticketId"
+              params={{ ticketId: ticket.parentTicketId }}
+              className="text-primary hover:underline font-medium"
+            >
+              #{parentTicketNumber}
+            </Link>
+            {parentLinkedByUserName && (
+              <span className="text-muted-foreground/60"> · linked by {parentLinkedByUserName}</span>
+            )}
+          </div>
+          {!isMerged && onUnlinkParent && (
+            <button
+              type="button"
+              onClick={() => onUnlinkParent()}
+              title="Unlink from main ticket"
+              className="text-muted-foreground/50 hover:text-destructive p-0.5"
+            >
+              <Unlink className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {childTickets.length > 0 && (
+        <div className="flex items-start gap-2 text-xs text-foreground/80">
+          <Link2 className="h-3.5 w-3.5 mt-0.5 text-muted-foreground/60 shrink-0" />
+          <div className="min-w-0">
+            <span className="text-muted-foreground/70">Sub tickets </span>
+            <span className="text-foreground/80">
+              {childTickets.map((c, i) => (
+                <React.Fragment key={c.id}>
+                  {i > 0 && ", "}
+                  <Link
+                    to="/tickets/$ticketId"
+                    params={{ ticketId: c.id }}
+                    className="text-primary hover:underline font-medium"
+                  >
+                    #{c.number}
+                  </Link>
+                </React.Fragment>
+              ))}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {!showRelationships && (
+        <div className="text-[11px] text-muted-foreground/50 italic">
+          No related tickets yet.
+        </div>
+      )}
+
+      {!isMerged && (
+        <div className="flex flex-col gap-1.5 pt-1">
+          {!ticket.parentTicketId && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full justify-start gap-2 text-xs"
+              onClick={onRequestLinkParent}
+            >
+              <Link2 className="h-3.5 w-3.5" />
+              Link to main ticket
+            </Button>
+          )}
+          <NewTicketDrawer
+            initialContactId={ticket.requesterContactId}
+            initialQueueId={ticket.queueId}
+            parentTicketId={ticket.id}
+          >
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full justify-start gap-2 text-xs"
+            >
+              <PlusCircle className="h-3.5 w-3.5" />
+              Create linked ticket
+            </Button>
+          </NewTicketDrawer>
+        </div>
+      )}
+    </div>
   );
 }
 

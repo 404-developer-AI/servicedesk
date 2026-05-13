@@ -1411,7 +1411,8 @@ public sealed class DatabaseBootstrapper : IHostedService
                                   'AssignmentChange','PriorityChange','QueueChange',
                                   'CategoryChange','SystemNote','MailReceived',
                                   'MailSent','CompanyAssignment','RequesterChange',
-                                  'IntakeFormSent','IntakeFormSubmitted','IntakeFormExpired')) NOT VALID;
+                                  'IntakeFormSent','IntakeFormSubmitted','IntakeFormExpired',
+                                  'ParentLinked','ParentUnlinked')) NOT VALID;
 
         -- v0.0.23 ticket merge: a finalised merge stamps merged_into_ticket_id
         -- on the source ticket so mail-ingest can follow the redirect chain to
@@ -1433,6 +1434,25 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_tickets_merged_into
             ON tickets (merged_into_ticket_id)
             WHERE merged_into_ticket_id IS NOT NULL;
+
+        -- Manual Main / Sub-ticket links. One parent, N children. Used for
+        -- workflows like "support ticket spawns a separate order ticket but
+        -- both must remain linked". Distinct from merge (which closes the
+        -- source) and split (which forks the body) — the link is purely
+        -- relational; both tickets stay independently editable. ON DELETE
+        -- SET NULL so a hard-delete of the parent silently un-parents the
+        -- child instead of cascading.
+        ALTER TABLE tickets
+            ADD COLUMN IF NOT EXISTS parent_ticket_id         UUID NULL
+                REFERENCES tickets(id) ON DELETE SET NULL,
+            ADD COLUMN IF NOT EXISTS parent_linked_utc        TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS parent_linked_by_user_id UUID NULL
+                REFERENCES users(id) ON DELETE SET NULL;
+
+        -- Sparse index for "list this ticket's sub-tickets" lookups.
+        CREATE INDEX IF NOT EXISTS ix_tickets_parent
+            ON tickets (parent_ticket_id)
+            WHERE parent_ticket_id IS NOT NULL;
 
         -- v0.0.23 ticket split: when an agent splits a multi-question mail off
         -- into a fresh ticket, the new ticket records its parent here so both
@@ -1522,6 +1542,32 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- upgrade without overwriting admin tweaks. The first PUT/DELETE
         -- by an admin clears the flag in the API layer.
         ALTER TABLE triggers ADD COLUMN IF NOT EXISTS is_seed BOOLEAN NOT NULL DEFAULT FALSE;
+
+        -- Optional grouping for triggers. Groups are a pure UX construct
+        -- (no effect on evaluation order or matching) so the evaluator
+        -- ignores them. ON DELETE SET NULL drops the membership but
+        -- keeps the trigger — admin chose "Triggers to Ungrouped" over
+        -- "blocked delete" when designing the feature.
+        CREATE TABLE IF NOT EXISTS trigger_groups (
+            id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            name            TEXT        NOT NULL,
+            color           TEXT        NULL,
+            sort_order      INTEGER     NOT NULL DEFAULT 0,
+            created_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc     TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS ix_trigger_groups_sort
+            ON trigger_groups (sort_order, lower(name));
+
+        ALTER TABLE triggers ADD COLUMN IF NOT EXISTS group_id UUID NULL
+            REFERENCES trigger_groups(id) ON DELETE SET NULL;
+        ALTER TABLE triggers ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+
+        -- Quick scan for "list this group's triggers in their saved order"
+        -- (the admin UI's primary query). NULL group_id is the
+        -- "Ungrouped" pseudo-section and is covered by the same index.
+        CREATE INDEX IF NOT EXISTS ix_triggers_group_sort
+            ON triggers (group_id, sort_order, lower(name));
 
         -- Append-only audit of every trigger evaluation. Rows are kept
         -- indefinitely in MVP; a retention sweep is added later if volume
@@ -2293,6 +2339,46 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- locked in and no second migration is needed when the toggle lands.
         ALTER TABLE timesheet_entries
             ADD COLUMN IF NOT EXISTS invoiced BOOLEAN NOT NULL DEFAULT FALSE;
+
+        -- Drop the old global pending-till defaults. Pending-till is now
+        -- entirely trigger-driven (set_pending_till action, chained
+        -- next_trigger_id for snap-on-expiry). These rows are orphaned
+        -- on installs that previously read them and harmless to remove.
+        DELETE FROM settings WHERE key IN (
+            'Tickets.PendingDefaultBusinessDays',
+            'Tickets.PendingDefaultWakeAtLocal',
+            'Tickets.PendingExpirySnapToStatusSlug'
+        );
+
+        -- ===================================================================
+        -- Compose Templates — pre-canned HTML snippets (mail/reply/note).
+        --
+        -- Agents pull a template into the active editor via the `::` picker
+        -- (same trigger as intake forms; the picker merges both sources).
+        -- queue_ids is an array of queues the template applies to; an empty
+        -- array means "available in every queue" — the repo's filter does
+        -- the union so the UI only ever sees relevant templates.
+        -- body_html is sanitised on write (admin-authored, but still scoped
+        -- through the same allow-list the rich-text bodies use elsewhere).
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS compose_templates (
+            id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            name            TEXT        NOT NULL,
+            description     TEXT        NULL,
+            body_html       TEXT        NOT NULL DEFAULT '',
+            is_active       BOOLEAN     NOT NULL DEFAULT TRUE,
+            queue_ids       UUID[]      NOT NULL DEFAULT '{}',
+            created_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            created_by      UUID        NULL REFERENCES users(id) ON DELETE SET NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_compose_templates_active_name
+            ON compose_templates (lower(name))
+            WHERE is_active;
+
+        CREATE INDEX IF NOT EXISTS ix_compose_templates_queue_ids
+            ON compose_templates USING GIN (queue_ids);
         """;
 
     private readonly NpgsqlDataSource _dataSource;

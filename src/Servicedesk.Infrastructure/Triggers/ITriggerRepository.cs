@@ -27,6 +27,12 @@ public interface ITriggerRepository
     Task<bool> SetActiveAsync(Guid id, bool isActive, CancellationToken ct);
     Task<bool> DeleteAsync(Guid id, CancellationToken ct);
 
+    /// Bulk placement update — applies a list of (id, groupId, sortOrder)
+    /// tuples in one transaction. Used by the drag-and-drop UI when an
+    /// admin drops a trigger into a different group or reshuffles within
+    /// one. Ids that don't exist are silently skipped.
+    Task ReorderAsync(IReadOnlyList<TriggerPlacement> placements, CancellationToken ct);
+
     /// Aggregate <c>trigger_runs</c> over the rolling 24h window for the
     /// list view. One row per trigger that has at least one run; missing
     /// trigger ids in the result mean "no runs since cutoff" — the API

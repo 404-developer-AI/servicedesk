@@ -174,6 +174,27 @@ public static class TriggerEndpoints
             });
         }).WithName("DryRunTrigger").WithOpenApi();
 
+        // Bulk placement update — the drag-and-drop UI posts the whole
+        // affected slice (typically two groups: the source and the dest)
+        // so the commit is atomic. Empty lists are no-ops.
+        admin.MapPost("/reorder", async (
+            [FromBody] ReorderTriggersInput req, HttpContext http,
+            ITriggerRepository repo, IAuditLogger audit, CancellationToken ct) =>
+        {
+            if (req.Items is null || req.Items.Count == 0)
+                return Results.NoContent();
+
+            var placements = req.Items
+                .Where(i => i.Id != Guid.Empty)
+                .Select(i => new TriggerPlacement(i.Id, i.GroupId, i.SortOrder))
+                .ToList();
+            if (placements.Count == 0) return Results.NoContent();
+
+            await repo.ReorderAsync(placements, ct);
+            await LogAsync(audit, http, TriggerAuditEventTypes.Reordered, null, new { count = placements.Count });
+            return Results.NoContent();
+        }).WithName("ReorderTriggers").WithOpenApi();
+
         admin.MapGet("/{id:guid}/runs", async (
             Guid id, int? limit, DateTime? cursorUtc, ITriggerRepository repo, CancellationToken ct) =>
         {
@@ -219,6 +240,8 @@ public static class TriggerEndpoints
             timezone = row.Timezone,
             createdUtc = row.CreatedUtc,
             updatedUtc = row.UpdatedUtc,
+            groupId = row.GroupId,
+            sortOrder = row.SortOrder,
             runs = new
             {
                 applied = summary?.AppliedCount ?? 0,
@@ -246,6 +269,8 @@ public static class TriggerEndpoints
         createdUtc = row.CreatedUtc,
         updatedUtc = row.UpdatedUtc,
         createdByUserId = row.CreatedByUserId,
+        groupId = row.GroupId,
+        sortOrder = row.SortOrder,
     };
 
     private static Servicedesk.Infrastructure.Triggers.ValidationResult ValidateAndNormalize(TriggerInput req, out NormalizedInput normalized)
@@ -307,6 +332,9 @@ public static class TriggerEndpoints
     public sealed record ActiveToggleInput([property: Required] bool IsActive);
 
     public sealed record DryRunInput([property: Required] Guid TicketId);
+
+    public sealed record ReorderTriggerItem(Guid Id, Guid? GroupId, int SortOrder);
+    public sealed record ReorderTriggersInput(IReadOnlyList<ReorderTriggerItem>? Items);
 
     private sealed record NormalizedInput(
         string Name,

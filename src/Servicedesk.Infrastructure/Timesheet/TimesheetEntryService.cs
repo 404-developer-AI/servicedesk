@@ -189,9 +189,21 @@ public sealed class TimesheetEntryService : ITimesheetEntryService
             {
                 errors.Add(new TimesheetFieldError("ticketId", $"Ticket is required for task '{task.Name}'."));
             }
-            else if (!await TicketExistsAsync(input.TicketId.Value, ct))
+            else
             {
-                errors.Add(new TimesheetFieldError("ticketId", "Selected ticket does not exist."));
+                var check = await CheckTicketAsync(input.TicketId.Value, ct);
+                if (!check.Exists)
+                {
+                    errors.Add(new TimesheetFieldError("ticketId", "Selected ticket does not exist."));
+                }
+                else if (check.IsMerged)
+                {
+                    errors.Add(new TimesheetFieldError(
+                        "ticketId",
+                        check.MergedIntoNumber > 0
+                            ? $"Ticket has been merged into #{check.MergedIntoNumber}. Log time on the surviving ticket instead."
+                            : "Ticket has been merged. Log time on the surviving ticket instead."));
+                }
             }
         }
         else if (input.TicketId is not null && input.TicketId != Guid.Empty)
@@ -208,13 +220,27 @@ public sealed class TimesheetEntryService : ITimesheetEntryService
         return errors;
     }
 
-    private async Task<bool> TicketExistsAsync(Guid ticketId, CancellationToken ct)
+    private async Task<TicketCheck> CheckTicketAsync(Guid ticketId, CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        var exists = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
-            "SELECT EXISTS (SELECT 1 FROM tickets WHERE id = @ticketId AND is_deleted = FALSE)",
-            new { ticketId },
-            cancellationToken: ct));
-        return exists;
+        var row = await conn.QuerySingleOrDefaultAsync<TicketCheckRow>(new CommandDefinition(
+            """
+            SELECT t.merged_into_ticket_id AS MergedIntoTicketId,
+                   COALESCE(m.number, 0)    AS MergedIntoNumber
+              FROM tickets t
+              LEFT JOIN tickets m ON m.id = t.merged_into_ticket_id
+             WHERE t.id = @ticketId AND t.is_deleted = FALSE
+            """,
+            new { ticketId }, cancellationToken: ct));
+        if (row is null) return new TicketCheck(false, false, 0);
+        return new TicketCheck(true, row.MergedIntoTicketId is not null, row.MergedIntoNumber);
+    }
+
+    private readonly record struct TicketCheck(bool Exists, bool IsMerged, long MergedIntoNumber);
+
+    private sealed class TicketCheckRow
+    {
+        public Guid? MergedIntoTicketId { get; set; }
+        public long MergedIntoNumber { get; set; }
     }
 }

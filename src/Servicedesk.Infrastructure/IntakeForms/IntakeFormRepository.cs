@@ -308,9 +308,11 @@ public sealed class IntakeFormRepository : IIntakeFormRepository
         var lookup = await conn.QueryFirstOrDefaultAsync<SubmitLookupRow>(new CommandDefinition("""
             SELECT i.id AS InstanceId, i.ticket_id AS TicketId, i.template_id AS TemplateId,
                    t.name AS TemplateName, i.expires_utc AS ExpiresUtc,
-                   se.author_user_id AS SentByUserId
+                   se.author_user_id AS SentByUserId,
+                   tk.requester_contact_id AS RequesterContactId
             FROM intake_form_instances i
             JOIN intake_templates t ON t.id = i.template_id
+            JOIN tickets tk ON tk.id = i.ticket_id
             LEFT JOIN ticket_events se ON se.id = i.sent_event_id
             WHERE i.token_hash = @tokenHash AND i.status = 'Sent'
             FOR UPDATE OF i
@@ -339,12 +341,16 @@ public sealed class IntakeFormRepository : IIntakeFormRepository
             answerCount = answers.Count,
         });
 
+        // Attribute the event to the ticket's requester contact so the
+        // trigger matcher resolves `article.sender = "Customer"` and admins
+        // can write a "customer-touched-this-ticket" rule that fires on
+        // intake submissions the same way it does for inbound mail.
         var submittedEventId = await conn.ExecuteScalarAsync<long>(new CommandDefinition("""
-            INSERT INTO ticket_events (ticket_id, event_type, body_text, body_html, metadata, is_internal)
-            VALUES (@ticketId, 'IntakeFormSubmitted', NULL, NULL, @metadataJson::jsonb, FALSE)
+            INSERT INTO ticket_events (ticket_id, event_type, author_contact_id, body_text, body_html, metadata, is_internal)
+            VALUES (@ticketId, 'IntakeFormSubmitted', @authorContactId, NULL, NULL, @metadataJson::jsonb, FALSE)
             RETURNING id
             """,
-            new { ticketId = lookup.TicketId, metadataJson },
+            new { ticketId = lookup.TicketId, authorContactId = lookup.RequesterContactId, metadataJson },
             transaction: tx, cancellationToken: ct));
 
         foreach (var a in answers)
@@ -714,6 +720,7 @@ public sealed class IntakeFormRepository : IIntakeFormRepository
         public string TemplateName { get; set; } = string.Empty;
         public DateTime? ExpiresUtc { get; set; }
         public Guid? SentByUserId { get; set; }
+        public Guid? RequesterContactId { get; set; }
     }
 
     private sealed record ExpireLookupRow(Guid InstanceId, Guid TicketId, Guid TemplateId, string TemplateName);

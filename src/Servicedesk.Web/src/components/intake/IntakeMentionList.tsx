@@ -1,8 +1,24 @@
 import * as React from "react";
+import { ClipboardList, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { IntakeTemplate } from "@/lib/intakeForms-api";
 
-export type IntakeMentionItem = Pick<IntakeTemplate, "id" | "name" | "description">;
+/// Items shown in the `::` typeahead. The picker now mixes intake-form
+/// templates and pre-canned compose templates — both surface through the
+/// same trigger so an agent only has to learn one keystroke.
+///
+/// `kind` determines what happens on select (handled by the Tiptap
+/// suggestion plugin in <RichTextEditor>):
+///   - "intake"   → insert an intake-form chip + async draft-instance create
+///   - "template" → insert the template's HTML body inline (no chip)
+export type IntakeMentionItem = {
+  id: string;
+  name: string;
+  description?: string | null;
+  kind: "intake" | "template";
+  /// Only set for kind = "template". The picker hands it through to the
+  /// suggestion command so the editor can insertContent at the trigger range.
+  bodyHtml?: string;
+};
 
 export type IntakeMentionListHandle = {
   onKeyDown: (props: { event: KeyboardEvent }) => boolean;
@@ -11,14 +27,13 @@ export type IntakeMentionListHandle = {
 export type IntakeMentionListProps = {
   items: IntakeMentionItem[];
   loading: boolean;
-  command: (props: { id: string; label: string }) => void;
+  /// The picker forwards the full item so the Tiptap suggestion plugin can
+  /// branch on `kind` and skip the chip-flow for templates.
+  command: (props: IntakeMentionItem) => void;
 };
 
-/// Typeahead popover for the `::` intake-form Tiptap extension. Same shape
-/// as <see cref="MentionList"/> but keyed to templates instead of agents.
-/// The inserted node attrs carry the template id (Guid) and display label;
-/// the draft-instance id replaces templateId after the composer resolves
-/// the POST /api/tickets/{id}/intake-forms roundtrip.
+/// Typeahead popover for the `::` Tiptap extension. Shared by intake-form
+/// templates and compose templates; the row badge tells them apart.
 export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, IntakeMentionListProps>(
   function IntakeMentionList({ items, loading, command }, ref) {
     const [selectedIndex, setSelectedIndex] = React.useState(0);
@@ -31,7 +46,7 @@ export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, Intak
       (index: number) => {
         const item = items[index];
         if (!item) return;
-        command({ id: item.id, label: item.name });
+        command(item);
       },
       [items, command],
     );
@@ -58,7 +73,7 @@ export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, Intak
     return (
       <div
         className={cn(
-          "min-w-[18rem] max-w-[24rem] max-h-64 overflow-auto",
+          "min-w-[20rem] max-w-[28rem] max-h-72 overflow-auto",
           "rounded-[var(--radius)] border border-white/10",
           "bg-[hsl(240_10%_6%/0.96)] backdrop-blur-xl shadow-2xl",
           "py-1 text-sm",
@@ -67,18 +82,20 @@ export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, Intak
       >
         {loading && items.length === 0 ? (
           <div className="px-3 py-2 text-xs text-muted-foreground/70">
-            Searching templates…
+            Searching…
           </div>
         ) : items.length === 0 ? (
           <div className="px-3 py-2 text-xs text-muted-foreground/70">
-            No intake templates match
+            No matches
           </div>
         ) : (
           items.map((item, i) => {
             const isSelected = i === selectedIndex;
+            const Icon = item.kind === "template" ? FileText : ClipboardList;
+            const kindLabel = item.kind === "template" ? "Template" : "Intake";
             return (
               <button
-                key={item.id}
+                key={`${item.kind}:${item.id}`}
                 type="button"
                 role="option"
                 aria-selected={isSelected}
@@ -88,18 +105,38 @@ export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, Intak
                 }}
                 onMouseEnter={() => setSelectedIndex(i)}
                 className={cn(
-                  "w-full flex flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors",
+                  "w-full flex items-start gap-3 px-3 py-2 text-left transition-colors",
                   isSelected
                     ? "bg-emerald-500/15 text-emerald-100"
                     : "text-foreground/80 hover:bg-white/[0.04]",
                 )}
               >
-                <span className="font-medium">{item.name}</span>
-                {item.description && (
-                  <span className="text-xs text-muted-foreground/70 line-clamp-1">
-                    {item.description}
-                  </span>
-                )}
+                <Icon
+                  className={cn(
+                    "mt-0.5 h-4 w-4 shrink-0",
+                    item.kind === "template" ? "text-violet-300" : "text-cyan-300",
+                  )}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate font-medium">{item.name}</span>
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] uppercase tracking-wider",
+                        item.kind === "template"
+                          ? "border-violet-400/30 bg-violet-400/10 text-violet-200"
+                          : "border-cyan-400/30 bg-cyan-400/10 text-cyan-200",
+                      )}
+                    >
+                      {kindLabel}
+                    </span>
+                  </div>
+                  {item.description && (
+                    <span className="block truncate text-xs text-muted-foreground/70">
+                      {item.description}
+                    </span>
+                  )}
+                </div>
               </button>
             );
           })

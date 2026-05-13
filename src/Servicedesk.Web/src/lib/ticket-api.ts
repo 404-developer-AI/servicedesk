@@ -120,6 +120,19 @@ export type Ticket = {
   splitFromTicketId: string | null;
   splitFromUtc: string | null;
   splitFromUserId: string | null;
+  /// v0.0.37 — agent-visible "Pending till" datetime, set when the
+  /// status sits in the Pending state_category. Null otherwise. The
+  /// pending-till scheduler wakes the ticket at this UTC moment;
+  /// `pendingTillNextTriggerId` is a one-shot pointer used by chained
+  /// reminder triggers (see SetPendingTillHandler).
+  pendingTillUtc: string | null;
+  pendingTillNextTriggerId: string | null;
+  /// Manual Main/Sub-ticket link. When set, this ticket is the child of
+  /// `parentTicketId`. The detail payload surfaces `parentTicketNumber`
+  /// alongside for banner rendering without a second round-trip.
+  parentTicketId: string | null;
+  parentLinkedUtc: string | null;
+  parentLinkedByUserId: string | null;
 };
 
 export type TicketBody = {
@@ -218,6 +231,13 @@ export type TicketDetail = {
     size: number;
     url: string;
   }[];
+  /// Number of the manually-linked parent ("Main ticket"). Null when the
+  /// ticket has no parent. Companion to `ticket.parentTicketId`.
+  parentTicketNumber: string | null;
+  /// Resolved email of the user that last set the parent link.
+  parentLinkedByUserName: string | null;
+  /// Children manually linked to this ticket via Main/Sub.
+  childTickets: { id: string; number: string }[];
 };
 
 /// Lightweight row returned by /api/tickets/picker for the merge dialog.
@@ -297,6 +317,13 @@ export type CreateTicketRequest = {
   categoryId?: string;
   assigneeUserId?: string;
   source?: string;
+  /// v0.0.37 — optional initial "Pending till" datetime (UTC ISO).
+  /// Only honoured when the initial status sits in the Pending
+  /// state_category; otherwise the backend ignores it.
+  pendingTillUtc?: string | null;
+  /// When set, the newly created ticket is immediately linked as a
+  /// sub-ticket of this parent (manual Main/Sub flow from the side panel).
+  parentTicketId?: string;
 };
 
 export type TicketFieldUpdate = {
@@ -308,6 +335,12 @@ export type TicketFieldUpdate = {
   subject?: string;
   bodyText?: string;
   bodyHtml?: string;
+  /// v0.0.37 — sent as UTC ISO string. Pair with a statusId flip into
+  /// a Pending status to override the server-computed default; the
+  /// trigger-driven `set_pending_till` action runs after this PATCH
+  /// commits and overwrites whatever we send here, matching the
+  /// "trigger has priority over manual" spec.
+  pendingTillUtc?: string | null;
 };
 
 export type NewTicketEvent = {
@@ -666,6 +699,14 @@ export const ticketApi = {
   },
   merge: (id: string, body: MergeTicketRequest) =>
     request<MergeTicketResponse>("POST", `/api/tickets/${id}/merge`, body),
+  linkParent: (id: string, parentTicketId: string) =>
+    request<{ parentTicketId: string; parentNumber: number }>(
+      "POST",
+      `/api/tickets/${id}/link-parent`,
+      { parentTicketId },
+    ),
+  unlinkParent: (id: string) =>
+    request<void>("DELETE", `/api/tickets/${id}/link-parent`),
   split: (id: string, body: SplitTicketRequest) =>
     request<SplitTicketResponse>("POST", `/api/tickets/${id}/split`, body),
   exportPdf: (id: string, excludeInternal = true) => {

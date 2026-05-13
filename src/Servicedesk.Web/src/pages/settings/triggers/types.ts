@@ -51,6 +51,7 @@ export type TriggerAction =
   | SetPendingTillAction
   | { kind: "add_internal_note"; body_html: string }
   | { kind: "add_public_note"; body_html: string }
+  | { kind: "repost_as_public_reply" }
   | {
       kind: "send_mail";
       to: string;
@@ -73,6 +74,7 @@ export const KNOWN_ACTION_KINDS = [
   "set_pending_till",
   "add_internal_note",
   "add_public_note",
+  "repost_as_public_reply",
   "send_mail",
 ] as const;
 
@@ -86,6 +88,7 @@ export const ACTION_KIND_LABELS: Record<KnownActionKind, string> = {
   set_pending_till: "Set pending till",
   add_internal_note: "Add internal note",
   add_public_note: "Add public note",
+  repost_as_public_reply: "Repost as public reply",
   send_mail: "Send mail",
 };
 
@@ -98,6 +101,7 @@ export function blankActionForKind(kind: KnownActionKind): TriggerAction {
     case "set_pending_till": return { kind, mode: "relative", value: "P1D" };
     case "add_internal_note": return { kind, body_html: "" };
     case "add_public_note": return { kind, body_html: "" };
+    case "repost_as_public_reply": return { kind };
     case "send_mail":
       return {
         kind,

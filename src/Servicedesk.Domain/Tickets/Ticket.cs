@@ -27,7 +27,18 @@ public sealed record Ticket(
     Guid? MergedByUserId = null,
     Guid? SplitFromTicketId = null,
     DateTime? SplitFromUtc = null,
-    Guid? SplitFromUserId = null);
+    Guid? SplitFromUserId = null,
+    // v0.0.37 — pending_till_utc + pending_till_next_trigger_id were
+    // added to the schema in v0.0.24 for trigger-driven reminder cycles
+    // (see `SetPendingTillHandler`). The agent-facing fields are
+    // surfaced through the domain model from v0.0.37 onwards so the
+    // side panel + new-ticket drawer can read/write a "Pending till"
+    // datetime when the status sits in the Pending state-category.
+    DateTime? PendingTillUtc = null,
+    Guid? PendingTillNextTriggerId = null,
+    Guid? ParentTicketId = null,
+    DateTime? ParentLinkedUtc = null,
+    Guid? ParentLinkedByUserId = null);
 
 public sealed record TicketBody(
     Guid TicketId,

@@ -9,6 +9,7 @@ using Servicedesk.Api.Presence;
 using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth;
+using Servicedesk.Infrastructure.KnowledgeBase;
 using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Mail.Ingest;
@@ -16,6 +17,7 @@ using Servicedesk.Infrastructure.Mail.Outbound;
 using Servicedesk.Infrastructure.Notifications;
 using Servicedesk.Infrastructure.Persistence.Companies;
 using Servicedesk.Infrastructure.Persistence.Tickets;
+using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Triggers;
 
@@ -98,6 +100,8 @@ public static class TicketEndpoints
             // target). One round-trip each — both index-only at scale.
             var mergedSourceNumbers = await repo.GetMergedSourceTicketNumbersAsync(id, ct);
             var splitChildren = await repo.GetSplitChildrenAsync(id, ct);
+            var childTickets = await repo.GetChildTicketsAsync(id, ct);
+            var parentSummary = await repo.GetParentSummaryAsync(id, ct);
             string? mergedByUserName = null;
             string? mergedIntoTicketNumber = null;
             string? splitFromTicketNumber = null;
@@ -162,6 +166,9 @@ public static class TicketEndpoints
                 splitFromUserName,
                 splitChildren = splitChildren.Select(c => new { id = c.Id, number = c.Number }),
                 descriptionAttachments,
+                parentTicketNumber = parentSummary?.ParentNumber.ToString(),
+                parentLinkedByUserName = parentSummary?.LinkedByName,
+                childTickets = childTickets.Select(c => new { id = c.Id, number = c.Number.ToString() }),
             });
         }).WithName("GetTicket").WithOpenApi();
 
@@ -185,11 +192,31 @@ public static class TicketEndpoints
             var requester = await companies.GetContactAsync(req.RequesterContactId, ct);
             if (requester is null) return Results.BadRequest(new { error = "Unknown requester contact." });
 
+            // Optional parent-link: the "Create linked ticket" flow on a
+            // source ticket passes its own id here so the new ticket lands
+            // as a sub-ticket. Validate access + non-merged + non-self
+            // before insert; the link is applied in a follow-up call once
+            // the new ticket exists.
+            if (req.ParentTicketId is Guid parentId)
+            {
+                if (parentId == Guid.Empty)
+                    return Results.BadRequest(new { error = "parentTicketId is empty." });
+                var parent = await tickets.GetByIdAsync(parentId, ct);
+                if (parent is null)
+                    return Results.BadRequest(new { error = "Parent ticket not found." });
+                if (!await queueAccess.HasQueueAccessAsync(userId, userRole, parent.Ticket.QueueId, ct))
+                    return Results.Json(new { error = "You do not have access to the parent ticket's queue." }, statusCode: 403);
+                if (parent.Ticket.MergedIntoTicketId is not null)
+                    return Results.Conflict(new { error = "Parent ticket is merged.", code = "parent_is_merged" });
+            }
+
             // Run the same resolution tree the mail-intake uses so an
             // agent-created ticket freezes its company_id identically. An
             // ambiguous contact → awaiting_company_assignment=true and the
             // Ticket dialog (ToDo #4) prompts the agent to pick explicitly.
             var resolution = await contactLookup.ResolveCompanyForNewTicketAsync(req.RequesterContactId, ct);
+
+            var pendingTillUtc = req.PendingTillUtc;
 
             var created = await tickets.CreateAsync(new NewTicket(
                 Subject: req.Subject.Trim(),
@@ -204,7 +231,26 @@ public static class TicketEndpoints
                 Source: req.Source ?? "Api",
                 CompanyId: resolution.CompanyId,
                 AwaitingCompanyAssignment: resolution.Awaiting,
-                CompanyResolvedVia: resolution.ResolvedVia), ct);
+                CompanyResolvedVia: resolution.ResolvedVia,
+                PendingTillUtc: pendingTillUtc), ct);
+
+            // Apply the parent link after create so the new ticket exists
+            // for the FK + cycle-check. Failure here is logged but does not
+            // roll the new ticket back — the agent can re-link from the
+            // side panel afterwards if validation rejected.
+            if (req.ParentTicketId is Guid parentTicketId)
+            {
+                var linkResult = await tickets.LinkParentAsync(created.Id, parentTicketId, userId, ct);
+                if (!linkResult.Success)
+                {
+                    return Results.Conflict(new
+                    {
+                        error = $"Ticket was created but linking to parent failed: {linkResult.FailureReason}",
+                        code = "parent_link_failed",
+                        ticketId = created.Id,
+                    });
+                }
+            }
 
             var (actor, role) = ActorContext.Resolve(http);
             await audit.LogAsync(new AuditEvent(
@@ -274,7 +320,8 @@ public static class TicketEndpoints
                 AssigneeUserId: req.AssigneeUserId,
                 Subject: req.Subject?.Trim(),
                 BodyText: req.BodyText,
-                BodyHtml: req.BodyHtml);
+                BodyHtml: req.BodyHtml,
+                PendingTillUtc: req.PendingTillUtc);
             var detail = await tickets.UpdateFieldsAsync(id, update, userId, ct);
             if (detail is null) return Results.NotFound();
 
@@ -530,9 +577,23 @@ public static class TicketEndpoints
                 ? JsonSerializer.Serialize(new { mentionedUserIds = mentionedIds })
                 : null;
 
+            // The agent UI only sends bodyHtml (the rich-text composer's
+            // output). Without a plain-text version, downstream consumers
+            // that index or match against body_text (full-text search,
+            // trigger `article.body` conditions, mention notifications)
+            // silently see null and skip the event. Strip the HTML server-
+            // side so the DB row carries both representations and stays
+            // consistent regardless of which caller submitted it.
+            var derivedBodyText = req.BodyText;
+            if (string.IsNullOrWhiteSpace(derivedBodyText) && !string.IsNullOrWhiteSpace(req.BodyHtml))
+            {
+                var stripped = KbBodyStripper.HtmlToText(req.BodyHtml);
+                if (!string.IsNullOrWhiteSpace(stripped)) derivedBodyText = stripped;
+            }
+
             var input = new NewTicketEvent(
                 EventType: req.EventType,
-                BodyText: req.BodyText,
+                BodyText: derivedBodyText,
                 BodyHtml: req.BodyHtml,
                 IsInternal: req.IsInternal ?? (req.EventType == "Note"),
                 AuthorUserId: userId,
@@ -866,7 +927,9 @@ public static class TicketEndpoints
         group.MapPost("/{id:guid}/merge", async (
             Guid id, [FromBody] MergeTicketRequest req, HttpContext http,
             ITicketRepository tickets, IQueueAccessService queueAccess,
-            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit,
+            ITimesheetEntryNotifier timesheetNotifier,
+            CancellationToken ct) =>
         {
             if (req.TargetTicketId == Guid.Empty)
                 return Results.BadRequest(new { error = "targetTicketId is required." });
@@ -955,6 +1018,13 @@ public static class TicketEndpoints
             await hub.Clients.Group($"ticket:{targetIdStr}").SendAsync("TicketUpdated", targetIdStr, ct);
             await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", targetIdStr, ct);
 
+            // Timesheet entries were re-pointed by MergeAsync — both the
+            // source panel (now empty) and the target panel (gained rows)
+            // need to refetch. Without this push, viewers see stale data
+            // until the 30s staleTime in the panel's useQuery expires.
+            await timesheetNotifier.NotifyEntryChangedAsync(id, ct);
+            await timesheetNotifier.NotifyEntryChangedAsync(req.TargetTicketId, ct);
+
             return Results.Ok(new
             {
                 targetTicketId = req.TargetTicketId,
@@ -964,6 +1034,135 @@ public static class TicketEndpoints
                 crossCustomer = result.CrossCustomer,
             });
         }).WithName("MergeTicket").WithOpenApi();
+
+        // Manual Main/Sub-ticket linking. Sets parent_ticket_id on the
+        // current ticket (the child). Different from merge (which closes
+        // the source) — the link is purely relational and both tickets
+        // stay independently editable. Cycle-detection + cross-queue
+        // access checks run server-side; the picker dialog reuses
+        // /api/tickets/picker which already scopes to accessible queues.
+        group.MapPost("/{id:guid}/link-parent", async (
+            Guid id, [FromBody] LinkParentRequest req, HttpContext http,
+            ITicketRepository tickets, IQueueAccessService queueAccess,
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit,
+            CancellationToken ct) =>
+        {
+            if (req.ParentTicketId == Guid.Empty)
+                return Results.BadRequest(new { error = "parentTicketId is required." });
+            if (req.ParentTicketId == id)
+                return Results.BadRequest(new { error = "A ticket cannot be its own parent." });
+
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            var source = await tickets.GetByIdAsync(id, ct);
+            if (source is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, source.Ticket.QueueId, ct))
+                return Results.NotFound();
+
+            var parent = await tickets.GetByIdAsync(req.ParentTicketId, ct);
+            if (parent is null)
+                return Results.BadRequest(new { error = "Parent ticket not found." });
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, parent.Ticket.QueueId, ct))
+                return Results.Json(
+                    new { error = "You do not have access to the parent ticket's queue.", code = "queue_forbidden" },
+                    statusCode: 403);
+
+            var result = await tickets.LinkParentAsync(id, req.ParentTicketId, userId, ct);
+            if (!result.Success)
+            {
+                return result.FailureReason switch
+                {
+                    LinkParentFailureReason.WouldCycle => Results.Conflict(new
+                    {
+                        error = "This link would create a cycle (the candidate parent is already a descendant of this ticket).",
+                        code = "would_cycle",
+                    }),
+                    LinkParentFailureReason.ParentIsMerged => Results.Conflict(new
+                    {
+                        error = "Parent ticket is merged into another ticket and cannot be the parent of new links.",
+                        code = "parent_is_merged",
+                    }),
+                    LinkParentFailureReason.SourceIsMerged => Results.Conflict(new
+                    {
+                        error = "This ticket has been merged and cannot have a parent set.",
+                        code = "source_is_merged",
+                    }),
+                    LinkParentFailureReason.SameTicket => Results.BadRequest(new
+                    {
+                        error = "A ticket cannot be its own parent.",
+                    }),
+                    _ => Results.NotFound(),
+                };
+            }
+
+            var (actor, role) = ActorContext.Resolve(http);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "ticket.parent_linked",
+                Actor: actor,
+                ActorRole: role,
+                Target: id.ToString(),
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: new
+                {
+                    parentTicketId = req.ParentTicketId,
+                    parentNumber = parent.Ticket.Number,
+                    sourceNumber = source.Ticket.Number,
+                }));
+
+            // Push to both ticket SignalR groups so any open detail tab
+            // refreshes its "Sub tickets" / "Main ticket" strip.
+            var idStr = id.ToString();
+            var parentIdStr = req.ParentTicketId.ToString();
+            await hub.Clients.Group($"ticket:{idStr}").SendAsync("TicketUpdated", idStr, ct);
+            await hub.Clients.Group($"ticket:{parentIdStr}").SendAsync("TicketUpdated", parentIdStr, ct);
+
+            return Results.Ok(new
+            {
+                parentTicketId = req.ParentTicketId,
+                parentNumber = parent.Ticket.Number,
+            });
+        }).WithName("LinkTicketParent").WithOpenApi();
+
+        group.MapDelete("/{id:guid}/link-parent", async (
+            Guid id, HttpContext http,
+            ITicketRepository tickets, IQueueAccessService queueAccess,
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit,
+            CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            var source = await tickets.GetByIdAsync(id, ct);
+            if (source is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, source.Ticket.QueueId, ct))
+                return Results.NotFound();
+
+            var previousParentId = source.Ticket.ParentTicketId;
+            var ok = await tickets.UnlinkParentAsync(id, userId, ct);
+            if (!ok) return Results.NotFound();
+
+            var (actor, role) = ActorContext.Resolve(http);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "ticket.parent_unlinked",
+                Actor: actor,
+                ActorRole: role,
+                Target: id.ToString(),
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: new { previousParentTicketId = previousParentId }));
+
+            var idStr = id.ToString();
+            await hub.Clients.Group($"ticket:{idStr}").SendAsync("TicketUpdated", idStr, ct);
+            if (previousParentId is Guid prev)
+            {
+                var prevStr = prev.ToString();
+                await hub.Clients.Group($"ticket:{prevStr}").SendAsync("TicketUpdated", prevStr, ct);
+            }
+
+            return Results.NoContent();
+        }).WithName("UnlinkTicketParent").WithOpenApi();
 
         // v0.0.23 ticket split endpoint. Splits a multi-question mail off into
         // a fresh ticket with system defaults for queue/priority/status. The
@@ -1167,7 +1366,9 @@ public static class TicketEndpoints
         Guid PriorityId,
         Guid? CategoryId,
         Guid? AssigneeUserId,
-        string? Source);
+        string? Source,
+        DateTime? PendingTillUtc = null,
+        Guid? ParentTicketId = null);
 
     public sealed record UpdateTicketRequest(
         Guid? QueueId,
@@ -1177,7 +1378,8 @@ public static class TicketEndpoints
         Guid? AssigneeUserId,
         string? Subject,
         string? BodyText,
-        string? BodyHtml);
+        string? BodyHtml,
+        DateTime? PendingTillUtc = null);
 
     public sealed record AddEventRequest(
         string? EventType,
@@ -1232,6 +1434,8 @@ public static class TicketEndpoints
     /// The company re-resolves server-side via <see cref="IContactLookupService"/>,
     /// so the client only needs to pass the target contact id.
     public sealed record ChangeTicketRequesterRequest(Guid ContactId);
+
+    public sealed record LinkParentRequest(Guid ParentTicketId);
 
     /// v0.0.23: payload for merging this ticket into another. The acknowledge
     /// flag is required only when the dialog detected a cross-customer or
