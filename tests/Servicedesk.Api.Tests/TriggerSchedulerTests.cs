@@ -270,6 +270,7 @@ public class TriggerSchedulerTests
             => Task.FromResult<IReadOnlyDictionary<Guid, TriggerRunSummary>>(new Dictionary<Guid, TriggerRunSummary>());
         public Task<IReadOnlyList<TriggerRunDetail>> ListRunsAsync(Guid triggerId, int limit, DateTime? cursorUtc, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<TriggerRunDetail>>(Array.Empty<TriggerRunDetail>());
+        public Task ReorderAsync(IReadOnlyList<TriggerPlacement> placements, CancellationToken ct) => throw new NotImplementedException();
     }
 
     private sealed class FakeDispatcher : ITriggerActionDispatcher
@@ -322,6 +323,10 @@ public class TriggerSchedulerTests
         public Task<MergeResult?> MergeAsync(Guid sourceTicketId, Guid targetTicketId, Guid actorUserId, bool acknowledgedCrossCustomer, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<SplitChildTicket>> GetSplitChildrenAsync(Guid parentTicketId, CancellationToken ct) => throw new NotImplementedException();
         public Task<SplitResult?> SplitAsync(Guid sourceTicketId, long sourceMailEventId, string newSubject, Guid actorUserId, string? overrideBodyHtml, string? overrideBodyText, CancellationToken ct) => throw new NotImplementedException();
+        public Task<IReadOnlyList<LinkedChildTicket>> GetChildTicketsAsync(Guid parentTicketId, CancellationToken ct) => throw new NotImplementedException();
+        public Task<ParentTicketSummary?> GetParentSummaryAsync(Guid ticketId, CancellationToken ct) => throw new NotImplementedException();
+        public Task<LinkParentResult> LinkParentAsync(Guid ticketId, Guid parentTicketId, Guid actorUserId, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> UnlinkParentAsync(Guid ticketId, Guid actorUserId, CancellationToken ct) => throw new NotImplementedException();
     }
 
     private sealed class FakeSettings : ISettingsService
