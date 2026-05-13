@@ -1,7 +1,11 @@
 import * as React from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { GripVertical, Ticket, X } from "lucide-react";
 import { useRecentTicketsStore } from "@/stores/useRecentTicketsStore";
+import { getConnection } from "@/hooks/usePresence";
+import { ticketApi } from "@/lib/ticket-api";
+import { taxonomyApi, type Status } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export function RecentTickets({ collapsed }: { collapsed: boolean }) {
@@ -10,8 +14,52 @@ export function RecentTickets({ collapsed }: { collapsed: boolean }) {
   const moveTicket = useRecentTicketsStore((s) => s.moveTicket);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [dragIndex, setDragIndex] = React.useState<number | null>(null);
   const [overIndex, setOverIndex] = React.useState<number | null>(null);
+
+  // Live-refresh the colour bar + tooltip when another agent (or the
+  // current user from another window) changes a recent ticket's status.
+  // SignalR fires `TicketUpdated(id)` for every field change; we ignore
+  // the ones that aren't in our recent list, and for the rest we refresh
+  // the snapshot via the (cached) ticket detail + statuses queries.
+  React.useEffect(() => {
+    const hub = getConnection();
+    const onTicketUpdated = async (updatedTicketId: string) => {
+      const recent = useRecentTicketsStore.getState().recentTickets;
+      const hit = recent.find((t) => t.id === updatedTicketId);
+      if (!hit) return;
+      try {
+        const [detail, statuses] = await Promise.all([
+          queryClient.fetchQuery({
+            queryKey: ["ticket", updatedTicketId],
+            queryFn: () => ticketApi.get(updatedTicketId),
+          }),
+          queryClient.fetchQuery<Status[]>({
+            queryKey: ["statuses"],
+            queryFn: taxonomyApi.statuses.list,
+            staleTime: 300_000,
+          }),
+        ]);
+        const status = statuses.find((s) => s.id === detail.ticket.statusId);
+        useRecentTicketsStore.getState().addTicket({
+          id: detail.ticket.id,
+          number: detail.ticket.number,
+          subject: detail.ticket.subject,
+          statusColor: status?.color,
+          statusName: status?.name,
+          statusStateCategory: status?.stateCategory,
+        });
+      } catch {
+        // Recent-list freshness is best-effort; a failed fetch leaves
+        // the stale snapshot in place until the next event or re-view.
+      }
+    };
+    hub.on("TicketUpdated", onTicketUpdated);
+    return () => {
+      hub.off("TicketUpdated", onTicketUpdated);
+    };
+  }, [queryClient]);
 
   if (tickets.length === 0) return null;
 
@@ -61,6 +109,13 @@ export function RecentTickets({ collapsed }: { collapsed: boolean }) {
           const isDragging = dragIndex === index;
           const isOver = overIndex === index && dragIndex !== index;
 
+          const statusTint = t.statusColor;
+          const collapsedTitle = collapsed
+            ? t.statusName
+              ? `#${t.number} — ${t.subject} (${t.statusName})`
+              : `#${t.number} — ${t.subject}`
+            : t.statusName ?? undefined;
+
           return (
             <div
               key={t.id}
@@ -69,15 +124,33 @@ export function RecentTickets({ collapsed }: { collapsed: boolean }) {
               onDragOver={(e) => handleDragOver(e, index)}
               onDrop={(e) => handleDrop(e, index)}
               onDragEnd={handleDragEnd}
+              // The inset bar is drawn via boxShadow so it follows the
+              // rounded-lg corners and doesn't shift content the way a
+              // border-left would. The active-row ring is composed in
+              // the same shadow stack to keep both effects visible.
+              style={
+                statusTint
+                  ? {
+                      boxShadow: active
+                        ? `inset 3px 0 0 0 ${statusTint}, inset 0 0 0 1px hsl(var(--border))`
+                        : `inset 3px 0 0 0 ${statusTint}`,
+                    }
+                  : undefined
+              }
               className={cn(
                 "group flex items-center rounded-lg transition-colors",
                 active
-                  ? "bg-white/[0.07] text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+                  ? "bg-white/[0.07] text-foreground"
                   : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
+                // Without an inline boxShadow the active row keeps its
+                // original ring class. With one, the shadow already
+                // includes the ring, so skip the class to avoid stacking.
+                active && !statusTint && "shadow-[inset_0_0_0_1px_hsl(var(--border))]",
                 collapsed ? "justify-center px-2 py-2" : "gap-1 px-1 py-1.5",
                 isDragging && "opacity-40",
                 isOver && "border-t-2 border-primary/50",
               )}
+              title={collapsedTitle}
             >
               {!collapsed && (
                 <span className="shrink-0 cursor-grab active:cursor-grabbing text-muted-foreground/30 hover:text-muted-foreground/60 px-1">
@@ -91,10 +164,16 @@ export function RecentTickets({ collapsed }: { collapsed: boolean }) {
                   "flex min-w-0 flex-1 items-center gap-2",
                   collapsed && "justify-center",
                 )}
-                title={collapsed ? `#${t.number} — ${t.subject}` : undefined}
+                title={collapsed ? collapsedTitle : undefined}
                 draggable={false}
               >
-                <Ticket className={cn("h-3.5 w-3.5 shrink-0", active && "text-primary")} />
+                <Ticket
+                  className={cn(
+                    "h-3.5 w-3.5 shrink-0",
+                    !statusTint && active && "text-primary",
+                  )}
+                  style={statusTint ? { color: statusTint } : undefined}
+                />
                 {!collapsed && (
                   <>
                     <span className="font-mono text-xs shrink-0">#{t.number}</span>

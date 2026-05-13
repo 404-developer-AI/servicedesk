@@ -6,6 +6,7 @@ import {
   Clock,
   Contact,
   Eye,
+  FileText,
   Mail,
   Paperclip,
   Plug,
@@ -116,6 +117,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       "Reusable questionnaires agents send to customers via a public link — drag-reorder questions, bind defaults to ticket fields.",
     icon: ClipboardList,
+  },
+  {
+    slug: "templates",
+    label: "Templates",
+    description:
+      "Pre-canned HTML snippets agents drop into a note, reply, or outgoing mail via the :: picker. Scope each template to one or more queues.",
+    icon: FileText,
   },
   {
     slug: "triggers",

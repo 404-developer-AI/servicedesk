@@ -116,6 +116,7 @@ public sealed class TriggerConditionMatcher : ITriggerConditionMatcher
             TriggerFieldKeys.ArticleSender => ResolveArticleSender(ctx.TriggeringEvent),
             TriggerFieldKeys.ArticleType => ctx.TriggeringEvent?.EventType,
             TriggerFieldKeys.ArticleBodyText => ctx.TriggeringEvent?.BodyText,
+            TriggerFieldKeys.ArticleIsInternal => ctx.TriggeringEvent?.IsInternal,
             TriggerFieldKeys.ArticleHasAttachments => false, // attachment-aware lookup deferred to a later block
             _ => null,
         };

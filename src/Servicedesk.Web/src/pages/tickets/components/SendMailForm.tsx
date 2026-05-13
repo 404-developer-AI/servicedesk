@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Reply, ReplyAll, Forward as ForwardIcon, Mail } from "lucide-react";
 import {
@@ -14,6 +14,7 @@ import type { PendingMailAction } from "@/stores/useWorkspaceStore";
 import { AttachmentTray } from "./AttachmentTray";
 import { useAttachmentUploads } from "../hooks/useAttachmentUploads";
 import { intakeFormsApi } from "@/lib/intakeForms-api";
+import { composeTemplatesApi } from "@/lib/composeTemplates-api";
 import { IntakePrefillDrawer } from "@/components/intake/IntakePrefillDrawer";
 
 export type MailRecipient = { address: string; name: string };
@@ -35,6 +36,10 @@ export type MailContext = {
 
 type Props = {
   ticketId: string;
+  /// Ticket queue id — scopes the `::` template picker so an agent only
+  /// sees templates configured for the host ticket's queue (plus any
+  /// unrestricted templates).
+  queueId?: string | null;
   context: MailContext;
   initialIntent: PendingMailAction | null;
   onSent: () => void;
@@ -132,7 +137,7 @@ function buildReplyQuote(source: {
 <blockquote>${body}</blockquote>`;
 }
 
-export function SendMailForm({ ticketId, context, initialIntent, onSent, onCancel }: Props) {
+export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent, onCancel }: Props) {
   const [kind, setKind] = React.useState<OutboundMailKind>(
     initialIntent?.kind ?? (context.latestInbound ? "Reply" : "New"),
   );
@@ -152,6 +157,15 @@ export function SendMailForm({ ticketId, context, initialIntent, onSent, onCance
   const [drawerInstanceId, setDrawerInstanceId] = React.useState<string | null>(
     null,
   );
+
+  // Tokens for the :: template picker. Same cache key/staleTime as the
+  // note/reply form so both tabs share the resolved values.
+  const tokensQ = useQuery({
+    queryKey: ["compose-templates", "resolve", { ticketId }],
+    queryFn: () => composeTemplatesApi.resolveTokens({ ticketId }),
+    staleTime: 60_000,
+  });
+  const composeTokens = tokensQ.data?.tokens;
   const queryClient = useQueryClient();
   const attachments = useAttachmentUploads(ticketId);
 
@@ -449,26 +463,53 @@ export function SendMailForm({ ticketId, context, initialIntent, onSent, onCance
         content={initialEditorContent}
         autoFocus={false}
         onChange={(html) => setBodyHtml(html)}
-        placeholder="Write your message. Type @@ to tag an agent, :: to attach an intake form..."
+        placeholder="Write your message. Type @@ to tag an agent, :: to insert a template or intake form..."
         minHeight="140px"
         onUploadFile={attachments.upload}
         onMentionQuery={(q) => userApi.searchAgents(q)}
         onMentionsChange={setMentionedUserIds}
+        composeTokens={composeTokens}
         onIntakeQuery={async (q) => {
-          const list = await intakeFormsApi.listTemplates(false);
+          // Merge two sources behind a single `::` picker:
+          //   - compose templates → insert HTML body inline
+          //   - intake-form templates → insert chip + async draft create
+          // Settled-promise so a failing fetch on one side doesn't blank
+          // the other. Compose templates appear first; the picker shows a
+          // kind badge so the difference is obvious.
+          const [composedRes, intakeRes] = await Promise.allSettled([
+            composeTemplatesApi.usable(queueId ?? null),
+            intakeFormsApi.listTemplates(false),
+          ]);
           const needle = q.trim().toLowerCase();
-          const filtered = needle
-            ? list.filter(
-                (t) =>
-                  t.name.toLowerCase().includes(needle) ||
-                  (t.description ?? "").toLowerCase().includes(needle),
-              )
-            : list;
-          return filtered.slice(0, 8).map((t) => ({
-            id: t.id,
-            name: t.name,
-            description: t.description,
-          }));
+          const matchesNeedle = (name: string, description: string | null | undefined) =>
+            !needle ||
+            name.toLowerCase().includes(needle) ||
+            (description ?? "").toLowerCase().includes(needle);
+
+          const templateItems = composedRes.status === "fulfilled"
+            ? composedRes.value
+                .filter((t) => matchesNeedle(t.name, t.description))
+                .map((t) => ({
+                  id: t.id,
+                  name: t.name,
+                  description: t.description,
+                  kind: "template" as const,
+                  bodyHtml: t.bodyHtml,
+                }))
+            : [];
+
+          const intakeItems = intakeRes.status === "fulfilled"
+            ? intakeRes.value
+                .filter((t) => matchesNeedle(t.name, t.description))
+                .map((t) => ({
+                  id: t.id,
+                  name: t.name,
+                  description: t.description,
+                  kind: "intake" as const,
+                }))
+            : [];
+
+          return [...templateItems, ...intakeItems].slice(0, 16);
         }}
         onIntakeInsert={async (templateId) => {
           try {

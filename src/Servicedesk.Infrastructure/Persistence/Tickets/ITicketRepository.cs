@@ -94,7 +94,60 @@ public interface ITicketRepository
         string? overrideBodyHtml,
         string? overrideBodyText,
         CancellationToken ct);
+
+    /// Returns the child tickets (id + number) directly linked to this
+    /// parent via `parent_ticket_id`. Used by the detail view to render
+    /// the "Sub tickets" strip. Order: ticket number ascending.
+    Task<IReadOnlyList<LinkedChildTicket>> GetChildTicketsAsync(Guid parentTicketId, CancellationToken ct);
+
+    /// Returns the (number, name-of-linker) summary for the parent ticket,
+    /// or null if this ticket has no parent. The linker name is the email
+    /// of the user that ran the link; falls back to null when the link
+    /// pre-dates the user-attribution column.
+    Task<ParentTicketSummary?> GetParentSummaryAsync(Guid ticketId, CancellationToken ct);
+
+    /// Links <paramref name="ticketId"/> as a sub-ticket of
+    /// <paramref name="parentTicketId"/>. Writes a ParentLinked timeline
+    /// event on the child. Returns the failure reason on validation error
+    /// (self-link, cycle, parent doesn't exist, …) so the endpoint can
+    /// translate it into the right HTTP status.
+    Task<LinkParentResult> LinkParentAsync(
+        Guid ticketId,
+        Guid parentTicketId,
+        Guid actorUserId,
+        CancellationToken ct);
+
+    /// Clears `parent_ticket_id` on <paramref name="ticketId"/> and writes
+    /// a ParentUnlinked event. Returns false when the ticket doesn't
+    /// exist OR has no parent (idempotent no-op the caller can 404 on).
+    Task<bool> UnlinkParentAsync(Guid ticketId, Guid actorUserId, CancellationToken ct);
 }
+
+public sealed class LinkedChildTicket
+{
+    public Guid Id { get; set; }
+    public long Number { get; set; }
+}
+
+public sealed record ParentTicketSummary(
+    Guid ParentTicketId,
+    long ParentNumber,
+    string? LinkedByName,
+    DateTime LinkedUtc);
+
+public enum LinkParentFailureReason
+{
+    SourceNotFound,
+    ParentNotFound,
+    SameTicket,
+    ParentIsMerged,
+    SourceIsMerged,
+    WouldCycle,
+}
+
+public sealed record LinkParentResult(
+    bool Success,
+    LinkParentFailureReason? FailureReason);
 
 public sealed class TicketPickerHit
 {
@@ -173,7 +226,12 @@ public sealed record NewTicket(
     string Source,
     Guid? CompanyId = null,
     bool AwaitingCompanyAssignment = false,
-    string? CompanyResolvedVia = null);
+    string? CompanyResolvedVia = null,
+    // v0.0.37 — set when the initial StatusId sits in the Pending
+    // state-category. The endpoint computes the default value from
+    // taxonomy + Tickets.PendingDefault* settings before calling
+    // CreateAsync; the repository persists whatever it's given.
+    DateTime? PendingTillUtc = null);
 
 public sealed record TicketFieldUpdate(
     Guid? QueueId = null,
@@ -183,7 +241,14 @@ public sealed record TicketFieldUpdate(
     Guid? AssigneeUserId = null,
     string? Subject = null,
     string? BodyText = null,
-    string? BodyHtml = null);
+    string? BodyHtml = null,
+    // v0.0.37 — when provided, sets the ticket's pending_till_utc.
+    // Combined with the status-flip auto-clear in UpdateFieldsAsync
+    // (status moves OUT of Pending → column is wiped regardless of
+    // this value), the caller never needs an explicit "clear" flag for
+    // the agent flow. Trigger-driven clears go through
+    // `SetPendingTillHandler` / `SystemFieldMutator` instead.
+    DateTime? PendingTillUtc = null);
 
 public sealed record NewTicketEvent(
     string EventType,

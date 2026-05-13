@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth;
+using Servicedesk.Infrastructure.ComposeTemplates;
 using Servicedesk.Infrastructure.Auth.Admin;
 using Servicedesk.Infrastructure.Auth.Microsoft;
 using Servicedesk.Infrastructure.Auth.Sessions;
@@ -248,6 +249,7 @@ public static class DependencyInjection
         // AsyncLocal counter spans the whole process; the dedup tracker
         // shares IMemoryCache.
         services.AddSingleton<ITriggerRepository, TriggerRepository>();
+        services.AddSingleton<ITriggerGroupRepository, TriggerGroupRepository>();
         services.AddSingleton<ITriggerConditionMatcher, TriggerConditionMatcher>();
         services.AddSingleton<ITriggerActionDispatcher, TriggerActionDispatcher>();
         services.AddSingleton<TriggerLoopGuard>();
@@ -268,6 +270,7 @@ public static class DependencyInjection
         services.AddSingleton<ITriggerActionHandler, SetPendingTillHandler>();
         services.AddSingleton<ITriggerActionHandler, AddInternalNoteHandler>();
         services.AddSingleton<ITriggerActionHandler, AddPublicNoteHandler>();
+        services.AddSingleton<ITriggerActionHandler, RepostAsPublicReplyHandler>();
         services.AddSingleton<ITriggerActionHandler, SendMailHandler>();
 
         // Blok 7 — dry-run previewers: parallel registration, one per
@@ -283,7 +286,15 @@ public static class DependencyInjection
         services.AddSingleton<ITriggerActionPreviewer, SetPendingTillPreviewer>();
         services.AddSingleton<ITriggerActionPreviewer, AddInternalNotePreviewer>();
         services.AddSingleton<ITriggerActionPreviewer, AddPublicNotePreviewer>();
+        services.AddSingleton<ITriggerActionPreviewer, RepostAsPublicReplyPreviewer>();
         services.AddSingleton<ITriggerActionPreviewer, SendMailPreviewer>();
+
+        // Compose templates — pre-canned HTML snippets for note/reply/mail
+        // composers. Reuses KbHtmlSanitizer for body sanitisation; the picker
+        // endpoint sits next to the intake-form one so both can power the
+        // same `::` Tiptap suggestion.
+        services.AddSingleton<IComposeTemplateRepository, ComposeTemplateRepository>();
+        services.AddSingleton<IComposeTokenResolver, ComposeTokenResolver>();
 
         // Intake Forms (v0.0.19)
         services.AddSingleton<IIntakeTemplateRepository, IntakeTemplateRepository>();

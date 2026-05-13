@@ -19,4 +19,6 @@ public sealed class TriggerRow
     public DateTime CreatedUtc { get; set; }
     public DateTime UpdatedUtc { get; set; }
     public Guid? CreatedByUserId { get; set; }
+    public Guid? GroupId { get; set; }
+    public int SortOrder { get; set; }
 }

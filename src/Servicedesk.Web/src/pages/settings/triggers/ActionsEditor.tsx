@@ -391,6 +391,15 @@ function ActionForm({
           />
         </FieldRow>
       );
+    case "repost_as_public_reply":
+      return (
+        <p className="rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] text-muted-foreground/80">
+          Duplicates the triggering article verbatim as a public reply
+          (same body, formatting, and attachments-link). Pair with an{" "}
+          <span className="text-foreground/80">Article is internal = true</span>{" "}
+          condition to prevent the public copy from re-firing the trigger.
+        </p>
+      );
     case "send_mail":
       return (
         <div className="space-y-3">

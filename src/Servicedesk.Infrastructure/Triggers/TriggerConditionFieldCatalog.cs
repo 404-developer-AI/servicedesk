@@ -22,6 +22,7 @@ public static class TriggerConditionFieldCatalog
         new(TriggerFieldKeys.ArticleSender,     "Article sender",     "sender"),
         new(TriggerFieldKeys.ArticleType,       "Article type",       "article-type"),
         new(TriggerFieldKeys.ArticleBodyText,   "Article body",       "string"),
+        new(TriggerFieldKeys.ArticleIsInternal, "Article is internal","boolean"),
         new(TriggerFieldKeys.ArticleHasAttachments, "Article has attachments", "boolean"),
     };
 }

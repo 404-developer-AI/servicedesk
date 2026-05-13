@@ -80,7 +80,7 @@ function RevisionEntry({
             <div className="rounded-md border border-white/10 bg-white/[0.02] p-3 text-sm">
               {danger ? (
                 <div
-                  className="prose-sm text-foreground/70 [&_a]:text-primary [&_a]:underline [&_p]:my-1 [&_ul]:pl-5 [&_ol]:pl-5"
+                  className="prose-sm text-foreground/70 [&_a]:text-primary [&_a]:underline [&_p]:my-1 [&_ul]:list-disc [&_ul]:list-outside [&_ul]:pl-6 [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:list-outside [&_ol]:pl-6 [&_ol]:ml-4"
                   dangerouslySetInnerHTML={danger}
                 />
               ) : (

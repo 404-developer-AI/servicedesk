@@ -56,5 +56,6 @@ public static class TriggerFieldKeys
     public const string ArticleSender = "article.sender";
     public const string ArticleType = "article.type";
     public const string ArticleBodyText = "article.body_text";
+    public const string ArticleIsInternal = "article.is_internal";
     public const string ArticleHasAttachments = "article.has_attachments";
 }

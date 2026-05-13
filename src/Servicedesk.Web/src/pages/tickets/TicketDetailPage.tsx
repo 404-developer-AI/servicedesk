@@ -2,10 +2,10 @@ import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Check, Copy, Download, FileDown, GitBranch, GitMerge, PanelRightClose, PanelRightOpen, Pencil, X } from "lucide-react";
+import { Check, Copy, Download, FileDown, GitBranch, PanelRightClose, PanelRightOpen, Pencil, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ticketApi, contactApi, type Ticket, type TicketFieldUpdate } from "@/lib/ticket-api";
-import { agentQueueApi } from "@/lib/api";
+import { agentQueueApi, taxonomyApi } from "@/lib/api";
 import {
   CompanyAlertDialog,
   hasSeenAlertThisSession,
@@ -61,7 +61,10 @@ function TicketNumber({ number }: { number: number }) {
   const [copied, setCopied] = React.useState(false);
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(`#${number}`);
+    // Copy just the number — the visible "#" prefix is decoration; the
+    // global search and ticket-lookup endpoints match on the bare digits,
+    // so pasting with the prefix returns no hits.
+    await navigator.clipboard.writeText(String(number));
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -375,16 +378,33 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
     [accessibleQueues],
   );
 
+  // Status taxonomy — shared cache key with TicketSidePanel so this is a
+  // no-cost subscribe (no second fetch). Used to snapshot the current
+  // status into the Recent list, so the sidebar can colour-code rows
+  // by status without re-opening every ticket.
+  const { data: statuses } = useQuery({
+    queryKey: ["statuses"],
+    queryFn: taxonomyApi.statuses.list,
+    staleTime: 300_000,
+  });
+  const currentStatus = React.useMemo(
+    () => statuses?.find((s) => s.id === data?.ticket?.statusId),
+    [statuses, data?.ticket?.statusId],
+  );
+
   React.useEffect(() => {
     if (data?.ticket) {
       addTicket({
         id: data.ticket.id,
         number: data.ticket.number,
         subject: data.ticket.subject,
+        statusColor: currentStatus?.color,
+        statusName: currentStatus?.name,
+        statusStateCategory: currentStatus?.stateCategory,
       });
       useWorkspaceStore.getState().setLastTicket(data.ticket.id);
     }
-  }, [data?.ticket, addTicket]);
+  }, [data?.ticket, addTicket, currentStatus]);
 
   // v0.0.12 stap 4 — deep-link to a specific event (from mention
   // notifications, mail CTAs, etc.). Runs once events are in the DOM.
@@ -501,6 +521,9 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
   const splitFromUserName = data.splitFromUserName ?? null;
   const splitChildren = data.splitChildren ?? [];
   const descriptionAttachments = data.descriptionAttachments ?? [];
+  const parentTicketNumber = data.parentTicketNumber ?? null;
+  const parentLinkedByUserName = data.parentLinkedByUserName ?? null;
+  const childTickets = data.childTickets ?? [];
 
   return (
     <>
@@ -523,6 +546,9 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         splitFromUserName={splitFromUserName}
         splitChildren={splitChildren}
         descriptionAttachments={descriptionAttachments}
+        parentTicketNumber={parentTicketNumber}
+        parentLinkedByUserName={parentLinkedByUserName}
+        childTickets={childTickets}
       />
       {companyAlert && (
         <CompanyAlertDialog
@@ -555,6 +581,9 @@ function TicketDetailBody({
   splitFromUserName,
   splitChildren,
   descriptionAttachments,
+  parentTicketNumber,
+  parentLinkedByUserName,
+  childTickets,
 }: {
   ticketId: string;
   ticket: any;
@@ -574,12 +603,55 @@ function TicketDetailBody({
   splitFromUserName: string | null;
   splitChildren: { id: string; number: number }[];
   descriptionAttachments: { id: string; name: string; mimeType: string; size: number; url: string }[];
+  parentTicketNumber: string | null;
+  parentLinkedByUserName: string | null;
+  childTickets: { id: string; number: string }[];
 }) {
   const { matchesEvent, mode, query, registerScope } = useInTicketSearch();
   const visibleEvents = React.useMemo(() => {
     if (mode !== "filter" || !query.trim()) return events;
     return events.filter(matchesEvent);
   }, [events, matchesEvent, mode, query]);
+
+  // Scroll the activity feed to the latest post when an agent opens (or
+  // switches to) a ticket. We park a ref on the same scroll container the
+  // in-ticket search uses; the callback below feeds both. Logic:
+  //   - On every ticketId change we reset a "done" marker.
+  //   - On the first render where events.length > 0 for that ticket, we
+  //     scroll to scrollHeight. Two follow-up timers catch late layout
+  //     from inline images / mail bodies that render after the first
+  //     paint and would otherwise leave us above the true bottom.
+  // We deliberately do NOT auto-scroll on later events.length growth so
+  // a realtime push doesn't yank the agent away from what they're reading.
+  const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const initialScrollDoneRef = React.useRef<string | null>(null);
+  const setScrollRef = React.useCallback(
+    (el: HTMLDivElement | null) => {
+      scrollContainerRef.current = el;
+      registerScope(el);
+    },
+    [registerScope],
+  );
+
+  React.useEffect(() => {
+    if (initialScrollDoneRef.current === ticketId) return;
+    if (events.length === 0) return;
+    const el = scrollContainerRef.current;
+    if (!el) return;
+
+    const scroll = () => {
+      const c = scrollContainerRef.current;
+      if (c) c.scrollTop = c.scrollHeight;
+    };
+    scroll();
+    const t1 = window.setTimeout(scroll, 80);
+    const t2 = window.setTimeout(scroll, 240);
+    initialScrollDoneRef.current = ticketId;
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, [ticketId, events.length]);
 
   // Side-panel collapse — per-user pin state lives in the workspace store and
   // applies to *every* ticket the agent opens. The local `expanded` flag is
@@ -613,13 +685,6 @@ function TicketDetailBody({
             <ExportPdfButton ticketId={ticketId} />
           </div>
         </div>
-
-        <MergeBanners
-          ticket={ticket}
-          mergedIntoTicketNumber={mergedIntoTicketNumber}
-          mergedSourceTicketNumbers={mergedSourceTicketNumbers}
-          mergedByUserName={mergedByUserName}
-        />
 
         <SplitBanners
           ticket={ticket}
@@ -688,7 +753,7 @@ function TicketDetailBody({
             ref is handed to the in-ticket search highlighter so it knows
             which subtree to walk — nothing outside this container gets
             mutated. */}
-        <div ref={registerScope} className="flex-1 min-h-0 overflow-y-auto pr-1">
+        <div ref={setScrollRef} className="flex-1 min-h-0 overflow-y-auto pr-1">
           <TicketTimeline ticketId={ticketId} events={visibleEvents} pinnedEventIds={pinnedEventIds} />
           {mode === "filter" && query.trim() && visibleEvents.length === 0 && (
             <div className="py-6 text-center text-sm text-muted-foreground">
@@ -706,6 +771,7 @@ function TicketDetailBody({
               <AddNoteForm
                 key={ticketId}
                 ticketId={ticketId}
+                queueId={ticket.queueId}
                 mailContext={buildMailContext(ticket, events, requesterEmail, ownMailboxAddresses)}
                 onSubmitted={() => {
                   queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
@@ -747,68 +813,19 @@ function TicketDetailBody({
             onRequestCompanyAssign={onRequestCompanyAssign}
             pinned={sidePanelPinned}
             onTogglePin={() => setSidePanelPinned(!sidePanelPinned)}
+            mergedIntoTicketNumber={mergedIntoTicketNumber}
+            mergedSourceTicketNumbers={mergedSourceTicketNumbers}
+            mergedByUserName={mergedByUserName}
+            parentTicketNumber={parentTicketNumber}
+            parentLinkedByUserName={parentLinkedByUserName}
+            childTickets={childTickets}
+            onUnlinkParent={async () => {
+              await ticketApi.unlinkParent(ticketId);
+              queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
+            }}
           />
         </div>
       </div>
-    </div>
-  );
-}
-
-function MergeBanners({
-  ticket,
-  mergedIntoTicketNumber,
-  mergedSourceTicketNumbers,
-  mergedByUserName,
-}: {
-  ticket: Ticket;
-  mergedIntoTicketNumber: string | null;
-  mergedSourceTicketNumbers: number[];
-  mergedByUserName: string | null;
-}) {
-  const isMerged = !!ticket.mergedIntoTicketId;
-  const hasIncomingMerges = mergedSourceTicketNumbers.length > 0;
-  if (!isMerged && !hasIncomingMerges) return null;
-
-  return (
-    <div className="shrink-0 pb-3 space-y-2">
-      {isMerged && ticket.mergedIntoTicketId && (
-        <div className="rounded-md border border-purple-400/30 bg-purple-500/[0.06] px-3 py-2.5 flex items-start gap-2">
-          <GitMerge className="h-4 w-4 shrink-0 mt-0.5 text-purple-300/90" />
-          <div className="text-sm text-purple-100/90">
-            This ticket was merged into{" "}
-            <Link
-              to="/tickets/$ticketId"
-              params={{ ticketId: ticket.mergedIntoTicketId }}
-              className="font-medium underline underline-offset-2 hover:text-purple-50"
-            >
-              #{mergedIntoTicketNumber ?? "?"}
-            </Link>
-            {ticket.mergedUtc && (
-              <>
-                {" "}on {new Date(ticket.mergedUtc).toLocaleDateString()}
-              </>
-            )}
-            {mergedByUserName && (
-              <>
-                {" "}by <span className="text-purple-50/90">{mergedByUserName}</span>
-              </>
-            )}
-            .
-          </div>
-        </div>
-      )}
-      {hasIncomingMerges && !isMerged && (
-        <div className="rounded-md border border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-muted-foreground/80 flex items-center gap-2 flex-wrap">
-          <GitMerge className="h-3.5 w-3.5 shrink-0 text-purple-300/80" />
-          <span>Merged from</span>
-          {mergedSourceTicketNumbers.map((n, idx) => (
-            <span key={n}>
-              <span className="text-foreground/80 font-medium">#{n}</span>
-              {idx < mergedSourceTicketNumbers.length - 1 ? "," : ""}
-            </span>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

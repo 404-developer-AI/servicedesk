@@ -1,10 +1,11 @@
 import * as React from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { MessageCircle, ExternalLink, Clock } from "lucide-react";
 import { ticketApi, userApi } from "@/lib/ticket-api";
 import { preferencesApi } from "@/lib/api";
 import { timesheetTicketApi } from "@/lib/timesheet-api";
+import { composeTemplatesApi } from "@/lib/composeTemplates-api";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
@@ -14,6 +15,10 @@ import { useAttachmentUploads } from "../hooks/useAttachmentUploads";
 
 type AddNoteFormProps = {
   ticketId: string;
+  /// The ticket's queue — used to scope the `::` template picker so an
+  /// agent only sees templates configured for this queue (plus any
+  /// unrestricted templates).
+  queueId?: string | null;
   onSubmitted: () => void;
   mailContext: MailContext;
   /// When true, the form renders for the standalone `/tickets/:id/compose`
@@ -25,7 +30,7 @@ type AddNoteFormProps = {
 
 type TabType = "reply" | "note" | "mail";
 
-export function AddNoteForm({ ticketId, onSubmitted, mailContext, isPopup = false }: AddNoteFormProps) {
+export function AddNoteForm({ ticketId, queueId, onSubmitted, mailContext, isPopup = false }: AddNoteFormProps) {
   const savedDraft = useWorkspaceStore.getState().getDraft(ticketId);
   // Popup always starts expanded — no collapsed-button state in that flow.
   const [expanded, setExpanded] = React.useState(isPopup || !!savedDraft);
@@ -45,6 +50,17 @@ export function AddNoteForm({ ticketId, onSubmitted, mailContext, isPopup = fals
   const queryClient = useQueryClient();
   const attachments = useAttachmentUploads(ticketId);
   const formRef = React.useRef<HTMLDivElement>(null);
+
+  // Token map for the :: template picker — one fetch per ticket, cached
+  // for the conversation. Tokens live with the ticket; mutations elsewhere
+  // (contact rename, company assignment) invalidate the ticket key, which
+  // is enough since the next render-cycle will refetch.
+  const tokensQ = useQuery({
+    queryKey: ["compose-templates", "resolve", { ticketId }],
+    queryFn: () => composeTemplatesApi.resolveTokens({ ticketId }),
+    staleTime: 60_000,
+  });
+  const composeTokens = tokensQ.data?.tokens;
 
   // Scroll the bottom of the form flush with the viewport bottom so the
   // whole card (tabs + editor + Send/Add button) is visible after expand
@@ -238,6 +254,7 @@ export function AddNoteForm({ ticketId, onSubmitted, mailContext, isPopup = fals
       {tab === "mail" ? (
         <SendMailForm
           ticketId={ticketId}
+          queueId={queueId}
           context={mailContext}
           initialIntent={pendingAction}
           onSent={() => {
@@ -266,13 +283,35 @@ export function AddNoteForm({ ticketId, onSubmitted, mailContext, isPopup = fals
         }}
         placeholder={
           isInternal
-            ? "Add an internal note (not visible to customers). Type @@ to tag an agent..."
-            : "Write a reply to the customer. Type @@ to tag an agent..."
+            ? "Add an internal note (not visible to customers). Type @@ to tag an agent, :: to insert a template..."
+            : "Write a reply to the customer. Type @@ to tag an agent, :: to insert a template..."
         }
         minHeight="120px"
         onUploadFile={attachments.upload}
         onMentionQuery={(q) => userApi.searchAgents(q)}
         onMentionsChange={setMentionedUserIds}
+        composeTokens={composeTokens}
+        onIntakeQuery={async (q) => {
+          // Note + reply: only compose-templates surface in the picker. The
+          // intake-form chip flow is mail-only (it needs a recipient + send
+          // mechanism the internal-note pathway doesn't have).
+          const list = await composeTemplatesApi.usable(queueId ?? null);
+          const needle = q.trim().toLowerCase();
+          const filtered = needle
+            ? list.filter(
+                (t) =>
+                  t.name.toLowerCase().includes(needle) ||
+                  (t.description ?? "").toLowerCase().includes(needle),
+              )
+            : list;
+          return filtered.slice(0, 12).map((t) => ({
+            id: t.id,
+            name: t.name,
+            description: t.description,
+            kind: "template" as const,
+            bodyHtml: t.bodyHtml,
+          }));
+        }}
         onEditorReady={(editor) => {
           editorRef.current = editor as typeof editorRef.current;
         }}

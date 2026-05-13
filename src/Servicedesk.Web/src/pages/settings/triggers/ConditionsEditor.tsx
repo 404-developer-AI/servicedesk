@@ -368,8 +368,11 @@ function LeafRow({
       operator: leaf.operator,
       // Reset value type when switching field type, otherwise an admin
       // would get garbage in the DB (e.g. a guid stored where a tag-array
-      // is expected).
-      value: def?.type === "tags" ? [] : "",
+      // is expected). Boolean defaults to "true" so the matcher can read
+      // a non-empty value if the admin never touches the dropdown — the
+      // visual <select> picks the first option but a stale empty-string
+      // value would otherwise persist into JSONB and never match.
+      value: def?.type === "tags" ? [] : def?.type === "boolean" ? "true" : "",
     });
   }
 
@@ -479,16 +482,7 @@ function ValueInput({
     );
   }
   if (fieldType === "boolean") {
-    return (
-      <select
-        value={typeof value === "string" ? value : "true"}
-        onChange={(e) => onChange(e.target.value)}
-        className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
-      >
-        <option value="true">true</option>
-        <option value="false">false</option>
-      </select>
-    );
+    return <BooleanValueInput value={value} onChange={onChange} />;
   }
   if (fieldType === "tags") {
     const list = Array.isArray(value) ? value : [];
@@ -537,6 +531,40 @@ function ValueInput({
       placeholder="value"
       className="min-w-[12rem] rounded-md border border-white/10 bg-white/[0.04] px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
     />
+  );
+}
+
+/// Boolean condition value. Repairs stale leaves whose `value` is not
+/// "true" / "false" — older trigger rows landed in JSONB with an empty
+/// string when the admin never touched the dropdown, which then never
+/// matches at runtime. Normalising on mount means the next save persists
+/// the cleaned value back.
+function BooleanValueInput({
+  value,
+  onChange,
+}: {
+  value: ConditionLeaf["value"];
+  onChange: (v: ConditionLeaf["value"]) => void;
+}) {
+  const stringValue = typeof value === "string" ? value : "";
+  const normalized = stringValue === "true" || stringValue === "false" ? stringValue : "true";
+
+  React.useEffect(() => {
+    if (stringValue !== normalized) {
+      onChange(normalized);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stringValue, normalized]);
+
+  return (
+    <select
+      value={normalized}
+      onChange={(e) => onChange(e.target.value)}
+      className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
+    >
+      <option value="true">true</option>
+      <option value="false">false</option>
+    </select>
   );
 }
 

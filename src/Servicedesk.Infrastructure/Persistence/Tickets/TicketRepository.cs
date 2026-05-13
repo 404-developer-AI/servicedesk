@@ -255,7 +255,12 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                    merged_by_user_id AS MergedByUserId,
                    split_from_ticket_id AS SplitFromTicketId,
                    split_from_utc AS SplitFromUtc,
-                   split_from_user_id AS SplitFromUserId
+                   split_from_user_id AS SplitFromUserId,
+                   pending_till_utc AS PendingTillUtc,
+                   pending_till_next_trigger_id AS PendingTillNextTriggerId,
+                   parent_ticket_id AS ParentTicketId,
+                   parent_linked_utc AS ParentLinkedUtc,
+                   parent_linked_by_user_id AS ParentLinkedByUserId
             FROM tickets WHERE id = @id AND is_deleted = FALSE
             """;
         const string bodySql = """
@@ -310,10 +315,12 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         const string insertTicket = """
             INSERT INTO tickets (subject, requester_contact_id, assignee_user_id, queue_id,
                                  status_id, priority_id, category_id, source,
-                                 company_id, awaiting_company_assignment, company_resolved_via)
+                                 company_id, awaiting_company_assignment, company_resolved_via,
+                                 pending_till_utc)
             VALUES (@Subject, @RequesterContactId, @AssigneeUserId, @QueueId,
                     @StatusId, @PriorityId, @CategoryId, @Source,
-                    @CompanyId, @AwaitingCompanyAssignment, @CompanyResolvedVia)
+                    @CompanyId, @AwaitingCompanyAssignment, @CompanyResolvedVia,
+                    @PendingTillUtc)
             RETURNING id AS Id, number AS Number, subject AS Subject,
                       requester_contact_id AS RequesterContactId, assignee_user_id AS AssigneeUserId,
                       queue_id AS QueueId, status_id AS StatusId, priority_id AS PriorityId,
@@ -329,7 +336,12 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                       merged_by_user_id AS MergedByUserId,
                       split_from_ticket_id AS SplitFromTicketId,
                       split_from_utc AS SplitFromUtc,
-                      split_from_user_id AS SplitFromUserId
+                      split_from_user_id AS SplitFromUserId,
+                      pending_till_utc AS PendingTillUtc,
+                      pending_till_next_trigger_id AS PendingTillNextTriggerId,
+                      parent_ticket_id AS ParentTicketId,
+                      parent_linked_utc AS ParentLinkedUtc,
+                      parent_linked_by_user_id AS ParentLinkedByUserId
             """;
         const string insertBody = """
             INSERT INTO ticket_bodies (ticket_id, body_text, body_html)
@@ -366,7 +378,8 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
 
         const string readSql = """
             SELECT queue_id AS QueueId, status_id AS StatusId, priority_id AS PriorityId,
-                   category_id AS CategoryId, assignee_user_id AS AssigneeUserId
+                   category_id AS CategoryId, assignee_user_id AS AssigneeUserId,
+                   pending_till_utc AS PendingTillUtc
             FROM tickets WHERE id = @ticketId AND is_deleted = FALSE
             FOR UPDATE
             """;
@@ -445,6 +458,20 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             bodyChanged = true;
         }
 
+        // v0.0.37 — gate pending-till writes against the *effective*
+        // status (after a same-PATCH flip). The auto-clear below
+        // already wipes the column when flipping out of Pending, so
+        // any value the caller sends in that case is ignored. Has to
+        // run BEFORE the no-op short-circuit further down, otherwise a
+        // pending-till-only PATCH (the common agent-edit case) rolls
+        // back with sets.Count == 0.
+        bool writePendingTill =
+            update.PendingTillUtc.HasValue
+            && (current.StatusId == update.StatusId
+                || !update.StatusId.HasValue
+                || await IsPendingStatusAsync(conn, tx, update.StatusId!.Value, ct));
+        if (writePendingTill) sets.Add("pending_till_utc = @NewPendingTillUtc");
+
         if (sets.Count == 0 && !bodyChanged) { await tx.RollbackAsync(ct); return await GetByIdAsync(ticketId, ct); }
 
         sets.Add("updated_utc = now()");
@@ -456,6 +483,17 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                     new { id = update.StatusId }, tx, cancellationToken: ct));
             if (stateCategory == "Resolved") sets.Add("resolved_utc = COALESCE(resolved_utc, now())");
             if (stateCategory == "Closed") sets.Add("closed_utc = COALESCE(closed_utc, now())");
+            // v0.0.37 — flipping OUT of Pending wipes the reminder.
+            // The trigger-driven `next_trigger_id` chain (v0.0.24) is
+            // tied to the same lifecycle so we clear it in the same
+            // breath. Flipping IN to Pending without an explicit value
+            // is the endpoint's responsibility — the repo only persists
+            // what it's given.
+            if (stateCategory != "Pending")
+            {
+                sets.Add("pending_till_utc = NULL");
+                sets.Add("pending_till_next_trigger_id = NULL");
+            }
         }
 
         if (sets.Count > 1) // more than just updated_utc
@@ -470,6 +508,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                 NewCategoryId = update.CategoryId,
                 NewAssigneeUserId = update.AssigneeUserId,
                 NewSubject = update.Subject,
+                NewPendingTillUtc = update.PendingTillUtc,
             }, tx, cancellationToken: ct));
         }
 
@@ -882,7 +921,24 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
     }
 
     private sealed record TicketFieldSnapshot(
-        Guid QueueId, Guid StatusId, Guid PriorityId, Guid? CategoryId, Guid? AssigneeUserId);
+        Guid QueueId, Guid StatusId, Guid PriorityId, Guid? CategoryId, Guid? AssigneeUserId,
+        DateTime? PendingTillUtc);
+
+    /// Returns true when the supplied status_id sits in the
+    /// <c>Pending</c> state_category. Used by UpdateFieldsAsync to
+    /// decide whether to honour an explicit pending_till_utc write
+    /// alongside a status flip — agents on a non-Pending status can't
+    /// poke a stray pending-till value into the row through a stale
+    /// form.
+    private static async Task<bool> IsPendingStatusAsync(
+        Npgsql.NpgsqlConnection conn, System.Data.Common.DbTransaction tx,
+        Guid statusId, CancellationToken ct)
+    {
+        var cat = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
+            "SELECT state_category FROM statuses WHERE id = @id",
+            new { id = statusId }, tx, cancellationToken: ct));
+        return cat == "Pending";
+    }
 
     public async Task<bool> EventBelongsToTicketAsync(Guid ticketId, long eventId, CancellationToken ct)
     {
@@ -1134,6 +1190,15 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             "UPDATE intake_form_instances SET ticket_id = @target WHERE ticket_id = @source",
             new { source = sourceTicketId, target = targetTicketId }, tx, cancellationToken: ct));
 
+        // Re-point logged time. Without this, agents who already booked
+        // hours on the soon-to-be-merged source would either lose the
+        // attribution entirely or be left chasing a tombstone ticket.
+        // The count is included in the target's system-note metadata so
+        // the audit story stays self-contained.
+        var movedTimesheetEntries = await conn.ExecuteAsync(new CommandDefinition(
+            "UPDATE timesheet_entries SET ticket_id = @target WHERE ticket_id = @source",
+            new { source = sourceTicketId, target = targetTicketId }, tx, cancellationToken: ct));
+
         // The original ticket-body of the source is a 1:1 row, not part of the
         // event stream. To preserve the requester's first message we project
         // it onto the target as a Comment event timestamped at the source's
@@ -1233,6 +1298,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             mergedFromTicketNumber = source.Number,
             actorUserId = actorUserId.ToString(),
             movedEventCount = moved,
+            movedTimesheetEntryCount = movedTimesheetEntries,
         });
         await conn.ExecuteAsync(new CommandDefinition("""
             INSERT INTO ticket_events (ticket_id, event_type, author_user_id, metadata, is_internal, body_text)
@@ -1528,5 +1594,183 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             new CommandDefinition(ensureContact, cancellationToken: ct));
         return await conn.ExecuteAsync(
             new CommandDefinition(insertTickets, new { contactId, count }, cancellationToken: ct, commandTimeout: 600));
+    }
+
+    public async Task<IReadOnlyList<LinkedChildTicket>> GetChildTicketsAsync(Guid parentTicketId, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT id AS Id, number AS Number
+            FROM tickets
+            WHERE parent_ticket_id = @parentTicketId
+              AND is_deleted = FALSE
+            ORDER BY number
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<LinkedChildTicket>(
+            new CommandDefinition(sql, new { parentTicketId }, cancellationToken: ct));
+        return rows.ToList();
+    }
+
+    public async Task<ParentTicketSummary?> GetParentSummaryAsync(Guid ticketId, CancellationToken ct)
+    {
+        // Joins the parent row + the user that ran the link so the UI can
+        // render "Main ticket #X (linked by alice@…)" without a second
+        // round-trip. Returns null when this ticket has no parent.
+        const string sql = """
+            SELECT p.id           AS ParentTicketId,
+                   p.number       AS ParentNumber,
+                   u.email        AS LinkedByName,
+                   t.parent_linked_utc AS LinkedUtc
+            FROM tickets t
+            JOIN tickets p ON p.id = t.parent_ticket_id
+            LEFT JOIN users u ON u.id = t.parent_linked_by_user_id
+            WHERE t.id = @ticketId
+              AND t.parent_ticket_id IS NOT NULL
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.QueryFirstOrDefaultAsync<ParentTicketSummary>(
+            new CommandDefinition(sql, new { ticketId }, cancellationToken: ct));
+    }
+
+    public async Task<LinkParentResult> LinkParentAsync(
+        Guid ticketId, Guid parentTicketId, Guid actorUserId, CancellationToken ct)
+    {
+        if (ticketId == parentTicketId)
+            return new LinkParentResult(false, LinkParentFailureReason.SameTicket);
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        // Lock both rows so a concurrent re-parent on either side can't
+        // race the cycle check. SELECT FOR UPDATE blocks until the other
+        // tx commits, then we re-read the up-to-date parent chain.
+        const string readSql = """
+            SELECT id AS Id, merged_into_ticket_id AS MergedIntoTicketId,
+                   parent_ticket_id AS ParentTicketId
+            FROM tickets
+            WHERE id = @id AND is_deleted = FALSE
+            FOR UPDATE
+            """;
+        var source = await conn.QueryFirstOrDefaultAsync<LinkParentRow>(
+            new CommandDefinition(readSql, new { id = ticketId }, tx, cancellationToken: ct));
+        if (source is null) { await tx.RollbackAsync(ct); return new LinkParentResult(false, LinkParentFailureReason.SourceNotFound); }
+        if (source.MergedIntoTicketId is not null)
+        {
+            await tx.RollbackAsync(ct);
+            return new LinkParentResult(false, LinkParentFailureReason.SourceIsMerged);
+        }
+
+        var parent = await conn.QueryFirstOrDefaultAsync<LinkParentRow>(
+            new CommandDefinition(readSql, new { id = parentTicketId }, tx, cancellationToken: ct));
+        if (parent is null) { await tx.RollbackAsync(ct); return new LinkParentResult(false, LinkParentFailureReason.ParentNotFound); }
+        if (parent.MergedIntoTicketId is not null)
+        {
+            await tx.RollbackAsync(ct);
+            return new LinkParentResult(false, LinkParentFailureReason.ParentIsMerged);
+        }
+
+        // Cycle check: walk the candidate parent's chain upward. If we
+        // hit `ticketId` along the way, accepting the link would create a
+        // cycle. Bounded at 50 hops; the index on parent_ticket_id makes
+        // each hop a single indexed PK lookup. Typical depth is 1.
+        var cursor = parent.ParentTicketId;
+        const int maxDepth = 50;
+        for (var i = 0; i < maxDepth && cursor is Guid pid; i++)
+        {
+            if (pid == ticketId)
+            {
+                await tx.RollbackAsync(ct);
+                return new LinkParentResult(false, LinkParentFailureReason.WouldCycle);
+            }
+            cursor = await conn.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+                "SELECT parent_ticket_id FROM tickets WHERE id = @id",
+                new { id = pid }, tx, cancellationToken: ct));
+        }
+
+        const string updateSql = """
+            UPDATE tickets
+               SET parent_ticket_id         = @parentTicketId,
+                   parent_linked_utc        = now(),
+                   parent_linked_by_user_id = @actorUserId,
+                   updated_utc              = now()
+             WHERE id = @ticketId AND is_deleted = FALSE
+            """;
+        var rows = await conn.ExecuteAsync(new CommandDefinition(updateSql,
+            new { ticketId, parentTicketId, actorUserId }, tx, cancellationToken: ct));
+        if (rows == 0)
+        {
+            await tx.RollbackAsync(ct);
+            return new LinkParentResult(false, LinkParentFailureReason.SourceNotFound);
+        }
+
+        // Timeline event on the child so the audit trail is complete.
+        // The parent ticket's "Sub tickets" list is derived from the FK,
+        // not from events, so no event is written on that side.
+        var metadata = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            parentTicketId,
+            parentNumber = await conn.ExecuteScalarAsync<long?>(new CommandDefinition(
+                "SELECT number FROM tickets WHERE id = @id", new { id = parentTicketId }, tx, cancellationToken: ct)),
+            previousParentTicketId = source.ParentTicketId,
+        });
+        await conn.ExecuteAsync(new CommandDefinition(
+            """
+            INSERT INTO ticket_events (ticket_id, event_type, author_user_id, metadata, is_internal)
+            VALUES (@ticketId, 'ParentLinked', @actorUserId, @metadata::jsonb, FALSE)
+            """,
+            new { ticketId, actorUserId, metadata }, tx, cancellationToken: ct));
+
+        await tx.CommitAsync(ct);
+        return new LinkParentResult(true, null);
+    }
+
+    public async Task<bool> UnlinkParentAsync(Guid ticketId, Guid actorUserId, CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        // Snapshot the previous parent so the event metadata carries it.
+        // If the ticket has no parent we treat it as "nothing to do" — the
+        // endpoint maps that to 404 so an idempotent client doesn't get a
+        // false success.
+        const string readSql = """
+            SELECT parent_ticket_id AS ParentTicketId
+            FROM tickets
+            WHERE id = @ticketId AND is_deleted = FALSE
+            FOR UPDATE
+            """;
+        var prevParent = await conn.ExecuteScalarAsync<Guid?>(
+            new CommandDefinition(readSql, new { ticketId }, tx, cancellationToken: ct));
+        if (prevParent is null) { await tx.RollbackAsync(ct); return false; }
+
+        const string updateSql = """
+            UPDATE tickets
+               SET parent_ticket_id         = NULL,
+                   parent_linked_utc        = NULL,
+                   parent_linked_by_user_id = NULL,
+                   updated_utc              = now()
+             WHERE id = @ticketId AND is_deleted = FALSE
+            """;
+        var rows = await conn.ExecuteAsync(new CommandDefinition(updateSql,
+            new { ticketId }, tx, cancellationToken: ct));
+        if (rows == 0) { await tx.RollbackAsync(ct); return false; }
+
+        var metadata = System.Text.Json.JsonSerializer.Serialize(new { previousParentTicketId = prevParent });
+        await conn.ExecuteAsync(new CommandDefinition(
+            """
+            INSERT INTO ticket_events (ticket_id, event_type, author_user_id, metadata, is_internal)
+            VALUES (@ticketId, 'ParentUnlinked', @actorUserId, @metadata::jsonb, FALSE)
+            """,
+            new { ticketId, actorUserId, metadata }, tx, cancellationToken: ct));
+
+        await tx.CommitAsync(ct);
+        return true;
+    }
+
+    private sealed class LinkParentRow
+    {
+        public Guid Id { get; set; }
+        public Guid? MergedIntoTicketId { get; set; }
+        public Guid? ParentTicketId { get; set; }
     }
 }

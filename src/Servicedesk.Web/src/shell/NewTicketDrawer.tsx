@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type ReactNode } from "react";
-import { useForm, Controller } from "react-hook-form";
+import { useForm, Controller, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -9,20 +9,16 @@ import { Drawer } from "vaul";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { ContactPicker } from "@/components/ContactPicker";
 import { AgentPicker } from "@/components/AgentPicker";
 import { CompanyAlertDialog } from "@/components/CompanyAlertDialog";
+import { TaxonomySelect } from "@/components/TaxonomySelect";
+import { PendingTillField } from "@/components/PendingTillField";
 import { agentQueueApi, taxonomyApi } from "@/lib/api";
 import { ticketApi, type CompanyAlert } from "@/lib/ticket-api";
+import { composeTemplatesApi } from "@/lib/composeTemplates-api";
 import { cn } from "@/lib/utils";
 
 const createTicketSchema = z.object({
@@ -34,6 +30,11 @@ const createTicketSchema = z.object({
   priorityId: z.string().uuid(),
   categoryId: z.string().uuid().optional().or(z.literal("")),
   assigneeUserId: z.string().uuid().optional().or(z.literal("")).or(z.null()),
+  // v0.0.37 — optional UTC ISO string. Only honoured when the
+  // selected status's state_category is "Pending" (the backend
+  // ignores it otherwise). null/undefined → backend computes the
+  // default from settings.
+  pendingTillUtc: z.string().datetime().optional().nullable(),
 });
 
 type CreateTicketForm = z.infer<typeof createTicketSchema>;
@@ -61,73 +62,11 @@ function FieldError({ message }: { message?: string }) {
   return <p className="mt-1 text-xs text-destructive">{message}</p>;
 }
 
-function ColorDot({ color }: { color: string }) {
-  return (
-    <span
-      className="inline-block h-2 w-2 rounded-full shrink-0"
-      style={{ backgroundColor: color || "#6b7280" }}
-    />
-  );
-}
-
-type TaxonomySelectProps = {
-  value: string;
-  onChange: (value: string) => void;
-  options: Array<{ id: string; name: string; color: string; badge?: string }>;
-  placeholder?: string;
-  disabled?: boolean;
-  allowEmpty?: boolean;
-  emptyLabel?: string;
-};
-
-function TaxonomySelect({
-  value,
-  onChange,
-  options,
-  placeholder,
-  disabled,
-  allowEmpty,
-  emptyLabel = "None",
-}: TaxonomySelectProps) {
-  return (
-    <Select
-      value={value || undefined}
-      onValueChange={(v) => onChange(v === "__empty__" ? "" : v)}
-      disabled={disabled}
-    >
-      <SelectTrigger
-        className={cn(
-          "h-9 border-white/10 bg-white/[0.04] focus:border-white/20 focus:bg-white/[0.06] transition-colors",
-          !value && "text-muted-foreground",
-        )}
-      >
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent className="border-white/10 bg-background/95 backdrop-blur-xl">
-        {allowEmpty && (
-          <SelectItem value="__empty__">{emptyLabel}</SelectItem>
-        )}
-        {options.map((opt) => (
-          <SelectItem key={opt.id} value={opt.id}>
-            <div className="flex items-center gap-2">
-              <ColorDot color={opt.color} />
-              <span>{opt.name}</span>
-              {opt.badge && (
-                <span className="text-[10px] text-muted-foreground">
-                  ({opt.badge})
-                </span>
-              )}
-            </div>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
 export function NewTicketDrawer({
   children,
   initialContactId,
+  initialQueueId,
+  parentTicketId,
   onOpenChange,
 }: {
   children: ReactNode;
@@ -138,6 +77,14 @@ export function NewTicketDrawer({
   /// trigger after a cancelled ticket doesn't surprise the agent with an
   /// empty requester slot.
   initialContactId?: string;
+  /// When set, pre-fills the queue dropdown on open. Used by the "Create
+  /// linked ticket" flow so the new ticket starts in the same queue as
+  /// its parent — the agent can still change it before saving.
+  initialQueueId?: string;
+  /// When set, the newly created ticket is immediately linked as a
+  /// sub-ticket of this parent. Passed to the backend create call;
+  /// validation (cycle, merged-state, queue access) happens server-side.
+  parentTicketId?: string;
   /// Fires when the drawer transitions between open and closed. Callers
   /// use this when the trigger lives inside another transient surface
   /// (e.g. the incoming-call popup) and they need to keep that surface
@@ -220,8 +167,39 @@ export function NewTicketDrawer({
       priorityId: "",
       categoryId: "",
       assigneeUserId: null,
+      pendingTillUtc: null,
     },
   });
+
+  // Drives the conditional "Pending till" field in the right column —
+  // we re-render whenever statusId changes so the field appears/hides
+  // in sync with the selected state_category.
+  const watchedStatusId = useWatch({ control, name: "statusId" });
+  const watchedQueueId = useWatch({ control, name: "queueId" });
+  const watchedRequesterContactId = useWatch({
+    control,
+    name: "requesterContactId",
+  });
+
+  // Resolve {{contact.*}} tokens for the picked requester so the ::
+  // template picker substitutes them on insert. No ticket exists yet,
+  // so ticket-level tokens (number / subject) stay empty and the raw
+  // placeholder remains visible — the user can still edit it once the
+  // ticket is created.
+  const tokensQ = useQuery({
+    queryKey: [
+      "compose-templates",
+      "resolve",
+      { contactId: watchedRequesterContactId || null },
+    ],
+    queryFn: () =>
+      composeTemplatesApi.resolveTokens({
+        contactId: watchedRequesterContactId || null,
+      }),
+    staleTime: 30_000,
+    enabled: !!watchedRequesterContactId,
+  });
+  const composeTokens = tokensQ.data?.tokens;
 
   // Track the previous `open` so we can do a single full-reset on the
   // false → true transition. setValue inside a useEffect was unreliable
@@ -240,11 +218,12 @@ export function NewTicketDrawer({
         subject: "",
         bodyHtml: "",
         requesterContactId: initialContactId ?? "",
-        queueId: "",
+        queueId: initialQueueId ?? "",
         statusId: defaultStatusId || "",
         priorityId: defaultPriorityId || "",
         categoryId: "",
         assigneeUserId: null,
+        pendingTillUtc: null,
       });
     }
   });
@@ -279,6 +258,14 @@ export function NewTicketDrawer({
   });
 
   function onSubmit(data: CreateTicketForm) {
+    // Only send pendingTillUtc when the chosen status is Pending; the
+    // backend ignores it for other statuses but sending it would still
+    // leak through the audit payload and create noise.
+    const status = statuses?.find((s) => s.id === data.statusId);
+    const pendingTillUtc =
+      status?.stateCategory === "Pending" && data.pendingTillUtc
+        ? data.pendingTillUtc
+        : undefined;
     createTicket({
       subject: data.subject,
       bodyHtml: data.bodyHtml || undefined,
@@ -289,6 +276,8 @@ export function NewTicketDrawer({
       categoryId: data.categoryId || undefined,
       assigneeUserId: data.assigneeUserId || undefined,
       source: "Web",
+      pendingTillUtc,
+      parentTicketId,
     });
   }
 
@@ -393,8 +382,35 @@ export function NewTicketDrawer({
                         <RichTextEditor
                           content={field.value ?? ""}
                           onChange={field.onChange}
-                          placeholder="Describe the issue…"
+                          placeholder="Describe the issue. Type :: to insert a template…"
                           minHeight="180px"
+                          composeTokens={composeTokens}
+                          onIntakeQuery={async (q) => {
+                            // New-Ticket drawer: pre-creation, so the
+                            // intake-form chip flow doesn't apply (no
+                            // ticket id yet). Only compose templates
+                            // surface here, scoped to the chosen queue.
+                            const list = await composeTemplatesApi.usable(
+                              watchedQueueId || null,
+                            );
+                            const needle = q.trim().toLowerCase();
+                            const filtered = needle
+                              ? list.filter(
+                                  (t) =>
+                                    t.name.toLowerCase().includes(needle) ||
+                                    (t.description ?? "")
+                                      .toLowerCase()
+                                      .includes(needle),
+                                )
+                              : list;
+                            return filtered.slice(0, 12).map((t) => ({
+                              id: t.id,
+                              name: t.name,
+                              description: t.description,
+                              kind: "template" as const,
+                              bodyHtml: t.bodyHtml,
+                            }));
+                          }}
                         />
                       )}
                     />
@@ -418,6 +434,71 @@ export function NewTicketDrawer({
                     />
                     <FieldError message={errors.requesterContactId?.message} />
                   </div>
+
+                  <div>
+                    <FormLabel>Status *</FormLabel>
+                    <Controller
+                      name="statusId"
+                      control={control}
+                      render={({ field }) => (
+                        <>
+                          <TaxonomySelect
+                            value={field.value}
+                            onChange={field.onChange}
+                            options={statusOptions}
+                            placeholder="Select status…"
+                            disabled={!taxonomyReady}
+                          />
+                          {field.value && (() => {
+                            const st = statuses?.find((s) => s.id === field.value);
+                            return st ? (
+                              <span
+                                className={cn(
+                                  "mt-1.5 inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium",
+                                  STATE_CATEGORY_COLORS[st.stateCategory] ??
+                                    "bg-zinc-500/20 text-zinc-300 border-zinc-500/30",
+                                )}
+                              >
+                                {st.stateCategory}
+                              </span>
+                            ) : null;
+                          })()}
+                        </>
+                      )}
+                    />
+                    <FieldError message={errors.statusId?.message} />
+                  </div>
+
+                  {(() => {
+                    // v0.0.37 — show "Pending till" only when the
+                    // selected status sits in the Pending state.
+                    // Leaving the field unset is fine: the backend
+                    // computes a default (business days + wake-at-local
+                    // from settings) on create when this is null.
+                    const selectedStatus = statuses?.find(
+                      (s) => s.id === watchedStatusId,
+                    );
+                    if (selectedStatus?.stateCategory !== "Pending") return null;
+                    return (
+                      <div>
+                        <FormLabel>Pending till</FormLabel>
+                        <Controller
+                          name="pendingTillUtc"
+                          control={control}
+                          render={({ field }) => (
+                            <PendingTillField
+                              value={field.value ?? null}
+                              onCommit={field.onChange}
+                            />
+                          )}
+                        />
+                        <p className="mt-1 text-[10px] text-muted-foreground/70">
+                          Leave blank to let the server compute it from your
+                          Pending defaults (Settings → Tickets).
+                        </p>
+                      </div>
+                    );
+                  })()}
 
                   <div>
                     <FormLabel>Queue *</FormLabel>
@@ -456,37 +537,18 @@ export function NewTicketDrawer({
                   </div>
 
                   <div>
-                    <FormLabel>Status *</FormLabel>
+                    <FormLabel>Assignee</FormLabel>
                     <Controller
-                      name="statusId"
+                      name="assigneeUserId"
                       control={control}
                       render={({ field }) => (
-                        <>
-                          <TaxonomySelect
-                            value={field.value}
-                            onChange={field.onChange}
-                            options={statusOptions}
-                            placeholder="Select status…"
-                            disabled={!taxonomyReady}
-                          />
-                          {field.value && (() => {
-                            const st = statuses?.find((s) => s.id === field.value);
-                            return st ? (
-                              <span
-                                className={cn(
-                                  "mt-1.5 inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium",
-                                  STATE_CATEGORY_COLORS[st.stateCategory] ??
-                                    "bg-zinc-500/20 text-zinc-300 border-zinc-500/30",
-                                )}
-                              >
-                                {st.stateCategory}
-                              </span>
-                            ) : null;
-                          })()}
-                        </>
+                        <AgentPicker
+                          value={field.value ?? null}
+                          onChange={field.onChange}
+                          placeholder="Unassigned"
+                        />
                       )}
                     />
-                    <FieldError message={errors.statusId?.message} />
                   </div>
 
                   <div>
@@ -503,21 +565,6 @@ export function NewTicketDrawer({
                           disabled={!taxonomyReady}
                           allowEmpty
                           emptyLabel="None"
-                        />
-                      )}
-                    />
-                  </div>
-
-                  <div>
-                    <FormLabel>Assignee</FormLabel>
-                    <Controller
-                      name="assigneeUserId"
-                      control={control}
-                      render={({ field }) => (
-                        <AgentPicker
-                          value={field.value ?? null}
-                          onChange={field.onChange}
-                          placeholder="Unassigned"
                         />
                       )}
                     />

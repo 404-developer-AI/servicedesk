@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError, contactApi, companyApi, ticketApi } from "@/lib/ticket-api";
 import type { Ticket, TicketPickerItem } from "@/lib/ticket-api";
+import { taxonomyApi, type Status } from "@/lib/api";
+import { useRecentTicketsStore } from "@/stores/useRecentTicketsStore";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -103,10 +105,56 @@ export function MergeTicketDialog({
         targetTicketId: selected!.id,
         acknowledgedCrossCustomer: isCrossCustomer ? acknowledged : false,
       }),
-    onSuccess: (response) => {
+    onSuccess: async (response) => {
       queryClient.invalidateQueries({ queryKey: ["ticket", source.id] });
       queryClient.invalidateQueries({ queryKey: ["ticket", response.targetTicketId] });
       queryClient.invalidateQueries({ queryKey: ["tickets"] });
+      // Timesheet entries were re-pointed server-side; refresh both panels.
+      // `refetchType: "all"` forces the fetch even when no observer is
+      // mounted yet — important because the target page mounts AFTER the
+      // navigation below, so the default "active-only" refetch wouldn't
+      // fire until the panel subscribes, leaving the user staring at a
+      // brief "No entries yet" flash before the request lands. With
+      // "all" the request is in flight before navigation, and the panel
+      // attaches to the in-flight query on mount.
+      queryClient.invalidateQueries({
+        queryKey: ["timesheet", "ticket", source.id],
+        refetchType: "all",
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["timesheet", "ticket", response.targetTicketId],
+        refetchType: "all",
+      });
+
+      // Flip the source's Recent-list snapshot to the "Merged" status
+      // synchronously. SignalR usually delivers the TicketUpdated push
+      // before the navigation below unmounts the source page, but on a
+      // slow connection the listener can miss it — leaving the agent
+      // staring at the pre-merge colour. Looking the merged status up
+      // by slug is deterministic: the seeder guarantees the row and
+      // the slug is immutable even if an admin recolours/renames it.
+      try {
+        const statuses = await queryClient.fetchQuery<Status[]>({
+          queryKey: ["statuses"],
+          queryFn: taxonomyApi.statuses.list,
+          staleTime: 300_000,
+        });
+        const merged = statuses.find((s) => s.slug === "merged");
+        if (merged) {
+          useRecentTicketsStore.getState().addTicket({
+            id: source.id,
+            number: source.number,
+            subject: source.subject,
+            statusColor: merged.color,
+            statusName: merged.name,
+            statusStateCategory: merged.stateCategory,
+          });
+        }
+      } catch {
+        // Non-fatal: the SignalR listener in RecentTickets is the
+        // second line of defence and will catch up on the next event.
+      }
+
       toast.success(`Merged #${response.sourceNumber} into #${response.targetNumber}`);
       onMerged?.(response.targetTicketId);
       onClose();
@@ -130,7 +178,9 @@ export function MergeTicketDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && !mergeMutation.isPending && onClose()}>
-      <DialogContent className="max-w-2xl">
+      {/* max-h + flex column lets the search result list scroll instead
+          of pushing the footer below the fold on a small viewport. */}
+      <DialogContent className="flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-3xl flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <GitMerge className="h-4 w-4 text-primary" />
@@ -143,15 +193,15 @@ export function MergeTicketDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="flex min-h-0 flex-1 flex-col space-y-4 overflow-y-auto">
           <div className="rounded-md border border-white/10 bg-white/[0.02] px-3 py-2.5">
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 mb-1">
               From
             </div>
-            <div className="text-sm font-medium text-foreground/90 truncate">
+            <div className="text-sm font-medium text-foreground/90 break-words">
               {sourceLabel}
             </div>
-            <div className="text-xs text-muted-foreground/70 truncate">
+            <div className="text-xs text-muted-foreground/70 break-words">
               {sourceRequesterEmail ?? "No requester email"}
               {sourceCompanyName ? ` · ${sourceCompanyName}` : ""}
             </div>

@@ -105,7 +105,10 @@ function HtmlField({
 }) {
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      // StarterKit ships its own Link extension since Tiptap v3; we want
+      // explicit autolink + openOnClick=false, so disable StarterKit's
+      // copy and add a configured one. Same fix as RichTextEditor.tsx.
+      StarterKit.configure({ link: false }),
       Link.configure({ autolink: true, openOnClick: false }),
       Placeholder.configure({ placeholder: placeholder ?? "Body…" }),
     ],
