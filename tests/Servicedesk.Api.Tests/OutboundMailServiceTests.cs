@@ -334,6 +334,12 @@ public sealed class OutboundMailServiceTests
             => Task.FromResult<IReadOnlyList<SplitChildTicket>>(Array.Empty<SplitChildTicket>());
         public Task<SplitResult?> SplitAsync(Guid s, long e, string subj, Guid a, string? oh, string? ot, CancellationToken ct)
             => Task.FromResult<SplitResult?>(null);
+        public Task<IReadOnlyList<LinkedChildTicket>> GetChildTicketsAsync(Guid p, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<LinkedChildTicket>>(Array.Empty<LinkedChildTicket>());
+        public Task<ParentTicketSummary?> GetParentSummaryAsync(Guid t, CancellationToken ct)
+            => Task.FromResult<ParentTicketSummary?>(null);
+        public Task<LinkParentResult> LinkParentAsync(Guid t, Guid p, Guid a, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> UnlinkParentAsync(Guid t, Guid a, CancellationToken ct) => throw new NotImplementedException();
 
         private static TicketDetail MakeDetail()
         {

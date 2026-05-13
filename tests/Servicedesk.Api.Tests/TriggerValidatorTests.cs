@@ -434,5 +434,6 @@ public class TriggerValidatorTests
         public Task<IReadOnlyList<TriggerScheduleCandidate>> ListReminderCandidatesAsync(int limit, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<TriggerScheduleCandidate>> ListEscalationCandidatesAsync(int limit, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<TriggerScheduleCandidate>> ListEscalationWarningCandidatesAsync(int warningMinutes, int limit, CancellationToken ct) => throw new NotImplementedException();
+        public Task ReorderAsync(IReadOnlyList<TriggerPlacement> placements, CancellationToken ct) => throw new NotImplementedException();
     }
 }
