@@ -21,6 +21,7 @@ using Servicedesk.Api.Search;
 using Servicedesk.Api.Tickets;
 using Servicedesk.Api.Settings;
 using Servicedesk.Api.Sla;
+using Servicedesk.Api.Surveys;
 using Servicedesk.Api.Triggers;
 using Servicedesk.Api.Access;
 using Servicedesk.Api.Views;
@@ -220,6 +221,36 @@ builder.Services.AddRateLimiter(options =>
             AutoReplenishment = true,
         });
     });
+
+    // v0.0.38 — public survey endpoints partition by {ip, token} just like
+    // intake-public. Defaults to 10 req / 60s (stricter than intake because
+    // a GET+POST is the only legitimate flow; reloads are rare).
+    var surveyPublicPermit = builder.Configuration.GetValue<int?>("Surveys:PublicRateLimit:PermitPerWindow") ?? 10;
+    var surveyPublicWindow = builder.Configuration.GetValue<int?>("Surveys:PublicRateLimit:WindowSeconds") ?? 60;
+    options.AddPolicy("survey-public", ctx =>
+    {
+        var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
+        var path = ctx.Request.Path.Value ?? string.Empty;
+        string tokenPart = "-";
+        const string prefix = "/api/public/surveys/";
+        if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var rest = path[prefix.Length..];
+            var slash = rest.IndexOf('/');
+            var token = slash < 0 ? rest : rest[..slash];
+            if (token.Length > 32) token = token[..32];
+            if (!string.IsNullOrEmpty(token)) tokenPart = token;
+        }
+
+        var key = ip + ":" + tokenPart;
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = surveyPublicPermit,
+            Window = TimeSpan.FromSeconds(surveyPublicWindow),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        });
+    });
 });
 
 var app = builder.Build();
@@ -382,6 +413,8 @@ app.MapTriggerEndpoints();
 app.MapTriggerGroupEndpoints();
 app.MapIntakeFormEndpoints();
 app.MapComposeTemplateEndpoints();
+app.MapSurveyEndpoints();
+app.MapSurveyTokenMetadata();
 app.MapGraphAdminEndpoints();
 app.MapAdsolutEndpoints();
 app.MapTelavoxEndpoints();

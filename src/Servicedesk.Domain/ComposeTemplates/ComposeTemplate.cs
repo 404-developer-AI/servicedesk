@@ -10,4 +10,7 @@ public sealed record ComposeTemplate(
     IReadOnlyList<Guid> QueueIds,
     DateTime CreatedUtc,
     DateTime UpdatedUtc,
-    Guid? CreatedBy);
+    Guid? CreatedBy,
+    // v0.0.38 — optional CSAT survey to dispatch when an agent sends a
+    // reply/note built from this template. Null = no survey-on-send.
+    Guid? LinkedSurveyId = null);

@@ -19,6 +19,7 @@ using Servicedesk.Infrastructure.Persistence.Companies;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Sla;
+using Servicedesk.Infrastructure.Surveys;
 using Servicedesk.Infrastructure.Triggers;
 
 namespace Servicedesk.Api.Tickets;
@@ -156,7 +157,7 @@ public static class TicketEndpoints
             {
                 ticket = detail.Ticket,
                 body = detail.Body,
-                events = detail.Events,
+                events = FilterTimelineEventsForRole(detail.Events, role),
                 pinnedEvents = detail.PinnedEvents,
                 companyAlert,
                 mergedSourceTicketNumbers = mergedSourceNumbers,
@@ -366,7 +367,7 @@ public static class TicketEndpoints
             {
                 ticket = detail.Ticket,
                 body = detail.Body,
-                events = detail.Events,
+                events = FilterTimelineEventsForRole(detail.Events, role),
                 pinnedEvents = detail.PinnedEvents,
                 companyAlert,
             });
@@ -461,7 +462,7 @@ public static class TicketEndpoints
             {
                 ticket = detail.Ticket,
                 body = detail.Body,
-                events = detail.Events,
+                events = FilterTimelineEventsForRole(detail.Events, actorRole),
                 pinnedEvents = detail.PinnedEvents,
                 companyAlert,
             });
@@ -536,7 +537,7 @@ public static class TicketEndpoints
             {
                 ticket = detail.Ticket,
                 body = detail.Body,
-                events = detail.Events,
+                events = FilterTimelineEventsForRole(detail.Events, role),
                 pinnedEvents = detail.PinnedEvents,
                 companyAlert,
             });
@@ -548,7 +549,9 @@ public static class TicketEndpoints
             IAttachmentRepository attachmentsRepo, IUserService users,
             IMentionNotificationService mentionService,
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla,
-            ITriggerService triggerService, CancellationToken ct) =>
+            ITriggerService triggerService,
+            IComposeTemplateSurveyDispatcher surveyTemplateDispatcher,
+            CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(req.EventType))
                 return Results.BadRequest(new { error = "eventType is required." });
@@ -670,6 +673,14 @@ public static class TicketEndpoints
                     BodyText: evt.BodyText ?? string.Empty), ct);
             }
 
+            // v0.0.38 — compose-template-linked surveys. Fires AFTER the
+            // event lands so a Graph hiccup never rolls back the reply
+            // itself. Idempotency comes from the dispatch service.
+            if (req.ComposeTemplateIds is { Count: > 0 } tplIds)
+            {
+                await surveyTemplateDispatcher.DispatchForTemplatesAsync(id, tplIds, userId, ct);
+            }
+
             return Results.Created($"/api/tickets/{id}/events/{evt.Id}", evt);
         }).WithName("AddTicketEvent").WithOpenApi();
 
@@ -677,6 +688,7 @@ public static class TicketEndpoints
             Guid id, [FromBody] SendOutboundMailRequest req, HttpContext http,
             ITicketRepository tickets, IQueueAccessService queueAccess,
             IOutboundMailService outbound, IHubContext<TicketPresenceHub> hub,
+            IComposeTemplateSurveyDispatcher surveyTemplateDispatcher,
             IAuditLogger audit, CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
@@ -739,6 +751,15 @@ public static class TicketEndpoints
             var ticketIdStr = id.ToString();
             await hub.Clients.Group($"ticket:{ticketIdStr}").SendAsync("TicketUpdated", ticketIdStr, ct);
             await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", ticketIdStr, ct);
+
+            // v0.0.38 — fire any compose-template-linked surveys after the
+            // mail-send succeeds. Failures inside the dispatcher are logged
+            // there; we never want a survey-mail hiccup to roll back the
+            // already-sent reply.
+            if (req.ComposeTemplateIds is { Count: > 0 } tplIds)
+            {
+                await surveyTemplateDispatcher.DispatchForTemplatesAsync(id, tplIds, userId, ct);
+            }
 
             return Results.Created($"/api/tickets/{id}/events/{evt.Id}", evt);
         }).WithName("SendTicketMail").WithOpenApi();
@@ -1387,7 +1408,12 @@ public static class TicketEndpoints
         string? BodyHtml,
         bool? IsInternal,
         IReadOnlyList<Guid>? AttachmentIds = null,
-        IReadOnlyList<Guid>? MentionedUserIds = null);
+        IReadOnlyList<Guid>? MentionedUserIds = null,
+        // v0.0.38 — compose templates inserted into this event. Any template
+        // with a non-null linked_survey_id triggers a SurveyDispatchService
+        // call after the event lands. Idempotent: dispatch skips when an
+        // active invitation already exists for (survey, ticket).
+        IReadOnlyList<Guid>? ComposeTemplateIds = null);
 
     public sealed record UpdateEventRequest(
         string? BodyText,
@@ -1403,7 +1429,10 @@ public static class TicketEndpoints
         string? BodyHtml,
         IReadOnlyList<Guid>? AttachmentIds = null,
         IReadOnlyList<Guid>? MentionedUserIds = null,
-        IReadOnlyList<Guid>? LinkedFormIds = null);
+        IReadOnlyList<Guid>? LinkedFormIds = null,
+        // v0.0.38 — compose templates used to build this mail; any with a
+        // linked survey dispatch after a successful send.
+        IReadOnlyList<Guid>? ComposeTemplateIds = null);
 
     public sealed record MailRecipientInput(string Address, string? Name);
 
@@ -1463,6 +1492,23 @@ public static class TicketEndpoints
         bool AlertOnCreate,
         bool AlertOnOpen,
         string AlertOnOpenMode);
+
+    /// Hide survey-result events from the timeline for non-admin agents.
+    /// SurveySent stays visible as operational context ("we asked the
+    /// customer for feedback"), but SurveySubmitted and SurveyExpired carry
+    /// the response-cycle outcome — that's admin-only per the v0.0.38
+    /// post-test access tightening. EventType is stored on the record as a
+    /// string (matches the DB CHECK constraint), so we compare names rather
+    /// than enum values.
+    private static IReadOnlyList<Servicedesk.Domain.Tickets.TicketEvent> FilterTimelineEventsForRole(
+        IReadOnlyList<Servicedesk.Domain.Tickets.TicketEvent> events, string role)
+    {
+        if (string.Equals(role, "Admin", StringComparison.Ordinal)) return events;
+        return events
+            .Where(e => !string.Equals(e.EventType, nameof(Servicedesk.Domain.Tickets.TicketEventType.SurveySubmitted), StringComparison.Ordinal)
+                     && !string.Equals(e.EventType, nameof(Servicedesk.Domain.Tickets.TicketEventType.SurveyExpired), StringComparison.Ordinal))
+            .ToList();
+    }
 
     private static async Task<TicketCompanyAlert?> BuildCompanyAlertAsync(
         ICompanyRepository companies, Guid requesterContactId, CancellationToken ct)

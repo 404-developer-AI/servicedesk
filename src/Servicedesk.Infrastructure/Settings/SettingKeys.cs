@@ -404,6 +404,18 @@ public static class SettingKeys
         public const string AutoPinSubmittedForms = "IntakeForms.AutoPinSubmittedForms";
     }
 
+    public static class Surveys
+    {
+        public const string DefaultTtlDays = "Surveys.DefaultTtlDays";
+        public const string ExpirySweepMinutes = "Surveys.ExpirySweepMinutes";
+        public const string EnableAgentNotifications = "Surveys.EnableAgentNotifications";
+        public const string InviteFromName = "Surveys.InviteFromName";
+        public const string PublicRateLimitPermits = "Surveys.PublicRateLimit.PermitPerWindow";
+        public const string PublicRateLimitWindowSeconds = "Surveys.PublicRateLimit.WindowSeconds";
+        public const string MaxQuestionsPerSurvey = "Surveys.MaxQuestionsPerSurvey";
+        public const string MaxCommentLength = "Surveys.MaxCommentLength";
+    }
+
     public static class Triggers
     {
         // v0.0.24 — admin-configurable automation. Hard caps that keep a
@@ -869,6 +881,28 @@ public static class SettingDefaults
             "Rate-limit window length (seconds) for the public intake-form endpoints."),
         new SettingDefault(SettingKeys.IntakeForms.AutoPinSubmittedForms, "true", "bool", "IntakeForms",
             "When true, an intake-form submission is automatically pinned in the ticket activity feed so the agent sees it at the top. Pin can still be removed manually. Turn off if your team prefers to triage submissions chronologically without surfacing them above other pinned context."),
+
+        // Surveys — v0.0.38 CSAT. TtlDays default mirrors the user's stated
+        // 7-day expectation but each survey can override in the designer.
+        // RateLimit is intentionally stricter than IntakeForms (10/min vs
+        // 20/min) because a survey GET-POST is cheaper traffic and bigger
+        // value to a brute-force enumeration.
+        new SettingDefault(SettingKeys.Surveys.DefaultTtlDays, "7", "int", "Surveys",
+            "Default validity window (days) for a newly sent survey link. Used when the survey's designer-level TTL is left blank. Existing invitations keep their original expires_utc."),
+        new SettingDefault(SettingKeys.Surveys.ExpirySweepMinutes, "15", "int", "Surveys",
+            "How often (minutes) the background worker flips Sent → Expired for invitations past their expires_utc and writes a SurveyExpired ticket event."),
+        new SettingDefault(SettingKeys.Surveys.EnableAgentNotifications, "true", "bool", "Surveys",
+            "When true, the agents being rated receive an in-app notification via the @-mention framework as soon as a customer submits a survey. Turn off if your team finds the notifications noisy."),
+        new SettingDefault(SettingKeys.Surveys.InviteFromName, "", "string", "Surveys",
+            "Optional display-name override for the From: field on survey invitation emails. Leave blank to use the default mailbox display name."),
+        new SettingDefault(SettingKeys.Surveys.PublicRateLimitPermits, "10", "int", "Surveys",
+            "Requests permitted per rate-limit window against the public /api/public/surveys/{token} endpoints, partitioned by {ip,token}."),
+        new SettingDefault(SettingKeys.Surveys.PublicRateLimitWindowSeconds, "60", "int", "Surveys",
+            "Rate-limit window length (seconds) for the public survey endpoints."),
+        new SettingDefault(SettingKeys.Surveys.MaxQuestionsPerSurvey, "30", "int", "Surveys",
+            "Maximum number of questions allowed per survey. Enforced server-side on save; bigger surveys mean fewer completed responses."),
+        new SettingDefault(SettingKeys.Surveys.MaxCommentLength, "4000", "int", "Surveys",
+            "Hard cap (characters) on the optional free-text comment field a customer can submit alongside the structured answers."),
 
         // Triggers — v0.0.24. Loop-prevention knobs for the evaluator. The
         // chain-cap stops a trigger storm where trigger A's side-effects

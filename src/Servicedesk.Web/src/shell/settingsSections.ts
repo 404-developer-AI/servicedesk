@@ -13,6 +13,7 @@ import {
   ScrollText,
   Shield,
   SlidersHorizontal,
+  Smile,
   Ticket,
   Timer,
   UserCog,
@@ -122,8 +123,15 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     slug: "templates",
     label: "Templates",
     description:
-      "Pre-canned HTML snippets agents drop into a note, reply, or outgoing mail via the :: picker. Scope each template to one or more queues.",
+      "Pre-canned HTML snippets agents drop into a note, reply, or outgoing mail via the :: picker. Scope each template to one or more queues. Each template can optionally link a survey that fires on send.",
     icon: FileText,
+  },
+  {
+    slug: "surveys",
+    label: "Surveys",
+    description:
+      "Customer satisfaction surveys with configurable rating scales, per-agent or overall scoring, and token-protected public links. Triggered via send_survey action or a compose-template hook.",
+    icon: Smile,
   },
   {
     slug: "triggers",

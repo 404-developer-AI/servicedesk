@@ -34,6 +34,7 @@ public static class TriggerValidator
         "set_queue", "set_priority", "set_status", "set_owner", "set_pending_till",
         "add_internal_note", "add_public_note", "repost_as_public_reply",
         "send_mail",
+        "send_survey",
     };
 
     public static readonly IReadOnlySet<string> ActivatorPairs = new HashSet<string>(StringComparer.Ordinal)
@@ -346,6 +347,30 @@ public static class TriggerValidator
                     return "requires non-empty 'subject'.";
                 if (!HasNonEmptyString(action, "body_html"))
                     return "requires non-empty 'body_html'.";
+                return null;
+            case "send_survey":
+                // survey_id is the only required field; subject + body live
+                // on the survey row itself. TTL + recipient overrides are
+                // optional and type-checked when present.
+                {
+                    var err = RequireGuid(action, "survey_id");
+                    if (err is not null) return err;
+                    if (action.TryGetProperty("ttl_days_override", out var ttlEl)
+                        && ttlEl.ValueKind != JsonValueKind.Null)
+                    {
+                        if (ttlEl.ValueKind != JsonValueKind.Number || !ttlEl.TryGetInt32(out var ttl)
+                            || ttl < 1 || ttl > 365)
+                        {
+                            return "'ttl_days_override' must be an integer between 1 and 365.";
+                        }
+                    }
+                    if (action.TryGetProperty("recipient_override", out var recEl)
+                        && recEl.ValueKind != JsonValueKind.Null
+                        && recEl.ValueKind != JsonValueKind.String)
+                    {
+                        return "'recipient_override' must be a string or null.";
+                    }
+                }
                 return null;
             default:
                 // Unknown kinds are already rejected upstream — kept here

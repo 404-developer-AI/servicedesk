@@ -17,4 +17,7 @@ public enum TicketEventType
     IntakeFormSent,
     IntakeFormSubmitted,
     IntakeFormExpired,
+    SurveySent,
+    SurveySubmitted,
+    SurveyExpired,
 }
