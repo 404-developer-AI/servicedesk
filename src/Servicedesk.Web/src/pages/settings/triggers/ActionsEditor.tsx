@@ -22,6 +22,7 @@ import {
   type TriggerListItem,
   type TriggerTemplateVariable,
 } from "@/lib/api";
+import { surveysAgentApi } from "@/lib/surveys-api";
 import { TriggerTemplateField } from "./TriggerTemplateField";
 import { cn } from "@/lib/utils";
 
@@ -452,7 +453,74 @@ function ActionForm({
           </FieldRow>
         </div>
       );
+    case "send_survey":
+      return <SendSurveyFields action={action} onChange={onChange} />;
   }
+}
+
+function SendSurveyFields({
+  action,
+  onChange,
+}: {
+  action: Extract<TriggerAction, { kind: "send_survey" }>;
+  onChange: (next: TriggerAction) => void;
+}) {
+  const surveysQ = useQuery({
+    queryKey: ["surveys", "usable"],
+    queryFn: () => surveysAgentApi.usable(),
+    staleTime: 60_000,
+  });
+  const ttlText = action.ttl_days_override?.toString() ?? "";
+  return (
+    <div className="space-y-3">
+      <FieldRow label="Survey">
+        <NativeSelect
+          value={action.survey_id}
+          onChange={(v) => onChange({ ...action, survey_id: v })}
+        >
+          <option value="">— pick a survey —</option>
+          {(surveysQ.data ?? []).map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </NativeSelect>
+      </FieldRow>
+      <FieldRow label="TTL override (days, optional)">
+        <input
+          type="number"
+          value={ttlText}
+          min={1}
+          max={365}
+          onChange={(e) => {
+            const raw = e.target.value;
+            const next = raw === "" ? null : Math.max(1, Math.min(365, Number(raw)));
+            onChange({ ...action, ttl_days_override: next });
+          }}
+          placeholder="Survey-level default"
+          className="w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+        />
+      </FieldRow>
+      <FieldRow label="Recipient override (optional)">
+        <input
+          type="email"
+          value={action.recipient_override ?? ""}
+          onChange={(e) =>
+            onChange({
+              ...action,
+              recipient_override: e.target.value || null,
+            })
+          }
+          placeholder="Defaults to the ticket requester's email"
+          className="w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+        />
+      </FieldRow>
+      <p className="text-[11px] text-muted-foreground/80">
+        Idempotent: dispatch is skipped while an active invitation already
+        exists for this (survey, ticket) pair.
+      </p>
+    </div>
+  );
 }
 
 function FieldRow({

@@ -58,6 +58,12 @@ export type TriggerAction =
       subject: string;
       body_html: string;
     }
+  | {
+      kind: "send_survey";
+      survey_id: string;
+      ttl_days_override?: number | null;
+      recipient_override?: string | null;
+    }
   // Sentinel for actions whose `kind` this editor build doesn't know
   // about (e.g. a future kind saved by a newer frontend or hand-
   // written JSON). Carries the original payload verbatim so the admin
@@ -76,6 +82,7 @@ export const KNOWN_ACTION_KINDS = [
   "add_public_note",
   "repost_as_public_reply",
   "send_mail",
+  "send_survey",
 ] as const;
 
 export type KnownActionKind = (typeof KNOWN_ACTION_KINDS)[number];
@@ -90,6 +97,7 @@ export const ACTION_KIND_LABELS: Record<KnownActionKind, string> = {
   add_public_note: "Add public note",
   repost_as_public_reply: "Repost as public reply",
   send_mail: "Send mail",
+  send_survey: "Send survey",
 };
 
 export function blankActionForKind(kind: KnownActionKind): TriggerAction {
@@ -109,6 +117,8 @@ export function blankActionForKind(kind: KnownActionKind): TriggerAction {
         subject: "",
         body_html: "",
       };
+    case "send_survey":
+      return { kind, survey_id: "" };
   }
 }
 

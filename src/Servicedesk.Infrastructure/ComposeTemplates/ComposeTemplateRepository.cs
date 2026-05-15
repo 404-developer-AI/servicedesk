@@ -24,7 +24,8 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
                    queue_ids   AS QueueIds,
                    created_utc AS CreatedUtc,
                    updated_utc AS UpdatedUtc,
-                   created_by  AS CreatedBy
+                   created_by  AS CreatedBy,
+                   linked_survey_id AS LinkedSurveyId
             FROM compose_templates
             """;
         if (!includeInactive) sql += " WHERE is_active = TRUE";
@@ -46,7 +47,8 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
                    queue_ids   AS QueueIds,
                    created_utc AS CreatedUtc,
                    updated_utc AS UpdatedUtc,
-                   created_by  AS CreatedBy
+                   created_by  AS CreatedBy,
+                   linked_survey_id AS LinkedSurveyId
             FROM compose_templates WHERE id = @id
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -101,18 +103,19 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
         string? description,
         string bodyHtml,
         IReadOnlyList<Guid> queueIds,
+        Guid? linkedSurveyId,
         Guid? createdBy,
         CancellationToken ct)
     {
         const string sql = """
-            INSERT INTO compose_templates (name, description, body_html, queue_ids, created_by)
-            VALUES (@name, @description, @bodyHtml, @queueIds, @createdBy)
+            INSERT INTO compose_templates (name, description, body_html, queue_ids, linked_survey_id, created_by)
+            VALUES (@name, @description, @bodyHtml, @queueIds, @linkedSurveyId, @createdBy)
             RETURNING id
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.ExecuteScalarAsync<Guid>(new CommandDefinition(
             sql,
-            new { name, description, bodyHtml, queueIds = queueIds.ToArray(), createdBy },
+            new { name, description, bodyHtml, queueIds = queueIds.ToArray(), linkedSurveyId, createdBy },
             cancellationToken: ct));
     }
 
@@ -123,6 +126,7 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
         string bodyHtml,
         bool isActive,
         IReadOnlyList<Guid> queueIds,
+        Guid? linkedSurveyId,
         CancellationToken ct)
     {
         const string sql = """
@@ -132,13 +136,14 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
                 body_html = @bodyHtml,
                 is_active = @isActive,
                 queue_ids = @queueIds,
+                linked_survey_id = @linkedSurveyId,
                 updated_utc = now()
             WHERE id = @id
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition(
             sql,
-            new { id, name, description, bodyHtml, isActive, queueIds = queueIds.ToArray() },
+            new { id, name, description, bodyHtml, isActive, queueIds = queueIds.ToArray(), linkedSurveyId },
             cancellationToken: ct));
     }
 
@@ -167,7 +172,8 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
         r.QueueIds ?? Array.Empty<Guid>(),
         r.CreatedUtc,
         r.UpdatedUtc,
-        r.CreatedBy);
+        r.CreatedBy,
+        r.LinkedSurveyId);
 
     // Mutable class for Dapper column-name binding. See the project memo
     // about positional-record-struct null bugs — we avoid those here.
@@ -182,5 +188,6 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
         public DateTime CreatedUtc { get; set; }
         public DateTime UpdatedUtc { get; set; }
         public Guid? CreatedBy { get; set; }
+        public Guid? LinkedSurveyId { get; set; }
     }
 }

@@ -36,6 +36,7 @@ using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Storage;
+using Servicedesk.Infrastructure.Surveys;
 using Servicedesk.Infrastructure.Triggers;
 using Servicedesk.Infrastructure.Triggers.Actions;
 using Servicedesk.Infrastructure.Triggers.Actions.Previewers;
@@ -272,6 +273,7 @@ public static class DependencyInjection
         services.AddSingleton<ITriggerActionHandler, AddPublicNoteHandler>();
         services.AddSingleton<ITriggerActionHandler, RepostAsPublicReplyHandler>();
         services.AddSingleton<ITriggerActionHandler, SendMailHandler>();
+        services.AddSingleton<ITriggerActionHandler, SendSurveyHandler>();
 
         // Blok 7 — dry-run previewers: parallel registration, one per
         // action kind. The preview-dispatcher is the only consumer; the
@@ -288,6 +290,7 @@ public static class DependencyInjection
         services.AddSingleton<ITriggerActionPreviewer, AddPublicNotePreviewer>();
         services.AddSingleton<ITriggerActionPreviewer, RepostAsPublicReplyPreviewer>();
         services.AddSingleton<ITriggerActionPreviewer, SendMailPreviewer>();
+        services.AddSingleton<ITriggerActionPreviewer, SendSurveyPreviewer>();
 
         // Compose templates — pre-canned HTML snippets for note/reply/mail
         // composers. Reuses KbHtmlSanitizer for body sanitisation; the picker
@@ -318,6 +321,19 @@ public static class DependencyInjection
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<IntakeTemplateSearchSource>()));
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<IntakeSubmissionSearchSource>()));
 
+        // Surveys (v0.0.38). Token-protected per-send invitations, CRUD on
+        // the designer, results aggregation, dispatch service shared by the
+        // send_survey trigger action and the compose-template linked-survey
+        // hook. Hosted ExpiryWorker runs alongside the intake one.
+        services.AddSingleton<ISurveyRepository, SurveyRepository>();
+        services.AddSingleton<ISurveyInvitationRepository, SurveyInvitationRepository>();
+        services.AddSingleton<ISurveyTokenService, SurveyTokenService>();
+        services.AddSingleton<ISurveyDispatchService, SurveyDispatchService>();
+        services.AddSingleton<ISurveyResponseService, SurveyResponseService>();
+        services.AddSingleton<IComposeTemplateSurveyDispatcher, ComposeTemplateSurveyDispatcher>();
+        services.AddSingleton<SurveySearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<SurveySearchSource>()));
+
         // Triggers search-source (v0.0.24 Blok 8). Admin-only — agents and
         // customers see zero hits, enforced both inside the source and
         // again by the ScopedSearchSource decorator.
@@ -347,6 +363,7 @@ public static class DependencyInjection
         services.AddHostedService<TriggerSchedulerWorker>();
         services.AddHostedService<SecurityActivityMonitor>();
         services.AddHostedService<IntakeFormExpiryWorker>();
+        services.AddHostedService<SurveyExpiryWorker>();
 
         return services;
     }

@@ -39,6 +39,10 @@ public sealed class DoubleSubmitCsrfMiddleware
         "/api/auth/setup",
         "/api/security/csp-report",
         "/api/intake-forms/",
+        // v0.0.38 — public survey endpoints follow the same model: the
+        // customer hitting the link has no session and the token-hash
+        // gate + rate limiter together provide the defence.
+        "/api/public/surveys/",
         "/hubs/",
     };
 

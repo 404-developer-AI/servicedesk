@@ -82,6 +82,7 @@ public static class ComposeTemplateEndpoints
                     string.IsNullOrWhiteSpace(req.Description) ? null : req.Description.Trim(),
                     sanitized,
                     req.QueueIds ?? Array.Empty<Guid>(),
+                    req.LinkedSurveyId,
                     userId,
                     ct);
             }
@@ -129,6 +130,7 @@ public static class ComposeTemplateEndpoints
                     sanitized,
                     req.IsActive ?? existing.IsActive,
                     req.QueueIds ?? Array.Empty<Guid>(),
+                    req.LinkedSurveyId,
                     ct);
             }
             catch (Npgsql.PostgresException pg) when (pg.SqlState == "23505" && pg.ConstraintName == "ux_compose_templates_active_name")
@@ -246,7 +248,8 @@ public static class ComposeTemplateEndpoints
         string? Description,
         string? BodyHtml,
         bool? IsActive,
-        IReadOnlyList<Guid>? QueueIds);
+        IReadOnlyList<Guid>? QueueIds,
+        Guid? LinkedSurveyId);
 
     private static string? Validate(UpsertRequest req)
     {
@@ -274,6 +277,7 @@ public static class ComposeTemplateEndpoints
         bodyHtml = t.BodyHtml,
         isActive = t.IsActive,
         queueIds = t.QueueIds,
+        linkedSurveyId = t.LinkedSurveyId,
         createdUtc = t.CreatedUtc,
         updatedUtc = t.UpdatedUtc,
     };
@@ -287,5 +291,6 @@ public static class ComposeTemplateEndpoints
         description = t.Description is null ? null : HtmlEncoder.Default.Encode(t.Description),
         bodyHtml = t.BodyHtml,
         queueIds = t.QueueIds,
+        linkedSurveyId = t.LinkedSurveyId,
     };
 }

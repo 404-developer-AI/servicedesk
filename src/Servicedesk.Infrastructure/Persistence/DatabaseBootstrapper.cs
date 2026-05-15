@@ -2379,6 +2379,213 @@ public sealed class DatabaseBootstrapper : IHostedService
 
         CREATE INDEX IF NOT EXISTS ix_compose_templates_queue_ids
             ON compose_templates USING GIN (queue_ids);
+
+        -- ===================================================================
+        -- v0.0.38 customer satisfaction surveys (CSAT). See ARCHITECTURE.md →
+        -- "Surveys". surveys + survey_questions hold the designer model.
+        -- survey_invitations are per-send token-protected rows mirroring
+        -- intake_form_instances. Submissions live in survey_responses (1 per
+        -- invitation) + survey_answers (1 per answered question) +
+        -- survey_agent_scores (1 per rated agent in per-agent rating mode).
+        --
+        -- Carve-out: a SurveySubmitted ticket-event MUST NOT trigger an
+        -- auto-reopen. The response service skips the trigger evaluation
+        -- mail-ingest fires; the agent-side reopen-rules can also filter on
+        -- event_type != 'SurveySubmitted' if the admin wants to be explicit.
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS surveys (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            name                TEXT        NOT NULL,
+            description         TEXT        NULL,
+            intro_html          TEXT        NOT NULL DEFAULT '',
+            invite_subject      TEXT        NOT NULL DEFAULT '',
+            invite_body_html    TEXT        NOT NULL DEFAULT '',
+            is_active           BOOLEAN     NOT NULL DEFAULT TRUE,
+            ttl_days            INT         NULL,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            created_by          UUID        NULL REFERENCES users(id) ON DELETE SET NULL
+        );
+
+        -- v0.0.38 redesign: per-agent rating is no longer a tri-state mode.
+        -- Admins now define agent sub-questions (applies_to='Agent' on
+        -- survey_questions); the public page renders each contributing
+        -- agent with the full sub-question set. Drop the old column + check
+        -- so a stale schema can't leak the deprecated rating mode.
+        ALTER TABLE surveys DROP CONSTRAINT IF EXISTS chk_surveys_agent_rating_mode;
+        ALTER TABLE surveys DROP COLUMN IF EXISTS agent_rating_mode;
+
+        -- All surfaced text on the public survey is admin-defined so a
+        -- Dutch-speaking customer never sees an English fallback. Nullable
+        -- so older surveys (pre-rename) keep loading; the API enforces
+        -- non-empty values on save.
+        ALTER TABLE surveys ADD COLUMN IF NOT EXISTS agent_block_heading TEXT NULL;
+        ALTER TABLE surveys ADD COLUMN IF NOT EXISTS submit_button_label TEXT NULL;
+        ALTER TABLE surveys ADD COLUMN IF NOT EXISTS thank_you_message   TEXT NULL;
+        ALTER TABLE surveys ADD COLUMN IF NOT EXISTS expired_message     TEXT NULL;
+        ALTER TABLE surveys ADD COLUMN IF NOT EXISTS not_found_message   TEXT NULL;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_surveys_active_name
+            ON surveys (lower(name)) WHERE is_active;
+
+        CREATE TABLE IF NOT EXISTS survey_questions (
+            id              BIGSERIAL PRIMARY KEY,
+            survey_id       UUID NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+            sort_order      INT  NOT NULL,
+            question_type   TEXT NOT NULL,
+            label           TEXT NOT NULL,
+            help_text       TEXT NULL,
+            is_required     BOOLEAN NOT NULL DEFAULT FALSE,
+            -- Type-specific options (rating: { points: 5, labels: ["Bad","OK","Good"] },
+            -- choice: { options: [{value,label}, ...], multi: false }). Empty
+            -- object for Text/Nps which need no config.
+            config_json     JSONB NOT NULL DEFAULT '{}'::jsonb
+        );
+
+        -- v0.0.38 redesign: scope distinguishes 'Survey' questions (asked
+        -- once) from 'Agent' questions (rendered per contributing agent at
+        -- submit time). Sort-order is unique within (survey, scope), not
+        -- globally, so each list reorders independently.
+        ALTER TABLE survey_questions ADD COLUMN IF NOT EXISTS applies_to TEXT NOT NULL DEFAULT 'Survey';
+        ALTER TABLE survey_questions DROP CONSTRAINT IF EXISTS chk_survey_question_applies_to;
+        ALTER TABLE survey_questions ADD CONSTRAINT chk_survey_question_applies_to
+            CHECK (applies_to IN ('Survey','Agent')) NOT VALID;
+
+        -- Replace the legacy (survey_id, sort_order) UNIQUE with one scoped
+        -- per applies_to. PG names inline UNIQUE constraints predictably.
+        ALTER TABLE survey_questions DROP CONSTRAINT IF EXISTS survey_questions_survey_id_sort_order_key;
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_survey_questions_scope_sort
+            ON survey_questions (survey_id, applies_to, sort_order);
+
+        ALTER TABLE survey_questions DROP CONSTRAINT IF EXISTS chk_survey_question_type;
+        ALTER TABLE survey_questions ADD CONSTRAINT chk_survey_question_type
+            CHECK (question_type IN ('Rating','Nps','Text','SingleChoice','MultiChoice')) NOT VALID;
+
+        CREATE TABLE IF NOT EXISTS survey_invitations (
+            id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            survey_id               UUID NOT NULL REFERENCES surveys(id) ON DELETE RESTRICT,
+            ticket_id               UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            sent_event_id           BIGINT NULL REFERENCES ticket_events(id) ON DELETE SET NULL,
+            submitted_event_id      BIGINT NULL REFERENCES ticket_events(id) ON DELETE SET NULL,
+            token_hash              BYTEA NOT NULL,
+            token_cipher            BYTEA NOT NULL,
+            status                  TEXT NOT NULL DEFAULT 'Sent',
+            sent_to_email           TEXT NOT NULL,
+            sent_utc                TIMESTAMPTZ NOT NULL DEFAULT now(),
+            expires_utc             TIMESTAMPTZ NOT NULL,
+            submitted_utc           TIMESTAMPTZ NULL,
+            cancelled_utc           TIMESTAMPTZ NULL,
+            -- Snapshot of contributing agent user-ids at send-time. Frozen so
+            -- a later assignment-change can't retroactively shuffle the
+            -- per-agent rating-blocks the customer answered against.
+            attributed_agent_ids    UUID[] NOT NULL DEFAULT '{}',
+            -- Frozen survey definition (name + questions + agent-rating mode)
+            -- so an admin can rewrite the live survey without corrupting
+            -- pending invitations or historical responses.
+            survey_snapshot_json    JSONB NOT NULL DEFAULT '{}'::jsonb,
+            submitter_ip            INET NULL,
+            submitter_ua            TEXT NULL,
+            created_by              UUID NULL REFERENCES users(id) ON DELETE SET NULL
+        );
+
+        ALTER TABLE survey_invitations DROP CONSTRAINT IF EXISTS chk_survey_invitation_status;
+        ALTER TABLE survey_invitations ADD CONSTRAINT chk_survey_invitation_status
+            CHECK (status IN ('Sent','Submitted','Expired','Cancelled')) NOT VALID;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_survey_invitations_token_hash
+            ON survey_invitations (token_hash);
+
+        CREATE INDEX IF NOT EXISTS ix_survey_invitations_ticket
+            ON survey_invitations (ticket_id, sent_utc DESC);
+
+        CREATE INDEX IF NOT EXISTS ix_survey_invitations_survey
+            ON survey_invitations (survey_id, sent_utc DESC);
+
+        -- Expiry sweeper hot path: only Sent rows can expire.
+        CREATE INDEX IF NOT EXISTS ix_survey_invitations_expiry
+            ON survey_invitations (expires_utc) WHERE status = 'Sent';
+
+        -- One active invitation per (survey, ticket). Prevents a chatty
+        -- trigger from spamming the customer; resends require the existing
+        -- row to be Expired or Cancelled first.
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_survey_invitations_active_pair
+            ON survey_invitations (survey_id, ticket_id) WHERE status = 'Sent';
+
+        CREATE TABLE IF NOT EXISTS survey_responses (
+            id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            invitation_id   UUID NOT NULL UNIQUE REFERENCES survey_invitations(id) ON DELETE CASCADE,
+            submitted_utc   TIMESTAMPTZ NOT NULL DEFAULT now(),
+            comment         TEXT NULL
+        );
+
+        -- v0.0.38 redesign: dropped overall_rating (the deprecated Overall
+        -- rating-mode column). The new "Per-agent sub-questions" model
+        -- attributes ratings via survey_answers.agent_user_id instead.
+        ALTER TABLE survey_responses DROP COLUMN IF EXISTS overall_rating;
+
+        CREATE TABLE IF NOT EXISTS survey_answers (
+            id              BIGSERIAL PRIMARY KEY,
+            response_id     UUID NOT NULL REFERENCES survey_responses(id) ON DELETE CASCADE,
+            -- No FK to survey_questions: answers render against
+            -- survey_invitations.survey_snapshot_json so live edits to the
+            -- survey designer never corrupt historical responses (same
+            -- snapshot pattern as intake_form_answers post-v0.0.19).
+            question_id     BIGINT NOT NULL,
+            value_numeric   NUMERIC NULL,
+            value_text      TEXT NULL,
+            value_json      JSONB NULL
+        );
+
+        -- v0.0.38 redesign: per-agent answers carry an agent_user_id so a
+        -- single Agent-scoped question yields N rows (one per attributed
+        -- agent). Survey-scoped questions keep agent_user_id NULL and
+        -- remain unique per response.
+        ALTER TABLE survey_answers ADD COLUMN IF NOT EXISTS agent_user_id UUID NULL
+            REFERENCES users(id) ON DELETE RESTRICT;
+
+        -- Replace the legacy (response_id, question_id) UNIQUE with two
+        -- partial uniques: one per Survey-scope answer, one per (agent)
+        -- pair for Agent-scope. Two partial indexes are cleaner than a
+        -- COALESCE expression on the unique key.
+        ALTER TABLE survey_answers DROP CONSTRAINT IF EXISTS survey_answers_response_id_question_id_key;
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_survey_answers_survey_scope
+            ON survey_answers (response_id, question_id) WHERE agent_user_id IS NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_survey_answers_agent_scope
+            ON survey_answers (response_id, question_id, agent_user_id) WHERE agent_user_id IS NOT NULL;
+
+        CREATE INDEX IF NOT EXISTS ix_survey_answers_agent
+            ON survey_answers (agent_user_id) WHERE agent_user_id IS NOT NULL;
+
+        -- v0.0.38 redesign: drop the single-overall-rating-per-agent table;
+        -- per-agent scores now live in survey_answers with agent_user_id.
+        DROP TABLE IF EXISTS survey_agent_scores;
+
+        -- Compose template → survey link. When an agent sends a reply using
+        -- this template, the reply endpoint dispatches the linked survey.
+        ALTER TABLE compose_templates
+            ADD COLUMN IF NOT EXISTS linked_survey_id UUID NULL
+            REFERENCES surveys(id) ON DELETE SET NULL;
+
+        CREATE INDEX IF NOT EXISTS ix_compose_templates_linked_survey
+            ON compose_templates (linked_survey_id) WHERE linked_survey_id IS NOT NULL;
+
+        -- v0.0.38 extends ticket_events CHECK with the three survey event
+        -- types. Same NOT VALID drop+recreate pattern as v0.0.19 intake.
+        ALTER TABLE ticket_events DROP CONSTRAINT IF EXISTS chk_ticket_event_type;
+        ALTER TABLE ticket_events ADD CONSTRAINT chk_ticket_event_type
+            CHECK (event_type IN ('Created','Comment','Mail','Note','StatusChange',
+                                  'AssignmentChange','PriorityChange','QueueChange',
+                                  'CategoryChange','SystemNote','MailReceived',
+                                  'MailSent','CompanyAssignment','RequesterChange',
+                                  'IntakeFormSent','IntakeFormSubmitted','IntakeFormExpired',
+                                  'ParentLinked','ParentUnlinked',
+                                  'SurveySent','SurveySubmitted','SurveyExpired')) NOT VALID;
+
+        -- v0.0.38 also allows 'survey_submitted' notification rows so the
+        -- @-mention framework can fan results out to rated agents.
+        ALTER TABLE user_notifications DROP CONSTRAINT IF EXISTS chk_user_notifications_type;
+        ALTER TABLE user_notifications ADD CONSTRAINT chk_user_notifications_type
+            CHECK (notification_type IN ('mention','survey_submitted')) NOT VALID;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

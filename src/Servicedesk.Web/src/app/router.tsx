@@ -24,6 +24,10 @@ import { SlaSettingsPage } from "@/pages/settings/SlaSettingsPage";
 import { IntakeFormsSettingsPage } from "@/pages/settings/IntakeFormsSettingsPage";
 import { TemplatesSettingsPage } from "@/pages/settings/TemplatesSettingsPage";
 import { PublicIntakeFormPage } from "@/pages/intake/PublicIntakeFormPage";
+import { PublicSurveyPage } from "@/pages/surveys/PublicSurveyPage";
+import { SurveysSettingsPage } from "@/pages/settings/SurveysSettingsPage";
+import { SurveyEditorPage } from "@/pages/settings/surveys/SurveyEditorPage";
+import { SurveyResultsPage } from "@/pages/settings/surveys/SurveyResultsPage";
 import { TicketsSettingsPage } from "@/pages/settings/TicketsSettingsPage";
 import { TriggersSettingsPage } from "@/pages/settings/TriggersSettingsPage";
 import { TriggerRunsPage } from "@/pages/settings/triggers/TriggerRunsPage";
@@ -92,6 +96,7 @@ function isBareRoute(path: string): boolean {
   if (UNAUTHENTICATED_PATHS.has(path)) return true;
   if (path.endsWith("/compose")) return true;
   if (path.startsWith("/intake/")) return true;
+  if (path.startsWith("/surveys/")) return true;
   return false;
 }
 
@@ -338,6 +343,39 @@ const settingsTemplatesRoute = createRoute({
   component: TemplatesSettingsPage,
 });
 
+// v0.0.38 — survey designer + results
+const settingsSurveysRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "surveys",
+  component: SurveysSettingsPage,
+});
+
+const settingsSurveyEditorRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "surveys/$surveyId",
+  component: function SettingsSurveyEditorRoute() {
+    const { surveyId } = settingsSurveyEditorRoute.useParams();
+    return <SurveyEditorPage surveyId={surveyId} />;
+  },
+});
+
+const settingsSurveyNewRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "surveys-new",
+  component: function SettingsSurveyNewRoute() {
+    return <SurveyEditorPage surveyId={null} />;
+  },
+});
+
+const settingsSurveyResultsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "surveys/$surveyId/results",
+  component: function SettingsSurveyResultsRoute() {
+    const { surveyId } = settingsSurveyResultsRoute.useParams();
+    return <SurveyResultsPage surveyId={surveyId} />;
+  },
+});
+
 const settingsTriggersRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "triggers",
@@ -475,6 +513,16 @@ const publicIntakeRoute = createRoute({
   },
 });
 
+// v0.0.38 — public survey link. Same bare-shell semantics as intake.
+const publicSurveyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/surveys/$token",
+  component: function PublicSurveyRoute() {
+    const { token } = publicSurveyRoute.useParams();
+    return <PublicSurveyPage token={token} />;
+  },
+});
+
 const settingsViewGroupsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "view-groups",
@@ -539,6 +587,10 @@ const routeTree = rootRoute.addChildren([
     settingsSlaRoute,
     settingsIntakeFormsRoute,
     settingsTemplatesRoute,
+    settingsSurveysRoute,
+    settingsSurveyNewRoute,
+    settingsSurveyEditorRoute,
+    settingsSurveyResultsRoute,
     settingsTriggersRoute,
     settingsTriggerDetailRoute,
     settingsTriggerRunsRoute,
@@ -560,6 +612,7 @@ const routeTree = rootRoute.addChildren([
     settingsAuditRoute,
   ]),
   publicIntakeRoute,
+  publicSurveyRoute,
 ]);
 
 export const router = createRouter({

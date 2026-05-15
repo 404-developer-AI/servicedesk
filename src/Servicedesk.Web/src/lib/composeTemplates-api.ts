@@ -11,6 +11,9 @@ export interface ComposeTemplate {
   /// Empty = available in every queue; otherwise the picker only surfaces
   /// the template when the editor's host ticket lives in one of these queues.
   queueIds: string[];
+  /// v0.0.38 — optional CSAT survey that fires automatically when an agent
+  /// sends a reply/note built from this template. Null = no survey-on-send.
+  linkedSurveyId: string | null;
   createdUtc: string;
   updatedUtc: string;
 }
@@ -23,6 +26,7 @@ export interface UsableComposeTemplate {
   description: string | null;
   bodyHtml: string;
   queueIds: string[];
+  linkedSurveyId: string | null;
 }
 
 export interface ComposeTemplateUpsert {
@@ -31,6 +35,7 @@ export interface ComposeTemplateUpsert {
   bodyHtml: string;
   isActive?: boolean;
   queueIds: string[];
+  linkedSurveyId: string | null;
 }
 
 async function request<T>(

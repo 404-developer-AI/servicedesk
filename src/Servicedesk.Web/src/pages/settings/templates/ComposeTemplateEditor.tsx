@@ -11,7 +11,15 @@ import {
   composeTemplatesApi,
   type ComposeTemplate,
 } from "@/lib/composeTemplates-api";
+import { surveysAgentApi } from "@/lib/surveys-api";
 import { taxonomyApi } from "@/lib/api";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,6 +52,15 @@ export function TemplateEditor({
   const [bodyHtml, setBodyHtml] = useState(existing?.bodyHtml ?? "");
   const [isActive, setIsActive] = useState(existing?.isActive ?? true);
   const [queueIds, setQueueIds] = useState<string[]>(existing?.queueIds ?? []);
+  const [linkedSurveyId, setLinkedSurveyId] = useState<string | null>(
+    existing?.linkedSurveyId ?? null,
+  );
+
+  const usableSurveysQ = useQuery({
+    queryKey: ["surveys", "usable"],
+    queryFn: () => surveysAgentApi.usable(),
+    staleTime: 60_000,
+  });
 
   const queuesQ = useQuery({
     queryKey: ["taxonomy", "queues"],
@@ -73,6 +90,7 @@ export function TemplateEditor({
         bodyHtml,
         isActive,
         queueIds,
+        linkedSurveyId,
       };
       return existing
         ? composeTemplatesApi.update(existing.id, payload)
@@ -247,6 +265,36 @@ export function TemplateEditor({
             })}
           </div>
         )}
+      </div>
+
+      <div className="space-y-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+        <div className="space-y-0.5">
+          <p className="text-sm font-medium text-foreground">
+            Linked survey (optional)
+          </p>
+          <p className="text-xs text-muted-foreground">
+            When set, sending a reply or note built from this template
+            automatically dispatches the chosen CSAT survey to the ticket
+            requester. Idempotent — repeats are skipped while an active
+            invitation exists for the (survey, ticket) pair.
+          </p>
+        </div>
+        <Select
+          value={linkedSurveyId ?? "__none"}
+          onValueChange={(v) => setLinkedSurveyId(v === "__none" ? null : v)}
+        >
+          <SelectTrigger className="h-9 bg-white/[0.02]">
+            <SelectValue placeholder="No survey" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none">No survey</SelectItem>
+            {(usableSurveysQ.data ?? []).map((s) => (
+              <SelectItem key={s.id} value={s.id}>
+                {s.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3">

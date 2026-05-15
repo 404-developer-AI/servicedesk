@@ -25,6 +25,7 @@ public interface IComposeTemplateRepository
         string? description,
         string bodyHtml,
         IReadOnlyList<Guid> queueIds,
+        Guid? linkedSurveyId,
         Guid? createdBy,
         CancellationToken ct);
 
@@ -35,6 +36,7 @@ public interface IComposeTemplateRepository
         string bodyHtml,
         bool isActive,
         IReadOnlyList<Guid> queueIds,
+        Guid? linkedSurveyId,
         CancellationToken ct);
 
     Task<bool> DeactivateAsync(Guid id, CancellationToken ct);
