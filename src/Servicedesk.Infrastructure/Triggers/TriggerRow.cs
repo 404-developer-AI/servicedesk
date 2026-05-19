@@ -21,4 +21,9 @@ public sealed class TriggerRow
     public Guid? CreatedByUserId { get; set; }
     public Guid? GroupId { get; set; }
     public int SortOrder { get; set; }
+    /// v0.0.39 — populated only when <see cref="ActivatorKind"/> is
+    /// "manual". Points at the ticket-type this trigger creates and
+    /// drives the "Create linked X ticket" buttons in the side panel.
+    /// Enforced by chk_trigger_manual_ticket_type at the database layer.
+    public Guid? ManualTicketTypeId { get; set; }
 }

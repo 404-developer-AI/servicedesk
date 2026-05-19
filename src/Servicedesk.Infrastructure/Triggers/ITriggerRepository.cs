@@ -121,7 +121,11 @@ public sealed record NewTrigger(
     string? Locale,
     string? Timezone,
     string Note,
-    Guid? CreatedByUserId);
+    Guid? CreatedByUserId,
+    /// v0.0.39 — set only when <see cref="ActivatorKind"/> is "manual".
+    /// Identifies the ticket-type the trigger creates and is checked by
+    /// chk_trigger_manual_ticket_type at the SQL layer.
+    Guid? ManualTicketTypeId = null);
 
 /// Update payload — <see cref="CreatedByUserId"/> is intentionally absent;
 /// the original creator is preserved.
@@ -135,7 +139,10 @@ public sealed record UpdateTrigger(
     string ActionsJson,
     string? Locale,
     string? Timezone,
-    string Note);
+    string Note,
+    /// v0.0.39 — mirror of <see cref="NewTrigger.ManualTicketTypeId"/>.
+    /// Stays null for action/time-kind triggers.
+    Guid? ManualTicketTypeId = null);
 
 /// Aggregate over a trigger's <c>trigger_runs</c> rows since a given UTC
 /// cutoff. <see cref="LastFiredUtc"/> is the most recent fired_utc across

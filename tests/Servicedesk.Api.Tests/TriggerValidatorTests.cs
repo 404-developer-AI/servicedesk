@@ -36,11 +36,41 @@ public class TriggerValidatorTests
     [InlineData("time", "selective")]       // time-kind never has action modes
     [InlineData("action", "always_off")]    // unknown mode
     [InlineData("foo", "selective")]        // unknown kind
+    [InlineData("manual", "selective")]     // v0.0.39 — manual never pairs with selective
+    [InlineData("manual", "reminder")]      // v0.0.39 — manual never pairs with reminder
     public void Mismatched_activator_pair_is_rejected(string kind, string mode)
     {
         var r = TriggerValidator.Validate("t", kind, mode, "{\"op\":\"AND\",\"items\":[]}", "[]", null, null);
         Assert.False(r.IsValid);
         Assert.Contains("activator_kind", r.Error!);
+    }
+
+    [Fact]
+    public void Manual_linked_ticket_creator_pair_is_accepted()
+    {
+        // v0.0.39 — the new activator pair must pass the whitelist check.
+        // The validator does not enforce ManualTicketTypeId presence
+        // itself; that check lives in the endpoint layer because it
+        // requires DB access. The base whitelist must still accept the
+        // pair so the endpoint reaches that downstream guard.
+        var r = TriggerValidator.Validate(
+            name: "Order ticket preset",
+            activatorKind: "manual",
+            activatorMode: "linked_ticket_creator",
+            conditionsJson: "{\"op\":\"AND\",\"items\":[]}",
+            actionsJson: "[{\"kind\":\"create_linked_ticket\",\"subject_template\":\"Order\"}]",
+            locale: null,
+            timezone: null);
+        Assert.True(r.IsValid, r.Error);
+    }
+
+    [Fact]
+    public void Create_linked_ticket_is_a_recognised_action_kind()
+    {
+        // v0.0.39 — the editor lists `create_linked_ticket` in
+        // KNOWN_ACTION_KINDS; the validator's ActionKinds whitelist
+        // must match or admins cannot save manual triggers.
+        Assert.Contains("create_linked_ticket", TriggerValidator.ActionKinds);
     }
 
     [Fact]

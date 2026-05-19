@@ -43,6 +43,29 @@ export type SetPendingTillAction =
       next_trigger_id?: string | null;
     };
 
+// v0.0.39 — create_linked_ticket. Carries the full preset payload:
+// subject/body templates with #{ticket.*} tokens, defaults for status/
+// queue/priority/category/assignee, three-way enum for the requester
+// and company source, and an optional initial-note sub-block.
+export type CreateLinkedTicketAction = {
+  kind: "create_linked_ticket";
+  subject_template: string;
+  body_html_template: string;
+  queue_id: string | null;
+  status_id: string | null;
+  priority_id: string | null;
+  category_id: string | null;
+  assignee_user_id: string | null;
+  requester_source: "parent" | "fixed_contact" | "current_agent";
+  requester_contact_id: string | null;
+  company_source: "parent" | "from_requester_primary" | "fixed_company";
+  company_id: string | null;
+  initial_note: {
+    body_html_template: string;
+    is_internal: boolean;
+  } | null;
+};
+
 export type TriggerAction =
   | { kind: "set_queue"; queue_id: string }
   | { kind: "set_priority"; priority_id: string }
@@ -64,6 +87,7 @@ export type TriggerAction =
       ttl_days_override?: number | null;
       recipient_override?: string | null;
     }
+  | CreateLinkedTicketAction
   // Sentinel for actions whose `kind` this editor build doesn't know
   // about (e.g. a future kind saved by a newer frontend or hand-
   // written JSON). Carries the original payload verbatim so the admin
@@ -83,6 +107,7 @@ export const KNOWN_ACTION_KINDS = [
   "repost_as_public_reply",
   "send_mail",
   "send_survey",
+  "create_linked_ticket",
 ] as const;
 
 export type KnownActionKind = (typeof KNOWN_ACTION_KINDS)[number];
@@ -98,6 +123,7 @@ export const ACTION_KIND_LABELS: Record<KnownActionKind, string> = {
   repost_as_public_reply: "Repost as public reply",
   send_mail: "Send mail",
   send_survey: "Send survey",
+  create_linked_ticket: "Create linked ticket",
 };
 
 export function blankActionForKind(kind: KnownActionKind): TriggerAction {
@@ -119,6 +145,22 @@ export function blankActionForKind(kind: KnownActionKind): TriggerAction {
       };
     case "send_survey":
       return { kind, survey_id: "" };
+    case "create_linked_ticket":
+      return {
+        kind,
+        subject_template: "",
+        body_html_template: "",
+        queue_id: null,
+        status_id: null,
+        priority_id: null,
+        category_id: null,
+        assignee_user_id: null,
+        requester_source: "parent",
+        requester_contact_id: null,
+        company_source: "parent",
+        company_id: null,
+        initial_note: null,
+      };
   }
 }
 

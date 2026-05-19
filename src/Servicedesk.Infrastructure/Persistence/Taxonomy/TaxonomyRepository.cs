@@ -381,4 +381,94 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
         await conn.ExecuteAsync(new CommandDefinition("DELETE FROM categories WHERE id = @id", new { id }, cancellationToken: ct));
         return DeleteResult.Deleted;
     }
+
+    // ---------- Ticket types (v0.0.39) ----------
+
+    private const string TicketTypeColumns = """
+        id AS Id, code AS Code, label AS Label, description AS Description,
+        icon AS Icon, color AS Color, sort_order AS SortOrder,
+        is_active AS IsActive, is_system AS IsSystem,
+        created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
+        """;
+
+    public async Task<IReadOnlyList<TicketType>> ListTicketTypesAsync(CancellationToken ct)
+    {
+        const string sql = $"""
+            SELECT {TicketTypeColumns}
+            FROM ticket_types
+            ORDER BY sort_order, lower(label)
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return (await conn.QueryAsync<TicketType>(new CommandDefinition(sql, cancellationToken: ct))).ToList();
+    }
+
+    public async Task<TicketType?> GetTicketTypeAsync(Guid id, CancellationToken ct)
+    {
+        const string sql = $"""
+            SELECT {TicketTypeColumns}
+            FROM ticket_types WHERE id = @id
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.QueryFirstOrDefaultAsync<TicketType>(new CommandDefinition(sql, new { id }, cancellationToken: ct));
+    }
+
+    public async Task<TicketType?> GetTicketTypeByCodeAsync(string code, CancellationToken ct)
+    {
+        // code column is CITEXT — case-insensitive equality is automatic.
+        const string sql = $"""
+            SELECT {TicketTypeColumns}
+            FROM ticket_types WHERE code = @code
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.QueryFirstOrDefaultAsync<TicketType>(new CommandDefinition(sql, new { code }, cancellationToken: ct));
+    }
+
+    public async Task<TicketType> CreateTicketTypeAsync(TicketType t, CancellationToken ct)
+    {
+        const string sql = $"""
+            INSERT INTO ticket_types (code, label, description, icon, color, sort_order, is_active, is_system)
+            VALUES (@Code, @Label, @Description, @Icon, @Color, @SortOrder, @IsActive, @IsSystem)
+            RETURNING {TicketTypeColumns}
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.QuerySingleAsync<TicketType>(new CommandDefinition(sql, t, cancellationToken: ct));
+    }
+
+    public async Task<TicketType?> UpdateTicketTypeAsync(Guid id, string code, string label, string description, string icon, string color, int sortOrder, bool isActive, CancellationToken ct)
+    {
+        // is_system stays as-is on update; the seeded 'support' row keeps
+        // its protection flag regardless of how the admin tweaks the
+        // label/icon/color so deletes remain blocked.
+        const string sql = $"""
+            UPDATE ticket_types SET
+                code = @code, label = @label, description = @description,
+                icon = @icon, color = @color, sort_order = @sortOrder,
+                is_active = @isActive, updated_utc = now()
+            WHERE id = @id
+            RETURNING {TicketTypeColumns}
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.QueryFirstOrDefaultAsync<TicketType>(new CommandDefinition(sql,
+            new { id, code, label, description, icon, color, sortOrder, isActive }, cancellationToken: ct));
+    }
+
+    public async Task<DeleteResult> DeleteTicketTypeAsync(Guid id, CancellationToken ct)
+    {
+        // A type is deletable when no live tickets reference it AND no
+        // active manual trigger is bound to it. System rows (the seeded
+        // 'support') stay protected regardless of usage to keep the
+        // default-fallback path safe.
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var row = await conn.QueryFirstOrDefaultAsync<(Guid? Id, bool IsSystem, int TicketCount, int TriggerCount)>(new CommandDefinition("""
+            SELECT tt.id AS Id, tt.is_system AS IsSystem,
+                   (SELECT count(*) FROM tickets t  WHERE t.ticket_type_id = tt.id AND t.is_deleted = FALSE)::int AS TicketCount,
+                   (SELECT count(*) FROM triggers tr WHERE tr.manual_ticket_type_id = tt.id)::int AS TriggerCount
+            FROM ticket_types tt WHERE tt.id = @id
+            """, new { id }, cancellationToken: ct));
+        if (row.Id is null) return DeleteResult.NotFound;
+        if (row.IsSystem) return DeleteResult.SystemProtected;
+        if (row.TicketCount > 0 || row.TriggerCount > 0) return DeleteResult.InUse;
+        await conn.ExecuteAsync(new CommandDefinition("DELETE FROM ticket_types WHERE id = @id", new { id }, cancellationToken: ct));
+        return DeleteResult.Deleted;
+    }
 }

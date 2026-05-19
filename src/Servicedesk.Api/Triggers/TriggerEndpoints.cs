@@ -64,7 +64,8 @@ public static class TriggerEndpoints
                 Locale: normalized.Locale,
                 Timezone: normalized.Timezone,
                 Note: normalized.Note,
-                CreatedByUserId: creatorId), ct);
+                CreatedByUserId: creatorId,
+                ManualTicketTypeId: normalized.ManualTicketTypeId), ct);
 
             await LogAsync(audit, http, TriggerAuditEventTypes.Created, row.Id.ToString(), new
             {
@@ -98,7 +99,8 @@ public static class TriggerEndpoints
                 ActionsJson: normalized.ActionsJson,
                 Locale: normalized.Locale,
                 Timezone: normalized.Timezone,
-                Note: normalized.Note), ct);
+                Note: normalized.Note,
+                ManualTicketTypeId: normalized.ManualTicketTypeId), ct);
             if (row is null) return Results.NotFound();
 
             await LogAsync(audit, http, TriggerAuditEventTypes.Updated, row.Id.ToString(), new
@@ -242,6 +244,7 @@ public static class TriggerEndpoints
             updatedUtc = row.UpdatedUtc,
             groupId = row.GroupId,
             sortOrder = row.SortOrder,
+            manualTicketTypeId = row.ManualTicketTypeId,
             runs = new
             {
                 applied = summary?.AppliedCount ?? 0,
@@ -271,6 +274,7 @@ public static class TriggerEndpoints
         createdByUserId = row.CreatedByUserId,
         groupId = row.GroupId,
         sortOrder = row.SortOrder,
+        manualTicketTypeId = row.ManualTicketTypeId,
     };
 
     private static Servicedesk.Infrastructure.Triggers.ValidationResult ValidateAndNormalize(TriggerInput req, out NormalizedInput normalized)
@@ -287,7 +291,20 @@ public static class TriggerEndpoints
             ActionsJson: string.IsNullOrWhiteSpace(req.ActionsJson) ? "[]" : req.ActionsJson,
             Locale: string.IsNullOrWhiteSpace(req.Locale) ? null : req.Locale!.Trim(),
             Timezone: string.IsNullOrWhiteSpace(req.Timezone) ? null : req.Timezone!.Trim(),
-            Note: req.Note ?? string.Empty);
+            Note: req.Note ?? string.Empty,
+            // v0.0.39 — only honour the value on manual triggers; null
+            // it for action/time-kind rows so the chk_trigger_manual_
+            // ticket_type CHECK never fails on a stray client payload.
+            ManualTicketTypeId: string.Equals(req.ActivatorKind?.Trim(), "manual", StringComparison.OrdinalIgnoreCase)
+                ? req.ManualTicketTypeId
+                : null);
+
+        // Manual triggers MUST carry a ticket-type id — the picker can't
+        // group them without it and the DB CHECK would reject the
+        // INSERT regardless. Short-circuit with a friendlier message.
+        if (normalized.ActivatorKind == "manual" && normalized.ManualTicketTypeId is null)
+            return Servicedesk.Infrastructure.Triggers.ValidationResult.Fail(
+                "Manual triggers must reference a ticket type via 'manualTicketTypeId'.");
 
         return TriggerValidator.Validate(
             normalized.Name,
@@ -327,7 +344,12 @@ public static class TriggerEndpoints
         string? ActionsJson,
         string? Locale,
         string? Timezone,
-        string? Note);
+        string? Note,
+        // v0.0.39 — required when ActivatorKind == "manual"; ignored
+        // otherwise. The chk_trigger_manual_ticket_type DB constraint is
+        // the ultimate enforcement; the validator below short-circuits
+        // with a friendly error before the query is even sent.
+        Guid? ManualTicketTypeId = null);
 
     public sealed record ActiveToggleInput([property: Required] bool IsActive);
 
@@ -346,5 +368,6 @@ public static class TriggerEndpoints
         string ActionsJson,
         string? Locale,
         string? Timezone,
-        string Note);
+        string Note,
+        Guid? ManualTicketTypeId);
 }

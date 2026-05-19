@@ -79,6 +79,9 @@ export type TicketListItem = {
   dueUtc: string | null;
   awaitingCompanyAssignment: boolean;
   companyResolvedVia: CompanyResolvedVia | null;
+  // v0.0.39 — first-class ticket type. Always set after the migration
+  // (NOT NULL at the DB layer); legacy rows are 'support' after backfill.
+  ticketTypeId: string;
 };
 
 export type TicketPage = {
@@ -133,6 +136,11 @@ export type Ticket = {
   parentTicketId: string | null;
   parentLinkedUtc: string | null;
   parentLinkedByUserId: string | null;
+  /// v0.0.39 — first-class ticket type. Always set after the migration
+  /// (NOT NULL at the DB layer, backfilled to 'support' for existing
+  /// rows). The header + list use this to render a coloured type badge;
+  /// the linked-ticket flow uses it to mark how the ticket was created.
+  ticketTypeId: string;
 };
 
 export type TicketBody = {
@@ -324,6 +332,51 @@ export type CreateTicketRequest = {
   /// When set, the newly created ticket is immediately linked as a
   /// sub-ticket of this parent (manual Main/Sub flow from the side panel).
   parentTicketId?: string;
+  /// v0.0.39 — caller picks the ticket type explicitly when known.
+  /// Null/omitted defaults to the seeded 'support' type server-side, so
+  /// the legacy "+ New ticket" flow keeps working unchanged.
+  ticketTypeId?: string;
+  /// v0.0.39 — optional first event written immediately after the
+  /// ticket exists. Used by the "Create linked X ticket" flow to drop
+  /// an opening note (internal or public) into the timeline alongside
+  /// the ticket body.
+  initialNote?: { bodyHtml: string; isInternal: boolean };
+};
+
+// v0.0.39 — server-side preset summary used by the LinkedTicketTypeDialog.
+// One row per active manual trigger, denormalised with the ticket-type
+// metadata so the picker can render a button without a second round-trip.
+export type LinkedTicketPresetSummary = {
+  triggerId: string;
+  name: string;
+  ticketTypeId: string;
+  ticketTypeCode: string;
+  ticketTypeLabel: string;
+  ticketTypeDescription: string;
+  ticketTypeIcon: string;
+  ticketTypeColor: string;
+  sortOrder: number;
+};
+
+// v0.0.39 — server-rendered prefill DTO. Subject / bodyHtml / initialNote
+// templates are already resolved against the parent ticket's render
+// context; requester/company are resolved per the trigger's source
+// configuration. The drawer opens with this and the agent can edit
+// before submitting via POST /api/tickets.
+export type LinkedTicketPrefill = {
+  triggerId: string;
+  ticketTypeId: string;
+  ticketTypeCode: string;
+  subject: string;
+  bodyHtml: string;
+  requesterContactId: string;
+  companyId: string | null;
+  queueId: string;
+  statusId: string;
+  priorityId: string;
+  categoryId: string | null;
+  assigneeUserId: string | null;
+  initialNote: { bodyHtml: string; isInternal: boolean } | null;
 };
 
 export type TicketFieldUpdate = {
@@ -707,6 +760,17 @@ export const ticketApi = {
     ),
   unlinkParent: (id: string) =>
     request<void>("DELETE", `/api/tickets/${id}/link-parent`),
+  // v0.0.39 — linked-ticket presets (manual triggers grouped by type).
+  listLinkedTicketPresets: (parentTicketId: string) =>
+    request<LinkedTicketPresetSummary[]>(
+      "GET",
+      `/api/tickets/${parentTicketId}/linked-ticket-presets`,
+    ),
+  getLinkedTicketPrefill: (parentTicketId: string, triggerId: string) =>
+    request<LinkedTicketPrefill>(
+      "GET",
+      `/api/tickets/${parentTicketId}/linked-ticket-presets/${triggerId}/prefill`,
+    ),
   split: (id: string, body: SplitTicketRequest) =>
     request<SplitTicketResponse>("POST", `/api/tickets/${id}/split`, body),
   exportPdf: (id: string, excludeInternal = true) => {

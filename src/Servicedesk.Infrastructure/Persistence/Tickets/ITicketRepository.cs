@@ -231,7 +231,21 @@ public sealed record NewTicket(
     // state-category. The endpoint computes the default value from
     // taxonomy + Tickets.PendingDefault* settings before calling
     // CreateAsync; the repository persists whatever it's given.
-    DateTime? PendingTillUtc = null);
+    DateTime? PendingTillUtc = null,
+    // v0.0.39 — caller picks the ticket type explicitly when known
+    // (e.g. when the LinkedTicketLauncher launched a manual trigger
+    // for an "order" ticket). Null falls back to the 'support'
+    // taxonomy row inside the repository so legacy callers stay
+    // valid without each having to look up the support id.
+    Guid? TicketTypeId = null,
+    // v0.0.39 — optional first event written immediately after the
+    // ticket is created. Used by the manual-trigger "create linked
+    // ticket" flow to drop an opening note (internal or public)
+    // into the freshly-created ticket's timeline. Null = no event,
+    // identical to the pre-v0.0.39 behaviour.
+    InitialTicketNote? InitialNote = null);
+
+public sealed record InitialTicketNote(string BodyHtml, bool IsInternal);
 
 public sealed record TicketFieldUpdate(
     Guid? QueueId = null,

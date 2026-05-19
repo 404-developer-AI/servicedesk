@@ -233,7 +233,11 @@ public static class TicketEndpoints
                 CompanyId: resolution.CompanyId,
                 AwaitingCompanyAssignment: resolution.Awaiting,
                 CompanyResolvedVia: resolution.ResolvedVia,
-                PendingTillUtc: pendingTillUtc), ct);
+                PendingTillUtc: pendingTillUtc,
+                TicketTypeId: req.TicketTypeId,
+                InitialNote: req.InitialNote is { } note && !string.IsNullOrWhiteSpace(note.BodyHtml)
+                    ? new InitialTicketNote(note.BodyHtml, note.IsInternal)
+                    : null), ct);
 
             // Apply the parent link after create so the new ticket exists
             // for the FK + cycle-check. Failure here is logged but does not
@@ -1185,6 +1189,59 @@ public static class TicketEndpoints
             return Results.NoContent();
         }).WithName("UnlinkTicketParent").WithOpenApi();
 
+        // v0.0.39 — list active manual-trigger presets visible from this
+        // ticket. Each row carries the ticket-type metadata so the
+        // LinkedTicketTypeDialog can render one button per row directly.
+        // Returns an empty array when no active presets exist; the
+        // dialog then surfaces a friendly empty-state instead of crashing.
+        group.MapGet("/{id:guid}/linked-ticket-presets", async (
+            Guid id, HttpContext http,
+            ITicketRepository tickets, IQueueAccessService queueAccess,
+            ILinkedTicketPresetService presets, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            var source = await tickets.GetByIdAsync(id, ct);
+            if (source is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, source.Ticket.QueueId, ct))
+                return Results.NotFound();
+            // Merged tickets hide the picker entirely in the side panel.
+            // Defensive: also return empty here so a stale UI cache can
+            // never produce a usable prefill for a frozen ticket.
+            if (source.Ticket.MergedIntoTicketId is not null)
+                return Results.Ok(Array.Empty<LinkedTicketPresetSummary>());
+
+            var list = await presets.ListAvailablePresetsAsync(id, ct);
+            return Results.Ok(list);
+        }).WithName("ListLinkedTicketPresets").WithOpenApi();
+
+        // v0.0.39 — server-rendered prefill for a single preset. The
+        // drawer opens with this DTO; the agent reviews/edits and
+        // submits via POST /api/tickets (which now accepts ticketTypeId
+        // + initialNote). Templates are rendered against the PARENT
+        // ticket's render context so #{ticket.*} resolves to the
+        // parent's company / requester / queue.
+        group.MapGet("/{id:guid}/linked-ticket-presets/{triggerId:guid}/prefill", async (
+            Guid id, Guid triggerId, HttpContext http,
+            ITicketRepository tickets, IQueueAccessService queueAccess,
+            ILinkedTicketPresetService presets, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            var source = await tickets.GetByIdAsync(id, ct);
+            if (source is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, source.Ticket.QueueId, ct))
+                return Results.NotFound();
+            if (source.Ticket.MergedIntoTicketId is not null)
+                return Results.Conflict(new { error = "Parent ticket is merged.", code = "parent_is_merged" });
+
+            var prefill = await presets.ResolvePrefillAsync(triggerId, id, userId, ct);
+            if (prefill is null) return Results.NotFound();
+            return Results.Ok(prefill);
+        }).WithName("GetLinkedTicketPresetPrefill").WithOpenApi();
+
         // v0.0.23 ticket split endpoint. Splits a multi-question mail off into
         // a fresh ticket with system defaults for queue/priority/status. The
         // source ticket gains a "Split into #X" SystemNote; the new ticket
@@ -1389,7 +1446,18 @@ public static class TicketEndpoints
         Guid? AssigneeUserId,
         string? Source,
         DateTime? PendingTillUtc = null,
-        Guid? ParentTicketId = null);
+        Guid? ParentTicketId = null,
+        // v0.0.39 — caller selects the ticket type when known. Null
+        // defaults to 'support' in the repository so the existing
+        // "+ New ticket" flow keeps working unchanged.
+        Guid? TicketTypeId = null,
+        // v0.0.39 — optional first event written immediately after the
+        // ticket exists. Used by the "Create linked X ticket" flow to
+        // drop an opening note (internal or public) into the timeline
+        // alongside the ticket body.
+        InitialNoteRequest? InitialNote = null);
+
+    public sealed record InitialNoteRequest(string BodyHtml, bool IsInternal);
 
     public sealed record UpdateTicketRequest(
         Guid? QueueId,

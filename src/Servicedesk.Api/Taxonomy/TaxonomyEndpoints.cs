@@ -28,8 +28,106 @@ public static class TaxonomyEndpoints
         MapPriorities(group);
         MapStatuses(group);
         MapCategories(group);
+        MapTicketTypes(group);
 
         return app;
+    }
+
+    // ---------- Ticket types (v0.0.39) ----------
+
+    public sealed record TicketTypeRequest(
+        [property: Required] string Code,
+        [property: Required] string Label,
+        string? Description,
+        string? Icon,
+        string? Color,
+        int SortOrder,
+        bool IsActive);
+
+    private static void MapTicketTypes(RouteGroupBuilder group)
+    {
+        // List + GET are agent-visible: the LinkedTicketTypeDialog
+        // needs the catalog to render its buttons. Writes stay admin-only.
+        group.MapGet("/ticket-types", async (ITaxonomyRepository repo, CancellationToken ct) =>
+            Results.Ok(await repo.ListTicketTypesAsync(ct)))
+            .WithName("ListTicketTypes").WithOpenApi();
+
+        group.MapGet("/ticket-types/{id:guid}", async (Guid id, ITaxonomyRepository repo, CancellationToken ct) =>
+        {
+            var t = await repo.GetTicketTypeAsync(id, ct);
+            return t is null ? Results.NotFound() : Results.Ok(t);
+        }).WithName("GetTicketType").WithOpenApi();
+
+        group.MapPost("/ticket-types", async (
+            [FromBody] TicketTypeRequest req, HttpContext http,
+            ITaxonomyRepository repo, IAuditLogger audit, CancellationToken ct) =>
+        {
+            if (ValidateTaxonomyName(req.Label) is { } labelErr) return labelErr;
+            if (ValidateTicketTypeCode(req.Code) is { } codeErr) return codeErr;
+            // Reject duplicate codes early — the unique index would otherwise
+            // surface as a 500 from Postgres. CITEXT collation in the column
+            // makes the comparison case-insensitive automatically.
+            var existing = await repo.GetTicketTypeByCodeAsync(req.Code.Trim(), ct);
+            if (existing is not null)
+                return Results.Conflict(new { error = $"A ticket type with code '{req.Code}' already exists." });
+
+            var now = DateTime.UtcNow;
+            var created = await repo.CreateTicketTypeAsync(new TicketType(
+                Id: Guid.Empty,
+                Code: req.Code.Trim(),
+                Label: req.Label.Trim(),
+                Description: req.Description ?? "",
+                Icon: Normalize(req.Icon, "ticket"),
+                Color: Normalize(req.Color, "#7c7cff"),
+                SortOrder: req.SortOrder,
+                IsActive: req.IsActive,
+                IsSystem: false,
+                CreatedUtc: now,
+                UpdatedUtc: now), ct);
+            await AuditWrite(audit, http, "taxonomy.ticket_type.created", created.Id.ToString(), created);
+            return Results.Created($"/api/taxonomy/ticket-types/{created.Id}", created);
+        }).WithName("CreateTicketType").WithOpenApi()
+          .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
+
+        group.MapPut("/ticket-types/{id:guid}", async (
+            Guid id, [FromBody] TicketTypeRequest req, HttpContext http,
+            ITaxonomyRepository repo, IAuditLogger audit, CancellationToken ct) =>
+        {
+            if (ValidateTaxonomyName(req.Label) is { } labelErr) return labelErr;
+            if (ValidateTicketTypeCode(req.Code) is { } codeErr) return codeErr;
+            // Duplicate-code guard ignoring the row being updated.
+            var existing = await repo.GetTicketTypeByCodeAsync(req.Code.Trim(), ct);
+            if (existing is not null && existing.Id != id)
+                return Results.Conflict(new { error = $"A ticket type with code '{req.Code}' already exists." });
+
+            var updated = await repo.UpdateTicketTypeAsync(
+                id, req.Code.Trim(), req.Label.Trim(), req.Description ?? "",
+                Normalize(req.Icon, "ticket"), Normalize(req.Color, "#7c7cff"),
+                req.SortOrder, req.IsActive, ct);
+            if (updated is null) return Results.NotFound();
+            await AuditWrite(audit, http, "taxonomy.ticket_type.updated", id.ToString(), updated);
+            return Results.Ok(updated);
+        }).WithName("UpdateTicketType").WithOpenApi()
+          .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
+
+        group.MapDelete("/ticket-types/{id:guid}", async (
+            Guid id, HttpContext http, ITaxonomyRepository repo, IAuditLogger audit, CancellationToken ct) =>
+        {
+            var result = await repo.DeleteTicketTypeAsync(id, ct);
+            return await DeleteResultToHttp(result, http, audit, "taxonomy.ticket_type.deleted", id);
+        }).WithName("DeleteTicketType").WithOpenApi()
+          .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
+    }
+
+    private static readonly Regex TicketTypeCodeRegex = new("^[a-z][a-z0-9_-]{1,63}$", RegexOptions.Compiled);
+
+    private static IResult? ValidateTicketTypeCode(string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+            return Results.BadRequest(new { error = "Ticket type code is required." });
+        if (!TicketTypeCodeRegex.IsMatch(code.Trim()))
+            return Results.BadRequest(new { error = "Ticket type code must start with a lowercase letter and contain only lowercase letters, digits, underscores or hyphens (max 64 chars)." });
+        return null;
     }
 
     // ---------- Queues ----------

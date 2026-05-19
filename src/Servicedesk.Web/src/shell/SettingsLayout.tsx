@@ -40,7 +40,7 @@ function SettingsRail() {
         </div>
       </div>
 
-      <nav className="flex-1 space-y-1 px-3 pb-4">
+      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-4">
         {SETTINGS_SECTIONS.map((section) => {
           const to = `/settings/${section.slug}`;
           const active = pathname === to || pathname.startsWith(`${to}/`);

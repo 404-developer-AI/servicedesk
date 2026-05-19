@@ -35,7 +35,8 @@ public sealed class TriggerRepository : ITriggerRepository
                    updated_utc         AS UpdatedUtc,
                    created_by_user_id  AS CreatedByUserId,
                    group_id            AS GroupId,
-                   sort_order          AS SortOrder
+                   sort_order          AS SortOrder,
+                   manual_ticket_type_id AS ManualTicketTypeId
             FROM triggers
             WHERE is_active = TRUE
               AND activator_kind = @ActivatorKind
@@ -65,7 +66,8 @@ public sealed class TriggerRepository : ITriggerRepository
                    updated_utc         AS UpdatedUtc,
                    created_by_user_id  AS CreatedByUserId,
                    group_id            AS GroupId,
-                   sort_order          AS SortOrder
+                   sort_order          AS SortOrder,
+                   manual_ticket_type_id AS ManualTicketTypeId
             FROM triggers
             ORDER BY group_id NULLS FIRST, sort_order, lower(name)
             """;
@@ -92,7 +94,8 @@ public sealed class TriggerRepository : ITriggerRepository
                    updated_utc         AS UpdatedUtc,
                    created_by_user_id  AS CreatedByUserId,
                    group_id            AS GroupId,
-                   sort_order          AS SortOrder
+                   sort_order          AS SortOrder,
+                   manual_ticket_type_id AS ManualTicketTypeId
             FROM triggers
             WHERE id = @triggerId
             """;
@@ -110,12 +113,13 @@ public sealed class TriggerRepository : ITriggerRepository
             INSERT INTO triggers
                 (name, description, is_active, activator_kind, activator_mode,
                  conditions, actions, locale, timezone, note, created_by_user_id,
-                 sort_order)
+                 sort_order, manual_ticket_type_id)
             VALUES
                 (@Name, @Description, @IsActive, @ActivatorKind, @ActivatorMode,
                  @ConditionsJson::jsonb, @ActionsJson::jsonb,
                  @Locale, @Timezone, @Note, @CreatedByUserId,
-                 COALESCE((SELECT MAX(sort_order) + 1 FROM triggers WHERE group_id IS NULL), 0))
+                 COALESCE((SELECT MAX(sort_order) + 1 FROM triggers WHERE group_id IS NULL), 0),
+                 @ManualTicketTypeId)
             RETURNING id                  AS Id,
                       name                AS Name,
                       description         AS Description,
@@ -131,7 +135,8 @@ public sealed class TriggerRepository : ITriggerRepository
                       updated_utc         AS UpdatedUtc,
                       created_by_user_id  AS CreatedByUserId,
                       group_id            AS GroupId,
-                      sort_order          AS SortOrder
+                      sort_order          AS SortOrder,
+                      manual_ticket_type_id AS ManualTicketTypeId
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.QuerySingleAsync<TriggerRow>(new CommandDefinition(sql, row, cancellationToken: ct));
@@ -141,18 +146,19 @@ public sealed class TriggerRepository : ITriggerRepository
     {
         const string sql = """
             UPDATE triggers SET
-                name           = @Name,
-                description    = @Description,
-                is_active      = @IsActive,
-                activator_kind = @ActivatorKind,
-                activator_mode = @ActivatorMode,
-                conditions     = @ConditionsJson::jsonb,
-                actions        = @ActionsJson::jsonb,
-                locale         = @Locale,
-                timezone       = @Timezone,
-                note           = @Note,
-                is_seed        = FALSE,
-                updated_utc    = now()
+                name                   = @Name,
+                description            = @Description,
+                is_active              = @IsActive,
+                activator_kind         = @ActivatorKind,
+                activator_mode         = @ActivatorMode,
+                conditions             = @ConditionsJson::jsonb,
+                actions                = @ActionsJson::jsonb,
+                locale                 = @Locale,
+                timezone               = @Timezone,
+                note                   = @Note,
+                manual_ticket_type_id  = @ManualTicketTypeId,
+                is_seed                = FALSE,
+                updated_utc            = now()
             WHERE id = @id
             RETURNING id                  AS Id,
                       name                AS Name,
@@ -169,7 +175,8 @@ public sealed class TriggerRepository : ITriggerRepository
                       updated_utc         AS UpdatedUtc,
                       created_by_user_id  AS CreatedByUserId,
                       group_id            AS GroupId,
-                      sort_order          AS SortOrder
+                      sort_order          AS SortOrder,
+                      manual_ticket_type_id AS ManualTicketTypeId
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var parameters = new DynamicParameters(row);
@@ -507,6 +514,7 @@ public sealed class TriggerRepository : ITriggerRepository
     {
         TriggerActivatorKind.Action => "action",
         TriggerActivatorKind.Time => "time",
+        TriggerActivatorKind.Manual => "manual",
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
     };
 

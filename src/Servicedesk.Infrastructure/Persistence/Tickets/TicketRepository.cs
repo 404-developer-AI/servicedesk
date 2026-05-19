@@ -73,7 +73,8 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             t.updated_utc                   AS UpdatedUtc,
             t.due_utc                       AS DueUtc,
             t.awaiting_company_assignment   AS AwaitingCompanyAssignment,
-            t.company_resolved_via          AS CompanyResolvedVia
+            t.company_resolved_via          AS CompanyResolvedVia,
+            t.ticket_type_id                AS TicketTypeId
         FROM tickets t
         JOIN queues     q ON q.id = t.queue_id
         JOIN statuses   s ON s.id = t.status_id
@@ -260,7 +261,8 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                    pending_till_next_trigger_id AS PendingTillNextTriggerId,
                    parent_ticket_id AS ParentTicketId,
                    parent_linked_utc AS ParentLinkedUtc,
-                   parent_linked_by_user_id AS ParentLinkedByUserId
+                   parent_linked_by_user_id AS ParentLinkedByUserId,
+                   ticket_type_id AS TicketTypeId
             FROM tickets WHERE id = @id AND is_deleted = FALSE
             """;
         const string bodySql = """
@@ -312,15 +314,22 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
 
     public async Task<Ticket> CreateAsync(NewTicket input, CancellationToken ct)
     {
+        // v0.0.39 — ticket_type_id is NOT NULL. The COALESCE-with-subquery
+        // pattern lets the caller pass an explicit id (chosen by the agent
+        // via a manual trigger) or fall through to the 'support' system
+        // type when the caller hasn't picked one. Resolving inline avoids
+        // an extra round-trip and keeps the create flow a single statement.
         const string insertTicket = """
             INSERT INTO tickets (subject, requester_contact_id, assignee_user_id, queue_id,
                                  status_id, priority_id, category_id, source,
                                  company_id, awaiting_company_assignment, company_resolved_via,
-                                 pending_till_utc)
+                                 pending_till_utc, ticket_type_id)
             VALUES (@Subject, @RequesterContactId, @AssigneeUserId, @QueueId,
                     @StatusId, @PriorityId, @CategoryId, @Source,
                     @CompanyId, @AwaitingCompanyAssignment, @CompanyResolvedVia,
-                    @PendingTillUtc)
+                    @PendingTillUtc,
+                    COALESCE(@TicketTypeId,
+                             (SELECT id FROM ticket_types WHERE code = 'support' LIMIT 1)))
             RETURNING id AS Id, number AS Number, subject AS Subject,
                       requester_contact_id AS RequesterContactId, assignee_user_id AS AssigneeUserId,
                       queue_id AS QueueId, status_id AS StatusId, priority_id AS PriorityId,
@@ -341,7 +350,8 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                       pending_till_next_trigger_id AS PendingTillNextTriggerId,
                       parent_ticket_id AS ParentTicketId,
                       parent_linked_utc AS ParentLinkedUtc,
-                      parent_linked_by_user_id AS ParentLinkedByUserId
+                      parent_linked_by_user_id AS ParentLinkedByUserId,
+                      ticket_type_id AS TicketTypeId
             """;
         const string insertBody = """
             INSERT INTO ticket_bodies (ticket_id, body_text, body_html)
@@ -350,6 +360,15 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         const string insertEvent = """
             INSERT INTO ticket_events (ticket_id, event_type, author_contact_id, body_text, body_html, metadata)
             VALUES (@TicketId, 'Created', @AuthorContactId, NULL, NULL, COALESCE(@MetadataJson::jsonb, '{}'::jsonb))
+            """;
+        // v0.0.39 — optional first-note event for the manual "create
+        // linked X ticket" flow. Inserted in the same transaction as
+        // the ticket itself so the timeline is consistent at first
+        // GET. is_internal honours the trigger config; the body is
+        // pre-rendered HTML supplied by the caller.
+        const string insertInitialNote = """
+            INSERT INTO ticket_events (ticket_id, event_type, author_user_id, body_html, is_internal, metadata)
+            VALUES (@TicketId, 'Note', @AuthorUserId, @BodyHtml, @IsInternal, '{}'::jsonb)
             """;
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -366,6 +385,19 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                 MetadataJson = System.Text.Json.JsonSerializer.Serialize(new { source = input.Source }),
             },
             tx, cancellationToken: ct));
+
+        if (input.InitialNote is { } note && !string.IsNullOrWhiteSpace(note.BodyHtml))
+        {
+            await conn.ExecuteAsync(new CommandDefinition(insertInitialNote,
+                new
+                {
+                    TicketId = ticket.Id,
+                    AuthorUserId = (Guid?)null,
+                    BodyHtml = note.BodyHtml,
+                    IsInternal = note.IsInternal,
+                },
+                tx, cancellationToken: ct));
+        }
 
         await tx.CommitAsync(ct);
         return ticket;
