@@ -366,6 +366,34 @@ export type CategoryInput = {
   isActive: boolean;
 };
 
+// v0.0.39 — ticket types. Seeded with support / order / iso27001; admins
+// can add their own. Drives the "Create linked X ticket" picker in the
+// ticket side panel — each active manual trigger is bound to one of
+// these rows and produces a ticket of that type.
+export type TicketType = {
+  id: string;
+  code: string;
+  label: string;
+  description: string;
+  icon: string;
+  color: string;
+  sortOrder: number;
+  isActive: boolean;
+  isSystem: boolean;
+  createdUtc: string;
+  updatedUtc: string;
+};
+
+export type TicketTypeInput = {
+  code: string;
+  label: string;
+  description?: string;
+  icon?: string;
+  color?: string;
+  sortOrder: number;
+  isActive: boolean;
+};
+
 function crud<T, TInput>(base: string) {
   return {
     list: () => request<T[]>("GET", base),
@@ -381,6 +409,7 @@ export const taxonomyApi = {
   priorities: crud<Priority, PriorityInput>("/api/taxonomy/priorities"),
   statuses: crud<Status, StatusInput>("/api/taxonomy/statuses"),
   categories: crud<Category, CategoryInput>("/api/taxonomy/categories"),
+  ticketTypes: crud<TicketType, TicketTypeInput>("/api/taxonomy/ticket-types"),
 };
 
 export const STATE_CATEGORIES: StatusStateCategory[] = [
@@ -1269,13 +1298,17 @@ export const searchApi = {
 
 // ---- Triggers (admin) ----
 
-export type TriggerActivatorKind = "action" | "time";
+export type TriggerActivatorKind = "action" | "time" | "manual";
 export type TriggerActivatorMode =
   | "selective"
   | "always"
   | "reminder"
   | "escalation"
-  | "escalation_warning";
+  | "escalation_warning"
+  // v0.0.39 — sole mode for manual triggers today. The trigger runs
+  // only when an agent clicks "Create linked X ticket" in the side
+  // panel; never fired by the event evaluator or scheduler.
+  | "linked_ticket_creator";
 
 export type TriggerRunSummary = {
   applied: number;
@@ -1346,6 +1379,9 @@ export type TriggerDetail = {
   createdUtc: string;
   updatedUtc: string;
   createdByUserId: string | null;
+  // v0.0.39 — only populated for manual triggers; identifies the
+  // ticket-type the trigger is bound to.
+  manualTicketTypeId?: string | null;
 };
 
 export type TriggerInput = {
@@ -1359,6 +1395,9 @@ export type TriggerInput = {
   locale: string | null;
   timezone: string | null;
   note: string;
+  // v0.0.39 — required when activatorKind === "manual"; ignored
+  // otherwise. The server validates the pairing.
+  manualTicketTypeId?: string | null;
 };
 
 export type TriggerConditionField = {

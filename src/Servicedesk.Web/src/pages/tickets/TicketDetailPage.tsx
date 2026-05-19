@@ -12,6 +12,7 @@ import {
   markAlertSeen,
 } from "@/components/CompanyAlertDialog";
 import { TicketCompanyAssignmentDialog } from "@/components/TicketCompanyAssignmentDialog";
+import { TicketTypeBadge } from "@/components/TicketTypeBadge";
 import { SearchContextBar } from "@/components/SearchContextBar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RichTextEditor } from "@/components/RichTextEditor";
@@ -91,10 +92,12 @@ function TicketNumber({ number }: { number: number }) {
 function EditableSubject({
   number,
   value,
+  ticketTypeId,
   onSave,
 }: {
   number: number;
   value: string;
+  ticketTypeId?: string | null;
   onSave: (subject: string) => Promise<void>;
 }) {
   const [editing, setEditing] = React.useState(false);
@@ -129,6 +132,7 @@ function EditableSubject({
     return (
       <div className="group flex items-center gap-3">
         <TicketNumber number={number} />
+        {ticketTypeId && <TicketTypeBadge ticketTypeId={ticketTypeId} />}
         <h1 className="text-2xl font-semibold tracking-tight text-foreground leading-tight flex-1 min-w-0 truncate">
           {value}
         </h1>
@@ -147,6 +151,7 @@ function EditableSubject({
   return (
     <div className="flex items-center gap-3">
       <TicketNumber number={number} />
+      {ticketTypeId && <TicketTypeBadge ticketTypeId={ticketTypeId} />}
       <input
         ref={inputRef}
         type="text"
@@ -676,6 +681,7 @@ function TicketDetailBody({
               <EditableSubject
                 number={ticket.number}
                 value={ticket.subject}
+                ticketTypeId={ticket.ticketTypeId}
                 onSave={async (subject) => {
                   await updateMutation.mutateAsync({ subject });
                 }}

@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-table";
 import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TicketTypeBadge } from "@/components/TicketTypeBadge";
 import type { TicketListItem } from "@/lib/ticket-api";
 import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
 
@@ -64,9 +65,13 @@ export const ALL_COLUMNS = [
     header: "Subject",
     cell: (info) => {
       const val = info.getValue();
+      const row = info.row.original;
       return (
-        <span title={val} className="block max-w-[360px] truncate">
-          {val.length > 60 ? `${val.slice(0, 60)}…` : val}
+        <span className="flex max-w-[420px] items-center gap-2 truncate">
+          <TicketTypeBadge ticketTypeId={row.ticketTypeId} variant="compact" />
+          <span title={val} className="truncate">
+            {val.length > 60 ? `${val.slice(0, 60)}…` : val}
+          </span>
         </span>
       );
     },

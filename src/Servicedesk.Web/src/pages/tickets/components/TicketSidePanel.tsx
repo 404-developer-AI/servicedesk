@@ -1,4 +1,5 @@
 import * as React from "react";
+import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { agentQueueApi, settingsApi, taxonomyApi } from "@/lib/api";
@@ -9,7 +10,9 @@ import { AddContactLinkDialog } from "@/components/AddContactLinkDialog";
 import { SwitchRequesterDialog } from "@/components/SwitchRequesterDialog";
 import { MergeTicketDialog } from "@/components/MergeTicketDialog";
 import { LinkParentDialog } from "@/components/LinkParentDialog";
+import { LinkedTicketTypeDialog } from "@/components/LinkedTicketTypeDialog";
 import { NewTicketDrawer } from "@/shell/NewTicketDrawer";
+import { ticketApi as ticketApiClient, type LinkedTicketPrefill } from "@/lib/ticket-api";
 import { AddCompanyContactDialog } from "@/components/AddCompanyContactDialog";
 import { CompanyEditDialog } from "@/components/CompanyEditDialog";
 import { TaxonomySelect } from "@/components/TaxonomySelect";
@@ -641,24 +644,92 @@ function RelationshipsBlock({
               Link to main ticket
             </Button>
           )}
-          <NewTicketDrawer
-            initialContactId={ticket.requesterContactId}
-            initialQueueId={ticket.queueId}
-            parentTicketId={ticket.id}
-          >
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="w-full justify-start gap-2 text-xs"
-            >
-              <PlusCircle className="h-3.5 w-3.5" />
-              Create linked ticket
-            </Button>
-          </NewTicketDrawer>
+          <LinkedTicketLauncher ticket={ticket} />
         </div>
       )}
     </div>
+  );
+}
+
+/// v0.0.39 — two-step entry point for creating a linked ticket. The
+/// agent clicks the side-panel button → a dialog lists every active
+/// manual trigger (admin-configured under Settings → Triggers), each
+/// rendered with the ticket-type's icon/colour/label. Picking one
+/// fetches a server-rendered prefill (subject/body templates resolved,
+/// requester/company looked up per the trigger's source rules) and
+/// opens the existing new-ticket drawer pre-filled. Falls back
+/// gracefully when no presets exist: an empty-state nudges the admin
+/// to configure one.
+function LinkedTicketLauncher({ ticket }: { ticket: Ticket }) {
+  const [typeDialogOpen, setTypeDialogOpen] = React.useState(false);
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
+  const [prefill, setPrefill] = React.useState<LinkedTicketPrefill | null>(null);
+  const [loadingPrefill, setLoadingPrefill] = React.useState(false);
+
+  const presetsQ = useQuery({
+    queryKey: ["linked-ticket-presets", ticket.id],
+    queryFn: () => ticketApiClient.listLinkedTicketPresets(ticket.id),
+    enabled: typeDialogOpen,
+    staleTime: 30_000,
+  });
+
+  const handleSelect = async (triggerId: string) => {
+    setLoadingPrefill(true);
+    try {
+      const fetched = await ticketApiClient.getLinkedTicketPrefill(ticket.id, triggerId);
+      setPrefill(fetched);
+      setTypeDialogOpen(false);
+      setDrawerOpen(true);
+    } catch {
+      toast.error("Failed to load preset prefill");
+    } finally {
+      setLoadingPrefill(false);
+    }
+  };
+
+  const handleDrawerOpenChange = (next: boolean) => {
+    setDrawerOpen(next);
+    // Drop the cached prefill once the drawer closes so a fresh
+    // open re-fetches against the parent's current state (queue,
+    // requester, company can change between opens).
+    if (!next) setPrefill(null);
+  };
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="w-full justify-start gap-2 text-xs"
+        onClick={() => setTypeDialogOpen(true)}
+      >
+        <PlusCircle className="h-3.5 w-3.5" />
+        Create linked ticket
+      </Button>
+      <LinkedTicketTypeDialog
+        open={typeDialogOpen}
+        onOpenChange={setTypeDialogOpen}
+        presets={presetsQ.data}
+        loading={presetsQ.isLoading || loadingPrefill}
+        onSelect={(preset) => handleSelect(preset.triggerId)}
+      />
+      <NewTicketDrawer
+        initialContactId={prefill?.requesterContactId ?? ticket.requesterContactId}
+        initialQueueId={prefill?.queueId ?? ticket.queueId}
+        parentTicketId={ticket.id}
+        initialSubject={prefill?.subject}
+        initialBodyHtml={prefill?.bodyHtml}
+        initialStatusId={prefill?.statusId}
+        initialPriorityId={prefill?.priorityId}
+        initialCategoryId={prefill?.categoryId ?? undefined}
+        initialAssigneeUserId={prefill?.assigneeUserId ?? undefined}
+        ticketTypeId={prefill?.ticketTypeId}
+        initialNote={prefill?.initialNote ?? undefined}
+        open={drawerOpen}
+        onOpenChange={handleDrawerOpenChange}
+      />
+    </>
   );
 }
 

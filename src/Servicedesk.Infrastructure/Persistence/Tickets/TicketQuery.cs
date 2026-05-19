@@ -64,7 +64,10 @@ public sealed record TicketListItem(
     DateTime UpdatedUtc,
     DateTime? DueUtc,
     bool AwaitingCompanyAssignment = false,
-    string? CompanyResolvedVia = null);
+    string? CompanyResolvedVia = null,
+    // v0.0.39 — surfaced so the list row can render the type-badge
+    // alongside the priority/category pills.
+    Guid TicketTypeId = default);
 
 public sealed record TicketPage(
     IReadOnlyList<TicketListItem> Items,

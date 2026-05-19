@@ -275,6 +275,12 @@ public static class DependencyInjection
         services.AddSingleton<ITriggerActionHandler, SendMailHandler>();
         services.AddSingleton<ITriggerActionHandler, SendSurveyHandler>();
 
+        // v0.0.39 — manual "Create linked X ticket" preset service. Lives
+        // outside ITriggerActionHandler because manual triggers run
+        // synchronously on an explicit endpoint call rather than via the
+        // event-driven evaluator. Stateless beyond the injected repos.
+        services.AddSingleton<ILinkedTicketPresetService, LinkedTicketPresetService>();
+
         // Blok 7 — dry-run previewers: parallel registration, one per
         // action kind. The preview-dispatcher is the only consumer; the
         // production evaluator never sees these. Adding a new action

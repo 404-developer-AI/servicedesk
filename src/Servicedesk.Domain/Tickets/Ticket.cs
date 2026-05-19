@@ -38,7 +38,14 @@ public sealed record Ticket(
     Guid? PendingTillNextTriggerId = null,
     Guid? ParentTicketId = null,
     DateTime? ParentLinkedUtc = null,
-    Guid? ParentLinkedByUserId = null);
+    Guid? ParentLinkedByUserId = null,
+    // v0.0.39 — first-class ticket type. NOT NULL at the database
+    // layer (backfilled to 'support' for pre-existing rows); declared
+    // as a required Guid here so Dapper hydration cannot leave it
+    // default-zeroed silently. New positional position is appended at
+    // the end so older positional callers (none observed in-repo)
+    // would surface as compile errors.
+    Guid TicketTypeId = default);
 
 public sealed record TicketBody(
     Guid TicketId,

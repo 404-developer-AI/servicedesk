@@ -35,4 +35,16 @@ public interface ITaxonomyRepository
     Task<Category> CreateCategoryAsync(Category c, CancellationToken ct);
     Task<Category?> UpdateCategoryAsync(Guid id, Guid? parentId, string name, string slug, string description, int sortOrder, bool isActive, CancellationToken ct);
     Task<DeleteResult> DeleteCategoryAsync(Guid id, CancellationToken ct);
+
+    // v0.0.39 — Ticket types. CRUD mirrors the other taxonomies: list/get
+    // for agents (drives the "Create linked X ticket" picker), create/
+    // update/delete for admins. DeleteResult adds InUse when tickets or
+    // active manual triggers still reference the row; SystemProtected
+    // when is_system = TRUE (the seeded 'support' row).
+    Task<IReadOnlyList<TicketType>> ListTicketTypesAsync(CancellationToken ct);
+    Task<TicketType?> GetTicketTypeAsync(Guid id, CancellationToken ct);
+    Task<TicketType?> GetTicketTypeByCodeAsync(string code, CancellationToken ct);
+    Task<TicketType> CreateTicketTypeAsync(TicketType t, CancellationToken ct);
+    Task<TicketType?> UpdateTicketTypeAsync(Guid id, string code, string label, string description, string icon, string color, int sortOrder, bool isActive, CancellationToken ct);
+    Task<DeleteResult> DeleteTicketTypeAsync(Guid id, CancellationToken ct);
 }

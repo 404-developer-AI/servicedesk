@@ -95,6 +95,15 @@ function EditorBody({
   const [conditions, setConditions] = React.useState<ConditionGroup>({ op: "AND", items: [] });
   const [expert, setExpert] = React.useState(false);
   const [actions, setActions] = React.useState<TriggerAction[]>([]);
+  // v0.0.39 — bound ticket-type id for manual activators. Server enforces
+  // the pairing (chk_trigger_manual_ticket_type), the editor surfaces a
+  // picker only when activatorPair starts with "manual:".
+  const [manualTicketTypeId, setManualTicketTypeId] = React.useState<string | null>(null);
+  const ticketTypesQ = useQuery({
+    queryKey: ["taxonomy", "ticket-types"],
+    queryFn: () => taxonomyApi.ticketTypes.list(),
+  });
+  const isManual = activatorPair.startsWith("manual:");
 
   React.useEffect(() => {
     if (isNew) {
@@ -108,6 +117,7 @@ function EditorBody({
       setConditions({ op: "AND", items: [] });
       setExpert(false);
       setActions([]);
+      setManualTicketTypeId(null);
       return;
     }
     if (!detailQ.data) return;
@@ -129,6 +139,7 @@ function EditorBody({
     // parseActions wraps any unrecognised entry as `__unknown` so the
     // admin can see + remove it instead of silently losing the payload.
     setActions(parseActions(d.actionsJson));
+    setManualTicketTypeId(d.manualTicketTypeId ?? null);
   }
 
   const save = useMutation({
@@ -143,12 +154,21 @@ function EditorBody({
         isActive,
         activatorKind,
         activatorMode,
-        conditionsJson: JSON.stringify(conditions),
+        // Manual triggers ship with no conditions — the server still
+        // accepts a JSON blob but rejects time-empty conditions. Send
+        // a plain empty AND for clarity.
+        conditionsJson: isManual
+          ? "{\"op\":\"AND\",\"items\":[]}"
+          : JSON.stringify(conditions),
         actionsJson: serializeActions(actions),
         locale: locale.trim() || null,
         timezone: timezone.trim() || null,
         note,
+        manualTicketTypeId: isManual ? manualTicketTypeId : null,
       };
+      if (isManual && !manualTicketTypeId) {
+        throw new Error("Manual triggers must reference a ticket type.");
+      }
       if (isNew) return triggerApi.create(body);
       return triggerApi.update(triggerId as string, body);
     },
@@ -245,21 +265,40 @@ function EditorBody({
             ))}
           </select>
         </Field>
+        {isManual && (
+          <Field label="Linked ticket type">
+            <select
+              value={manualTicketTypeId ?? ""}
+              onChange={(e) => setManualTicketTypeId(e.target.value || null)}
+              className="w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
+            >
+              <option value="">— select a ticket type —</option>
+              {(ticketTypesQ.data ?? []).filter((t) => t.isActive).map((t) => (
+                <option key={t.id} value={t.id}>{t.label}</option>
+              ))}
+            </select>
+            <p className="text-[11px] text-muted-foreground/70">
+              Bound type drives the button shown in the "Create linked ticket" picker. Manage types under Settings → Tickets → Types.
+            </p>
+          </Field>
+        )}
       </Section>
 
-      {/* Conditions */}
-      <Section title="Conditions" hint="Which tickets match.">
-        <ConditionsEditor
-          value={conditions}
-          onChange={setConditions}
-          fields={metadata.conditionFields}
-          operators={metadata.conditionOperators}
-          maxDepth={metadata.maxConditionDepth}
-          expert={expert}
-          onExpertChange={setExpert}
-          taxonomies={taxonomies}
-        />
-      </Section>
+      {/* Conditions — hidden for manual triggers (no event to match against). */}
+      {!isManual && (
+        <Section title="Conditions" hint="Which tickets match.">
+          <ConditionsEditor
+            value={conditions}
+            onChange={setConditions}
+            fields={metadata.conditionFields}
+            operators={metadata.conditionOperators}
+            maxDepth={metadata.maxConditionDepth}
+            expert={expert}
+            onExpertChange={setExpert}
+            taxonomies={taxonomies}
+          />
+        </Section>
+      )}
 
       {/* Actions */}
       <Section title="Actions" hint="What the trigger does — applied in order, top to bottom.">
@@ -280,7 +319,7 @@ function EditorBody({
           <TestRunner
             triggerId={triggerId as string}
             dirty={isDirty(detailQ.data, {
-              name, description, isActive, activatorPair, locale, timezone, note, conditions, actions,
+              name, description, isActive, activatorPair, locale, timezone, note, conditions, actions, manualTicketTypeId,
             })}
           />
         </Section>
@@ -362,6 +401,7 @@ function isDirty(
     name: string; description: string; isActive: boolean; activatorPair: string;
     locale: string; timezone: string; note: string;
     conditions: ConditionGroup; actions: TriggerAction[];
+    manualTicketTypeId: string | null;
   },
 ): boolean {
   if (form.name !== saved.name) return true;
@@ -373,6 +413,7 @@ function isDirty(
   if (form.note !== (saved.note ?? "")) return true;
   if (JSON.stringify(form.conditions) !== JSON.stringify(parseConditions(saved.conditionsJson))) return true;
   if (JSON.stringify(form.actions) !== JSON.stringify(parseActions(saved.actionsJson))) return true;
+  if ((form.manualTicketTypeId ?? null) !== (saved.manualTicketTypeId ?? null)) return true;
   return false;
 }
 
@@ -384,6 +425,7 @@ function prettifyActivator(pair: string): string {
     reminder: "When pending-till elapses",
     escalation: "When SLA deadline elapses",
     escalation_warning: "When SLA warning threshold elapses",
+    linked_ticket_creator: "Manual — invoked from \"Create linked X ticket\" picker",
   };
   return modeLabels[mode] ?? `${kind}:${mode}`;
 }

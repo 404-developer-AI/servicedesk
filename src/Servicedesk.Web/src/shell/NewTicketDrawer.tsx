@@ -62,14 +62,37 @@ function FieldError({ message }: { message?: string }) {
   return <p className="mt-1 text-xs text-destructive">{message}</p>;
 }
 
+// Strip empty wrapper tags the rich-text editor leaves behind so an
+// untouched initial-note block isn't sent as a real note. Matches the
+// shape ProseMirror serialises for an empty document (a single empty
+// paragraph) and trims raw whitespace as well.
+function stripEmptyHtml(html: string): string {
+  return html
+    .replace(/<p>(\s|&nbsp;|<br\s*\/?>)*<\/p>/gi, "")
+    .replace(/\s+/g, "")
+    .trim();
+}
+
 export function NewTicketDrawer({
   children,
   initialContactId,
   initialQueueId,
   parentTicketId,
+  initialSubject,
+  initialBodyHtml,
+  initialStatusId,
+  initialPriorityId,
+  initialCategoryId,
+  initialAssigneeUserId,
+  ticketTypeId,
+  initialNote,
+  open: controlledOpen,
   onOpenChange,
 }: {
-  children: ReactNode;
+  /// Trigger element. Optional — omit when the drawer is opened
+  /// programmatically via the controlled `open` prop (e.g. after an
+  /// intermediate type-selection dialog).
+  children?: ReactNode;
   /// When set, the drawer pre-fills the requester field with this contact
   /// id on every open. Used by the Telavox call-popup so an agent who
   /// presses "Create ticket" lands on a half-filled form with the caller
@@ -85,32 +108,47 @@ export function NewTicketDrawer({
   /// sub-ticket of this parent. Passed to the backend create call;
   /// validation (cycle, merged-state, queue access) happens server-side.
   parentTicketId?: string;
-  /// Fires when the drawer transitions between open and closed. Callers
-  /// use this when the trigger lives inside another transient surface
-  /// (e.g. the incoming-call popup) and they need to keep that surface
-  /// alive until the drawer is gone — closing the surface synchronously
-  /// in the click handler would unmount the drawer's React tree.
+  /// v0.0.39 — extra prefills driven by the manual-trigger
+  /// "Create linked X ticket" flow. Each is optional; null/undefined
+  /// values fall back to the existing empty-form defaults. Applied
+  /// only on the closed → open transition (the same reset() pass that
+  /// seeds requester + queue) so opening, editing, cancelling and
+  /// re-opening produces a fresh prefill every time.
+  initialSubject?: string;
+  initialBodyHtml?: string;
+  initialStatusId?: string;
+  initialPriorityId?: string;
+  initialCategoryId?: string;
+  initialAssigneeUserId?: string;
+  /// v0.0.39 — caller picks the ticket type (typically from a manual
+  /// trigger). Null falls back to 'support' server-side. Not displayed
+  /// in the UI because the agent already picked it via the type dialog;
+  /// surfaced as a non-editable badge in the drawer header.
+  ticketTypeId?: string;
+  /// v0.0.39 — when set, the drawer renders an extra "Initial note"
+  /// block (rich-text + internal/public toggle) and includes the value
+  /// in the create payload. Agent can clear the block to suppress the
+  /// note. Templates are server-rendered so the body lands ready-to-go.
+  initialNote?: { bodyHtml: string; isInternal: boolean };
+  /// Optional controlled open state. When provided, the drawer becomes a
+  /// controlled component — the parent owns the boolean and must react to
+  /// `onOpenChange`. Used by flows that need to open the drawer from
+  /// outside the trigger pattern (e.g. after a confirmation/selection
+  /// dialog). Leave undefined for the default self-managed behaviour.
+  open?: boolean;
+  /// Fires when the drawer transitions between open and closed. Used both
+  /// for controlled mode (parent must mirror the value into `open`) and
+  /// for legacy uncontrolled callers that need to keep a transient
+  /// surface alive until the drawer has fully closed.
   onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
-
-  // Bridge open-state changes to the optional callback. We use a ref to
-  // avoid stale closures without forcing the effect to re-run on every
-  // callback identity change. The initial false fire is intentional — a
-  // first-render notification with the current state is consistent with
-  // Radix-style onOpenChange callers and is a no-op in practice.
-  const onOpenChangeRef = useRef(onOpenChange);
-  useEffect(() => {
-    onOpenChangeRef.current = onOpenChange;
-  });
-  const initialOpenFireRef = useRef(true);
-  useEffect(() => {
-    if (initialOpenFireRef.current) {
-      initialOpenFireRef.current = false;
-      return;
-    }
-    onOpenChangeRef.current?.(open);
-  }, [open]);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = (value: boolean) => {
+    if (!isControlled) setInternalOpen(value);
+    onOpenChange?.(value);
+  };
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -209,22 +247,35 @@ export function NewTicketDrawer({
   // entire form when "opening" — a Controller mounting later picks up
   // the freshly-written _formValues. Stays a ref (not a state) so we
   // don't double-render on the transition.
+  // v0.0.39 — local state for the optional initial-note block. RHF's
+  // form schema stays focused on ticket-shape fields; the note has its
+  // own simpler shape and the toggle is independent. Seeded on the
+  // open transition alongside the form reset and cleared on close.
+  const [noteState, setNoteState] = useState<{ bodyHtml: string; isInternal: boolean } | null>(null);
+
   const previousOpenRef = useRef(false);
   useEffect(() => {
     const wasOpen = previousOpenRef.current;
     previousOpenRef.current = open;
     if (open && !wasOpen) {
       reset({
-        subject: "",
-        bodyHtml: "",
+        subject: initialSubject ?? "",
+        bodyHtml: initialBodyHtml ?? "",
         requesterContactId: initialContactId ?? "",
         queueId: initialQueueId ?? "",
-        statusId: defaultStatusId || "",
-        priorityId: defaultPriorityId || "",
-        categoryId: "",
-        assigneeUserId: null,
+        statusId: initialStatusId || defaultStatusId || "",
+        priorityId: initialPriorityId || defaultPriorityId || "",
+        categoryId: initialCategoryId ?? "",
+        assigneeUserId: initialAssigneeUserId ?? null,
         pendingTillUtc: null,
       });
+      setNoteState(initialNote ?? null);
+    }
+    if (!open && wasOpen) {
+      // Drop the note on close so re-opening from a different preset
+      // doesn't inherit a stale body. The form's reset() is handled
+      // by handleClose / the mutation onSuccess.
+      setNoteState(null);
     }
   });
 
@@ -278,6 +329,13 @@ export function NewTicketDrawer({
       source: "Web",
       pendingTillUtc,
       parentTicketId,
+      ticketTypeId,
+      // Only send the note when the agent has actually populated it.
+      // An empty body or a body that's just an empty <p></p> rendered
+      // by the rich-text editor is treated as "no note".
+      initialNote: noteState && stripEmptyHtml(noteState.bodyHtml).length > 0
+        ? { bodyHtml: noteState.bodyHtml, isInternal: noteState.isInternal }
+        : undefined,
     });
   }
 
@@ -334,7 +392,7 @@ export function NewTicketDrawer({
       />
     )}
     <Drawer.Root open={open} onOpenChange={setOpen}>
-      <Drawer.Trigger asChild>{children}</Drawer.Trigger>
+      {children && <Drawer.Trigger asChild>{children}</Drawer.Trigger>}
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
         <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[90vh] max-w-2xl flex-col rounded-t-[var(--radius)] border border-white/10 bg-background/90 backdrop-blur-xl">
@@ -415,6 +473,58 @@ export function NewTicketDrawer({
                       )}
                     />
                   </div>
+
+                  {/* v0.0.39 — initial-note block. Only visible when a
+                      manual trigger supplied one. Agent can edit body
+                      or flip internal/public; clearing removes the note
+                      from the create payload entirely. */}
+                  {noteState !== null && (
+                    <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
+                      <div className="mb-2 flex items-center justify-between">
+                        <FormLabel>Initial note</FormLabel>
+                        <div className="flex items-center gap-1 rounded-md border border-white/[0.06] bg-white/[0.04] p-0.5 text-[11px]">
+                          <button
+                            type="button"
+                            onClick={() => setNoteState((s) => s ? { ...s, isInternal: true } : s)}
+                            className={cn(
+                              "rounded px-2 py-0.5 transition",
+                              noteState.isInternal
+                                ? "bg-amber-500/20 text-amber-200"
+                                : "text-muted-foreground hover:text-foreground",
+                            )}
+                          >
+                            Internal
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNoteState((s) => s ? { ...s, isInternal: false } : s)}
+                            className={cn(
+                              "rounded px-2 py-0.5 transition",
+                              !noteState.isInternal
+                                ? "bg-emerald-500/20 text-emerald-200"
+                                : "text-muted-foreground hover:text-foreground",
+                            )}
+                          >
+                            Public
+                          </button>
+                        </div>
+                      </div>
+                      <RichTextEditor
+                        content={noteState.bodyHtml}
+                        onChange={(html) => setNoteState((s) => s ? { ...s, bodyHtml: html } : s)}
+                        placeholder="Initial note body (rendered from the trigger template)…"
+                        minHeight="120px"
+                        composeTokens={composeTokens}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setNoteState(null)}
+                        className="mt-2 text-[11px] text-muted-foreground hover:text-destructive"
+                      >
+                        Remove this note
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Right column — metadata */}

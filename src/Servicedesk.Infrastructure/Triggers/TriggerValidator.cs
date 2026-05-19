@@ -35,12 +35,22 @@ public static class TriggerValidator
         "add_internal_note", "add_public_note", "repost_as_public_reply",
         "send_mail",
         "send_survey",
+        // v0.0.39 — only valid on manual triggers; the action carries the
+        // full preset (subject/body templates, defaults, requester/company
+        // source, optional initial note). Allowed in the whitelist here
+        // so the action-json validator passes; activator-pair check below
+        // enforces that it actually ships with activator_kind=manual.
+        "create_linked_ticket",
     };
 
     public static readonly IReadOnlySet<string> ActivatorPairs = new HashSet<string>(StringComparer.Ordinal)
     {
         "action:selective", "action:always",
         "time:reminder", "time:escalation", "time:escalation_warning",
+        // v0.0.39 — the new "manual" activator. Sole mode for now is
+        // 'linked_ticket_creator'; future manual-invocation modes (one-off
+        // reports, bulk fixes, …) can be added in the same slot.
+        "manual:linked_ticket_creator",
     };
 
     /// Pair the validator hands back when it has work for the caller to

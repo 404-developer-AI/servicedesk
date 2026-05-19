@@ -2586,6 +2586,117 @@ public sealed class DatabaseBootstrapper : IHostedService
         ALTER TABLE user_notifications DROP CONSTRAINT IF EXISTS chk_user_notifications_type;
         ALTER TABLE user_notifications ADD CONSTRAINT chk_user_notifications_type
             CHECK (notification_type IN ('mention','survey_submitted')) NOT VALID;
+
+        -- ===================================================================
+        -- v0.0.39 Linked-ticket types + manual trigger activator
+        -- ===================================================================
+        -- First-class ticket types (support / order / iso27001 / …) drive
+        -- the "Create linked X ticket" buttons in the ticket side panel.
+        -- A new 'manual' trigger activator kind binds a manual-trigger to
+        -- exactly one ticket-type and carries a single create_linked_ticket
+        -- action describing the prefill recipe (subject/body templates,
+        -- defaults, requester/company sources, optional initial note).
+        CREATE TABLE IF NOT EXISTS ticket_types (
+            id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            code            CITEXT      NOT NULL UNIQUE,
+            label           TEXT        NOT NULL,
+            description     TEXT        NOT NULL DEFAULT '',
+            icon            TEXT        NOT NULL DEFAULT 'ticket',
+            color           TEXT        NOT NULL DEFAULT '#7c7cff',
+            sort_order      INTEGER     NOT NULL DEFAULT 0,
+            is_active       BOOLEAN     NOT NULL DEFAULT TRUE,
+            is_system       BOOLEAN     NOT NULL DEFAULT FALSE,
+            created_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc     TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_ticket_types_active_sort
+            ON ticket_types (is_active, sort_order, lower(label));
+
+        -- Seed the three types referenced by the LinkedTicketTypeDialog.
+        -- 'support' is is_system so it always resolves as the historical
+        -- default for existing tickets. 'order' and 'iso27001' ship inactive-
+        -- adjacent (still active=true so admins can immediately attach a
+        -- manual trigger) and can be deactivated or relabelled without
+        -- breaking the FK on the tickets backfill.
+        INSERT INTO ticket_types (code, label, description, icon, color, sort_order, is_system)
+        VALUES
+            ('support',  'Support',         'Standard support request',                 'life-buoy',     '#7c7cff', 10, TRUE),
+            ('order',    'Order & Retour',  'Procurement or hardware order request',    'shopping-cart', '#22c55e', 20, FALSE),
+            ('iso27001', 'ISO 27001',       'Compliance / information-security ticket', 'shield-check',  '#f59e0b', 30, FALSE)
+        ON CONFLICT (code) DO NOTHING;
+
+        -- Idempotent label cleanup for installs that ran an earlier
+        -- v0.0.39 dev build with the original 'Order' / 'ISO27001'
+        -- labels. Only renames rows that still carry the pre-cleanup
+        -- value so an admin who customised the label keeps their text.
+        UPDATE ticket_types SET label = 'Order & Retour'
+            WHERE code = 'order' AND label = 'Order';
+        UPDATE ticket_types SET label = 'ISO 27001'
+            WHERE code = 'iso27001' AND label = 'ISO27001';
+
+        -- Add ticket_type_id, backfill existing rows to 'support', then
+        -- enforce NOT NULL so callers can rely on the column being set.
+        -- Two-step idempotent migration: ADD … NULL → UPDATE backfill →
+        -- ALTER COLUMN SET NOT NULL (no-op on subsequent runs).
+        ALTER TABLE tickets
+            ADD COLUMN IF NOT EXISTS ticket_type_id UUID NULL
+                REFERENCES ticket_types(id) ON DELETE RESTRICT;
+
+        UPDATE tickets t
+        SET ticket_type_id = tt.id
+        FROM ticket_types tt
+        WHERE t.ticket_type_id IS NULL AND tt.code = 'support';
+
+        ALTER TABLE tickets ALTER COLUMN ticket_type_id SET NOT NULL;
+
+        CREATE INDEX IF NOT EXISTS ix_tickets_type
+            ON tickets (ticket_type_id)
+            WHERE is_deleted = FALSE;
+
+        -- Extend chk_trigger_activator with the 'manual' kind. A manual
+        -- trigger does not fire automatically — it runs only when an
+        -- agent invokes it from the side panel. Sole mode for now is
+        -- 'linked_ticket_creator'; future manual modes can be added in
+        -- the same constraint slot.
+        ALTER TABLE triggers DROP CONSTRAINT IF EXISTS chk_trigger_activator;
+        ALTER TABLE triggers ADD CONSTRAINT chk_trigger_activator
+            CHECK (
+                (activator_kind = 'action' AND activator_mode IN ('selective','always'))
+                OR
+                (activator_kind = 'time'   AND activator_mode IN ('reminder','escalation','escalation_warning'))
+                OR
+                (activator_kind = 'manual' AND activator_mode IN ('linked_ticket_creator'))
+            ) NOT VALID;
+
+        -- Manual triggers carry the ticket-type they produce. The column
+        -- stays nullable for action/time-kind rows; the check enforces
+        -- the pairing so a manual trigger without a type cannot exist
+        -- and a non-manual trigger cannot accidentally carry one.
+        ALTER TABLE triggers
+            ADD COLUMN IF NOT EXISTS manual_ticket_type_id UUID NULL
+                REFERENCES ticket_types(id) ON DELETE RESTRICT;
+
+        ALTER TABLE triggers DROP CONSTRAINT IF EXISTS chk_trigger_manual_ticket_type;
+        ALTER TABLE triggers ADD CONSTRAINT chk_trigger_manual_ticket_type
+            CHECK (
+                (activator_kind = 'manual' AND manual_ticket_type_id IS NOT NULL)
+                OR
+                (activator_kind <> 'manual' AND manual_ticket_type_id IS NULL)
+            ) NOT VALID;
+
+        -- Hot path for the side-panel: "list active manual triggers for
+        -- this ticket-type" runs on every "Create linked ticket" open.
+        CREATE INDEX IF NOT EXISTS ix_triggers_manual_active
+            ON triggers (manual_ticket_type_id, is_active)
+            WHERE activator_kind = 'manual';
+
+        -- Track the linked ticket produced by a manual-trigger run so the
+        -- audit log can hop from "this run" to "this ticket". Nullable
+        -- because non-manual runs (action/time) do not produce tickets.
+        ALTER TABLE trigger_runs
+            ADD COLUMN IF NOT EXISTS result_ticket_id UUID NULL
+                REFERENCES tickets(id) ON DELETE SET NULL;
         """;
 
     private readonly NpgsqlDataSource _dataSource;
