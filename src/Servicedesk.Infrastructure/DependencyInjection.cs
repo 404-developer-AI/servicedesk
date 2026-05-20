@@ -8,6 +8,7 @@ using Servicedesk.Infrastructure.Auth.Admin;
 using Servicedesk.Infrastructure.Auth.Microsoft;
 using Servicedesk.Infrastructure.Auth.Sessions;
 using Servicedesk.Infrastructure.Auth.Totp;
+using Servicedesk.Infrastructure.Dashboard;
 using Servicedesk.Infrastructure.DataProtection;
 using Servicedesk.Infrastructure.Persistence;
 using Servicedesk.Infrastructure.Persistence.Companies;
@@ -93,6 +94,7 @@ public static class DependencyInjection
         services.AddSingleton<IGraphDirectoryClient, GraphDirectoryClient>();
         services.AddSingleton<IMicrosoftAuthService, MicrosoftAuthService>();
         services.AddSingleton<IUserAdminService, UserAdminService>();
+        services.AddSingleton<IDashboardTilesService, DashboardTilesService>();
 
         // Adsolut OAuth integration (v0.0.25). One install ↔ one Adsolut
         // administration. Refresh-token rotation + sliding-month window

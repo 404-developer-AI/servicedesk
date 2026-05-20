@@ -3,6 +3,7 @@ import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import { SETTINGS_SECTIONS } from "@/shell/settingsSections";
 import { useSecondarySidebarStore } from "@/stores/useSecondarySidebarStore";
+import { useAuth } from "@/auth/authStore";
 
 // Mounts a secondary nav rail into AppShell's root flex row (via
 // useSecondarySidebarStore), so the rail shares the main Sidebar's
@@ -25,6 +26,12 @@ export function SettingsLayout() {
 
 function SettingsRail() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { user } = useAuth();
+  // v0.0.40 polish — KB management is now per-user opt-in. Hide the
+  // entry for admins who don't carry the kb_enabled flag.
+  const sections = SETTINGS_SECTIONS.filter((s) =>
+    s.slug === "knowledge-base" ? !!user?.kbEnabled : true,
+  );
 
   return (
     <aside
@@ -41,7 +48,7 @@ function SettingsRail() {
       </div>
 
       <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-4">
-        {SETTINGS_SECTIONS.map((section) => {
+        {sections.map((section) => {
           const to = `/settings/${section.slug}`;
           const active = pathname === to || pathname.startsWith(`${to}/`);
           const Icon = section.icon;

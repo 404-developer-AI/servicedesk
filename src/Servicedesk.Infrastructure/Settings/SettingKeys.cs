@@ -404,6 +404,15 @@ public static class SettingKeys
         public const string AutoPinSubmittedForms = "IntakeForms.AutoPinSubmittedForms";
     }
 
+    // v0.0.40 — ISO 27001 workflow. One setting that admin populates
+    // post-install: the queue id where ISO tickets live. When unset the
+    // classification buttons never appear so the feature is fully
+    // opt-in. Stored as a Guid string; an empty value = disabled.
+    public static class Iso27001
+    {
+        public const string QueueId = "Iso27001.QueueId";
+    }
+
     public static class Surveys
     {
         public const string DefaultTtlDays = "Surveys.DefaultTtlDays";
@@ -903,6 +912,13 @@ public static class SettingDefaults
             "Maximum number of questions allowed per survey. Enforced server-side on save; bigger surveys mean fewer completed responses."),
         new SettingDefault(SettingKeys.Surveys.MaxCommentLength, "4000", "int", "Surveys",
             "Hard cap (characters) on the optional free-text comment field a customer can submit alongside the structured answers."),
+
+        // ISO 27001 workflow — v0.0.40. Single queue-binding setting; when
+        // empty the classification buttons never appear and the feature is
+        // dormant. Admin populates this after creating the dedicated ISO
+        // queue and setting up the manual trigger that auto-routes intake.
+        new SettingDefault(SettingKeys.Iso27001.QueueId, "", "guid", "Iso27001",
+            "Queue id where the ISO 27001 workflow runs. Empty = feature disabled, no classification buttons appear. Set this to the id of your dedicated ISO 27001 queue (Settings → Tickets → Queues) to enable the MGM → DPO flow."),
 
         // Triggers — v0.0.24. Loop-prevention knobs for the evaluator. The
         // chain-cap stops a trigger storm where trigger A's side-effects

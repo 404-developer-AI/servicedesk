@@ -19,7 +19,8 @@ public static class KbAttachmentEndpoints
     {
         var group = app.MapGroup("/api/kb")
             .WithTags("KnowledgeBase")
-            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+            .RequireKbAccess();
 
         // POST /api/kb/articles/{id}/attachments — multipart upload.
         // Returns the same shape as the ticket endpoint so the shared

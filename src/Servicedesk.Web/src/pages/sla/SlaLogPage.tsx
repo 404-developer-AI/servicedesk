@@ -5,6 +5,20 @@ import { Filter, Search, Timer } from "lucide-react";
 import { slaApi, taxonomyApi, type SlaLogItem } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+// Radix Select rejects empty-string values, so each filter uses its own
+// sentinel for the "All …" row. The handler strips it back to "" so the
+// query params stay unchanged.
+const ALL_QUEUES = "__all_queues__";
+const ALL_PRIORITIES = "__all_priorities__";
+const ALL_STATUSES = "__all_statuses__";
 
 function formatMinutes(m: number | null): string {
   if (m === null) return "—";
@@ -97,30 +111,48 @@ export function SlaLogPage() {
 
       <section className="flex flex-wrap items-end gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
         <div className="flex items-center gap-2 text-xs text-muted-foreground"><Filter className="h-3 w-3" /> Filters</div>
-        <select
-          value={queueId}
-          onChange={(e) => setQueueId(e.target.value)}
-          className="h-9 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 text-sm"
+        <Select
+          value={queueId || ALL_QUEUES}
+          onValueChange={(v) => setQueueId(v === ALL_QUEUES ? "" : v)}
         >
-          <option value="">All queues</option>
-          {queues.data?.map((q) => <option key={q.id} value={q.id}>{q.name}</option>)}
-        </select>
-        <select
-          value={priorityId}
-          onChange={(e) => setPriorityId(e.target.value)}
-          className="h-9 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 text-sm"
+          <SelectTrigger className="h-9 min-w-[10rem] text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_QUEUES}>All queues</SelectItem>
+            {queues.data?.map((q) => (
+              <SelectItem key={q.id} value={q.id}>{q.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={priorityId || ALL_PRIORITIES}
+          onValueChange={(v) => setPriorityId(v === ALL_PRIORITIES ? "" : v)}
         >
-          <option value="">All priorities</option>
-          {priorities.data?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-        <select
-          value={statusId}
-          onChange={(e) => setStatusId(e.target.value)}
-          className="h-9 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 text-sm"
+          <SelectTrigger className="h-9 min-w-[10rem] text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_PRIORITIES}>All priorities</SelectItem>
+            {priorities.data?.map((p) => (
+              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={statusId || ALL_STATUSES}
+          onValueChange={(v) => setStatusId(v === ALL_STATUSES ? "" : v)}
         >
-          <option value="">All statuses</option>
-          {statuses.data?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
+          <SelectTrigger className="h-9 min-w-[10rem] text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_STATUSES}>All statuses</SelectItem>
+            {statuses.data?.map((s) => (
+              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <input type="checkbox" checked={breachedOnly} onChange={(e) => setBreachedOnly(e.target.checked)} />
           Breached only

@@ -56,6 +56,11 @@ export type AuthUserPayload = {
   twoFactorEnabled: boolean;
   timesheetEnabled: boolean;
   timesheetManager: boolean;
+  isIsoMgm: boolean;
+  isIsoDpo: boolean;
+  kbEnabled: boolean;
+  searchEnabled: boolean;
+  dashboardTiles: string[];
 };
 
 export type MeResponse = {
@@ -273,6 +278,10 @@ export type Queue = {
   outboundMailboxAddress?: string | null;
   inboundFolderId?: string | null;
   inboundFolderName?: string | null;
+  // v0.0.40 polish — per-queue status scope. Empty array = all
+  // statuses available. Non-empty = dropdown filters to these ids.
+  allowedStatusIds: string[];
+  defaultStatusId: string | null;
 };
 
 export type Priority = {
@@ -336,6 +345,11 @@ export type QueueInput = {
   outboundMailboxAddress?: string | null;
   inboundFolderId?: string | null;
   inboundFolderName?: string | null;
+  // v0.0.40 polish — per-queue status scope. Empty / null = current
+  // behaviour (all statuses); non-empty = filter list. defaultStatusId
+  // drives the auto-flip on queue change.
+  allowedStatusIds?: string[];
+  defaultStatusId?: string | null;
 };
 
 export type PriorityInput = {

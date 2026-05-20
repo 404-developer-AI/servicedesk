@@ -17,7 +17,10 @@ const DEBOUNCE_MS = 150;
 export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) {
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const anchorRef = useRef<HTMLDivElement | null>(null);
+  // Anchor can be either the inline input wrapper (expanded) or the
+  // icon-only trigger button (collapsed) — both contribute a bounding
+  // rect to position the portal-mounted result panel.
+  const anchorRef = useRef<HTMLElement | null>(null);
   const { user } = useAuth();
 
   const [open, setOpen] = useState(false);
@@ -64,8 +67,10 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        inputRef.current?.focus();
         setOpen(true);
+        // When collapsed, the input only mounts after `open` is true, so
+        // defer focus until the portal has committed.
+        setTimeout(() => inputRef.current?.focus(), 0);
       } else if (e.key === "Escape" && open) {
         setOpen(false);
         inputRef.current?.blur();
@@ -75,7 +80,9 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
     return () => window.removeEventListener("keydown", handler);
   }, [open]);
 
-  const canSearch = user?.role === "Agent" || user?.role === "Admin";
+  const canSearch =
+    (user?.role === "Agent" || user?.role === "Admin")
+    && user?.searchEnabled === true;
 
   const { data, isFetching } = useQuery({
     queryKey: ["search", "quick", debounced],
@@ -117,49 +124,60 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
     .slice()
     .sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind));
 
-  // Collapsed: icon-only button that opens the search via Ctrl+K focus
-  if (collapsed) {
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          inputRef.current?.focus();
-          setOpen(true);
-        }}
-        title="Search (Ctrl+K)"
-        className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-foreground"
-      >
-        <Search className="h-4 w-4" />
-      </button>
-    );
-  }
-
   return (
-    <div className="relative w-full" data-testid="global-search">
+    <div
+      className={cn(collapsed ? "relative" : "relative w-full")}
+      data-testid="global-search"
+    >
       <Command shouldFilter={false} className="relative">
-        <div
-          ref={anchorRef}
-          className={cn(
-            "flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2",
-            "ring-1 ring-inset ring-white/5 transition focus-within:ring-white/20",
-          )}
-        >
-          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <Command.Input
-            ref={inputRef}
-            value={value}
-            onValueChange={setValue}
-            onFocus={() => setOpen(true)}
-            onBlur={() => {
-              setTimeout(() => setOpen(false), 120);
+        {collapsed ? (
+          <button
+            ref={(el) => { anchorRef.current = el; }}
+            type="button"
+            onMouseDown={(e) => {
+              // Prevent the input inside the portal from losing focus when
+              // the user clicks the trigger to toggle it — avoids the
+              // close-then-reopen race the blur timer would otherwise cause.
+              if (open) e.preventDefault();
             }}
-            placeholder="Zoeken…"
-            className="flex-1 min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-          />
-          <kbd className="shrink-0 rounded border border-white/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-            ⌘K
-          </kbd>
-        </div>
+            onClick={() => {
+              if (open) {
+                setOpen(false);
+              } else {
+                setOpen(true);
+                setTimeout(() => inputRef.current?.focus(), 0);
+              }
+            }}
+            title="Search (Ctrl+K)"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-foreground"
+          >
+            <Search className="h-4 w-4" />
+          </button>
+        ) : (
+          <div
+            ref={(el) => { anchorRef.current = el; }}
+            className={cn(
+              "flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2",
+              "ring-1 ring-inset ring-white/5 transition focus-within:ring-white/20",
+            )}
+          >
+            <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <Command.Input
+              ref={inputRef}
+              value={value}
+              onValueChange={setValue}
+              onFocus={() => setOpen(true)}
+              onBlur={() => {
+                setTimeout(() => setOpen(false), 120);
+              }}
+              placeholder="Zoeken…"
+              className="flex-1 min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            />
+            <kbd className="shrink-0 rounded border border-white/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+              ⌘K
+            </kbd>
+          </div>
+        )}
 
         {open && anchorRect && createPortal(
           <div
@@ -175,6 +193,26 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
             )}
             onMouseDown={(e) => e.preventDefault()}
           >
+            {collapsed && (
+              <div
+                className="border-b border-white/10 p-2"
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 ring-1 ring-inset ring-white/5 transition focus-within:ring-white/20">
+                  <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <Command.Input
+                    ref={inputRef}
+                    value={value}
+                    onValueChange={setValue}
+                    onBlur={() => {
+                      setTimeout(() => setOpen(false), 120);
+                    }}
+                    placeholder="Zoeken…"
+                    className="flex-1 min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                  />
+                </div>
+              </div>
+            )}
             <Command.List className="max-h-[70vh] overflow-y-auto p-1">
               {showHint && (
                 <div className="px-3 py-2 text-xs text-muted-foreground">

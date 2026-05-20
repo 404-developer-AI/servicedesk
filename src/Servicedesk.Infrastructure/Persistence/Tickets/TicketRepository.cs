@@ -98,9 +98,16 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         var sql = new StringBuilder(ListSelect);
         sql.Append(" WHERE t.is_deleted = FALSE");
 
-        if (query.QueueId.HasValue) sql.Append(" AND t.queue_id = @QueueId");
-        if (query.StatusId.HasValue) sql.Append(" AND t.status_id = @StatusId");
-        if (query.PriorityId.HasValue) sql.Append(" AND t.priority_id = @PriorityId");
+        // Multi-select wins over singular: a saved view that picks "Queue A + B"
+        // forwards QueueIds; ad-hoc URL params still drop in via QueueId. Same
+        // pattern for status and priority. Empty list = no filter (treated as
+        // null) so an empty multi-select doesn't accidentally exclude every row.
+        if (query.QueueIds is { Count: > 0 }) sql.Append(" AND t.queue_id = ANY(@QueueIds)");
+        else if (query.QueueId.HasValue) sql.Append(" AND t.queue_id = @QueueId");
+        if (query.StatusIds is { Count: > 0 }) sql.Append(" AND t.status_id = ANY(@StatusIds)");
+        else if (query.StatusId.HasValue) sql.Append(" AND t.status_id = @StatusId");
+        if (query.PriorityIds is { Count: > 0 }) sql.Append(" AND t.priority_id = ANY(@PriorityIds)");
+        else if (query.PriorityId.HasValue) sql.Append(" AND t.priority_id = @PriorityId");
         if (query.AssigneeUserId.HasValue) sql.Append(" AND t.assignee_user_id = @AssigneeUserId");
         if (query.RequesterContactId.HasValue) sql.Append(" AND t.requester_contact_id = @RequesterContactId");
         if (query.RequesterCompanyId.HasValue) sql.Append(" AND t.company_id = @RequesterCompanyId");
@@ -211,6 +218,9 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             Limit = limit,
             Offset = query.Offset ?? 0,
             AccessibleQueueIds = query.AccessibleQueueIds as IEnumerable<Guid>,
+            QueueIds = query.QueueIds as IEnumerable<Guid>,
+            StatusIds = query.StatusIds as IEnumerable<Guid>,
+            PriorityIds = query.PriorityIds as IEnumerable<Guid>,
         };
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -418,6 +428,33 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         var current = await conn.QueryFirstOrDefaultAsync<TicketFieldSnapshot>(
             new CommandDefinition(readSql, new { ticketId }, tx, cancellationToken: ct));
         if (current is null) { await tx.RollbackAsync(ct); return null; }
+
+        // v0.0.40 — auto-flip status when a queue change would land the
+        // ticket on a status outside the new queue's allowed-list. The
+        // status-dropdown filters in the UI prevent the common case at
+        // save-time, but a trigger that only does set_queue or a hand-
+        // rolled API call still needs the runtime safety net. We rebind
+        // `update` (record copy via `with`) so every downstream branch
+        // — change-event metadata, state-category side-effects, SQL
+        // parameter binding — picks up the auto-flip without further
+        // wiring.
+        if (update.QueueId.HasValue && update.QueueId != current.QueueId)
+        {
+            var scope = await conn.QueryFirstOrDefaultAsync<QueueStatusScopeRow>(
+                new CommandDefinition(
+                    "SELECT allowed_status_ids AS AllowedStatusIds, default_status_id AS DefaultStatusId FROM queues WHERE id = @id",
+                    new { id = update.QueueId.Value }, tx, cancellationToken: ct));
+            if (scope is not null
+                && scope.AllowedStatusIds is { Length: > 0 }
+                && scope.DefaultStatusId.HasValue)
+            {
+                var effective = update.StatusId ?? current.StatusId;
+                if (!scope.AllowedStatusIds.Contains(effective))
+                {
+                    update = update with { StatusId = scope.DefaultStatusId };
+                }
+            }
+        }
 
         var sets = new List<string>();
         var events = new List<(string EventType, string MetadataJson)>();
@@ -955,6 +992,16 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
     private sealed record TicketFieldSnapshot(
         Guid QueueId, Guid StatusId, Guid PriorityId, Guid? CategoryId, Guid? AssigneeUserId,
         DateTime? PendingTillUtc);
+
+    // v0.0.40 — projection used by the queue auto-flip path in
+    // UpdateFieldsAsync. Sealed class (not record) per the project's
+    // dapper_record_struct_null_bug convention; default_status_id is
+    // nullable in the schema and may legitimately be null.
+    private sealed class QueueStatusScopeRow
+    {
+        public Guid[] AllowedStatusIds { get; set; } = Array.Empty<Guid>();
+        public Guid? DefaultStatusId { get; set; }
+    }
 
     /// Returns true when the supplied status_id sits in the
     /// <c>Pending</c> state_category. Used by UpdateFieldsAsync to

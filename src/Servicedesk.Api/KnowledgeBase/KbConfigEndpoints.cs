@@ -16,7 +16,8 @@ public static class KbConfigEndpoints
     {
         var group = app.MapGroup("/api/kb")
             .WithTags("KnowledgeBase")
-            .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
+            .RequireAuthorization(AuthorizationPolicies.RequireAdmin)
+            .RequireKbAccess();
 
         group.MapGet("/config", async (IKbConfigRepository repo, CancellationToken ct) =>
             Results.Ok(await repo.GetConfigAsync(ct)))

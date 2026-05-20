@@ -67,14 +67,50 @@ const GROUP_BY_OPTIONS: { value: string; label: string; hasTaxonomy: boolean }[]
 ];
 
 // ---- Filter shape stored in filtersJson ----
+//
+// v0.0.40 polish — queue / status / priority each accept multiple ids.
+// Legacy views written before this change still have the singular
+// `queueId` / `statusId` / `priorityId` fields; `normaliseFilters` folds
+// those into the array form at read time so no DB migration is needed.
 
 type ViewFilters = {
-  queueId?: string;
-  statusId?: string;
-  priorityId?: string;
+  queueIds?: string[];
+  statusIds?: string[];
+  priorityIds?: string[];
   openOnly?: boolean;
   search?: string;
 };
+
+type LegacyViewFilters = ViewFilters & {
+  queueId?: string;
+  statusId?: string;
+  priorityId?: string;
+};
+
+function normaliseFilters(raw: LegacyViewFilters): ViewFilters {
+  const queueIds = raw.queueIds ?? (raw.queueId ? [raw.queueId] : undefined);
+  const statusIds = raw.statusIds ?? (raw.statusId ? [raw.statusId] : undefined);
+  const priorityIds =
+    raw.priorityIds ?? (raw.priorityId ? [raw.priorityId] : undefined);
+  return {
+    queueIds: queueIds && queueIds.length > 0 ? queueIds : undefined,
+    statusIds: statusIds && statusIds.length > 0 ? statusIds : undefined,
+    priorityIds:
+      priorityIds && priorityIds.length > 0 ? priorityIds : undefined,
+    openOnly: raw.openOnly,
+    search: raw.search,
+  };
+}
+
+function joinNames<T extends { id: string; name: string }>(
+  ids: string[],
+  source: T[],
+): string {
+  return ids
+    .map((id) => source.find((s) => s.id === id)?.name)
+    .filter((n): n is string => !!n)
+    .join(", ");
+}
 
 function formatFilters(
   filtersJson: string,
@@ -83,19 +119,19 @@ function formatFilters(
   priorities: Priority[],
 ): string[] {
   try {
-    const f: ViewFilters = JSON.parse(filtersJson);
+    const f = normaliseFilters(JSON.parse(filtersJson) as LegacyViewFilters);
     const parts: string[] = [];
-    if (f.queueId) {
-      const q = queues.find((q) => q.id === f.queueId);
-      if (q) parts.push(`Queue: ${q.name}`);
+    if (f.queueIds && f.queueIds.length > 0) {
+      const names = joinNames(f.queueIds, queues);
+      if (names) parts.push(`Queue: ${names}`);
     }
-    if (f.statusId) {
-      const s = statuses.find((s) => s.id === f.statusId);
-      if (s) parts.push(`Status: ${s.name}`);
+    if (f.statusIds && f.statusIds.length > 0) {
+      const names = joinNames(f.statusIds, statuses);
+      if (names) parts.push(`Status: ${names}`);
     }
-    if (f.priorityId) {
-      const p = priorities.find((p) => p.id === f.priorityId);
-      if (p) parts.push(`Priority: ${p.name}`);
+    if (f.priorityIds && f.priorityIds.length > 0) {
+      const names = joinNames(f.priorityIds, priorities);
+      if (names) parts.push(`Priority: ${names}`);
     }
     if (f.openOnly) parts.push("Open only");
     if (f.search) parts.push(`Search: "${f.search}"`);
@@ -161,6 +197,70 @@ function NativeSelect({
     >
       {children}
     </select>
+  );
+}
+
+// ---- MultiSelectPills ----
+//
+// Chip-toggle grid used by the view editor for Queue / Status / Priority
+// filters. An empty selection means "any" (no filter), matching the
+// server's behaviour when the array is empty. Mirrors the visual
+// language of the column-toggle chips below the filters so the dialog
+// reads as one consistent surface.
+
+function MultiSelectPills({
+  items,
+  selected,
+  onChange,
+  emptyHint = "Any",
+}: {
+  items: { id: string; name: string }[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+  emptyHint?: string;
+}) {
+  function toggle(id: string) {
+    onChange(
+      selected.includes(id)
+        ? selected.filter((s) => s !== id)
+        : [...selected, id],
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <p className="text-[11px] text-muted-foreground/60 italic">
+        Nothing to choose from
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {selected.length === 0 && (
+        <span className="text-[11px] text-muted-foreground/60 italic mr-1">
+          {emptyHint}
+        </span>
+      )}
+      {items.map((item) => {
+        const active = selected.includes(item.id);
+        return (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => toggle(item.id)}
+            className={cn(
+              "rounded-full border px-2.5 py-0.5 text-[11px] transition-colors select-none",
+              active
+                ? "border-primary/50 bg-primary/20 text-foreground"
+                : "border-white/10 bg-white/[0.03] text-muted-foreground hover:border-white/20 hover:text-foreground",
+            )}
+          >
+            {item.name}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -287,7 +387,7 @@ function ViewDialog({
   function parseFilters(json: string | undefined): ViewFilters {
     if (!json) return {};
     try {
-      return JSON.parse(json);
+      return normaliseFilters(JSON.parse(json) as LegacyViewFilters);
     } catch {
       return {};
     }
@@ -312,6 +412,8 @@ function ViewDialog({
 
   const [name, setName] = React.useState(view?.name ?? "");
   const [filters, setFilters] = React.useState<ViewFilters>(initial);
+  // Sidebar ordering — lower numbers appear first, identical across users.
+  const [sortOrder, setSortOrder] = React.useState<number>(view?.sortOrder ?? 0);
   const [selectedColumns, setSelectedColumns] = React.useState<string[]>(
     parseColumns(view?.columns),
   );
@@ -349,6 +451,7 @@ function ViewDialog({
         filtersJson: JSON.stringify(filters),
         columns: selectedColumns.length > 0 ? selectedColumns.join(",") : null,
         displayConfigJson: JSON.stringify(dc),
+        sortOrder: Math.max(0, Math.min(100, Math.trunc(sortOrder))),
       };
       if (view) {
         return viewApi.update(view.id, input);
@@ -382,57 +485,60 @@ function ViewDialog({
         </DialogHeader>
 
         <div className="space-y-3 text-sm">
-          <Field label="Name">
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. My open tickets"
-              autoFocus
-            />
-          </Field>
-
-          {/* ---- Filters ---- */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Field label="Queue">
-              <NativeSelect
-                value={filters.queueId ?? ""}
-                onChange={(v) => patch({ queueId: v || undefined })}
-              >
-                <option value="">Any</option>
-                {queues.map((q) => (
-                  <option key={q.id} value={q.id}>
-                    {q.name}
-                  </option>
-                ))}
-              </NativeSelect>
+          <div className="grid grid-cols-[1fr_7rem] gap-3">
+            <Field label="Name">
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. My open tickets"
+                autoFocus
+              />
             </Field>
-
-            <Field label="Status">
-              <NativeSelect
-                value={filters.statusId ?? ""}
-                onChange={(v) => patch({ statusId: v || undefined })}
-              >
-                <option value="">Any</option>
-                {statuses.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </NativeSelect>
-            </Field>
-
             <Field label="Priority">
-              <NativeSelect
-                value={filters.priorityId ?? ""}
-                onChange={(v) => patch({ priorityId: v || undefined })}
-              >
-                <option value="">Any</option>
-                {priorities.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </NativeSelect>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                value={sortOrder}
+                onChange={(e) => setSortOrder(Number(e.target.value))}
+                title="0–100. Lower numbers appear first in the sidebar; identical across users."
+              />
+            </Field>
+          </div>
+
+          {/* ---- Filters ----
+              Multi-select chip grids: tap a chip to add/remove, an empty
+              selection means "Any" (no filter on that field). */}
+          <div className="space-y-3">
+            <Field label="Queues">
+              <MultiSelectPills
+                items={queues.map((q) => ({ id: q.id, name: q.name }))}
+                selected={filters.queueIds ?? []}
+                onChange={(next) =>
+                  patch({ queueIds: next.length > 0 ? next : undefined })
+                }
+              />
+            </Field>
+
+            <Field label="Statuses">
+              <MultiSelectPills
+                items={statuses.map((s) => ({ id: s.id, name: s.name }))}
+                selected={filters.statusIds ?? []}
+                onChange={(next) =>
+                  patch({ statusIds: next.length > 0 ? next : undefined })
+                }
+              />
+            </Field>
+
+            <Field label="Priorities">
+              <MultiSelectPills
+                items={priorities.map((p) => ({ id: p.id, name: p.name }))}
+                selected={filters.priorityIds ?? []}
+                onChange={(next) =>
+                  patch({ priorityIds: next.length > 0 ? next : undefined })
+                }
+              />
             </Field>
           </div>
 
@@ -656,6 +762,12 @@ function ViewRow({
           className="flex min-w-0 flex-1 items-center gap-3 text-left"
         >
           <Eye className="h-3.5 w-3.5 shrink-0 text-primary/60" />
+          <span
+            className="shrink-0 rounded-md border border-white/8 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground"
+            title="Sidebar priority (0 = top, 100 = bottom)"
+          >
+            {view.sortOrder}
+          </span>
           <span className="truncate text-sm font-medium text-foreground">
             {view.name}
           </span>
@@ -737,9 +849,11 @@ export function ViewsPage() {
   const [deletingView, setDeletingView] = React.useState<View | null>(null);
   const [expandedId, setExpandedId] = React.useState<string | null>(null);
 
+  // Settings → Views is a management surface, so admins see every view in
+  // the system, not just the ones they personally have access to.
   const { data: views, isLoading: viewsLoading } = useQuery({
-    queryKey: ["views"],
-    queryFn: () => viewApi.list(),
+    queryKey: ["views", "all"],
+    queryFn: () => viewApi.listAll(),
   });
 
   const { data: queues = [] } = useQuery({

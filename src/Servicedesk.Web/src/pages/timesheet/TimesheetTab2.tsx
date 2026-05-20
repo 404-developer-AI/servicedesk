@@ -10,6 +10,7 @@ import {
   X,
   Check,
   Filter,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -150,13 +151,14 @@ export function TimesheetTab2() {
 
       <section className="glass-card overflow-hidden">
         <div className="overflow-x-auto">
-        <table className="w-full min-w-[1280px] text-left text-sm">
+        <table className="w-full min-w-[1410px] text-left text-sm">
           <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-white/10">
             <tr>
               <th className="w-28 px-3 py-2 font-medium">Date</th>
               <th className="w-44 px-3 py-2 font-medium">User</th>
               <th className="w-20 px-3 py-2 font-medium">Start</th>
               <th className="w-20 px-3 py-2 font-medium">End</th>
+              <th className="w-32 px-3 py-2 font-medium">Logged</th>
               <th className="w-56 px-3 py-2 font-medium">Ticket</th>
               <th className="w-36 px-3 py-2 font-medium">Company</th>
               <th className="w-36 px-3 py-2 font-medium">Task</th>
@@ -169,7 +171,7 @@ export function TimesheetTab2() {
           <tbody>
             {entriesQuery.isLoading && (
               <tr>
-                <td colSpan={11} className="px-3 py-3">
+                <td colSpan={12} className="px-3 py-3">
                   <Skeleton className="h-6 w-full" />
                 </td>
               </tr>
@@ -177,7 +179,7 @@ export function TimesheetTab2() {
             {!entriesQuery.isLoading && entries.length === 0 && (
               <tr>
                 <td
-                  colSpan={11}
+                  colSpan={12}
                   className="px-3 py-8 text-center text-sm text-muted-foreground"
                 >
                   No entries match these filters.
@@ -425,6 +427,13 @@ function ManagerDisplayRow({
       </td>
       <td className="px-3 py-2 font-mono text-xs text-foreground/90">
         {formatHHMM(entry.endMinutes)}
+      </td>
+      <td className="px-3 py-2">
+        <LogTimeCell
+          createdUtc={entry.createdUtc}
+          entryDate={entry.entryDate}
+          endMinutes={entry.endMinutes}
+        />
       </td>
       <td className="px-3 py-2 text-foreground/90">
         {entry.ticketId ? (
@@ -681,6 +690,13 @@ function ManagerEditableRow({
         )}
       </td>
       <td className="px-3 py-2 align-top">
+        <LogTimeCell
+          createdUtc={entry.createdUtc}
+          entryDate={entry.entryDate}
+          endMinutes={entry.endMinutes}
+        />
+      </td>
+      <td className="px-3 py-2 align-top">
         <TicketAutocomplete
           value={row.ticket}
           disabled={!requiresTicket}
@@ -793,6 +809,75 @@ function BilledPill({ invoiced }: { invoiced: boolean }) {
       —
     </span>
   );
+}
+
+// ---- Log-time cell (creation-vs-end mismatch indicator) ---------------
+
+/// Threshold for "logged late" — when the entry's `created_utc` differs
+/// from the local "entry_date + end_minutes" moment by more than this
+/// many minutes, the cell turns red so a manager can immediately spot
+/// back-dated registrations. 5 minutes is a generous default that
+/// swallows ordinary network/save delay; promote to a Timesheet setting
+/// if installs want a different policy.
+const LOG_TIME_MISMATCH_THRESHOLD_MINUTES = 5;
+
+function LogTimeCell({
+  createdUtc,
+  entryDate,
+  endMinutes,
+}: {
+  createdUtc: string;
+  entryDate: string;
+  endMinutes: number;
+}) {
+  const created = new Date(createdUtc);
+  // Build the entry's end as a local-time Date — `entry_date + end_minutes`
+  // is a local-day concept; the server stores `end_minutes` as minutes
+  // since midnight without a timezone. We construct the same local moment
+  // in the browser so the comparison happens against the manager's clock.
+  const endLocal = new Date(entryDate.slice(0, 10) + "T00:00:00");
+  endLocal.setMinutes(endLocal.getMinutes() + endMinutes);
+
+  const diffMinutes = Math.abs(created.getTime() - endLocal.getTime()) / 60000;
+  const mismatch = diffMinutes > LOG_TIME_MISMATCH_THRESHOLD_MINUTES;
+
+  const label = formatLogTime(created);
+  const title = mismatch
+    ? `Logged ${formatLogDelta(diffMinutes)} ${created > endLocal ? "after" : "before"} the entry's end time.`
+    : "Logged within tolerance of the entry's end time.";
+
+  return (
+    <span
+      title={title}
+      className={cn(
+        "inline-flex items-center gap-1 font-mono text-xs",
+        mismatch ? "text-red-300" : "text-muted-foreground",
+      )}
+    >
+      <History className="h-3 w-3" />
+      {label}
+    </span>
+  );
+}
+
+function formatLogTime(d: Date): string {
+  const m = (d.getMonth() + 1).toString().padStart(2, "0");
+  const day = d.getDate().toString().padStart(2, "0");
+  const hh = d.getHours().toString().padStart(2, "0");
+  const mm = d.getMinutes().toString().padStart(2, "0");
+  return `${m}-${day} ${hh}:${mm}`;
+}
+
+function formatLogDelta(minutes: number): string {
+  if (minutes < 60) return `${Math.round(minutes)}m`;
+  if (minutes < 1440) {
+    const hh = Math.floor(minutes / 60);
+    const mm = Math.round(minutes - hh * 60);
+    return mm === 0 ? `${hh}h` : `${hh}h ${mm}m`;
+  }
+  const days = Math.floor(minutes / 1440);
+  const rem = Math.round((minutes - days * 1440) / 60);
+  return rem === 0 ? `${days}d` : `${days}d ${rem}h`;
 }
 
 // ---- Ticket autocomplete (shared shape with Tab 1) --------------------

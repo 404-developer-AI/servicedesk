@@ -20,7 +20,8 @@ public static class KbArticleEndpoints
     {
         var agentGroup = app.MapGroup("/api/kb")
             .WithTags("KnowledgeBase")
-            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+            .RequireKbAccess();
 
         // ---- Reads (Agent+Admin) ----
 
@@ -199,7 +200,8 @@ public static class KbArticleEndpoints
 
         var adminGroup = app.MapGroup("/api/kb")
             .WithTags("KnowledgeBase")
-            .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
+            .RequireAuthorization(AuthorizationPolicies.RequireAdmin)
+            .RequireKbAccess();
 
         adminGroup.MapPost("/articles/{id:guid}/featured", async (
             Guid id, [FromBody] KbArticleFeaturedRequest req, HttpContext http,

@@ -2697,6 +2697,79 @@ public sealed class DatabaseBootstrapper : IHostedService
         ALTER TABLE trigger_runs
             ADD COLUMN IF NOT EXISTS result_ticket_id UUID NULL
                 REFERENCES tickets(id) ON DELETE SET NULL;
+
+        -- ===================================================================
+        -- v0.0.40 ISO 27001 workflow — MGM review → DPO ISMS-registration
+        -- ===================================================================
+        -- Two extra per-user role flags (timesheet-pattern: live next to
+        -- role_name so an Agent or Admin can carry the extra hat). Plus
+        -- four seed statuses that scope the ISO flow. The statuses live
+        -- in the global taxonomy but their labels are prefixed with
+        -- "ISO 27001 –" so they are visually scoped in other dropdowns.
+        -- A single Iso27001.QueueId setting binds the workflow to one
+        -- queue; when unset the classification buttons never appear so
+        -- the feature is fully opt-in.
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS is_iso_mgm BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS is_iso_dpo BOOLEAN NOT NULL DEFAULT FALSE;
+
+        -- v0.0.40 polish — Knowledge Base is now opt-in per user. FALSE on
+        -- upgrade means existing installs see the KB disappear from the
+        -- sidebar until an admin opts users in; that mirrors what the
+        -- admin asked for ("manual assignment"), and matches the
+        -- timesheet/iso pattern above.
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS kb_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+        -- Seed the three ISO statuses idempotently. The slug is the
+        -- stable identifier (admin can re-label freely). is_system is
+        -- TRUE so an over-eager admin cannot delete the rows the
+        -- classification endpoints depend on.
+        INSERT INTO statuses (name, slug, state_category, color, icon, sort_order, is_system, is_active, is_default)
+        VALUES
+            ('ISO 27001 – MGM review',                  'iso-mgm-review',         'Open',     '#7c7cff', 'shield-alert', 91, TRUE, TRUE, FALSE),
+            ('ISO 27001 – Awaiting ISMS registration',  'iso-awaiting-isms',      'Pending',  '#f59e0b', 'shield-check', 92, TRUE, TRUE, FALSE),
+            ('ISO 27001 – No incident',                 'iso-no-incident',        'Closed',   '#71717a', 'shield',       93, TRUE, TRUE, FALSE)
+        ON CONFLICT (slug) DO NOTHING;
+
+        -- v0.0.40 polish — per-queue status scope. Two nullable extras
+        -- on the queues row that together drive the "ISO statuses only
+        -- show inside the ISO queue and the default statuses are
+        -- hidden there" UX. Backward-compatible: empty array on
+        -- allowed_status_ids = current behaviour (all statuses
+        -- available); null default_status_id = no auto-flip on queue
+        -- change. Existing queues stay on those defaults.
+        ALTER TABLE queues
+            ADD COLUMN IF NOT EXISTS allowed_status_ids UUID[] NOT NULL DEFAULT '{}'::uuid[],
+            ADD COLUMN IF NOT EXISTS default_status_id UUID NULL
+                REFERENCES statuses(id) ON DELETE SET NULL;
+
+        -- Per-user Sidebar feature flag for the global search bar.
+        -- DEFAULT TRUE so brownfield Agent/Admin users do not lose
+        -- the bar on upgrade. Customer rows carry TRUE too but the
+        -- API rejects mutations for Customers and the frontend
+        -- never reads this for that role.
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS search_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+
+        -- An earlier iteration introduced a master `dashboard_enabled`
+        -- flag. It was replaced by per-tile feature toggles (see the
+        -- user_dashboard_tiles table below) and is dropped here to
+        -- keep the column shape clean. The DROP is idempotent so a
+        -- fresh install that never had the column is unaffected.
+        ALTER TABLE users
+            DROP COLUMN IF EXISTS dashboard_enabled;
+
+        -- Per-user Dashboard tile preferences. A row means "this tile
+        -- is enabled for this user"; absence means OFF (default for
+        -- every user on first upgrade). Tile-id validation happens at
+        -- the API boundary against a static allow-list; storing the
+        -- string here keeps schema-free when new tiles arrive.
+        CREATE TABLE IF NOT EXISTS user_dashboard_tiles (
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            tile_id VARCHAR(64) NOT NULL,
+            PRIMARY KEY (user_id, tile_id)
+        );
         """;
 
     private readonly NpgsqlDataSource _dataSource;

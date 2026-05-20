@@ -299,6 +299,11 @@ export type TicketListQuery = {
   queueId?: string;
   statusId?: string;
   priorityId?: string;
+  // v0.0.40 polish — multi-select counterparts used by saved views.
+  // When non-empty, the singular counterpart is ignored server-side.
+  queueIds?: string[];
+  statusIds?: string[];
+  priorityIds?: string[];
   assigneeUserId?: string;
   requesterContactId?: string;
   companyId?: string;
@@ -363,6 +368,14 @@ export type LinkedTicketPresetSummary = {
 // context; requester/company are resolved per the trigger's source
 // configuration. The drawer opens with this and the agent can edit
 // before submitting via POST /api/tickets.
+// v0.0.40 — return shape of an ISO 27001 classification transition.
+export type IsoTransitionResponse = {
+  ticketId: string;
+  fromStatusId: string;
+  toStatusId: string;
+  noteEventId: number;
+};
+
 export type LinkedTicketPrefill = {
   triggerId: string;
   ticketTypeId: string;
@@ -698,6 +711,12 @@ export const ticketApi = {
     if (query.queueId) params.set("queueId", query.queueId);
     if (query.statusId) params.set("statusId", query.statusId);
     if (query.priorityId) params.set("priorityId", query.priorityId);
+    if (query.queueIds && query.queueIds.length > 0)
+      params.set("queueIds", query.queueIds.join(","));
+    if (query.statusIds && query.statusIds.length > 0)
+      params.set("statusIds", query.statusIds.join(","));
+    if (query.priorityIds && query.priorityIds.length > 0)
+      params.set("priorityIds", query.priorityIds.join(","));
     if (query.assigneeUserId)
       params.set("assigneeUserId", query.assigneeUserId);
     if (query.requesterContactId)
@@ -771,6 +790,22 @@ export const ticketApi = {
       "GET",
       `/api/tickets/${parentTicketId}/linked-ticket-presets/${triggerId}/prefill`,
     ),
+
+  // v0.0.40 — ISO 27001 classification transitions. Each takes a
+  // mandatory motivation that lands as an internal note on the
+  // ticket plus a structured audit row.
+  isoClassifyEvent: (ticketId: string, motivation: string) =>
+    request<IsoTransitionResponse>(
+      "POST",
+      `/api/tickets/${ticketId}/iso/classify-event`,
+      { motivation },
+    ),
+  isoClassifyIncident: (ticketId: string, motivation: string) =>
+    request<IsoTransitionResponse>(
+      "POST",
+      `/api/tickets/${ticketId}/iso/classify-incident`,
+      { motivation },
+    ),
   split: (id: string, body: SplitTicketRequest) =>
     request<SplitTicketResponse>("POST", `/api/tickets/${id}/split`, body),
   exportPdf: (id: string, excludeInternal = true) => {
@@ -811,6 +846,9 @@ export const ticketApi = {
 
 export const viewApi = {
   list: () => request<View[]>("GET", "/api/views"),
+  // Admin-only: every view in the system, used by management surfaces.
+  // Personal `list()` is filtered for admins too so the sidebar stays clean.
+  listAll: () => request<View[]>("GET", "/api/views/all"),
   get: (id: string) => request<View>("GET", `/api/views/${id}`),
   create: (input: ViewInput) => request<View>("POST", "/api/views", input),
   update: (id: string, input: ViewInput) =>
@@ -844,7 +882,29 @@ export type UserAdminRow = {
   lastLoginUtc: string | null;
   timesheetEnabled: boolean;
   timesheetManager: boolean;
+  // v0.0.40 — per-user ISO 27001 workflow flags. Same toggle-pattern
+  // as the timesheet flags; default false on insert.
+  isIsoMgm: boolean;
+  isIsoDpo: boolean;
+  // v0.0.40 polish — Knowledge Base opt-in. False on insert; admins flip
+  // it on for the agents who should see the KB sidebar entry.
+  kbEnabled: boolean;
+  // Sidebar feature flag. Default true on insert so brownfield
+  // Agent/Admin users keep their search bar on upgrade.
+  searchEnabled: boolean;
+  // Per-user Dashboard tile preferences. Empty array on insert
+  // (admins opt the user in to specific tiles).
+  dashboardTiles: string[];
 };
+
+export type FeatureFlagsUpdate = Partial<{
+  timesheetEnabled: boolean;
+  timesheetManager: boolean;
+  isIsoMgm: boolean;
+  isIsoDpo: boolean;
+  kbEnabled: boolean;
+  searchEnabled: boolean;
+}>;
 
 export type M365PickerUser = {
   oid: string;
@@ -896,6 +956,41 @@ export const adminUserApi = {
       "PUT",
       `/api/admin/users/${userId}/timesheet-flags`,
       { enabled, manager },
+    ),
+
+  // v0.0.40 — ISO 27001 per-user role flags.
+  setIsoFlags: (userId: string, mgm: boolean, dpo: boolean) =>
+    request<UserAdminRow>(
+      "PUT",
+      `/api/admin/users/${userId}/iso-flags`,
+      { mgm, dpo },
+    ),
+
+  // v0.0.40 polish — Knowledge Base per-user opt-in.
+  setKbFlag: (userId: string, enabled: boolean) =>
+    request<UserAdminRow>(
+      "PUT",
+      `/api/admin/users/${userId}/kb-flag`,
+      { enabled },
+    ),
+
+  // Consolidated partial-update across every per-user feature flag.
+  // Only the fields present in `update` are written; the rest stay as
+  // they are. One transaction server-side, one audit row per call.
+  setFeatureFlags: (userId: string, update: FeatureFlagsUpdate) =>
+    request<UserAdminRow>(
+      "PUT",
+      `/api/admin/users/${userId}/feature-flags`,
+      update,
+    ),
+
+  // Replace the full set of enabled Dashboard tile-ids for one user.
+  // Unknown ids cause a 400; sending an empty array clears the set.
+  setDashboardTiles: (userId: string, tileIds: string[]) =>
+    request<UserAdminRow>(
+      "PUT",
+      `/api/admin/users/${userId}/dashboard-tiles`,
+      { tileIds },
     ),
 
   /// v0.0.35-E — per-user Timesheet preference overrides. Reads + writes

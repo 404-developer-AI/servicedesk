@@ -499,8 +499,14 @@ public sealed class HealthAggregatorTests
 
         public Task<Queue?> GetQueueAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
         public Task<Queue> CreateQueueAsync(Queue q, CancellationToken ct) => throw new NotImplementedException();
-        public Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, string? inboundMailboxAddress, string? outboundMailboxAddress, string? inboundFolderId, string? inboundFolderName, CancellationToken ct) => throw new NotImplementedException();
+        public Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, string? inboundMailboxAddress, string? outboundMailboxAddress, string? inboundFolderId, string? inboundFolderName, IReadOnlyList<Guid> allowedStatusIds, Guid? defaultStatusId, CancellationToken ct) => throw new NotImplementedException();
         public Task<DeleteResult> DeleteQueueAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
+        public Task<IReadOnlyList<TicketType>> ListTicketTypesAsync(CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketType?> GetTicketTypeAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketType?> GetTicketTypeByCodeAsync(string code, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketType> CreateTicketTypeAsync(TicketType t, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketType?> UpdateTicketTypeAsync(Guid id, string code, string label, string description, string icon, string color, int sortOrder, bool isActive, CancellationToken ct) => throw new NotImplementedException();
+        public Task<DeleteResult> DeleteTicketTypeAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<Priority>> ListPrioritiesAsync(CancellationToken ct) => throw new NotImplementedException();
         public Task<Priority?> GetPriorityAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
         public Task<Priority> CreatePriorityAsync(Priority p, CancellationToken ct) => throw new NotImplementedException();

@@ -18,68 +18,103 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
     }
 
     // ---------- Queues ----------
+    //
+    // All four queue queries hydrate into the private QueueRow class
+    // (property-setter binding) and then project to the Queue record via
+    // MapQueueRow. This mirrors the proven ComposeTemplateRepository
+    // pattern: Dapper's positional-record materializer cannot reconcile
+    // an Npgsql uuid[] column (`System.Array`) with a constructor param
+    // of type Guid[]? or IReadOnlyList<Guid>?, so we go around that by
+    // never querying directly into the record. The Row class accepts the
+    // array via a plain `Guid[]?` setter, which Dapper hydrates cleanly.
+
+    private const string QueueSelectColumns = """
+        id AS Id, name AS Name, slug AS Slug, description AS Description,
+        color AS Color, icon AS Icon, sort_order AS SortOrder,
+        is_active AS IsActive, is_system AS IsSystem,
+        created_utc AS CreatedUtc, updated_utc AS UpdatedUtc,
+        inbound_mailbox_address AS InboundMailboxAddress,
+        outbound_mailbox_address AS OutboundMailboxAddress,
+        inbound_folder_id AS InboundFolderId,
+        inbound_folder_name AS InboundFolderName,
+        allowed_status_ids AS AllowedStatusIds,
+        default_status_id AS DefaultStatusId
+        """;
+
+    private static Queue MapQueueRow(QueueRow r) => new(
+        r.Id, r.Name, r.Slug, r.Description, r.Color, r.Icon,
+        r.SortOrder, r.IsActive, r.IsSystem, r.CreatedUtc, r.UpdatedUtc,
+        r.InboundMailboxAddress, r.OutboundMailboxAddress,
+        r.InboundFolderId, r.InboundFolderName,
+        r.AllowedStatusIds ?? Array.Empty<Guid>(),
+        r.DefaultStatusId);
+
+    private sealed class QueueRow
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string Slug { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public string Color { get; set; } = string.Empty;
+        public string Icon { get; set; } = string.Empty;
+        public int SortOrder { get; set; }
+        public bool IsActive { get; set; }
+        public bool IsSystem { get; set; }
+        public DateTime CreatedUtc { get; set; }
+        public DateTime UpdatedUtc { get; set; }
+        public string? InboundMailboxAddress { get; set; }
+        public string? OutboundMailboxAddress { get; set; }
+        public string? InboundFolderId { get; set; }
+        public string? InboundFolderName { get; set; }
+        public Guid[]? AllowedStatusIds { get; set; }
+        public Guid? DefaultStatusId { get; set; }
+    }
 
     public async Task<IReadOnlyList<Queue>> ListQueuesAsync(CancellationToken ct)
     {
-        const string sql = """
-            SELECT id AS Id, name AS Name, slug AS Slug, description AS Description,
-                   color AS Color, icon AS Icon, sort_order AS SortOrder,
-                   is_active AS IsActive, is_system AS IsSystem,
-                   created_utc AS CreatedUtc, updated_utc AS UpdatedUtc,
-                   inbound_mailbox_address AS InboundMailboxAddress,
-                   outbound_mailbox_address AS OutboundMailboxAddress,
-                   inbound_folder_id AS InboundFolderId,
-                   inbound_folder_name AS InboundFolderName
-            FROM queues
-            ORDER BY sort_order, name
-            """;
+        var sql = $"SELECT {QueueSelectColumns} FROM queues ORDER BY sort_order, name";
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        var rows = await conn.QueryAsync<Queue>(new CommandDefinition(sql, cancellationToken: ct));
-        return rows.ToList();
+        var rows = await conn.QueryAsync<QueueRow>(new CommandDefinition(sql, cancellationToken: ct));
+        return rows.Select(MapQueueRow).ToList();
     }
 
     public async Task<Queue?> GetQueueAsync(Guid id, CancellationToken ct)
     {
-        const string sql = """
-            SELECT id AS Id, name AS Name, slug AS Slug, description AS Description,
-                   color AS Color, icon AS Icon, sort_order AS SortOrder,
-                   is_active AS IsActive, is_system AS IsSystem,
-                   created_utc AS CreatedUtc, updated_utc AS UpdatedUtc,
-                   inbound_mailbox_address AS InboundMailboxAddress,
-                   outbound_mailbox_address AS OutboundMailboxAddress,
-                   inbound_folder_id AS InboundFolderId,
-                   inbound_folder_name AS InboundFolderName
-            FROM queues WHERE id = @id
-            """;
+        var sql = $"SELECT {QueueSelectColumns} FROM queues WHERE id = @id";
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        return await conn.QueryFirstOrDefaultAsync<Queue>(new CommandDefinition(sql, new { id }, cancellationToken: ct));
+        var row = await conn.QueryFirstOrDefaultAsync<QueueRow>(new CommandDefinition(sql, new { id }, cancellationToken: ct));
+        return row is null ? null : MapQueueRow(row);
     }
 
     public async Task<Queue> CreateQueueAsync(Queue q, CancellationToken ct)
     {
-        const string sql = """
+        var sql = $$"""
             INSERT INTO queues (name, slug, description, color, icon, sort_order, is_active, is_system,
                                 inbound_mailbox_address, outbound_mailbox_address,
-                                inbound_folder_id, inbound_folder_name)
+                                inbound_folder_id, inbound_folder_name,
+                                allowed_status_ids, default_status_id)
             VALUES (@Name, @Slug, @Description, @Color, @Icon, @SortOrder, @IsActive, @IsSystem,
                     @InboundMailboxAddress, @OutboundMailboxAddress,
-                    @InboundFolderId, @InboundFolderName)
-            RETURNING id AS Id, name AS Name, slug AS Slug, description AS Description,
-                      color AS Color, icon AS Icon, sort_order AS SortOrder,
-                      is_active AS IsActive, is_system AS IsSystem,
-                      created_utc AS CreatedUtc, updated_utc AS UpdatedUtc,
-                      inbound_mailbox_address AS InboundMailboxAddress,
-                      outbound_mailbox_address AS OutboundMailboxAddress,
-                      inbound_folder_id AS InboundFolderId,
-                      inbound_folder_name AS InboundFolderName
+                    @InboundFolderId, @InboundFolderName,
+                    COALESCE(@AllowedStatusIds, '{}'::uuid[]), @DefaultStatusId)
+            RETURNING {{QueueSelectColumns}}
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        return await conn.QuerySingleAsync<Queue>(new CommandDefinition(sql, q, cancellationToken: ct));
+        var row = await conn.QuerySingleAsync<QueueRow>(new CommandDefinition(sql, new
+        {
+            q.Name, q.Slug, q.Description, q.Color, q.Icon, q.SortOrder,
+            q.IsActive, q.IsSystem,
+            q.InboundMailboxAddress, q.OutboundMailboxAddress,
+            q.InboundFolderId, q.InboundFolderName,
+            AllowedStatusIds = (q.AllowedStatusIds ?? Array.Empty<Guid>()).ToArray(),
+            q.DefaultStatusId,
+        }, cancellationToken: ct));
+        return MapQueueRow(row);
     }
 
-    public async Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, string? inboundMailboxAddress, string? outboundMailboxAddress, string? inboundFolderId, string? inboundFolderName, CancellationToken ct)
+    public async Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, string? inboundMailboxAddress, string? outboundMailboxAddress, string? inboundFolderId, string? inboundFolderName, IReadOnlyList<Guid> allowedStatusIds, Guid? defaultStatusId, CancellationToken ct)
     {
-        const string sql = """
+        var sql = $$"""
             UPDATE queues SET name = @name, slug = @slug, description = @description,
                               color = @color, icon = @icon, sort_order = @sortOrder,
                               is_active = @isActive,
@@ -87,22 +122,20 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
                               outbound_mailbox_address = @outboundMailboxAddress,
                               inbound_folder_id = @inboundFolderId,
                               inbound_folder_name = @inboundFolderName,
+                              allowed_status_ids = COALESCE(@allowedStatusIds, '{}'::uuid[]),
+                              default_status_id = @defaultStatusId,
                               updated_utc = now()
             WHERE id = @id
-            RETURNING id AS Id, name AS Name, slug AS Slug, description AS Description,
-                      color AS Color, icon AS Icon, sort_order AS SortOrder,
-                      is_active AS IsActive, is_system AS IsSystem,
-                      created_utc AS CreatedUtc, updated_utc AS UpdatedUtc,
-                      inbound_mailbox_address AS InboundMailboxAddress,
-                      outbound_mailbox_address AS OutboundMailboxAddress,
-                      inbound_folder_id AS InboundFolderId,
-                      inbound_folder_name AS InboundFolderName
+            RETURNING {{QueueSelectColumns}}
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        return await conn.QueryFirstOrDefaultAsync<Queue>(new CommandDefinition(sql,
+        var row = await conn.QueryFirstOrDefaultAsync<QueueRow>(new CommandDefinition(sql,
             new { id, name, slug, description, color, icon, sortOrder, isActive,
                   inboundMailboxAddress, outboundMailboxAddress,
-                  inboundFolderId, inboundFolderName }, cancellationToken: ct));
+                  inboundFolderId, inboundFolderName,
+                  allowedStatusIds = allowedStatusIds.ToArray(),
+                  defaultStatusId }, cancellationToken: ct));
+        return row is null ? null : MapQueueRow(row);
     }
 
     public async Task<DeleteResult> DeleteQueueAsync(Guid id, CancellationToken ct)

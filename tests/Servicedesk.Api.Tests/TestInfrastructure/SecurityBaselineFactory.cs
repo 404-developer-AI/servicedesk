@@ -279,6 +279,15 @@ public sealed class FakeUserService : IUserService
 
     public Task<TimesheetFlags> GetTimesheetFlagsAsync(Guid userId, CancellationToken ct = default) =>
         Task.FromResult(TimesheetFlags.None);
+
+    public Task<IsoFlags> GetIsoFlagsAsync(Guid userId, CancellationToken ct = default) =>
+        Task.FromResult(IsoFlags.None);
+
+    public Task<bool> GetKbEnabledAsync(Guid userId, CancellationToken ct = default) =>
+        Task.FromResult(false);
+
+    public Task<bool> GetSearchEnabledAsync(Guid userId, CancellationToken ct = default) =>
+        Task.FromResult(true);
 }
 
 public sealed class FakeSessionService : ISessionService

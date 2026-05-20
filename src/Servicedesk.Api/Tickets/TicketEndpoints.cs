@@ -16,6 +16,7 @@ using Servicedesk.Infrastructure.Mail.Ingest;
 using Servicedesk.Infrastructure.Mail.Outbound;
 using Servicedesk.Infrastructure.Notifications;
 using Servicedesk.Infrastructure.Persistence.Companies;
+using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Sla;
@@ -43,6 +44,10 @@ public static class TicketEndpoints
             Guid? requesterContactId, Guid? companyId, string? search, bool? openOnly, bool? openFirst,
             string? sortField, string? sortDirection, bool? priorityFloat, int? offset,
             DateTime? cursorUpdatedUtc, Guid? cursorId, int? limit,
+            // v0.0.40 polish — multi-select filters from saved views. Comma-
+            // separated Guids; invalid tokens are silently dropped so a
+            // partially valid query still returns a sensible page.
+            string? queueIds, string? statusIds, string? priorityIds,
             HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess, CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
@@ -68,7 +73,10 @@ public static class TicketEndpoints
                 PriorityFloat: priorityFloat ?? false, Offset: offset,
                 CursorUpdatedUtc: cursorUpdatedUtc, CursorId: cursorId,
                 Limit: limit ?? 50,
-                AccessibleQueueIds: accessibleQueueIds);
+                AccessibleQueueIds: accessibleQueueIds,
+                QueueIds: ParseGuidList(queueIds),
+                StatusIds: ParseGuidList(statusIds),
+                PriorityIds: ParseGuidList(priorityIds));
             var page = await repo.SearchAsync(q, VisibilityScope.All, null, null, ct);
             return Results.Ok(new
             {
@@ -298,6 +306,7 @@ public static class TicketEndpoints
         group.MapPatch("/{id:guid}", async (
             Guid id, [FromBody] UpdateTicketRequest req, HttpContext http,
             ITicketRepository tickets, ICompanyRepository companies, IQueueAccessService queueAccess,
+            ITaxonomyRepository taxonomy,
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla,
             ITriggerService triggerService, CancellationToken ct) =>
         {
@@ -315,6 +324,29 @@ public static class TicketEndpoints
             {
                 if (!await queueAccess.HasQueueAccessAsync(userId, userRole, req.QueueId.Value, ct))
                     return Results.Json(new { error = "You do not have access to the target queue." }, statusCode: 403);
+            }
+
+            // v0.0.40 polish — if the caller is explicitly setting a
+            // status, validate that it sits in the target queue's
+            // allowed-list. Skipped when StatusId is unset (the
+            // repository's auto-flip handles queue-only changes). When
+            // the queue isn't changing we validate against the current
+            // queue. This catches the rare case where a stale client
+            // form posts a status the dropdown filter would have hidden.
+            if (req.StatusId.HasValue)
+            {
+                var targetQueueId = req.QueueId ?? current.Ticket.QueueId;
+                var targetQueue = await taxonomy.GetQueueAsync(targetQueueId, ct);
+                if (targetQueue is not null
+                    && targetQueue.AllowedStatusIds is { Count: > 0 } allowed
+                    && !allowed.Contains(req.StatusId.Value))
+                {
+                    return Results.BadRequest(new
+                    {
+                        error = "This status is not allowed for the target queue.",
+                        code = "status_not_in_queue_scope",
+                    });
+                }
             }
 
             var update = new TicketFieldUpdate(
@@ -1432,6 +1464,21 @@ public static class TicketEndpoints
         }).WithName("DevSeedAgent").WithOpenApi();
 
         return app;
+    }
+
+    // v0.0.40 polish — parse comma-separated guid query strings sent by
+    // the view editor's multi-select. Invalid tokens are silently dropped.
+    // Returns null for empty input so the repository treats it as "no
+    // multi-filter" and falls back to the singular field path.
+    private static IReadOnlyList<Guid>? ParseGuidList(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var result = new List<Guid>();
+        foreach (var token in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (Guid.TryParse(token, out var g)) result.Add(g);
+        }
+        return result.Count == 0 ? null : result;
     }
 
     public sealed record CreateTicketRequest(

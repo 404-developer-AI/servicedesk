@@ -12,6 +12,22 @@ export type AuthUser = {
   /// round-trip on every page load.
   timesheetEnabled: boolean;
   timesheetManager: boolean;
+  /// v0.0.40 — per-user ISO 27001 workflow flags. Surface on /auth/me so
+  /// the ticket-detail page can conditionally render the classification
+  /// buttons without a second round-trip.
+  isIsoMgm: boolean;
+  isIsoDpo: boolean;
+  /// v0.0.40 polish — KB access is now opt-in per user. Sidebar +
+  /// Settings nav hide the entries when this is false.
+  kbEnabled: boolean;
+  /// Per-user Sidebar feature flag for the global search bar.
+  /// Default true server-side so brownfield users keep the bar.
+  searchEnabled: boolean;
+  /// Per-user Dashboard tile preferences. Each id corresponds to a
+  /// tile in the `DASHBOARD_TILES` registry; tiles whose id is not
+  /// in this list are hidden on the Dashboard page. Default empty
+  /// (no tiles) on first upgrade — admins opt users in per tile.
+  dashboardTiles: string[];
 };
 
 export type AuthState = {

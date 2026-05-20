@@ -19,10 +19,10 @@ import {
   EyeOff,
   Mail,
   Clock,
-  Users as UsersIcon,
 } from "lucide-react";
 import { adminUserApi, type UserAdminRow, type M365PickerUser } from "@/lib/ticket-api";
 import { TimesheetOverridesDialog } from "@/pages/settings/TimesheetOverridesDialog";
+import { FeatureFlagsDropdown } from "@/pages/settings/FeatureFlagsDropdown";
 import { authApi } from "@/lib/api";
 import { useAuth } from "@/auth/authStore";
 import { Badge } from "@/components/ui/badge";
@@ -163,6 +163,12 @@ export function UsersSettingsPage() {
           className="pl-9"
         />
       </div>
+
+      <p className="text-[11px] text-muted-foreground/80">
+        Sidebar features default ON for Agent/Admin. Dashboard tiles are
+        opt-in per user — open the Features dropdown on a row to enable
+        tiles for that user.
+      </p>
 
       {isLoading ? (
         <div className="space-y-2">
@@ -394,48 +400,22 @@ function UserRow({
       />
 
       {user.role !== "Customer" && (
-        <>
-          <TimesheetFlagPill
-            label="Timesheet"
-            icon={<Clock className="h-3 w-3" />}
-            active={user.timesheetEnabled}
-            tone="sky"
-            disabled={mutationPending}
-            onToggle={() =>
-              runAction(
-                () =>
-                  adminUserApi.setTimesheetFlags(
-                    user.id,
-                    !user.timesheetEnabled,
-                    user.timesheetManager,
-                  ),
-                user.timesheetEnabled
-                  ? "Timesheet access revoked"
-                  : "Timesheet access granted",
-              )
-            }
-          />
-          <TimesheetFlagPill
-            label="TS manager"
-            icon={<UsersIcon className="h-3 w-3" />}
-            active={user.timesheetManager}
-            tone="violet"
-            disabled={mutationPending}
-            onToggle={() =>
-              runAction(
-                () =>
-                  adminUserApi.setTimesheetFlags(
-                    user.id,
-                    user.timesheetEnabled,
-                    !user.timesheetManager,
-                  ),
-                user.timesheetManager
-                  ? "Timesheet manager revoked"
-                  : "Timesheet manager granted",
-              )
-            }
-          />
-        </>
+        <FeatureFlagsDropdown
+          user={user}
+          disabled={mutationPending}
+          onToggleFlag={(update, label, enabling) =>
+            runAction(
+              () => adminUserApi.setFeatureFlags(user.id, update),
+              `${label} ${enabling ? "enabled" : "disabled"}`,
+            )
+          }
+          onToggleTile={(nextTileIds, label, enabling) =>
+            runAction(
+              () => adminUserApi.setDashboardTiles(user.id, nextTileIds),
+              `${label} tile ${enabling ? "enabled" : "disabled"}`,
+            )
+          }
+        />
       )}
 
       <DropdownMenu>
@@ -576,53 +556,6 @@ function ActiveToggle({
         <Circle className="h-3 w-3" />
       )}
       {active ? "Active" : "Inactive"}
-    </button>
-  );
-}
-
-// ---- Timesheet flag pill (v0.0.35) ------------------------------------
-
-function TimesheetFlagPill({
-  label,
-  icon,
-  active,
-  tone,
-  disabled,
-  onToggle,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  active: boolean;
-  tone: "sky" | "violet";
-  disabled: boolean;
-  onToggle: () => void;
-}) {
-  // Two tones so the related pair reads as a group without colour-clashing
-  // with the existing Admin (amber) / Active (emerald) chips on the row.
-  const onClass =
-    tone === "sky"
-      ? "border-sky-400/40 bg-sky-400/15 text-sky-300 hover:bg-sky-400/20"
-      : "border-violet-400/40 bg-violet-400/15 text-violet-300 hover:bg-violet-400/20";
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onToggle}
-      title={
-        active
-          ? `Disable ${label.toLowerCase()}`
-          : `Enable ${label.toLowerCase()}`
-      }
-      className={cn(
-        "shrink-0 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
-        "disabled:opacity-50 disabled:cursor-not-allowed",
-        active
-          ? onClass
-          : "border-white/[0.08] bg-white/[0.02] text-muted-foreground hover:bg-white/[0.05]",
-      )}
-    >
-      {icon}
-      {label}
     </button>
   );
 }

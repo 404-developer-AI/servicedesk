@@ -86,6 +86,12 @@ export function Sidebar() {
         && !user?.timesheetManager) {
       return false;
     }
+    // v0.0.40 polish — Knowledge Base is per-user opt-in. Same rationale
+    // as Timesheet above: role gates Agent+Admin, but a user without the
+    // `kb_enabled` flag never sees the entry.
+    if (item.to === "/kb" && !user?.kbEnabled) {
+      return false;
+    }
     return true;
   });
 
@@ -124,7 +130,12 @@ export function Sidebar() {
       className="glass-panel sticky top-3 z-20 m-3 mr-0 flex h-[calc(100vh-1.5rem)] flex-col self-start overflow-hidden"
       data-testid="app-sidebar"
     >
-      <div className="flex items-center gap-3 px-4 pt-5 pb-4">
+      <div
+        className={cn(
+          "flex items-center gap-3 pt-5 pb-4",
+          collapsed ? "justify-center px-3" : "px-4",
+        )}
+      >
         <img
           src={ticksyMark}
           alt=""
@@ -140,9 +151,16 @@ export function Sidebar() {
         )}
       </div>
 
-      <div className="mx-3 mb-3 border-b border-white/5 pb-3">
-        <GlobalSearchBar collapsed={collapsed} />
-      </div>
+      {(role === "Agent" || role === "Admin") && user?.searchEnabled && (
+        <div
+          className={cn(
+            "mx-3 mb-3 border-b border-white/5 pb-3",
+            collapsed && "flex justify-center",
+          )}
+        >
+          <GlobalSearchBar collapsed={collapsed} />
+        </div>
+      )}
 
       <nav className="flex-1 space-y-1 px-3">
         {items.map((item) => {
@@ -215,7 +233,7 @@ export function Sidebar() {
         the chrome stays compact.
       */}
       {collapsed && (
-        <div className="mx-3 mb-3 flex flex-col gap-1">
+        <div className="mx-3 mb-3 flex flex-col items-center gap-1">
           {canSeeSettings && (
             <Link
               to="/settings"

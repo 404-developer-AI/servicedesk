@@ -310,6 +310,7 @@ public static class AuthEndpoints
         HttpContext httpContext,
         ITotpService totp,
         IUserService users,
+        Servicedesk.Infrastructure.Dashboard.IDashboardTilesService dashboardTiles,
         CancellationToken ct)
     {
         var userIdClaim = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -327,6 +328,19 @@ public static class AuthEndpoints
         // round-trip. Lives on IUserService so the test fakes don't
         // need a real NpgsqlDataSource for the auth-endpoint surface.
         var flags = await users.GetTimesheetFlagsAsync(userId, ct);
+        // v0.0.40 — same pattern for the ISO 27001 workflow flags. The
+        // ticket-detail page reads these to decide which classification
+        // buttons to render.
+        var isoFlags = await users.GetIsoFlagsAsync(userId, ct);
+        // v0.0.40 polish — KB access is per-user opt-in. Sidebar + Settings
+        // nav rail both gate on this flag.
+        var kbEnabled = await users.GetKbEnabledAsync(userId, ct);
+        // Sidebar feature flag. Default true on missing rows so a
+        // session that outlives a deleted user is harmless.
+        var searchEnabled = await users.GetSearchEnabledAsync(userId, ct);
+        // Per-user Dashboard tile preferences. Empty array = no tiles
+        // enabled; DashboardPage renders an empty-state in that case.
+        var tileIds = await dashboardTiles.GetForUserAsync(userId, ct);
 
         return Results.Ok(new
         {
@@ -339,6 +353,11 @@ public static class AuthEndpoints
                 twoFactorEnabled,
                 timesheetEnabled = flags.Enabled,
                 timesheetManager = flags.Manager,
+                isIsoMgm = isoFlags.Mgm,
+                isIsoDpo = isoFlags.Dpo,
+                kbEnabled,
+                searchEnabled,
+                dashboardTiles = tileIds,
             },
             serverTimeUtc = DateTimeOffset.UtcNow,
         });
