@@ -15,6 +15,7 @@ using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Auth.Sessions;
 using Servicedesk.Infrastructure.Auth.Totp;
+using Servicedesk.Infrastructure.Dashboard;
 using Servicedesk.Infrastructure.DataProtection;
 using Servicedesk.Infrastructure.Persistence;
 using Servicedesk.Infrastructure.Settings;
@@ -88,6 +89,12 @@ public sealed class SecurityBaselineFactory : WebApplicationFactory<Program>
             services.AddSingleton<ISessionService>(Sessions);
             services.RemoveAll<ITotpService>();
             services.AddSingleton<ITotpService>(Totp);
+
+            // /auth/me reads per-user dashboard tile preferences — swap the
+            // Postgres-backed service for a no-op so DI does not pull in
+            // NpgsqlDataSource (removed above).
+            services.RemoveAll<IDashboardTilesService>();
+            services.AddSingleton<IDashboardTilesService, FakeDashboardTilesService>();
 
             // Swap the Postgres-backed Data Protection keyring for an in-memory
             // one so tests never reach (and never need) the stubbed datasource.
@@ -354,6 +361,19 @@ public sealed class FakeSessionService : ISessionService
         }
         return Task.CompletedTask;
     }
+}
+
+public sealed class FakeDashboardTilesService : IDashboardTilesService
+{
+    public Task<IReadOnlyList<string>> GetForUserAsync(Guid userId, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+
+    public Task<SetDashboardTilesResult> SetForUserAsync(
+        Guid userId,
+        IReadOnlyCollection<string> tileIds,
+        Guid actingAdminId,
+        CancellationToken ct = default) =>
+        Task.FromResult<SetDashboardTilesResult>(new SetDashboardTilesResult.Updated(tileIds.ToList()));
 }
 
 public sealed class FakeTotpService : ITotpService
