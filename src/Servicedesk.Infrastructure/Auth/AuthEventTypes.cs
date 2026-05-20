@@ -53,4 +53,27 @@ public static class AuthEventTypes
     // default". Globals-changes are audited via the generic
     // 'setting_changed' event on /api/settings.
     public const string UserTimesheetPreferencesChanged = "user.timesheet_preferences.changed";
+
+    // v0.0.40 — per-user ISO 27001 workflow flags. Single combined event
+    // with the {mgm, dpo} pair in the payload, same shape as the
+    // timesheet-flags event so an admin can reconstruct full state from
+    // one audit row.
+    public const string UserIsoFlagsChanged = "user.iso_flags.changed";
+
+    // v0.0.40 polish — Knowledge Base per-user opt-in. Same shape as the
+    // timesheet/iso event: payload carries the post-write boolean so an
+    // admin can reconstruct the flip from one audit row.
+    public const string UserKbFlagChanged = "user.kb_flag.changed";
+
+    // Consolidated per-user feature-flag mutation (search + every existing
+    // flag through the same endpoint). Payload carries the post-write
+    // state of every flag so an admin reconstructing history from a
+    // single row sees the full picture even when a partial update touched
+    // only one field.
+    public const string UserFeatureFlagsChanged = "user.feature_flags.changed";
+
+    // Per-user Dashboard tile preferences. Payload carries the full set
+    // of enabled tile-ids post-write so a single audit row reconstructs
+    // what tiles the user can see after the change.
+    public const string UserDashboardTilesChanged = "user.dashboard_tiles.changed";
 }

@@ -39,7 +39,7 @@ export function NotificationsWidget({ collapsed }: Props) {
   // a label+count pill in the expanded sidebar, an icon-only tile when
   // the sidebar is collapsed.
   return (
-    <div className="mx-3 mb-2">
+    <div className={cn("mx-3 mb-2", collapsed && "flex justify-center")}>
       <Popover>
         <PopoverTrigger asChild>
           {collapsed ? (

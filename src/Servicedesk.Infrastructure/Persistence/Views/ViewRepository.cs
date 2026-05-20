@@ -25,6 +25,14 @@ public sealed class ViewRepository : IViewRepository
         return rows.ToList();
     }
 
+    public async Task<IReadOnlyList<View>> ListAllAsync(CancellationToken ct)
+    {
+        var sql = $"SELECT {SelectColumns} FROM views ORDER BY sort_order, name";
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<View>(new CommandDefinition(sql, cancellationToken: ct));
+        return rows.ToList();
+    }
+
     public async Task<View?> GetAsync(Guid id, CancellationToken ct)
     {
         var sql = $"SELECT {SelectColumns} FROM views WHERE id = @id";

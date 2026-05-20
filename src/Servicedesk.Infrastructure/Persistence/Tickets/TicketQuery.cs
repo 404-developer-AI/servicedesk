@@ -33,7 +33,14 @@ public sealed record TicketQuery(
     DateTime? CursorUpdatedUtc = null,
     Guid? CursorId = null,
     int Limit = 50,
-    IReadOnlyList<Guid>? AccessibleQueueIds = null);
+    IReadOnlyList<Guid>? AccessibleQueueIds = null,
+    // v0.0.40 polish — multi-select filters from a saved view. When a
+    // list is non-empty, the singular counterpart is ignored and the
+    // SQL uses `= ANY(@<List>)`. Singular fields stay around for the
+    // sidebar's ad-hoc filter dropdowns + legacy URLs.
+    IReadOnlyList<Guid>? QueueIds = null,
+    IReadOnlyList<Guid>? StatusIds = null,
+    IReadOnlyList<Guid>? PriorityIds = null);
 
 public sealed record TicketListItem(
     Guid Id,

@@ -65,6 +65,25 @@ public interface IUserService
     /// without a second DB hit. Returns (false, false) when the user is
     /// gone or has never had the flags set.
     Task<TimesheetFlags> GetTimesheetFlagsAsync(Guid userId, CancellationToken ct = default);
+
+    /// v0.0.40 — surfaces the two per-user ISO 27001 workflow flags. The
+    /// /auth/me payload uses them to decide which classification buttons
+    /// to render on a ticket sitting in the ISO queue. Returns
+    /// (false, false) when the user is gone or has never had the flags
+    /// set — non-ISO agents never see the workflow.
+    Task<IsoFlags> GetIsoFlagsAsync(Guid userId, CancellationToken ct = default);
+
+    /// v0.0.40 polish — surfaces the per-user Knowledge Base opt-in flag.
+    /// The sidebar uses it to hide the KB nav entry; the KB endpoint
+    /// filter uses it to gate the /api/kb surface. Returns false when
+    /// the row is gone or the column is FALSE.
+    Task<bool> GetKbEnabledAsync(Guid userId, CancellationToken ct = default);
+
+    /// Per-user Sidebar feature flag for the global search bar. Returns
+    /// true on missing rows so a session outliving a deleted user does
+    /// not produce a visible regression (the search bar is also gated
+    /// by role on the frontend).
+    Task<bool> GetSearchEnabledAsync(Guid userId, CancellationToken ct = default);
 }
 
 /// Per-user Timesheet feature flags. Empty struct-y record so the call
@@ -72,6 +91,14 @@ public interface IUserService
 public readonly record struct TimesheetFlags(bool Enabled, bool Manager)
 {
     public static TimesheetFlags None => default;
+}
+
+/// Per-user ISO 27001 workflow flags. Mgm = first-line reviewer; Dpo =
+/// data-protection officer who registers incidents in the ISMS. A user
+/// can carry both (admins often do) or neither (default for new users).
+public readonly record struct IsoFlags(bool Mgm, bool Dpo)
+{
+    public static IsoFlags None => default;
 }
 
 public sealed class UserService : IUserService
@@ -343,6 +370,45 @@ public sealed class UserService : IUserService
     {
         public bool Enabled { get; set; }
         public bool Manager { get; set; }
+    }
+
+    public async Task<IsoFlags> GetIsoFlagsAsync(Guid userId, CancellationToken ct = default)
+    {
+        // Same record-struct hydration shape as the timesheet path —
+        // intermediate mutable holder to keep Dapper happy.
+        const string sql = """
+            SELECT is_iso_mgm AS Mgm,
+                   is_iso_dpo AS Dpo
+            FROM users WHERE id = @id
+            """;
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var row = await connection.QuerySingleOrDefaultAsync<IsoFlagsRow>(
+            new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
+        return row is null ? IsoFlags.None : new IsoFlags(row.Mgm, row.Dpo);
+    }
+
+    private sealed class IsoFlagsRow
+    {
+        public bool Mgm { get; set; }
+        public bool Dpo { get; set; }
+    }
+
+    public async Task<bool> GetKbEnabledAsync(Guid userId, CancellationToken ct = default)
+    {
+        const string sql = "SELECT kb_enabled FROM users WHERE id = @id";
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var value = await connection.QuerySingleOrDefaultAsync<bool?>(
+            new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
+        return value ?? false;
+    }
+
+    public async Task<bool> GetSearchEnabledAsync(Guid userId, CancellationToken ct = default)
+    {
+        const string sql = "SELECT search_enabled FROM users WHERE id = @id";
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var value = await connection.QuerySingleOrDefaultAsync<bool?>(
+            new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
+        return value ?? true;
     }
 }
 

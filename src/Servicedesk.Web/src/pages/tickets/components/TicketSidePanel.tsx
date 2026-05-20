@@ -366,9 +366,23 @@ function StatusTab({
   // render blank for legacy tickets and the user could no longer save.
   // Inactive carve-outs are flagged with a "— inactive" suffix at the
   // render site so the user knows why they can't pick that again later.
+  // v0.0.40 polish — restrict the status dropdown to the ticket's
+  // current queue's allowed-list. Empty list = no scoping (legacy
+  // behaviour, all statuses). The ticket's actual current status is
+  // always retained via the inactive-carve-out so a queue rescope
+  // doesn't break existing tickets — the dropdown still shows the
+  // current value so the agent can change it.
+  const queueAllowedStatusIds = currentQueue?.allowedStatusIds ?? [];
+  const scopedStatuses = React.useMemo(
+    () =>
+      queueAllowedStatusIds.length === 0
+        ? statuses
+        : statuses?.filter((s) => queueAllowedStatusIds.includes(s.id)),
+    [statuses, queueAllowedStatusIds],
+  );
   const statusOptions = React.useMemo(
-    () => withInactiveCarveOut(statuses, currentStatus),
-    [statuses, currentStatus],
+    () => withInactiveCarveOut(scopedStatuses, currentStatus),
+    [scopedStatuses, currentStatus],
   );
   const priorityOptions = React.useMemo(
     () => withInactiveCarveOut(priorities, currentPriority),

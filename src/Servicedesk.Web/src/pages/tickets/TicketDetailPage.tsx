@@ -13,6 +13,7 @@ import {
 } from "@/components/CompanyAlertDialog";
 import { TicketCompanyAssignmentDialog } from "@/components/TicketCompanyAssignmentDialog";
 import { TicketTypeBadge } from "@/components/TicketTypeBadge";
+import { IsoClassificationActions } from "@/components/IsoClassificationActions";
 import { SearchContextBar } from "@/components/SearchContextBar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RichTextEditor } from "@/components/RichTextEditor";
@@ -687,6 +688,7 @@ function TicketDetailBody({
                 }}
               />
             </div>
+            <IsoClassificationActions ticket={ticket} />
             <SlaPill ticketId={ticket.id} className="shrink-0 justify-end" />
             <ExportPdfButton ticketId={ticketId} />
           </div>

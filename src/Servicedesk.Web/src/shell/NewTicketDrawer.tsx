@@ -289,6 +289,25 @@ export function NewTicketDrawer({
     if (defaultStatusId) setValue("statusId", defaultStatusId);
   }, [open, defaultPriorityId, defaultStatusId, setValue]);
 
+  // v0.0.40 polish — when the chosen queue's allowed-list excludes the
+  // current statusId selection, swap to the queue's default (or the
+  // first allowed status as fallback). Mirrors the server's auto-flip
+  // on UpdateFieldsAsync — keeps the form preview consistent with what
+  // POST would land on.
+  const watchedStatusInForm = useWatch({ control, name: "statusId" });
+  useEffect(() => {
+    if (!open) return;
+    const q = (queues ?? []).find((x) => x.id === watchedQueueId);
+    if (!q) return;
+    const allowed = q.allowedStatusIds ?? [];
+    if (allowed.length === 0) return;
+    if (watchedStatusInForm && allowed.includes(watchedStatusInForm)) return;
+    const next = q.defaultStatusId && allowed.includes(q.defaultStatusId)
+      ? q.defaultStatusId
+      : allowed[0];
+    if (next) setValue("statusId", next);
+  }, [open, watchedQueueId, watchedStatusInForm, queues, setValue]);
+
   const [postCreateAlert, setPostCreateAlert] = useState<CompanyAlert | null>(null);
 
   const { mutate: createTicket, isPending } = useMutation({
@@ -348,7 +367,15 @@ export function NewTicketDrawer({
   const activePriorities = (priorities ?? [])
     .filter((p) => p.isActive)
     .sort((a, b) => a.sortOrder - b.sortOrder);
-  const activeStatuses = (statuses ?? []).filter((s) => s.isActive);
+  // v0.0.40 polish — filter statuses against the currently-selected
+  // queue's allowed-list. Empty list = no scoping, all active
+  // statuses available (backward-compat with queues created before
+  // this column existed).
+  const selectedQueue = activeQueues.find((q) => q.id === watchedQueueId);
+  const queueAllowedStatusIds = selectedQueue?.allowedStatusIds ?? [];
+  const activeStatuses = (statuses ?? [])
+    .filter((s) => s.isActive)
+    .filter((s) => queueAllowedStatusIds.length === 0 || queueAllowedStatusIds.includes(s.id));
   const activeCategories = (categories ?? []).filter((c) => c.isActive);
 
   const queueOptions = activeQueues.map((q) => ({

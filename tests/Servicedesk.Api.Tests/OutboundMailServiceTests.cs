@@ -268,8 +268,14 @@ public sealed class OutboundMailServiceTests
         public Task<Queue?> GetQueueAsync(Guid id, CancellationToken ct) => Task.FromResult<Queue?>(Q);
         public Task<IReadOnlyList<Queue>> ListQueuesAsync(CancellationToken ct) => throw new NotImplementedException();
         public Task<Queue> CreateQueueAsync(Queue q, CancellationToken ct) => throw new NotImplementedException();
-        public Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, string? inbound, string? outbound, string? inboundFolderId, string? inboundFolderName, CancellationToken ct) => throw new NotImplementedException();
+        public Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, string? inbound, string? outbound, string? inboundFolderId, string? inboundFolderName, IReadOnlyList<Guid> allowedStatusIds, Guid? defaultStatusId, CancellationToken ct) => throw new NotImplementedException();
         public Task<DeleteResult> DeleteQueueAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
+        public Task<IReadOnlyList<TicketType>> ListTicketTypesAsync(CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketType?> GetTicketTypeAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketType?> GetTicketTypeByCodeAsync(string code, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketType> CreateTicketTypeAsync(TicketType t, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketType?> UpdateTicketTypeAsync(Guid id, string code, string label, string description, string icon, string color, int sortOrder, bool isActive, CancellationToken ct) => throw new NotImplementedException();
+        public Task<DeleteResult> DeleteTicketTypeAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<Status>> ListStatusesAsync(CancellationToken ct) => throw new NotImplementedException();
         public Task<Status?> GetStatusAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
         public Task<Status> CreateStatusAsync(Status s, CancellationToken ct) => throw new NotImplementedException();
@@ -474,6 +480,9 @@ public sealed class OutboundMailServiceTests
         public Task RecordSuccessfulLoginAsync(Guid userId, CancellationToken ct = default) => Task.CompletedTask;
         public Task<bool> RecordFailedLoginAsync(Guid userId, int maxAttempts, int windowSeconds, int lockoutDurationSeconds, CancellationToken ct = default) => Task.FromResult(false);
         public Task<TimesheetFlags> GetTimesheetFlagsAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(TimesheetFlags.None);
+        public Task<IsoFlags> GetIsoFlagsAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(IsoFlags.None);
+        public Task<bool> GetKbEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
+        public Task<bool> GetSearchEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(true);
     }
 
     private sealed class StubIntakeForms : IIntakeFormRepository

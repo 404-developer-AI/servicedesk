@@ -57,6 +57,22 @@ public static class AdminUserEndpoints
             .WithName("AdminUsersUpdateTimesheetFlags")
             .WithOpenApi();
 
+        group.MapPut("/{id:guid}/iso-flags", UpdateIsoFlags)
+            .WithName("AdminUsersUpdateIsoFlags")
+            .WithOpenApi();
+
+        group.MapPut("/{id:guid}/kb-flag", UpdateKbFlag)
+            .WithName("AdminUsersUpdateKbFlag")
+            .WithOpenApi();
+
+        group.MapPut("/{id:guid}/feature-flags", UpdateFeatureFlags)
+            .WithName("AdminUsersUpdateFeatureFlags")
+            .WithOpenApi();
+
+        group.MapPut("/{id:guid}/dashboard-tiles", UpdateDashboardTiles)
+            .WithName("AdminUsersUpdateDashboardTiles")
+            .WithOpenApi();
+
         group.MapGet("/{id:guid}/timesheet-preferences", GetTimesheetPreferences)
             .WithName("AdminUsersGetTimesheetPreferences")
             .WithOpenApi();
@@ -362,6 +378,192 @@ public static class AdminUserEndpoints
     // ---- timesheet feature flags (v0.0.35) ---------------------------------
 
     public sealed record UpdateTimesheetFlagsRequest(bool Enabled, bool Manager);
+
+    public sealed record UpdateIsoFlagsRequest(bool Mgm, bool Dpo);
+
+    public sealed record UpdateKbFlagRequest(bool Enabled);
+
+    public sealed record UpdateFeatureFlagsRequest(
+        bool? TimesheetEnabled,
+        bool? TimesheetManager,
+        bool? IsIsoMgm,
+        bool? IsIsoDpo,
+        bool? KbEnabled,
+        bool? SearchEnabled);
+
+    private static async Task<IResult> UpdateFeatureFlags(
+        Guid id,
+        [FromBody] UpdateFeatureFlagsRequest request,
+        HttpContext httpContext,
+        IUserAdminService admin,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        var adminId = RequireUserId(httpContext);
+        if (adminId is null) return Results.Unauthorized();
+
+        var update = new FeatureFlagsUpdate(
+            request.TimesheetEnabled,
+            request.TimesheetManager,
+            request.IsIsoMgm,
+            request.IsIsoDpo,
+            request.KbEnabled,
+            request.SearchEnabled);
+
+        var result = await admin.UpdateFeatureFlagsAsync(id, update, adminId.Value, ct);
+        return result switch
+        {
+            UpdateFeatureFlagsResult.Updated updated =>
+                await LogAndReturnAsync(httpContext, audit,
+                    AuthEventTypes.UserFeatureFlagsChanged,
+                    target: updated.Row.Id.ToString(),
+                    payload: new
+                    {
+                        email = updated.Row.Email,
+                        timesheet_enabled = updated.Row.TimesheetEnabled,
+                        timesheet_manager = updated.Row.TimesheetManager,
+                        is_iso_mgm = updated.Row.IsIsoMgm,
+                        is_iso_dpo = updated.Row.IsIsoDpo,
+                        kb_enabled = updated.Row.KbEnabled,
+                        search_enabled = updated.Row.SearchEnabled,
+                    },
+                    body: updated.Row,
+                    statusCode: StatusCodes.Status200OK,
+                    ct: ct),
+            UpdateFeatureFlagsResult.UserNotFound => Results.NotFound(),
+            UpdateFeatureFlagsResult.CustomerNotAllowed =>
+                Results.Conflict(new { error = "Feature flags are only available for Agent and Admin accounts." }),
+            UpdateFeatureFlagsResult.NoChange => Results.Ok(),
+            _ => Results.Problem("Unhandled feature-flags result."),
+        };
+    }
+
+    public sealed record UpdateDashboardTilesRequest(IReadOnlyList<string> TileIds);
+
+    private static async Task<IResult> UpdateDashboardTiles(
+        Guid id,
+        [FromBody] UpdateDashboardTilesRequest request,
+        HttpContext httpContext,
+        Servicedesk.Infrastructure.Dashboard.IDashboardTilesService dashboardTiles,
+        IUserAdminService admin,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        var adminId = RequireUserId(httpContext);
+        if (adminId is null) return Results.Unauthorized();
+
+        var requested = request.TileIds ?? Array.Empty<string>();
+        var result = await dashboardTiles.SetForUserAsync(id, requested, adminId.Value, ct);
+        return result switch
+        {
+            Servicedesk.Infrastructure.Dashboard.SetDashboardTilesResult.Updated upd =>
+                await ReturnRowAfterTilesChangeAsync(
+                    httpContext, audit, admin, id, upd.TileIds, ct),
+            Servicedesk.Infrastructure.Dashboard.SetDashboardTilesResult.UserNotFound =>
+                Results.NotFound(),
+            Servicedesk.Infrastructure.Dashboard.SetDashboardTilesResult.CustomerNotAllowed =>
+                Results.Conflict(new { error = "Dashboard tiles are only available for Agent and Admin accounts." }),
+            Servicedesk.Infrastructure.Dashboard.SetDashboardTilesResult.UnknownTileIds unknown =>
+                Results.BadRequest(new
+                {
+                    error = "Unknown tile id(s).",
+                    unknown_tile_ids = unknown.Ids,
+                }),
+            _ => Results.Problem("Unhandled dashboard-tiles result."),
+        };
+    }
+
+    private static async Task<IResult> ReturnRowAfterTilesChangeAsync(
+        HttpContext httpContext,
+        IAuditLogger audit,
+        IUserAdminService admin,
+        Guid userId,
+        IReadOnlyList<string> tileIds,
+        CancellationToken ct)
+    {
+        var row = await admin.GetByIdAsync(userId, ct);
+        if (row is null) return Results.NotFound();
+        return await LogAndReturnAsync(httpContext, audit,
+            AuthEventTypes.UserDashboardTilesChanged,
+            target: row.Id.ToString(),
+            payload: new
+            {
+                email = row.Email,
+                tile_ids = tileIds,
+            },
+            body: row,
+            statusCode: StatusCodes.Status200OK,
+            ct: ct);
+    }
+
+    private static async Task<IResult> UpdateKbFlag(
+        Guid id,
+        [FromBody] UpdateKbFlagRequest request,
+        HttpContext httpContext,
+        IUserAdminService admin,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        var adminId = RequireUserId(httpContext);
+        if (adminId is null) return Results.Unauthorized();
+
+        var result = await admin.UpdateKbFlagAsync(
+            id, request.Enabled, adminId.Value, ct);
+        return result switch
+        {
+            UpdateKbFlagResult.Updated updated =>
+                await LogAndReturnAsync(httpContext, audit,
+                    AuthEventTypes.UserKbFlagChanged,
+                    target: updated.Row.Id.ToString(),
+                    payload: new
+                    {
+                        email = updated.Row.Email,
+                        kb_enabled = updated.Row.KbEnabled,
+                    },
+                    body: updated.Row,
+                    statusCode: StatusCodes.Status200OK,
+                    ct: ct),
+            UpdateKbFlagResult.UserNotFound => Results.NotFound(),
+            UpdateKbFlagResult.CustomerNotAllowed =>
+                Results.Conflict(new { error = "Knowledge Base access is only available for Agent and Admin accounts." }),
+            _ => Results.Problem("Unhandled kb-flag result."),
+        };
+    }
+
+    private static async Task<IResult> UpdateIsoFlags(
+        Guid id,
+        [FromBody] UpdateIsoFlagsRequest request,
+        HttpContext httpContext,
+        IUserAdminService admin,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        var adminId = RequireUserId(httpContext);
+        if (adminId is null) return Results.Unauthorized();
+
+        var result = await admin.UpdateIsoFlagsAsync(
+            id, request.Mgm, request.Dpo, adminId.Value, ct);
+        return result switch
+        {
+            UpdateIsoFlagsResult.Updated updated =>
+                await LogAndReturnAsync(httpContext, audit,
+                    AuthEventTypes.UserIsoFlagsChanged,
+                    target: updated.Row.Id.ToString(),
+                    payload: new
+                    {
+                        email = updated.Row.Email,
+                        is_iso_mgm = updated.Row.IsIsoMgm,
+                        is_iso_dpo = updated.Row.IsIsoDpo,
+                    },
+                    body: updated.Row,
+                    statusCode: StatusCodes.Status200OK,
+                    ct: ct),
+            UpdateIsoFlagsResult.UserNotFound => Results.NotFound(),
+            UpdateIsoFlagsResult.CustomerNotAllowed =>
+                Results.Conflict(new { error = "ISO 27001 flags are only available for Agent and Admin accounts." }),
+            _ => Results.Problem("Unhandled iso-flags result."),
+        };
+    }
 
     private static async Task<IResult> UpdateTimesheetFlags(
         Guid id,

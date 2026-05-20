@@ -11,6 +11,24 @@ import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
 import { useTicketListRealtime } from "@/hooks/useTicketRealtime";
 import type { TicketListQuery, TicketListItem, DisplayConfig } from "@/lib/ticket-api";
 
+// v0.0.40 polish — pull a multi-id list from a parsed filtersJson object
+// while falling back to the legacy singular field. Returns undefined when
+// neither form is present so the caller can omit the key entirely.
+function readIdList(
+  raw: Record<string, unknown>,
+  listKey: string,
+  singularKey: string,
+): string[] | undefined {
+  const list = raw[listKey];
+  if (Array.isArray(list)) {
+    const ids = list.filter((v): v is string => typeof v === "string" && v.length > 0);
+    if (ids.length > 0) return ids;
+  }
+  const single = raw[singularKey];
+  if (typeof single === "string" && single.length > 0) return [single];
+  return undefined;
+}
+
 function readFiltersFromSearch(searchStr: string): TicketListQuery {
   const params = new URLSearchParams(searchStr);
   const filters: TicketListQuery = {};
@@ -102,9 +120,15 @@ export function TicketListPage() {
     try {
       const vf = JSON.parse(viewData.filtersJson) as Record<string, unknown>;
       const applied: TicketListQuery = {};
-      if (typeof vf.queueId === "string") applied.queueId = vf.queueId;
-      if (typeof vf.statusId === "string") applied.statusId = vf.statusId;
-      if (typeof vf.priorityId === "string") applied.priorityId = vf.priorityId;
+      // v0.0.40 polish — multi-select arrays from the view editor. Legacy
+      // views (singular form) are folded into a single-element array so
+      // the server can take the same path.
+      const queueIds = readIdList(vf, "queueIds", "queueId");
+      const statusIds = readIdList(vf, "statusIds", "statusId");
+      const priorityIds = readIdList(vf, "priorityIds", "priorityId");
+      if (queueIds) applied.queueIds = queueIds;
+      if (statusIds) applied.statusIds = statusIds;
+      if (priorityIds) applied.priorityIds = priorityIds;
       if (typeof vf.assigneeUserId === "string") applied.assigneeUserId = vf.assigneeUserId;
       if (typeof vf.search === "string") applied.search = vf.search;
       if (vf.openOnly === true) applied.openOnly = true;

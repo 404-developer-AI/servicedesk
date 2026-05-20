@@ -86,6 +86,7 @@ export function ActionsEditor({ value, onChange, taxonomies, variables }: Props)
           action={action}
           idx={idx}
           total={value.length}
+          peerActions={value}
           onChange={(a) => update(idx, a)}
           onRemove={() => remove(idx)}
           onMove={(dir) => move(idx, dir)}
@@ -128,6 +129,7 @@ function ActionCard({
   action,
   idx,
   total,
+  peerActions,
   onChange,
   onRemove,
   onMove,
@@ -137,6 +139,7 @@ function ActionCard({
   action: TriggerAction;
   idx: number;
   total: number;
+  peerActions: TriggerAction[];
   onChange: (a: TriggerAction) => void;
   onRemove: () => void;
   onMove: (dir: -1 | 1) => void;
@@ -194,6 +197,7 @@ function ActionCard({
 
       <ActionForm
         action={action}
+        peerActions={peerActions}
         onChange={onChange}
         taxonomies={taxonomies}
         variables={variables}
@@ -204,11 +208,13 @@ function ActionCard({
 
 function ActionForm({
   action,
+  peerActions,
   onChange,
   taxonomies,
   variables,
 }: {
   action: TriggerAction;
+  peerActions: TriggerAction[];
   onChange: (a: TriggerAction) => void;
   taxonomies: Props["taxonomies"];
   variables: TriggerTemplateVariable[];
@@ -253,7 +259,19 @@ function ActionForm({
           </NativeSelect>
         </FieldRow>
       );
-    case "set_status":
+    case "set_status": {
+      // v0.0.40 polish — when this trigger also flips the queue,
+      // filter the status dropdown to that target queue's allowed-list.
+      // Surfaces the same constraint the runtime enforces: you can't
+      // save a `set_status` that the target queue would reject.
+      const peerSetQueue = peerActions.find((a): a is Extract<TriggerAction, { kind: "set_queue" }> => a.kind === "set_queue");
+      const targetQueue = peerSetQueue
+        ? taxonomies.queues.find((q) => q.id === peerSetQueue.queue_id)
+        : null;
+      const targetAllowed = targetQueue?.allowedStatusIds ?? [];
+      const scopedStatuses = targetAllowed.length === 0
+        ? taxonomies.statuses
+        : taxonomies.statuses.filter((s) => targetAllowed.includes(s.id));
       return (
         <FieldRow label="Status">
           <NativeSelect
@@ -261,12 +279,18 @@ function ActionForm({
             onChange={(v) => onChange({ ...action, status_id: v })}
           >
             <option value="">— Select —</option>
-            {taxonomies.statuses.map((s) => (
+            {scopedStatuses.map((s) => (
               <option key={s.id} value={s.id}>{s.name}</option>
             ))}
           </NativeSelect>
+          {targetQueue && targetAllowed.length > 0 && (
+            <p className="mt-1 text-[11px] text-muted-foreground/70">
+              Filtered to the {targetQueue.name} queue's allowed statuses (set_queue is also active in this trigger).
+            </p>
+          )}
         </FieldRow>
       );
+    }
     case "set_owner":
       return (
         <FieldRow label="Owner">
@@ -590,9 +614,20 @@ function CreateLinkedTicketFields({
             onChange={(v) => onChange({ ...action, status_id: v || null })}
           >
             <option value="">— inherit from parent —</option>
-            {taxonomies.statuses.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
+            {(() => {
+              // v0.0.40 polish — when this action also picks a queue,
+              // scope the status options to that queue's allowed-list.
+              const linkedQueue = action.queue_id
+                ? taxonomies.queues.find((q) => q.id === action.queue_id)
+                : null;
+              const allowed = linkedQueue?.allowedStatusIds ?? [];
+              const list = allowed.length === 0
+                ? taxonomies.statuses
+                : taxonomies.statuses.filter((s) => allowed.includes(s.id));
+              return list.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ));
+            })()}
           </NativeSelect>
         </FieldRow>
         <FieldRow label="Priority (default)">

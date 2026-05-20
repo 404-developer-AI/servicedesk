@@ -89,6 +89,38 @@ public interface IUserAdminService
         bool manager,
         Guid actingAdminId,
         CancellationToken ct = default);
+
+    /// v0.0.40 — flips the two ISO 27001 workflow flags. Same shape as
+    /// UpdateTimesheetFlagsAsync: Customer accounts are rejected,
+    /// self-edit is allowed (the flags drive button-visibility only,
+    /// not authentication).
+    Task<UpdateIsoFlagsResult> UpdateIsoFlagsAsync(
+        Guid userId,
+        bool mgm,
+        bool dpo,
+        Guid actingAdminId,
+        CancellationToken ct = default);
+
+    /// v0.0.40 polish — flips the Knowledge Base opt-in flag. Customer
+    /// accounts are rejected; the KB is agent/admin territory. Self-edit
+    /// is allowed (the flag gates feature visibility, not authentication).
+    Task<UpdateKbFlagResult> UpdateKbFlagAsync(
+        Guid userId,
+        bool enabled,
+        Guid actingAdminId,
+        CancellationToken ct = default);
+
+    /// Consolidated partial-update across every per-user feature flag.
+    /// Each field in <paramref name="update"/> is nullable: null = leave
+    /// alone, non-null = write. One transaction with FOR UPDATE row lock,
+    /// one audit event. Customer accounts are rejected because none of
+    /// the seven flags apply to them. All-null payload returns NoChange
+    /// without touching the database.
+    Task<UpdateFeatureFlagsResult> UpdateFeatureFlagsAsync(
+        Guid userId,
+        FeatureFlagsUpdate update,
+        Guid actingAdminId,
+        CancellationToken ct = default);
 }
 
 /// Projection for the /settings/users table. Fields are whitelisted so a
@@ -105,7 +137,21 @@ public sealed record UserAdminRow(
     DateTime CreatedUtc,
     DateTime? LastLoginUtc,
     bool TimesheetEnabled,
-    bool TimesheetManager);
+    bool TimesheetManager,
+    bool IsIsoMgm = false,
+    bool IsIsoDpo = false,
+    bool KbEnabled = false,
+    bool SearchEnabled = true)
+{
+    /// Per-user Dashboard tile preferences sourced from
+    /// `user_dashboard_tiles`. Empty list = no tiles enabled
+    /// (default on first upgrade). Tile ids are validated against
+    /// <see cref="Servicedesk.Infrastructure.Dashboard.DashboardTileIds.All"/>
+    /// before being written, so anything that ends up in this list
+    /// is guaranteed to be a known tile.
+    public IReadOnlyList<string> DashboardTiles { get; init; } =
+        Array.Empty<string>();
+}
 
 // ---- Result types ------------------------------------------------------
 
@@ -172,4 +218,37 @@ public abstract record UpdateTimesheetFlagsResult
     public sealed record Updated(UserAdminRow Row) : UpdateTimesheetFlagsResult;
     public sealed record UserNotFound : UpdateTimesheetFlagsResult;
     public sealed record CustomerNotAllowed : UpdateTimesheetFlagsResult;
+}
+
+public abstract record UpdateIsoFlagsResult
+{
+    public sealed record Updated(UserAdminRow Row) : UpdateIsoFlagsResult;
+    public sealed record UserNotFound : UpdateIsoFlagsResult;
+    public sealed record CustomerNotAllowed : UpdateIsoFlagsResult;
+}
+
+public abstract record UpdateKbFlagResult
+{
+    public sealed record Updated(UserAdminRow Row) : UpdateKbFlagResult;
+    public sealed record UserNotFound : UpdateKbFlagResult;
+    public sealed record CustomerNotAllowed : UpdateKbFlagResult;
+}
+
+/// Partial update payload for <see cref="IUserAdminService.UpdateFeatureFlagsAsync"/>.
+/// Every field is nullable so the caller can patch one flag without
+/// touching the others. All-null = no-op (returns NoChange).
+public sealed record FeatureFlagsUpdate(
+    bool? TimesheetEnabled,
+    bool? TimesheetManager,
+    bool? IsIsoMgm,
+    bool? IsIsoDpo,
+    bool? KbEnabled,
+    bool? SearchEnabled);
+
+public abstract record UpdateFeatureFlagsResult
+{
+    public sealed record Updated(UserAdminRow Row) : UpdateFeatureFlagsResult;
+    public sealed record UserNotFound : UpdateFeatureFlagsResult;
+    public sealed record CustomerNotAllowed : UpdateFeatureFlagsResult;
+    public sealed record NoChange : UpdateFeatureFlagsResult;
 }

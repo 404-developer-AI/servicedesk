@@ -429,9 +429,11 @@ export function ViewGroupsSettingsPage() {
     queryFn: () => userApi.listAgents(),
   });
 
+  // Admins assign views to groups, so this page needs every view in the
+  // system — not just the ones the admin personally has access to.
   const { data: views = [] } = useQuery({
-    queryKey: ["views"],
-    queryFn: () => viewApi.list(),
+    queryKey: ["views", "all"],
+    queryFn: () => viewApi.listAll(),
   });
 
   const selectedGroup = groups?.find((g) => g.id === selectedId) ?? null;

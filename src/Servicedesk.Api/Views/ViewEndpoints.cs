@@ -14,7 +14,10 @@ public static class ViewEndpoints
         var group = app.MapGroup("/api/views")
             .WithTags("Views");
 
-        // List: agents see only their assigned views, admins see all.
+        // List: every caller (agent or admin) sees only views they have been
+        // granted access to via a view group or direct assignment. Admins who
+        // want everything in their personal sidebar add themselves like any
+        // other agent; the management surface uses /all below.
         group.MapGet("/", async (HttpContext http, IViewAccessService viewAccess, CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
@@ -22,6 +25,14 @@ public static class ViewEndpoints
             return Results.Ok(await viewAccess.GetAccessibleViewsAsync(userId, role, ct));
         }).WithName("ListViews").WithOpenApi()
           .RequireAuthorization(AuthorizationPolicies.RequireAgent);
+
+        // Admin-only: every view in the system, used by management surfaces
+        // (Settings → Views, Settings → View groups) where admins need to see
+        // and assign views regardless of personal access.
+        group.MapGet("/all", async (IViewRepository repo, CancellationToken ct) =>
+            Results.Ok(await repo.ListAllAsync(ct)))
+          .WithName("ListAllViews").WithOpenApi()
+          .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // Get: validate view access. Returns 404 if no access (prevents enumeration).
         group.MapGet("/{id:guid}", async (
@@ -46,6 +57,8 @@ public static class ViewEndpoints
         {
             if (string.IsNullOrWhiteSpace(req.Name))
                 return Results.BadRequest(new { error = "Name is required." });
+            if (req.SortOrder is { } so && (so < 0 || so > 100))
+                return Results.BadRequest(new { error = "SortOrder must be between 0 and 100." });
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var created = await repo.CreateAsync(userId, req.Name.Trim(), req.FiltersJson ?? "{}", req.Columns, req.SortOrder ?? 0, req.IsShared ?? false, req.DisplayConfigJson ?? "{}", ct);
             viewAccess.InvalidateAllViewCaches();
@@ -58,6 +71,8 @@ public static class ViewEndpoints
         {
             if (string.IsNullOrWhiteSpace(req.Name))
                 return Results.BadRequest(new { error = "Name is required." });
+            if (req.SortOrder is { } so && (so < 0 || so > 100))
+                return Results.BadRequest(new { error = "SortOrder must be between 0 and 100." });
             var updated = await repo.UpdateAsync(id, req.Name.Trim(), req.FiltersJson ?? "{}", req.Columns, req.SortOrder ?? 0, req.IsShared ?? false, req.DisplayConfigJson ?? "{}", ct);
             if (updated is not null) viewAccess.InvalidateAllViewCaches();
             return updated is null ? Results.NotFound() : Results.Ok(updated);

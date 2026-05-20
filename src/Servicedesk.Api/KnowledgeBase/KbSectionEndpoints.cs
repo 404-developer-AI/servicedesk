@@ -16,7 +16,8 @@ public static class KbSectionEndpoints
     {
         var readGroup = app.MapGroup("/api/kb")
             .WithTags("KnowledgeBase")
-            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+            .RequireKbAccess();
 
         readGroup.MapGet("/sections", async (
             IKbConfigRepository configs, IKbSectionRepository sections, CancellationToken ct) =>
@@ -46,7 +47,8 @@ public static class KbSectionEndpoints
         // ---- Admin-only: section lifecycle ----
         var adminGroup = app.MapGroup("/api/kb")
             .WithTags("KnowledgeBase")
-            .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
+            .RequireAuthorization(AuthorizationPolicies.RequireAdmin)
+            .RequireKbAccess();
 
         adminGroup.MapPost("/sections", async (
             [FromBody] KbSectionRequest req, HttpContext http,

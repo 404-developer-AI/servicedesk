@@ -42,7 +42,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-type TabKey = "queues" | "priorities" | "statuses" | "categories" | "types" | "warnings";
+type TabKey = "queues" | "priorities" | "statuses" | "categories" | "types" | "iso27001" | "warnings";
 
 const TABS: { key: TabKey; label: string; description: string }[] = [
   {
@@ -74,6 +74,12 @@ const TABS: { key: TabKey; label: string; description: string }[] = [
     label: "Types",
     description:
       "First-class ticket type — drives the badge on each ticket and the buttons in the 'Create linked ticket' picker. Bind a manual trigger to a type under Settings → Triggers to expose a one-click linked-ticket preset.",
+  },
+  {
+    key: "iso27001",
+    label: "ISO 27001",
+    description:
+      "Bind the ISO 27001 workflow to a dedicated queue. MGM-flagged agents classify each ticket as event or incident; DPO-flagged agents register incidents in the ISMS. Per-user roles are managed under Settings → Users.",
   },
   {
     key: "warnings",
@@ -129,6 +135,7 @@ export function TicketsSettingsPage() {
         {tab === "statuses" && <StatusesTab />}
         {tab === "categories" && <CategoriesTab />}
         {tab === "types" && <TicketTypesTab />}
+        {tab === "iso27001" && <Iso27001Tab />}
         {tab === "warnings" && <WarningsTab />}
       </div>
     </div>
@@ -390,7 +397,17 @@ function QueueDialog({
     outboundMailboxAddress: queue?.outboundMailboxAddress ?? "",
     inboundFolderId: queue?.inboundFolderId ?? "",
     inboundFolderName: queue?.inboundFolderName ?? "",
+    allowedStatusIds: queue?.allowedStatusIds ?? [],
+    defaultStatusId: queue?.defaultStatusId ?? null,
   }));
+
+  // v0.0.40 polish — load every status so the "Status scope" block
+  // can offer the multi-select. Cached + reused with the existing key.
+  const { data: statuses } = useQuery({
+    queryKey: ["taxonomy", "statuses"],
+    queryFn: () => taxonomyApi.statuses.list(),
+    staleTime: 60_000,
+  });
 
   const [folders, setFolders] = useState<GraphMailFolder[]>([]);
   const [foldersLoading, setFoldersLoading] = useState(false);
@@ -426,6 +443,8 @@ function QueueDialog({
         outboundMailboxAddress: form.outboundMailboxAddress?.trim() || null,
         inboundFolderId: form.inboundFolderId?.trim() || null,
         inboundFolderName: form.inboundFolderName?.trim() || null,
+        allowedStatusIds: form.allowedStatusIds ?? [],
+        defaultStatusId: form.defaultStatusId ?? null,
       };
       if (queue) {
         return taxonomyApi.queues.update(queue.id, payload);
@@ -495,6 +514,86 @@ function QueueDialog({
             />
             Active (visible to agents when creating tickets)
           </label>
+
+          {/* v0.0.40 polish — status scope. Leave empty to keep the
+              current behaviour (all statuses available); pick a subset
+              to filter the status dropdown and the trigger set_status
+              picker. Default status is the auto-flip target when a
+              ticket moves into this queue on a status not in the list. */}
+          <div className="mt-2 space-y-3 rounded-md border border-white/[0.06] bg-white/[0.02] p-3">
+            <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+              Status scope
+            </div>
+            <Field label="Allowed statuses (leave empty = all)">
+              <div className="flex flex-wrap gap-1.5">
+                {(statuses ?? []).filter((s) => s.isActive).map((s) => {
+                  const selected = form.allowedStatusIds?.includes(s.id) ?? false;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() =>
+                        setForm((f) => {
+                          const current = f.allowedStatusIds ?? [];
+                          const next = selected
+                            ? current.filter((id) => id !== s.id)
+                            : [...current, s.id];
+                          return {
+                            ...f,
+                            allowedStatusIds: next,
+                            // If the current defaultStatusId is no
+                            // longer in the (non-empty) list, clear it.
+                            defaultStatusId:
+                              next.length > 0 && f.defaultStatusId
+                                ? next.includes(f.defaultStatusId) ? f.defaultStatusId : null
+                                : f.defaultStatusId,
+                          };
+                        })
+                      }
+                      className={cn(
+                        "rounded-md border px-2 py-0.5 text-[11px] transition",
+                        selected
+                          ? "border-violet-400/40 bg-violet-400/15 text-violet-200"
+                          : "border-white/10 bg-white/[0.04] text-muted-foreground hover:bg-white/[0.07]",
+                      )}
+                      style={selected ? { color: s.color } : undefined}
+                    >
+                      {s.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+            <Field label="Default status on queue change">
+              <Select
+                value={form.defaultStatusId ?? "__none__"}
+                onValueChange={(v) =>
+                  setForm((f) => ({
+                    ...f,
+                    defaultStatusId: v === "__none__" ? null : v,
+                  }))
+                }
+              >
+                <SelectTrigger className="h-9 border-white/10 bg-white/[0.04]">
+                  <SelectValue placeholder="— no auto-flip —" />
+                </SelectTrigger>
+                <SelectContent className="border-white/10 bg-popover/80 backdrop-blur-xl">
+                  <SelectItem value="__none__">— no auto-flip —</SelectItem>
+                  {(statuses ?? [])
+                    .filter((s) => s.isActive)
+                    .filter((s) => (form.allowedStatusIds?.length ?? 0) === 0 || form.allowedStatusIds!.includes(s.id))
+                    .map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <p className="text-[11px] text-muted-foreground/70">
+              When a ticket moves into this queue (manually or via a trigger) and its current status is not allowed here, the status auto-flips to the default. Leave both empty to disable.
+            </p>
+          </div>
 
           <div className="mt-2 space-y-3 rounded-md border border-white/[0.06] bg-white/[0.02] p-3">
             <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
@@ -1295,6 +1394,99 @@ function LoadingSkeleton() {
       {Array.from({ length: 5 }).map((_, i) => (
         <Skeleton key={i} className="h-10 w-full" />
       ))}
+    </div>
+  );
+}
+
+// ---------- ISO 27001 tab (v0.0.40) ----------
+
+function Iso27001Tab() {
+  const qc = useQueryClient();
+  const { data: entries, isLoading: settingsLoading } = useQuery({
+    queryKey: ["settings", "iso27001"],
+    queryFn: () => settingsApi.list("Iso27001"),
+    staleTime: 60_000,
+  });
+  const { data: queues, isLoading: queuesLoading } = useQuery({
+    queryKey: ["taxonomy", "queues"],
+    queryFn: () => taxonomyApi.queues.list(),
+  });
+
+  const queueIdValue = useMemo(
+    () => entries?.find((e) => e.key === "Iso27001.QueueId")?.value ?? "",
+    [entries],
+  );
+
+  const update = useMutation({
+    mutationFn: ({ value }: { value: string }) =>
+      settingsApi.update("Iso27001.QueueId", value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "iso27001"] });
+      toast.success("ISO 27001 queue updated");
+    },
+    onError: () => toast.error("Could not update ISO 27001 queue"),
+  });
+
+  const loading = settingsLoading || queuesLoading;
+  const isConfigured = !!queueIdValue && queueIdValue.trim().length > 0;
+  const boundQueueName = queues?.find((q) => q.id === queueIdValue)?.name ?? null;
+
+  return (
+    <div className="space-y-6">
+      <section className="glass-card p-5">
+        <div className="space-y-1">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            Workflow queue
+          </h2>
+          <p className="text-xs text-muted-foreground/70">
+            Pick the queue where ISO 27001 tickets land. Leave empty to disable
+            the classification buttons entirely. Tickets in any other queue are
+            unaffected.
+          </p>
+        </div>
+        <div className="mt-4 space-y-3">
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Bound queue
+            </span>
+            <Select
+              value={queueIdValue || "__none__"}
+              disabled={loading || update.isPending}
+              onValueChange={(v) =>
+                update.mutate({ value: v === "__none__" ? "" : v })
+              }
+            >
+              <SelectTrigger className="h-9 w-full border-white/10 bg-white/[0.04]">
+                <SelectValue placeholder="— disabled —" />
+              </SelectTrigger>
+              <SelectContent className="border-white/10 bg-popover/80 backdrop-blur-xl">
+                <SelectItem value="__none__">— disabled —</SelectItem>
+                {(queues ?? [])
+                  .filter((q) => q.isActive)
+                  .map((q) => (
+                    <SelectItem key={q.id} value={q.id}>
+                      {q.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </label>
+          <div className="rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-xs text-muted-foreground">
+            {isConfigured ? (
+              <>
+                <span className="text-emerald-300">Active.</span>{" "}
+                Workflow runs in <span className="font-medium text-foreground">{boundQueueName ?? "(unknown queue)"}</span>.
+                Per-user MGM / DPO roles are toggled in Settings → Users.
+              </>
+            ) : (
+              <>
+                <span className="text-muted-foreground">Disabled.</span>{" "}
+                The classification buttons never appear until a queue is bound here.
+              </>
+            )}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

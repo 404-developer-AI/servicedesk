@@ -21,6 +21,10 @@ public sealed class ViewAccessService : IViewAccessService
 
     public async Task<IReadOnlyList<View>> GetAccessibleViewsAsync(Guid userId, string role, CancellationToken ct = default)
     {
+        // v0.0.40 polish — admins now go through the same access filter as agents
+        // so the sidebar / saved-views list stays clean. They can still grant
+        // themselves access via view groups or direct assignment, and can still
+        // load any individual view by id (see HasViewAccessAsync).
         var cacheKey = $"va:{userId}";
 
         if (_cache.TryGetValue(cacheKey, out IReadOnlyList<View>? cached) && cached is not null)
@@ -28,38 +32,22 @@ public sealed class ViewAccessService : IViewAccessService
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
 
-        IEnumerable<View> rows;
-
-        if (string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
-        {
-            const string sql = """
-                SELECT id AS Id, user_id AS UserId, name AS Name, filters::text AS FiltersJson,
-                       columns AS Columns, sort_order AS SortOrder, is_shared AS IsShared,
-                       display_config::text AS DisplayConfigJson,
-                       created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
-                FROM views ORDER BY sort_order, name
-                """;
-            rows = await conn.QueryAsync<View>(new CommandDefinition(sql, cancellationToken: ct));
-        }
-        else
-        {
-            const string sql = """
-                SELECT DISTINCT v.id AS Id, v.user_id AS UserId, v.name AS Name, v.filters::text AS FiltersJson,
-                       v.columns AS Columns, v.sort_order AS SortOrder, v.is_shared AS IsShared,
-                       v.display_config::text AS DisplayConfigJson,
-                       v.created_utc AS CreatedUtc, v.updated_utc AS UpdatedUtc
-                FROM views v
-                WHERE v.id IN (
-                    SELECT gv.view_id FROM view_group_views gv
-                    JOIN view_group_members gm ON gm.view_group_id = gv.view_group_id
-                    WHERE gm.user_id = @userId
-                    UNION
-                    SELECT uva.view_id FROM user_view_access uva WHERE uva.user_id = @userId
-                )
-                ORDER BY v.sort_order, v.name
-                """;
-            rows = await conn.QueryAsync<View>(new CommandDefinition(sql, new { userId }, cancellationToken: ct));
-        }
+        const string sql = """
+            SELECT DISTINCT v.id AS Id, v.user_id AS UserId, v.name AS Name, v.filters::text AS FiltersJson,
+                   v.columns AS Columns, v.sort_order AS SortOrder, v.is_shared AS IsShared,
+                   v.display_config::text AS DisplayConfigJson,
+                   v.created_utc AS CreatedUtc, v.updated_utc AS UpdatedUtc
+            FROM views v
+            WHERE v.id IN (
+                SELECT gv.view_id FROM view_group_views gv
+                JOIN view_group_members gm ON gm.view_group_id = gv.view_group_id
+                WHERE gm.user_id = @userId
+                UNION
+                SELECT uva.view_id FROM user_view_access uva WHERE uva.user_id = @userId
+            )
+            ORDER BY v.sort_order, v.name
+            """;
+        var rows = await conn.QueryAsync<View>(new CommandDefinition(sql, new { userId }, cancellationToken: ct));
 
         var result = rows.ToList();
 

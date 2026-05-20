@@ -43,15 +43,32 @@ public sealed class UserAdminService : IUserAdminService
                     u.created_utc     AS CreatedUtc,
                     u.last_login_utc  AS LastLoginUtc,
                     u.timesheet_enabled AS TimesheetEnabled,
-                    u.timesheet_manager AS TimesheetManager
+                    u.timesheet_manager AS TimesheetManager,
+                    u.is_iso_mgm        AS IsIsoMgm,
+                    u.is_iso_dpo        AS IsIsoDpo,
+                    u.kb_enabled        AS KbEnabled,
+                    u.search_enabled    AS SearchEnabled
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             ORDER BY u.created_utc ASC
             """;
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
-        var rows = await connection.QueryAsync<UserAdminRow>(
-            new CommandDefinition(sql, cancellationToken: ct));
-        return rows.ToList();
+        var rows = (await connection.QueryAsync<UserAdminRow>(
+            new CommandDefinition(sql, cancellationToken: ct))).ToList();
+
+        // Pull every (user_id, tile_id) pair in one round-trip and
+        // group them client-side. Cheap even at thousands of users —
+        // the junction is small (≤ 7 tiles * N users) and avoids the
+        // N+1 we'd get from per-user fetches.
+        var tilesByUser = await LoadAllDashboardTilesAsync(connection, ct);
+        for (var i = 0; i < rows.Count; i++)
+        {
+            if (tilesByUser.TryGetValue(rows[i].Id, out var tiles))
+            {
+                rows[i] = rows[i] with { DashboardTiles = tiles };
+            }
+        }
+        return rows;
     }
 
     public async Task<UserAdminRow?> GetByIdAsync(Guid userId, CancellationToken ct = default)
@@ -67,14 +84,41 @@ public sealed class UserAdminService : IUserAdminService
                     u.created_utc     AS CreatedUtc,
                     u.last_login_utc  AS LastLoginUtc,
                     u.timesheet_enabled AS TimesheetEnabled,
-                    u.timesheet_manager AS TimesheetManager
+                    u.timesheet_manager AS TimesheetManager,
+                    u.is_iso_mgm        AS IsIsoMgm,
+                    u.is_iso_dpo        AS IsIsoDpo,
+                    u.kb_enabled        AS KbEnabled,
+                    u.search_enabled    AS SearchEnabled
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             WHERE u.id = @id
             """;
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
-        return await connection.QueryFirstOrDefaultAsync<UserAdminRow>(
+        var row = await connection.QueryFirstOrDefaultAsync<UserAdminRow>(
             new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
+        if (row is null) return null;
+
+        var tiles = (await connection.QueryAsync<string>(
+            new CommandDefinition(
+                "SELECT tile_id FROM user_dashboard_tiles WHERE user_id = @id",
+                new { id = userId },
+                cancellationToken: ct))).ToList();
+        return row with { DashboardTiles = tiles };
+    }
+
+    private static async Task<Dictionary<Guid, IReadOnlyList<string>>> LoadAllDashboardTilesAsync(
+        NpgsqlConnection connection,
+        CancellationToken ct)
+    {
+        var rows = await connection.QueryAsync<(Guid UserId, string TileId)>(
+            new CommandDefinition(
+                "SELECT user_id AS UserId, tile_id AS TileId FROM user_dashboard_tiles",
+                cancellationToken: ct));
+        return rows
+            .GroupBy(r => r.UserId)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<string>)g.Select(r => r.TileId).ToList());
     }
 
     public async Task<AddLocalUserResult> AddLocalUserAsync(
@@ -590,6 +634,171 @@ public sealed class UserAdminService : IUserAdminService
         return row is null
             ? new UpdateTimesheetFlagsResult.UserNotFound()
             : new UpdateTimesheetFlagsResult.Updated(row);
+    }
+
+    public async Task<UpdateIsoFlagsResult> UpdateIsoFlagsAsync(
+        Guid userId,
+        bool mgm,
+        bool dpo,
+        Guid actingAdminId,
+        CancellationToken ct = default)
+    {
+        // Mirrors UpdateTimesheetFlagsAsync — single UPDATE inside a
+        // FOR UPDATE row lock, Customer rows rejected. Self-edit is
+        // allowed (the flags don't gate authentication, only feature
+        // visibility, so there's no lockout risk).
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await connection.BeginTransactionAsync(ct);
+
+        var currentRole = await connection.ExecuteScalarAsync<string?>(
+            new CommandDefinition(
+                "SELECT role_name FROM users WHERE id = @id FOR UPDATE",
+                new { id = userId },
+                tx,
+                cancellationToken: ct));
+        if (currentRole is null)
+        {
+            await tx.RollbackAsync(ct);
+            return new UpdateIsoFlagsResult.UserNotFound();
+        }
+
+        if (string.Equals(currentRole, "Customer", StringComparison.Ordinal))
+        {
+            await tx.RollbackAsync(ct);
+            return new UpdateIsoFlagsResult.CustomerNotAllowed();
+        }
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE users SET
+                is_iso_mgm = @mgm,
+                is_iso_dpo = @dpo
+            WHERE id = @id
+            """,
+            new { id = userId, mgm, dpo },
+            tx,
+            cancellationToken: ct));
+        await tx.CommitAsync(ct);
+        _ = actingAdminId;
+
+        var row = await GetByIdAsync(userId, ct);
+        return row is null
+            ? new UpdateIsoFlagsResult.UserNotFound()
+            : new UpdateIsoFlagsResult.Updated(row);
+    }
+
+    public async Task<UpdateKbFlagResult> UpdateKbFlagAsync(
+        Guid userId,
+        bool enabled,
+        Guid actingAdminId,
+        CancellationToken ct = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await connection.BeginTransactionAsync(ct);
+
+        var currentRole = await connection.ExecuteScalarAsync<string?>(
+            new CommandDefinition(
+                "SELECT role_name FROM users WHERE id = @id FOR UPDATE",
+                new { id = userId },
+                tx,
+                cancellationToken: ct));
+        if (currentRole is null)
+        {
+            await tx.RollbackAsync(ct);
+            return new UpdateKbFlagResult.UserNotFound();
+        }
+
+        if (string.Equals(currentRole, "Customer", StringComparison.Ordinal))
+        {
+            await tx.RollbackAsync(ct);
+            return new UpdateKbFlagResult.CustomerNotAllowed();
+        }
+
+        await connection.ExecuteAsync(new CommandDefinition(
+            "UPDATE users SET kb_enabled = @enabled WHERE id = @id",
+            new { id = userId, enabled },
+            tx,
+            cancellationToken: ct));
+        await tx.CommitAsync(ct);
+        _ = actingAdminId;
+
+        var row = await GetByIdAsync(userId, ct);
+        return row is null
+            ? new UpdateKbFlagResult.UserNotFound()
+            : new UpdateKbFlagResult.Updated(row);
+    }
+
+    public async Task<UpdateFeatureFlagsResult> UpdateFeatureFlagsAsync(
+        Guid userId,
+        FeatureFlagsUpdate update,
+        Guid actingAdminId,
+        CancellationToken ct = default)
+    {
+        if (update.TimesheetEnabled is null
+            && update.TimesheetManager is null
+            && update.IsIsoMgm is null
+            && update.IsIsoDpo is null
+            && update.KbEnabled is null
+            && update.SearchEnabled is null)
+        {
+            return new UpdateFeatureFlagsResult.NoChange();
+        }
+
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await connection.BeginTransactionAsync(ct);
+
+        var currentRole = await connection.ExecuteScalarAsync<string?>(
+            new CommandDefinition(
+                "SELECT role_name FROM users WHERE id = @id FOR UPDATE",
+                new { id = userId },
+                tx,
+                cancellationToken: ct));
+        if (currentRole is null)
+        {
+            await tx.RollbackAsync(ct);
+            return new UpdateFeatureFlagsResult.UserNotFound();
+        }
+
+        if (string.Equals(currentRole, "Customer", StringComparison.Ordinal))
+        {
+            await tx.RollbackAsync(ct);
+            return new UpdateFeatureFlagsResult.CustomerNotAllowed();
+        }
+
+        // COALESCE(@param, column) keeps the existing value where the
+        // caller sent null. One atomic UPDATE inside the FOR UPDATE row
+        // lock — concurrent admins toggling different flags on the same
+        // row cannot lose each other's writes.
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE users SET
+                timesheet_enabled = COALESCE(@timesheetEnabled, timesheet_enabled),
+                timesheet_manager = COALESCE(@timesheetManager, timesheet_manager),
+                is_iso_mgm        = COALESCE(@isIsoMgm,         is_iso_mgm),
+                is_iso_dpo        = COALESCE(@isIsoDpo,         is_iso_dpo),
+                kb_enabled        = COALESCE(@kbEnabled,        kb_enabled),
+                search_enabled    = COALESCE(@searchEnabled,    search_enabled)
+            WHERE id = @id
+            """,
+            new
+            {
+                id = userId,
+                timesheetEnabled = update.TimesheetEnabled,
+                timesheetManager = update.TimesheetManager,
+                isIsoMgm = update.IsIsoMgm,
+                isIsoDpo = update.IsIsoDpo,
+                kbEnabled = update.KbEnabled,
+                searchEnabled = update.SearchEnabled,
+            },
+            tx,
+            cancellationToken: ct));
+        await tx.CommitAsync(ct);
+        _ = actingAdminId;
+
+        var row = await GetByIdAsync(userId, ct);
+        return row is null
+            ? new UpdateFeatureFlagsResult.UserNotFound()
+            : new UpdateFeatureFlagsResult.Updated(row);
     }
 
     // ---- helpers -------------------------------------------------------

@@ -142,7 +142,14 @@ public static class TaxonomyEndpoints
         string? InboundMailboxAddress,
         string? OutboundMailboxAddress,
         string? InboundFolderId,
-        string? InboundFolderName);
+        string? InboundFolderName,
+        // v0.0.40 polish — per-queue status scope. Null/empty = current
+        // behaviour (all statuses available). Non-empty = dropdowns and
+        // write-paths only accept these status ids for tickets in this
+        // queue. DefaultStatusId drives auto-flip on queue change when
+        // the current status is no longer allowed.
+        Guid[]? AllowedStatusIds = null,
+        Guid? DefaultStatusId = null);
 
     private static void MapQueues(RouteGroupBuilder group)
     {
@@ -171,7 +178,9 @@ public static class TaxonomyEndpoints
                 NormalizeMailbox(req.InboundMailboxAddress),
                 NormalizeMailbox(req.OutboundMailboxAddress),
                 req.InboundFolderId?.Trim(),
-                req.InboundFolderName?.Trim()), ct);
+                req.InboundFolderName?.Trim(),
+                (IReadOnlyList<Guid>)(req.AllowedStatusIds ?? Array.Empty<Guid>()),
+                req.DefaultStatusId), ct);
             await AuditWrite(audit, http, "taxonomy.queue.created", created.Id.ToString(), created);
             return Results.Created($"/api/taxonomy/queues/{created.Id}", created);
         }).WithName("CreateQueue").WithOpenApi()
@@ -191,7 +200,9 @@ public static class TaxonomyEndpoints
                 NormalizeMailbox(req.InboundMailboxAddress),
                 NormalizeMailbox(req.OutboundMailboxAddress),
                 req.InboundFolderId?.Trim(),
-                req.InboundFolderName?.Trim(), ct);
+                req.InboundFolderName?.Trim(),
+                (IReadOnlyList<Guid>)(req.AllowedStatusIds ?? Array.Empty<Guid>()),
+                req.DefaultStatusId, ct);
             if (updated is null) return Results.NotFound();
             await AuditWrite(audit, http, "taxonomy.queue.updated", id.ToString(), updated);
             return Results.Ok(updated);
