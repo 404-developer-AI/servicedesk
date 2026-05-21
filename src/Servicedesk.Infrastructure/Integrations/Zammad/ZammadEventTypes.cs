@@ -70,6 +70,12 @@ public static class ZammadEventTypes
     /// for one ticket. Walked once per ticket during the real import.
     public const string ArticlesList = "api.articles.list";
 
+    /// GET /api/v1/ticket_attachment/{ticketId}/{articleId}/{attachmentId} —
+    /// raw bytes for one Zammad attachment. One row per attachment fetched
+    /// during the real import; payload carries the local attachment row id
+    /// + byte count, never the bytes themselves.
+    public const string AttachmentFetch = "api.attachment.fetch";
+
     // ---- mapping CRUD (audit_log security trail) ----------------------
 
     /// Admin set or updated a Zammad-group → queue mapping. Payload

@@ -61,6 +61,21 @@ public sealed class ZammadImportWriter : IZammadImportWriter
         var firstArticle = input.Articles.Count > 0 ? input.Articles[0] : null;
         var (firstBodyText, firstBodyHtml) = SplitBody(firstArticle);
 
+        // Group blob-staged attachment plans by their Zammad article-id so
+        // the per-article event insert can flush exactly its own rows.
+        // Plans whose article never lands as an event (shouldn't happen
+        // in normal flow but tolerate gracefully) are silently dropped.
+        var attachmentsByArticle = new Dictionary<long, List<ZammadImportAttachmentPlan>>();
+        foreach (var p in input.Attachments)
+        {
+            if (!attachmentsByArticle.TryGetValue(p.ZammadArticleId, out var bucket))
+            {
+                bucket = new List<ZammadImportAttachmentPlan>();
+                attachmentsByArticle[p.ZammadArticleId] = bucket;
+            }
+            bucket.Add(p);
+        }
+
         // pending_till_utc carries the Zammad pending_time so the local
         // scheduler picks the ticket back up at the same wake-up moment.
         // Normalise to UTC before binding so Npgsql doesn't reject a
@@ -156,16 +171,41 @@ public sealed class ZammadImportWriter : IZammadImportWriter
 
         // First article is bound to the 'Created' event. If it was an
         // email, write the mail_messages thread anchor too so a future
-        // customer reply matches via In-Reply-To/References.
+        // customer reply matches via In-Reply-To/References. The anchor's
+        // own UUID is captured so the attachment-row INSERTs below can
+        // FK to it (owner_kind='Mail', owner_id=mailId).
+        Guid? firstMailId = null;
         if (firstArticle is not null)
         {
-            await TryInsertMailAnchorAsync(conn, tx, newTicketId.Value, createdEventId, firstArticle, ct);
+            firstMailId = await TryInsertMailAnchorAsync(
+                conn, tx, newTicketId.Value, createdEventId, firstArticle, ct);
+            if (firstMailId is not null)
+            {
+                // Stamp mail_message_id on the Created event so the
+                // timeline-enricher's recipient + cid-rewrite paths apply
+                // even when the originating article landed under the
+                // 'Created' event-type. ticket_bodies still carries the
+                // body text/html for the description block (no rewrite
+                // there) but the timeline row will render attachments.
+                await conn.ExecuteAsync(new CommandDefinition("""
+                    UPDATE ticket_events
+                       SET metadata = jsonb_set(metadata, '{mail_message_id}', to_jsonb(@MailId::text), true)
+                     WHERE id = @EventId
+                    """, new { MailId = firstMailId.Value, EventId = createdEventId }, tx, cancellationToken: ct));
+            }
+        }
+        if (firstArticle is not null && attachmentsByArticle.TryGetValue(firstArticle.Id, out var firstPlans))
+        {
+            await InsertAttachmentsForEventAsync(
+                conn, tx, newTicketId.Value, createdEventId, firstMailId, firstPlans, ct);
         }
 
         // Subsequent articles → timeline events. Sender + type drive the
         // event_type; internal flag carries through to is_internal so an
         // imported internal note stays hidden from the customer portal.
-        // We do not touch attachments — fase 5.
+        // Phase 5: per-event attachment rows are inserted right after each
+        // event so the timeline-enricher can pick them up by event_id (or
+        // by mail_id for the email cases) without a post-pass.
         const string insertEvent = """
             INSERT INTO ticket_events (ticket_id, event_type, author_user_id, author_contact_id,
                                        body_text, body_html, metadata, is_internal, created_utc)
@@ -201,7 +241,24 @@ public sealed class ZammadImportWriter : IZammadImportWriter
                 CreatedUtc = a.CreatedAt?.UtcDateTime,
             }, tx, cancellationToken: ct));
 
-            await TryInsertMailAnchorAsync(conn, tx, newTicketId.Value, eventId, a, ct);
+            var mailId = await TryInsertMailAnchorAsync(conn, tx, newTicketId.Value, eventId, a, ct);
+            if (mailId is not null)
+            {
+                // Re-stamp metadata so MailTimelineEnricher.TryGetMailMessageId
+                // can locate the row without joining mail_messages.ticket_event_id.
+                // jsonb_set with create_missing=true tolerates missing keys.
+                await conn.ExecuteAsync(new CommandDefinition("""
+                    UPDATE ticket_events
+                       SET metadata = jsonb_set(metadata, '{mail_message_id}', to_jsonb(@MailId::text), true)
+                     WHERE id = @EventId
+                    """, new { MailId = mailId.Value, EventId = eventId }, tx, cancellationToken: ct));
+            }
+
+            if (attachmentsByArticle.TryGetValue(a.Id, out var plans))
+            {
+                await InsertAttachmentsForEventAsync(
+                    conn, tx, newTicketId.Value, eventId, mailId, plans, ct);
+            }
         }
 
         await tx.CommitAsync(ct);
@@ -298,16 +355,22 @@ public sealed class ZammadImportWriter : IZammadImportWriter
 
     /// Inserts a minimal mail_messages row for an imported Zammad email
     /// article so a future customer reply (which carries In-Reply-To set to
-    /// this Zammad-side Message-ID) matches the imported ticket. We skip
-    /// non-email articles, articles without a Message-ID, and articles
-    /// without a From address (the column is NOT NULL CITEXT).
+    /// this Zammad-side Message-ID) matches the imported ticket. Returns
+    /// the inserted (or pre-existing) mail-message UUID so the caller can
+    /// stamp it onto the event's metadata + attach attachments under
+    /// <c>owner_kind='Mail'</c>. We skip non-email articles, articles
+    /// without a Message-ID, and articles without a From address (the
+    /// column is NOT NULL CITEXT) — null return tells the caller to use
+    /// the ticket-owned fallback for attachments.
     ///
-    /// Idempotent via ON CONFLICT on the message_id UNIQUE constraint so
-    /// re-imports and accidental duplicate Message-IDs across upstream
-    /// tickets stay no-ops instead of failing the whole writer transaction.
+    /// Idempotent via <c>DO UPDATE SET message_id = EXCLUDED.message_id</c>
+    /// (no-op assignment) so a re-import or a cross-ticket duplicate
+    /// Message-ID still returns the existing row's id via RETURNING. See
+    /// [[upsert-race-pattern]] memory for why this beats DO NOTHING +
+    /// fallback SELECT under cross-worker race conditions.
     /// mailbox_moved_utc=now() keeps the inbound finalizer-sweep from
     /// picking the row up.
-    private static async Task TryInsertMailAnchorAsync(
+    private static async Task<Guid?> TryInsertMailAnchorAsync(
         Npgsql.NpgsqlConnection conn,
         System.Data.Common.DbTransaction tx,
         Guid ticketId,
@@ -316,13 +379,13 @@ public sealed class ZammadImportWriter : IZammadImportWriter
         CancellationToken ct)
     {
         var type = (article.Type ?? string.Empty).ToLowerInvariant();
-        if (type != "email") return;
+        if (type != "email") return null;
 
         var messageId = (article.MessageId ?? string.Empty).Trim().Trim('<', '>');
-        if (string.IsNullOrEmpty(messageId)) return;
+        if (string.IsNullOrEmpty(messageId)) return null;
 
         var fromAddress = ExtractEmailAddress(article.From);
-        if (string.IsNullOrEmpty(fromAddress)) return;
+        if (string.IsNullOrEmpty(fromAddress)) return null;
 
         var direction = string.Equals(article.Sender, "Agent", StringComparison.OrdinalIgnoreCase)
             ? "Outbound"
@@ -337,11 +400,12 @@ public sealed class ZammadImportWriter : IZammadImportWriter
                 @MessageId, @FromAddress, '', @Subject,
                 @Mailbox, @ReceivedUtc, @SentUtc, @Direction,
                 @TicketId, @EventId, now())
-            ON CONFLICT (message_id) DO NOTHING
+            ON CONFLICT (message_id) DO UPDATE SET message_id = EXCLUDED.message_id
+            RETURNING id
             """;
 
         var ts = article.CreatedAt?.UtcDateTime ?? DateTime.UtcNow;
-        await conn.ExecuteAsync(new CommandDefinition(sql, new
+        return await conn.ExecuteScalarAsync<Guid?>(new CommandDefinition(sql, new
         {
             MessageId = messageId,
             FromAddress = fromAddress,
@@ -353,6 +417,76 @@ public sealed class ZammadImportWriter : IZammadImportWriter
             TicketId = ticketId,
             EventId = eventId,
         }, tx, cancellationToken: ct));
+    }
+
+    /// Inserts <c>attachments</c> rows for one event from a list of
+    /// blob-staged plans. Routing follows the same convention the local
+    /// mail / note paths use:
+    /// <list type="bullet">
+    /// <item>When <paramref name="mailMessageId"/> is non-null (email
+    /// article): <c>owner_kind='Mail', owner_id=mailMessageId</c>. The
+    /// timeline-enricher resolves these via <see cref="IAttachmentRepository.ListByMailAsync"/>
+    /// and rewrites <c>cid:</c> references in the bodyHtml. event_id is
+    /// also stamped so <see cref="IAttachmentRepository.ListByEventAsync"/>
+    /// returns the same rows uniformly.</item>
+    /// <item>Otherwise (note / phone / web article): <c>owner_kind='Ticket',
+    /// owner_id=ticketId, event_id=eventId</c>. is_inline is always false
+    /// — non-email Zammad articles don't carry cid references.</item>
+    /// </list>
+    /// processing_state is set straight to 'Ready' because the bytes are
+    /// already in the blob store; no AttachmentWorker fetch step needed.
+    /// Imports that skipped a too-large attachment never enter this method
+    /// — the worker drops the plan and adds the upstream id to the
+    /// per-record reasons list instead.
+    private static async Task InsertAttachmentsForEventAsync(
+        Npgsql.NpgsqlConnection conn,
+        System.Data.Common.DbTransaction tx,
+        Guid ticketId,
+        long eventId,
+        Guid? mailMessageId,
+        IReadOnlyList<ZammadImportAttachmentPlan> plans,
+        CancellationToken ct)
+    {
+        if (plans.Count == 0) return;
+
+        var ownerKind = mailMessageId is not null ? "Mail" : "Ticket";
+        var ownerId = mailMessageId ?? ticketId;
+
+        const string sql = """
+            INSERT INTO attachments
+                (content_hash, size_bytes, mime_type, original_filename,
+                 owner_kind, owner_id, is_inline, content_id, event_id,
+                 processing_state)
+            VALUES
+                (@ContentHash, @SizeBytes, @MimeType, @Filename,
+                 @OwnerKind, @OwnerId,
+                 @IsInline, @ContentId, @EventId,
+                 'Ready')
+            """;
+
+        foreach (var p in plans)
+        {
+            // Email articles use the plan's is_inline + content_id straight
+            // through; non-email articles flatten to is_inline=false and
+            // content_id=null because the local schema doesn't carry cid
+            // for them and the local cid-rewriter only consults Mail-owned
+            // attachments anyway.
+            var inline = mailMessageId is not null && p.IsInline;
+            var contentId = mailMessageId is not null ? p.ContentId : null;
+
+            await conn.ExecuteAsync(new CommandDefinition(sql, new
+            {
+                p.ContentHash,
+                p.SizeBytes,
+                MimeType = string.IsNullOrWhiteSpace(p.MimeType) ? "application/octet-stream" : p.MimeType,
+                Filename = string.IsNullOrEmpty(p.Filename) ? "attachment" : p.Filename,
+                OwnerKind = ownerKind,
+                OwnerId = ownerId,
+                IsInline = inline,
+                ContentId = contentId,
+                EventId = (long?)eventId,
+            }, tx, cancellationToken: ct));
+        }
     }
 
     /// Pulls the bare email address out of an RFC-5322 From header value.

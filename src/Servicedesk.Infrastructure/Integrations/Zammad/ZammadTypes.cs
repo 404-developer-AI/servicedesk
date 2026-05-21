@@ -171,7 +171,33 @@ public sealed record ZammadArticle(
     // type=email articles; null on note/phone/web). The importer writes
     // it into mail_messages so a future customer reply threads back to
     // the imported ticket via In-Reply-To/References.
-    string? MessageId);
+    string? MessageId,
+    // Per-article attachment manifest. Bytes are fetched lazily by the
+    // importer via <see cref="IZammadApiClient.FetchAttachmentBytesAsync"/>
+    // (Zammad serves them at /api/v1/ticket_attachment/{ticketId}/{articleId}/{id});
+    // this list only carries metadata so the planner can size + filter
+    // before pulling. Empty list when the article has no attachments.
+    IReadOnlyList<ZammadArticleAttachment> Attachments);
+
+/// One Zammad article attachment as listed in the article-list response.
+/// Zammad nests these under <c>attachments[]</c> per article. The byte
+/// payload is fetched lazily from
+/// <c>/api/v1/ticket_attachment/{ticketId}/{articleId}/{id}</c>; this row
+/// only carries metadata so the importer can decide whether to pull (size
+/// cap, mime, inline disposition) before the network hop.
+///
+/// <c>ContentId</c> is the RFC-2392 cid token referenced from the
+/// article body's HTML <c>cid:</c> URLs. Present on inline images;
+/// absent on regular attachments. Used by the local mail-timeline
+/// enricher to rewrite the body to <c>/api/.../attachments/{id}</c> so
+/// browsers render the image with the session cookie.
+public sealed record ZammadArticleAttachment(
+    long Id,
+    string Filename,
+    long SizeBytes,
+    string MimeType,
+    bool IsInline,
+    string? ContentId);
 
 /// Query parameters for <see cref="IZammadApiClient.SearchTicketsAsync"/>.
 /// IDs are passed as raw long lists; the client composes the Zammad

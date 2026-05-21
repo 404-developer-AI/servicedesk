@@ -5,6 +5,15 @@ namespace Servicedesk.Infrastructure.Integrations.Zammad;
 /// Every field comes straight from the dry-run snapshot — the importer
 /// never re-resolves Zammad-side mappings, so the verdict the admin
 /// reviewed on the dry-run is exactly what lands.
+///
+/// Attachment plumbing note (v0.0.41 phase 5): the worker streams each
+/// Zammad attachment into <see cref="Servicedesk.Infrastructure.Storage.IBlobStore"/>
+/// *before* invoking the writer, then hands the (article-id, attachment-
+/// meta, content-hash) tuples in via <see cref="Attachments"/>. Keeping
+/// blob-writes outside the writer transaction lets oversized or 404
+/// attachments fail/skip without holding the Postgres tx open across
+/// multi-MB downloads. The writer just inserts the metadata rows in the
+/// same tx as the events they belong to.
 public sealed record ZammadImportWriteInput(
     long ZammadTicketId,
     string? ZammadTicketNumber,
@@ -14,7 +23,25 @@ public sealed record ZammadImportWriteInput(
     System.Guid StatusId,
     System.Guid PriorityId,
     System.Collections.Generic.IReadOnlyList<ZammadArticle> Articles,
+    System.Collections.Generic.IReadOnlyList<ZammadImportAttachmentPlan> Attachments,
     System.DateTime? PendingTillUtc = null);
+
+/// One attachment that has already been streamed into the blob store and
+/// is ready for the writer to materialise as an <c>attachments</c> row.
+/// <see cref="ContentHash"/> is the SHA-256 hex hash returned by
+/// <see cref="Servicedesk.Infrastructure.Storage.IBlobStore.WriteAsync"/>;
+/// <see cref="SizeBytes"/> is what the blob-store actually observed (which
+/// may differ from what Zammad advertised on really old installs that
+/// over-reported sizes — we trust the blob-store).
+public sealed record ZammadImportAttachmentPlan(
+    long ZammadArticleId,
+    long ZammadAttachmentId,
+    string Filename,
+    long SizeBytes,
+    string MimeType,
+    bool IsInline,
+    string? ContentId,
+    string ContentHash);
 
 /// What the writer did with one ticket. <c>Result</c> matches the
 /// <c>zammad_import_records.result</c> CHECK enum (imported /

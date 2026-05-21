@@ -65,4 +65,17 @@ public interface IZammadApiClient
     /// articles become <c>ticket_events</c>. Returns an empty list when
     /// Zammad responds 404 — same soft-skip pattern as <see cref="GetTicketAsync"/>.
     Task<IReadOnlyList<ZammadArticle>> ListArticlesAsync(long ticketId, CancellationToken ct);
+
+    /// <c>GET /api/v1/ticket_attachment/{ticketId}/{articleId}/{attachmentId}</c>
+    /// — raw bytes for one attachment listed in the per-article manifest.
+    /// Returns a read-open stream; the caller is responsible for disposing.
+    /// Throws <see cref="ZammadApiException"/> on any non-2xx (404 included
+    /// — unlike the metadata endpoints, the importer treats a missing
+    /// attachment as a per-row failure rather than a soft skip so the
+    /// admin can see the gap in the import-record reasons list).
+    Task<Stream> FetchAttachmentBytesAsync(
+        long ticketId,
+        long articleId,
+        long attachmentId,
+        CancellationToken ct);
 }

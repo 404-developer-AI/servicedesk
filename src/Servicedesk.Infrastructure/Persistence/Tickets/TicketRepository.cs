@@ -272,7 +272,9 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                    parent_ticket_id AS ParentTicketId,
                    parent_linked_utc AS ParentLinkedUtc,
                    parent_linked_by_user_id AS ParentLinkedByUserId,
-                   ticket_type_id AS TicketTypeId
+                   ticket_type_id AS TicketTypeId,
+                   zammad_ticket_id AS ZammadTicketId,
+                   zammad_ticket_number AS ZammadTicketNumber
             FROM tickets WHERE id = @id AND is_deleted = FALSE
             """;
         const string bodySql = """
@@ -361,7 +363,9 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                       parent_ticket_id AS ParentTicketId,
                       parent_linked_utc AS ParentLinkedUtc,
                       parent_linked_by_user_id AS ParentLinkedByUserId,
-                      ticket_type_id AS TicketTypeId
+                      ticket_type_id AS TicketTypeId,
+                      zammad_ticket_id AS ZammadTicketId,
+                      zammad_ticket_number AS ZammadTicketNumber
             """;
         const string insertBody = """
             INSERT INTO ticket_bodies (ticket_id, body_text, body_html)
