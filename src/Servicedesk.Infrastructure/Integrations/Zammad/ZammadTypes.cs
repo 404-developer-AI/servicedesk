@@ -1,0 +1,176 @@
+namespace Servicedesk.Infrastructure.Integrations.Zammad;
+
+/// Result of <c>GET /api/v1/users/me</c>. Only the fields v0.0.41 actually
+/// uses are pulled off the wire — the response payload is much wider but
+/// the integration-page only needs a friendly "Connected as …" label.
+public sealed record ZammadMe(
+    long Id,
+    string? Email,
+    string? FirstName,
+    string? LastName,
+    string? Login,
+    long? OrganizationId);
+
+/// Combined result of the Test-connection action — the two GET calls the
+/// page fires when an admin clicks the button. <see cref="ZammadVersion"/>
+/// is nullable because some Zammad installs lock down /version even
+/// though /users/me succeeded; the page renders "version unknown" rather
+/// than treating the whole test as failed in that case.
+public sealed record ZammadTestConnectionResult(
+    ZammadMe Me,
+    string? ZammadVersion,
+    int LatencyMs);
+
+/// Resolved connection-state shown on the integration tile + page. Mirrors
+/// the Adsolut / Telavox enum shape so the SPA renders all three through
+/// the same surface.
+public enum ZammadConnectionState
+{
+    /// Master kill-switch is off (<c>Zammad.Enabled = false</c>). Tile
+    /// shows "Disabled".
+    Disabled = 0,
+
+    /// Base URL or token is missing. Tile shows "Not configured".
+    NotConfigured = 1,
+
+    /// Both configured but no successful test-connection yet. Tile shows
+    /// "Ready — run Test connection".
+    Ready = 2,
+
+    /// Configured and a recent Test-connection succeeded. Tile shows
+    /// "Active".
+    Active = 3,
+}
+
+/// Zammad group ("queue equivalent" in Zammad parlance). Only the fields
+/// v0.0.41 phase 2 actually uses are surfaced; the wider record lives on
+/// Zammad's side.
+public sealed record ZammadGroup(long Id, string Name, bool Active);
+
+/// Zammad ticket state. Carries the <c>state_type_id</c> so later phases
+/// can derive an open/pending/closed/merged-as-closed bucket from it
+/// without re-fetching <c>/ticket_state_types</c>.
+public sealed record ZammadState(
+    long Id,
+    string Name,
+    long? StateTypeId,
+    bool Active);
+
+/// Zammad ticket priority. Standard Zammad installs ship with three
+/// (1=low, 2=normal, 3=high) but the API returns whatever the install
+/// configured. v0.0.41 phase 3 mapping table consumes this directly.
+public sealed record ZammadPriority(long Id, string Name, bool Active);
+
+/// One Zammad user as returned by <c>GET /api/v1/users/{id}</c>. v0.0.41
+/// phase 3 uses this to pre-fill the Create-contact dialog with the
+/// upstream's first / last name when an admin clicks "Create" on a
+/// no-contact record. The single-ticket GET only carries customer_id +
+/// the resolved email; the rest of the human identity lives on the
+/// user resource.
+public sealed record ZammadUser(
+    long Id,
+    string? Email,
+    string? FirstName,
+    string? LastName,
+    string? Login,
+    long? OrganizationId,
+    bool Active);
+
+/// One row in the picker result list — denormalised projection of a
+/// Zammad ticket + its resolved customer / group / state. Built either
+/// from a bare expanded ticket-object or from a <c>{ tickets, assets }</c>
+/// envelope by looking up the relations in the assets dictionary.
+public sealed record ZammadTicketSearchItem(
+    long Id,
+    long? Number,
+    string Title,
+    long? CustomerId,
+    string? CustomerEmail,
+    string? CustomerName,
+    long? GroupId,
+    string? GroupName,
+    long? StateId,
+    string? StateName,
+    int? ArticleCount,
+    DateTimeOffset? CreatedAt,
+    DateTimeOffset? UpdatedAt);
+
+/// Paginated picker result. <see cref="Total"/> is the server-side total
+/// match-count (Zammad fills it when we pass <c>with_total_count=true</c>);
+/// null means the install refused to compute it.
+public sealed record ZammadTicketSearchPage(
+    IReadOnlyList<ZammadTicketSearchItem> Items,
+    int? Total,
+    int Page,
+    int PerPage);
+
+/// Full ticket as returned by <c>GET /api/v1/tickets/{id}?expand=true</c>.
+/// v0.0.41 phase 3 (dry-run) uses everything except the article-list;
+/// phase 4 (real import) layers article-fetching on top.
+///
+/// Zammad version note: on Zammad 7 the legacy <c>customer_email</c>
+/// field is gone and the email is instead returned in the resolved
+/// <c>customer</c> string. The parser tries <c>customer_email</c> first
+/// for backward-compat and falls back to <c>customer</c> when it looks
+/// like an email (contains <c>@</c>). On Zammad 6 the original layout
+/// (<c>customer_email</c> + <c>customer</c> as display name) keeps
+/// working. <see cref="GroupName"/> / <see cref="StateName"/> /
+/// <see cref="PriorityName"/> / <see cref="OrganizationName"/> come
+/// from the same expanded string-relations and are surfaced into the
+/// mapping snapshot so the records page reads "Servicedesk | Datawolk"
+/// next to <c>zammad_group_id=2</c> instead of an opaque id.
+public sealed record ZammadTicket(
+    long Id,
+    long? Number,
+    string Title,
+    long? CustomerId,
+    string? CustomerEmail,
+    string? CustomerFirstName,
+    string? CustomerLastName,
+    long? OrganizationId,
+    string? OrganizationName,
+    long? GroupId,
+    string? GroupName,
+    long? StateId,
+    string? StateName,
+    long? PriorityId,
+    string? PriorityName,
+    int? ArticleCount,
+    DateTimeOffset? CreatedAt,
+    DateTimeOffset? UpdatedAt);
+
+/// Query parameters for <see cref="IZammadApiClient.SearchTicketsAsync"/>.
+/// IDs are passed as raw long lists; the client composes the Zammad
+/// Elasticsearch query string from them so the endpoint layer never has
+/// to know the on-wire syntax.
+public sealed record ZammadTicketSearchQuery(
+    string? FreeText,
+    IReadOnlyList<long> GroupIds,
+    IReadOnlyList<long> StateIds,
+    int Page,
+    int PerPage);
+
+/// Thrown by <see cref="IZammadApiClient"/> implementations when a call
+/// fails for any reason. Carries the upstream HTTP status (when one
+/// landed) and a normalised error code so the endpoint layer can surface
+/// a structured payload to the SPA.
+public sealed class ZammadApiException : Exception
+{
+    public int? HttpStatus { get; }
+    public string? UpstreamErrorCode { get; }
+
+    public ZammadApiException(
+        string message,
+        int? httpStatus = null,
+        string? upstreamErrorCode = null)
+        : base(message)
+    {
+        HttpStatus = httpStatus;
+        UpstreamErrorCode = upstreamErrorCode;
+    }
+
+    public ZammadApiException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}

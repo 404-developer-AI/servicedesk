@@ -297,6 +297,60 @@ public static class SettingKeys
         public const string AuditSummaryIntervalSeconds = "Telavox.AuditSummaryIntervalSeconds";
     }
 
+    /// Zammad migration link (v0.0.41). One-way bridge from an existing
+    /// Zammad install into Servicedesk: connect, browse, dry-run, import.
+    /// Single-install model — one base URL + one HTTP token per Servicedesk
+    /// install. Knowledge-base, contacts and companies stay out of scope
+    /// (contacts/companies come from Adsolut/CRM; if a Zammad ticket
+    /// references a missing contact the importer skips it + reports).
+    public static class Zammad
+    {
+        /// Master kill-switch. When false every Zammad endpoint refuses with
+        /// 409 and the integration page surfaces "Disabled" — the setup
+        /// fields remain editable so an admin can configure the connection
+        /// while keeping the integration off. Default off; a fresh install
+        /// is silent until the admin opts in.
+        public const string Enabled = "Zammad.Enabled";
+
+        /// Base URL of the source Zammad instance (e.g.
+        /// <c>https://desk.example.com</c>). The client appends
+        /// <c>/api/v1/...</c> to it. Trailing slashes are normalised.
+        /// Validated to be http(s) at write time; non-https is rejected
+        /// for any non-localhost host so a typo can't route the token over
+        /// plaintext.
+        public const string BaseUrl = "Zammad.BaseUrl";
+
+        /// Page size used by the picker proxy when calling Zammad's
+        /// <c>/tickets/search</c> + list endpoints. Clamped to [1, 200] on
+        /// read. Default 50 keeps a result page snappy without round-trip
+        /// chatter on large filter-matches.
+        public const string PerPageDefault = "Zammad.PerPageDefault";
+
+        /// Defensive rate limit applied client-side (token-bucket style)
+        /// before issuing any Zammad request. Zammad publishes no rate
+        /// limits; capping at 2/s on a fresh install avoids hammering a
+        /// production helpdesk during a bulk dry-run. Clamped to [0.5, 20].
+        public const string MaxRequestsPerSecond = "Zammad.MaxRequestsPerSecond";
+
+        /// Base delay (seconds) for exponential backoff between retries
+        /// when Zammad returns 429 / 5xx. Actual delay is
+        /// <c>base * 2^attempt</c> plus ±20% jitter. Clamped to [1, 60].
+        public const string RetryBaseSeconds = "Zammad.RetryBaseSeconds";
+
+        /// Maximum retry attempts before a Zammad call surfaces as a hard
+        /// failure to the caller. Clamped to [0, 8]. Default 3 covers a
+        /// short upstream blip without dragging an admin-facing test out
+        /// minutes deep.
+        public const string RetryMaxAttempts = "Zammad.RetryMaxAttempts";
+
+        /// Retention (days) for dry-run snapshots in
+        /// <c>zammad_import_runs</c>. A dry-run carries the per-ticket
+        /// mapping verdict + the resolved id-list a follow-up import will
+        /// freeze on; that payload is bulky on a 5k-ticket migration, so
+        /// we sweep aggressively. Clamped to [1, 90]. Default 14.
+        public const string DryRunRetentionDays = "Zammad.DryRunRetentionDays";
+    }
+
     /// Generic integration-framework knobs shared by every connector. The
     /// per-integration tunables (Adsolut.*, Graph.*) stay in their own
     /// section; this group only carries the cross-cutting ones.
@@ -768,6 +822,26 @@ public static class SettingDefaults
             "Base URL of the Telavox CAPI (customer / per-agent API) host. Endpoints the SD worker appends live under /api/capi/v1/... — matches the host + basePath of the published CAPI swagger. Distinct from the PAPI host; the two APIs are not served from the same domain."),
         new SettingDefault(SettingKeys.Telavox.AuditSummaryIntervalSeconds, "300", "int", "Telavox",
             "Coalesce window (seconds) for the per-tick poll-summary row the worker writes to integration_audit. Without coalescing the worker writes one row per PollIntervalSeconds — at the default 2s cadence that's ~30 rows/min even on a silent install. Default 300 (5 minutes) keeps the audit-log browsable; any tick with a fired popup or a per-agent failure flushes immediately so admins still see those events in real time. Floor 30s."),
+
+        // Zammad — v0.0.41 migration link. Single-install: one base URL + one
+        // HTTP token. Enabled defaults OFF so a fresh install is silent until
+        // an admin pastes the token + URL and verifies via Test connection.
+        // Tunables are conservative: 2 req/s, 3 retry-attempts, 14d dry-run
+        // retention. All clamps live in ZammadApiClient on read.
+        new SettingDefault(SettingKeys.Zammad.Enabled, "false", "bool", "Zammad",
+            "Master kill-switch. When false the integration page is read/writable for setup but every Zammad endpoint refuses with 409 so an in-progress dry-run cannot accidentally fire. Off by default so a fresh install is silent until the admin opts in."),
+        new SettingDefault(SettingKeys.Zammad.BaseUrl, "", "string", "Zammad",
+            "Base URL of the source Zammad instance, e.g. https://desk.example.com. The client appends /api/v1/... to this. Trailing slashes are normalised away on write. Non-HTTPS values are rejected for any non-localhost host so a typo can't route the API token over plaintext."),
+        new SettingDefault(SettingKeys.Zammad.PerPageDefault, "50", "int", "Zammad",
+            "Page size used when proxying Zammad's /tickets/search and list endpoints. Clamped to [1, 200] on read. Default 50 keeps a result page snappy without round-trip chatter on large filter-matches."),
+        new SettingDefault(SettingKeys.Zammad.MaxRequestsPerSecond, "2", "int", "Zammad",
+            "Defensive client-side cap on outbound Zammad requests per second. Zammad publishes no rate limit; this prevents a bulk dry-run from hammering a production helpdesk. Clamped to [1, 20] (whole requests per second)."),
+        new SettingDefault(SettingKeys.Zammad.RetryBaseSeconds, "2", "int", "Zammad",
+            "Base delay (seconds) for exponential backoff between retries on 429 / 5xx. Actual delay is base * 2^attempt plus ±20% jitter. Clamped to [1, 60]."),
+        new SettingDefault(SettingKeys.Zammad.RetryMaxAttempts, "3", "int", "Zammad",
+            "Maximum retry attempts before a Zammad call surfaces as a hard failure. Clamped to [0, 8]. Default 3 covers a short upstream blip without dragging an admin-facing Test connection out minutes deep."),
+        new SettingDefault(SettingKeys.Zammad.DryRunRetentionDays, "14", "int", "Zammad",
+            "Retention window (days) for dry-run snapshots in zammad_import_runs. Dry-run payloads carry the full per-ticket mapping verdict + frozen id-list and are heavy on large migrations, so the sweeper retires them aggressively. Clamped to [1, 90]. Default 14."),
 
         // Integrations — v0.0.25 healthcheck framework. Cross-integration
         // knobs only; per-connector specifics live under their own

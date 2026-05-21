@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   adsolutApi,
   telavoxAdminApi,
+  zammadAdminApi,
   type IntegrationAuditEntry,
   type IntegrationAuditOutcome,
   type IntegrationAuditPage,
@@ -46,7 +47,7 @@ type Props = {
   /** Which integration to query. Each backend exposes its own /audit
    * endpoint scoped to its `integration_audit.integration` column, so
    * the dispatch lives here. */
-  integration: "adsolut" | "telavox";
+  integration: "adsolut" | "telavox" | "zammad";
 };
 
 export function IntegrationAuditLog({ integration }: Props) {
@@ -66,10 +67,21 @@ export function IntegrationAuditLog({ integration }: Props) {
           return adsolutApi.auditLog(cursor, PAGE_SIZE);
         case "telavox":
           return telavoxAdminApi.auditLog(cursor, PAGE_SIZE);
+        case "zammad":
+          return zammadAdminApi.auditLog(cursor, PAGE_SIZE);
       }
     },
     getNextPageParam: (last) => last.nextCursor ?? null,
-    staleTime: 15_000,
+    // Short stale time + visibility-paced polling. 10s is fast enough
+    // that an admin watching a test-connection roundtrip sees the new
+    // row appear without having to F5, but not so fast that we burn DB
+    // calls when the page is parked open. `refetchIntervalInBackground`
+    // stays default-off so a hidden tab is silent.
+    staleTime: 5_000,
+    refetchInterval: 10_000,
+    // Force-refetch when the admin re-focuses the window — covers the
+    // common case where they ran an action in another tab and come back.
+    refetchOnWindowFocus: true,
   });
 
   if (query.isLoading) {
@@ -95,6 +107,24 @@ export function IntegrationAuditLog({ integration }: Props) {
 
   return (
     <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-end">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 text-xs text-muted-foreground hover:text-foreground"
+          onClick={() => query.refetch()}
+          disabled={query.isFetching}
+          title="Auto-refreshes every 10s; click to refresh now."
+        >
+          <RefreshCw
+            className={cn(
+              "mr-1.5 h-3 w-3",
+              query.isFetching && "animate-spin",
+            )}
+          />
+          {query.isFetching ? "Refreshing…" : "Refresh"}
+        </Button>
+      </div>
       <div className="overflow-hidden rounded-md border border-white/[0.06] bg-white/[0.02]">
         <table className="w-full text-xs">
           <thead className="text-[10px] uppercase tracking-widest text-muted-foreground/60">
