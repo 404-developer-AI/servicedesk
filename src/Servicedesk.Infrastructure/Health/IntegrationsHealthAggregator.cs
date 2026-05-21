@@ -1,5 +1,8 @@
+using Dapper;
+using Npgsql;
 using Servicedesk.Infrastructure.Integrations.Adsolut;
 using Servicedesk.Infrastructure.Integrations.Telavox;
+using Servicedesk.Infrastructure.Integrations.Zammad;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
 
@@ -55,19 +58,22 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
     private readonly IAdsolutConnectionStore _adsolutConnections;
     private readonly IAdsolutSyncStateStore _adsolutSyncState;
     private readonly ITelavoxAgentLinkStore _telavoxLinks;
+    private readonly NpgsqlDataSource _dataSource;
 
     public IntegrationsHealthAggregator(
         IProtectedSecretStore secrets,
         ISettingsService settings,
         IAdsolutConnectionStore adsolutConnections,
         IAdsolutSyncStateStore adsolutSyncState,
-        ITelavoxAgentLinkStore telavoxLinks)
+        ITelavoxAgentLinkStore telavoxLinks,
+        NpgsqlDataSource dataSource)
     {
         _secrets = secrets;
         _settings = settings;
         _adsolutConnections = adsolutConnections;
         _adsolutSyncState = adsolutSyncState;
         _telavoxLinks = telavoxLinks;
+        _dataSource = dataSource;
     }
 
     public async Task<IntegrationsHealthReport> CollectAsync(CancellationToken ct)
@@ -79,6 +85,9 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
 
         var telavox = await BuildTelavoxAsync(ct);
         if (telavox is not null) integrations.Add(telavox);
+
+        var zammad = await BuildZammadAsync(ct);
+        if (zammad is not null) integrations.Add(zammad);
 
         var rollup = integrations.Aggregate(HealthStatus.Ok,
             (acc, i) => i.Rollup > acc ? i.Rollup : acc);
@@ -556,5 +565,167 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
             catch { /* Invalid IANA id — fall through. */ }
         }
         return TimeZoneInfo.Local;
+    }
+
+    // ---- Zammad --------------------------------------------------------
+
+    /// Visibility rule mirrors Telavox: only surface the tile when the
+    /// admin has *actually configured* the integration (master switch on
+    /// + base URL set + token stored). A vanilla install therefore never
+    /// shows an empty Zammad card. When the admin disables it again the
+    /// tile disappears too — there's no half-configured "degraded" state
+    /// to flag because the importer just refuses to run.
+    ///
+    /// Unlike Adsolut/Telavox, Zammad is a one-shot migration link rather
+    /// than a steady-state sync — so the tile shows a single Connection
+    /// check + a Recent runs check that lists the latest import-run's
+    /// outcome (or "no runs yet" on a freshly-configured install).
+    private async Task<IntegrationHealth?> BuildZammadAsync(CancellationToken ct)
+    {
+        var enabled = await _settings.GetAsync<bool>(SettingKeys.Zammad.Enabled, ct);
+        if (!enabled) return null;
+
+        var baseUrl = (await _settings.GetAsync<string>(SettingKeys.Zammad.BaseUrl, ct)
+            ?? string.Empty).Trim().TrimEnd('/');
+        var hasToken = await _secrets.HasAsync(ProtectedSecretKeys.ZammadToken, ct);
+
+        var connectionCheck = BuildZammadConnectionCheck(baseUrl, hasToken);
+        var runsCheck = await BuildZammadRunsCheckAsync(ct);
+
+        var checks = new[] { connectionCheck, runsCheck };
+        var rollup = checks.Aggregate(HealthStatus.Ok,
+            (acc, c) => c.Status > acc ? c.Status : acc);
+
+        return new IntegrationHealth(
+            Key: "zammad",
+            Name: "Zammad",
+            LogoKey: "zammad",
+            Rollup: rollup,
+            Checks: checks,
+            Actions: Array.Empty<HealthAction>());
+    }
+
+    private static SubsystemHealth BuildZammadConnectionCheck(string baseUrl, bool hasToken)
+    {
+        var details = new List<HealthDetail>();
+
+        if (baseUrl.Length == 0 || !hasToken)
+        {
+            details.Add(new HealthDetail("Base URL",
+                baseUrl.Length == 0 ? "Not configured" : baseUrl));
+            details.Add(new HealthDetail("Token",
+                hasToken ? "Stored (encrypted)" : "Not stored"));
+            return new SubsystemHealth(
+                Key: "zammad-connection",
+                Label: "Connection",
+                Status: HealthStatus.Warning,
+                Summary: "Master switch is on but base URL or token is missing.",
+                Details: details,
+                Actions: Array.Empty<HealthAction>());
+        }
+
+        details.Add(new HealthDetail("Base URL", baseUrl));
+        details.Add(new HealthDetail("Token", "Stored (encrypted)"));
+        return new SubsystemHealth(
+            Key: "zammad-connection",
+            Label: "Connection",
+            Status: HealthStatus.Ok,
+            Summary: "Configured — admin can launch a dry-run or real import.",
+            Details: details,
+            Actions: Array.Empty<HealthAction>());
+    }
+
+    /// One-row roll-up of the most recent <c>zammad_import_runs</c> entry,
+    /// regardless of kind. A failed last run lifts the tile to Warning so
+    /// the admin notices; a cancelled or completed run stays green. No
+    /// staleness check — migration is episodic by definition, so a gap of
+    /// days between runs is the normal state once the bulk import is done.
+    private async Task<SubsystemHealth> BuildZammadRunsCheckAsync(CancellationToken ct)
+    {
+        const string sql = """
+            SELECT id              AS Id,
+                   kind            AS Kind,
+                   status          AS Status,
+                   started_utc     AS StartedUtc,
+                   finished_utc    AS FinishedUtc,
+                   error_message   AS ErrorMessage
+              FROM zammad_import_runs
+             ORDER BY started_utc DESC, id DESC
+             LIMIT 1
+            """;
+        ZammadRunSummary? last = null;
+        try
+        {
+            await using var conn = await _dataSource.OpenConnectionAsync(ct);
+            last = await conn.QueryFirstOrDefaultAsync<ZammadRunSummary>(
+                new CommandDefinition(sql, cancellationToken: ct));
+        }
+        catch
+        {
+            // Health endpoint must never throw — surface as Ok with a
+            // diagnostic line and let the admin see the rest of the tile.
+            return new SubsystemHealth(
+                Key: "zammad-runs",
+                Label: "Recent runs",
+                Status: HealthStatus.Ok,
+                Summary: "Run history is currently unreadable — Postgres unreachable?",
+                Details: Array.Empty<HealthDetail>(),
+                Actions: Array.Empty<HealthAction>());
+        }
+
+        if (last is null)
+        {
+            return new SubsystemHealth(
+                Key: "zammad-runs",
+                Label: "Recent runs",
+                Status: HealthStatus.Ok,
+                Summary: "No import runs yet.",
+                Details: new[]
+                {
+                    new HealthDetail("State", "Awaiting first dry-run or import."),
+                },
+                Actions: Array.Empty<HealthAction>());
+        }
+
+        var label = last.Kind == "import" ? "Import" : "Dry-run";
+        var details = new List<HealthDetail>
+        {
+            new("Last run", $"{label} {last.Status} (started {last.StartedUtc:u})"),
+        };
+        if (last.FinishedUtc is { } fin)
+        {
+            details.Add(new HealthDetail("Finished", fin.ToString("u")));
+        }
+        if (!string.IsNullOrEmpty(last.ErrorMessage))
+        {
+            details.Add(new HealthDetail("Error", last.ErrorMessage));
+        }
+
+        var status = last.Status == "failed" ? HealthStatus.Warning : HealthStatus.Ok;
+        var summary = last.Status switch
+        {
+            "failed" => $"Last {label.ToLowerInvariant()} failed — see the run history.",
+            "running" => $"{label} in progress…",
+            "cancelled" => $"Last {label.ToLowerInvariant()} was cancelled.",
+            "completed" => $"Last {label.ToLowerInvariant()} completed at {last.FinishedUtc:u}.",
+            _ => $"Last {label.ToLowerInvariant()} is {last.Status}.",
+        };
+        return new SubsystemHealth(
+            Key: "zammad-runs",
+            Label: "Recent runs",
+            Status: status,
+            Summary: summary,
+            Details: details,
+            Actions: Array.Empty<HealthAction>());
+    }
+
+    private sealed class ZammadRunSummary
+    {
+        public Guid Id { get; set; }
+        public string Kind { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public DateTime StartedUtc { get; set; }
+        public DateTime? FinishedUtc { get; set; }
+        public string? ErrorMessage { get; set; }
     }
 }

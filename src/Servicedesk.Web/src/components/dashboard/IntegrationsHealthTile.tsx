@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import adsolutLogo from "@/assets/integrations/adsolut.ico";
 import telavoxLogo from "@/assets/integrations/telavox.svg";
+import zammadLogo from "@/assets/integrations/zammad.svg";
 
 const QUERY_KEY = ["admin", "integrations-health"] as const;
 
@@ -51,11 +52,13 @@ const STATUS_STYLES: Record<
 const LOGOS: Record<string, string> = {
   adsolut: adsolutLogo,
   telavox: telavoxLogo,
+  zammad: zammadLogo,
 };
 
 const DETAIL_ROUTES: Record<string, string> = {
   adsolut: "/settings/integrations/adsolut",
   telavox: "/settings/integrations/telavox",
+  zammad: "/settings/integrations/zammad",
 };
 
 /// Admin-only dashboard tile. Shows a compact roll-up of every configured
@@ -85,8 +88,8 @@ export function IntegrationsHealthTile() {
   const style = STATUS_STYLES[rollup];
 
   return (
-    <section className="glass-card p-4">
-      <header className="mb-3 flex items-center justify-between gap-2">
+    <section className="glass-card flex h-full flex-col p-5">
+      <header className="mb-4 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <Plug className="h-4 w-4 text-primary" />
           Integrations
@@ -97,30 +100,46 @@ export function IntegrationsHealthTile() {
         </Badge>
       </header>
 
-      <ul className="divide-y divide-white/[0.04]">
+      {/* One self-contained sub-card per integration. Grid breakpoints chosen
+          so a typical install (2-3 integrations) lays out as one row on xl
+          without forcing single-column on a tablet; a future fourth integration
+          wraps to the next row cleanly. items-stretch (grid default) keeps the
+          cards in the same row visually balanced even when one carries an
+          extra strip (e.g. Adsolut's coverage row). */}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         {integrations.map((i) => (
-          <IntegrationRow key={i.key} integration={i} />
+          <IntegrationCard key={i.key} integration={i} />
         ))}
-      </ul>
+      </div>
     </section>
   );
 }
 
-function IntegrationRow({ integration }: { integration: IntegrationHealth }) {
+/// Self-contained integration sub-card. Layout — header strip (logo + name +
+/// per-integration status), checks stacked, optional extras (Adsolut coverage
+/// chips), then the tile-level actions footer pinned to the bottom via
+/// `mt-auto` so cards in the same grid row keep their action buttons
+/// horizontally aligned even when their bodies have unequal height.
+function IntegrationCard({ integration }: { integration: IntegrationHealth }) {
   const navigate = useNavigate();
   const logoSrc = LOGOS[integration.logoKey];
   const detailRoute = DETAIL_ROUTES[integration.key];
+  const rollupStyle = STATUS_STYLES[integration.status];
+
+  const handleHeaderClick = () => {
+    if (detailRoute) void navigate({ to: detailRoute });
+  };
 
   return (
-    <li className="space-y-2 py-3">
-      <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-[10rem_1fr_1fr_auto]">
+    <article className="group flex flex-col rounded-lg border border-white/[0.06] bg-white/[0.02] p-4 transition-colors hover:border-white/[0.10] hover:bg-white/[0.03]">
+      <header className="mb-3 flex items-center justify-between gap-3">
         <button
           type="button"
-          onClick={() => detailRoute && void navigate({ to: detailRoute })}
+          onClick={handleHeaderClick}
           disabled={!detailRoute}
           className={cn(
-            "flex items-center gap-2.5 rounded-md px-1 py-0.5 text-left transition-colors",
-            detailRoute && "hover:bg-white/[0.03]",
+            "-m-1 flex items-center gap-2.5 rounded-md p-1 text-left transition-colors",
+            detailRoute && "hover:bg-white/[0.04]",
             !detailRoute && "cursor-default",
           )}
         >
@@ -135,33 +154,47 @@ function IntegrationRow({ integration }: { integration: IntegrationHealth }) {
           ) : (
             <div className="h-8 w-8 rounded-sm border border-white/10 bg-white/[0.03]" />
           )}
-          <span className="text-sm font-medium text-foreground">{integration.name}</span>
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-foreground">{integration.name}</div>
+            {detailRoute ? (
+              <div className="flex items-center gap-1 text-[11px] text-muted-foreground/70">
+                Open settings
+                <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+              </div>
+            ) : null}
+          </div>
         </button>
+        <Badge className={`border text-[11px] font-normal ${rollupStyle.badge}`}>
+          <span className="mr-1">{rollupStyle.icon}</span>
+          {rollupStyle.label}
+        </Badge>
+      </header>
 
+      <div className="space-y-3">
         {integration.checks.map((c) => (
           <CheckCell key={c.key} integrationKey={integration.key} check={c} />
         ))}
-
-        {/* Tile-level actions, vertically centred at the end of the row. The
-            fixed `auto` track keeps the column tight so the check cells
-            claim the remaining width. Empty when the integration has no
-            tile actions (e.g. not yet authorised). */}
-        <div className="flex items-center justify-end self-center">
-          {integration.actions.map((a) => (
-            <TileActionButton key={a.key} action={a} />
-          ))}
-        </div>
       </div>
 
-      {/* v0.0.30 — compact sync-coverage strip under the Adsolut row when
-          the integration is configured. Hidden when the connection check
+      {/* v0.0.30 — compact sync-coverage strip anchored inside the Adsolut card
+          when the integration is configured. Hidden when the connection check
           is not OK (no point showing gap counts when the connection itself
           is broken — the connection-cell already calls out the bigger
           problem). */}
       {integration.key === "adsolut" && integration.status !== "Critical" ? (
-        <AdsolutCoverageStrip />
+        <div className="mt-3 border-t border-white/[0.04] pt-3">
+          <AdsolutCoverageStrip />
+        </div>
       ) : null}
-    </li>
+
+      {integration.actions.length > 0 ? (
+        <footer className="mt-auto flex justify-end gap-2 pt-3">
+          {integration.actions.map((a) => (
+            <TileActionButton key={a.key} action={a} />
+          ))}
+        </footer>
+      ) : null}
+    </article>
   );
 }
 
@@ -225,7 +258,7 @@ function AdsolutCoverageStrip() {
   ];
 
   return (
-    <div className="ml-[2.625rem] flex flex-wrap items-center gap-2 text-[11px]">
+    <div className="flex flex-wrap items-center gap-2 text-[11px]">
       <span className="text-muted-foreground/70">Sync coverage</span>
       {total === 0 ? (
         <Link

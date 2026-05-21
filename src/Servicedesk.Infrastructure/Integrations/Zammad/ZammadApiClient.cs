@@ -172,11 +172,7 @@ public sealed class ZammadApiClient : IZammadApiClient
             eventType: ZammadEventTypes.TicketsSearch,
             method: HttpMethod.Get,
             path: path,
-            ct: ct,
-            // Fase 2 — keep a snippet of the raw response on the success
-            // row so an admin can verify the upstream shape if results
-            // come up empty. Reviewable from the audit-log payload view.
-            includeSuccessBodySnippet: true);
+            ct: ct);
         var items = ParseSearchItems(body, out var total);
         return new ZammadTicketSearchPage(items, total, page, perPage);
     }

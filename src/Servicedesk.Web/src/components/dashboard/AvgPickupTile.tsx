@@ -26,7 +26,7 @@ export function AvgPickupTile() {
   });
 
   return (
-    <section className="glass-card p-5">
+    <section className="glass-card flex h-full flex-col p-5">
       <header className="mb-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <Clock className="h-4 w-4 text-primary" />
