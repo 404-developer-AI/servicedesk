@@ -23,6 +23,7 @@ using Servicedesk.Infrastructure.IntakeForms;
 using Servicedesk.Infrastructure.Integrations;
 using Servicedesk.Infrastructure.Integrations.Adsolut;
 using Servicedesk.Infrastructure.Integrations.Telavox;
+using Servicedesk.Infrastructure.Integrations.Zammad;
 using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Mail.Ingest;
@@ -140,6 +141,23 @@ public static class DependencyInjection
         services.AddSingleton<Realtime.ITelavoxCallNotifier, Realtime.NullTelavoxCallNotifier>();
         services.AddHttpClient(TelavoxApiClient.HttpClientName);
         services.AddHostedService<TelavoxPollingWorker>();
+
+        // Zammad migration link (v0.0.41). One install-wide HTTP token +
+        // base URL; no background worker in fase 1 — the integration is
+        // admin-driven (Test connection click). Fasen 2-5 add ticket-
+        // picker proxies, dry-run resolver and import service against this
+        // same client.
+        services.AddSingleton<IZammadApiClient, ZammadApiClient>();
+        services.AddHttpClient(ZammadApiClient.HttpClientName);
+        // v0.0.41 phase 3 — mapping service (Zammad group/state/priority
+        // → local queue/status/priority) + dry-run engine. Mapping service
+        // is stateless beyond DB I/O; dry-run worker is a singleton
+        // hosted service that pulls jobs from an in-memory channel.
+        services.AddSingleton<IZammadMappingService, ZammadMappingService>();
+        services.AddSingleton<IZammadTicketResolver, ZammadTicketResolver>();
+        services.AddSingleton<IZammadDryRunQueue, ZammadDryRunQueue>();
+        services.AddSingleton<IZammadDryRunService, ZammadDryRunService>();
+        services.AddHostedService<ZammadDryRunWorker>();
 
         // Healthcheck-BackgroundService writes integration_audit rows and
         // pushes resolved status over SignalR. The notifier defaults to

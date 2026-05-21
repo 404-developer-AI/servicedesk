@@ -2770,6 +2770,111 @@ public sealed class DatabaseBootstrapper : IHostedService
             tile_id VARCHAR(64) NOT NULL,
             PRIMARY KEY (user_id, tile_id)
         );
+
+        -- ===================================================================
+        -- v0.0.41 — Zammad migration link (one-way bridge from a Zammad
+        -- install into this servicedesk). Three explicit-mapping tables
+        -- let an admin lock down how Zammad groups/states/priorities
+        -- translate into local queues/statuses/priorities BEFORE any
+        -- ticket is imported. Two run-tables capture every dry-run and
+        -- (later, fase 4) real-import as an immutable record so the
+        -- admin can audit + roll forward without re-querying Zammad.
+        --
+        -- Mapping tables share the same shape: zammad_id (the upstream
+        -- numeric id, unique) + zammad_name (snapshot for UX so we don't
+        -- need a live Zammad call to render the mapping table) + the
+        -- target UUID. zammad_id is the natural key — an admin re-mapping
+        -- a group performs an UPSERT on zammad_id, not on uuid.
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS zammad_group_mappings (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            zammad_group_id     BIGINT      NOT NULL UNIQUE,
+            zammad_group_name   TEXT        NOT NULL,
+            queue_id            UUID        NOT NULL REFERENCES queues(id) ON DELETE RESTRICT,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS zammad_state_mappings (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            zammad_state_id     BIGINT      NOT NULL UNIQUE,
+            zammad_state_name   TEXT        NOT NULL,
+            status_id           UUID        NOT NULL REFERENCES statuses(id) ON DELETE RESTRICT,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS zammad_priority_mappings (
+            id                      UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            zammad_priority_id      BIGINT      NOT NULL UNIQUE,
+            zammad_priority_name    TEXT        NOT NULL,
+            priority_id             UUID        NOT NULL REFERENCES priorities(id) ON DELETE RESTRICT,
+            created_utc             TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc             TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        -- Run metadata. One row per dry-run (fase 3) or real import (fase 4).
+        -- kind drives later branching but the columns are deliberately the
+        -- same so the UI's runs-list can render both without a UNION. status
+        -- is an explicit short whitelist (matches IntegrationAudit-style
+        -- colour coding in the UI). source_filter captures the picker state
+        -- at the moment the admin clicked "Dry run" — so an old run remains
+        -- reproducible even after the admin changes the filters in the
+        -- picker. totals is a denormalised running counter the worker
+        -- updates after every batch; the UI polls it for progress.
+        CREATE TABLE IF NOT EXISTS zammad_import_runs (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            kind                TEXT        NOT NULL,
+            status              TEXT        NOT NULL DEFAULT 'pending',
+            started_by_user_id  UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            started_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            finished_utc        TIMESTAMPTZ NULL,
+            source_filter       JSONB       NOT NULL DEFAULT '{}'::jsonb,
+            totals              JSONB       NOT NULL DEFAULT '{}'::jsonb,
+            error_message       TEXT        NULL,
+            CONSTRAINT chk_zammad_run_kind   CHECK (kind   IN ('dry_run','import')),
+            CONSTRAINT chk_zammad_run_status CHECK (status IN ('pending','running','completed','failed','cancelled'))
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_zammad_import_runs_started
+            ON zammad_import_runs (started_utc DESC, id DESC);
+
+        -- Per-ticket result. Created in batches by the worker. result is
+        -- a short whitelist (NOT a free-form reason string) so the UI can
+        -- group + filter without parsing text; the human-readable details
+        -- are in unresolved_reasons (TEXT[], can be empty) + mapping (JSONB
+        -- snapshot of every resolved target id + name, useful for the
+        -- run-detail page's per-row preview without a live Zammad query).
+        -- would_create_ticket_id is reserved for fase 4 — fase 3 leaves it
+        -- NULL because dry-run never writes a tickets row.
+        CREATE TABLE IF NOT EXISTS zammad_import_records (
+            id                      UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            run_id                  UUID        NOT NULL REFERENCES zammad_import_runs(id) ON DELETE CASCADE,
+            zammad_ticket_id        BIGINT      NOT NULL,
+            zammad_ticket_number    TEXT        NULL,
+            zammad_ticket_title     TEXT        NULL,
+            result                  TEXT        NOT NULL,
+            unresolved_reasons      TEXT[]      NOT NULL DEFAULT '{}',
+            mapping                 JSONB       NOT NULL DEFAULT '{}'::jsonb,
+            would_create_ticket_id  UUID        NULL,
+            created_utc             TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT chk_zammad_record_result
+                CHECK (result IN (
+                    'mapped',
+                    'skipped_no_contact',
+                    'skipped_no_group_mapping',
+                    'skipped_no_state_mapping',
+                    'skipped_no_priority_mapping',
+                    'failed'
+                ))
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_zammad_import_records_run
+            ON zammad_import_records (run_id, id);
+        CREATE INDEX IF NOT EXISTS ix_zammad_import_records_run_result
+            ON zammad_import_records (run_id, result);
+        CREATE INDEX IF NOT EXISTS ix_zammad_import_records_ticket
+            ON zammad_import_records (zammad_ticket_id);
         """;
 
     private readonly NpgsqlDataSource _dataSource;

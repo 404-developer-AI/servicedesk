@@ -31,6 +31,14 @@ public static class ProtectedSecretKeys
     // a const.
     public const string TelavoxPartnerToken = "Telavox.PartnerToken";
 
+    // Zammad migration link (v0.0.41). One HTTP token per Servicedesk
+    // install — minted by the admin under their personal Zammad profile
+    // (Settings → Profile → Token Access). The token grants access to
+    // tickets, articles, attachments, users and organizations of the
+    // source Zammad instance, scoped to whatever permissions the minting
+    // agent has.
+    public const string ZammadToken = "Zammad.Token";
+
     /// Encrypted-secret key for a per-agent Telavox CAPI token. Returns a
     /// stable string built from the SD user-id so the protected_secrets
     /// row can be located on every poll and cleared on de-provision.

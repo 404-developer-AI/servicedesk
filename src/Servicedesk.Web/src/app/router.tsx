@@ -18,6 +18,9 @@ import { IntegrationsSettingsPage } from "@/pages/settings/IntegrationsSettingsP
 import { AdsolutIntegrationPage } from "@/pages/settings/AdsolutIntegrationPage";
 import { AdsolutCoveragePage } from "@/pages/settings/AdsolutCoveragePage";
 import { TelavoxIntegrationPage } from "@/pages/settings/TelavoxIntegrationPage";
+import { ZammadIntegrationPage } from "@/pages/settings/ZammadIntegrationPage";
+import { ZammadImportRunsListPage } from "@/pages/settings/zammad/ZammadImportRunsListPage";
+import { ZammadImportRunDetailPage } from "@/pages/settings/zammad/ZammadImportRunDetailPage";
 import { MailSettingsPage } from "@/pages/settings/MailSettingsPage";
 import { MailDiagnosticsPage } from "@/pages/settings/MailDiagnosticsPage";
 import { SlaSettingsPage } from "@/pages/settings/SlaSettingsPage";
@@ -435,6 +438,29 @@ const settingsTelavoxIntegrationRoute = createRoute({
   component: TelavoxIntegrationPage,
 });
 
+// v0.0.41 — Zammad migration link. Admin-only; phase 1 only ships
+// connectivity (base URL, token, test connection) — ticket picker,
+// dry-run and import surface here in later phases.
+const settingsZammadIntegrationRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "integrations/zammad",
+  component: ZammadIntegrationPage,
+});
+
+// v0.0.41 phase 3 — dry-run engine pages. Runs-list lives on its own
+// URL so admins can deep-link to past runs from a separate tab; the
+// detail page renders the per-ticket mapping verdict for one run.
+const settingsZammadRunsListRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "integrations/zammad/runs",
+  component: ZammadImportRunsListPage,
+});
+const settingsZammadRunDetailRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "integrations/zammad/runs/$runId",
+  component: ZammadImportRunDetailPage,
+});
+
 // v0.0.30 — coverage overview page. URL-state filter (tab + bucket) keeps
 // deep-links from the tile + back/forward navigation honest. All four
 // keys are optional; the route component derives sensible defaults.
@@ -600,6 +626,9 @@ const routeTree = rootRoute.addChildren([
     settingsAdsolutIntegrationRoute,
     settingsAdsolutCoverageRoute,
     settingsTelavoxIntegrationRoute,
+    settingsZammadIntegrationRoute,
+    settingsZammadRunsListRoute,
+    settingsZammadRunDetailRoute,
     settingsTicketsRoute,
     settingsCompaniesRoute,
     settingsContactsRoute,
