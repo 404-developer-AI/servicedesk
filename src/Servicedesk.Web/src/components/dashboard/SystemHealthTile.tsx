@@ -52,7 +52,7 @@ export function SystemHealthTile() {
   const style = STATUS_STYLES[rollup];
 
   return (
-    <section className="glass-card p-5">
+    <section className="glass-card flex h-full flex-col p-5">
       <header className="mb-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <Activity className="h-4 w-4 text-primary" />
@@ -82,7 +82,7 @@ export function SystemHealthTile() {
           <button
             type="button"
             onClick={() => void navigate({ to: "/settings/health" })}
-            className="mt-3 flex w-full items-center justify-between rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-xs text-muted-foreground transition hover:bg-white/[0.04] hover:text-foreground"
+            className="mt-auto flex w-full items-center justify-between rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-xs text-muted-foreground transition hover:bg-white/[0.04] hover:text-foreground"
           >
             <span>Open Health page</span>
             <ChevronRight className="h-3.5 w-3.5" />

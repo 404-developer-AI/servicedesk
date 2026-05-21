@@ -30,7 +30,12 @@ export function DashboardPage() {
             return (
               <div
                 key={tile.id}
-                className={cn(tile.span === "full" && "lg:col-span-2")}
+                // h-full so the tile section inside (`h-full flex-col`)
+                // stretches to the grid row's height — keeps side-by-side
+                // tiles visually aligned even when their content has
+                // different intrinsic heights (a sparse pickup-list next
+                // to a six-row health card).
+                className={cn("h-full", tile.span === "full" && "lg:col-span-2")}
               >
                 <Tile />
               </div>
