@@ -374,6 +374,23 @@ public static class SettingKeys
         public const string MaintenanceStartUtc = "App.Maintenance.StartUtc";
         public const string MaintenanceEndUtc = "App.Maintenance.EndUtc";
         public const string MaintenanceMessage = "App.Maintenance.Message";
+
+        /// Login banner — admin-controlled notice shown above the login card
+        /// on every anonymous auth page (local login, M365 callback, future
+        /// customer-portal login). Distinct from the maintenance banner so an
+        /// admin can post a transient notice ("planned upgrade Sat 9:00") or
+        /// a hard error ("storage degraded — open tickets only") without
+        /// flipping the maintenance toggle, which has its own semantics.
+        /// Message supports a constrained Markdown subset (bold/italic/links)
+        /// — rendered HTML is sanitized client-side.
+        public const string LoginBannerEnabled = "App.LoginBanner.Enabled";
+
+        /// One of "info" | "warning" | "error". Drives banner colour + icon.
+        /// Unknown values fall back to "info" so a hand-edited DB row can't
+        /// blank the banner.
+        public const string LoginBannerType = "App.LoginBanner.Type";
+
+        public const string LoginBannerMessage = "App.LoginBanner.Message";
     }
 
     public static class Notifications
@@ -830,6 +847,17 @@ public static class SettingDefaults
             "ISO-8601 UTC timestamp at which the banner auto-disappears. Empty = banner stays up until an admin disables the toggle."),
         new SettingDefault(SettingKeys.App.MaintenanceMessage, "", "string", "App",
             "Free-text message shown inside the maintenance banner. Empty falls back to a generic 'service may be temporarily affected' line."),
+
+        // Login banner — admin-controlled notice on every anonymous auth
+        // page (local login + M365 callback + future customer-portal login).
+        // Separate from the maintenance banner so admins can post a generic
+        // info/warning/error notice without touching the maintenance toggle.
+        new SettingDefault(SettingKeys.App.LoginBannerEnabled, "false", "bool", "App",
+            "When true, a notice banner is shown above the login card on every anonymous auth page. The banner is read via a public endpoint, so it works before authentication. Disable to hide it again — content is preserved across toggles."),
+        new SettingDefault(SettingKeys.App.LoginBannerType, "info", "string", "App",
+            "Visual style of the login banner. One of 'info' (blue, neutral notice), 'warning' (amber, attention needed) or 'error' (red, operational issue). Unknown values silently fall back to 'info'."),
+        new SettingDefault(SettingKeys.App.LoginBannerMessage, "", "string", "App",
+            "Body text of the login banner. Supports a constrained Markdown subset (bold, italic, links) which is sanitized to HTML on the client. Empty or whitespace-only messages suppress rendering even when the toggle is on."),
 
         // Notifications — v0.0.12 stap 4. Mention-trigger notification
         // raamwerk (@@-tag pipeline). Per-user preferences are out of scope
