@@ -2,6 +2,7 @@ using System.Text.Json;
 using Dapper;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Integrations.Zammad;
 
@@ -21,6 +22,7 @@ public sealed class ZammadDryRunService : IZammadDryRunService
     private readonly IZammadDryRunQueue _queue;
     private readonly IZammadMappingService _mappings;
     private readonly IZammadTicketResolver _resolver;
+    private readonly ISettingsService _settings;
     private readonly ILogger<ZammadDryRunService> _logger;
 
     public ZammadDryRunService(
@@ -28,12 +30,14 @@ public sealed class ZammadDryRunService : IZammadDryRunService
         IZammadDryRunQueue queue,
         IZammadMappingService mappings,
         IZammadTicketResolver resolver,
+        ISettingsService settings,
         ILogger<ZammadDryRunService> logger)
     {
         _dataSource = dataSource;
         _queue = queue;
         _mappings = mappings;
         _resolver = resolver;
+        _settings = settings;
         _logger = logger;
     }
 
@@ -328,6 +332,98 @@ public sealed class ZammadDryRunService : IZammadDryRunService
         await tx.CommitAsync(ct);
     }
 
+    public async Task<ZammadImportStartResult> StartImportFromDryRunAsync(
+        Guid dryRunId,
+        Guid? startedByUserId,
+        CancellationToken ct)
+    {
+        // Read the dry-run row first so every guard-rail fires with a
+        // typed reason. The admin will see this in the response banner
+        // and act accordingly — re-run the dry-run, fix mapping, etc.
+        const string readSql = """
+            SELECT kind                     AS "Kind",
+                   status                   AS "Status",
+                   started_utc              AS "StartedUtc",
+                   totals::text             AS "TotalsJson"
+              FROM zammad_import_runs
+             WHERE id = @RunId
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var row = await conn.QuerySingleOrDefaultAsync<DryRunGuardRow>(new CommandDefinition(
+            readSql, new { RunId = dryRunId }, cancellationToken: ct));
+        if (row is null)
+        {
+            return new ZammadImportStartResult(null,
+                "dry_run_not_found",
+                "Referenced dry-run does not exist.");
+        }
+        if (!string.Equals(row.Kind, "dry_run", StringComparison.Ordinal))
+        {
+            return new ZammadImportStartResult(null,
+                "not_a_dry_run",
+                "Referenced run is not a dry-run.");
+        }
+        if (!string.Equals(row.Status, "completed", StringComparison.Ordinal))
+        {
+            return new ZammadImportStartResult(null,
+                "dry_run_not_completed",
+                "Dry-run must be in status='completed' before promoting to an import.");
+        }
+
+        var retentionDays = await _settings.GetAsync<int>(SettingKeys.Zammad.DryRunRetentionDays, ct);
+        retentionDays = Math.Clamp(retentionDays <= 0 ? 14 : retentionDays, 1, 90);
+        var age = DateTime.UtcNow - DateTime.SpecifyKind(row.StartedUtc, DateTimeKind.Utc);
+        if (age.TotalDays > retentionDays)
+        {
+            return new ZammadImportStartResult(null,
+                "dry_run_expired",
+                $"Dry-run is older than the retention window ({retentionDays} days). Run a fresh dry-run first.");
+        }
+
+        var totals = ParseTotals(row.TotalsJson);
+        if (totals.Mapped <= 0)
+        {
+            return new ZammadImportStartResult(null,
+                "dry_run_no_mapped_records",
+                "Dry-run has no records in result='mapped'. Resolve mapping or contacts before importing.");
+        }
+
+        // All guards passed — create the import run row pointing back at
+        // the dry-run, seed the planned-total counter with the mapped
+        // count so the progress bar paints proportionally from tick 1,
+        // and enqueue the worker.
+        var filter = new ZammadImportSourceFilter(
+            TicketIds: null,
+            FreeText: null,
+            GroupIds: null,
+            StateIds: null,
+            SelectAllMatching: false,
+            DryRunId: dryRunId);
+        var seededTotals = ZammadImportTotals.Empty(totals.Mapped);
+
+        const string insertSql = """
+            INSERT INTO zammad_import_runs
+                (kind, status, started_by_user_id, started_utc, source_filter, totals)
+            VALUES
+                ('import', 'pending', @StartedByUserId, now(), @Filter::jsonb, @Totals::jsonb)
+            RETURNING id
+            """;
+        var importRunId = await conn.ExecuteScalarAsync<Guid>(new CommandDefinition(insertSql, new
+        {
+            StartedByUserId = startedByUserId,
+            Filter = JsonSerializer.Serialize(filter),
+            Totals = JsonSerializer.Serialize(seededTotals),
+        }, cancellationToken: ct));
+
+        if (!_queue.TryEnqueue(importRunId))
+        {
+            _logger.LogWarning(
+                "Zammad import queue refused enqueue for run {RunId}; row remains pending.",
+                importRunId);
+        }
+        return new ZammadImportStartResult(importRunId, null, null);
+    }
+
     public async Task<bool> CancelRunAsync(Guid runId, CancellationToken ct)
     {
         // Only flip pending/running rows — a completed/failed/cancelled
@@ -433,5 +529,13 @@ public sealed class ZammadDryRunService : IZammadDryRunService
         public string? MappingJson { get; set; }
         public Guid? WouldCreateTicketId { get; set; }
         public DateTime CreatedUtc { get; set; }
+    }
+
+    private sealed class DryRunGuardRow
+    {
+        public string Kind { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public DateTime StartedUtc { get; set; }
+        public string? TotalsJson { get; set; }
     }
 }

@@ -69,6 +69,13 @@ public sealed class ZammadTicketResolver : IZammadTicketResolver
         if (ticket.PriorityName is not null) snapshot["zammadPriorityName"] = ticket.PriorityName;
         if (ticket.OrganizationName is not null) snapshot["zammadOrganizationName"] = ticket.OrganizationName;
         if (ticket.OrganizationId is not null) snapshot["zammadOrganizationId"] = ticket.OrganizationId;
+        // pending_time on the upstream maps to tickets.pending_till_utc.
+        // Kept on the snapshot so the import worker writes the wake-up
+        // moment without a second /tickets/{id} fetch.
+        if (ticket.PendingTime is not null)
+        {
+            snapshot["pendingTillUtc"] = ticket.PendingTime.Value.UtcDateTime;
+        }
 
         // --- mapping resolves -------------------------------------------
         Guid? queueId = null;

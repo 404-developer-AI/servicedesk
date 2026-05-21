@@ -99,6 +99,7 @@ public sealed class ZammadDryRunWorker : BackgroundService
         var zammad = scope.ServiceProvider.GetRequiredService<IZammadApiClient>();
         var mappings = scope.ServiceProvider.GetRequiredService<IZammadMappingService>();
         var resolver = scope.ServiceProvider.GetRequiredService<IZammadTicketResolver>();
+        var writer = scope.ServiceProvider.GetRequiredService<IZammadImportWriter>();
         var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
         var audit = scope.ServiceProvider.GetRequiredService<IAuditLogger>();
         var integrationAudit = scope.ServiceProvider.GetRequiredService<IIntegrationAuditLogger>();
@@ -122,7 +123,7 @@ public sealed class ZammadDryRunWorker : BackgroundService
                     "ZammadDryRunWorker: run {RunId} not found in DB; skipping.", runId);
                 return;
             }
-            var (status, filter, totals) = loaded.Value;
+            var (kind, status, filter, totals) = loaded.Value;
 
             if (status is "cancelled" or "completed" or "failed")
             {
@@ -132,6 +133,14 @@ public sealed class ZammadDryRunWorker : BackgroundService
             }
 
             await MarkRunStatusAsync(dataSource, runId, "running", stoppingToken);
+
+            if (string.Equals(kind, "import", StringComparison.Ordinal))
+            {
+                await ProcessImportRunAsync(
+                    dataSource, zammad, writer, audit, runId, filter, totals, stoppingToken);
+                return;
+            }
+
             await LogLifecycleAsync(audit, ZammadEventTypes.DryRunStarted, runId, new
             {
                 runId,
@@ -238,6 +247,273 @@ public sealed class ZammadDryRunWorker : BackgroundService
         }
     }
 
+    // ---- real-import path ---------------------------------------------
+
+    /// Walks the prior dry-run's mapped records, fetches articles for
+    /// each upstream ticket, and hands the snapshot + articles to
+    /// <see cref="IZammadImportWriter"/>. Per-ticket records land in
+    /// the import-run with result='imported' / 'already_imported' /
+    /// 'failed'.
+    private async Task ProcessImportRunAsync(
+        NpgsqlDataSource ds,
+        IZammadApiClient zammad,
+        IZammadImportWriter writer,
+        IAuditLogger audit,
+        Guid runId,
+        ZammadImportSourceFilter? filter,
+        ZammadImportTotals totals,
+        CancellationToken ct)
+    {
+        var dryRunId = filter?.DryRunId;
+        if (dryRunId is null)
+        {
+            await MarkRunFailedAsync(ds, runId,
+                "Import run is missing the parent dry-run id in its source filter.", ct);
+            return;
+        }
+
+        await LogLifecycleAsync(audit, ZammadEventTypes.ImportStarted, runId, new
+        {
+            runId,
+            dryRunId = dryRunId.Value,
+            plannedTotal = totals.PlannedTotal,
+        }, ct);
+
+        var inputs = await LoadMappedDryRunRecordsAsync(ds, dryRunId.Value, ct);
+        if (inputs.Count == 0)
+        {
+            await CompleteRunAsync(ds, runId, totals with { PlannedTotal = 0 }, ct);
+            await LogLifecycleAsync(audit, ZammadEventTypes.ImportFinished, runId, new
+            {
+                runId,
+                status = "completed",
+                total = 0,
+            }, ct);
+            return;
+        }
+        if (totals.PlannedTotal is null || totals.PlannedTotal == 0)
+        {
+            totals = totals with { PlannedTotal = inputs.Count };
+            await PersistTotalsAsync(ds, runId, totals, ct);
+        }
+
+        var pending = 0;
+        foreach (var snapshot in inputs)
+        {
+            if (ct.IsCancellationRequested) return;
+            var live = await GetRunStatusAsync(ds, runId, ct);
+            if (live == "cancelled")
+            {
+                await PersistTotalsAsync(ds, runId, totals, ct);
+                await LogLifecycleAsync(audit, ZammadEventTypes.ImportCancelled, runId, new
+                {
+                    runId,
+                    processedSoFar = totals.Processed,
+                }, ct);
+                return;
+            }
+
+            ZammadImportWriteResult writeResult;
+            IReadOnlyList<string> reasons = Array.Empty<string>();
+            try
+            {
+                var articles = await zammad.ListArticlesAsync(snapshot.ZammadTicketId, ct);
+                var input = new ZammadImportWriteInput(
+                    ZammadTicketId: snapshot.ZammadTicketId,
+                    ZammadTicketNumber: snapshot.ZammadTicketNumber,
+                    ZammadTicketTitle: snapshot.ZammadTicketTitle ?? "(no subject)",
+                    ContactId: snapshot.ContactId,
+                    QueueId: snapshot.QueueId,
+                    StatusId: snapshot.StatusId,
+                    PriorityId: snapshot.PriorityId,
+                    Articles: articles,
+                    PendingTillUtc: snapshot.PendingTillUtc);
+                writeResult = await writer.WriteAsync(input, ct);
+            }
+            catch (ZammadApiException ex)
+            {
+                writeResult = new ZammadImportWriteResult(
+                    ZammadImportRecordResult.Failed, null,
+                    "articles_fetch_failed:" + (ex.UpstreamErrorCode ?? "unknown"));
+                reasons = new[] { writeResult.FailureReason ?? "articles_fetch_failed" };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "ZammadImportWriter threw on ticket {ZammadId} in run {RunId}",
+                    snapshot.ZammadTicketId, runId);
+                writeResult = new ZammadImportWriteResult(
+                    ZammadImportRecordResult.Failed, null, ex.Message);
+                reasons = new[] { "writer_exception" };
+            }
+
+            // Persist a record row in the IMPORT run. The mapping JSONB
+            // snapshot is preserved as-is from the dry-run plus the
+            // resulting local ticket id (or NULL on failure).
+            await InsertImportRecordAsync(
+                ds, runId, snapshot, writeResult, reasons, ct);
+            totals = BumpImportTotals(totals, writeResult.Result);
+            pending++;
+            if (pending >= TotalsFlushBatchSize)
+            {
+                await PersistTotalsAsync(ds, runId, totals, ct);
+                pending = 0;
+            }
+        }
+
+        await CompleteRunAsync(ds, runId, totals, ct);
+        await LogLifecycleAsync(audit, ZammadEventTypes.ImportFinished, runId, new
+        {
+            runId,
+            status = "completed",
+            totals,
+        }, ct);
+    }
+
+    private static ZammadImportTotals BumpImportTotals(ZammadImportTotals t, string result)
+    {
+        return result switch
+        {
+            ZammadImportRecordResult.Imported =>
+                t with { Processed = t.Processed + 1, Imported = t.Imported + 1 },
+            ZammadImportRecordResult.AlreadyImported =>
+                t with { Processed = t.Processed + 1, AlreadyImported = t.AlreadyImported + 1 },
+            _ => t with { Processed = t.Processed + 1, Failed = t.Failed + 1 },
+        };
+    }
+
+    private static async Task<IReadOnlyList<DryRunMappedSnapshot>> LoadMappedDryRunRecordsAsync(
+        NpgsqlDataSource ds, Guid dryRunId, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT id                       AS "RecordId",
+                   zammad_ticket_id         AS "ZammadTicketId",
+                   zammad_ticket_number     AS "ZammadTicketNumber",
+                   zammad_ticket_title      AS "ZammadTicketTitle",
+                   mapping::text            AS "MappingJson"
+              FROM zammad_import_records
+             WHERE run_id = @RunId AND result = 'mapped'
+             ORDER BY id ASC
+            """;
+        await using var conn = await ds.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<MappedSnapshotRow>(new CommandDefinition(
+            sql, new { RunId = dryRunId }, cancellationToken: ct));
+
+        var list = new List<DryRunMappedSnapshot>();
+        foreach (var r in rows)
+        {
+            var parsed = ParseSnapshot(r);
+            if (parsed is null) continue;
+            list.Add(parsed);
+        }
+        return list;
+    }
+
+    private static DryRunMappedSnapshot? ParseSnapshot(MappedSnapshotRow row)
+    {
+        if (string.IsNullOrWhiteSpace(row.MappingJson)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(row.MappingJson);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return null;
+            Guid? contactId = TryGetGuid(root, "contactId");
+            Guid? queueId = TryGetGuid(root, "queueId");
+            Guid? statusId = TryGetGuid(root, "statusId");
+            Guid? priorityId = TryGetGuid(root, "priorityId");
+            if (contactId is null || queueId is null || statusId is null || priorityId is null)
+                return null;
+            return new DryRunMappedSnapshot(
+                RecordId: row.RecordId,
+                ZammadTicketId: row.ZammadTicketId,
+                ZammadTicketNumber: row.ZammadTicketNumber,
+                ZammadTicketTitle: row.ZammadTicketTitle,
+                ContactId: contactId.Value,
+                QueueId: queueId.Value,
+                StatusId: statusId.Value,
+                PriorityId: priorityId.Value,
+                PendingTillUtc: TryGetUtcDateTime(root, "pendingTillUtc"),
+                MappingJson: row.MappingJson);
+        }
+        catch (JsonException) { return null; }
+    }
+
+    private static Guid? TryGetGuid(JsonElement el, string name)
+    {
+        if (!el.TryGetProperty(name, out var prop)) return null;
+        return prop.ValueKind switch
+        {
+            JsonValueKind.String when Guid.TryParse(prop.GetString(), out var g) => g,
+            _ => null,
+        };
+    }
+
+    private static DateTime? TryGetUtcDateTime(JsonElement el, string name)
+    {
+        if (!el.TryGetProperty(name, out var prop)) return null;
+        if (prop.ValueKind != JsonValueKind.String) return null;
+        var raw = prop.GetString();
+        if (string.IsNullOrEmpty(raw)) return null;
+        return DateTime.TryParse(
+                raw,
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                out var v)
+            ? DateTime.SpecifyKind(v, DateTimeKind.Utc)
+            : (DateTime?)null;
+    }
+
+    private static async Task InsertImportRecordAsync(
+        NpgsqlDataSource ds,
+        Guid runId,
+        DryRunMappedSnapshot snapshot,
+        ZammadImportWriteResult writeResult,
+        IReadOnlyList<string> reasons,
+        CancellationToken ct)
+    {
+        const string sql = """
+            INSERT INTO zammad_import_records (
+                run_id, zammad_ticket_id, zammad_ticket_number, zammad_ticket_title,
+                result, unresolved_reasons, mapping, would_create_ticket_id)
+            VALUES (
+                @RunId, @ZammadTicketId, @ZammadTicketNumber, @ZammadTicketTitle,
+                @Result, @UnresolvedReasons, @Mapping::jsonb, @LocalTicketId)
+            """;
+        await using var conn = await ds.OpenConnectionAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            RunId = runId,
+            ZammadTicketId = snapshot.ZammadTicketId,
+            ZammadTicketNumber = snapshot.ZammadTicketNumber,
+            ZammadTicketTitle = snapshot.ZammadTicketTitle,
+            Result = writeResult.Result,
+            UnresolvedReasons = reasons.ToArray(),
+            Mapping = snapshot.MappingJson,
+            LocalTicketId = writeResult.LocalTicketId,
+        }, cancellationToken: ct));
+    }
+
+    private sealed record DryRunMappedSnapshot(
+        Guid RecordId,
+        long ZammadTicketId,
+        string? ZammadTicketNumber,
+        string? ZammadTicketTitle,
+        Guid ContactId,
+        Guid QueueId,
+        Guid StatusId,
+        Guid PriorityId,
+        DateTime? PendingTillUtc,
+        string MappingJson);
+
+    private sealed class MappedSnapshotRow
+    {
+        public Guid RecordId { get; set; }
+        public long ZammadTicketId { get; set; }
+        public string? ZammadTicketNumber { get; set; }
+        public string? ZammadTicketTitle { get; set; }
+        public string? MappingJson { get; set; }
+    }
+
     // ---- per-ticket resolver hot loop ---------------------------------
 
     private static async Task<ZammadImportTotals> ProcessTicketAsync(
@@ -329,11 +605,12 @@ public sealed class ZammadDryRunWorker : BackgroundService
 
     // ---- DB plumbing --------------------------------------------------
 
-    private static async Task<(string Status, ZammadImportSourceFilter? Filter, ZammadImportTotals Totals)?>
+    private static async Task<(string Kind, string Status, ZammadImportSourceFilter? Filter, ZammadImportTotals Totals)?>
         LoadRunAsync(NpgsqlDataSource ds, Guid runId, CancellationToken ct)
     {
         const string sql = """
-            SELECT status                AS "Status",
+            SELECT kind                  AS "Kind",
+                   status                AS "Status",
                    source_filter::text   AS "SourceFilterJson",
                    totals::text          AS "TotalsJson"
               FROM zammad_import_runs
@@ -357,7 +634,7 @@ public sealed class ZammadDryRunWorker : BackgroundService
             try { totals = JsonSerializer.Deserialize<ZammadImportTotals>(row.TotalsJson) ?? totals; }
             catch (JsonException) { /* keep empty */ }
         }
-        return (row.Status, filter, totals);
+        return (row.Kind, row.Status, filter, totals);
     }
 
     private static async Task<string?> GetRunStatusAsync(NpgsqlDataSource ds, Guid runId, CancellationToken ct)
@@ -489,6 +766,7 @@ public sealed class ZammadDryRunWorker : BackgroundService
 
     private sealed class LoadRunRow
     {
+        public string Kind { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
         public string? SourceFilterJson { get; set; }
         public string? TotalsJson { get; set; }

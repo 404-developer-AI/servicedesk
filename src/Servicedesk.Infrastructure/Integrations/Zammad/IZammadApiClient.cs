@@ -57,4 +57,12 @@ public interface IZammadApiClient
     /// to pre-fill first/last name. Returns null on 404 so the dialog
     /// can fall back to empty fields.
     Task<ZammadUser?> GetUserAsync(long userId, CancellationToken ct);
+
+    /// <c>GET /api/v1/ticket_articles/by_ticket/{ticketId}</c>. Full
+    /// article list (Zammad's "timeline") in upload order. The real-
+    /// import worker (v0.0.41 phase 4) walks this list once per ticket:
+    /// the first article becomes <c>ticket_bodies</c>, subsequent
+    /// articles become <c>ticket_events</c>. Returns an empty list when
+    /// Zammad responds 404 — same soft-skip pattern as <see cref="GetTicketAsync"/>.
+    Task<IReadOnlyList<ZammadArticle>> ListArticlesAsync(long ticketId, CancellationToken ct);
 }

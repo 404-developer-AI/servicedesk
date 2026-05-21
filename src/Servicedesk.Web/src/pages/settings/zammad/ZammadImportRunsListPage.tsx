@@ -94,18 +94,29 @@ function RunsTable({ rows }: { rows: ZammadImportRunSummary[] }) {
             <th className="px-3 py-2 text-left">Kind</th>
             <th className="px-3 py-2 text-left">Status</th>
             <th className="px-3 py-2 text-right">Progress</th>
-            <th className="px-3 py-2 text-right">Mapped</th>
-            <th className="px-3 py-2 text-right">Skipped</th>
+            <th className="px-3 py-2 text-right" title="Mapped (dry-run) / Imported (import)">
+              OK
+            </th>
+            <th className="px-3 py-2 text-right" title="Skipped (dry-run) / Already imported (import)">
+              Skipped
+            </th>
             <th className="px-3 py-2 text-right">Failed</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => {
+            const isImport = row.kind === "Import";
             const skipped =
               row.totals.skippedNoContact +
               row.totals.skippedNoGroupMapping +
               row.totals.skippedNoStateMapping +
               row.totals.skippedNoPriorityMapping;
+            // Per-kind interpretation. Import: OK=imported, Skipped=
+            // already_imported (shown sky to indicate "no-op, not a
+            // problem"). Dry-run keeps the existing mapped/skipped view.
+            const okValue = isImport ? row.totals.imported : row.totals.mapped;
+            const skippedValue = isImport ? row.totals.alreadyImported : skipped;
+            const skippedTone = isImport ? "text-sky-300" : "text-amber-300";
             const tone = STATUS_TONE[row.status];
             return (
               <tr
@@ -125,7 +136,7 @@ function RunsTable({ rows }: { rows: ZammadImportRunSummary[] }) {
                   {row.startedByDisplayName ?? "—"}
                 </td>
                 <td className="px-3 py-2 align-middle text-muted-foreground">
-                  {row.kind === "DryRun" ? "Dry-run" : "Import"}
+                  {isImport ? "Import" : "Dry-run"}
                 </td>
                 <td className={cn("px-3 py-2 align-middle", tone.text)}>
                   <span className="inline-flex items-center gap-1.5">
@@ -140,10 +151,10 @@ function RunsTable({ rows }: { rows: ZammadImportRunSummary[] }) {
                     : ""}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums text-emerald-300">
-                  {row.totals.mapped}
+                  {okValue}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums text-amber-300">
-                  {skipped}
+                <td className={cn("px-3 py-2 text-right tabular-nums", skippedTone)}>
+                  {skippedValue}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums text-rose-300">
                   {row.totals.failed}

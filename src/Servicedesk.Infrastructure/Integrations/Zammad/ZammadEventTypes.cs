@@ -66,6 +66,10 @@ public static class ZammadEventTypes
     /// pre-fill name fields from Zammad's user record.
     public const string UserGet = "api.users.get";
 
+    /// GET /api/v1/ticket_articles/by_ticket/{id} — full article list
+    /// for one ticket. Walked once per ticket during the real import.
+    public const string ArticlesList = "api.articles.list";
+
     // ---- mapping CRUD (audit_log security trail) ----------------------
 
     /// Admin set or updated a Zammad-group → queue mapping. Payload
@@ -99,4 +103,17 @@ public static class ZammadEventTypes
 
     /// Admin requested cancellation of a running dry-run.
     public const string DryRunCancelled = "integration.zammad.dry_run.cancelled";
+
+    // ---- real-import lifecycle (audit_log security trail) ------------
+
+    /// Admin started a real import from a prior dry-run. Payload carries
+    /// the parent dry-run-id + import-run-id so the trail can hop between
+    /// rows.
+    public const string ImportStarted = "integration.zammad.import.started";
+
+    /// Worker finished a real import. Payload carries the final totals.
+    public const string ImportFinished = "integration.zammad.import.finished";
+
+    /// Admin cancelled a running real import.
+    public const string ImportCancelled = "integration.zammad.import.cancelled";
 }

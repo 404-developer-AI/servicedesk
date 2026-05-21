@@ -1188,6 +1188,8 @@ export type ZammadImportTotals = {
   skippedNoPriorityMapping: number;
   failed: number;
   plannedTotal: number | null;
+  imported: number;
+  alreadyImported: number;
 };
 
 export type ZammadImportRunSummary = {
@@ -1208,6 +1210,7 @@ export type ZammadImportSourceFilter = {
   groupIds: number[] | null;
   stateIds: number[] | null;
   selectAllMatching: boolean;
+  dryRunId: string | null;
 };
 
 export type ZammadImportRunDetail = {
@@ -1221,7 +1224,9 @@ export type ZammadImportRecordResult =
   | "skipped_no_group_mapping"
   | "skipped_no_state_mapping"
   | "skipped_no_priority_mapping"
-  | "failed";
+  | "failed"
+  | "imported"
+  | "already_imported";
 
 export type ZammadImportRecordItem = {
   id: string;
@@ -1291,6 +1296,12 @@ export const zammadDryRunApi = {
       "POST",
       `/api/admin/integrations/zammad/import/runs/${runId}/recheck`,
       { recordIds },
+    ),
+  startImport: (dryRunId: string) =>
+    request<{ runId: string }>(
+      "POST",
+      "/api/admin/integrations/zammad/import/import",
+      { dryRunId },
     ),
 };
 
