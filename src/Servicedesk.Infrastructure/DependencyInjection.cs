@@ -157,6 +157,7 @@ public static class DependencyInjection
         services.AddSingleton<IZammadTicketResolver, ZammadTicketResolver>();
         services.AddSingleton<IZammadDryRunQueue, ZammadDryRunQueue>();
         services.AddSingleton<IZammadDryRunService, ZammadDryRunService>();
+        services.AddSingleton<IZammadImportWriter, ZammadImportWriter>();
         services.AddHostedService<ZammadDryRunWorker>();
 
         // Healthcheck-BackgroundService writes integration_audit rows and

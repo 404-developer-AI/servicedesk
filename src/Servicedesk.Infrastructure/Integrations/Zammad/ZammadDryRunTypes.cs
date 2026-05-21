@@ -29,8 +29,10 @@ public enum ZammadImportRunKind
     Import = 1,
 }
 
-/// Result the resolver assigned to one ticket. Mirrors the DB CHECK
-/// constraint on <c>zammad_import_records.result</c>.
+/// Result the resolver / importer assigned to one ticket. Mirrors the
+/// DB CHECK constraint on <c>zammad_import_records.result</c>. Dry-run
+/// rows use one of the first six; import rows use <c>Imported</c> /
+/// <c>AlreadyImported</c> / <c>Failed</c>.
 public static class ZammadImportRecordResult
 {
     public const string Mapped = "mapped";
@@ -39,17 +41,33 @@ public static class ZammadImportRecordResult
     public const string SkippedNoStateMapping = "skipped_no_state_mapping";
     public const string SkippedNoPriorityMapping = "skipped_no_priority_mapping";
     public const string Failed = "failed";
+
+    /// Real import — writer created a fresh local ticket row.
+    public const string Imported = "imported";
+
+    /// Real import — the Zammad ticket id was already linked to a
+    /// local ticket (idempotent re-run, or a parallel-import race).
+    /// The writer skipped the write and surfaced the existing ticket id.
+    public const string AlreadyImported = "already_imported";
 }
 
 /// Frozen snapshot of the picker's source filters at run-start. Persisted
 /// as JSONB so an old run remains reproducible after the admin changes
 /// the picker filters in a later session.
+///
+/// For dry-run rows: <c>TicketIds</c> / <c>FreeText</c> / <c>GroupIds</c> /
+/// <c>StateIds</c> / <c>SelectAllMatching</c> capture the picker state.
+/// For import-kind rows: <c>DryRunId</c> points at the prior completed
+/// dry-run whose mapped records the importer consumes; the picker
+/// fields stay null because the importer does not query Zammad-search
+/// again.
 public sealed record ZammadImportSourceFilter(
     IReadOnlyList<long>? TicketIds,
     string? FreeText,
     IReadOnlyList<long>? GroupIds,
     IReadOnlyList<long>? StateIds,
-    bool SelectAllMatching);
+    bool SelectAllMatching,
+    Guid? DryRunId = null);
 
 /// Running totals the worker bumps after each ticket. Same shape on
 /// dry-run + (later) real import. Stored as JSONB on the run row so
@@ -62,10 +80,12 @@ public sealed record ZammadImportTotals(
     int SkippedNoStateMapping,
     int SkippedNoPriorityMapping,
     int Failed,
-    int? PlannedTotal)
+    int? PlannedTotal,
+    int Imported = 0,
+    int AlreadyImported = 0)
 {
     public static ZammadImportTotals Empty(int? plannedTotal) =>
-        new(0, 0, 0, 0, 0, 0, 0, plannedTotal);
+        new(0, 0, 0, 0, 0, 0, 0, plannedTotal, 0, 0);
 }
 
 /// Row as exposed to the admin UI on the runs-list page.

@@ -19,6 +19,7 @@ public static class ZammadDryRunEndpoints
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         admin.MapPost("/dry-run", StartDryRun).WithName("StartZammadDryRun").WithOpenApi();
+        admin.MapPost("/import", StartImport).WithName("StartZammadImport").WithOpenApi();
         admin.MapGet("/runs", ListRuns).WithName("ListZammadImportRuns").WithOpenApi();
         admin.MapGet("/runs/{runId:guid}", GetRun).WithName("GetZammadImportRun").WithOpenApi();
         admin.MapGet("/runs/{runId:guid}/records", GetRecords).WithName("GetZammadImportRecords").WithOpenApi();
@@ -29,6 +30,8 @@ public static class ZammadDryRunEndpoints
     }
 
     public sealed record RecheckRequest(IReadOnlyList<Guid> RecordIds);
+
+    public sealed record StartImportRequest([property: Required] Guid DryRunId);
 
     // ---- request shapes -------------------------------------------------
 
@@ -78,6 +81,45 @@ public static class ZammadDryRunEndpoints
         var userId = ActorContext.GetUserId(http);
         var runId = await service.StartDryRunAsync(filter, userId, ct);
         return Results.Accepted($"/api/admin/integrations/zammad/import/runs/{runId}", new { runId });
+    }
+
+    private static async Task<IResult> StartImport(
+        [FromBody] StartImportRequest req,
+        HttpContext http,
+        ISettingsService settings,
+        IZammadDryRunService service,
+        CancellationToken ct)
+    {
+        var blocked = await EnabledGuard(settings, ct);
+        if (blocked is not null) return blocked;
+        if (req is null || req.DryRunId == Guid.Empty)
+        {
+            return Results.BadRequest(new
+            {
+                error = "invalid_dry_run_id",
+                message = "Provide a non-empty dryRunId.",
+            });
+        }
+
+        var userId = ActorContext.GetUserId(http);
+        var result = await service.StartImportFromDryRunAsync(req.DryRunId, userId, ct);
+        if (result.RunId is null)
+        {
+            // Map service-level error codes onto HTTP status. dry-run-
+            // missing → 404, anything else (state / expiry / no rows)
+            // → 409 since the request is structurally valid but the
+            // server state is wrong.
+            var status = result.ErrorCode == "dry_run_not_found" ? 404 : 409;
+            return Results.Json(new
+            {
+                error = result.ErrorCode ?? "import_blocked",
+                message = result.ErrorMessage ?? "Import could not be started.",
+            }, statusCode: status);
+        }
+        var runId = result.RunId.Value;
+        return Results.Accepted(
+            $"/api/admin/integrations/zammad/import/runs/{runId}",
+            new { runId });
     }
 
     private static async Task<IResult> ListRuns(
@@ -195,6 +237,8 @@ public static class ZammadDryRunEndpoints
             skippedNoPriorityMapping = s.Totals.SkippedNoPriorityMapping,
             failed = s.Totals.Failed,
             plannedTotal = s.Totals.PlannedTotal,
+            imported = s.Totals.Imported,
+            alreadyImported = s.Totals.AlreadyImported,
         },
         errorMessage = s.ErrorMessage,
     };

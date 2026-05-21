@@ -55,7 +55,31 @@ public interface IZammadDryRunService
         Guid runId,
         IReadOnlyCollection<Guid> recordIds,
         CancellationToken ct);
+
+    /// Promote a completed dry-run to a real import. Validates that the
+    /// referenced dry-run is in a state that can be promoted — completed,
+    /// within the retention window, with at least one mapped record —
+    /// then writes a new run row with <c>kind='import'</c> referencing
+    /// the dry-run's id in the source filter, enqueues the runId, and
+    /// returns it.
+    ///
+    /// On guard-rail rejection (dry-run missing, wrong kind, not
+    /// completed, expired, or no mapped records) returns a result whose
+    /// <c>RunId</c> is null and <c>ErrorCode</c> identifies which rule
+    /// fired so the API layer can return a structured 4xx.
+    Task<ZammadImportStartResult> StartImportFromDryRunAsync(
+        Guid dryRunId,
+        Guid? startedByUserId,
+        CancellationToken ct);
 }
+
+/// Outcome of <see cref="IZammadDryRunService.StartImportFromDryRunAsync"/>.
+/// Success carries a non-null <see cref="RunId"/>; failure carries a
+/// short <see cref="ErrorCode"/> the API layer maps onto a 4xx.
+public sealed record ZammadImportStartResult(
+    Guid? RunId,
+    string? ErrorCode,
+    string? ErrorMessage);
 
 /// Hand-off channel between the API endpoint that starts a run and the
 /// background worker that processes it. Thin abstraction over

@@ -137,7 +137,41 @@ public sealed record ZammadTicket(
     string? PriorityName,
     int? ArticleCount,
     DateTimeOffset? CreatedAt,
-    DateTimeOffset? UpdatedAt);
+    DateTimeOffset? UpdatedAt,
+    DateTimeOffset? PendingTime);
+
+/// One Zammad article (timeline entry) as returned by
+/// <c>GET /api/v1/ticket_articles/by_ticket/{ticketId}</c>. v0.0.41 phase 4
+/// (real import) walks the full article list per ticket to populate the
+/// local <c>ticket_bodies</c> (first article) plus the timeline events
+/// (subsequent articles).
+///
+/// <c>Sender</c> maps to Zammad's three-value enum
+/// ("Customer" / "Agent" / "System") — used to decide whether to attach
+/// the row as an author-contact or author-user event. <c>ContentType</c>
+/// is the Zammad-side hint: "text/html" or "text/plain". When it is
+/// HTML the body is the HTML source and a stripped plain-text mirror
+/// can be derived for the text-only timeline view; when plain the body
+/// is already plain text.
+public sealed record ZammadArticle(
+    long Id,
+    long TicketId,
+    string? Type,
+    string? Sender,
+    string? From,
+    string? To,
+    string? Subject,
+    string? Body,
+    string? ContentType,
+    bool Internal,
+    long? CreatedById,
+    string? CreatedByEmail,
+    DateTimeOffset? CreatedAt,
+    // RFC-5322 Message-ID Zammad recorded for this article (present on
+    // type=email articles; null on note/phone/web). The importer writes
+    // it into mail_messages so a future customer reply threads back to
+    // the imported ticket via In-Reply-To/References.
+    string? MessageId);
 
 /// Query parameters for <see cref="IZammadApiClient.SearchTicketsAsync"/>.
 /// IDs are passed as raw long lists; the client composes the Zammad

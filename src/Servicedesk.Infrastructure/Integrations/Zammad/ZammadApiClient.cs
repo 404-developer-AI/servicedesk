@@ -115,6 +115,23 @@ public sealed class ZammadApiClient : IZammadApiClient
         }
     }
 
+    public async Task<IReadOnlyList<ZammadArticle>> ListArticlesAsync(long ticketId, CancellationToken ct)
+    {
+        try
+        {
+            var body = await SendAsync(
+                eventType: ZammadEventTypes.ArticlesList,
+                method: HttpMethod.Get,
+                path: $"/api/v1/ticket_articles/by_ticket/{ticketId}",
+                ct: ct);
+            return ParseArticles(body);
+        }
+        catch (ZammadApiException ex) when (ex.HttpStatus == 404)
+        {
+            return Array.Empty<ZammadArticle>();
+        }
+    }
+
     public async Task<ZammadTicketSearchPage> SearchTicketsAsync(
         ZammadTicketSearchQuery query, CancellationToken ct)
     {
@@ -594,6 +611,41 @@ public sealed class ZammadApiClient : IZammadApiClient
         return list;
     }
 
+    /// Parses the article list returned by
+    /// <c>GET /api/v1/ticket_articles/by_ticket/{id}</c>. Each entry is
+    /// a flat object — Zammad has no assets-mode for this endpoint. We
+    /// keep the body as the raw upstream string; mapping the HTML/text
+    /// distinction onto our own <c>body_text</c> / <c>body_html</c>
+    /// happens in the writer because the decision is consumer-side.
+    internal static IReadOnlyList<ZammadArticle> ParseArticles(string body)
+    {
+        var array = TryRootArray(body);
+        if (array is null) return Array.Empty<ZammadArticle>();
+        var list = new List<ZammadArticle>(array.Value.GetArrayLength());
+        foreach (var el in array.Value.EnumerateArray())
+        {
+            if (el.ValueKind != JsonValueKind.Object) continue;
+            var id = TryGetLong(el, "id");
+            if (id is null) continue;
+            list.Add(new ZammadArticle(
+                Id: id.Value,
+                TicketId: TryGetLong(el, "ticket_id") ?? 0,
+                Type: TryGetString(el, "type"),
+                Sender: TryGetString(el, "sender"),
+                From: TryGetString(el, "from"),
+                To: TryGetString(el, "to"),
+                Subject: TryGetString(el, "subject"),
+                Body: TryGetString(el, "body"),
+                ContentType: TryGetString(el, "content_type"),
+                Internal: TryGetBool(el, "internal") ?? false,
+                CreatedById: TryGetLong(el, "created_by_id"),
+                CreatedByEmail: TryGetString(el, "created_by"),
+                CreatedAt: TryGetDateTimeOffset(el, "created_at"),
+                MessageId: TryGetString(el, "message_id")));
+        }
+        return list;
+    }
+
     /// Parses the expand=true ticket-object Zammad returns from
     /// <c>GET /api/v1/tickets/{id}</c>. With <c>expand=true</c> the
     /// numeric *_id fields are mirrored by resolved string forms —
@@ -655,7 +707,11 @@ public sealed class ZammadApiClient : IZammadApiClient
                 PriorityName: TryGetString(root, "priority"),
                 ArticleCount: TryGetInt(root, "article_count"),
                 CreatedAt: TryGetDateTimeOffset(root, "created_at"),
-                UpdatedAt: TryGetDateTimeOffset(root, "updated_at"));
+                UpdatedAt: TryGetDateTimeOffset(root, "updated_at"),
+                // pending_time is only set when state_type is pending_*;
+                // null on regular tickets. Import keeps it so a Zammad
+                // pending-reminder lands as a local pending-till.
+                PendingTime: TryGetDateTimeOffset(root, "pending_time"));
         }
         catch (JsonException)
         {

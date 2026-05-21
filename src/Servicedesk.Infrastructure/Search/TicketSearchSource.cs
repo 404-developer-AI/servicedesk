@@ -42,6 +42,12 @@ public sealed class TicketSearchSource : ISearchSource
         // an exact-match probe first so "1042" ranks a matching ticket #1042
         // above anything else.
         long? numberProbe = long.TryParse(normalized, out var n) ? n : null;
+        // Zammad-number probe: same gate, but we keep the raw string so a
+        // Zammad ticket whose number carried leading zeros ("00042") still
+        // matches against the TEXT zammad_ticket_number column. Rank-boost
+        // is 8.0 below — local number wins (rank 10) on ties, but imported
+        // tickets with the same digit-sequence still surface just under.
+        string? zammadNumberProbe = numberProbe is not null ? normalized : null;
 
         // Build a prefix-matching tsquery: each alphanumeric token gets a `:*`
         // suffix so "bench" matches "benchmark". User-typed `*` chars act as
@@ -50,7 +56,7 @@ public sealed class TicketSearchSource : ISearchSource
         // number probe applies.
         var tsqueryText = BuildPrefixTsQuery(normalized);
 
-        if (string.IsNullOrEmpty(tsqueryText) && numberProbe is null)
+        if (string.IsNullOrEmpty(tsqueryText) && numberProbe is null && zammadNumberProbe is null)
             return new SearchGroup(Kind, Array.Empty<SearchHit>(), 0, false);
 
         const string sql = """
@@ -59,12 +65,17 @@ public sealed class TicketSearchSource : ISearchSource
                             ELSE to_tsquery('simple', @tsqueryText) END AS tsq
             ),
             hits AS (
-                -- Subject / number hits
+                -- Subject / local-number / Zammad-number hits. The
+                -- zammad_ticket_number match-arm gives an "imported from
+                -- Zammad #N" probe the same shortcut behaviour as the
+                -- local-number probe — rank 8.0 keeps a real local #N
+                -- (rank 10) above an imported one with the same digits.
                 SELECT t.id, t.number, t.subject, t.queue_id, t.updated_utc,
                        t.requester_contact_id,
                        GREATEST(
                            COALESCE(ts_rank_cd(t.search_vector, (SELECT tsq FROM q)), 0),
-                           CASE WHEN @numberProbe IS NOT NULL AND t.number = @numberProbe THEN 10.0 ELSE 0 END
+                           CASE WHEN @numberProbe IS NOT NULL AND t.number = @numberProbe THEN 10.0 ELSE 0 END,
+                           CASE WHEN @zammadNumberProbe IS NOT NULL AND t.zammad_ticket_number = @zammadNumberProbe THEN 8.0 ELSE 0 END
                        ) AS rank,
                        NULL::text AS body_snippet
                 FROM tickets t
@@ -73,6 +84,7 @@ public sealed class TicketSearchSource : ISearchSource
                   AND (
                         ((SELECT tsq FROM q) IS NOT NULL AND t.search_vector @@ (SELECT tsq FROM q))
                      OR (@numberProbe IS NOT NULL AND t.number = @numberProbe)
+                     OR (@zammadNumberProbe IS NOT NULL AND t.zammad_ticket_number = @zammadNumberProbe)
                   )
                 UNION ALL
                 -- Body hits via ticket_event_search sidecar
@@ -118,6 +130,7 @@ public sealed class TicketSearchSource : ISearchSource
         {
             tsqueryText,
             numberProbe,
+            zammadNumberProbe,
             skipQueueFilter = principal.IsAdmin,
             allowedQueues = allowedQueues?.ToArray() ?? Array.Empty<Guid>(),
             limit,

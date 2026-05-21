@@ -1470,13 +1470,40 @@ public sealed class DatabaseBootstrapper : IHostedService
             ON tickets (split_from_ticket_id)
             WHERE split_from_ticket_id IS NOT NULL;
 
-        -- v0.0.23 ticket split: extend the source allow-list with 'Split' so the
-        -- new ticket can record where it came from. Drop-then-add is idempotent
-        -- across re-deploys; existing rows are guaranteed to satisfy the new
-        -- predicate (it's a superset of the old one).
+        -- tickets.source allow-list — kept here at its historical
+        -- insertion point so the bootstrap reads top-down. Original was
+        -- the inline CHECK in CREATE TABLE (Web/Mail/Api/System). v0.0.23
+        -- added 'Split' for the ticket-split feature. v0.0.41 fase 4
+        -- added 'Zammad' for the migration import. The allow-list MUST
+        -- be the union of every value the codebase writes into this
+        -- column — CHECK constraints re-validate the whole row on
+        -- UPDATE, so dropping a value here would break SLA recalcs and
+        -- other unrelated writes on previously-saved tickets.
+        --
+        -- The heal-step normalises any historical rows whose source
+        -- predates the current allow-list (e.g. typo / lowercase /
+        -- removed value) to 'Api' so the ADD CONSTRAINT scan attaches
+        -- cleanly. RAISE NOTICE prints the offending values + count for
+        -- post-hoc audit.
+        DO $$ DECLARE
+            bad_count int;
+            bad_values text;
+        BEGIN
+            SELECT count(*), string_agg(DISTINCT source, ', ')
+              INTO bad_count, bad_values
+              FROM tickets
+             WHERE source NOT IN ('Web','Mail','Api','System','Split','Zammad');
+            IF bad_count > 0 THEN
+                RAISE NOTICE 'chk_ticket_source heal: % row(s) had source outside allow-list (values: %) — normalising to Api.',
+                    bad_count, bad_values;
+                UPDATE tickets SET source = 'Api'
+                 WHERE source NOT IN ('Web','Mail','Api','System','Split','Zammad');
+            END IF;
+        END $$;
+
         ALTER TABLE tickets DROP CONSTRAINT IF EXISTS chk_ticket_source;
         ALTER TABLE tickets ADD CONSTRAINT chk_ticket_source
-            CHECK (source IN ('Web','Mail','Api','System','Split'));
+            CHECK (source IN ('Web','Mail','Api','System','Split','Zammad'));
 
         -- v0.0.24 triggers Blok 3: per-ticket pending-till timestamp written by
         -- the set_pending_till action and consumed by the Blok 5 scheduler
@@ -2875,6 +2902,51 @@ public sealed class DatabaseBootstrapper : IHostedService
             ON zammad_import_records (run_id, result);
         CREATE INDEX IF NOT EXISTS ix_zammad_import_records_ticket
             ON zammad_import_records (zammad_ticket_id);
+
+        -- v0.0.41 fase 4 — real-import additions.
+        --
+        -- The result-CHECK on zammad_import_records gains 'imported' and
+        -- 'already_imported' for import-kind runs. Postgres can't ALTER
+        -- a CHECK in place, so we drop and re-add idempotently.
+        ALTER TABLE zammad_import_records DROP CONSTRAINT IF EXISTS chk_zammad_record_result;
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'chk_zammad_record_result'
+            ) THEN
+                ALTER TABLE zammad_import_records
+                    ADD CONSTRAINT chk_zammad_record_result
+                    CHECK (result IN (
+                        'mapped',
+                        'skipped_no_contact',
+                        'skipped_no_group_mapping',
+                        'skipped_no_state_mapping',
+                        'skipped_no_priority_mapping',
+                        'failed',
+                        'imported',
+                        'already_imported'
+                    ));
+            END IF;
+        END $$;
+
+        -- Sparse Zammad-link on tickets. zammad_ticket_id is nullable
+        -- because the vast majority of rows are not migrated; the
+        -- partial UNIQUE index guarantees the same upstream id can never
+        -- be imported twice without imposing a NULL collation cost on
+        -- the millions of non-Zammad rows. zammad_ticket_number is the
+        -- human-friendly number (Zammad's column is a STRING — leading
+        -- zeroes etc).
+        ALTER TABLE tickets
+            ADD COLUMN IF NOT EXISTS zammad_ticket_id      BIGINT NULL,
+            ADD COLUMN IF NOT EXISTS zammad_ticket_number  TEXT   NULL;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ix_tickets_zammad_id
+            ON tickets (zammad_ticket_id)
+            WHERE zammad_ticket_id IS NOT NULL;
+
+        -- (Note: the tickets.source CHECK with 'Zammad' in its allow-
+        -- list lives further up next to the v0.0.23 split-source block,
+        -- to keep the constraint defined in one place. Add new
+        -- INSERT-INTO-tickets sources there.)
         """;
 
     private readonly NpgsqlDataSource _dataSource;

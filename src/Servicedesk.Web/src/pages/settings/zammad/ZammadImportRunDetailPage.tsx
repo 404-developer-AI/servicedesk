@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -11,6 +11,7 @@ import {
   Circle,
   Loader2,
   PauseCircle,
+  PlayCircle,
   UserPlus,
   XCircle,
 } from "lucide-react";
@@ -20,9 +21,18 @@ import {
   zammadDryRunApi,
   type ZammadImportRecordItem,
   type ZammadImportRecordResult,
+  type ZammadImportRunKind,
   type ZammadImportRunStatus,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +43,8 @@ const RESULT_LABEL: Record<ZammadImportRecordResult, string> = {
   skipped_no_state_mapping: "State unmapped",
   skipped_no_priority_mapping: "Priority unmapped",
   failed: "Failed",
+  imported: "Imported",
+  already_imported: "Already imported",
 };
 
 const RESULT_TONE: Record<ZammadImportRecordResult, { dot: string; text: string }> = {
@@ -42,6 +54,13 @@ const RESULT_TONE: Record<ZammadImportRecordResult, { dot: string; text: string 
   skipped_no_state_mapping: { dot: "bg-amber-400", text: "text-amber-300" },
   skipped_no_priority_mapping: { dot: "bg-amber-400", text: "text-amber-300" },
   failed: { dot: "bg-rose-400", text: "text-rose-300" },
+  imported: { dot: "bg-emerald-400", text: "text-emerald-300" },
+  already_imported: { dot: "bg-sky-400", text: "text-sky-300" },
+};
+
+const KIND_LABEL: Record<ZammadImportRunKind, string> = {
+  DryRun: "Dry-run",
+  Import: "Import",
 };
 
 const STATUS_ICON: Record<ZammadImportRunStatus, ReactNode> = {
@@ -74,12 +93,14 @@ export function ZammadImportRunDetailPage() {
   });
   const runId = params.runId;
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [resultFilter, setResultFilter] = useState<string | undefined>(undefined);
   const [createContactRecord, setCreateContactRecord] = useState<{
     recordId: string;
     email: string;
     zammadCustomerId: number | null;
   } | null>(null);
+  const [importConfirmOpen, setImportConfirmOpen] = useState(false);
 
   const detail = useQuery({
     queryKey: ["integrations", "zammad", "import", "run", runId],
@@ -149,6 +170,25 @@ export function ZammadImportRunDetailPage() {
     onError: (err) => toast.error(apiErrorMessage(err)),
   });
 
+  // Promotes the current dry-run to a real import. Once the worker
+  // accepts the request we navigate the admin to the new run's detail
+  // page so they can watch progress without manually switching tabs.
+  const startImportMutation = useMutation({
+    mutationFn: () => zammadDryRunApi.startImport(runId),
+    onSuccess: ({ runId: newRunId }) => {
+      toast.success("Import started — tickets are being created now.");
+      void qc.invalidateQueries({
+        queryKey: ["integrations", "zammad", "import", "runs"],
+      });
+      setImportConfirmOpen(false);
+      void navigate({
+        to: "/settings/integrations/zammad/runs/$runId",
+        params: { runId: newRunId },
+      });
+    },
+    onError: (err) => toast.error(apiErrorMessage(err)),
+  });
+
   if (detail.isLoading) {
     return <Skeleton className="h-64 w-full bg-white/[0.04]" />;
   }
@@ -169,6 +209,14 @@ export function ZammadImportRunDetailPage() {
     totals.skippedNoStateMapping +
     totals.skippedNoPriorityMapping;
   const inFlight = summary.status === "Pending" || summary.status === "Running";
+  const isDryRun = summary.kind === "DryRun";
+  const isImport = summary.kind === "Import";
+  // Promote-to-import button shows only on a completed dry-run that
+  // produced at least one mapped record. The endpoint guards against
+  // the same conditions server-side; checking client-side keeps the UI
+  // honest before the click.
+  const canStartImport =
+    isDryRun && summary.status === "Completed" && totals.mapped > 0;
 
   return (
     <div className="space-y-6">
@@ -182,10 +230,22 @@ export function ZammadImportRunDetailPage() {
         <div className="mt-2 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-lg font-semibold">
             {STATUS_ICON[summary.status]}
-            Dry-run · {summary.status}
+            {KIND_LABEL[summary.kind]} · {summary.status}
           </div>
           <div className="flex items-center gap-2">
-            {!inFlight && visibleIds.length > 0 ? (
+            {canStartImport ? (
+              <Button
+                size="sm"
+                className="h-8 bg-emerald-500/[0.15] text-emerald-100 hover:bg-emerald-500/[0.25] border border-emerald-400/40"
+                variant="outline"
+                onClick={() => setImportConfirmOpen(true)}
+                title={`Promote this dry-run to a real import — ${totals.mapped} ticket(s) will be created.`}
+              >
+                <PlayCircle className="mr-1.5 h-3.5 w-3.5" />
+                Start import ({totals.mapped})
+              </Button>
+            ) : null}
+            {!inFlight && isDryRun && visibleIds.length > 0 ? (
               <Button
                 size="sm"
                 variant="outline"
@@ -236,21 +296,38 @@ export function ZammadImportRunDetailPage() {
       ) : null}
 
       {/* ---- Summary cards -------------------------------------------- */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <SummaryCard
-          label="Processed"
-          value={totals.processed}
-          denominator={totals.plannedTotal ?? undefined}
-        />
-        <SummaryCard label="Mapped" value={totals.mapped} tone="emerald" />
-        <SummaryCard label="Skipped" value={skippedTotal} tone="amber" />
-        <SummaryCard label="Failed" value={totals.failed} tone="rose" />
-        <SummaryCard
-          label="Unresolved contacts"
-          value={totals.skippedNoContact}
-          tone="amber"
-        />
-      </div>
+      {isImport ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <SummaryCard
+            label="Processed"
+            value={totals.processed}
+            denominator={totals.plannedTotal ?? undefined}
+          />
+          <SummaryCard label="Imported" value={totals.imported} tone="emerald" />
+          <SummaryCard
+            label="Already imported"
+            value={totals.alreadyImported}
+            tone="sky"
+          />
+          <SummaryCard label="Failed" value={totals.failed} tone="rose" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+          <SummaryCard
+            label="Processed"
+            value={totals.processed}
+            denominator={totals.plannedTotal ?? undefined}
+          />
+          <SummaryCard label="Mapped" value={totals.mapped} tone="emerald" />
+          <SummaryCard label="Skipped" value={skippedTotal} tone="amber" />
+          <SummaryCard label="Failed" value={totals.failed} tone="rose" />
+          <SummaryCard
+            label="Unresolved contacts"
+            value={totals.skippedNoContact}
+            tone="amber"
+          />
+        </div>
+      )}
 
       {/* ---- Filter buttons ------------------------------------------- */}
       <div className="flex flex-wrap items-center gap-1.5 text-xs">
@@ -260,36 +337,58 @@ export function ZammadImportRunDetailPage() {
           label="All"
           onClick={() => setResultFilter(undefined)}
         />
-        <FilterChip
-          active={resultFilter === "mapped"}
-          label="Mapped"
-          onClick={() => setResultFilter("mapped")}
-        />
-        <FilterChip
-          active={resultFilter === "skipped_no_contact"}
-          label="No contact"
-          onClick={() => setResultFilter("skipped_no_contact")}
-        />
-        <FilterChip
-          active={resultFilter === "skipped_no_group_mapping"}
-          label="Group unmapped"
-          onClick={() => setResultFilter("skipped_no_group_mapping")}
-        />
-        <FilterChip
-          active={resultFilter === "skipped_no_state_mapping"}
-          label="State unmapped"
-          onClick={() => setResultFilter("skipped_no_state_mapping")}
-        />
-        <FilterChip
-          active={resultFilter === "skipped_no_priority_mapping"}
-          label="Priority unmapped"
-          onClick={() => setResultFilter("skipped_no_priority_mapping")}
-        />
-        <FilterChip
-          active={resultFilter === "failed"}
-          label="Failed"
-          onClick={() => setResultFilter("failed")}
-        />
+        {isImport ? (
+          <>
+            <FilterChip
+              active={resultFilter === "imported"}
+              label="Imported"
+              onClick={() => setResultFilter("imported")}
+            />
+            <FilterChip
+              active={resultFilter === "already_imported"}
+              label="Already imported"
+              onClick={() => setResultFilter("already_imported")}
+            />
+            <FilterChip
+              active={resultFilter === "failed"}
+              label="Failed"
+              onClick={() => setResultFilter("failed")}
+            />
+          </>
+        ) : (
+          <>
+            <FilterChip
+              active={resultFilter === "mapped"}
+              label="Mapped"
+              onClick={() => setResultFilter("mapped")}
+            />
+            <FilterChip
+              active={resultFilter === "skipped_no_contact"}
+              label="No contact"
+              onClick={() => setResultFilter("skipped_no_contact")}
+            />
+            <FilterChip
+              active={resultFilter === "skipped_no_group_mapping"}
+              label="Group unmapped"
+              onClick={() => setResultFilter("skipped_no_group_mapping")}
+            />
+            <FilterChip
+              active={resultFilter === "skipped_no_state_mapping"}
+              label="State unmapped"
+              onClick={() => setResultFilter("skipped_no_state_mapping")}
+            />
+            <FilterChip
+              active={resultFilter === "skipped_no_priority_mapping"}
+              label="Priority unmapped"
+              onClick={() => setResultFilter("skipped_no_priority_mapping")}
+            />
+            <FilterChip
+              active={resultFilter === "failed"}
+              label="Failed"
+              onClick={() => setResultFilter("failed")}
+            />
+          </>
+        )}
       </div>
 
       {/* ---- Records table ------------------------------------------- */}
@@ -329,6 +428,50 @@ export function ZammadImportRunDetailPage() {
           onClose={() => setCreateContactRecord(null)}
         />
       ) : null}
+
+      <Dialog
+        open={importConfirmOpen}
+        onOpenChange={(o) => {
+          if (!o && !startImportMutation.isPending) setImportConfirmOpen(false);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Start real import?</DialogTitle>
+            <DialogDescription>
+              {totals.mapped} ticket(s) marked as <span className="font-medium">mapped</span> on
+              this dry-run will be created in the local servicedesk. Body
+              + timeline events are imported. Attachments are not part of
+              this phase. Already-imported tickets stay untouched.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setImportConfirmOpen(false)}
+              disabled={startImportMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => startImportMutation.mutate()}
+              disabled={startImportMutation.isPending}
+            >
+              {startImportMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  Starting…
+                </>
+              ) : (
+                <>
+                  <PlayCircle className="mr-1.5 h-3.5 w-3.5" />
+                  Start import
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -369,12 +512,13 @@ function SummaryCard({
   label: string;
   value: number;
   denominator?: number;
-  tone?: "emerald" | "amber" | "rose";
+  tone?: "emerald" | "amber" | "rose" | "sky";
 }) {
   const toneClass = {
     emerald: "text-emerald-300",
     amber: "text-amber-300",
     rose: "text-rose-300",
+    sky: "text-sky-300",
   };
   return (
     <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
