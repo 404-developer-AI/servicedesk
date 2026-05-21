@@ -93,14 +93,14 @@ export function RecentTickets({ collapsed }: { collapsed: boolean }) {
   }
 
   return (
-    <div className="mt-2 border-t border-white/5 pt-2">
+    <div className="mt-2 flex min-h-0 flex-1 flex-col border-t border-white/5 pt-2">
       {!collapsed && (
         <div className="px-3 pb-1 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">
           Recent
         </div>
       )}
       <div
-        className="max-h-[40vh] space-y-0.5 overflow-y-auto pr-0.5"
+        className="min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-0.5"
         onDragOver={(e) => e.preventDefault()}
       >
         {tickets.map((t, index) => {

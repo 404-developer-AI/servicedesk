@@ -13,6 +13,14 @@ export type SystemTime = {
   offsetMinutes: number;
 };
 
+export type LoginBannerType = "info" | "warning" | "error";
+
+export type LoginBannerState = {
+  enabled: boolean;
+  type: LoginBannerType;
+  message: string;
+};
+
 export type MaintenanceState = {
   active: boolean;
   startUtc: string | null;
@@ -201,6 +209,7 @@ export const systemApi = {
   time: () => request<SystemTime>("GET", "/api/system/time"),
   health: () => request<{ status: HealthStatus }>("GET", "/api/system/health"),
   maintenance: () => request<MaintenanceState>("GET", "/api/system/maintenance"),
+  loginBanner: () => request<LoginBannerState>("GET", "/api/system/login-banner"),
 };
 
 export type IncidentSeverity = "Warning" | "Critical";

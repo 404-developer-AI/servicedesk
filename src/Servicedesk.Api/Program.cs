@@ -396,6 +396,47 @@ app.MapGet("/api/system/maintenance", async (ISettingsService settings, Cancella
 .WithName("GetSystemMaintenance")
 .WithOpenApi();
 
+// Login banner read endpoint. Public — every anonymous auth page (local
+// login, M365 callback, future customer-portal login) reads this without
+// a session. Distinct from /api/system/maintenance so admins can post a
+// notice without flipping the maintenance toggle. Unknown banner-type
+// values fall back to "info" so a hand-edited DB row can't break the
+// login page. Settings-store failures are swallowed and reported as
+// disabled — the login page must keep loading even if settings 500.
+app.MapGet("/api/system/login-banner", async (ISettingsService settings, CancellationToken ct) =>
+{
+    var enabled = false;
+    string type = "info", message = string.Empty;
+    try
+    {
+        enabled = await settings.GetAsync<bool>(SettingKeys.App.LoginBannerEnabled, ct);
+        type = await settings.GetAsync<string>(SettingKeys.App.LoginBannerType, ct);
+        message = await settings.GetAsync<string>(SettingKeys.App.LoginBannerMessage, ct);
+    }
+    catch
+    {
+        // Settings store unreachable — report disabled and let the login render.
+    }
+
+    var normalizedType = (type ?? "info").Trim().ToLowerInvariant() switch
+    {
+        "warning" => "warning",
+        "error" => "error",
+        _ => "info",
+    };
+    var trimmedMessage = (message ?? string.Empty).Trim();
+    var active = enabled && trimmedMessage.Length > 0;
+
+    return Results.Ok(new
+    {
+        enabled = active,
+        type = normalizedType,
+        message = trimmedMessage,
+    });
+})
+.WithName("GetLoginBanner")
+.WithOpenApi();
+
 app.MapCspReportEndpoint();
 app.MapAuditEndpoints();
 app.MapAuthEndpoints();

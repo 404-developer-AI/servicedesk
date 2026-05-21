@@ -162,7 +162,7 @@ export function Sidebar() {
         </div>
       )}
 
-      <nav className="flex-1 space-y-1 px-3">
+      <nav className="flex min-h-0 flex-1 flex-col space-y-1 px-3">
         {items.map((item) => {
           const active = pathname === item.to;
           const Icon = item.icon;

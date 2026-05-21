@@ -1,17 +1,35 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { SlidersHorizontal, Globe2, Clock, Wrench, AlertTriangle } from "lucide-react";
+import {
+  SlidersHorizontal,
+  Globe2,
+  Clock,
+  Wrench,
+  AlertTriangle,
+  Megaphone,
+  Info,
+  AlertCircle,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SettingField } from "@/components/settings/SettingField";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
-import { settingsApi, type SettingEntry } from "@/lib/api";
+import { renderLoginBannerPreviewHtml } from "@/components/auth/LoginBanner";
+import { settingsApi, type SettingEntry, type LoginBannerType } from "@/lib/api";
 import { useServerTime } from "@/hooks/useServerTime";
 import { cn } from "@/lib/utils";
 
 const APP_QUERY_KEY = ["settings", "list", "App"] as const;
 const MAINTENANCE_QUERY_KEY = ["system", "maintenance"] as const;
+const LOGIN_BANNER_QUERY_KEY = ["system", "login-banner"] as const;
+
+const LOGIN_BANNER_MESSAGE_MAX = 500;
+const LOGIN_BANNER_TYPES: ReadonlyArray<{ value: LoginBannerType; label: string }> = [
+  { value: "info", label: "Info" },
+  { value: "warning", label: "Warning" },
+  { value: "error", label: "Error" },
+];
 
 function findEntry(entries: SettingEntry[] | undefined, key: string) {
   return entries?.find((e) => e.key === key);
@@ -106,6 +124,11 @@ export function GeneralSettingsPage() {
       </section>
 
       <MaintenanceWindowSection
+        entries={appSettings.data}
+        loading={appSettings.isLoading}
+      />
+
+      <LoginBannerSection
         entries={appSettings.data}
         loading={appSettings.isLoading}
       />
@@ -253,6 +276,272 @@ function MaintenanceWindowSection({
     </section>
   );
 }
+
+function LoginBannerSection({
+  entries,
+  loading,
+}: {
+  entries: SettingEntry[] | undefined;
+  loading: boolean;
+}) {
+  const qc = useQueryClient();
+
+  const enabledEntry = findEntry(entries, "App.LoginBanner.Enabled");
+  const typeEntry = findEntry(entries, "App.LoginBanner.Type");
+  const messageEntry = findEntry(entries, "App.LoginBanner.Message");
+
+  const enabled = enabledEntry?.value === "true";
+  const rawType = (typeEntry?.value ?? "info").toLowerCase();
+  const type: LoginBannerType =
+    rawType === "warning" || rawType === "error" ? rawType : "info";
+
+  // Local message draft so each keystroke does not fire a save; persisted
+  // on blur. Same pattern as the maintenance-message field above.
+  const [messageDraft, setMessageDraft] = useState(messageEntry?.value ?? "");
+  useEffect(() => {
+    setMessageDraft(messageEntry?.value ?? "");
+  }, [messageEntry?.value]);
+
+  const update = useMutation({
+    mutationFn: ({ key, value }: { key: string; value: string }) =>
+      settingsApi.update(key, value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: APP_QUERY_KEY });
+      qc.invalidateQueries({ queryKey: LOGIN_BANNER_QUERY_KEY });
+    },
+    onError: (_err, vars) => {
+      toast.error(`Failed to update ${vars.key}`);
+    },
+  });
+
+  const setEnabled = (next: boolean) => {
+    update.mutate({ key: "App.LoginBanner.Enabled", value: next ? "true" : "false" });
+  };
+  const setType = (next: LoginBannerType) => {
+    update.mutate({ key: "App.LoginBanner.Type", value: next });
+  };
+  const commitMessage = () => {
+    if (messageDraft === (messageEntry?.value ?? "")) return;
+    update.mutate({ key: "App.LoginBanner.Message", value: messageDraft });
+  };
+
+  const previewHtml = useMemo(
+    () => renderLoginBannerPreviewHtml(messageDraft),
+    [messageDraft],
+  );
+  const showPreview = enabled && previewHtml.length > 0;
+
+  return (
+    <section className="glass-card p-6">
+      <div className="mb-4 flex items-start gap-3">
+        <div className="rounded-md bg-white/[0.04] p-2 text-sky-300">
+          <Megaphone className="h-5 w-5" />
+        </div>
+        <div className="flex-1">
+          <h2 className="text-base font-semibold text-foreground">Login banner</h2>
+          <p className="text-xs text-muted-foreground">
+            Show a notice above the login card on every anonymous auth page. Use{" "}
+            <span className="font-medium text-foreground">Info</span> for neutral
+            announcements, <span className="font-medium text-foreground">Warning</span>{" "}
+            when attention is needed, and{" "}
+            <span className="font-medium text-foreground">Error</span> for active
+            operational issues. Limited Markdown is supported (
+            <code className="font-mono text-[10px]">**bold**</code>,{" "}
+            <code className="font-mono text-[10px]">_italic_</code>,{" "}
+            <code className="font-mono text-[10px]">[text](https://…)</code>).
+          </p>
+        </div>
+        <ToggleSwitch
+          checked={enabled}
+          disabled={loading || update.isPending}
+          onChange={setEnabled}
+        />
+      </div>
+
+      {loading ? (
+        <Skeleton className="h-32 w-full" />
+      ) : (
+        <div className={cn("space-y-4", !enabled && "opacity-60")}>
+          <FieldShell label="Type">
+            <div className="flex flex-wrap gap-2">
+              {LOGIN_BANNER_TYPES.map((t) => (
+                <BannerTypeButton
+                  key={t.value}
+                  value={t.value}
+                  label={t.label}
+                  selected={type === t.value}
+                  disabled={update.isPending}
+                  onSelect={setType}
+                />
+              ))}
+            </div>
+          </FieldShell>
+
+          <FieldShell label="Message">
+            <textarea
+              value={messageDraft}
+              onChange={(e) => setMessageDraft(e.target.value)}
+              onBlur={commitMessage}
+              disabled={update.isPending}
+              rows={3}
+              maxLength={LOGIN_BANNER_MESSAGE_MAX}
+              placeholder="e.g. Scheduled upgrade Saturday 21:00 — login may be briefly unavailable."
+              className="w-full rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            />
+            <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground/70">
+              <span>
+                Links open in a new tab and are sanitized — only http/https/mailto
+                are kept.
+              </span>
+              <span className={cn(messageDraft.length >= LOGIN_BANNER_MESSAGE_MAX && "text-amber-300")}>
+                {messageDraft.length}/{LOGIN_BANNER_MESSAGE_MAX}
+              </span>
+            </div>
+          </FieldShell>
+
+          <FieldShell label="Preview">
+            {showPreview ? (
+              <LoginBannerPreview type={type} html={previewHtml} />
+            ) : (
+              <div className="rounded-md border border-dashed border-white/10 bg-white/[0.02] px-3 py-4 text-center text-[11px] text-muted-foreground/70">
+                {enabled
+                  ? "Enter a message to see the banner preview."
+                  : "Banner is disabled — turn the toggle on to preview."}
+              </div>
+            )}
+          </FieldShell>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function BannerTypeButton({
+  value,
+  label,
+  selected,
+  disabled,
+  onSelect,
+}: {
+  value: LoginBannerType;
+  label: string;
+  selected: boolean;
+  disabled?: boolean;
+  onSelect: (next: LoginBannerType) => void;
+}) {
+  const palette = LOGIN_BANNER_PREVIEW_PALETTES[value];
+  const Icon = palette.icon;
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      disabled={disabled}
+      onClick={() => onSelect(value)}
+      className={cn(
+        "inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
+        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        "disabled:cursor-not-allowed disabled:opacity-50",
+        selected
+          ? cn(palette.selectedBorder, palette.selectedBg, palette.selectedText)
+          : "border-white/10 bg-white/[0.02] text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <Icon className={cn("h-3.5 w-3.5", selected ? palette.selectedIcon : "opacity-70")} />
+      {label}
+    </button>
+  );
+}
+
+function LoginBannerPreview({ type, html }: { type: LoginBannerType; html: string }) {
+  const palette = LOGIN_BANNER_PREVIEW_PALETTES[type];
+  const Icon = palette.icon;
+  const wrapper = useMemo(() => ({ __html: html }), [html]);
+  return (
+    <div
+      role="status"
+      className={cn(
+        "flex items-start gap-3 rounded-[var(--radius)] border px-4 py-3 text-xs backdrop-blur",
+        palette.previewContainer,
+      )}
+    >
+      <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", palette.previewIcon)} />
+      <div className="space-y-1 min-w-0">
+        <p
+          className={cn(
+            "font-medium uppercase tracking-wider text-[10px]",
+            palette.previewLabel,
+          )}
+        >
+          {palette.title}
+        </p>
+        <div
+          className={cn("leading-snug break-words", palette.previewBody)}
+          dangerouslySetInnerHTML={wrapper}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Mirror of the production banner palette — kept locally so the preview
+// renders 1:1 without needing the live banner component (which queries the
+// server). Update both in lock-step when tweaking colours.
+const LOGIN_BANNER_PREVIEW_PALETTES: Record<
+  LoginBannerType,
+  {
+    icon: typeof Info;
+    title: string;
+    selectedBorder: string;
+    selectedBg: string;
+    selectedText: string;
+    selectedIcon: string;
+    previewContainer: string;
+    previewIcon: string;
+    previewLabel: string;
+    previewBody: string;
+  }
+> = {
+  info: {
+    icon: Info,
+    title: "Notice",
+    selectedBorder: "border-sky-500/40",
+    selectedBg: "bg-sky-500/[0.12]",
+    selectedText: "text-sky-100",
+    selectedIcon: "text-sky-300",
+    previewContainer: "border-sky-500/30 bg-sky-500/[0.08]",
+    previewIcon: "text-sky-300",
+    previewLabel: "text-sky-200/90",
+    previewBody:
+      "text-sky-100/90 [&_a]:underline [&_a]:underline-offset-2 [&_a]:text-sky-100",
+  },
+  warning: {
+    icon: AlertTriangle,
+    title: "Warning",
+    selectedBorder: "border-amber-500/40",
+    selectedBg: "bg-amber-500/[0.12]",
+    selectedText: "text-amber-100",
+    selectedIcon: "text-amber-300",
+    previewContainer: "border-amber-500/30 bg-amber-500/[0.08]",
+    previewIcon: "text-amber-300",
+    previewLabel: "text-amber-200/90",
+    previewBody:
+      "text-amber-100/90 [&_a]:underline [&_a]:underline-offset-2 [&_a]:text-amber-100",
+  },
+  error: {
+    icon: AlertCircle,
+    title: "Error",
+    selectedBorder: "border-rose-500/40",
+    selectedBg: "bg-rose-500/[0.14]",
+    selectedText: "text-rose-100",
+    selectedIcon: "text-rose-300",
+    previewContainer: "border-rose-500/40 bg-rose-500/[0.10]",
+    previewIcon: "text-rose-300",
+    previewLabel: "text-rose-200/90",
+    previewBody:
+      "text-rose-100/90 [&_a]:underline [&_a]:underline-offset-2 [&_a]:text-rose-100",
+  },
+};
 
 function FieldShell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
