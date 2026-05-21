@@ -132,6 +132,19 @@ public sealed class ZammadApiClient : IZammadApiClient
         }
     }
 
+    public async Task<Stream> FetchAttachmentBytesAsync(
+        long ticketId,
+        long articleId,
+        long attachmentId,
+        CancellationToken ct)
+    {
+        var path = $"/api/v1/ticket_attachment/{ticketId}/{articleId}/{attachmentId}";
+        return await SendBinaryAsync(
+            eventType: ZammadEventTypes.AttachmentFetch,
+            path: path,
+            ct: ct);
+    }
+
     public async Task<ZammadTicketSearchPage> SearchTicketsAsync(
         ZammadTicketSearchQuery query, CancellationToken ct)
     {
@@ -421,6 +434,180 @@ public sealed class ZammadApiClient : IZammadApiClient
         }
     }
 
+    /// Binary sibling of <see cref="SendAsync"/>. Used by the attachment
+    /// fetcher: we don't want to materialise the full body as a string for
+    /// audit-log truncation (megabyte responses are common), and we want a
+    /// stream the caller can hand straight to <c>IBlobStore</c>. Success
+    /// rows still land in <c>integration_audit</c> — payload carries the
+    /// content-length + content-type Zammad advertised, never the bytes.
+    /// On non-2xx we drain the body to a string (cheap because errors are
+    /// small) so the audit-row gets the same snippet treatment.
+    private async Task<Stream> SendBinaryAsync(
+        string eventType,
+        string path,
+        CancellationToken ct)
+    {
+        var baseUrl = await ResolveBaseUrlAsync(ct);
+        var token = await _secrets.GetAsync(ProtectedSecretKeys.ZammadToken, ct);
+
+        if (string.IsNullOrEmpty(token))
+        {
+            await _audit.LogAsync(new IntegrationAuditEvent(
+                Integration: ZammadEventTypes.Integration,
+                EventType: eventType,
+                Outcome: IntegrationAuditOutcome.Warn,
+                Endpoint: path,
+                HttpStatus: null,
+                LatencyMs: 0,
+                ErrorCode: "token_missing"), ct);
+            throw new ZammadApiException(
+                "Zammad API token is not configured.",
+                upstreamErrorCode: "token_missing");
+        }
+        if (string.IsNullOrEmpty(baseUrl))
+        {
+            await _audit.LogAsync(new IntegrationAuditEvent(
+                Integration: ZammadEventTypes.Integration,
+                EventType: eventType,
+                Outcome: IntegrationAuditOutcome.Warn,
+                Endpoint: path,
+                HttpStatus: null,
+                LatencyMs: 0,
+                ErrorCode: "base_url_missing"), ct);
+            throw new ZammadApiException(
+                "Zammad base URL is not configured.",
+                upstreamErrorCode: "base_url_missing");
+        }
+
+        var url = baseUrl + path;
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.TryAddWithoutValidation("Authorization", $"Token token={token}");
+        // Don't restrict Accept — Zammad returns the original
+        // Content-Type of the file (image/png, application/pdf, …).
+
+        var http = _httpClientFactory.CreateClient(HttpClientName);
+        var stopwatch = Stopwatch.StartNew();
+        HttpResponseMessage response;
+        try
+        {
+            // ResponseHeadersRead so we stream the body instead of buffering.
+            response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            stopwatch.Stop();
+            await _audit.LogAsync(new IntegrationAuditEvent(
+                Integration: ZammadEventTypes.Integration,
+                EventType: eventType,
+                Outcome: IntegrationAuditOutcome.Warn,
+                Endpoint: path,
+                HttpStatus: null,
+                LatencyMs: (int)stopwatch.ElapsedMilliseconds,
+                ErrorCode: "transport_error",
+                Payload: new { message = ex.Message }), ct);
+            throw new ZammadApiException("Transport error talking to Zammad: " + ex.Message, ex);
+        }
+        catch (TaskCanceledException ex)
+        {
+            stopwatch.Stop();
+            await _audit.LogAsync(new IntegrationAuditEvent(
+                Integration: ZammadEventTypes.Integration,
+                EventType: eventType,
+                Outcome: IntegrationAuditOutcome.Warn,
+                Endpoint: path,
+                HttpStatus: null,
+                LatencyMs: (int)stopwatch.ElapsedMilliseconds,
+                ErrorCode: "timeout"), ct);
+            throw new ZammadApiException("Timed out talking to Zammad.", ex);
+        }
+        stopwatch.Stop();
+
+        var status = (int)response.StatusCode;
+        if (!response.IsSuccessStatusCode)
+        {
+            string errorBody;
+            try { errorBody = await response.Content.ReadAsStringAsync(ct); }
+            catch { errorBody = string.Empty; }
+            response.Dispose();
+            var upstreamCode = TryParseErrorCode(errorBody, status);
+            var outcome = response.StatusCode == HttpStatusCode.TooManyRequests || status >= 500
+                ? IntegrationAuditOutcome.Warn
+                : IntegrationAuditOutcome.Error;
+            await _audit.LogAsync(new IntegrationAuditEvent(
+                Integration: ZammadEventTypes.Integration,
+                EventType: eventType,
+                Outcome: outcome,
+                Endpoint: path,
+                HttpStatus: status,
+                LatencyMs: (int)stopwatch.ElapsedMilliseconds,
+                ErrorCode: upstreamCode,
+                Payload: new { snippet = Truncate(errorBody, 256) }), ct);
+            throw new ZammadApiException(
+                BuildHttpMessage(status, upstreamCode),
+                httpStatus: status,
+                upstreamErrorCode: upstreamCode);
+        }
+
+        // Success — open the stream and pass it back. Wrap it so disposing
+        // the stream also disposes the underlying HttpResponseMessage so
+        // the connection returns to the pool.
+        await _audit.LogAsync(new IntegrationAuditEvent(
+            Integration: ZammadEventTypes.Integration,
+            EventType: eventType,
+            Outcome: IntegrationAuditOutcome.Ok,
+            Endpoint: path,
+            HttpStatus: status,
+            LatencyMs: (int)stopwatch.ElapsedMilliseconds,
+            Payload: new
+            {
+                contentLength = response.Content.Headers.ContentLength,
+                contentType = response.Content.Headers.ContentType?.MediaType,
+            }), ct);
+        var stream = await response.Content.ReadAsStreamAsync(ct);
+        return new ResponseDisposingStream(stream, response);
+    }
+
+    /// Stream wrapper that disposes both the underlying response message
+    /// and the content stream when the consumer is done. Needed so the
+    /// importer can <c>await using var stream = …</c> and the pooled
+    /// HTTP connection still returns to the pool.
+    private sealed class ResponseDisposingStream : Stream
+    {
+        private readonly Stream _inner;
+        private readonly HttpResponseMessage _response;
+        public ResponseDisposingStream(Stream inner, HttpResponseMessage response)
+        { _inner = inner; _response = response; }
+        public override bool CanRead => _inner.CanRead;
+        public override bool CanSeek => _inner.CanSeek;
+        public override bool CanWrite => _inner.CanWrite;
+        public override long Length => _inner.Length;
+        public override long Position { get => _inner.Position; set => _inner.Position = value; }
+        public override void Flush() => _inner.Flush();
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+        public override long Seek(long offset, SeekOrigin origin) => _inner.Seek(offset, origin);
+        public override void SetLength(long value) => _inner.SetLength(value);
+        public override void Write(byte[] buffer, int offset, int count) => _inner.Write(buffer, offset, count);
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct)
+            => _inner.ReadAsync(buffer, offset, count, ct);
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+            => _inner.ReadAsync(buffer, ct);
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _inner.Dispose();
+                _response.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+        public override async ValueTask DisposeAsync()
+        {
+            await _inner.DisposeAsync();
+            _response.Dispose();
+            await base.DisposeAsync();
+        }
+    }
+
     private async Task<string> ResolveBaseUrlAsync(CancellationToken ct)
     {
         var raw = (await _settings.GetAsync<string>(SettingKeys.Zammad.BaseUrl, ct) ?? string.Empty).Trim();
@@ -641,7 +828,78 @@ public sealed class ZammadApiClient : IZammadApiClient
                 CreatedById: TryGetLong(el, "created_by_id"),
                 CreatedByEmail: TryGetString(el, "created_by"),
                 CreatedAt: TryGetDateTimeOffset(el, "created_at"),
-                MessageId: TryGetString(el, "message_id")));
+                MessageId: TryGetString(el, "message_id"),
+                Attachments: ParseArticleAttachments(el)));
+        }
+        return list;
+    }
+
+    /// Reads the <c>attachments[]</c> array off one article-list entry.
+    /// Zammad returns each attachment as
+    /// <c>{ id, filename, size, preferences: { "Mime-Type", "Content-Type",
+    ///       "Content-ID", "Content-Disposition" } }</c>. Size is a string
+    /// of bytes on some versions and a JSON number on others, so we accept
+    /// both. Mime-type is sourced from preferences (Zammad's canonical
+    /// location); missing → application/octet-stream so the local row has
+    /// a non-empty MIME column (which is NOT NULL).
+    ///
+    /// Inline disposition is encoded two ways across versions:
+    /// <list type="bullet">
+    /// <item><c>preferences["Content-Disposition"]</c> = <c>"inline"</c>
+    /// — modern Zammad.</item>
+    /// <item>Presence of a non-empty <c>Content-ID</c> alone — older
+    /// versions sometimes omit Content-Disposition for inline images.</item>
+    /// </list>
+    /// We treat either as inline. The cid token itself is normalised
+    /// (stripped of angle brackets) so it matches the html body's
+    /// <c>cid:&lt;token&gt;</c> form after the local rewriter.
+    internal static IReadOnlyList<ZammadArticleAttachment> ParseArticleAttachments(JsonElement article)
+    {
+        if (!article.TryGetProperty("attachments", out var arr)
+            || arr.ValueKind != JsonValueKind.Array
+            || arr.GetArrayLength() == 0)
+        {
+            return Array.Empty<ZammadArticleAttachment>();
+        }
+        var list = new List<ZammadArticleAttachment>(arr.GetArrayLength());
+        foreach (var el in arr.EnumerateArray())
+        {
+            if (el.ValueKind != JsonValueKind.Object) continue;
+            var id = TryGetLong(el, "id");
+            if (id is null) continue;
+
+            var filename = TryGetString(el, "filename") ?? string.Empty;
+            var size = TryGetLong(el, "size") ?? 0;
+
+            string? mime = null;
+            string? contentId = null;
+            string? disposition = null;
+            if (el.TryGetProperty("preferences", out var prefs)
+                && prefs.ValueKind == JsonValueKind.Object)
+            {
+                mime = TryGetString(prefs, "Mime-Type")
+                    ?? TryGetString(prefs, "Content-Type");
+                contentId = TryGetString(prefs, "Content-ID");
+                disposition = TryGetString(prefs, "Content-Disposition");
+            }
+            if (string.IsNullOrWhiteSpace(mime))
+            {
+                mime = "application/octet-stream";
+            }
+
+            var normalisedCid = string.IsNullOrWhiteSpace(contentId)
+                ? null
+                : contentId.Trim().Trim('<', '>');
+            var isInline = string.Equals(disposition, "inline", StringComparison.OrdinalIgnoreCase)
+                || !string.IsNullOrEmpty(normalisedCid);
+
+            list.Add(new ZammadArticleAttachment(
+                Id: id.Value,
+                Filename: filename,
+                SizeBytes: size,
+                MimeType: mime,
+                IsInline: isInline,
+                ContentId: normalisedCid));
         }
         return list;
     }

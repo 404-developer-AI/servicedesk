@@ -503,8 +503,33 @@ function StatusTab({
         </Button>
       )}
 
+      <ZammadImportBadge ticket={ticket} />
+
       <TicketPresence ticketId={ticket.id} />
     </>
+  );
+}
+
+/* ─── Zammad provenance badge ─── */
+
+/// Renders a quiet "Imported from Zammad #<number>" strip in the Status
+/// tab for tickets created by the v0.0.41 migration link. Pure metadata —
+/// no link out (we don't trust the Zammad install to stay reachable) and
+/// no actions. The upstream number is rendered as monospace so it lines up
+/// with the local ticket-number chip in the header.
+function ZammadImportBadge({ ticket }: { ticket: Ticket }) {
+  if (ticket.zammadTicketId == null) return null;
+  const upstreamLabel = ticket.zammadTicketNumber ?? String(ticket.zammadTicketId);
+  return (
+    <div className="rounded-md border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5 text-[11px] text-muted-foreground">
+      <div className="text-[9px] uppercase tracking-wider text-muted-foreground/60">
+        Provenance
+      </div>
+      <div className="mt-0.5 flex items-baseline gap-1.5">
+        <span>Imported from Zammad</span>
+        <span className="font-mono text-foreground/80">#{upstreamLabel}</span>
+      </div>
+    </div>
   );
 }
 

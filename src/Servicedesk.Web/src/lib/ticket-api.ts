@@ -141,6 +141,12 @@ export type Ticket = {
   /// rows). The header + list use this to render a coloured type badge;
   /// the linked-ticket flow uses it to mark how the ticket was created.
   ticketTypeId: string;
+  /// v0.0.41 phase 5 — Zammad migration provenance. Set only on tickets
+  /// created by the Zammad importer; both null for local-origin tickets.
+  /// The side-panel renders a small "Imported from Zammad #N" badge when
+  /// these are populated.
+  zammadTicketId: number | null;
+  zammadTicketNumber: string | null;
 };
 
 export type TicketBody = {

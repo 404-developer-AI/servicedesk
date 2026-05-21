@@ -45,7 +45,15 @@ public sealed record Ticket(
     // default-zeroed silently. New positional position is appended at
     // the end so older positional callers (none observed in-repo)
     // would surface as compile errors.
-    Guid TicketTypeId = default);
+    Guid TicketTypeId = default,
+    // v0.0.41 phase 5 — Zammad migration provenance. Both nullable;
+    // populated only on tickets created by the Zammad import. The
+    // detail page renders an "Imported from Zammad #N" badge in the
+    // side panel when these are non-null. Surface as nullable string
+    // / nullable long so a JSON-deserialised Ticket from an older
+    // payload still hydrates cleanly.
+    long? ZammadTicketId = null,
+    string? ZammadTicketNumber = null);
 
 public sealed record TicketBody(
     Guid TicketId,

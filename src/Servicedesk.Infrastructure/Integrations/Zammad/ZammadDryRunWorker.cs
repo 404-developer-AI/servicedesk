@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Storage;
 
 namespace Servicedesk.Infrastructure.Integrations.Zammad;
 
@@ -136,8 +137,28 @@ public sealed class ZammadDryRunWorker : BackgroundService
 
             if (string.Equals(kind, "import", StringComparison.Ordinal))
             {
+                // Resolve attachment-size cap once per run. Matches the
+                // Graph inbound + ticket-upload paths so Zammad imports
+                // inherit the same admin-tunable limit. Oversized
+                // attachments are skipped (the ticket still imports; the
+                // per-record reasons list captures which files were
+                // dropped) rather than failing the whole ticket.
+                long maxAttachmentBytes;
+                try
+                {
+                    maxAttachmentBytes = await settings.GetAsync<long>(
+                        SettingKeys.Storage.MaxAttachmentBytes, stoppingToken);
+                    if (maxAttachmentBytes <= 0) maxAttachmentBytes = 26_214_400;
+                }
+                catch
+                {
+                    maxAttachmentBytes = 26_214_400;
+                }
+                var blobs = scope.ServiceProvider.GetRequiredService<IBlobStore>();
+
                 await ProcessImportRunAsync(
-                    dataSource, zammad, writer, audit, runId, filter, totals, stoppingToken);
+                    dataSource, zammad, writer, audit, blobs, maxAttachmentBytes,
+                    runId, filter, totals, stoppingToken);
                 return;
             }
 
@@ -259,6 +280,8 @@ public sealed class ZammadDryRunWorker : BackgroundService
         IZammadApiClient zammad,
         IZammadImportWriter writer,
         IAuditLogger audit,
+        IBlobStore blobs,
+        long maxAttachmentBytes,
         Guid runId,
         ZammadImportSourceFilter? filter,
         ZammadImportTotals totals,
@@ -318,6 +341,10 @@ public sealed class ZammadDryRunWorker : BackgroundService
             try
             {
                 var articles = await zammad.ListArticlesAsync(snapshot.ZammadTicketId, ct);
+                var (plans, attachmentReasons) = await StageAttachmentsAsync(
+                    zammad, blobs, snapshot.ZammadTicketId, articles,
+                    maxAttachmentBytes, ct);
+
                 var input = new ZammadImportWriteInput(
                     ZammadTicketId: snapshot.ZammadTicketId,
                     ZammadTicketNumber: snapshot.ZammadTicketNumber,
@@ -327,8 +354,17 @@ public sealed class ZammadDryRunWorker : BackgroundService
                     StatusId: snapshot.StatusId,
                     PriorityId: snapshot.PriorityId,
                     Articles: articles,
+                    Attachments: plans,
                     PendingTillUtc: snapshot.PendingTillUtc);
                 writeResult = await writer.WriteAsync(input, ct);
+
+                // Attachment-level skips don't fail the ticket — surface
+                // them as record-reasons alongside whatever the writer
+                // returned so the admin can scan one column for gaps.
+                if (attachmentReasons.Count > 0)
+                {
+                    reasons = attachmentReasons;
+                }
             }
             catch (ZammadApiException ex)
             {
@@ -368,6 +404,81 @@ public sealed class ZammadDryRunWorker : BackgroundService
             status = "completed",
             totals,
         }, ct);
+    }
+
+    /// Walks every attachment manifest entry on every article and streams
+    /// the bytes into the blob store, building a list of
+    /// <see cref="ZammadImportAttachmentPlan"/>s the writer consumes inside
+    /// its tx. Behaviour notes:
+    /// <list type="bullet">
+    /// <item>Oversized attachments (advertised size &gt; cap) are skipped
+    /// without contacting Zammad; the reason list records
+    /// <c>attachment_too_large:&lt;id&gt;</c>.</item>
+    /// <item>Per-attachment fetch failures (404, transport, 5xx) are
+    /// logged and skipped — the ticket still imports without that
+    /// attachment; reason <c>attachment_fetch_failed:&lt;id&gt;</c>.</item>
+    /// <item>Empty manifests yield an empty plan list; the writer then
+    /// inserts no <c>attachments</c> rows for that article.</item>
+    /// </list>
+    /// Reasons are deliberately compact (token-prefixed ids) so they
+    /// survive the <c>zammad_import_records.unresolved_reasons</c> column's
+    /// existing CHECK length without bloating the per-run JSONB.
+    private async Task<(IReadOnlyList<ZammadImportAttachmentPlan> Plans, IReadOnlyList<string> Reasons)>
+        StageAttachmentsAsync(
+            IZammadApiClient zammad,
+            IBlobStore blobs,
+            long zammadTicketId,
+            IReadOnlyList<ZammadArticle> articles,
+            long maxAttachmentBytes,
+            CancellationToken ct)
+    {
+        var plans = new List<ZammadImportAttachmentPlan>();
+        var reasons = new List<string>();
+        foreach (var article in articles)
+        {
+            if (article.Attachments.Count == 0) continue;
+
+            foreach (var att in article.Attachments)
+            {
+                if (att.SizeBytes > maxAttachmentBytes)
+                {
+                    reasons.Add($"attachment_too_large:{att.Id}");
+                    continue;
+                }
+
+                try
+                {
+                    await using var stream = await zammad.FetchAttachmentBytesAsync(
+                        zammadTicketId, article.Id, att.Id, ct);
+                    var written = await blobs.WriteAsync(stream, ct);
+                    plans.Add(new ZammadImportAttachmentPlan(
+                        ZammadArticleId: article.Id,
+                        ZammadAttachmentId: att.Id,
+                        Filename: att.Filename,
+                        SizeBytes: written.SizeBytes,
+                        MimeType: att.MimeType,
+                        IsInline: att.IsInline,
+                        ContentId: att.ContentId,
+                        ContentHash: written.ContentHash));
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (ZammadApiException ex)
+                {
+                    _logger.LogWarning(
+                        "Zammad attachment fetch failed for ticket {TicketId} article {ArticleId} attachment {AttId}: http={Status} upstream={Upstream}",
+                        zammadTicketId, article.Id, att.Id, ex.HttpStatus, ex.UpstreamErrorCode);
+                    reasons.Add($"attachment_fetch_failed:{att.Id}");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Zammad attachment write failed for ticket {TicketId} article {ArticleId} attachment {AttId}",
+                        zammadTicketId, article.Id, att.Id);
+                    reasons.Add($"attachment_write_failed:{att.Id}");
+                }
+            }
+        }
+        return (plans, reasons);
     }
 
     private static ZammadImportTotals BumpImportTotals(ZammadImportTotals t, string result)
