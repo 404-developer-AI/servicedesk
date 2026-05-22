@@ -3,6 +3,7 @@ import { authStore, type AuthUser } from "@/auth/authStore";
 import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
 import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
 import { useSidebarStore } from "@/stores/useSidebarStore";
+import { hydrateRecentTicketsFromServer } from "@/stores/useRecentTicketsStore";
 
 /// Fetches `/api/auth/setup/status` + `/api/auth/me` before the router takes
 /// over, so route gates can trust `authStore.get()` from their very first call.
@@ -27,6 +28,11 @@ export async function bootstrapAuth(): Promise<void> {
       if (ws.loaded) {
         useSidebarStore.getState().setCollapsed(ws.sidebarCollapsed);
       }
+      // v0.0.42 — recent-tickets list lives server-side now so the
+      // sidebar shows the same list across every browser. Fire-and-
+      // forget; the sidebar renders its empty state until the fetch
+      // resolves (cheap — single indexed query).
+      void hydrateRecentTicketsFromServer();
     }
   } catch {
     authStore.set({ status: "ready", user: null, setupAvailable: false });

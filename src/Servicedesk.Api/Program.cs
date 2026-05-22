@@ -497,6 +497,7 @@ app.MapAgentQueueEndpoints();
 app.MapUserEndpoints();
 app.MapDashboardEndpoints();
 app.MapUserDashboardLayoutEndpoints();
+app.MapRecentTicketsEndpoints();
 app.MapActivityEndpoints();
 app.MapUserPreferencesEndpoints();
 app.MapNotificationEndpoints();

@@ -328,6 +328,27 @@ export type ActivityListPage = {
   nextCursor: number | null;
 };
 
+// ---- Recent tickets (v0.0.42) — server-side per-user sidebar list ----
+
+export type RecentTicketEntry = {
+  id: string;
+  number: number;
+  subject: string;
+  statusColor?: string;
+  statusName?: string;
+  statusStateCategory?: string;
+};
+
+export const recentTicketsApi = {
+  list: () => request<{ items: RecentTicketEntry[] }>("GET", "/api/me/recent-tickets/"),
+  add: (ticketId: string) =>
+    request<void>("POST", `/api/me/recent-tickets/${ticketId}`),
+  remove: (ticketId: string) =>
+    request<void>("DELETE", `/api/me/recent-tickets/${ticketId}`),
+  reorder: (ticketIds: string[]) =>
+    request<void>("PUT", "/api/me/recent-tickets/order", { ticketIds }),
+};
+
 // ---- User dashboard layout (v0.0.42) ----
 
 /// One row in the user's saved dashboard layout. Mirrors the backend
