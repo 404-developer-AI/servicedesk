@@ -22,6 +22,7 @@ using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Surveys;
 using Servicedesk.Infrastructure.Triggers;
+using Servicedesk.Infrastructure.Triggers.StatusGate;
 
 namespace Servicedesk.Api.Tickets;
 
@@ -303,12 +304,40 @@ public static class TicketEndpoints
             });
         }).WithName("CreateTicket").WithOpenApi();
 
+        // v0.0.42 — gate matching probe. Returns the active
+        // gate:status_change triggers whose conditions + source/target
+        // pair match a proposed status change. The FE calls this BEFORE
+        // sending PATCH so it can open the confirmation dialog only when
+        // a gate actually applies. PATCH re-evaluates the same matcher
+        // server-side; this endpoint exists for UX only — the FE could
+        // in principle skip it and let PATCH return 409 + the gates list,
+        // but the round-trip is cheap and avoids a flash of stale UI.
+        group.MapGet("/{id:guid}/status-gates", async (
+            Guid id, Guid toStatusId, HttpContext http,
+            ITicketRepository tickets, IQueueAccessService queueAccess,
+            IStatusGateService gates, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            var current = await tickets.GetByIdAsync(id, ct);
+            if (current is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, current.Ticket.QueueId, ct))
+                return Results.NotFound();
+
+            var matches = await gates.FindMatchingAsync(id, toStatusId, ct);
+            return Results.Ok(new
+            {
+                items = matches.Select(g => ProjectGateForApi(g)),
+            });
+        }).WithName("ListStatusGates").WithOpenApi();
+
         group.MapPatch("/{id:guid}", async (
             Guid id, [FromBody] UpdateTicketRequest req, HttpContext http,
             ITicketRepository tickets, ICompanyRepository companies, IQueueAccessService queueAccess,
             ITaxonomyRepository taxonomy,
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla,
-            ITriggerService triggerService, CancellationToken ct) =>
+            ITriggerService triggerService, IStatusGateService gateService, CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
@@ -349,6 +378,55 @@ public static class TicketEndpoints
                 }
             }
 
+            // v0.0.42 — status-change gate enforcement. Only runs when
+            // the agent actually changes the status (a same-value PATCH
+            // is a no-op the matcher already filters), and only on the
+            // agent-UI path: TriggerService and mail-ingest call the
+            // repository directly and never enter this endpoint, so
+            // automation bypasses by construction. Missing or incomplete
+            // confirmations yield 409 + the unsatisfied gates so the FE
+            // can re-open the dialog without retrying the matching probe.
+            IReadOnlyList<MatchedStatusGate> matchedGates = Array.Empty<MatchedStatusGate>();
+            var confirmedGates = new List<(MatchedStatusGate Gate, Dictionary<string, string> Answers)>();
+            if (req.StatusId.HasValue && req.StatusId.Value != current.Ticket.StatusId)
+            {
+                matchedGates = await gateService.FindMatchingAsync(id, req.StatusId.Value, ct);
+                if (matchedGates.Count > 0)
+                {
+                    var confirmationsByTrigger = (req.GateConfirmations ?? Array.Empty<GateConfirmationInput>())
+                        .GroupBy(c => c.TriggerId)
+                        .ToDictionary(
+                            g => g.Key,
+                            g => g.First().Answers ?? new Dictionary<string, string>(StringComparer.Ordinal));
+
+                    var missing = new List<MatchedStatusGate>();
+                    foreach (var gate in matchedGates)
+                    {
+                        if (!confirmationsByTrigger.TryGetValue(gate.TriggerId, out var answers))
+                        {
+                            missing.Add(gate);
+                            continue;
+                        }
+                        if (!GateAnswersSatisfyQuestions(gate, answers))
+                        {
+                            missing.Add(gate);
+                            continue;
+                        }
+                        confirmedGates.Add((gate, answers));
+                    }
+
+                    if (missing.Count > 0)
+                    {
+                        return Results.Json(new
+                        {
+                            error = "Status change requires confirmation from one or more gates.",
+                            code = "status_gate_required",
+                            gates = missing.Select(g => ProjectGateForApi(g)),
+                        }, statusCode: 409);
+                    }
+                }
+            }
+
             var update = new TicketFieldUpdate(
                 QueueId: req.QueueId,
                 StatusId: req.StatusId,
@@ -361,6 +439,34 @@ public static class TicketEndpoints
                 PendingTillUtc: req.PendingTillUtc);
             var detail = await tickets.UpdateFieldsAsync(id, update, userId, ct);
             if (detail is null) return Results.NotFound();
+
+            // v0.0.42 — append a Note event per confirmed gate. Rendered
+            // after the field update so the note's created_utc is strictly
+            // greater than the StatusChange event's, keeping the timeline
+            // order intuitive ("status changed to Closed" → "gate
+            // confirmation note"). Failures here are logged but do not
+            // roll the status change back — the audit trail still shows
+            // the change happened.
+            foreach (var (gate, answers) in confirmedGates)
+            {
+                var bodyHtml = await gateService.RenderNoteAsync(gate, id, userId, answers, ct);
+                if (string.IsNullOrWhiteSpace(bodyHtml)) continue;
+                await tickets.AddEventAsync(id, new NewTicketEvent(
+                    EventType: "Note",
+                    BodyText: null,
+                    BodyHtml: bodyHtml,
+                    IsInternal: gate.NoteVisibility != "public",
+                    AuthorUserId: userId,
+                    MetadataJson: $"{{\"gate_trigger_id\":\"{gate.TriggerId}\"}}"), ct);
+            }
+            if (confirmedGates.Count > 0)
+            {
+                // Refresh the detail snapshot so the response carries the
+                // newly-appended notes — the FE renders the timeline from
+                // this payload and we want the confirmation note visible
+                // immediately after the dialog closes.
+                detail = await tickets.GetByIdAsync(id, ct) ?? detail;
+            }
 
             var (actor, role) = ActorContext.Resolve(http);
             await audit.LogAsync(new AuditEvent(
@@ -1481,6 +1587,73 @@ public static class TicketEndpoints
         return result.Count == 0 ? null : result;
     }
 
+    /// Checks that the agent supplied an acceptable value for every
+    /// question that demands one. Rules:
+    ///   * Text question with required=true  → answers[key] must be
+    ///     non-whitespace.
+    ///   * Yes/No question with a yes_label  → answers[key] must be
+    ///     present (= agent clicked Yes; No clicks cancel the gate
+    ///     client-side and never reach the PATCH).
+    ///   * Yes/No question with only no_label → no positive answer
+    ///     possible; ignored here. The agent can still submit Confirm
+    ///     because the dialog short-circuits to cancel on the only
+    ///     visible button.
+    ///   * Text question with required=false → ignored if missing.
+    private static bool GateAnswersSatisfyQuestions(
+        MatchedStatusGate gate,
+        IReadOnlyDictionary<string, string> answers)
+    {
+        foreach (var q in gate.Questions)
+        {
+            switch (q.Type)
+            {
+                case "text":
+                    if (q.Required
+                        && (!answers.TryGetValue(q.Key, out var txt)
+                            || string.IsNullOrWhiteSpace(txt)))
+                    {
+                        return false;
+                    }
+                    break;
+                case "yesno":
+                    if (q.YesLabel is not null)
+                    {
+                        if (!answers.TryGetValue(q.Key, out var yn)
+                            || string.IsNullOrWhiteSpace(yn))
+                        {
+                            return false;
+                        }
+                    }
+                    break;
+            }
+        }
+        return true;
+    }
+
+    /// Shared projection for both the probe endpoint and the PATCH 409
+    /// payload. Keeps the shape identical so the FE renders an
+    /// out-of-band match (409 fallback) the same as a probe-then-PATCH
+    /// match. The TriggerId, question list and labels are the only
+    /// fields the dialog needs — note_template stays server-side.
+    private static object ProjectGateForApi(MatchedStatusGate g) => new
+    {
+        triggerId = g.TriggerId,
+        name = g.Name,
+        title = g.Title,
+        message = g.Message,
+        confirmLabel = g.ConfirmLabel,
+        cancelLabel = g.CancelLabel,
+        questions = g.Questions.Select(q => new
+        {
+            key = q.Key,
+            type = q.Type,
+            label = q.Label,
+            required = q.Required,
+            yesLabel = q.YesLabel,
+            noLabel = q.NoLabel,
+        }),
+    };
+
     public sealed record CreateTicketRequest(
         [property: Required] string Subject,
         string? BodyText,
@@ -1515,7 +1688,23 @@ public static class TicketEndpoints
         string? Subject,
         string? BodyText,
         string? BodyHtml,
-        DateTime? PendingTillUtc = null);
+        DateTime? PendingTillUtc = null,
+        // v0.0.42 — gate confirmations the agent submitted in the
+        // status-change dialog. Each entry pairs a gate trigger id with
+        // the optional textarea answer. Server re-evaluates the gate set
+        // before applying the mutation; missing or empty-required
+        // entries cause a 409 + the list of unsatisfied gates.
+        IReadOnlyList<GateConfirmationInput>? GateConfirmations = null);
+
+    /// One agent-supplied confirmation payload for a status-change gate.
+    /// <c>Answers</c> is keyed by the gate's per-question <c>key</c>;
+    /// values come from the gate's UI — typed text for text questions,
+    /// the clicked button's label for yesno questions. Missing answers
+    /// for required questions cause the PATCH to 409 with
+    /// <c>status_gate_required</c>.
+    public sealed record GateConfirmationInput(
+        Guid TriggerId,
+        Dictionary<string, string>? Answers);
 
     public sealed record AddEventRequest(
         string? EventType,

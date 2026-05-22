@@ -66,6 +66,45 @@ export type CreateLinkedTicketAction = {
   } | null;
 };
 
+// v0.0.42 — prompt_confirm. Single action allowed on a
+// gate:status_change trigger. The dialog renders title + an optional
+// message + a list of inline questions (free-text or yes/no buttons,
+// each side independently hide-able). Each question carries an admin-
+// defined `key` referenced from `note_template` as `#{prompt.<key>}`.
+// The status change is gated until every required question is
+// satisfied and the agent clicks the confirm button.
+export type PromptQuestion =
+  | {
+      key: string;
+      type: "text";
+      label: string;
+      required: boolean;
+    }
+  | {
+      key: string;
+      type: "yesno";
+      label: string;
+      yes_label: string | null;
+      no_label: string | null;
+    };
+
+export type PromptConfirmAction = {
+  kind: "prompt_confirm";
+  to_status_id: string;
+  from_status_id: string | null;
+  title: string;
+  /// When false, the dialog skips the message section entirely (button-
+  /// only gate). The `message` field is kept around so toggling the
+  /// switch back on restores the previously-typed body.
+  show_message: boolean;
+  message: string;
+  questions: PromptQuestion[];
+  confirm_label: string;
+  cancel_label: string;
+  note_visibility: "internal" | "public";
+  note_template: string;
+};
+
 export type TriggerAction =
   | { kind: "set_queue"; queue_id: string }
   | { kind: "set_priority"; priority_id: string }
@@ -88,6 +127,7 @@ export type TriggerAction =
       recipient_override?: string | null;
     }
   | CreateLinkedTicketAction
+  | PromptConfirmAction
   // Sentinel for actions whose `kind` this editor build doesn't know
   // about (e.g. a future kind saved by a newer frontend or hand-
   // written JSON). Carries the original payload verbatim so the admin
@@ -108,6 +148,7 @@ export const KNOWN_ACTION_KINDS = [
   "send_mail",
   "send_survey",
   "create_linked_ticket",
+  "prompt_confirm",
 ] as const;
 
 export type KnownActionKind = (typeof KNOWN_ACTION_KINDS)[number];
@@ -124,6 +165,7 @@ export const ACTION_KIND_LABELS: Record<KnownActionKind, string> = {
   send_mail: "Send mail",
   send_survey: "Send survey",
   create_linked_ticket: "Create linked ticket",
+  prompt_confirm: "Confirmation dialog",
 };
 
 export function blankActionForKind(kind: KnownActionKind): TriggerAction {
@@ -160,6 +202,20 @@ export function blankActionForKind(kind: KnownActionKind): TriggerAction {
         company_source: "parent",
         company_id: null,
         initial_note: null,
+      };
+    case "prompt_confirm":
+      return {
+        kind,
+        to_status_id: "",
+        from_status_id: null,
+        title: "",
+        show_message: false,
+        message: "",
+        questions: [],
+        confirm_label: "Yes, completed",
+        cancel_label: "Cancel",
+        note_visibility: "internal",
+        note_template: "",
       };
   }
 }
@@ -206,6 +262,9 @@ export function actionFromBackend(raw: any): TriggerAction {
       raw,
     };
   }
+  if (raw.kind === "prompt_confirm") {
+    return normalizePromptConfirm(raw);
+  }
   if (raw.kind !== "set_pending_till") return raw as TriggerAction;
   if (raw.clear === true) return { kind: "set_pending_till", mode: "clear" };
   const chain: { next_trigger_id?: string | null } = typeof raw.nextTriggerId === "string"
@@ -230,6 +289,69 @@ export function actionFromBackend(raw: any): TriggerAction {
   }
   if (raw.mode === "clear") return { kind: "set_pending_till", mode: "clear" };
   return { kind: "set_pending_till", mode: "relative", value: "P1D", ...chain };
+}
+
+/// Round-trips a prompt_confirm action from the BE-stored shape to the
+/// editor shape. Migrates the pre-questions v0.0.42 layout
+/// (prompt_label / prompt_required) into a single text question with
+/// key="answer" so legacy gates render correctly and existing
+/// `#{prompt.answer}` tokens keep resolving after re-save.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizePromptConfirm(raw: any): PromptConfirmAction {
+  const questions: PromptQuestion[] = Array.isArray(raw.questions)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ? (raw.questions as any[]).flatMap((q): PromptQuestion[] => {
+        if (!q || typeof q !== "object") return [];
+        const key = typeof q.key === "string" ? q.key : "";
+        const label = typeof q.label === "string" ? q.label : "";
+        if (!key) return [];
+        if (q.type === "yesno") {
+          return [{
+            key,
+            type: "yesno",
+            label,
+            yes_label: typeof q.yes_label === "string" ? q.yes_label : null,
+            no_label: typeof q.no_label === "string" ? q.no_label : null,
+          }];
+        }
+        return [{
+          key,
+          type: "text",
+          label,
+          required: q.required === true,
+        }];
+      })
+    : [];
+  // Legacy migration: pre-questions gates carry prompt_label /
+  // prompt_required at the action root. Synthesize one text question
+  // with key="answer" so existing #{prompt.answer} tokens keep working.
+  if (questions.length === 0
+      && typeof raw.prompt_label === "string"
+      && raw.prompt_label.trim().length > 0) {
+    questions.push({
+      key: "answer",
+      type: "text",
+      label: raw.prompt_label,
+      required: raw.prompt_required === true,
+    });
+  }
+  const message = typeof raw.message === "string" ? raw.message : "";
+  const showMessage = typeof raw.show_message === "boolean"
+    ? raw.show_message
+    : message.trim().length > 0;
+  return {
+    kind: "prompt_confirm",
+    to_status_id: typeof raw.to_status_id === "string" ? raw.to_status_id : "",
+    from_status_id: typeof raw.from_status_id === "string" ? raw.from_status_id : null,
+    title: typeof raw.title === "string" ? raw.title : "",
+    show_message: showMessage,
+    message,
+    questions,
+    confirm_label: typeof raw.confirm_label === "string" ? raw.confirm_label : "Yes, completed",
+    cancel_label: typeof raw.cancel_label === "string" ? raw.cancel_label : "Cancel",
+    note_visibility: raw.note_visibility === "public" ? "public" : "internal",
+    note_template: typeof raw.note_template === "string" ? raw.note_template : "",
+  };
 }
 
 export function parseConditions(json: string): ConditionGroup {

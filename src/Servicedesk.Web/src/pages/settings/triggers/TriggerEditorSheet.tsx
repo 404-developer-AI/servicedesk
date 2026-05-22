@@ -19,6 +19,7 @@ import { ConditionsEditor } from "./ConditionsEditor";
 import { ActionsEditor } from "./ActionsEditor";
 import { TestRunner } from "./TestRunner";
 import {
+  blankActionForKind,
   isExpertConditions,
   parseActions,
   parseConditions,
@@ -104,6 +105,29 @@ function EditorBody({
     queryFn: () => taxonomyApi.ticketTypes.list(),
   });
   const isManual = activatorPair.startsWith("manual:");
+  const isGate = activatorPair.startsWith("gate:");
+
+  // v0.0.42 — keep the actions list in sync with the activator kind.
+  // Switching INTO gate seeds a single prompt_confirm (the validator
+  // rejects gates with zero or more than one), switching OUT drops any
+  // orphan prompt_confirm so the save doesn't break on the BE "gate
+  // only" pairing rule. Both branches are no-ops when the list already
+  // matches the target shape.
+  React.useEffect(() => {
+    if (isGate) {
+      setActions((prev) => {
+        const prompt = prev.find((a) => a.kind === "prompt_confirm");
+        if (prompt) return prev.length === 1 ? prev : [prompt];
+        return [blankActionForKind("prompt_confirm")];
+      });
+    } else {
+      setActions((prev) =>
+        prev.some((a) => a.kind === "prompt_confirm")
+          ? prev.filter((a) => a.kind !== "prompt_confirm")
+          : prev,
+      );
+    }
+  }, [isGate]);
 
   React.useEffect(() => {
     if (isNew) {
@@ -301,12 +325,18 @@ function EditorBody({
       )}
 
       {/* Actions */}
-      <Section title="Actions" hint="What the trigger does — applied in order, top to bottom.">
+      <Section
+        title={isGate ? "Confirmation prompt" : "Actions"}
+        hint={isGate
+          ? "The dialog the agent sees before the status change applies. One prompt per gate; the status only changes when the agent clicks confirm."
+          : "What the trigger does — applied in order, top to bottom."}
+      >
         <ActionsEditor
           value={actions}
           onChange={setActions}
           taxonomies={taxonomies}
           variables={metadata.templateVariables}
+          activatorKind={activatorPair.split(":")[0]}
         />
       </Section>
 
@@ -426,6 +456,7 @@ function prettifyActivator(pair: string): string {
     escalation: "When SLA deadline elapses",
     escalation_warning: "When SLA warning threshold elapses",
     linked_ticket_creator: "Manual — invoked from \"Create linked X ticket\" picker",
+    status_change: "Gate — intercepts a status change in the agent UI",
   };
   return modeLabels[mode] ?? `${kind}:${mode}`;
 }

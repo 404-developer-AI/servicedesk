@@ -4,7 +4,8 @@ import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Check, Copy, Download, FileDown, GitBranch, PanelRightClose, PanelRightOpen, Pencil, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ticketApi, contactApi, type Ticket, type TicketFieldUpdate } from "@/lib/ticket-api";
+import { ticketApi, contactApi, type GateConfirmation, type StatusGateMatch, type Ticket, type TicketFieldUpdate } from "@/lib/ticket-api";
+import { StatusGateDialog } from "@/components/StatusGateDialog";
 import { agentQueueApi, taxonomyApi } from "@/lib/api";
 import {
   CompanyAlertDialog,
@@ -444,6 +445,89 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
     onError: () => toast.error("Failed to update ticket"),
   });
 
+  // v0.0.42 — status-change gate orchestration. The dialog walks through
+  // matching gates one-by-one; only after every gate has been confirmed
+  // does the actual PATCH fire with the collected answers. Cancelling any
+  // gate aborts the entire status change (TaxonomySelect re-renders from
+  // server state on the next tick so the dropdown snaps back on its own).
+  const [gateQueue, setGateQueue] = React.useState<StatusGateMatch[]>([]);
+  const [gateConfirmations, setGateConfirmations] = React.useState<GateConfirmation[]>([]);
+  const [gatePendingFields, setGatePendingFields] = React.useState<TicketFieldUpdate | null>(null);
+  const [gateTargetStatusId, setGateTargetStatusId] = React.useState<string | null>(null);
+
+  const currentStatusId = data?.ticket?.statusId ?? null;
+
+  const handleSidePanelUpdate = React.useCallback(async (fields: TicketFieldUpdate) => {
+    // Non-status updates and same-value status PATCHes skip the gate
+    // probe entirely — listStatusGates would return [] anyway and the
+    // extra round-trip would only slow the common case.
+    if (!fields.statusId || fields.statusId === currentStatusId) {
+      await updateMutation.mutateAsync(fields);
+      return;
+    }
+    let matches: StatusGateMatch[];
+    try {
+      const probe = await ticketApi.listStatusGates(ticketId, fields.statusId);
+      matches = probe.items;
+    } catch {
+      // Network/auth failure on the probe must not block the user; fall
+      // through to the PATCH and let the server return 409 if a gate
+      // actually applies. The PATCH then surfaces the gate via ApiError.
+      await updateMutation.mutateAsync(fields);
+      return;
+    }
+    if (matches.length === 0) {
+      await updateMutation.mutateAsync(fields);
+      return;
+    }
+    setGateQueue(matches);
+    setGateConfirmations([]);
+    setGatePendingFields(fields);
+    setGateTargetStatusId(fields.statusId);
+  }, [currentStatusId, ticketId, updateMutation]);
+
+  const closeGateDialog = React.useCallback(() => {
+    setGateQueue([]);
+    setGateConfirmations([]);
+    setGatePendingFields(null);
+    setGateTargetStatusId(null);
+  }, []);
+
+  const onGateConfirm = React.useCallback(async (answers: Record<string, string>) => {
+    if (gateQueue.length === 0 || !gatePendingFields) {
+      closeGateDialog();
+      return;
+    }
+    const head = gateQueue[0];
+    const nextConfirmations = [...gateConfirmations, { triggerId: head.triggerId, answers }];
+    const rest = gateQueue.slice(1);
+    if (rest.length > 0) {
+      setGateQueue(rest);
+      setGateConfirmations(nextConfirmations);
+      return;
+    }
+    // Last gate confirmed — fire the PATCH with all answers. State
+    // teardown happens whether the mutation succeeds or fails so a
+    // failed PATCH doesn't strand the dialog open.
+    const fields = gatePendingFields;
+    closeGateDialog();
+    try {
+      await updateMutation.mutateAsync({ ...fields, gateConfirmations: nextConfirmations });
+    } catch {
+      // updateMutation.onError already surfaced the toast.
+    }
+  }, [gateQueue, gateConfirmations, gatePendingFields, updateMutation, closeGateDialog]);
+
+  const onGateCancel = React.useCallback(() => {
+    // Use the target status' stateCategory to phrase the toast — closing
+    // a ticket is the prototypical case so "Ticket not closed" reads
+    // naturally; everything else falls back to a generic message.
+    const targetStatus = statuses?.find((s) => s.id === gateTargetStatusId);
+    const closedish = targetStatus?.stateCategory === "Closed";
+    closeGateDialog();
+    toast(closedish ? "Ticket not closed" : "Status not changed");
+  }, [gateTargetStatusId, statuses, closeGateDialog]);
+
   const pinnedEventIds = React.useMemo(
     () => new Set(data?.pinnedEvents?.map((p) => p.eventId) ?? []),
     [data?.pinnedEvents]
@@ -542,6 +626,7 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         pinnedEventIds={pinnedEventIds}
         updateMutation={updateMutation}
         queryClient={queryClient}
+        onSidePanelUpdate={handleSidePanelUpdate}
         requesterEmail={requesterContact?.email ?? null}
         ownMailboxAddresses={ownMailboxAddresses}
         onRequestCompanyAssign={() => setAssignOpen(true)}
@@ -571,12 +656,18 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         onAssigned={() => setAssignOpen(false)}
         submit={submitAssignment}
       />
+      <StatusGateDialog
+        gate={gateQueue[0] ?? null}
+        onConfirm={onGateConfirm}
+        onCancel={onGateCancel}
+      />
     </>
   );
 }
 
 function TicketDetailBody({
   ticketId, ticket, body, events, pinnedEvents, pinnedEventIds, updateMutation, queryClient,
+  onSidePanelUpdate,
   requesterEmail,
   ownMailboxAddresses,
   onRequestCompanyAssign,
@@ -599,6 +690,11 @@ function TicketDetailBody({
   pinnedEventIds: Set<number>;
   updateMutation: any;
   queryClient: any;
+  /// v0.0.42 — gate-aware wrapper around the side-panel PATCH path.
+  /// Intercepts status changes to surface the StatusGateDialog before
+  /// the actual mutation fires. Falls through to updateMutation for
+  /// every other field.
+  onSidePanelUpdate: (fields: TicketFieldUpdate) => Promise<void>;
   requesterEmail: string | null;
   ownMailboxAddresses: string[];
   onRequestCompanyAssign: () => void;
@@ -817,7 +913,7 @@ function TicketDetailBody({
         >
           <TicketSidePanel
             ticket={ticket}
-            onUpdate={async (fields) => { await updateMutation.mutateAsync(fields); }}
+            onUpdate={onSidePanelUpdate}
             onRequestCompanyAssign={onRequestCompanyAssign}
             pinned={sidePanelPinned}
             onTogglePin={() => setSidePanelPinned(!sidePanelPinned)}

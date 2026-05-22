@@ -368,15 +368,22 @@ public sealed class FakeSessionService : ISessionService
 
 public sealed class FakeDashboardTilesService : IDashboardTilesService
 {
-    public Task<IReadOnlyList<string>> GetForUserAsync(Guid userId, CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+    public Task<IReadOnlyList<DashboardTilePref>> GetForUserAsync(Guid userId, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<DashboardTilePref>>(Array.Empty<DashboardTilePref>());
 
-    public Task<SetDashboardTilesResult> SetForUserAsync(
+    public Task<SetDashboardTilesResult> SetEnabledForUserAsync(
         Guid userId,
-        IReadOnlyCollection<string> tileIds,
+        IReadOnlyDictionary<string, string> tileSizes,
         Guid actingAdminId,
         CancellationToken ct = default) =>
-        Task.FromResult<SetDashboardTilesResult>(new SetDashboardTilesResult.Updated(tileIds.ToList()));
+        Task.FromResult<SetDashboardTilesResult>(new SetDashboardTilesResult.Updated(
+            tileSizes.Select(kv => new DashboardTilePref(kv.Key, kv.Value)).ToList()));
+
+    public Task<SetDashboardTilesResult> SaveLayoutForUserAsync(
+        Guid userId,
+        IReadOnlyList<DashboardTilePref> layout,
+        CancellationToken ct = default) =>
+        Task.FromResult<SetDashboardTilesResult>(new SetDashboardTilesResult.Updated(layout));
 }
 
 public sealed class FakeTotpService : ITotpService

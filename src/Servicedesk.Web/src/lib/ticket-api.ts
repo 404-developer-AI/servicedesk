@@ -3,10 +3,15 @@ import { csrfHeader } from "@/lib/csrf";
 export class ApiError extends Error {
   readonly status: number;
   readonly url: string;
-  constructor(status: number, url: string, message: string) {
+  /// Parsed JSON body of the failed response, if the server returned
+  /// application/json. Lets callers branch on error codes (e.g.
+  /// "status_gate_required") instead of just status numbers.
+  readonly body: unknown;
+  constructor(status: number, url: string, message: string, body: unknown) {
     super(message);
     this.status = status;
     this.url = url;
+    this.body = body;
   }
 }
 
@@ -27,10 +32,18 @@ async function request<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!res.ok) {
+    let parsedBody: unknown = null;
+    try {
+      const txt = await res.text();
+      if (txt) parsedBody = JSON.parse(txt);
+    } catch {
+      // non-JSON body — surface as null; callers fall back to status.
+    }
     throw new ApiError(
       res.status,
       url,
       `${url} → ${res.status} ${res.statusText}`,
+      parsedBody,
     );
   }
   if (res.status === 204) return undefined as T;
@@ -413,6 +426,58 @@ export type TicketFieldUpdate = {
   /// commits and overwrites whatever we send here, matching the
   /// "trigger has priority over manual" spec.
   pendingTillUtc?: string | null;
+  /// v0.0.42 — gate confirmations from the StatusGate dialog. Set only
+  /// when statusId is also set; the server re-evaluates the matching
+  /// gates and returns 409 with code "status_gate_required" if any
+  /// required confirmation is missing.
+  gateConfirmations?: GateConfirmation[];
+};
+
+/// v0.0.42 — one matching status-change gate the agent must confirm
+/// before the PATCH applies. The dialog renders title + optional
+/// message + a list of inline questions (free-text or yes/no buttons).
+/// Each question carries its own admin-defined `key` that drives the
+/// `#{prompt.<key>}` token in the gate's note template.
+export type StatusGateMatch = {
+  triggerId: string;
+  name: string;
+  title: string;
+  /// Null when the admin disabled the message section; the dialog
+  /// renders title + questions + buttons only.
+  message: string | null;
+  confirmLabel: string;
+  cancelLabel: string;
+  questions: GateQuestion[];
+};
+
+export type GateQuestion =
+  | {
+      key: string;
+      type: "text";
+      label: string;
+      required: boolean;
+      yesLabel: null;
+      noLabel: null;
+    }
+  | {
+      key: string;
+      type: "yesno";
+      label: string;
+      required: boolean;
+      /// Null = the Yes button is hidden. A yesno question with only
+      /// `noLabel` set offers no positive-confirmation path; the gate's
+      /// bottom Confirm button proceeds regardless of that question.
+      yesLabel: string | null;
+      noLabel: string | null;
+    };
+
+/// One per-trigger confirmation packet shipped back to the PATCH
+/// endpoint. `answers` is keyed by the gate's per-question `key`;
+/// values come from the inline UI — typed text for text questions, the
+/// clicked positive button's label for yes/no questions.
+export type GateConfirmation = {
+  triggerId: string;
+  answers: Record<string, string>;
 };
 
 export type NewTicketEvent = {
@@ -747,6 +812,11 @@ export const ticketApi = {
     request<CreateTicketResponse>("POST", "/api/tickets", input),
   update: (id: string, fields: TicketFieldUpdate) =>
     request<TicketDetail>("PATCH", `/api/tickets/${id}`, fields),
+  listStatusGates: (id: string, toStatusId: string) =>
+    request<{ items: StatusGateMatch[] }>(
+      "GET",
+      `/api/tickets/${id}/status-gates?toStatusId=${encodeURIComponent(toStatusId)}`,
+    ),
   addEvent: (id: string, event: NewTicketEvent) =>
     request<TicketEvent>("POST", `/api/tickets/${id}/events`, event),
   sendMail: (id: string, payload: SendOutboundMailRequest) =>
