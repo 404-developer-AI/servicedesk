@@ -4,8 +4,9 @@ import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Check, Copy, Download, FileDown, GitBranch, PanelRightClose, PanelRightOpen, Pencil, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ticketApi, contactApi, type GateConfirmation, type StatusGateMatch, type Ticket, type TicketFieldUpdate } from "@/lib/ticket-api";
+import { ticketApi, contactApi, type ContactCompanyRole, type GateConfirmation, type StatusGateMatch, type Ticket, type TicketFieldUpdate } from "@/lib/ticket-api";
 import { StatusGateDialog } from "@/components/StatusGateDialog";
+import { ContactCompanyGateDialog } from "@/components/ContactCompanyGateDialog";
 import { agentQueueApi, taxonomyApi } from "@/lib/api";
 import {
   CompanyAlertDialog,
@@ -493,22 +494,23 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
     setGateTargetStatusId(null);
   }, []);
 
-  const onGateConfirm = React.useCallback(async (answers: Record<string, string>) => {
+  // Shared "advance one gate" path used by both dialog kinds. Pops the
+  // head of the queue, appends the supplied confirmation to the running
+  // list, and either opens the next gate or fires the actual PATCH.
+  // State teardown runs whether the mutation succeeds or fails so a
+  // failed PATCH doesn't strand the dialog open.
+  const advanceGate = React.useCallback(async (confirmation: GateConfirmation) => {
     if (gateQueue.length === 0 || !gatePendingFields) {
       closeGateDialog();
       return;
     }
-    const head = gateQueue[0];
-    const nextConfirmations = [...gateConfirmations, { triggerId: head.triggerId, answers }];
+    const nextConfirmations = [...gateConfirmations, confirmation];
     const rest = gateQueue.slice(1);
     if (rest.length > 0) {
       setGateQueue(rest);
       setGateConfirmations(nextConfirmations);
       return;
     }
-    // Last gate confirmed — fire the PATCH with all answers. State
-    // teardown happens whether the mutation succeeds or fails so a
-    // failed PATCH doesn't strand the dialog open.
     const fields = gatePendingFields;
     closeGateDialog();
     try {
@@ -517,6 +519,21 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
       // updateMutation.onError already surfaced the toast.
     }
   }, [gateQueue, gateConfirmations, gatePendingFields, updateMutation, closeGateDialog]);
+
+  const onPromptGateConfirm = React.useCallback((answers: Record<string, string>) => {
+    const head = gateQueue[0];
+    if (!head) return;
+    advanceGate({ triggerId: head.triggerId, answers });
+  }, [gateQueue, advanceGate]);
+
+  const onContactCompanyGateConfirm = React.useCallback(
+    ({ companyId, role }: { companyId: string; role: ContactCompanyRole }) => {
+      const head = gateQueue[0];
+      if (!head) return;
+      advanceGate({ triggerId: head.triggerId, companyId, role });
+    },
+    [gateQueue, advanceGate],
+  );
 
   const onGateCancel = React.useCallback(() => {
     // Use the target status' stateCategory to phrase the toast — closing
@@ -657,8 +674,13 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         submit={submitAssignment}
       />
       <StatusGateDialog
-        gate={gateQueue[0] ?? null}
-        onConfirm={onGateConfirm}
+        gate={gateQueue[0]?.kind === "prompt_confirm" ? gateQueue[0] : null}
+        onConfirm={onPromptGateConfirm}
+        onCancel={onGateCancel}
+      />
+      <ContactCompanyGateDialog
+        gate={gateQueue[0]?.kind === "contact_company_link" ? gateQueue[0] : null}
+        onConfirm={onContactCompanyGateConfirm}
         onCancel={onGateCancel}
       />
     </>

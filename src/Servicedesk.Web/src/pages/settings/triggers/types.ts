@@ -105,6 +105,26 @@ export type PromptConfirmAction = {
   note_template: string;
 };
 
+// v0.0.42 — require_contact_company. Second gate-only action. Hard-
+// blocks a status change when the ticket's requester has no
+// contact_companies row; the dialog renders an inline company picker +
+// role selector (primary/secondary/supplier) and creates the link
+// inside the PATCH that flips the status. Note tokens:
+// `#{company.name}`, `#{company.code}`, `#{company.role}`,
+// `#{company.id}`.
+export type RequireContactCompanyAction = {
+  kind: "require_contact_company";
+  to_status_id: string;
+  from_status_id: string | null;
+  title: string;
+  show_message: boolean;
+  message: string;
+  confirm_label: string;
+  cancel_label: string;
+  note_visibility: "internal" | "public";
+  note_template: string;
+};
+
 export type TriggerAction =
   | { kind: "set_queue"; queue_id: string }
   | { kind: "set_priority"; priority_id: string }
@@ -128,6 +148,7 @@ export type TriggerAction =
     }
   | CreateLinkedTicketAction
   | PromptConfirmAction
+  | RequireContactCompanyAction
   // Sentinel for actions whose `kind` this editor build doesn't know
   // about (e.g. a future kind saved by a newer frontend or hand-
   // written JSON). Carries the original payload verbatim so the admin
@@ -149,6 +170,7 @@ export const KNOWN_ACTION_KINDS = [
   "send_survey",
   "create_linked_ticket",
   "prompt_confirm",
+  "require_contact_company",
 ] as const;
 
 export type KnownActionKind = (typeof KNOWN_ACTION_KINDS)[number];
@@ -166,6 +188,7 @@ export const ACTION_KIND_LABELS: Record<KnownActionKind, string> = {
   send_survey: "Send survey",
   create_linked_ticket: "Create linked ticket",
   prompt_confirm: "Confirmation dialog",
+  require_contact_company: "Require contact company",
 };
 
 export function blankActionForKind(kind: KnownActionKind): TriggerAction {
@@ -213,6 +236,19 @@ export function blankActionForKind(kind: KnownActionKind): TriggerAction {
         message: "",
         questions: [],
         confirm_label: "Yes, completed",
+        cancel_label: "Cancel",
+        note_visibility: "internal",
+        note_template: "",
+      };
+    case "require_contact_company":
+      return {
+        kind,
+        to_status_id: "",
+        from_status_id: null,
+        title: "Link company first",
+        show_message: true,
+        message: "This contact is not linked to a company. Pick a company and a role to continue.",
+        confirm_label: "Link & continue",
         cancel_label: "Cancel",
         note_visibility: "internal",
         note_template: "",

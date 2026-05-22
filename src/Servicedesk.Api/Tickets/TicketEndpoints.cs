@@ -387,7 +387,7 @@ public static class TicketEndpoints
             // confirmations yield 409 + the unsatisfied gates so the FE
             // can re-open the dialog without retrying the matching probe.
             IReadOnlyList<MatchedStatusGate> matchedGates = Array.Empty<MatchedStatusGate>();
-            var confirmedGates = new List<(MatchedStatusGate Gate, Dictionary<string, string> Answers)>();
+            var confirmedGates = new List<ConfirmedGate>();
             if (req.StatusId.HasValue && req.StatusId.Value != current.Ticket.StatusId)
             {
                 matchedGates = await gateService.FindMatchingAsync(id, req.StatusId.Value, ct);
@@ -395,24 +395,66 @@ public static class TicketEndpoints
                 {
                     var confirmationsByTrigger = (req.GateConfirmations ?? Array.Empty<GateConfirmationInput>())
                         .GroupBy(c => c.TriggerId)
-                        .ToDictionary(
-                            g => g.Key,
-                            g => g.First().Answers ?? new Dictionary<string, string>(StringComparer.Ordinal));
+                        .ToDictionary(g => g.Key, g => g.First());
 
                     var missing = new List<MatchedStatusGate>();
                     foreach (var gate in matchedGates)
                     {
-                        if (!confirmationsByTrigger.TryGetValue(gate.TriggerId, out var answers))
+                        if (!confirmationsByTrigger.TryGetValue(gate.TriggerId, out var conf))
                         {
                             missing.Add(gate);
                             continue;
                         }
-                        if (!GateAnswersSatisfyQuestions(gate, answers))
+                        switch (gate.Kind)
                         {
-                            missing.Add(gate);
-                            continue;
+                            case "prompt_confirm":
+                            {
+                                var answers = conf.Answers ?? new Dictionary<string, string>(StringComparer.Ordinal);
+                                if (!PromptAnswersSatisfyQuestions(gate, answers))
+                                {
+                                    missing.Add(gate);
+                                    break;
+                                }
+                                confirmedGates.Add(new ConfirmedGate(gate, answers, Extras: null, PendingLink: null));
+                                break;
+                            }
+                            case "contact_company_link":
+                            {
+                                var linkRole = NormalizeContactCompanyRole(conf.Role);
+                                if (!conf.CompanyId.HasValue || linkRole is null || !gate.RequesterContactId.HasValue)
+                                {
+                                    missing.Add(gate);
+                                    break;
+                                }
+                                var company = await companies.GetCompanyAsync(conf.CompanyId.Value, ct);
+                                if (company is null || !company.IsActive)
+                                {
+                                    return Results.BadRequest(new
+                                    {
+                                        error = "Selected company is not available.",
+                                        code = "invalid_company",
+                                    });
+                                }
+                                var extras = new Dictionary<string, string>(StringComparer.Ordinal)
+                                {
+                                    ["company.id"] = company.Id.ToString(),
+                                    ["company.name"] = company.Name,
+                                    ["company.code"] = company.Code ?? string.Empty,
+                                    ["company.role"] = linkRole,
+                                };
+                                var pending = new PendingContactCompanyLink(
+                                    gate.RequesterContactId.Value, company.Id, linkRole);
+                                confirmedGates.Add(new ConfirmedGate(gate, Answers: null, extras, pending));
+                                break;
+                            }
+                            default:
+                                // Unknown kind cannot be satisfied — the
+                                // validator should have rejected it at
+                                // admin-save time, but defend in depth so
+                                // a future kind cannot silently bypass.
+                                missing.Add(gate);
+                                break;
                         }
-                        confirmedGates.Add((gate, answers));
                     }
 
                     if (missing.Count > 0)
@@ -423,6 +465,22 @@ public static class TicketEndpoints
                             code = "status_gate_required",
                             gates = missing.Select(g => ProjectGateForApi(g)),
                         }, statusCode: 409);
+                    }
+
+                    // Apply each contact-company-link gate's pending fix
+                    // BEFORE the status flip. The link is the precondition
+                    // the gate enforces; doing it inside the same PATCH
+                    // keeps the agent's "Link company & continue" action
+                    // atomic. UpsertContactLinkAsync handles the demote-
+                    // previous-primary invariant.
+                    foreach (var c in confirmedGates)
+                    {
+                        if (c.PendingLink is null) continue;
+                        await companies.UpsertContactLinkAsync(
+                            c.PendingLink.ContactId,
+                            c.PendingLink.CompanyId,
+                            c.PendingLink.Role,
+                            ct);
                     }
                 }
             }
@@ -447,17 +505,17 @@ public static class TicketEndpoints
             // confirmation note"). Failures here are logged but do not
             // roll the status change back — the audit trail still shows
             // the change happened.
-            foreach (var (gate, answers) in confirmedGates)
+            foreach (var c in confirmedGates)
             {
-                var bodyHtml = await gateService.RenderNoteAsync(gate, id, userId, answers, ct);
+                var bodyHtml = await gateService.RenderNoteAsync(c.Gate, id, userId, c.Answers, c.Extras, ct);
                 if (string.IsNullOrWhiteSpace(bodyHtml)) continue;
                 await tickets.AddEventAsync(id, new NewTicketEvent(
                     EventType: "Note",
                     BodyText: null,
                     BodyHtml: bodyHtml,
-                    IsInternal: gate.NoteVisibility != "public",
+                    IsInternal: c.Gate.NoteVisibility != "public",
                     AuthorUserId: userId,
-                    MetadataJson: $"{{\"gate_trigger_id\":\"{gate.TriggerId}\"}}"), ct);
+                    MetadataJson: $"{{\"gate_trigger_id\":\"{c.Gate.TriggerId}\"}}"), ct);
             }
             if (confirmedGates.Count > 0)
             {
@@ -1588,7 +1646,7 @@ public static class TicketEndpoints
     }
 
     /// Checks that the agent supplied an acceptable value for every
-    /// question that demands one. Rules:
+    /// prompt_confirm question that demands one. Rules:
     ///   * Text question with required=true  → answers[key] must be
     ///     non-whitespace.
     ///   * Yes/No question with a yes_label  → answers[key] must be
@@ -1599,7 +1657,7 @@ public static class TicketEndpoints
     ///     because the dialog short-circuits to cancel on the only
     ///     visible button.
     ///   * Text question with required=false → ignored if missing.
-    private static bool GateAnswersSatisfyQuestions(
+    private static bool PromptAnswersSatisfyQuestions(
         MatchedStatusGate gate,
         IReadOnlyDictionary<string, string> answers)
     {
@@ -1630,15 +1688,33 @@ public static class TicketEndpoints
         return true;
     }
 
+    /// Validates the role the agent picked in the contact-company-link
+    /// dialog. Returns the normalized lowercase value when accepted, or
+    /// null when the input is malformed / out of range. Mirrors the DB
+    /// CHECK constraint <c>chk_contact_companies_role</c>.
+    private static string? NormalizeContactCompanyRole(string? role)
+    {
+        if (string.IsNullOrWhiteSpace(role)) return null;
+        return role.Trim().ToLowerInvariant() switch
+        {
+            "primary" => "primary",
+            "secondary" => "secondary",
+            "supplier" => "supplier",
+            _ => null,
+        };
+    }
+
     /// Shared projection for both the probe endpoint and the PATCH 409
     /// payload. Keeps the shape identical so the FE renders an
     /// out-of-band match (409 fallback) the same as a probe-then-PATCH
-    /// match. The TriggerId, question list and labels are the only
-    /// fields the dialog needs — note_template stays server-side.
+    /// match. The TriggerId, kind, dialog labels and (when applicable)
+    /// the requester contact info are the only fields the dialog
+    /// needs — note_template stays server-side.
     private static object ProjectGateForApi(MatchedStatusGate g) => new
     {
         triggerId = g.TriggerId,
         name = g.Name,
+        kind = g.Kind,
         title = g.Title,
         message = g.Message,
         confirmLabel = g.ConfirmLabel,
@@ -1652,7 +1728,31 @@ public static class TicketEndpoints
             yesLabel = q.YesLabel,
             noLabel = q.NoLabel,
         }),
+        requesterContactId = g.RequesterContactId,
+        requesterDisplayName = g.RequesterDisplayName,
     };
+
+    /// Internal bookkeeping for one gate that passed its confirmation
+    /// check. Exactly one of <see cref="Answers"/> / <see cref="Extras"/>
+    /// is populated depending on the gate kind, plus <see cref="PendingLink"/>
+    /// when the gate also needs to create a contact-company link before
+    /// the status flip.
+    private sealed record ConfirmedGate(
+        MatchedStatusGate Gate,
+        IReadOnlyDictionary<string, string>? Answers,
+        IReadOnlyDictionary<string, string>? Extras,
+        PendingContactCompanyLink? PendingLink);
+
+    /// Pre-status-update side-effect carried by a confirmed
+    /// <c>contact_company_link</c> gate: link <paramref name="ContactId"/>
+    /// to <paramref name="CompanyId"/> with the agent-picked role. The
+    /// PATCH handler runs every pending link inside the same request as
+    /// the status flip so the operation is atomic from the agent's
+    /// perspective.
+    private sealed record PendingContactCompanyLink(
+        Guid ContactId,
+        Guid CompanyId,
+        string Role);
 
     public sealed record CreateTicketRequest(
         [property: Required] string Subject,
@@ -1697,14 +1797,24 @@ public static class TicketEndpoints
         IReadOnlyList<GateConfirmationInput>? GateConfirmations = null);
 
     /// One agent-supplied confirmation payload for a status-change gate.
-    /// <c>Answers</c> is keyed by the gate's per-question <c>key</c>;
-    /// values come from the gate's UI — typed text for text questions,
-    /// the clicked button's label for yesno questions. Missing answers
-    /// for required questions cause the PATCH to 409 with
-    /// <c>status_gate_required</c>.
+    /// The fields are kind-specific:
+    ///   * <c>prompt_confirm</c> gate → <see cref="Answers"/> is keyed by
+    ///     the gate's per-question <c>key</c>; values come from the
+    ///     dialog (typed text for text questions, the clicked button's
+    ///     label for yesno questions).
+    ///   * <c>contact_company_link</c> gate → <see cref="CompanyId"/> +
+    ///     <see cref="Role"/> identify the contact-company link the
+    ///     agent picked in the dialog. The PATCH handler creates the
+    ///     link before applying the status flip; an invalid company or
+    ///     role causes the PATCH to fail with 400 or 409 depending on
+    ///     the kind of mismatch.
+    /// Missing or incomplete payloads cause the PATCH to 409 with
+    /// <c>status_gate_required</c> + the unsatisfied gates list.
     public sealed record GateConfirmationInput(
         Guid TriggerId,
-        Dictionary<string, string>? Answers);
+        Dictionary<string, string>? Answers,
+        Guid? CompanyId = null,
+        string? Role = null);
 
     public sealed record AddEventRequest(
         string? EventType,

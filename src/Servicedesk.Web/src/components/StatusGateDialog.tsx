@@ -9,13 +9,15 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { GateQuestion, StatusGateMatch } from "@/lib/ticket-api";
+import type { GateQuestion, StatusGatePromptConfirm } from "@/lib/ticket-api";
 
 type Props = {
   /// Null hides the dialog. The parent passes the next gate in the
   /// sequence (or null when done) so a single component instance can
-  /// walk through multiple matching gates without remount churn.
-  gate: StatusGateMatch | null;
+  /// walk through multiple matching gates without remount churn. Only
+  /// renders `prompt_confirm` gates; contact-company gates have their
+  /// own dialog component (<see cref="ContactCompanyGateDialog"/>).
+  gate: StatusGatePromptConfirm | null;
   /// Fires when the agent clicks the bottom confirm button. Receives a
   /// `{key: value}` map keyed by every question's `key` — the typed
   /// text for free-text fields, the clicked Yes-button label for

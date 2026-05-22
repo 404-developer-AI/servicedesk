@@ -433,21 +433,45 @@ export type TicketFieldUpdate = {
   gateConfirmations?: GateConfirmation[];
 };
 
-/// v0.0.42 — one matching status-change gate the agent must confirm
-/// before the PATCH applies. The dialog renders title + optional
-/// message + a list of inline questions (free-text or yes/no buttons).
-/// Each question carries its own admin-defined `key` that drives the
-/// `#{prompt.<key>}` token in the gate's note template.
-export type StatusGateMatch = {
+/// v0.0.42 — one matching status-change gate the agent must satisfy
+/// before the PATCH applies. Discriminated by `kind`:
+///   * `prompt_confirm` — confirmation dialog with inline questions
+///     (free-text + yes/no rows). Each question carries an admin-
+///     defined `key` referenced as `#{prompt.<key>}` in the note
+///     template.
+///   * `contact_company_link` — hard-block when the ticket's requester
+///     has no `contact_companies` row. The dialog renders a company-
+///     picker + role selector; submitting creates the link inside the
+///     same PATCH that flips the status.
+export type StatusGateMatch =
+  | StatusGatePromptConfirm
+  | StatusGateContactCompanyLink;
+
+type StatusGateCommon = {
   triggerId: string;
   name: string;
   title: string;
   /// Null when the admin disabled the message section; the dialog
-  /// renders title + questions + buttons only.
+  /// renders title + body + buttons only.
   message: string | null;
   confirmLabel: string;
   cancelLabel: string;
+};
+
+export type StatusGatePromptConfirm = StatusGateCommon & {
+  kind: "prompt_confirm";
   questions: GateQuestion[];
+};
+
+export type StatusGateContactCompanyLink = StatusGateCommon & {
+  kind: "contact_company_link";
+  /// The ticket's requester contact id — the link will be attached to
+  /// this contact when the dialog is confirmed.
+  requesterContactId: string;
+  /// Friendly display name for the requester ("First Last" or email).
+  /// Rendered in the dialog so the agent knows which contact they're
+  /// linking.
+  requesterDisplayName: string;
 };
 
 export type GateQuestion =
@@ -472,12 +496,18 @@ export type GateQuestion =
     };
 
 /// One per-trigger confirmation packet shipped back to the PATCH
-/// endpoint. `answers` is keyed by the gate's per-question `key`;
-/// values come from the inline UI — typed text for text questions, the
-/// clicked positive button's label for yes/no questions.
+/// endpoint. The payload is kind-specific:
+///   * `prompt_confirm` → `answers` keyed by the gate's per-question
+///     `key`; values come from the dialog (typed text or clicked
+///     positive button's label).
+///   * `contact_company_link` → `companyId` + `role` identify the link
+///     to create. The server creates the row before applying the
+///     status flip; invalid company/role yields 400/409.
 export type GateConfirmation = {
   triggerId: string;
-  answers: Record<string, string>;
+  answers?: Record<string, string>;
+  companyId?: string;
+  role?: ContactCompanyRole;
 };
 
 export type NewTicketEvent = {
