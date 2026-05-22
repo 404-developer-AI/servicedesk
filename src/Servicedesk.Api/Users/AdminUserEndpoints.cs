@@ -389,7 +389,8 @@ public static class AdminUserEndpoints
         bool? IsIsoMgm,
         bool? IsIsoDpo,
         bool? KbEnabled,
-        bool? SearchEnabled);
+        bool? SearchEnabled,
+        bool? ActivityFeedEnabled);
 
     private static async Task<IResult> UpdateFeatureFlags(
         Guid id,
@@ -408,7 +409,8 @@ public static class AdminUserEndpoints
             request.IsIsoMgm,
             request.IsIsoDpo,
             request.KbEnabled,
-            request.SearchEnabled);
+            request.SearchEnabled,
+            request.ActivityFeedEnabled);
 
         var result = await admin.UpdateFeatureFlagsAsync(id, update, adminId.Value, ct);
         return result switch
@@ -426,6 +428,7 @@ public static class AdminUserEndpoints
                         is_iso_dpo = updated.Row.IsIsoDpo,
                         kb_enabled = updated.Row.KbEnabled,
                         search_enabled = updated.Row.SearchEnabled,
+                        activity_feed_enabled = updated.Row.ActivityFeedEnabled,
                     },
                     body: updated.Row,
                     statusCode: StatusCodes.Status200OK,
@@ -453,12 +456,24 @@ public static class AdminUserEndpoints
         if (adminId is null) return Results.Unauthorized();
 
         var requested = request.TileIds ?? Array.Empty<string>();
-        var result = await dashboardTiles.SetForUserAsync(id, requested, adminId.Value, ct);
+        // Admin endpoint only toggles enable/disable; size + position
+        // belong to the user's own edit-mode flow. Newly-enabled tiles
+        // default to 'medium' and get appended at the end of the user's
+        // existing layout — established positions/sizes are preserved.
+        var tileSizes = requested
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToDictionary(
+                id => id,
+                _ => Servicedesk.Infrastructure.Dashboard.DashboardTileSizes.Medium,
+                StringComparer.Ordinal);
+
+        var result = await dashboardTiles.SetEnabledForUserAsync(id, tileSizes, adminId.Value, ct);
         return result switch
         {
             Servicedesk.Infrastructure.Dashboard.SetDashboardTilesResult.Updated upd =>
                 await ReturnRowAfterTilesChangeAsync(
-                    httpContext, audit, admin, id, upd.TileIds, ct),
+                    httpContext, audit, admin, id, upd.Tiles, ct),
             Servicedesk.Infrastructure.Dashboard.SetDashboardTilesResult.UserNotFound =>
                 Results.NotFound(),
             Servicedesk.Infrastructure.Dashboard.SetDashboardTilesResult.CustomerNotAllowed =>
@@ -469,6 +484,8 @@ public static class AdminUserEndpoints
                     error = "Unknown tile id(s).",
                     unknown_tile_ids = unknown.Ids,
                 }),
+            Servicedesk.Infrastructure.Dashboard.SetDashboardTilesResult.InvalidSize bad =>
+                Results.BadRequest(new { error = "Invalid tile size.", size = bad.Size }),
             _ => Results.Problem("Unhandled dashboard-tiles result."),
         };
     }
@@ -478,7 +495,7 @@ public static class AdminUserEndpoints
         IAuditLogger audit,
         IUserAdminService admin,
         Guid userId,
-        IReadOnlyList<string> tileIds,
+        IReadOnlyList<Servicedesk.Infrastructure.Dashboard.DashboardTilePref> tiles,
         CancellationToken ct)
     {
         var row = await admin.GetByIdAsync(userId, ct);
@@ -489,7 +506,7 @@ public static class AdminUserEndpoints
             payload: new
             {
                 email = row.Email,
-                tile_ids = tileIds,
+                tiles = tiles.Select(t => new { tile_id = t.TileId, size = t.Size }).ToList(),
             },
             body: row,
             statusCode: StatusCodes.Status200OK,

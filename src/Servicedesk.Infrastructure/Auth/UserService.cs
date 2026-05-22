@@ -84,6 +84,13 @@ public interface IUserService
     /// not produce a visible regression (the search bar is also gated
     /// by role on the frontend).
     Task<bool> GetSearchEnabledAsync(Guid userId, CancellationToken ct = default);
+
+    /// v0.0.42 — per-user opt-in for the agent activity feed. When false,
+    /// the dashboard tile and admin activity page are hidden and the
+    /// SignalR hub refuses the group-enroll on connect. Returns false on
+    /// missing rows so a session outliving a deleted user cannot keep a
+    /// stale subscription open.
+    Task<bool> GetActivityFeedEnabledAsync(Guid userId, CancellationToken ct = default);
 }
 
 /// Per-user Timesheet feature flags. Empty struct-y record so the call
@@ -409,6 +416,15 @@ public sealed class UserService : IUserService
         var value = await connection.QuerySingleOrDefaultAsync<bool?>(
             new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
         return value ?? true;
+    }
+
+    public async Task<bool> GetActivityFeedEnabledAsync(Guid userId, CancellationToken ct = default)
+    {
+        const string sql = "SELECT activity_feed_enabled FROM users WHERE id = @id";
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var value = await connection.QuerySingleOrDefaultAsync<bool?>(
+            new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
+        return value ?? false;
     }
 }
 

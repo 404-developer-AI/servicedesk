@@ -23,12 +23,18 @@ export type AuthUser = {
   /// Per-user Sidebar feature flag for the global search bar.
   /// Default true server-side so brownfield users keep the bar.
   searchEnabled: boolean;
-  /// Per-user Dashboard tile preferences. Each id corresponds to a
-  /// tile in the `DASHBOARD_TILES` registry; tiles whose id is not
-  /// in this list are hidden on the Dashboard page. Default empty
-  /// (no tiles) on first upgrade — admins opt users in per tile.
-  dashboardTiles: string[];
+  /// v0.0.42 — per-user opt-in for the agent activity feed.
+  /// Gates the dashboard tile, the /activity page nav entry,
+  /// and the SignalR hub's group enrollment.
+  activityFeedEnabled: boolean;
+  /// Per-user Dashboard tile preferences. Ordered list of
+  /// {tileId, size} pairs; tiles whose id is not in this list are
+  /// hidden on the Dashboard page. Size cycles small/medium/wide/full
+  /// via the edit-mode UI; default empty (no tiles) on first upgrade.
+  dashboardTiles: { tileId: string; size: DashboardTileSize }[];
 };
+
+export type DashboardTileSize = "small" | "medium" | "wide" | "full";
 
 export type AuthState = {
   status: "loading" | "ready";

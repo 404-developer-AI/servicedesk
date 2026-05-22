@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Activity;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Dashboard;
 using Servicedesk.Infrastructure.Realtime;
@@ -232,6 +233,7 @@ public sealed class TelavoxPollingWorker : BackgroundService
         // sp.GetRequiredService pattern matches every other dependency
         // here so the worker stays uniform.
         var agentActivityBroadcaster = sp.GetRequiredService<IAgentActivityBroadcaster>();
+        var activityRecorder = sp.GetRequiredService<IActivityRecorder>();
         var integrationAudit = sp.GetRequiredService<IIntegrationAuditLogger>();
 
         var allLinks = await links.ListAsync(ct);
@@ -307,6 +309,38 @@ public sealed class TelavoxPollingWorker : BackgroundService
                         _logger.LogWarning(broadcastEx,
                             "AgentActivity broadcast for user {UserId} failed; tile may lag until next change.",
                             link.UserId);
+                    }
+
+                    // v0.0.42 — record a single feed row on the
+                    // answered → idle edge so a completed call lands in
+                    // the activity feed with direction + number + the
+                    // call id reference. We deliberately do NOT record
+                    // on ringing-edge (would create noise from missed
+                    // calls) or answered-edge (no duration yet).
+                    if (string.Equals(priorCategory, AgentCallStateCategorization.Answered, StringComparison.Ordinal)
+                        && string.Equals(newCategory, AgentCallStateCategorization.Idle, StringComparison.Ordinal))
+                    {
+                        try
+                        {
+                            await activityRecorder.RecordAsync(new ActivityRecord(
+                                AgentId: link.UserId,
+                                EventType: "telavox_call_completed",
+                                Summary: "completed phone call",
+                                EntityType: "telavox_call",
+                                EntityId: prior?.LastCallId,
+                                Metadata: new
+                                {
+                                    callId = prior?.LastCallId,
+                                    extension = link.TelavoxExtension,
+                                    lastState = prior?.LastState,
+                                }), ct);
+                        }
+                        catch (Exception recEx)
+                        {
+                            _logger.LogWarning(recEx,
+                                "ActivityRecorder write for completed call (user {UserId}) failed.",
+                                link.UserId);
+                        }
                     }
                 }
 

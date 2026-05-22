@@ -338,9 +338,16 @@ public static class AuthEndpoints
         // Sidebar feature flag. Default true on missing rows so a
         // session that outlives a deleted user is harmless.
         var searchEnabled = await users.GetSearchEnabledAsync(userId, ct);
+        // v0.0.42 — per-user opt-in for the agent activity feed. Drives
+        // the dashboard tile + /admin/activity nav visibility and the
+        // SignalR hub's group enrollment.
+        var activityFeedEnabled = await users.GetActivityFeedEnabledAsync(userId, ct);
         // Per-user Dashboard tile preferences. Empty array = no tiles
         // enabled; DashboardPage renders an empty-state in that case.
-        var tileIds = await dashboardTiles.GetForUserAsync(userId, ct);
+        // Shape: ordered [{tileId, size}] so the frontend can render the
+        // layout without a second round-trip. v0.0.42 added position +
+        // size — the order returned here is the saved order.
+        var tiles = await dashboardTiles.GetForUserAsync(userId, ct);
 
         return Results.Ok(new
         {
@@ -357,7 +364,8 @@ public static class AuthEndpoints
                 isIsoDpo = isoFlags.Dpo,
                 kbEnabled,
                 searchEnabled,
-                dashboardTiles = tileIds,
+                activityFeedEnabled,
+                dashboardTiles = tiles.Select(t => new { tileId = t.TileId, size = t.Size }).ToList(),
             },
             serverTimeUtc = DateTimeOffset.UtcNow,
         });

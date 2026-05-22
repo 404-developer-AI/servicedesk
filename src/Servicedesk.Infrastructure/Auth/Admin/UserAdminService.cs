@@ -47,7 +47,8 @@ public sealed class UserAdminService : IUserAdminService
                     u.is_iso_mgm        AS IsIsoMgm,
                     u.is_iso_dpo        AS IsIsoDpo,
                     u.kb_enabled        AS KbEnabled,
-                    u.search_enabled    AS SearchEnabled
+                    u.search_enabled    AS SearchEnabled,
+                    u.activity_feed_enabled AS ActivityFeedEnabled
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             ORDER BY u.created_utc ASC
@@ -88,7 +89,8 @@ public sealed class UserAdminService : IUserAdminService
                     u.is_iso_mgm        AS IsIsoMgm,
                     u.is_iso_dpo        AS IsIsoDpo,
                     u.kb_enabled        AS KbEnabled,
-                    u.search_enabled    AS SearchEnabled
+                    u.search_enabled    AS SearchEnabled,
+                    u.activity_feed_enabled AS ActivityFeedEnabled
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             WHERE u.id = @id
@@ -739,7 +741,8 @@ public sealed class UserAdminService : IUserAdminService
             && update.IsIsoMgm is null
             && update.IsIsoDpo is null
             && update.KbEnabled is null
-            && update.SearchEnabled is null)
+            && update.SearchEnabled is null
+            && update.ActivityFeedEnabled is null)
         {
             return new UpdateFeatureFlagsResult.NoChange();
         }
@@ -772,12 +775,13 @@ public sealed class UserAdminService : IUserAdminService
         await connection.ExecuteAsync(new CommandDefinition(
             """
             UPDATE users SET
-                timesheet_enabled = COALESCE(@timesheetEnabled, timesheet_enabled),
-                timesheet_manager = COALESCE(@timesheetManager, timesheet_manager),
-                is_iso_mgm        = COALESCE(@isIsoMgm,         is_iso_mgm),
-                is_iso_dpo        = COALESCE(@isIsoDpo,         is_iso_dpo),
-                kb_enabled        = COALESCE(@kbEnabled,        kb_enabled),
-                search_enabled    = COALESCE(@searchEnabled,    search_enabled)
+                timesheet_enabled     = COALESCE(@timesheetEnabled,     timesheet_enabled),
+                timesheet_manager     = COALESCE(@timesheetManager,     timesheet_manager),
+                is_iso_mgm            = COALESCE(@isIsoMgm,             is_iso_mgm),
+                is_iso_dpo            = COALESCE(@isIsoDpo,             is_iso_dpo),
+                kb_enabled            = COALESCE(@kbEnabled,            kb_enabled),
+                search_enabled        = COALESCE(@searchEnabled,        search_enabled),
+                activity_feed_enabled = COALESCE(@activityFeedEnabled,  activity_feed_enabled)
             WHERE id = @id
             """,
             new
@@ -789,6 +793,7 @@ public sealed class UserAdminService : IUserAdminService
                 isIsoDpo = update.IsIsoDpo,
                 kbEnabled = update.KbEnabled,
                 searchEnabled = update.SearchEnabled,
+                activityFeedEnabled = update.ActivityFeedEnabled,
             },
             tx,
             cancellationToken: ct));

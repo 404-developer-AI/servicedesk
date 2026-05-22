@@ -295,6 +295,9 @@ public sealed class FakeUserService : IUserService
 
     public Task<bool> GetSearchEnabledAsync(Guid userId, CancellationToken ct = default) =>
         Task.FromResult(true);
+
+    public Task<bool> GetActivityFeedEnabledAsync(Guid userId, CancellationToken ct = default) =>
+        Task.FromResult(false);
 }
 
 public sealed class FakeSessionService : ISessionService

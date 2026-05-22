@@ -9,6 +9,7 @@ import {
   Settings2,
   ChevronDown,
   Lock,
+  Activity,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -47,6 +48,10 @@ const FLAG_GROUPS: Group[] = [
   {
     title: "Knowledge base",
     flags: [{ key: "kbEnabled", label: "KB", icon: BookOpen }],
+  },
+  {
+    title: "Activity feed",
+    flags: [{ key: "activityFeedEnabled", label: "Activity feed", icon: Activity }],
   },
 ];
 

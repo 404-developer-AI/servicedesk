@@ -289,6 +289,87 @@ export const dashboardApi = {
     request<AgentActivitySnapshot>("GET", "/api/dashboard/agent-activity"),
 };
 
+// ---- Activity feed (v0.0.42) ----
+
+/// One row in the agent activity feed. Mirrors the backend
+/// ActivityFeedEntry record. EntityId is the source entity's
+/// stringified id (ticket UUID, settings key, user id, …); the UI
+/// uses entityType to decide whether to render it as a link.
+export type ActivityEntry = {
+  id: number;
+  occurredUtc: string;
+  agentId: string;
+  agentEmail: string;
+  agentRole: string;
+  eventType: string;
+  entityType: string | null;
+  entityId: string | null;
+  entityExtra: string | null;
+  summary: string;
+  metadataJson: string;
+  /// Enriched at query time for ticket-typed events. Null for any
+  /// other entity type.
+  ticketNumber: number | null;
+  ticketSubject: string | null;
+};
+
+export type ActivityListQuery = {
+  agentId?: string;
+  eventType?: string;
+  fromUtc?: string;
+  toUtc?: string;
+  search?: string;
+  cursor?: number;
+  limit?: number;
+};
+
+export type ActivityListPage = {
+  items: ActivityEntry[];
+  nextCursor: number | null;
+};
+
+// ---- User dashboard layout (v0.0.42) ----
+
+/// One row in the user's saved dashboard layout. Mirrors the backend
+/// DashboardTilePref record.
+export type DashboardLayoutEntry = {
+  tileId: string;
+  size: "small" | "medium" | "wide" | "full";
+};
+
+export const userDashboardLayoutApi = {
+  /// Replace the signed-in user's full layout (order + size per tile).
+  /// Returns the persisted layout for cache reconciliation.
+  save: (tiles: DashboardLayoutEntry[]) =>
+    request<{ tiles: DashboardLayoutEntry[] }>(
+      "PUT",
+      "/api/me/dashboard/layout",
+      { tiles },
+    ),
+};
+
+export const activityApi = {
+  recent: (limit = 25) =>
+    request<{ items: ActivityEntry[] }>(
+      "GET",
+      `/api/activity/recent?limit=${limit}`,
+    ),
+  list: (query: ActivityListQuery = {}) => {
+    const params = new URLSearchParams();
+    if (query.agentId) params.set("agentId", query.agentId);
+    if (query.eventType) params.set("eventType", query.eventType);
+    if (query.fromUtc) params.set("fromUtc", query.fromUtc);
+    if (query.toUtc) params.set("toUtc", query.toUtc);
+    if (query.search) params.set("search", query.search);
+    if (query.cursor !== undefined) params.set("cursor", String(query.cursor));
+    params.set("limit", String(query.limit ?? 50));
+    return request<ActivityListPage>(
+      "GET",
+      `/api/activity?${params.toString()}`,
+    );
+  },
+};
+
 export const auditApi = {
   list: (query: AuditListQuery = {}) => {
     const params = new URLSearchParams();
