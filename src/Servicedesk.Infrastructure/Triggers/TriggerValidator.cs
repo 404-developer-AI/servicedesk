@@ -47,6 +47,14 @@ public static class TriggerValidator
         // a successful confirmation. Only valid on gate:status_change
         // triggers; the activator-pair guard below enforces the pairing.
         "prompt_confirm",
+        // v0.0.42 — second gate-only action: hard-block status changes
+        // when the ticket's requester contact has no entry in
+        // contact_companies. The dialog renders an inline company-picker
+        // with a primary/secondary/supplier role selector; submitting
+        // creates the link before applying the status change. Only valid
+        // on gate:status_change triggers — the activator-pair + gate-
+        // action guard below reject every other combination.
+        "require_contact_company",
     };
 
     public static readonly IReadOnlySet<string> ActivatorPairs = new HashSet<string>(StringComparer.Ordinal)
@@ -102,12 +110,16 @@ public static class TriggerValidator
         }
         else
         {
-            // prompt_confirm is gate-only. Reject it on any other
-            // activator so the editor cannot save a malformed combination
-            // (the action-kind whitelist itself accepts it).
-            var stray = ContainsActionKind(actionsJson, "prompt_confirm");
-            if (stray) return ValidationResult.Fail(
-                "prompt_confirm is only valid on gate:status_change triggers.");
+            // prompt_confirm and require_contact_company are gate-only.
+            // Reject either on any other activator so the editor cannot
+            // save a malformed combination (the action-kind whitelist
+            // itself accepts them).
+            if (ContainsActionKind(actionsJson, "prompt_confirm"))
+                return ValidationResult.Fail(
+                    "prompt_confirm is only valid on gate:status_change triggers.");
+            if (ContainsActionKind(actionsJson, "require_contact_company"))
+                return ValidationResult.Fail(
+                    "require_contact_company is only valid on gate:status_change triggers.");
         }
 
         // Time-activator triggers scan ALL tickets every tick — an empty
@@ -391,6 +403,8 @@ public static class TriggerValidator
                 return null;
             case "prompt_confirm":
                 return ValidatePromptConfirm(action);
+            case "require_contact_company":
+                return ValidateRequireContactCompany(action);
             case "send_survey":
                 // survey_id is the only required field; subject + body live
                 // on the survey row itself. TTL + recipient overrides are
@@ -422,24 +436,34 @@ public static class TriggerValidator
         }
     }
 
+    /// Action kinds a gate:status_change trigger may carry. Exactly one
+    /// entry from this set must be present; nothing else is allowed.
+    private static readonly IReadOnlySet<string> GateActionKinds =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "prompt_confirm",
+            "require_contact_company",
+        };
+
     /// Walks a gate trigger's actions JSON and ensures it has exactly one
-    /// prompt_confirm entry. Returns null on success, an error string the
-    /// admin endpoint surfaces verbatim on failure. The per-action payload
-    /// (titles, buttons, note template) is type-checked by the regular
-    /// ValidateActionPayload path; this method only enforces the shape
-    /// invariant the gate-matcher relies on.
+    /// gate-action entry (<c>prompt_confirm</c> or <c>require_contact_company</c>).
+    /// Returns null on success, an error string the admin endpoint surfaces
+    /// verbatim on failure. The per-action payload (titles, buttons, note
+    /// template) is type-checked by the regular ValidateActionPayload path;
+    /// this method only enforces the shape invariant the gate-matcher relies on.
     private static string? ValidateGateActions(string actionsJson)
     {
+        const string allowedList = "prompt_confirm or require_contact_company";
         if (string.IsNullOrWhiteSpace(actionsJson))
-            return "Gate triggers require exactly one prompt_confirm action.";
+            return $"Gate triggers require exactly one gate action ({allowedList}).";
         JsonDocument doc;
         try { doc = JsonDocument.Parse(actionsJson); }
         catch (JsonException) { return null; }
         try
         {
             if (doc.RootElement.ValueKind != JsonValueKind.Array)
-                return "Gate triggers require exactly one prompt_confirm action.";
-            int promptCount = 0;
+                return $"Gate triggers require exactly one gate action ({allowedList}).";
+            int gateCount = 0;
             int total = 0;
             foreach (var action in doc.RootElement.EnumerateArray())
             {
@@ -447,17 +471,17 @@ public static class TriggerValidator
                 if (action.ValueKind == JsonValueKind.Object
                     && action.TryGetProperty("kind", out var kind)
                     && kind.ValueKind == JsonValueKind.String
-                    && kind.GetString() == "prompt_confirm")
+                    && GateActionKinds.Contains(kind.GetString() ?? string.Empty))
                 {
-                    promptCount++;
+                    gateCount++;
                 }
             }
-            if (promptCount == 0)
-                return "Gate triggers require exactly one prompt_confirm action.";
-            if (promptCount > 1)
-                return "Gate triggers cannot carry more than one prompt_confirm action.";
-            if (total != promptCount)
-                return "Gate triggers can only carry the prompt_confirm action.";
+            if (gateCount == 0)
+                return $"Gate triggers require exactly one gate action ({allowedList}).";
+            if (gateCount > 1)
+                return "Gate triggers cannot carry more than one gate action.";
+            if (total != gateCount)
+                return $"Gate triggers can only carry gate actions ({allowedList}).";
             return null;
         }
         finally { doc.Dispose(); }
@@ -605,6 +629,51 @@ public static class TriggerValidator
             default:
                 return $"unknown type '{type}'. Allowed: text, yesno.";
         }
+    }
+
+    /// Validates the per-action payload for require_contact_company.
+    /// Required: to_status_id (UUID), title (string), confirm_label
+    /// (string), cancel_label (string), note_visibility ("internal"|"public"),
+    /// note_template (string — may be empty so no note is appended).
+    /// Optional: from_status_id (UUID or null), show_message (bool),
+    /// message (string — only shown when show_message is true). The role
+    /// the agent picks is captured at confirmation-time; the action
+    /// itself doesn't restrict which roles satisfy the gate.
+    private static string? ValidateRequireContactCompany(JsonElement action)
+    {
+        var toErr = RequireGuid(action, "to_status_id");
+        if (toErr is not null) return toErr;
+        if (action.TryGetProperty("from_status_id", out var fromEl)
+            && fromEl.ValueKind != JsonValueKind.Null)
+        {
+            if (fromEl.ValueKind != JsonValueKind.String
+                || !Guid.TryParse(fromEl.GetString(), out _))
+                return "'from_status_id' must be a UUID string or null.";
+        }
+        if (!HasNonEmptyString(action, "title"))
+            return "requires non-empty 'title'.";
+        if (!HasNonEmptyString(action, "confirm_label"))
+            return "requires non-empty 'confirm_label'.";
+        if (!HasNonEmptyString(action, "cancel_label"))
+            return "requires non-empty 'cancel_label'.";
+        if (!action.TryGetProperty("note_visibility", out var visEl)
+            || visEl.ValueKind != JsonValueKind.String
+            || (visEl.GetString() != "internal" && visEl.GetString() != "public"))
+        {
+            return "'note_visibility' must be 'internal' or 'public'.";
+        }
+        if (!action.TryGetProperty("note_template", out var tplEl)
+            || tplEl.ValueKind != JsonValueKind.String)
+        {
+            return "'note_template' must be a string (may be empty).";
+        }
+        if (action.TryGetProperty("show_message", out var showEl)
+            && showEl.ValueKind != JsonValueKind.True
+            && showEl.ValueKind != JsonValueKind.False)
+        {
+            return "'show_message' must be true or false when present.";
+        }
+        return null;
     }
 
     private static string? ValidateSetPendingTill(JsonElement action, string? triggerTimezone)

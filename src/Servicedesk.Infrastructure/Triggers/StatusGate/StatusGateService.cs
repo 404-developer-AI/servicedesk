@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Domain.Companies;
 using Servicedesk.Infrastructure.Auth;
+using Servicedesk.Infrastructure.Persistence.Companies;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Triggers.Templating;
 
@@ -9,11 +11,20 @@ namespace Servicedesk.Infrastructure.Triggers.StatusGate;
 
 /// Loads gate:status_change triggers, filters by source/target status,
 /// evaluates the regular condition tree against the current ticket
-/// snapshot, and returns the prompt payload the UI needs to render a
-/// confirmation dialog. Used by both the matching endpoint (read-only)
-/// and the ticket-PATCH enforcement path; the second path also drives
-/// note rendering via <see cref="RenderNoteAsync"/> so the confirmed
-/// answer lands on the timeline.
+/// snapshot, and returns the dialog payload the UI needs to render a
+/// confirmation. Used by both the matching endpoint (read-only) and the
+/// ticket-PATCH enforcement path; the second path also drives note
+/// rendering via <see cref="RenderNoteAsync"/> so the confirmed answer
+/// lands on the timeline.
+///
+/// Two gate kinds in v0.0.42:
+///   * <c>prompt_confirm</c> — confirmation questions; the gate always
+///     matches when its conditions pass.
+///   * <c>require_contact_company</c> — hard-block when the ticket's
+///     requester has zero rows in <c>contact_companies</c>. The matcher
+///     loads the requester's link count and skips the gate when at least
+///     one link already exists, so an admin-side fix between probe and
+///     PATCH is honoured without surfacing a stale dialog.
 ///
 /// Fails closed: any malformed row (bad JSON, missing payload, unknown
 /// status id) is logged and skipped — admins see no dialog rather than
@@ -23,6 +34,7 @@ public sealed class StatusGateService : IStatusGateService
 {
     private readonly ITriggerRepository _triggers;
     private readonly ITicketRepository _tickets;
+    private readonly ICompanyRepository _companies;
     private readonly ITriggerConditionMatcher _matcher;
     private readonly ITriggerRenderContextFactory _renderFactory;
     private readonly ITriggerTemplateRenderer _renderer;
@@ -32,6 +44,7 @@ public sealed class StatusGateService : IStatusGateService
     public StatusGateService(
         ITriggerRepository triggers,
         ITicketRepository tickets,
+        ICompanyRepository companies,
         ITriggerConditionMatcher matcher,
         ITriggerRenderContextFactory renderFactory,
         ITriggerTemplateRenderer renderer,
@@ -40,6 +53,7 @@ public sealed class StatusGateService : IStatusGateService
     {
         _triggers = triggers;
         _tickets = tickets;
+        _companies = companies;
         _matcher = matcher;
         _renderFactory = renderFactory;
         _renderer = renderer;
@@ -69,6 +83,29 @@ public sealed class StatusGateService : IStatusGateService
         }
         if (rows.Count == 0) return Array.Empty<MatchedStatusGate>();
 
+        // Lazy lookup of the requester's contact + link count. Two
+        // require_contact_company gates on the same ticket share one
+        // round-trip; tickets with no such gate skip the lookup entirely.
+        Contact? cachedRequester = null;
+        bool requesterLoaded = false;
+        int? cachedLinkCount = null;
+
+        async Task<(Contact? Contact, int LinkCount)> GetRequesterAsync()
+        {
+            if (!requesterLoaded)
+            {
+                cachedRequester = await _companies.GetContactAsync(detail.Ticket.RequesterContactId, ct);
+                requesterLoaded = true;
+            }
+            if (cachedRequester is null) return (null, 0);
+            if (!cachedLinkCount.HasValue)
+            {
+                var links = await _companies.ListContactLinksAsync(cachedRequester.Id, ct);
+                cachedLinkCount = links.Count;
+            }
+            return (cachedRequester, cachedLinkCount.Value);
+        }
+
         var result = new List<MatchedStatusGate>(rows.Count);
         foreach (var row in rows)
         {
@@ -79,7 +116,7 @@ public sealed class StatusGateService : IStatusGateService
             try { gate = ProjectGate(row); }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Gate trigger {TriggerId} has a malformed prompt_confirm payload; skipping.", row.Id);
+                _logger.LogWarning(ex, "Gate trigger {TriggerId} has a malformed gate-action payload; skipping.", row.Id);
                 continue;
             }
             if (gate is null) continue;
@@ -113,6 +150,23 @@ public sealed class StatusGateService : IStatusGateService
             }
             finally { condDoc.Dispose(); }
 
+            // Kind-specific match guard. require_contact_company only
+            // surfaces when the requester has zero existing links — a
+            // contact who already has any company link satisfies the
+            // gate by construction and is allowed through.
+            if (gate.Kind == "contact_company_link")
+            {
+                var (contact, linkCount) = await GetRequesterAsync();
+                if (contact is null) continue;
+                if (linkCount > 0) continue;
+                var displayName = BuildContactDisplayName(contact);
+                gate = gate with
+                {
+                    RequesterContactId = contact.Id,
+                    RequesterDisplayName = displayName,
+                };
+            }
+
             result.Add(gate);
         }
         return result;
@@ -123,6 +177,7 @@ public sealed class StatusGateService : IStatusGateService
         Guid ticketId,
         Guid agentUserId,
         IReadOnlyDictionary<string, string>? answers,
+        IReadOnlyDictionary<string, string>? extras,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(gate.NoteTemplate)) return null;
@@ -168,6 +223,18 @@ public sealed class StatusGateService : IStatusGateService
             merged["prompt.answer"] = answers?.Values.FirstOrDefault() ?? string.Empty;
         }
 
+        // Verbatim extras — e.g. require_contact_company synthesizes
+        // company.name / company.code / company.role from the just-
+        // created link so the note template can reference them without
+        // going through the prompt prefix.
+        if (extras is not null)
+        {
+            foreach (var (key, value) in extras)
+            {
+                merged[key] = value;
+            }
+        }
+
         var renderCtx = new TriggerRenderContext
         {
             StringValues = merged,
@@ -192,28 +259,22 @@ public sealed class StatusGateService : IStatusGateService
         {
             if (action.ValueKind != JsonValueKind.Object) continue;
             if (!action.TryGetProperty("kind", out var kindEl)
-                || kindEl.ValueKind != JsonValueKind.String
-                || kindEl.GetString() != "prompt_confirm")
+                || kindEl.ValueKind != JsonValueKind.String)
                 continue;
-            return ProjectFromAction(row, action);
+            return kindEl.GetString() switch
+            {
+                "prompt_confirm" => ProjectFromPromptConfirm(row, action),
+                "require_contact_company" => ProjectFromRequireContactCompany(row, action),
+                _ => null,
+            };
         }
         return null;
     }
 
-    private static MatchedStatusGate? ProjectFromAction(TriggerRow row, JsonElement action)
+    private static MatchedStatusGate? ProjectFromPromptConfirm(TriggerRow row, JsonElement action)
     {
-        if (!action.TryGetProperty("to_status_id", out var toEl)
-            || toEl.ValueKind != JsonValueKind.String
-            || !Guid.TryParse(toEl.GetString(), out var toStatus))
+        if (!TryReadStatusPair(action, out var toStatus, out var fromStatus))
             return null;
-
-        Guid? fromStatus = null;
-        if (action.TryGetProperty("from_status_id", out var fromEl)
-            && fromEl.ValueKind == JsonValueKind.String
-            && Guid.TryParse(fromEl.GetString(), out var parsedFrom))
-        {
-            fromStatus = parsedFrom;
-        }
 
         string title = TryStr(action, "title") ?? string.Empty;
         bool showMessage = !action.TryGetProperty("show_message", out var smEl)
@@ -224,8 +285,7 @@ public sealed class StatusGateService : IStatusGateService
 
         string confirmLabel = TryStr(action, "confirm_label") ?? "Confirm";
         string cancelLabel = TryStr(action, "cancel_label") ?? "Cancel";
-        string visibility = TryStr(action, "note_visibility") ?? "internal";
-        if (visibility != "internal" && visibility != "public") visibility = "internal";
+        string visibility = NormalizeVisibility(action);
         string noteTemplate = TryStr(action, "note_template") ?? string.Empty;
 
         var questions = new List<GateQuestion>();
@@ -261,6 +321,7 @@ public sealed class StatusGateService : IStatusGateService
         return new MatchedStatusGate(
             TriggerId: row.Id,
             Name: row.Name,
+            Kind: "prompt_confirm",
             Title: title,
             Message: message,
             Questions: questions,
@@ -269,7 +330,67 @@ public sealed class StatusGateService : IStatusGateService
             NoteVisibility: visibility,
             NoteTemplate: noteTemplate,
             ToStatusId: toStatus,
-            FromStatusId: fromStatus);
+            FromStatusId: fromStatus,
+            RequesterContactId: null,
+            RequesterDisplayName: null);
+    }
+
+    private static MatchedStatusGate? ProjectFromRequireContactCompany(TriggerRow row, JsonElement action)
+    {
+        if (!TryReadStatusPair(action, out var toStatus, out var fromStatus))
+            return null;
+
+        string title = TryStr(action, "title") ?? string.Empty;
+        bool showMessage = !action.TryGetProperty("show_message", out var smEl)
+            ? !string.IsNullOrWhiteSpace(TryStr(action, "message"))
+            : smEl.ValueKind == JsonValueKind.True;
+        string? message = showMessage ? TryStr(action, "message") : null;
+        if (string.IsNullOrWhiteSpace(message)) message = null;
+
+        string confirmLabel = TryStr(action, "confirm_label") ?? "Link company";
+        string cancelLabel = TryStr(action, "cancel_label") ?? "Cancel";
+        string visibility = NormalizeVisibility(action);
+        string noteTemplate = TryStr(action, "note_template") ?? string.Empty;
+
+        return new MatchedStatusGate(
+            TriggerId: row.Id,
+            Name: row.Name,
+            Kind: "contact_company_link",
+            Title: title,
+            Message: message,
+            Questions: Array.Empty<GateQuestion>(),
+            ConfirmLabel: confirmLabel,
+            CancelLabel: cancelLabel,
+            NoteVisibility: visibility,
+            NoteTemplate: noteTemplate,
+            ToStatusId: toStatus,
+            FromStatusId: fromStatus,
+            // Populated in FindMatchingAsync once the requester is loaded.
+            RequesterContactId: null,
+            RequesterDisplayName: null);
+    }
+
+    private static bool TryReadStatusPair(JsonElement action, out Guid toStatus, out Guid? fromStatus)
+    {
+        toStatus = Guid.Empty;
+        fromStatus = null;
+        if (!action.TryGetProperty("to_status_id", out var toEl)
+            || toEl.ValueKind != JsonValueKind.String
+            || !Guid.TryParse(toEl.GetString(), out toStatus))
+            return false;
+        if (action.TryGetProperty("from_status_id", out var fromEl)
+            && fromEl.ValueKind == JsonValueKind.String
+            && Guid.TryParse(fromEl.GetString(), out var parsedFrom))
+        {
+            fromStatus = parsedFrom;
+        }
+        return true;
+    }
+
+    private static string NormalizeVisibility(JsonElement action)
+    {
+        string visibility = TryStr(action, "note_visibility") ?? "internal";
+        return visibility is "internal" or "public" ? visibility : "internal";
     }
 
     private static GateQuestion? ProjectQuestion(JsonElement q)
@@ -293,5 +414,19 @@ public sealed class StatusGateService : IStatusGateService
     {
         if (!el.TryGetProperty(name, out var v)) return null;
         return v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+    }
+
+    /// "First Last", or the email when names are blank. Used in the
+    /// require_contact_company dialog so the agent knows which contact
+    /// they're linking.
+    private static string BuildContactDisplayName(Contact c)
+    {
+        var first = (c.FirstName ?? string.Empty).Trim();
+        var last = (c.LastName ?? string.Empty).Trim();
+        if (first.Length > 0 && last.Length > 0) return $"{first} {last}";
+        if (first.Length > 0) return first;
+        if (last.Length > 0) return last;
+        var email = (c.Email ?? string.Empty).Trim();
+        return email.Length > 0 ? email : c.Id.ToString();
     }
 }

@@ -18,13 +18,17 @@ public interface IStatusGateService
     /// Renders the gate's note_template against the current ticket
     /// snapshot, substituting <c>#{prompt.&lt;key&gt;}</c> for every
     /// supplied answer and <c>#{agent.name}</c> / <c>#{agent.email}</c>
-    /// with the confirming user. Returns null when the template renders
-    /// to whitespace — callers skip note insertion to keep the timeline
-    /// clean.
+    /// with the confirming user. <paramref name="extras"/> is merged
+    /// verbatim — its keys land in the renderer's token table as-is so
+    /// the contact-company-link gate can inject <c>company.name</c>,
+    /// <c>company.role</c>, etc., without going through the prompt
+    /// prefix. Returns null when the template renders to whitespace —
+    /// callers skip note insertion to keep the timeline clean.
     Task<string?> RenderNoteAsync(
         MatchedStatusGate gate,
         Guid ticketId,
         Guid agentUserId,
         IReadOnlyDictionary<string, string>? answers,
+        IReadOnlyDictionary<string, string>? extras,
         CancellationToken ct);
 }
