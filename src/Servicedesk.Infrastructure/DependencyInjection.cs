@@ -96,6 +96,11 @@ public static class DependencyInjection
         services.AddSingleton<IMicrosoftAuthService, MicrosoftAuthService>();
         services.AddSingleton<IUserAdminService, UserAdminService>();
         services.AddSingleton<IDashboardTilesService, DashboardTilesService>();
+        services.AddSingleton<IAgentActivityService, AgentActivityService>();
+        // IAgentActivityBroadcaster is registered in the API project
+        // (Program.cs) because the implementation lives there — it needs
+        // IHubContext<TicketPresenceHub> and the hub's static presence
+        // map, both of which live in Api, not Infrastructure.
 
         // Adsolut OAuth integration (v0.0.25). One install ↔ one Adsolut
         // administration. Refresh-token rotation + sliding-month window

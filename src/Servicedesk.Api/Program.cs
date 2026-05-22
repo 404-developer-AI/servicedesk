@@ -9,6 +9,7 @@ using Servicedesk.Api.Audit;
 using Servicedesk.Api.Auth;
 using Servicedesk.Api.Companies;
 using Servicedesk.Api.ComposeTemplates;
+using Servicedesk.Api.Dashboard;
 using Servicedesk.Api.Health;
 using Servicedesk.Api.IntakeForms;
 using Servicedesk.Api.Integrations;
@@ -138,6 +139,12 @@ builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.ITelavoxCallNo
 // (TicketTimesheetPanel) via the existing TicketPresenceHub.
 builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.ITimesheetEntryNotifier,
     Servicedesk.Api.Presence.SignalRTimesheetEntryNotifier>();
+// v0.0.42 — dashboard AgentActivity tile broadcaster. Sends per-user
+// activity updates to the agent-activity-admins SignalR group. Used by
+// TicketPresenceHub (presence transitions) and TelavoxPollingWorker
+// (call-state transitions) so the tile updates from a single channel.
+builder.Services.AddSingleton<Servicedesk.Infrastructure.Dashboard.IAgentActivityBroadcaster,
+    Servicedesk.Api.Presence.SignalRAgentActivityBroadcaster>();
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -480,6 +487,7 @@ app.MapViewGroupEndpoints();
 app.MapViewAccessEndpoints();
 app.MapAgentQueueEndpoints();
 app.MapUserEndpoints();
+app.MapDashboardEndpoints();
 app.MapUserPreferencesEndpoints();
 app.MapNotificationEndpoints();
 app.MapDevBenchmarkEndpoints(app.Environment);

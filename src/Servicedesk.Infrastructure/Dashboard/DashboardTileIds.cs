@@ -10,6 +10,7 @@ public static class DashboardTileIds
     public const string AvgPickup = "avg_pickup";
     public const string SystemHealth = "system_health";
     public const string Integrations = "integrations";
+    public const string AgentActivity = "agent_activity";
 
     public static readonly IReadOnlySet<string> All =
         new HashSet<string>(StringComparer.Ordinal)
@@ -17,6 +18,7 @@ public static class DashboardTileIds
             AvgPickup,
             SystemHealth,
             Integrations,
+            AgentActivity,
         };
 
     public static bool IsKnown(string tileId) => All.Contains(tileId);

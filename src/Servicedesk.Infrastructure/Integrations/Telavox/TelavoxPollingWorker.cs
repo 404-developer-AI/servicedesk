@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Audit;
+using Servicedesk.Infrastructure.Dashboard;
 using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
@@ -224,6 +225,13 @@ public sealed class TelavoxPollingWorker : BackgroundService
         var callState = sp.GetRequiredService<ITelavoxCallStateStore>();
         var apiClient = sp.GetRequiredService<ITelavoxApiClient>();
         var notifier = sp.GetRequiredService<ITelavoxCallNotifier>();
+        // v0.0.42 — dashboard AgentActivity tile receives a re-emit
+        // whenever an agent's call-state category flips (idle ↔ ringing
+        // ↔ answered). Resolved per-tick because the worker is a
+        // singleton and the broadcaster is too — still cheap, and the
+        // sp.GetRequiredService pattern matches every other dependency
+        // here so the worker stays uniform.
+        var agentActivityBroadcaster = sp.GetRequiredService<IAgentActivityBroadcaster>();
         var integrationAudit = sp.GetRequiredService<IIntegrationAuditLogger>();
 
         var allLinks = await links.ListAsync(ct);
@@ -280,6 +288,27 @@ public sealed class TelavoxPollingWorker : BackgroundService
 
                 if (IsRingingState(decision.NewBaseline.LastState))
                     anyRinging = true;
+
+                // Re-emit the dashboard AgentActivity payload when the
+                // call-state category flips so the admin tile's indicator
+                // tracks pickups and hangups in near real-time. Same
+                // best-effort discipline as the popup push above — a
+                // broadcast failure must never break the polling loop.
+                var priorCategory = AgentCallStateCategorization.Categorize(prior?.LastState);
+                var newCategory = AgentCallStateCategorization.Categorize(decision.NewBaseline.LastState);
+                if (!string.Equals(priorCategory, newCategory, StringComparison.Ordinal))
+                {
+                    try
+                    {
+                        await agentActivityBroadcaster.BroadcastForUserAsync(link.UserId, ct);
+                    }
+                    catch (Exception broadcastEx)
+                    {
+                        _logger.LogWarning(broadcastEx,
+                            "AgentActivity broadcast for user {UserId} failed; tile may lag until next change.",
+                            link.UserId);
+                    }
+                }
 
                 if (decision.ShouldFire && current is not null)
                 {
