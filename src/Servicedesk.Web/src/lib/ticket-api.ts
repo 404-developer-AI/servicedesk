@@ -7,7 +7,7 @@ export class ApiError extends Error {
   /// application/json. Lets callers branch on error codes (e.g.
   /// "status_gate_required") instead of just status numbers.
   readonly body: unknown;
-  constructor(status: number, url: string, message: string, body: unknown) {
+  constructor(status: number, url: string, message: string, body: unknown = null) {
     super(message);
     this.status = status;
     this.url = url;
