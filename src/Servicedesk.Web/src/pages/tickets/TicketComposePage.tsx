@@ -111,6 +111,7 @@ export function TicketComposePage({ ticketId }: { ticketId: string }) {
           key={ticketId}
           ticketId={ticketId}
           queueId={ticket.queueId}
+          statusId={ticket.statusId}
           mailContext={mailContext}
           isPopup
           onSubmitted={() => {

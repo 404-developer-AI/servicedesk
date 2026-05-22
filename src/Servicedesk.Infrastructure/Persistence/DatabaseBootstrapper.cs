@@ -3220,6 +3220,40 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_triggers_gate_active
             ON triggers (is_active)
             WHERE activator_kind = 'gate';
+
+        -- ===================================================================
+        -- v0.0.42 — Compose templates: auto-insert on internal note + status scope.
+        --
+        -- Two additive columns:
+        --   status_ids           — multi-status scope mirroring queue_ids.
+        --                          Empty array = any status. Both filters AND
+        --                          together for picker + auto-insert matching.
+        --   auto_insert_on_note  — when TRUE the template is selected as the
+        --                          initial body of the "Write an internal note"
+        --                          composer whenever the agent opens an empty
+        --                          composer on a ticket that matches both the
+        --                          queue and status scope. Picker behaviour is
+        --                          unchanged — the same template still surfaces
+        --                          under the :: dropdown.
+        --
+        -- Tie-breaker when more than one template matches: most-recently-updated
+        -- row wins (deterministic, predictable for admins editing their templates).
+        -- ===================================================================
+        ALTER TABLE compose_templates
+            ADD COLUMN IF NOT EXISTS status_ids UUID[] NOT NULL DEFAULT '{}';
+
+        ALTER TABLE compose_templates
+            ADD COLUMN IF NOT EXISTS auto_insert_on_note BOOLEAN NOT NULL DEFAULT FALSE;
+
+        CREATE INDEX IF NOT EXISTS ix_compose_templates_status_ids
+            ON compose_templates USING GIN (status_ids);
+
+        -- Partial index used by the default-for-note matcher — keeps the
+        -- index tight (only auto-insert rows) so the lookup stays cheap as
+        -- the templates table grows.
+        CREATE INDEX IF NOT EXISTS ix_compose_templates_auto_insert
+            ON compose_templates (is_active, updated_utc DESC)
+            WHERE auto_insert_on_note = TRUE;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

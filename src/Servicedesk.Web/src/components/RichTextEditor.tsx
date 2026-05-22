@@ -19,6 +19,7 @@ import {
   Paperclip,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { substituteComposeTokens } from "@/lib/composeTokens";
 import type { TicketAttachmentMeta, AgentUser } from "@/lib/ticket-api";
 import { MentionList, type MentionListHandle } from "./MentionList";
 import {
@@ -927,45 +928,9 @@ function buildIntakeSuggestion(
 /// placeholder regardless of how the admin typed it. The inner pattern
 /// `[\w.]+` is strict on purpose — anything weirder than ASCII identifiers
 /// and dots is not a placeholder we ship.
-function substituteComposeTokens(
-  html: string,
-  tokens: Record<string, string> | undefined,
-): string {
-  if (!html) return html;
-  const out = html.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (match, name: string) => {
-    const canonical = `{{${name}}}`;
-    const value = tokens?.[canonical];
-    return value ? escapeHtml(value) : match;
-  });
-
-  // Diagnostic: surface unresolved placeholders during development so a
-  // missing resolve endpoint / stale backend is obvious in the console
-  // instead of silently shipping raw `{{...}}` into the editor.
-  if (import.meta.env?.DEV) {
-    const unresolved = out.match(/\{\{\s*[\w.]+\s*\}\}/g);
-    if (unresolved && unresolved.length > 0) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        "[ComposeTokens] Unresolved placeholders:",
-        unresolved,
-        tokens
-          ? `(tokens map keys: ${Object.keys(tokens).join(", ")})`
-          : "(tokens map missing — is /api/compose-templates/resolve reachable? Did the backend restart after the templates feature was added?)",
-      );
-    }
-  }
-
-  return out;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+// substituteComposeTokens / escapeHtml live in @/lib/composeTokens so the
+// internal-note auto-insert path can reuse them without dragging the whole
+// Tiptap editor module into its dependency graph.
 
 function patchChipInstanceId(
   editor: import("@tiptap/react").Editor,

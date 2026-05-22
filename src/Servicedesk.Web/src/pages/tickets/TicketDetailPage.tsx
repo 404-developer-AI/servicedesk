@@ -898,6 +898,7 @@ function TicketDetailBody({
                 key={ticketId}
                 ticketId={ticketId}
                 queueId={ticket.queueId}
+                statusId={ticket.statusId}
                 mailContext={buildMailContext(ticket, events, requesterEmail, ownMailboxAddresses)}
                 onSubmitted={() => {
                   queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });

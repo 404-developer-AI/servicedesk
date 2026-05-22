@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowLeft, FileText, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, FileText, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -71,12 +71,22 @@ function ListPanel({
     queryKey: ["taxonomy", "queues"],
     queryFn: () => taxonomyApi.queues.list(),
   });
+  const statusesQ = useQuery({
+    queryKey: ["taxonomy", "statuses"],
+    queryFn: () => taxonomyApi.statuses.list(),
+  });
 
   const queueNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const q of queuesQ.data ?? []) map.set(q.id, q.name);
     return map;
   }, [queuesQ.data]);
+
+  const statusNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of statusesQ.data ?? []) map.set(s.id, s.name);
+    return map;
+  }, [statusesQ.data]);
 
   const remove = useMutation({
     mutationFn: (id: string) => composeTemplatesApi.remove(id),
@@ -125,6 +135,7 @@ function ListPanel({
             key={t.id}
             template={t}
             queueNameById={queueNameById}
+            statusNameById={statusNameById}
             onEdit={() => onEdit(t.id)}
             onDelete={() => {
               if (
@@ -145,18 +156,25 @@ function ListPanel({
 function TemplateRow({
   template,
   queueNameById,
+  statusNameById,
   onEdit,
   onDelete,
 }: {
   template: ComposeTemplate;
   queueNameById: Map<string, string>;
+  statusNameById: Map<string, string>;
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const scopeLabel = template.queueIds.length === 0
+  const queueLabel = template.queueIds.length === 0
     ? "All queues"
     : template.queueIds
         .map((id) => queueNameById.get(id) ?? "Unknown")
+        .join(", ");
+  const statusLabel = template.statusIds.length === 0
+    ? "Any status"
+    : template.statusIds
+        .map((id) => statusNameById.get(id) ?? "Unknown")
         .join(", ");
 
   return (
@@ -173,6 +191,15 @@ function TemplateRow({
           <span className="truncate text-sm font-medium text-foreground">
             {template.name}
           </span>
+          {template.autoInsertOnNote && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full border border-violet-400/30 bg-violet-400/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-violet-200"
+              title="This template auto-fills the internal-note composer when an agent opens it empty on a matching ticket."
+            >
+              <Sparkles className="h-3 w-3" />
+              Auto-insert
+            </span>
+          )}
           {!template.isActive && (
             <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
               Inactive
@@ -185,7 +212,9 @@ function TemplateRow({
           </p>
         )}
         <p className="mt-1 truncate text-[11px] text-muted-foreground/60">
-          {scopeLabel}
+          <span>{queueLabel}</span>
+          <span className="mx-1.5 text-muted-foreground/40">·</span>
+          <span>{statusLabel}</span>
         </p>
       </div>
       <div className="flex items-center gap-2">

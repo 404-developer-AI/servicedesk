@@ -11,6 +11,15 @@ export interface ComposeTemplate {
   /// Empty = available in every queue; otherwise the picker only surfaces
   /// the template when the editor's host ticket lives in one of these queues.
   queueIds: string[];
+  /// v0.0.42 — Empty = any status; otherwise the picker (and the auto-insert
+  /// matcher) only surfaces the template when the ticket's current status is
+  /// in this list. ANDed with queueIds.
+  statusIds: string[];
+  /// v0.0.42 — When true, this template is auto-prefilled into the
+  /// "Write an internal note" composer whenever the agent opens an empty
+  /// composer on a ticket that matches this template's queue + status scope.
+  /// Tie-breaker between multiple matching templates: most-recently-updated.
+  autoInsertOnNote: boolean;
   /// v0.0.38 — optional CSAT survey that fires automatically when an agent
   /// sends a reply/note built from this template. Null = no survey-on-send.
   linkedSurveyId: string | null;
@@ -26,6 +35,8 @@ export interface UsableComposeTemplate {
   description: string | null;
   bodyHtml: string;
   queueIds: string[];
+  statusIds: string[];
+  autoInsertOnNote: boolean;
   linkedSurveyId: string | null;
 }
 
@@ -35,6 +46,8 @@ export interface ComposeTemplateUpsert {
   bodyHtml: string;
   isActive?: boolean;
   queueIds: string[];
+  statusIds: string[];
+  autoInsertOnNote: boolean;
   linkedSurveyId: string | null;
 }
 
@@ -108,12 +121,30 @@ export const composeTemplatesApi = {
 
   /// Picker endpoint. `queueId=null` lists only unrestricted templates —
   /// matches the New-Ticket drawer where no queue is selected yet.
-  usable: (queueId: string | null) =>
-    request<UsableComposeTemplate[]>(
+  /// v0.0.42: `statusId` narrows the result further when supplied.
+  usable: (queueId: string | null, statusId?: string | null) => {
+    const qs = new URLSearchParams();
+    if (queueId) qs.set("queueId", queueId);
+    if (statusId) qs.set("statusId", statusId);
+    const suffix = qs.toString();
+    return request<UsableComposeTemplate[]>(
       "GET",
-      queueId
-        ? `/api/compose-templates/usable?queueId=${encodeURIComponent(queueId)}`
+      suffix
+        ? `/api/compose-templates/usable?${suffix}`
         : "/api/compose-templates/usable",
+    );
+  },
+
+  /// v0.0.42 — Auto-insert lookup. Returns the single best-matching
+  /// auto-insert template (if any) for the (queue, status) tuple of an
+  /// internal-note composer that's about to be opened empty. `null` =
+  /// no matching template, leave the composer blank.
+  defaultForNote: (queueId: string, statusId: string) =>
+    request<{ template: UsableComposeTemplate | null }>(
+      "GET",
+      `/api/compose-templates/default-for-note?queueId=${encodeURIComponent(
+        queueId,
+      )}&statusId=${encodeURIComponent(statusId)}`,
     ),
 
   /// Token picker metadata for the admin editor. Static list — fetched once
