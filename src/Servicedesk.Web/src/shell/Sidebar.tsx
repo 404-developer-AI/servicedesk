@@ -92,6 +92,12 @@ export function Sidebar() {
     if (item.to === "/kb" && !user?.kbEnabled) {
       return false;
     }
+    // v0.0.42 — Activity feed is per-user opt-in. Hides the link from
+    // users whose admin has not enabled the flag; server-side endpoint
+    // and SignalR hub also enforce the same gate.
+    if (item.to === "/activity" && !user?.activityFeedEnabled) {
+      return false;
+    }
     return true;
   });
 

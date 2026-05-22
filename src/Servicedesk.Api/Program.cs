@@ -9,6 +9,7 @@ using Servicedesk.Api.Audit;
 using Servicedesk.Api.Auth;
 using Servicedesk.Api.Companies;
 using Servicedesk.Api.ComposeTemplates;
+using Servicedesk.Api.Activity;
 using Servicedesk.Api.Dashboard;
 using Servicedesk.Api.Health;
 using Servicedesk.Api.IntakeForms;
@@ -145,6 +146,13 @@ builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.ITimesheetEntr
 // (call-state transitions) so the tile updates from a single channel.
 builder.Services.AddSingleton<Servicedesk.Infrastructure.Dashboard.IAgentActivityBroadcaster,
     Servicedesk.Api.Presence.SignalRAgentActivityBroadcaster>();
+
+// v0.0.42 — Agent activity feed SignalR push. Implementation lives in
+// the API project because it needs IHubContext<ActivityFeedHub>; the
+// Infrastructure ActivityListenerWorker resolves IActivityBroadcaster
+// from a scope and routes the enriched row here.
+builder.Services.AddSingleton<Servicedesk.Infrastructure.Activity.IActivityBroadcaster,
+    Servicedesk.Api.Activity.SignalRActivityBroadcaster>();
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -488,6 +496,8 @@ app.MapViewAccessEndpoints();
 app.MapAgentQueueEndpoints();
 app.MapUserEndpoints();
 app.MapDashboardEndpoints();
+app.MapUserDashboardLayoutEndpoints();
+app.MapActivityEndpoints();
 app.MapUserPreferencesEndpoints();
 app.MapNotificationEndpoints();
 app.MapDevBenchmarkEndpoints(app.Environment);
@@ -495,6 +505,7 @@ app.MapHub<TicketPresenceHub>("/hubs/presence");
 app.MapHub<UserNotificationHub>("/hubs/notifications");
 app.MapHub<IntegrationsHub>("/hubs/integrations");
 app.MapHub<TelavoxCallHub>("/hubs/telavox-calls");
+app.MapHub<Servicedesk.Api.Activity.ActivityFeedHub>("/hubs/activity");
 
 // Deep-link fallback for the SPA. The regex excludes /api/* and /hubs/* so an
 // unknown API route still returns 404 (JSON client) instead of HTML.

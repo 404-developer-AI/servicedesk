@@ -483,6 +483,7 @@ public sealed class OutboundMailServiceTests
         public Task<IsoFlags> GetIsoFlagsAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(IsoFlags.None);
         public Task<bool> GetKbEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetSearchEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(true);
+        public Task<bool> GetActivityFeedEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
     }
 
     private sealed class StubIntakeForms : IIntakeFormRepository

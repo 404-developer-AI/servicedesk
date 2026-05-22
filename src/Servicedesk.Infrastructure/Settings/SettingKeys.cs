@@ -577,6 +577,16 @@ public static class SettingKeys
         public const string ReplyFooterHtml = "Timesheet.ReplyFooterHtml";
     }
 
+    /// v0.0.42 — Agent activity feed. Append-only event stream that
+    /// captures every agent / admin action across the app. Visibility is
+    /// per-user (users.activity_feed_enabled); retention is global and
+    /// settings-driven.
+    public static class ActivityFeed
+    {
+        public const string RetentionDays = "ActivityFeed.RetentionDays";
+        public const string PruneIntervalHours = "ActivityFeed.PruneIntervalHours";
+    }
+
     public static class Health
     {
         // Security-activity subsystem (v0.0.18). Samples the audit_log over a
@@ -942,6 +952,13 @@ public static class SettingDefaults
             "When true, a tagged agent receives an email from the ticket's queue mailbox on top of the in-app toast + navbar entry. Turn off on installs where the in-app channel is sufficient."),
         new SettingDefault(SettingKeys.Notifications.PopupDurationSeconds, "10", "int", "Notifications",
             "How long (seconds) the mention pop-up toast stays on screen before auto-dismissing. The navbar entry and history page are unaffected."),
+
+        // Activity feed — v0.0.42. Single global retention window;
+        // per-user opt-in lives on the users row, not in settings.
+        new SettingDefault(SettingKeys.ActivityFeed.RetentionDays, "365", "int", "ActivityFeed",
+            "How long (days) rows in agent_activity_events are kept before the prune worker hard-deletes them. Default 365 = one year. Clamped to [7, 3650] on read; values below 7 days defeat the purpose of an audit trail, values above ~10 years bloat the table without practical benefit."),
+        new SettingDefault(SettingKeys.ActivityFeed.PruneIntervalHours, "24", "int", "ActivityFeed",
+            "How often (hours) the prune worker runs the retention sweep. Default 24 = once per day. Clamped to [1, 168]."),
 
         // Health — Security activity monitor (v0.0.18). Replaces "watch the
         // logs yourself". Defaults are tuned for a single-tenant install with

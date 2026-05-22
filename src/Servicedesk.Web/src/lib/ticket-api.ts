@@ -898,6 +898,10 @@ export type UserAdminRow = {
   // Sidebar feature flag. Default true on insert so brownfield
   // Agent/Admin users keep their search bar on upgrade.
   searchEnabled: boolean;
+  // v0.0.42 — per-user opt-in for the agent activity feed. Default
+  // false on insert; admins flip it on for the users who should see
+  // the dashboard tile + /activity admin page.
+  activityFeedEnabled: boolean;
   // Per-user Dashboard tile preferences. Empty array on insert
   // (admins opt the user in to specific tiles).
   dashboardTiles: string[];
@@ -910,6 +914,7 @@ export type FeatureFlagsUpdate = Partial<{
   isIsoDpo: boolean;
   kbEnabled: boolean;
   searchEnabled: boolean;
+  activityFeedEnabled: boolean;
 }>;
 
 export type M365PickerUser = {

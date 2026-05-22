@@ -5,6 +5,7 @@ import {
   Clock,
   Settings,
   Timer,
+  Activity,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "@/lib/roles";
@@ -69,6 +70,18 @@ export const NAV_ITEMS: readonly NavItem[] = [
     roles: ["Agent", "Admin"],
     comingIn: "",
     description: "Daily time registration — own entries, ticket-linked, with manager overview for opted-in users.",
+    section: "main",
+  },
+  // v0.0.42 — Activity feed. Role gate keeps customers out; the per-user
+  // `activity_feed_enabled` flag visibility filter lives in Sidebar.tsx
+  // so a user without the flag never sees this entry.
+  {
+    label: "Activity",
+    to: "/activity",
+    icon: Activity,
+    roles: ["Agent", "Admin"],
+    comingIn: "",
+    description: "Append-only feed of every agent + admin action across the app, with filters and search.",
     section: "main",
   },
   // Profile is reachable from the header avatar dropdown (top-right) and via

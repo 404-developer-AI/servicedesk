@@ -15,6 +15,7 @@ using Servicedesk.Infrastructure.Persistence.Companies;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Access;
+using Servicedesk.Infrastructure.Activity;
 using Servicedesk.Infrastructure.Persistence.ViewGroups;
 using Servicedesk.Infrastructure.Persistence.Views;
 using Servicedesk.Infrastructure.Health;
@@ -73,7 +74,16 @@ public static class DependencyInjection
             return new NpgsqlDataSourceBuilder(connectionString).Build();
         });
 
-        services.AddSingleton<IAuditLogger, AuditLogger>();
+        // v0.0.42 — IAuditLogger is decorated so every whitelisted audit
+        // event also lands in the agent activity feed. The decorator
+        // forwards to AuditLogger (the real writer) so the HMAC chain
+        // stays intact; the activity-feed tee-off is best-effort.
+        services.AddSingleton<AuditLogger>();
+        services.AddSingleton<IAuditLogger>(sp => new ActivityLoggingAuditDecorator(
+            sp.GetRequiredService<AuditLogger>(),
+            sp.GetRequiredService<IActivityRecorder>(),
+            sp.GetRequiredService<IUserService>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<ActivityLoggingAuditDecorator>>()));
         services.AddSingleton<IAuditQuery, AuditQueryService>();
 
         // Integration-audit (v0.0.25). Operational log for outbound
@@ -97,6 +107,18 @@ public static class DependencyInjection
         services.AddSingleton<IUserAdminService, UserAdminService>();
         services.AddSingleton<IDashboardTilesService, DashboardTilesService>();
         services.AddSingleton<IAgentActivityService, AgentActivityService>();
+
+        // v0.0.42 — Agent activity feed (append-only audit trail across
+        // every agent / admin action). Recorder = direct-write path used
+        // by non-ticket subsystems; ticket coverage comes from a Postgres
+        // trigger on ticket_events. ListenerWorker subscribes to the
+        // 'agent_activity_event' channel and pushes enriched rows to
+        // SignalR via IActivityBroadcaster (registered in the API
+        // project). RetentionWorker prunes daily.
+        services.AddSingleton<IActivityRecorder, ActivityRecorder>();
+        services.AddSingleton<IActivityFeedQuery, ActivityFeedQuery>();
+        services.AddHostedService<ActivityListenerWorker>();
+        services.AddHostedService<ActivityRetentionWorker>();
         // IAgentActivityBroadcaster is registered in the API project
         // (Program.cs) because the implementation lives there — it needs
         // IHubContext<TicketPresenceHub> and the hub's static presence

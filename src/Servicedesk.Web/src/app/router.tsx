@@ -59,6 +59,7 @@ import { KbArticleEditPage } from "@/pages/kb/KbArticleEditPage";
 import { KnowledgeBaseSettingsPage } from "@/pages/settings/KnowledgeBaseSettingsPage";
 import { TimesheetPage } from "@/pages/timesheet/TimesheetPage";
 import { TimesheetSettingsPage } from "@/pages/settings/TimesheetSettingsPage";
+import { ActivityFeedPage } from "@/pages/activity/ActivityFeedPage";
 
 // The router reads the "current role" outside of React here (for the
 // beforeLoad gate). The auth store is populated by bootstrapAuth() in
@@ -281,6 +282,19 @@ const profileRoute = createRoute({
   path: "/profile",
   beforeLoad: anyAuthenticatedGate(),
   component: ProfilePage,
+});
+
+// v0.0.42 — Activity feed. Agent + Admin role gate; the
+// activity_feed_enabled per-user flag is enforced server-side
+// (endpoints return 403 when off, hub never enrolls the connection),
+// so a manual /activity visit by a flag-off user shows the empty/error
+// states from the page instead of 404. The sidebar entry hides itself
+// when the flag is off so the user does not see a dead link.
+const activityFeedRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/activity",
+  beforeLoad: authGate(["Agent", "Admin"]),
+  component: ActivityFeedPage,
 });
 
 // v0.0.12 stap 4 — history of @@-mentions received by the caller.
@@ -606,6 +620,7 @@ const routeTree = rootRoute.addChildren([
   kbArticleEditRoute,
   profileRoute,
   profileMentionsRoute,
+  activityFeedRoute,
   settingsRoute.addChildren([
     settingsIndexRoute,
     settingsGeneralRoute,

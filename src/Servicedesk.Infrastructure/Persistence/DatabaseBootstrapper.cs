@@ -2798,6 +2798,49 @@ public sealed class DatabaseBootstrapper : IHostedService
             PRIMARY KEY (user_id, tile_id)
         );
 
+        -- v0.0.42 — per-user layout customisation. position drives the
+        -- sort order in the grid; size is one of the four canonical
+        -- widths (small=1/4, medium=2/4, wide=3/4, full=4/4 on the lg
+        -- breakpoint). Backfill: existing rows get position by tile_id
+        -- alphabetic and the registry's default size. Defaults keep a
+        -- fresh row useful even without a UI write.
+        ALTER TABLE user_dashboard_tiles
+            ADD COLUMN IF NOT EXISTS position INT  NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS size     TEXT NOT NULL DEFAULT 'medium';
+
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'chk_user_dashboard_tile_size'
+            ) THEN
+                ALTER TABLE user_dashboard_tiles
+                    ADD CONSTRAINT chk_user_dashboard_tile_size
+                    CHECK (size IN ('small','medium','wide','full'));
+            END IF;
+        END $$;
+
+        -- One-shot backfill of position for existing rows (where every
+        -- row currently sits on position 0). Skipped on a fresh install
+        -- because the unnumbered rows don't exist yet.
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM settings WHERE key = 'DashboardTiles.PositionBackfilled') THEN
+                WITH ranked AS (
+                    SELECT user_id, tile_id,
+                           row_number() OVER (PARTITION BY user_id ORDER BY tile_id) - 1 AS rn
+                    FROM user_dashboard_tiles
+                )
+                UPDATE user_dashboard_tiles t
+                    SET position = r.rn
+                    FROM ranked r
+                    WHERE t.user_id = r.user_id AND t.tile_id = r.tile_id
+                      AND t.position = 0 AND r.rn > 0;
+                INSERT INTO settings (key, value, value_type, category, description, default_value, updated_utc)
+                    VALUES ('DashboardTiles.PositionBackfilled', 'true', 'bool', 'Dashboard',
+                            'Internal marker: per-user dashboard tile positions were backfilled on first upgrade.',
+                            'true', now())
+                    ON CONFLICT (key) DO NOTHING;
+            END IF;
+        END $$;
+
         -- ===================================================================
         -- v0.0.41 — Zammad migration link (one-way bridge from a Zammad
         -- install into this servicedesk). Three explicit-mapping tables
@@ -2947,6 +2990,181 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- list lives further up next to the v0.0.23 split-source block,
         -- to keep the constraint defined in one place. Add new
         -- INSERT-INTO-tickets sources there.)
+
+        -- ===================================================================
+        -- v0.0.42 — Agent activity feed
+        --
+        -- Append-only feed that captures every agent / admin action across
+        -- the app (ticket mutations, KB edits, Telavox calls, auth, profile,
+        -- settings). Per-user opt-in for *viewing* only — every agent +
+        -- admin is always logged. Retention is settings-driven (default
+        -- 365d) and pruned by ActivityRetentionWorker.
+        --
+        -- entity_type / entity_id / entity_extra is a generic pointer so
+        -- the feed can link back to the source object (ticket #N, KB
+        -- article, settings key, …). metadata jsonb carries the extras
+        -- (call direction, duration, internal-vs-public note, …).
+        --
+        -- Ticket coverage is provided by a trigger on ticket_events so we
+        -- never miss a code path. Non-ticket subsystems push directly via
+        -- IActivityRecorder.RecordAsync. Both paths emit a `NOTIFY
+        -- agent_activity_event, <id>` so the SignalR worker can broadcast
+        -- the row to clients with the viewing flag enabled.
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS agent_activity_events (
+            id              BIGSERIAL   PRIMARY KEY,
+            occurred_utc    TIMESTAMPTZ NOT NULL DEFAULT now(),
+            agent_id        UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            agent_role      TEXT        NOT NULL,
+            event_type      TEXT        NOT NULL,
+            entity_type     TEXT        NULL,
+            entity_id       TEXT        NULL,
+            entity_extra    TEXT        NULL,
+            summary         TEXT        NOT NULL,
+            metadata        JSONB       NOT NULL DEFAULT '{}'::jsonb
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_agent_activity_events_agent_time
+            ON agent_activity_events (agent_id, occurred_utc DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS ix_agent_activity_events_time
+            ON agent_activity_events (occurred_utc DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS ix_agent_activity_events_event_type
+            ON agent_activity_events (event_type);
+
+        -- Per-user opt-in flag for *viewing* the activity feed. On first
+        -- upgrade Admins are backfilled to TRUE so the feature is
+        -- immediately usable; everyone else starts FALSE. Toggling the
+        -- flag flows through the existing feature-flags update path
+        -- and is captured in audit_log.
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS activity_feed_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+        -- One-shot backfill for existing admin rows. Idempotent: re-runs
+        -- on every boot but only flips rows currently false, so an admin
+        -- who explicitly switched themselves off does not get re-enabled.
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM settings WHERE key = 'ActivityFeed.AdminsBackfilled') THEN
+                UPDATE users SET activity_feed_enabled = TRUE
+                    WHERE role_name = 'Admin' AND activity_feed_enabled = FALSE;
+                INSERT INTO settings (key, value, value_type, category, description, default_value, updated_utc)
+                    VALUES ('ActivityFeed.AdminsBackfilled', 'true', 'bool', 'ActivityFeed',
+                            'Internal marker: admins were backfilled to activity_feed_enabled=true on first upgrade.',
+                            'true', now())
+                    ON CONFLICT (key) DO NOTHING;
+            END IF;
+        END $$;
+
+        -- Trigger that mirrors every agent-authored ticket_events row into
+        -- agent_activity_events. The trigger runs AFTER INSERT so it only
+        -- fires for committed rows. Customer-authored rows (author_user_id
+        -- IS NULL but author_contact_id IS NOT NULL) are skipped — the
+        -- feed tracks agent + admin activity only.
+        --
+        -- The summary string is a short human-readable verb; the UI
+        -- enriches it with the ticket subject + number via the LEFT JOIN
+        -- in the feed query, so re-titling a ticket does not leave stale
+        -- text in this table.
+        CREATE OR REPLACE FUNCTION agent_activity_from_ticket_event()
+            RETURNS TRIGGER
+            LANGUAGE plpgsql
+            AS $fn$
+        DECLARE
+            v_role TEXT;
+            v_summary TEXT;
+            v_event_type TEXT;
+            v_new_id BIGINT;
+        BEGIN
+            IF NEW.author_user_id IS NULL THEN
+                RETURN NEW;
+            END IF;
+
+            SELECT role_name INTO v_role FROM users WHERE id = NEW.author_user_id;
+            IF v_role IS NULL OR v_role = 'Customer' THEN
+                RETURN NEW;
+            END IF;
+
+            -- Translate the ticket-event kind into a short feed verb.
+            -- Note + Mail carry the internal/public distinction in their
+            -- metadata; we surface that via two distinct event_type values
+            -- so the page filter can split them.
+            v_event_type := CASE NEW.event_type
+                WHEN 'Created'            THEN 'ticket_created'
+                WHEN 'StatusChange'       THEN 'ticket_status_changed'
+                WHEN 'AssignmentChange'   THEN 'ticket_assigned'
+                WHEN 'PriorityChange'     THEN 'ticket_priority_changed'
+                WHEN 'QueueChange'        THEN 'ticket_queue_changed'
+                WHEN 'CategoryChange'     THEN 'ticket_category_changed'
+                WHEN 'CompanyAssignment'  THEN 'ticket_company_assigned'
+                WHEN 'RequesterChange'    THEN 'ticket_requester_changed'
+                WHEN 'Note'               THEN CASE WHEN NEW.is_internal THEN 'ticket_note_internal' ELSE 'ticket_note_public' END
+                WHEN 'Comment'            THEN 'ticket_comment'
+                WHEN 'Mail'               THEN 'ticket_mail_sent'
+                WHEN 'MailSent'           THEN 'ticket_mail_sent'
+                WHEN 'MailReceived'       THEN 'ticket_mail_received'
+                WHEN 'SystemNote'         THEN 'ticket_system_note'
+                ELSE 'ticket_' || lower(NEW.event_type)
+            END;
+
+            v_summary := CASE v_event_type
+                WHEN 'ticket_created'             THEN 'created ticket'
+                WHEN 'ticket_status_changed'      THEN 'changed ticket status'
+                WHEN 'ticket_assigned'            THEN 'changed ticket assignment'
+                WHEN 'ticket_priority_changed'    THEN 'changed ticket priority'
+                WHEN 'ticket_queue_changed'       THEN 'changed ticket queue'
+                WHEN 'ticket_category_changed'    THEN 'changed ticket category'
+                WHEN 'ticket_company_assigned'    THEN 'assigned ticket to company'
+                WHEN 'ticket_requester_changed'   THEN 'changed ticket requester'
+                WHEN 'ticket_note_internal'       THEN 'added internal note'
+                WHEN 'ticket_note_public'         THEN 'added public note'
+                WHEN 'ticket_comment'             THEN 'added comment'
+                WHEN 'ticket_mail_sent'           THEN 'sent mail reply'
+                WHEN 'ticket_mail_received'       THEN 'received mail'
+                WHEN 'ticket_system_note'         THEN 'added system note'
+                ELSE 'ticket activity'
+            END;
+
+            INSERT INTO agent_activity_events
+                (occurred_utc, agent_id, agent_role, event_type,
+                 entity_type, entity_id, summary, metadata)
+            VALUES
+                (NEW.created_utc, NEW.author_user_id, v_role, v_event_type,
+                 'ticket', NEW.ticket_id::text, v_summary,
+                 jsonb_build_object(
+                     'ticket_event_id', NEW.id,
+                     'is_internal', NEW.is_internal))
+            RETURNING id INTO v_new_id;
+
+            PERFORM pg_notify('agent_activity_event', v_new_id::text);
+            RETURN NEW;
+        END;
+        $fn$;
+
+        DROP TRIGGER IF EXISTS trg_agent_activity_from_ticket_event ON ticket_events;
+        CREATE TRIGGER trg_agent_activity_from_ticket_event
+            AFTER INSERT ON ticket_events
+            FOR EACH ROW EXECUTE FUNCTION agent_activity_from_ticket_event();
+
+        -- Companion trigger that fires NOTIFY for rows inserted directly
+        -- by ActivityRecorder (non-ticket subsystems). One channel for
+        -- both paths so the listener has a single subscription point.
+        -- We use a WHEN clause to avoid firing the NOTIFY twice for
+        -- ticket-sourced rows (the trigger above already emits it).
+        CREATE OR REPLACE FUNCTION agent_activity_notify_direct()
+            RETURNS TRIGGER
+            LANGUAGE plpgsql
+            AS $fn$
+        BEGIN
+            PERFORM pg_notify('agent_activity_event', NEW.id::text);
+            RETURN NEW;
+        END;
+        $fn$;
+
+        DROP TRIGGER IF EXISTS trg_agent_activity_notify_direct ON agent_activity_events;
+        CREATE TRIGGER trg_agent_activity_notify_direct
+            AFTER INSERT ON agent_activity_events
+            FOR EACH ROW
+            WHEN (NEW.entity_type IS DISTINCT FROM 'ticket')
+            EXECUTE FUNCTION agent_activity_notify_direct();
         """;
 
     private readonly NpgsqlDataSource _dataSource;
