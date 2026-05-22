@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { useNavigate } from "@tanstack/react-router";
 import type { UserNotification } from "@/lib/notification-api";
 import { notificationApi } from "@/lib/notification-api";
+import { hydrateRecentTicketsFromServer } from "@/stores/useRecentTicketsStore";
 
 let connection: HubConnection | null = null;
 
@@ -141,6 +142,16 @@ export function useNotificationSignalR(toastDurationMs: number) {
 
     hub.on("SecurityAlertReceived", handleSecurityAlert);
 
+    // v0.0.42 — recent-tickets sidebar list is server-side and synced
+    // across browsers. When another tab/device adds/removes/reorders a
+    // ticket, the backend fires this push to the caller's user-group;
+    // we rehydrate the local cache so the sidebar reflects the change
+    // without a manual refresh.
+    const handleRecentTicketsUpdated = () => {
+      void hydrateRecentTicketsFromServer();
+    };
+    hub.on("RecentTicketsUpdated", handleRecentTicketsUpdated);
+
     async function start() {
       if (hub.state === HubConnectionState.Disconnected) {
         try {
@@ -157,6 +168,7 @@ export function useNotificationSignalR(toastDurationMs: number) {
     return () => {
       hub.off("NotificationReceived", handleNotification);
       hub.off("SecurityAlertReceived", handleSecurityAlert);
+      hub.off("RecentTicketsUpdated", handleRecentTicketsUpdated);
     };
   }, [queryClient]);
 }

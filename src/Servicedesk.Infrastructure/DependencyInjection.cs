@@ -204,6 +204,7 @@ public static class DependencyInjection
 
         services.AddSingleton<ICompanyRepository, CompanyRepository>();
         services.AddSingleton<ITicketRepository, TicketRepository>();
+        services.AddSingleton<IRecentTicketsService, RecentTicketsService>();
         services.AddSingleton<IViewRepository, ViewRepository>();
         services.AddSingleton<IViewGroupRepository, ViewGroupRepository>();
         services.AddSingleton<IQueueAccessService, QueueAccessService>();

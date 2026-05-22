@@ -2798,6 +2798,24 @@ public sealed class DatabaseBootstrapper : IHostedService
             PRIMARY KEY (user_id, tile_id)
         );
 
+        -- v0.0.42 — per-user "recent tickets" sidebar list, server-side
+        -- so the same user sees the same list across browsers / devices.
+        -- Position is 0-based; client adds new entries at the tail and
+        -- can reorder via drag. Hard cap of 50 entries per user is
+        -- enforced by RecentTicketsService — when a 51st is added the
+        -- oldest (lowest position) is dropped. FK to tickets cascades on
+        -- delete so a deleted ticket disappears from every user's list.
+        CREATE TABLE IF NOT EXISTS user_recent_tickets (
+            user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            ticket_id   UUID        NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            position    INT         NOT NULL DEFAULT 0,
+            added_utc   TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (user_id, ticket_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_user_recent_tickets_user_pos
+            ON user_recent_tickets (user_id, position);
+
         -- v0.0.42 — per-user layout customisation. position drives the
         -- sort order in the grid; size is one of the four canonical
         -- widths (small=1/4, medium=2/4, wide=3/4, full=4/4 on the lg
