@@ -7,6 +7,7 @@ import { preferencesApi } from "@/lib/api";
 import { timesheetTicketApi } from "@/lib/timesheet-api";
 import { composeTemplatesApi } from "@/lib/composeTemplates-api";
 import { RichTextEditor } from "@/components/RichTextEditor";
+import { substituteComposeTokens } from "@/lib/composeTokens";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
 import { SendMailForm, type MailContext } from "./SendMailForm";
@@ -19,6 +20,10 @@ type AddNoteFormProps = {
   /// agent only sees templates configured for this queue (plus any
   /// unrestricted templates).
   queueId?: string | null;
+  /// v0.0.42 — the ticket's current status. Used together with queueId to
+  /// pick the auto-insert template for the empty internal-note composer
+  /// and to filter the `::` picker by status scope.
+  statusId?: string | null;
   onSubmitted: () => void;
   mailContext: MailContext;
   /// When true, the form renders for the standalone `/tickets/:id/compose`
@@ -30,7 +35,7 @@ type AddNoteFormProps = {
 
 type TabType = "reply" | "note" | "mail";
 
-export function AddNoteForm({ ticketId, queueId, onSubmitted, mailContext, isPopup = false }: AddNoteFormProps) {
+export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailContext, isPopup = false }: AddNoteFormProps) {
   const savedDraft = useWorkspaceStore.getState().getDraft(ticketId);
   // Popup always starts expanded — no collapsed-button state in that flow.
   const [expanded, setExpanded] = React.useState(isPopup || !!savedDraft);
@@ -42,10 +47,24 @@ export function AddNoteForm({ ticketId, queueId, onSubmitted, mailContext, isPop
   // v0.0.35-F — handed by RichTextEditor.onEditorReady; used by the
   // "Import registered time" button to insert pre-rendered HTML at the
   // current selection. Local-ref instead of state because we don't need
-  // to re-render when the editor mounts.
+  // to re-render when the editor mounts. v0.0.42: also used by the
+  // auto-insert template flow to setContent on the empty composer.
   const editorRef = React.useRef<{
-    chain: () => { focus: () => { insertContent: (html: string) => { run: () => void } } };
+    chain: () => {
+      focus: () => {
+        insertContent: (html: string) => { run: () => void };
+        setContent: (html: string) => { run: () => void };
+      };
+    };
   } | null>(null);
+  // v0.0.42 — flips to true via onEditorReady so the auto-insert effect
+  // can wait for a mounted editor before calling setContent. Using state
+  // (not a ref) so the effect re-runs once the editor is wired up.
+  const [editorReady, setEditorReady] = React.useState(false);
+  // v0.0.42 — guards against re-firing the auto-insert lookup on every
+  // re-render after a successful prefill. Resets when the composer
+  // collapses so the next open attempts again on an empty body.
+  const autoInsertAttemptedRef = React.useRef(false);
   const [importing, setImporting] = React.useState(false);
   const queryClient = useQueryClient();
   const attachments = useAttachmentUploads(ticketId);
@@ -99,6 +118,63 @@ export function AddNoteForm({ ticketId, queueId, onSubmitted, mailContext, isPop
       setTab("mail");
     }
   }, [pendingAction?.id, pendingAction]);
+
+  // v0.0.42 — Auto-insert a compose template into the empty internal-note
+  // composer. Fires once per expand-cycle: the moment the editor mounts on
+  // the "note" tab with no existing body (and no carried-over draft), we
+  // fetch the default-for-note match and drop it in via setContent. Token
+  // substitution mirrors the :: picker so the prefill arrives with
+  // {{contact.firstName}} already resolved — and unresolved tokens stay
+  // visible so the agent can fill them in.
+  React.useEffect(() => {
+    if (!expanded) {
+      autoInsertAttemptedRef.current = false;
+      // Force the next expand to wait for a fresh onEditorReady before the
+      // effect believes the editor is mounted — otherwise a stale-true
+      // value from the previous expand would let the effect proceed before
+      // the remounted editor's commands are wired up.
+      setEditorReady(false);
+      return;
+    }
+    if (tab !== "note") return;
+    if (!editorReady) return;
+    if (autoInsertAttemptedRef.current) return;
+    if (!queueId || !statusId) return;
+    if (bodyHtml && bodyHtml.trim() && bodyHtml !== "<p></p>") return;
+
+    autoInsertAttemptedRef.current = true;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { template } = await composeTemplatesApi.defaultForNote(
+          queueId,
+          statusId,
+        );
+        if (cancelled || !template) return;
+        // Bail if the agent already started typing while the request was
+        // in flight — we never overwrite content.
+        if (bodyHtml && bodyHtml.trim() && bodyHtml !== "<p></p>") return;
+
+        const html = substituteComposeTokens(template.bodyHtml, composeTokens);
+        const editor = editorRef.current;
+        if (!editor) return;
+        editor.chain().focus().setContent(html).run();
+        setBodyHtml(html);
+        updateDraft(html, "note");
+      } catch {
+        // Silent fail — the agent can still type a note manually. A
+        // missing/unreachable endpoint shouldn't block the composer.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // composeTokens are intentionally read via the latest closure; we don't
+    // want a token-refetch to re-trigger insertion after the agent typed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded, tab, editorReady, queueId, statusId]);
 
   const isInternal = tab === "note";
 
@@ -295,7 +371,10 @@ export function AddNoteForm({ ticketId, queueId, onSubmitted, mailContext, isPop
           // Note + reply: only compose-templates surface in the picker. The
           // intake-form chip flow is mail-only (it needs a recipient + send
           // mechanism the internal-note pathway doesn't have).
-          const list = await composeTemplatesApi.usable(queueId ?? null);
+          const list = await composeTemplatesApi.usable(
+            queueId ?? null,
+            statusId ?? null,
+          );
           const needle = q.trim().toLowerCase();
           const filtered = needle
             ? list.filter(
@@ -314,6 +393,7 @@ export function AddNoteForm({ ticketId, queueId, onSubmitted, mailContext, isPop
         }}
         onEditorReady={(editor) => {
           editorRef.current = editor as typeof editorRef.current;
+          setEditorReady(true);
         }}
       />
 

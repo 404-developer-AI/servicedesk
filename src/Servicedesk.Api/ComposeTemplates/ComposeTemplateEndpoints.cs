@@ -33,6 +33,7 @@ public static class ComposeTemplateEndpoints
     /// paste shouldn't be able to drop a megabyte into the editor.
     private const int MaxBodyHtmlLength = 200_000;
     private const int MaxQueueAssignments = 256;
+    private const int MaxStatusAssignments = 256;
 
     public static IEndpointRouteBuilder MapComposeTemplateEndpoints(this IEndpointRouteBuilder app)
     {
@@ -82,6 +83,8 @@ public static class ComposeTemplateEndpoints
                     string.IsNullOrWhiteSpace(req.Description) ? null : req.Description.Trim(),
                     sanitized,
                     req.QueueIds ?? Array.Empty<Guid>(),
+                    req.StatusIds ?? Array.Empty<Guid>(),
+                    req.AutoInsertOnNote ?? false,
                     req.LinkedSurveyId,
                     userId,
                     ct);
@@ -102,7 +105,12 @@ public static class ComposeTemplateEndpoints
                 Target: id.ToString(),
                 ClientIp: http.Connection.RemoteIpAddress?.ToString(),
                 UserAgent: http.Request.Headers.UserAgent.ToString(),
-                Payload: new { queueScope = req.QueueIds?.Count ?? 0 }));
+                Payload: new
+                {
+                    queueScope = req.QueueIds?.Count ?? 0,
+                    statusScope = req.StatusIds?.Count ?? 0,
+                    autoInsertOnNote = req.AutoInsertOnNote ?? false,
+                }));
 
             var created = await repo.GetAsync(id, ct);
             return Results.Created($"/api/settings/compose-templates/{id}", MapDto(created!));
@@ -130,6 +138,8 @@ public static class ComposeTemplateEndpoints
                     sanitized,
                     req.IsActive ?? existing.IsActive,
                     req.QueueIds ?? Array.Empty<Guid>(),
+                    req.StatusIds ?? Array.Empty<Guid>(),
+                    req.AutoInsertOnNote ?? existing.AutoInsertOnNote,
                     req.LinkedSurveyId,
                     ct);
             }
@@ -149,7 +159,13 @@ public static class ComposeTemplateEndpoints
                 Target: id.ToString(),
                 ClientIp: http.Connection.RemoteIpAddress?.ToString(),
                 UserAgent: http.Request.Headers.UserAgent.ToString(),
-                Payload: new { isActive = req.IsActive, queueScope = req.QueueIds?.Count ?? 0 }));
+                Payload: new
+                {
+                    isActive = req.IsActive,
+                    queueScope = req.QueueIds?.Count ?? 0,
+                    statusScope = req.StatusIds?.Count ?? 0,
+                    autoInsertOnNote = req.AutoInsertOnNote,
+                }));
 
             var updated = await repo.GetAsync(id, ct);
             return Results.Ok(MapDto(updated!));
@@ -189,12 +205,27 @@ public static class ComposeTemplateEndpoints
         // by an agent who happens to be looking at a ticket in a different
         // queue. queueId is optional — the New-Ticket drawer has no queue
         // chosen yet, in which case only unrestricted templates surface.
+        // v0.0.42: statusId is also optional; when supplied it narrows the
+        // list further so a status-scoped template only shows up while the
+        // ticket sits in one of its bound statuses.
         group.MapGet("/usable", async (
-            Guid? queueId, IComposeTemplateRepository repo, CancellationToken ct) =>
+            Guid? queueId, Guid? statusId, IComposeTemplateRepository repo, CancellationToken ct) =>
         {
-            var templates = await repo.ListForQueueAsync(queueId, ct);
+            var templates = await repo.ListForQueueAsync(queueId, statusId, ct);
             return Results.Ok(templates.Select(MapUsableDto));
         }).WithName("ListUsableComposeTemplates").WithOpenApi();
+
+        // v0.0.42 — Auto-insert lookup for the "Write an internal note"
+        // composer. Returns the single best-matching template (if any) for
+        // the ticket's queue + status, or null when nothing matches. The
+        // client only calls this when opening an empty composer, so the
+        // payload stays small (no body returned when null).
+        group.MapGet("/default-for-note", async (
+            Guid queueId, Guid statusId, IComposeTemplateRepository repo, CancellationToken ct) =>
+        {
+            var template = await repo.FindAutoInsertForNoteAsync(queueId, statusId, ct);
+            return Results.Ok(new { template = template is null ? null : MapUsableDto(template) });
+        }).WithName("GetDefaultComposeTemplateForNote").WithOpenApi();
 
         // Token resolution for the :: insert flow. Either ticketId or
         // contactId (or both) must be supplied — empty calls just return
@@ -249,6 +280,8 @@ public static class ComposeTemplateEndpoints
         string? BodyHtml,
         bool? IsActive,
         IReadOnlyList<Guid>? QueueIds,
+        IReadOnlyList<Guid>? StatusIds,
+        bool? AutoInsertOnNote,
         Guid? LinkedSurveyId);
 
     private static string? Validate(UpsertRequest req)
@@ -264,6 +297,10 @@ public static class ComposeTemplateEndpoints
             return $"A template may target at most {MaxQueueAssignments} queues.";
         if (req.QueueIds is not null && req.QueueIds.Distinct().Count() != req.QueueIds.Count)
             return "queueIds must not contain duplicates.";
+        if (req.StatusIds is not null && req.StatusIds.Count > MaxStatusAssignments)
+            return $"A template may target at most {MaxStatusAssignments} statuses.";
+        if (req.StatusIds is not null && req.StatusIds.Distinct().Count() != req.StatusIds.Count)
+            return "statusIds must not contain duplicates.";
         return null;
     }
 
@@ -277,6 +314,8 @@ public static class ComposeTemplateEndpoints
         bodyHtml = t.BodyHtml,
         isActive = t.IsActive,
         queueIds = t.QueueIds,
+        statusIds = t.StatusIds ?? Array.Empty<Guid>(),
+        autoInsertOnNote = t.AutoInsertOnNote,
         linkedSurveyId = t.LinkedSurveyId,
         createdUtc = t.CreatedUtc,
         updatedUtc = t.UpdatedUtc,
@@ -291,6 +330,8 @@ public static class ComposeTemplateEndpoints
         description = t.Description is null ? null : HtmlEncoder.Default.Encode(t.Description),
         bodyHtml = t.BodyHtml,
         queueIds = t.QueueIds,
+        statusIds = t.StatusIds ?? Array.Empty<Guid>(),
+        autoInsertOnNote = t.AutoInsertOnNote,
         linkedSurveyId = t.LinkedSurveyId,
     };
 }

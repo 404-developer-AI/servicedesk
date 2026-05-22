@@ -18,13 +18,27 @@ public interface IComposeTemplateRepository
     /// or include <paramref name="queueId"/>. When <paramref name="queueId"/>
     /// is <c>null</c> only unrestricted templates are returned — used by the
     /// New-Ticket drawer where no queue is selected yet.
-    Task<IReadOnlyList<ComposeTemplate>> ListForQueueAsync(Guid? queueId, CancellationToken ct);
+    /// <para>
+    /// v0.0.42: <paramref name="statusId"/> further filters by status scope.
+    /// A template with empty <c>status_ids</c> matches every status; otherwise
+    /// the status must appear in the array. <c>null</c> skips the status
+    /// filter entirely (preserves pre-v0.0.42 semantics for callers that
+    /// don't know the ticket's status).
+    /// </para>
+    Task<IReadOnlyList<ComposeTemplate>> ListForQueueAsync(Guid? queueId, Guid? statusId, CancellationToken ct);
+
+    /// v0.0.42 — Picks the single auto-insert template that matches the
+    /// ticket's queue + status. Returns <c>null</c> when no candidate
+    /// exists. Tie-breaker is most-recently-updated.
+    Task<ComposeTemplate?> FindAutoInsertForNoteAsync(Guid queueId, Guid statusId, CancellationToken ct);
 
     Task<Guid> CreateAsync(
         string name,
         string? description,
         string bodyHtml,
         IReadOnlyList<Guid> queueIds,
+        IReadOnlyList<Guid> statusIds,
+        bool autoInsertOnNote,
         Guid? linkedSurveyId,
         Guid? createdBy,
         CancellationToken ct);
@@ -36,6 +50,8 @@ public interface IComposeTemplateRepository
         string bodyHtml,
         bool isActive,
         IReadOnlyList<Guid> queueIds,
+        IReadOnlyList<Guid> statusIds,
+        bool autoInsertOnNote,
         Guid? linkedSurveyId,
         CancellationToken ct);
 

@@ -52,6 +52,12 @@ export function TemplateEditor({
   const [bodyHtml, setBodyHtml] = useState(existing?.bodyHtml ?? "");
   const [isActive, setIsActive] = useState(existing?.isActive ?? true);
   const [queueIds, setQueueIds] = useState<string[]>(existing?.queueIds ?? []);
+  const [statusIds, setStatusIds] = useState<string[]>(
+    existing?.statusIds ?? [],
+  );
+  const [autoInsertOnNote, setAutoInsertOnNote] = useState(
+    existing?.autoInsertOnNote ?? false,
+  );
   const [linkedSurveyId, setLinkedSurveyId] = useState<string | null>(
     existing?.linkedSurveyId ?? null,
   );
@@ -68,6 +74,12 @@ export function TemplateEditor({
   });
   const queues = queuesQ.data ?? [];
 
+  const statusesQ = useQuery({
+    queryKey: ["taxonomy", "statuses"],
+    queryFn: () => taxonomyApi.statuses.list(),
+  });
+  const statuses = (statusesQ.data ?? []).filter((s) => s.isActive);
+
   const tokensQ = useQuery({
     queryKey: ["compose-templates", "tokens"],
     queryFn: () => composeTemplatesApi.listTokens(),
@@ -81,6 +93,7 @@ export function TemplateEditor({
   const editorRef = useRef<EditorHandle | null>(null);
 
   const queueSet = useMemo(() => new Set(queueIds), [queueIds]);
+  const statusSet = useMemo(() => new Set(statusIds), [statusIds]);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -90,6 +103,8 @@ export function TemplateEditor({
         bodyHtml,
         isActive,
         queueIds,
+        statusIds,
+        autoInsertOnNote,
         linkedSurveyId,
       };
       return existing
@@ -115,6 +130,14 @@ export function TemplateEditor({
       prev.includes(queueId)
         ? prev.filter((id) => id !== queueId)
         : [...prev, queueId],
+    );
+  };
+
+  const toggleStatus = (statusId: string) => {
+    setStatusIds((prev) =>
+      prev.includes(statusId)
+        ? prev.filter((id) => id !== statusId)
+        : [...prev, statusId],
     );
   };
 
@@ -265,6 +288,80 @@ export function TemplateEditor({
             })}
           </div>
         )}
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-medium text-muted-foreground">
+            Available in statuses
+          </label>
+          {statusIds.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setStatusIds([])}
+              className="text-[11px] text-muted-foreground hover:text-foreground"
+            >
+              Clear scope (any status)
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Leave empty to make the template available regardless of the ticket's
+          status. Otherwise both the <code className="font-mono">::</code>{" "}
+          picker and the auto-insert behaviour only fire while the ticket sits
+          in one of the selected statuses.
+        </p>
+        {statusesQ.isLoading ? (
+          <p className="text-xs text-muted-foreground">Loading statuses…</p>
+        ) : statuses.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No active statuses.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {statuses.map((s) => {
+              const selected = statusSet.has(s.id);
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => toggleStatus(s.id)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors",
+                    selected
+                      ? "border-primary/40 bg-primary/15 text-primary-foreground"
+                      : "border-white/[0.06] bg-white/[0.02] text-muted-foreground hover:bg-white/[0.05]",
+                  )}
+                  aria-pressed={selected}
+                >
+                  {selected && <Check className="h-3.5 w-3.5" />}
+                  {s.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-start justify-between gap-4 rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+        <div className="space-y-0.5">
+          <p className="text-sm font-medium text-foreground">
+            Auto-insert into the internal-note composer
+          </p>
+          <p className="text-xs text-muted-foreground">
+            When enabled, this template is dropped into the{" "}
+            <span className="font-medium text-foreground/80">
+              Write an internal note
+            </span>{" "}
+            composer the first time an agent opens it on a matching ticket —
+            but only when the composer is empty (no saved draft). The agent
+            can still edit or clear the prefilled body. Scope it tight with
+            the queue and status pickers above; if multiple templates match,
+            the most-recently-updated one wins.
+          </p>
+        </div>
+        <Switch
+          checked={autoInsertOnNote}
+          onCheckedChange={setAutoInsertOnNote}
+        />
       </div>
 
       <div className="space-y-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3">
