@@ -1,8 +1,9 @@
 import type { ComponentType } from "react";
-import { LayoutDashboard, ShieldCheck, Plug } from "lucide-react";
+import { LayoutDashboard, ShieldCheck, Plug, UsersRound } from "lucide-react";
 import { AvgPickupTile } from "@/components/dashboard/AvgPickupTile";
 import { SystemHealthTile } from "@/components/dashboard/SystemHealthTile";
 import { IntegrationsHealthTile } from "@/components/dashboard/IntegrationsHealthTile";
+import { AgentActivityTile } from "@/components/dashboard/AgentActivityTile";
 import type { Role } from "@/lib/roles";
 
 export type DashboardTile = {
@@ -41,6 +42,16 @@ export const DASHBOARD_TILES: DashboardTile[] = [
     icon: ShieldCheck,
     span: "half",
     Component: SystemHealthTile,
+  },
+  {
+    id: "agent_activity",
+    label: "Agent activity",
+    description:
+      "Live overview of agents with their actively-viewed and recently-opened tickets. Click an agent to see their ticket list.",
+    minRole: "Admin",
+    icon: UsersRound,
+    span: "full",
+    Component: AgentActivityTile,
   },
   {
     id: "integrations",

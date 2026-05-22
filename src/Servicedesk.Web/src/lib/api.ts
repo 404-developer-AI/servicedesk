@@ -255,6 +255,40 @@ export const integrationsHealthApi = {
     request<IntegrationsHealthReport>("GET", "/api/admin/health/integrations"),
 };
 
+export type AgentActivityTicket = {
+  id: string;
+  number: number;
+  subject: string;
+  statusName: string;
+  statusColor: string;
+  statusStateCategory: string;
+};
+
+/// "idle" — no Telavox call (default for users without a linked
+/// extension). "ringing" — phone is alerting. "answered" — agent
+/// picked up. Drives the indicator on the AgentActivity tile (green
+/// dot vs. red phone).
+export type AgentCallState = "idle" | "ringing" | "answered";
+
+export type AgentActivity = {
+  userId: string;
+  email: string;
+  roleName: string;
+  online: boolean;
+  callState: AgentCallState;
+  viewing: AgentActivityTicket | null;
+  recent: AgentActivityTicket[];
+};
+
+export type AgentActivitySnapshot = {
+  agents: AgentActivity[];
+};
+
+export const dashboardApi = {
+  agentActivity: () =>
+    request<AgentActivitySnapshot>("GET", "/api/dashboard/agent-activity"),
+};
+
 export const auditApi = {
   list: (query: AuditListQuery = {}) => {
     const params = new URLSearchParams();

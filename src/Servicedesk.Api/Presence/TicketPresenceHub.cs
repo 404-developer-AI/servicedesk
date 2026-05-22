@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using Servicedesk.Infrastructure.Dashboard;
 
 namespace Servicedesk.Api.Presence;
 
@@ -17,6 +18,21 @@ public sealed class TicketPresenceHub : Hub
     // Key: connectionId → connection state.
     private static readonly ConcurrentDictionary<string, ConnectionState> Connections = new();
 
+    /// SignalR group that receives the per-agent AgentActivity broadcasts
+    /// powering the dashboard tile. Admin-only — agents already see the
+    /// per-ticket pill in the status bar; the cross-agent roll-up is for
+    /// admins. The broadcaster owns the canonical constant; the hub
+    /// references it for group enrollment on connect.
+    private const string AgentActivityAdminsGroup =
+        SignalRAgentActivityBroadcaster.AdminsGroup;
+
+    private readonly IAgentActivityBroadcaster _agentActivityBroadcaster;
+
+    public TicketPresenceHub(IAgentActivityBroadcaster agentActivityBroadcaster)
+    {
+        _agentActivityBroadcaster = agentActivityBroadcaster;
+    }
+
     public override async Task OnConnectedAsync()
     {
         var state = new ConnectionState
@@ -29,6 +45,18 @@ public sealed class TicketPresenceHub : Hub
         // Every connected client joins the ticket-list group so they
         // receive lightweight "something changed" pings for the list view.
         await Groups.AddToGroupAsync(Context.ConnectionId, "ticket-list");
+
+        // Admins additionally join the agent-activity broadcast group so
+        // the dashboard AgentActivity tile receives live per-agent updates.
+        var role = Context.User?.FindFirstValue(ClaimTypes.Role);
+        if (string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId, AgentActivityAdminsGroup);
+        }
+
+        // The newly-online agent's status changed (or this is a second tab
+        // that just opened — still worth a refresh for admins to see).
+        await BroadcastAgentActivity(state.UserId);
 
         await base.OnConnectedAsync();
     }
@@ -46,6 +74,10 @@ public sealed class TicketPresenceHub : Hub
             {
                 await BroadcastTicketPresence(ticketId);
             }
+
+            // The disconnected agent may go fully offline (last tab) — push
+            // an AgentActivity update so the dashboard tile flips them grey.
+            await BroadcastAgentActivity(state.UserId);
         }
         await base.OnDisconnectedAsync(exception);
     }
@@ -69,6 +101,11 @@ public sealed class TicketPresenceHub : Hub
         foreach (var ticketId in changed)
         {
             await BroadcastTicketPresence(ticketId);
+        }
+
+        if (changed.Count > 0)
+        {
+            await BroadcastAgentActivity(state.UserId);
         }
     }
 
@@ -99,6 +136,11 @@ public sealed class TicketPresenceHub : Hub
         {
             await BroadcastTicketPresence(previousTicketId);
         }
+
+        if (previousTicketId != ticketId)
+        {
+            await BroadcastAgentActivity(state.UserId);
+        }
     }
 
     /// <summary>
@@ -115,6 +157,7 @@ public sealed class TicketPresenceHub : Hub
         {
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"ticket:{previousTicketId}");
             await BroadcastTicketPresence(previousTicketId);
+            await BroadcastAgentActivity(state.UserId);
         }
     }
 
@@ -154,10 +197,71 @@ public sealed class TicketPresenceHub : Hub
         await Clients.Caller.SendAsync("FullSync", snapshot);
     }
 
+    /// <summary>
+    /// Returns the aggregated per-agent presence state across all live
+    /// connections. Multiple tabs from the same agent collapse into one
+    /// entry: viewing wins over recent. Online means at least one
+    /// connection exists for that user. Exposed for the REST snapshot
+    /// endpoint backing the dashboard AgentActivity tile.
+    /// </summary>
+    public static IReadOnlyDictionary<Guid, AgentPresenceState> GetAllAgentPresence()
+    {
+        var byUser = new Dictionary<Guid, AggregateBuilder>();
+        foreach (var conn in Connections.Values)
+        {
+            if (!Guid.TryParse(conn.UserId, out var userGuid)) continue;
+            if (!byUser.TryGetValue(userGuid, out var builder))
+            {
+                builder = new AggregateBuilder();
+                byUser[userGuid] = builder;
+            }
+            if (conn.ViewingTicketId is not null) builder.Viewing ??= conn.ViewingTicketId;
+            foreach (var id in conn.RecentTicketIds) builder.Recent.Add(id);
+        }
+
+        var result = new Dictionary<Guid, AgentPresenceState>(byUser.Count);
+        foreach (var (id, builder) in byUser)
+        {
+            result[id] = new AgentPresenceState(builder.Viewing, builder.Recent, Online: true);
+        }
+        return result;
+    }
+
+    /// Aggregated presence for one user across their tabs. Public so the
+    /// out-of-hub broadcaster (called from Telavox polling, etc.) can
+    /// read it without reaching into the in-memory dictionary directly.
+    public static AgentPresenceState GetAgentPresence(Guid userId)
+        => GetAgentPresence(userId.ToString());
+
+    private static AgentPresenceState GetAgentPresence(string userId)
+    {
+        string? viewing = null;
+        var recent = new HashSet<string>();
+        var online = false;
+        foreach (var conn in Connections.Values)
+        {
+            if (!string.Equals(conn.UserId, userId, StringComparison.Ordinal)) continue;
+            online = true;
+            if (conn.ViewingTicketId is not null) viewing ??= conn.ViewingTicketId;
+            foreach (var id in conn.RecentTicketIds) recent.Add(id);
+        }
+        return new AgentPresenceState(viewing, recent, online);
+    }
+
     private async Task BroadcastTicketPresence(string ticketId)
     {
         var users = BuildPresenceForTicket(ticketId);
         await Clients.All.SendAsync("TicketPresence", ticketId, users);
+    }
+
+    private async Task BroadcastAgentActivity(string userId)
+    {
+        if (!Guid.TryParse(userId, out var userGuid)) return;
+        // CancellationToken.None — broadcasts must complete even when the
+        // triggering connection has already been torn down (especially
+        // from OnDisconnectedAsync, where ConnectionAborted is already
+        // cancelled and would cancel the DB lookup mid-flight).
+        await _agentActivityBroadcaster.BroadcastForUserAsync(userGuid, CancellationToken.None);
     }
 
     private List<TicketPresenceUser> BuildPresenceForTicket(string ticketId)
@@ -200,6 +304,12 @@ public sealed class TicketPresenceHub : Hub
         public required string Email { get; init; }
         public string? ViewingTicketId { get; set; }
         public HashSet<string> RecentTicketIds { get; set; } = [];
+    }
+
+    private sealed class AggregateBuilder
+    {
+        public string? Viewing { get; set; }
+        public HashSet<string> Recent { get; } = [];
     }
 }
 
