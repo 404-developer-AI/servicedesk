@@ -515,6 +515,7 @@ public sealed class TriggerRepository : ITriggerRepository
         TriggerActivatorKind.Action => "action",
         TriggerActivatorKind.Time => "time",
         TriggerActivatorKind.Manual => "manual",
+        TriggerActivatorKind.Gate => "gate",
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
     };
 

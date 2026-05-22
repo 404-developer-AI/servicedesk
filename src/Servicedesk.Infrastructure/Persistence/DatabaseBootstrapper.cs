@@ -3183,6 +3183,43 @@ public sealed class DatabaseBootstrapper : IHostedService
             FOR EACH ROW
             WHEN (NEW.entity_type IS DISTINCT FROM 'ticket')
             EXECUTE FUNCTION agent_activity_notify_direct();
+
+        -- ===================================================================
+        -- v0.0.42 — Status-change gates (interactive triggers)
+        --
+        -- A gate is a trigger that intercepts an agent-initiated status
+        -- change in the UI and forces a confirmation dialog before the
+        -- mutation is applied. Modeled as a new activator pair
+        -- (gate:status_change) so all existing trigger CRUD, conditions,
+        -- audit, and run-history machinery is reused. The single action
+        -- 'prompt_confirm' carries the prompt payload + the source/target
+        -- status pair + an internal/public note template that is appended
+        -- to the ticket timeline when the agent confirms.
+        --
+        -- Automation paths bypass entirely: gates are enforced only inside
+        -- the agent-facing PATCH /api/tickets/{id} endpoint. TriggerService
+        -- and mail-ingest call the repository directly and never see a
+        -- gate prompt — required for surveys, mail-replies, and chained
+        -- triggers to keep functioning.
+        -- ===================================================================
+        ALTER TABLE triggers DROP CONSTRAINT IF EXISTS chk_trigger_activator;
+        ALTER TABLE triggers ADD CONSTRAINT chk_trigger_activator
+            CHECK (
+                (activator_kind = 'action' AND activator_mode IN ('selective','always'))
+                OR
+                (activator_kind = 'time'   AND activator_mode IN ('reminder','escalation','escalation_warning'))
+                OR
+                (activator_kind = 'manual' AND activator_mode IN ('linked_ticket_creator'))
+                OR
+                (activator_kind = 'gate'   AND activator_mode IN ('status_change'))
+            ) NOT VALID;
+
+        -- Hot path for the gate-matching endpoint: "list active
+        -- gate:status_change triggers" runs once per status-change attempt
+        -- so the active rows are filtered cheaply.
+        CREATE INDEX IF NOT EXISTS ix_triggers_gate_active
+            ON triggers (is_active)
+            WHERE activator_kind = 'gate';
         """;
 
     private readonly NpgsqlDataSource _dataSource;

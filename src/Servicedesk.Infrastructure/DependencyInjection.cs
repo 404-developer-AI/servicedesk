@@ -307,6 +307,12 @@ public static class DependencyInjection
         services.AddSingleton<ITriggerTemplateRenderer, TriggerTemplateRenderer>();
         services.AddSingleton<ITriggerRenderContextFactory, TriggerRenderContextFactory>();
         services.AddSingleton<ITriggerService, TriggerService>();
+        // v0.0.42 — status-change gate matcher. Called synchronously by
+        // the ticket PATCH endpoint and the GET status-gates endpoint.
+        // Singleton because the dependencies it composes are themselves
+        // long-lived; no per-request state lives on the service.
+        services.AddSingleton<Servicedesk.Infrastructure.Triggers.StatusGate.IStatusGateService,
+                              Servicedesk.Infrastructure.Triggers.StatusGate.StatusGateService>();
 
         // Blok 3 action handlers. add_tags / remove_tags are intentionally
         // unregistered until the tags schema + UI land — the dispatcher

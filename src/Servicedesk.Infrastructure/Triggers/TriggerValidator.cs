@@ -41,6 +41,12 @@ public static class TriggerValidator
         // so the action-json validator passes; activator-pair check below
         // enforces that it actually ships with activator_kind=manual.
         "create_linked_ticket",
+        // v0.0.42 — the gate prompt. Carries the full pop-up payload
+        // (title, message, optional textarea, button labels) plus the
+        // source/target status pair and the note-template applied after
+        // a successful confirmation. Only valid on gate:status_change
+        // triggers; the activator-pair guard below enforces the pairing.
+        "prompt_confirm",
     };
 
     public static readonly IReadOnlySet<string> ActivatorPairs = new HashSet<string>(StringComparer.Ordinal)
@@ -51,6 +57,11 @@ public static class TriggerValidator
         // 'linked_ticket_creator'; future manual-invocation modes (one-off
         // reports, bulk fixes, …) can be added in the same slot.
         "manual:linked_ticket_creator",
+        // v0.0.42 — interactive status-change gate. The trigger is NOT
+        // evaluated by TriggerService; instead the ticket PATCH endpoint
+        // calls into a dedicated matcher before applying the mutation and
+        // returns 409 if a gate matches without a confirmation payload.
+        "gate:status_change",
     };
 
     /// Pair the validator hands back when it has work for the caller to
@@ -78,6 +89,26 @@ public static class TriggerValidator
 
         var condError = ValidateConditionsJson(conditionsJson);
         if (condError is not null) return ValidationResult.Fail(condError);
+
+        // Gate triggers must own exactly one prompt_confirm action; the
+        // matcher API + ticket-PATCH enforcement both assume a single
+        // prompt-payload per matching gate. Multiple prompts on one gate
+        // would surface multiple consecutive dialogs the admin cannot
+        // re-order without rewriting the row.
+        if (activatorKind == "gate")
+        {
+            var promptError = ValidateGateActions(actionsJson);
+            if (promptError is not null) return ValidationResult.Fail(promptError);
+        }
+        else
+        {
+            // prompt_confirm is gate-only. Reject it on any other
+            // activator so the editor cannot save a malformed combination
+            // (the action-kind whitelist itself accepts it).
+            var stray = ContainsActionKind(actionsJson, "prompt_confirm");
+            if (stray) return ValidationResult.Fail(
+                "prompt_confirm is only valid on gate:status_change triggers.");
+        }
 
         // Time-activator triggers scan ALL tickets every tick — an empty
         // root AND matches everything, which turns a single misconfigured
@@ -358,6 +389,8 @@ public static class TriggerValidator
                 if (!HasNonEmptyString(action, "body_html"))
                     return "requires non-empty 'body_html'.";
                 return null;
+            case "prompt_confirm":
+                return ValidatePromptConfirm(action);
             case "send_survey":
                 // survey_id is the only required field; subject + body live
                 // on the survey row itself. TTL + recipient overrides are
@@ -386,6 +419,191 @@ public static class TriggerValidator
                 // Unknown kinds are already rejected upstream — kept here
                 // as a defensive null so the switch is exhaustive.
                 return null;
+        }
+    }
+
+    /// Walks a gate trigger's actions JSON and ensures it has exactly one
+    /// prompt_confirm entry. Returns null on success, an error string the
+    /// admin endpoint surfaces verbatim on failure. The per-action payload
+    /// (titles, buttons, note template) is type-checked by the regular
+    /// ValidateActionPayload path; this method only enforces the shape
+    /// invariant the gate-matcher relies on.
+    private static string? ValidateGateActions(string actionsJson)
+    {
+        if (string.IsNullOrWhiteSpace(actionsJson))
+            return "Gate triggers require exactly one prompt_confirm action.";
+        JsonDocument doc;
+        try { doc = JsonDocument.Parse(actionsJson); }
+        catch (JsonException) { return null; }
+        try
+        {
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                return "Gate triggers require exactly one prompt_confirm action.";
+            int promptCount = 0;
+            int total = 0;
+            foreach (var action in doc.RootElement.EnumerateArray())
+            {
+                total++;
+                if (action.ValueKind == JsonValueKind.Object
+                    && action.TryGetProperty("kind", out var kind)
+                    && kind.ValueKind == JsonValueKind.String
+                    && kind.GetString() == "prompt_confirm")
+                {
+                    promptCount++;
+                }
+            }
+            if (promptCount == 0)
+                return "Gate triggers require exactly one prompt_confirm action.";
+            if (promptCount > 1)
+                return "Gate triggers cannot carry more than one prompt_confirm action.";
+            if (total != promptCount)
+                return "Gate triggers can only carry the prompt_confirm action.";
+            return null;
+        }
+        finally { doc.Dispose(); }
+    }
+
+    /// Surface for "does this actions JSON include action X anywhere".
+    /// Used to reject prompt_confirm on non-gate triggers at the write
+    /// boundary so admins cannot smuggle a gate payload into an action-
+    /// activator trigger.
+    private static bool ContainsActionKind(string actionsJson, string kindName)
+    {
+        if (string.IsNullOrWhiteSpace(actionsJson)) return false;
+        JsonDocument doc;
+        try { doc = JsonDocument.Parse(actionsJson); }
+        catch (JsonException) { return false; }
+        try
+        {
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) return false;
+            foreach (var action in doc.RootElement.EnumerateArray())
+            {
+                if (action.ValueKind == JsonValueKind.Object
+                    && action.TryGetProperty("kind", out var kind)
+                    && kind.ValueKind == JsonValueKind.String
+                    && kind.GetString() == kindName)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+        finally { doc.Dispose(); }
+    }
+
+    /// Validates the per-action payload for prompt_confirm. Required:
+    /// to_status_id (UUID), title (string), confirm_label (string),
+    /// cancel_label (string), note_visibility ("internal"|"public"),
+    /// note_template (string — may be empty so no note is appended),
+    /// questions (array — may be empty for a button-only confirmation).
+    /// Optional: from_status_id (UUID or null), show_message (bool),
+    /// message (string — only shown when show_message is true).
+    private static string? ValidatePromptConfirm(JsonElement action)
+    {
+        var toErr = RequireGuid(action, "to_status_id");
+        if (toErr is not null) return toErr;
+        if (action.TryGetProperty("from_status_id", out var fromEl)
+            && fromEl.ValueKind != JsonValueKind.Null)
+        {
+            if (fromEl.ValueKind != JsonValueKind.String
+                || !Guid.TryParse(fromEl.GetString(), out _))
+                return "'from_status_id' must be a UUID string or null.";
+        }
+        if (!HasNonEmptyString(action, "title"))
+            return "requires non-empty 'title'.";
+        if (!HasNonEmptyString(action, "confirm_label"))
+            return "requires non-empty 'confirm_label'.";
+        if (!HasNonEmptyString(action, "cancel_label"))
+            return "requires non-empty 'cancel_label'.";
+        if (!action.TryGetProperty("note_visibility", out var visEl)
+            || visEl.ValueKind != JsonValueKind.String
+            || (visEl.GetString() != "internal" && visEl.GetString() != "public"))
+        {
+            return "'note_visibility' must be 'internal' or 'public'.";
+        }
+        if (!action.TryGetProperty("note_template", out var tplEl)
+            || tplEl.ValueKind != JsonValueKind.String)
+        {
+            return "'note_template' must be a string (may be empty).";
+        }
+        if (action.TryGetProperty("show_message", out var showEl)
+            && showEl.ValueKind != JsonValueKind.True
+            && showEl.ValueKind != JsonValueKind.False)
+        {
+            return "'show_message' must be true or false when present.";
+        }
+
+        if (!action.TryGetProperty("questions", out var qEl)
+            || qEl.ValueKind != JsonValueKind.Array)
+        {
+            return "'questions' must be an array (use [] for a confirmation-only prompt).";
+        }
+        var seenKeys = new HashSet<string>(StringComparer.Ordinal);
+        int qIdx = 0;
+        foreach (var q in qEl.EnumerateArray())
+        {
+            var err = ValidatePromptQuestion(q, seenKeys, qIdx);
+            if (err is not null) return $"questions[{qIdx}]: {err}";
+            qIdx++;
+        }
+        return null;
+    }
+
+    /// One <c>questions[]</c> entry. <c>key</c> drives the
+    /// <c>#{prompt.&lt;key&gt;}</c> token in the note template, so it must be
+    /// stable / alphanumeric / unique within the action. <c>type</c> is
+    /// either <c>text</c> (free-text textarea) or <c>yesno</c> (two button
+    /// slots that may be hidden independently). Both button labels can
+    /// be null but at least one must remain visible — otherwise the
+    /// question has no UI surface.
+    private static string? ValidatePromptQuestion(JsonElement q, HashSet<string> seenKeys, int idx)
+    {
+        if (q.ValueKind != JsonValueKind.Object)
+            return "must be an object.";
+        if (!q.TryGetProperty("key", out var keyEl)
+            || keyEl.ValueKind != JsonValueKind.String)
+            return "'key' is required (alphanumeric + underscore).";
+        var key = keyEl.GetString() ?? string.Empty;
+        if (!System.Text.RegularExpressions.Regex.IsMatch(key, "^[a-z][a-z0-9_]{0,39}$"))
+            return $"'key' '{key}' must match ^[a-z][a-z0-9_]{{0,39}}$.";
+        if (!seenKeys.Add(key))
+            return $"duplicate key '{key}'; question keys must be unique.";
+        if (!HasNonEmptyString(q, "label"))
+            return "'label' is required.";
+        if (!q.TryGetProperty("type", out var typeEl)
+            || typeEl.ValueKind != JsonValueKind.String)
+            return "'type' is required.";
+        var type = typeEl.GetString();
+        switch (type)
+        {
+            case "text":
+                if (q.TryGetProperty("required", out var reqEl)
+                    && reqEl.ValueKind != JsonValueKind.True
+                    && reqEl.ValueKind != JsonValueKind.False)
+                {
+                    return "'required' must be true or false when present.";
+                }
+                return null;
+            case "yesno":
+                var yesVisible = HasNonEmptyString(q, "yes_label");
+                var noVisible = HasNonEmptyString(q, "no_label");
+                if (!yesVisible && !noVisible)
+                    return "yesno questions need at least one of 'yes_label' or 'no_label' set.";
+                if (q.TryGetProperty("yes_label", out var yEl)
+                    && yEl.ValueKind != JsonValueKind.String
+                    && yEl.ValueKind != JsonValueKind.Null)
+                {
+                    return "'yes_label' must be a string or null.";
+                }
+                if (q.TryGetProperty("no_label", out var nEl)
+                    && nEl.ValueKind != JsonValueKind.String
+                    && nEl.ValueKind != JsonValueKind.Null)
+                {
+                    return "'no_label' must be a string or null.";
+                }
+                return null;
+            default:
+                return $"unknown type '{type}'. Allowed: text, yesno.";
         }
     }
 
