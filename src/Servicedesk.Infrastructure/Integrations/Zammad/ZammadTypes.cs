@@ -210,6 +210,110 @@ public sealed record ZammadTicketSearchQuery(
     int Page,
     int PerPage);
 
+// ---- v0.0.43 — Knowledge Base import ---------------------------------
+
+/// One Knowledge Base header as returned by
+/// <c>GET /api/v1/knowledge_bases</c>. Multi-KB installs return more
+/// than one row; single-KB installs return exactly one. Active flag
+/// surfaces whether the KB is published — inactive ones are still
+/// importable but the picker labels them so the admin notices.
+public sealed record ZammadKnowledgeBase(
+    long Id,
+    string Name,
+    bool Active,
+    string? DefaultLocale,
+    int CategoryCount,
+    int AnswerCount);
+
+/// One Zammad KB category — a node in the section-tree. ParentId is
+/// nullable for root categories. Position drives the original ordering
+/// in the source; the proposer preserves it.
+public sealed record ZammadKbCategory(
+    long Id,
+    long KnowledgeBaseId,
+    long? ParentId,
+    int Position,
+    IReadOnlyList<ZammadKbCategoryTranslation> Translations);
+
+/// Title (+ optional description) per locale for a category. Title is
+/// the canonical display label in the section-proposal UI.
+public sealed record ZammadKbCategoryTranslation(
+    string LocaleCode,
+    string Title);
+
+/// One Zammad KB answer (the article-equivalent). Status is encoded as
+/// three nullable timestamps in Zammad — the local importer derives a
+/// single enum from them (see <c>ZammadKbStatusMapper</c>). Promoted →
+/// our <c>is_featured</c>. Position is preserved 1:1.
+///
+/// Translations[] is keyed by locale; each translation references a
+/// Content via ContentId. The /init bundle inlines the Content payload
+/// so the importer doesn't need a per-translation fetch.
+public sealed record ZammadKbAnswer(
+    long Id,
+    long KnowledgeBaseId,
+    long CategoryId,
+    int Position,
+    bool Promoted,
+    DateTimeOffset? InternalAt,
+    DateTimeOffset? PublishedAt,
+    DateTimeOffset? ArchivedAt,
+    long? CreatedById,
+    string? InternalNote,
+    IReadOnlyList<ZammadKbAnswerTranslation> Translations,
+    IReadOnlyList<ZammadKbAnswerAttachment> Attachments);
+
+/// One translation of an answer — title + body for a single locale.
+/// BodyHtml is the upstream HTML (Zammad's editor produces HTML
+/// natively); empty string when the translation exists but has no
+/// content yet (Zammad lets editors create a translation stub before
+/// authoring).
+public sealed record ZammadKbAnswerTranslation(
+    long Id,
+    string LocaleCode,
+    string Title,
+    string BodyHtml);
+
+/// Attachment metadata for one KB answer. Bytes are fetched lazily via
+/// <see cref="IZammadApiClient.FetchKnowledgeBaseAttachmentBytesAsync"/>.
+/// IsInline / ContentId follow the same conventions as ticket-side
+/// attachments. PreviewUrl is the upstream HTML's reference to this
+/// attachment — when present, the body-rewriter uses it to locate the
+/// img/anchor that needs its src patched.
+public sealed record ZammadKbAnswerAttachment(
+    long Id,
+    string Filename,
+    long SizeBytes,
+    string MimeType,
+    bool IsInline,
+    string? ContentId,
+    string? PreviewUrl);
+
+/// One answer fetched with <c>?include_contents={translation_id}</c>.
+/// The translation body is inlined under <see cref="BodyHtml"/>; null
+/// when the requested translation has no content row yet. Attachments
+/// mirror the /init-bundle shape so the worker's rewriter can use the
+/// same code path.
+public sealed record ZammadKbAnswerDetail(
+    long AnswerId,
+    long? TranslationId,
+    string? BodyHtml,
+    IReadOnlyList<ZammadKbAnswerAttachment> Attachments);
+
+/// Bundle returned by <c>GET /api/v1/knowledge_bases/init</c>. Multi-KB
+/// installs return data for every KB; the importer filters on the
+/// selected <see cref="ZammadKnowledgeBase.Id"/>.
+///
+/// Locales[] surfaces every locale Zammad has configured for any KB so
+/// the importer can render a per-locale source picker. v0.0.43 imports
+/// only the default locale per the scope decision; the multi-locale
+/// importer lands in v0.1.x.
+public sealed record ZammadKbInit(
+    IReadOnlyList<ZammadKnowledgeBase> KnowledgeBases,
+    IReadOnlyList<ZammadKbCategory> Categories,
+    IReadOnlyList<ZammadKbAnswer> Answers,
+    IReadOnlyList<string> Locales);
+
 /// Thrown by <see cref="IZammadApiClient"/> implementations when a call
 /// fails for any reason. Carries the upstream HTTP status (when one
 /// landed) and a normalised error code so the endpoint layer can surface

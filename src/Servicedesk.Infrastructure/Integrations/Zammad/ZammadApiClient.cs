@@ -145,6 +145,99 @@ public sealed class ZammadApiClient : IZammadApiClient
             ct: ct);
     }
 
+    // ---- KB import (v0.0.43) ------------------------------------------
+
+    public async Task<IReadOnlyList<ZammadKnowledgeBase>> ListKnowledgeBasesAsync(CancellationToken ct)
+    {
+        // Zammad's bulk-init endpoint is `POST /api/v1/knowledge_bases/init`
+        // (confirmed by the official API docs + the upstream routes file).
+        // A GET on this path falls through to `GET /:id` and gets
+        // misinterpreted as `:id="init"`. The endpoint returns the full
+        // admin graph in one call — we project the KB headers for the
+        // picker step and discard the rest. The Build-proposal phase hits
+        // the same endpoint again for the full bundle; for typical KBs
+        // (<5K answers) the cost is sub-second.
+        //
+        // includeSuccessBodySnippet=true captures the response payload on
+        // the audit row so an admin can inspect the exact shape when the
+        // picker comes up empty (helps when Zammad version changes the
+        // assets-collection class names).
+        var body = await SendAsync(
+            eventType: ZammadEventTypes.KbList,
+            method: HttpMethod.Post,
+            path: "/api/v1/knowledge_bases/init",
+            ct: ct,
+            includeSuccessBodySnippet: true,
+            jsonBody: "{}");
+        var init = ParseKnowledgeBaseInit(body);
+        return init.KnowledgeBases;
+    }
+
+    public async Task<ZammadKbInit> GetKnowledgeBaseInitAsync(CancellationToken ct)
+    {
+        var body = await SendAsync(
+            eventType: ZammadEventTypes.KbInit,
+            method: HttpMethod.Post,
+            path: "/api/v1/knowledge_bases/init",
+            ct: ct,
+            includeSuccessBodySnippet: true,
+            jsonBody: "{}");
+        return ParseKnowledgeBaseInit(body);
+    }
+
+    public async Task<ZammadKbAnswerDetail?> GetKnowledgeBaseAnswerWithContentAsync(
+        long knowledgeBaseId,
+        long answerId,
+        long translationId,
+        CancellationToken ct)
+    {
+        try
+        {
+            // ?include_contents={tid} tells Zammad to inline the
+            // translation_content row alongside the answer. The exact
+            // response shape is assets-mode like /init, so the parser
+            // walks the same KnowledgeBase* keys it already understands.
+            //
+            // The kb-id prefix on the path is required — the un-prefixed
+            // `/knowledge_bases/answers/{id}` route 404s on real installs
+            // (only documented as a routes-file entry, not actually
+            // exposed).
+            var path = $"/api/v1/knowledge_bases/{knowledgeBaseId}/answers/{answerId}?include_contents={translationId}";
+            var body = await SendAsync(
+                eventType: ZammadEventTypes.KbAnswerGet,
+                method: HttpMethod.Get,
+                path: path,
+                ct: ct,
+                includeSuccessBodySnippet: true);
+            return ParseKnowledgeBaseAnswerDetail(body, answerId, translationId);
+        }
+        catch (ZammadApiException ex) when (ex.HttpStatus == 404)
+        {
+            return null;
+        }
+    }
+
+    public async Task<Stream> FetchKnowledgeBaseAttachmentBytesAsync(
+        long knowledgeBaseId,
+        long answerId,
+        long attachmentId,
+        CancellationToken ct)
+    {
+        // KB attachments are served via the polymorphic Zammad attachment
+        // endpoint `/api/v1/attachments/{id}` — the `url` field on each
+        // answer's attachment entry points there directly. There is no
+        // nested `/knowledge_bases/{kb}/answers/{a}/attachments/{id}`
+        // download route in current Zammad. knowledgeBaseId + answerId
+        // are kept on the signature for audit-row context (a future
+        // version could include them in the audit payload), but the
+        // download itself only needs the attachment id.
+        var path = $"/api/v1/attachments/{attachmentId}";
+        return await SendBinaryAsync(
+            eventType: ZammadEventTypes.KbAttachmentFetch,
+            path: path,
+            ct: ct);
+    }
+
     public async Task<ZammadTicketSearchPage> SearchTicketsAsync(
         ZammadTicketSearchQuery query, CancellationToken ct)
     {
@@ -296,7 +389,8 @@ public sealed class ZammadApiClient : IZammadApiClient
         HttpMethod method,
         string path,
         CancellationToken ct,
-        bool includeSuccessBodySnippet = false)
+        bool includeSuccessBodySnippet = false,
+        string? jsonBody = null)
     {
         var baseUrl = await ResolveBaseUrlAsync(ct);
         var token = await _secrets.GetAsync(ProtectedSecretKeys.ZammadToken, ct);
@@ -339,6 +433,13 @@ public sealed class ZammadApiClient : IZammadApiClient
         // the official docs and avoids surprising OAuth-flow rejections.
         request.Headers.TryAddWithoutValidation("Authorization", $"Token token={token}");
         request.Headers.Accept.ParseAdd("application/json");
+        if (jsonBody is not null)
+        {
+            // Rails endpoints that route via :id-style patterns expect a
+            // POST body even when the action takes no parameters; an empty
+            // "{}" satisfies the JSON parser without polluting the call.
+            request.Content = new StringContent(jsonBody, System.Text.Encoding.UTF8, "application/json");
+        }
 
         var http = _httpClientFactory.CreateClient(HttpClientName);
         var stopwatch = Stopwatch.StartNew();
@@ -390,10 +491,14 @@ public sealed class ZammadApiClient : IZammadApiClient
                 // For diagnostic-flagged calls we keep a body snippet on
                 // the success row too — admin can click the row open in
                 // the audit log to inspect the upstream shape. Used by
-                // the search-call during fase 2 until we're confident
-                // the parser handles every Zammad version's variant.
+                // the search-call during fase 2 + KB-import for the
+                // first install. Adds a `shape` summary (top-level keys
+                // + array-lengths) so the response structure is visible
+                // even when the body is too large for the snippet.
+                // 16K snippet cap accommodates per-answer payloads where
+                // body HTML follows ~3K of asset metadata.
                 object? successPayload = includeSuccessBodySnippet
-                    ? new { snippet = Truncate(responseBody, 2048) }
+                    ? new { snippet = Truncate(responseBody, 16384), shape = DescribeJsonShape(responseBody) }
                     : null;
                 await _audit.LogAsync(new IntegrationAuditEvent(
                     Integration: ZammadEventTypes.Integration,
@@ -657,6 +762,61 @@ public sealed class ZammadApiClient : IZammadApiClient
 
     private static string Truncate(string s, int max) =>
         string.IsNullOrEmpty(s) || s.Length <= max ? s : s[..max] + "…";
+
+    /// Diagnostic helper: produces a one-line summary of a JSON
+    /// response's top-level shape so the audit log carries the structure
+    /// even when the snippet truncates before the interesting parts.
+    /// Output looks like:
+    ///   "object{knowledge_bases[3],assets{KnowledgeBase[1],...},kb_locales[2]}"
+    ///   "array[42]"
+    /// Returns "non-json" when the body isn't parseable JSON.
+    private static string DescribeJsonShape(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return "empty";
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            return DescribeElement(doc.RootElement, depth: 0);
+        }
+        catch (JsonException)
+        {
+            return "non-json";
+        }
+    }
+
+    private static string DescribeElement(JsonElement el, int depth)
+    {
+        return el.ValueKind switch
+        {
+            JsonValueKind.Object => DescribeObject(el, depth),
+            JsonValueKind.Array  => $"array[{el.GetArrayLength()}]",
+            JsonValueKind.String => "string",
+            JsonValueKind.Number => "number",
+            JsonValueKind.True or JsonValueKind.False => "bool",
+            JsonValueKind.Null   => "null",
+            _ => "?",
+        };
+    }
+
+    private static string DescribeObject(JsonElement obj, int depth)
+    {
+        // Cap recursion at 2 levels so the assets envelope's inner-most
+        // keys don't blow up the summary string.
+        if (depth >= 2) return "object{...}";
+        var sb = new System.Text.StringBuilder();
+        sb.Append("object{");
+        var first = true;
+        foreach (var prop in obj.EnumerateObject())
+        {
+            if (!first) sb.Append(',');
+            first = false;
+            sb.Append(prop.Name);
+            sb.Append(':');
+            sb.Append(DescribeElement(prop.Value, depth + 1));
+        }
+        sb.Append('}');
+        return sb.ToString();
+    }
 
     // ---- parsers (internal for tests via InternalsVisibleTo) ----------
 
@@ -1334,5 +1494,769 @@ public sealed class ZammadApiClient : IZammadApiClient
             JsonValueKind.String when long.TryParse(prop.GetString(), out var v) => v,
             _ => null,
         };
+    }
+
+    // ---- KB parsers (v0.0.43) -----------------------------------------
+
+    /// Parses Zammad's <c>/api/v1/knowledge_bases</c> response. The
+    /// endpoint returns a bare array of KB-objects. Zammad doesn't
+    /// expose a top-level "name" field — the display label comes from
+    /// the first locale's title or, as a final fallback, "Knowledge
+    /// base #&lt;id&gt;" so the picker always has something to render.
+    /// Category/answer counts are best-effort: not every Zammad version
+    /// includes them on the list-endpoint, in which case they read as 0
+    /// and the UI shows "—".
+    internal static IReadOnlyList<ZammadKnowledgeBase> ParseKnowledgeBases(string body)
+    {
+        var array = TryRootArray(body);
+        if (array is null) return Array.Empty<ZammadKnowledgeBase>();
+        var list = new List<ZammadKnowledgeBase>(array.Value.GetArrayLength());
+        foreach (var el in array.Value.EnumerateArray())
+        {
+            if (el.ValueKind != JsonValueKind.Object) continue;
+            var id = TryGetLong(el, "id");
+            if (id is null) continue;
+            // Active flag — Zammad uses "active" or "kb_active" depending on version.
+            var active = TryGetBool(el, "active") ?? TryGetBool(el, "kb_active") ?? true;
+            // Name: try several common fallback fields; many installs
+            // surface a translation-derived label only.
+            var name = TryGetString(el, "name")
+                ?? TryGetString(el, "title")
+                ?? TryGetString(el, "url_prefix")
+                ?? TryReadFirstLocaleTitle(el)
+                ?? $"Knowledge base #{id.Value}";
+            var defaultLocale = TryReadDefaultLocaleCode(el);
+            var categoryCount = TryGetInt(el, "category_count") ?? 0;
+            var answerCount = TryGetInt(el, "answer_count") ?? 0;
+            list.Add(new ZammadKnowledgeBase(
+                Id: id.Value,
+                Name: name,
+                Active: active,
+                DefaultLocale: defaultLocale,
+                CategoryCount: categoryCount,
+                AnswerCount: answerCount));
+        }
+        return list;
+    }
+
+    private static string? TryReadFirstLocaleTitle(JsonElement kbEl)
+    {
+        if (!kbEl.TryGetProperty("kb_locales", out var arr)
+            || arr.ValueKind != JsonValueKind.Array
+            || arr.GetArrayLength() == 0)
+        {
+            return null;
+        }
+        foreach (var loc in arr.EnumerateArray())
+        {
+            if (loc.ValueKind != JsonValueKind.Object) continue;
+            var label = TryGetString(loc, "title")
+                ?? TryGetString(loc, "name");
+            if (!string.IsNullOrWhiteSpace(label)) return label;
+        }
+        return null;
+    }
+
+    private static string? TryReadDefaultLocaleCode(JsonElement kbEl)
+    {
+        // Zammad surfaces the primary locale either as a top-level
+        // primary_locale_id (numeric, requires lookup) or as a flag on
+        // the kb_locales[] entries (primary: true). Take whichever is
+        // present and return its bcp-47 string.
+        if (kbEl.TryGetProperty("kb_locales", out var arr)
+            && arr.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var loc in arr.EnumerateArray())
+            {
+                if (loc.ValueKind != JsonValueKind.Object) continue;
+                var isPrimary = TryGetBool(loc, "primary") ?? false;
+                if (!isPrimary) continue;
+                var code = TryGetString(loc, "system_locale")
+                    ?? TryGetString(loc, "locale")
+                    ?? TryGetString(loc, "name");
+                if (!string.IsNullOrWhiteSpace(code)) return code;
+            }
+        }
+        return null;
+    }
+
+    /// Parses the bundle returned by
+    /// <c>GET /api/v1/knowledge_bases/init</c>. Zammad's response shape
+    /// varies across versions — we accept both the flat-collection layout
+    /// and the assets-envelope layout, tolerating missing collections so
+    /// a partial response still produces a usable bundle (the importer
+    /// will surface missing pieces via audit + records).
+    ///
+    /// Collections we look for:
+    /// <list type="bullet">
+    /// <item><c>knowledge_bases[]</c> — KB headers</item>
+    /// <item><c>knowledge_base_categories[]</c> (or <c>categories[]</c>)</item>
+    /// <item><c>knowledge_base_answers[]</c> (or <c>answers[]</c>)</item>
+    /// <item><c>knowledge_base_answer_translations[]</c> (or
+    /// <c>answer_translations[]</c>)</item>
+    /// <item><c>knowledge_base_answer_translation_contents[]</c> (or
+    /// <c>answer_translation_contents[]</c>)</item>
+    /// <item><c>knowledge_base_category_translations[]</c> (or
+    /// <c>category_translations[]</c>)</item>
+    /// <item><c>knowledge_base_locales[]</c> (or <c>kb_locales[]</c>) —
+    /// drives the locale-list surfaced to the SPA</item>
+    /// </list>
+    internal static ZammadKbInit ParseKnowledgeBaseInit(string body)
+    {
+        var empty = new ZammadKbInit(
+            Array.Empty<ZammadKnowledgeBase>(),
+            Array.Empty<ZammadKbCategory>(),
+            Array.Empty<ZammadKbAnswer>(),
+            Array.Empty<string>());
+        if (string.IsNullOrWhiteSpace(body)) return empty;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return empty;
+
+            // POST /knowledge_bases/init returns assets-mode directly at
+            // root level (no `assets` wrapper). The keys are
+            // <ClassName>:object{<id>:object{...}} for every KB
+            // collection — KnowledgeBase, KnowledgeBaseTranslation,
+            // KnowledgeBaseLocale, KnowledgeBaseCategory, etc.
+            //
+            // We accept three shapes for robustness:
+            //   (a) flat top-level arrays (`knowledge_bases[]`, …)
+            //   (b) wrapped assets (`root.assets.KnowledgeBase`)
+            //   (c) flat assets (root itself acts as the assets envelope —
+            //       what manage/init returns)
+            JsonElement? assets;
+            if (root.TryGetProperty("assets", out var assetsEl)
+                && assetsEl.ValueKind == JsonValueKind.Object)
+            {
+                assets = assetsEl;
+            }
+            else if (root.TryGetProperty("KnowledgeBase", out _))
+            {
+                assets = root;
+            }
+            else
+            {
+                assets = null;
+            }
+
+            // Lookups consumed by KB + category + answer parsing. Built
+            // up-front from translation/locale collections so the row
+            // parsers don't re-walk the bundle per element.
+            var kbTitleByKbId = BuildKbTitleLookup(
+                EnumerateAssetCollection(assets,
+                    "KnowledgeBaseTranslation", "KnowledgeBase::Translation"));
+            var primaryKbLocaleId = FindPrimaryKbLocaleId(
+                EnumerateAssetCollection(assets,
+                    "KnowledgeBaseLocale", "KnowledgeBase::Locale"));
+
+            var kbArray = TryGetArrayProperty(root, "knowledge_bases");
+            var kbs = kbArray is not null
+                ? ParseKnowledgeBaseObjects(kbArray.Value)
+                : ParseKnowledgeBasesFromAssets(assets, kbTitleByKbId);
+
+            // Category translations may live at the flat top-level or in
+            // assets under either ::-name or PascalCase-without-:: name.
+            var categoryTranslationsArray = TryGetArrayProperty(root,
+                "knowledge_base_category_translations", "category_translations");
+            IEnumerable<JsonElement> categoryTranslations = categoryTranslationsArray is not null
+                ? categoryTranslationsArray.Value.EnumerateArray()
+                : EnumerateAssetCollection(assets,
+                    "KnowledgeBase::Category::Translation", "KnowledgeBaseCategoryTranslation");
+            var categoryTitles = BuildCategoryTitleLookup(categoryTranslations, primaryKbLocaleId);
+
+            var categoriesArray = TryGetArrayProperty(root,
+                "knowledge_base_categories", "categories");
+            IEnumerable<JsonElement> categoryEls = categoriesArray is not null
+                ? categoriesArray.Value.EnumerateArray()
+                : EnumerateAssetCollection(assets,
+                    "KnowledgeBase::Category", "KnowledgeBaseCategory");
+            var categories = ParseCategoriesFromElements(categoryEls, categoryTitles);
+
+            // Answer translations + their content texts.
+            var translationContentsArray = TryGetArrayProperty(root,
+                "knowledge_base_answer_translation_contents", "answer_translation_contents");
+            IEnumerable<JsonElement> contentEls = translationContentsArray is not null
+                ? translationContentsArray.Value.EnumerateArray()
+                : EnumerateAssetCollection(assets,
+                    "KnowledgeBase::Answer::Translation::Content",
+                    "KnowledgeBaseAnswerTranslationContent");
+            var contentsByTranslationId = BuildContentLookupFromElements(contentEls);
+
+            var translationsArray = TryGetArrayProperty(root,
+                "knowledge_base_answer_translations", "answer_translations");
+            IEnumerable<JsonElement> translationEls = translationsArray is not null
+                ? translationsArray.Value.EnumerateArray()
+                : EnumerateAssetCollection(assets,
+                    "KnowledgeBase::Answer::Translation", "KnowledgeBaseAnswerTranslation");
+            var translationsByAnswerId = BuildAnswerTranslationLookupFromElements(
+                translationEls, contentsByTranslationId, primaryKbLocaleId);
+
+            var answersArray = TryGetArrayProperty(root,
+                "knowledge_base_answers", "answers");
+            IEnumerable<JsonElement> answerEls = answersArray is not null
+                ? answersArray.Value.EnumerateArray()
+                : EnumerateAssetCollection(assets,
+                    "KnowledgeBase::Answer", "KnowledgeBaseAnswer");
+            var answers = ParseAnswersFromElements(answerEls, translationsByAnswerId);
+
+            var localesArray = TryGetArrayProperty(root,
+                "knowledge_base_locales", "kb_locales", "locales");
+            IEnumerable<JsonElement> localeEls = localesArray is not null
+                ? localesArray.Value.EnumerateArray()
+                : EnumerateAssetCollection(assets,
+                    "KnowledgeBase::Locale", "KnowledgeBaseLocale");
+            var locales = ParseLocalesFromElements(localeEls);
+
+            return new ZammadKbInit(kbs, categories, answers, locales);
+        }
+        catch (JsonException)
+        {
+            return empty;
+        }
+    }
+
+    /// Walks an assets-mode collection (object keyed by id-as-string)
+    /// trying each candidate key in order — Zammad serializes the
+    /// inner ::-namespaced class either as "KnowledgeBase::Category"
+    /// or "KnowledgeBaseCategory" depending on jbuilder template.
+    private static IEnumerable<JsonElement> EnumerateAssetCollection(
+        JsonElement? assets, params string[] candidateKeys)
+    {
+        if (assets is null) yield break;
+        foreach (var key in candidateKeys)
+        {
+            if (!assets.Value.TryGetProperty(key, out var bucket)) continue;
+            if (bucket.ValueKind != JsonValueKind.Object) continue;
+            foreach (var prop in bucket.EnumerateObject())
+            {
+                if (prop.Value.ValueKind == JsonValueKind.Object)
+                {
+                    yield return prop.Value;
+                }
+            }
+            yield break;
+        }
+    }
+
+    private static IReadOnlyList<ZammadKnowledgeBase> ParseKnowledgeBasesFromAssets(
+        JsonElement? assets,
+        IReadOnlyDictionary<long, string> kbTitleByKbId)
+    {
+        var list = new List<ZammadKnowledgeBase>();
+        foreach (var el in EnumerateAssetCollection(assets, "KnowledgeBase"))
+        {
+            var id = TryGetLong(el, "id");
+            if (id is null) continue;
+            // Zammad's KB object carries no direct name/title — the
+            // display label lives on a `KnowledgeBaseTranslation` row
+            // joined via knowledge_base_id. Fall back to url_prefix /
+            // first-locale-title only when no translation matched.
+            string? title = kbTitleByKbId.TryGetValue(id.Value, out var t) ? t : null;
+            // category_ids[].length + answer_ids[].length give us
+            // counts without scanning the full bundle.
+            var categoryCount = CountArrayProperty(el, "category_ids")
+                ?? TryGetInt(el, "category_count") ?? 0;
+            var answerCount = CountArrayProperty(el, "answer_ids")
+                ?? TryGetInt(el, "answer_count") ?? 0;
+            list.Add(new ZammadKnowledgeBase(
+                Id: id.Value,
+                Name: title
+                    ?? TryGetString(el, "name")
+                    ?? TryGetString(el, "title")
+                    ?? TryGetString(el, "url_prefix")
+                    ?? TryReadFirstLocaleTitle(el)
+                    ?? $"Knowledge base #{id.Value}",
+                Active: TryGetBool(el, "active") ?? TryGetBool(el, "kb_active") ?? true,
+                DefaultLocale: TryReadDefaultLocaleCode(el),
+                CategoryCount: categoryCount,
+                AnswerCount: answerCount));
+        }
+        return list;
+    }
+
+    private static int? CountArrayProperty(JsonElement el, string name)
+    {
+        if (el.TryGetProperty(name, out var prop)
+            && prop.ValueKind == JsonValueKind.Array)
+        {
+            return prop.GetArrayLength();
+        }
+        return null;
+    }
+
+    /// Builds the knowledge_base_id → title map from a stream of
+    /// KnowledgeBaseTranslation rows. Each translation row carries
+    /// `knowledge_base_id`, `kb_locale_id`, and `title`. We only keep
+    /// the first non-empty title per KB — primary locale wins because
+    /// Zammad's translations are returned in primary-first order, but
+    /// even if they weren't a non-empty fallback is better than no
+    /// label.
+    private static IReadOnlyDictionary<long, string> BuildKbTitleLookup(
+        IEnumerable<JsonElement> translations)
+    {
+        var result = new Dictionary<long, string>();
+        foreach (var el in translations)
+        {
+            if (el.ValueKind != JsonValueKind.Object) continue;
+            var kbId = TryGetLong(el, "knowledge_base_id");
+            var title = TryGetString(el, "title");
+            if (kbId is null || string.IsNullOrWhiteSpace(title)) continue;
+            if (!result.ContainsKey(kbId.Value)) result[kbId.Value] = title;
+        }
+        return result;
+    }
+
+    /// Scans KnowledgeBaseLocale rows for the primary entry and
+    /// returns its `id` — that id is what every translation row's
+    /// `kb_locale_id` field references. Returns null when no row is
+    /// flagged primary (Zammad always seeds one, so this should not
+    /// happen on a real install — but the importer treats null as
+    /// "any locale matches" so the picker still renders).
+    private static long? FindPrimaryKbLocaleId(IEnumerable<JsonElement> locales)
+    {
+        foreach (var el in locales)
+        {
+            if (el.ValueKind != JsonValueKind.Object) continue;
+            if (TryGetBool(el, "primary") == true)
+            {
+                var id = TryGetLong(el, "id");
+                if (id is not null) return id.Value;
+            }
+        }
+        return null;
+    }
+
+    /// Local synthetic locale code emitted for primary-locale
+    /// translation rows. The user picked nl-BE as the only import
+    /// locale in the v0.0.43 scope decisions, and the parser is
+    /// Zammad-aware enough to treat the source's primary as our
+    /// default. Stored as a constant so test expectations can
+    /// reference it.
+    internal const string PrimaryLocaleEmitCode = "nl-BE";
+
+    private static JsonElement? TryGetArrayProperty(JsonElement root, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (root.TryGetProperty(name, out var prop)
+                && prop.ValueKind == JsonValueKind.Array)
+            {
+                return prop;
+            }
+        }
+        return null;
+    }
+
+    private static IReadOnlyList<ZammadKnowledgeBase> ParseKnowledgeBaseObjects(JsonElement array)
+    {
+        var list = new List<ZammadKnowledgeBase>(array.GetArrayLength());
+        foreach (var el in array.EnumerateArray())
+        {
+            if (el.ValueKind != JsonValueKind.Object) continue;
+            var id = TryGetLong(el, "id");
+            if (id is null) continue;
+            list.Add(new ZammadKnowledgeBase(
+                Id: id.Value,
+                Name: TryGetString(el, "name")
+                    ?? TryGetString(el, "title")
+                    ?? TryGetString(el, "url_prefix")
+                    ?? TryReadFirstLocaleTitle(el)
+                    ?? $"Knowledge base #{id.Value}",
+                Active: TryGetBool(el, "active") ?? TryGetBool(el, "kb_active") ?? true,
+                DefaultLocale: TryReadDefaultLocaleCode(el),
+                CategoryCount: TryGetInt(el, "category_count") ?? 0,
+                AnswerCount: TryGetInt(el, "answer_count") ?? 0));
+        }
+        return list;
+    }
+
+    private static IReadOnlyDictionary<long, Dictionary<string, string>> BuildCategoryTitleLookup(
+        IEnumerable<JsonElement> translations,
+        long? primaryKbLocaleId)
+    {
+        var result = new Dictionary<long, Dictionary<string, string>>();
+        foreach (var el in translations)
+        {
+            if (el.ValueKind != JsonValueKind.Object) continue;
+            var categoryId = TryGetLong(el, "category_id");
+            var title = TryGetString(el, "title");
+            if (categoryId is null || string.IsNullOrWhiteSpace(title)) continue;
+            // Determine the locale-code to emit under. When the row's
+            // numeric kb_locale_id matches the source primary, we emit
+            // under our import locale (nl-BE) so the picker filter hits.
+            var locale = ResolveEmitLocale(el, primaryKbLocaleId);
+            if (string.IsNullOrWhiteSpace(locale)) continue;
+            if (!result.TryGetValue(categoryId.Value, out var perLocale))
+            {
+                perLocale = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                result[categoryId.Value] = perLocale;
+            }
+            perLocale[locale] = title;
+        }
+        return result;
+    }
+
+    /// Resolves the locale code to emit a translation row under. The
+    /// row carries either a numeric `kb_locale_id` (assets-mode) or a
+    /// string locale field (`system_locale` / `locale`). When the
+    /// numeric id matches the source primary, we collapse onto our
+    /// import-locale constant so consumers don't need to know Zammad's
+    /// per-install id mapping.
+    private static string? ResolveEmitLocale(JsonElement el, long? primaryKbLocaleId)
+    {
+        var localeId = TryGetLong(el, "kb_locale_id");
+        if (localeId is not null
+            && primaryKbLocaleId is not null
+            && localeId.Value == primaryKbLocaleId.Value)
+        {
+            return PrimaryLocaleEmitCode;
+        }
+        // Fallback to whatever string Zammad surfaced — older flat-mode
+        // responses carry `system_locale: "nl-BE"`.
+        return TryReadTranslationLocaleCode(el);
+    }
+
+    /// Zammad encodes locale on translation rows either as a string
+    /// field (<c>kb_locale_system</c> or <c>locale</c>) or via a numeric
+    /// <c>kb_locale_id</c> that needs a lookup. We accept either and
+    /// fall back to <c>locale</c> when needed. Numeric ids that can't be
+    /// resolved at parse-time are surfaced as the bare integer string —
+    /// the importer treats unrecognised locales as a soft skip.
+    private static string? TryReadTranslationLocaleCode(JsonElement el)
+    {
+        var s = TryGetString(el, "kb_locale_system")
+            ?? TryGetString(el, "system_locale")
+            ?? TryGetString(el, "locale_code")
+            ?? TryGetString(el, "locale");
+        if (!string.IsNullOrWhiteSpace(s)) return s;
+        var localeId = TryGetLong(el, "kb_locale_id");
+        return localeId?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static IReadOnlyList<ZammadKbCategory> ParseCategoriesFromElements(
+        IEnumerable<JsonElement> elements,
+        IReadOnlyDictionary<long, Dictionary<string, string>> categoryTitles)
+    {
+        var list = new List<ZammadKbCategory>();
+        foreach (var el in elements)
+        {
+            if (el.ValueKind != JsonValueKind.Object) continue;
+            var id = TryGetLong(el, "id");
+            if (id is null) continue;
+            var translations = new List<ZammadKbCategoryTranslation>();
+            if (categoryTitles.TryGetValue(id.Value, out var perLocale))
+            {
+                foreach (var kv in perLocale)
+                {
+                    translations.Add(new ZammadKbCategoryTranslation(kv.Key, kv.Value));
+                }
+            }
+            list.Add(new ZammadKbCategory(
+                Id: id.Value,
+                KnowledgeBaseId: TryGetLong(el, "knowledge_base_id") ?? 0,
+                ParentId: TryGetLong(el, "parent_id"),
+                Position: TryGetInt(el, "position") ?? 0,
+                Translations: translations));
+        }
+        return list;
+    }
+
+    private static IReadOnlyDictionary<long, string> BuildContentLookupFromElements(
+        IEnumerable<JsonElement> contents)
+    {
+        // translation_id → body_html. Zammad's translation_content row
+        // carries either body (HTML) or body_text alongside a
+        // content_type discriminator. We prefer the HTML form because
+        // it preserves formatting; if Zammad returned plain text only,
+        // we wrap it minimally so the local sanitizer accepts it.
+        var result = new Dictionary<long, string>();
+        foreach (var el in contents)
+        {
+            if (el.ValueKind != JsonValueKind.Object) continue;
+            var id = TryGetLong(el, "id");
+            if (id is null) continue;
+            // Zammad uses translation_id on some versions and a flat
+            // 1:1 join on others — fall back to id when explicit
+            // translation_id is missing.
+            var translationId = TryGetLong(el, "translation_id") ?? id.Value;
+            var body = TryGetString(el, "body");
+            if (string.IsNullOrEmpty(body))
+            {
+                var bodyText = TryGetString(el, "body_text");
+                if (!string.IsNullOrEmpty(bodyText))
+                {
+                    body = "<p>" + System.Net.WebUtility.HtmlEncode(bodyText).Replace("\n", "<br/>") + "</p>";
+                }
+            }
+            result[translationId] = body ?? string.Empty;
+        }
+        return result;
+    }
+
+    private static IReadOnlyDictionary<long, List<ZammadKbAnswerTranslation>> BuildAnswerTranslationLookupFromElements(
+        IEnumerable<JsonElement> translations,
+        IReadOnlyDictionary<long, string> contentsByTranslationId,
+        long? primaryKbLocaleId)
+    {
+        var result = new Dictionary<long, List<ZammadKbAnswerTranslation>>();
+        foreach (var el in translations)
+        {
+            if (el.ValueKind != JsonValueKind.Object) continue;
+            var id = TryGetLong(el, "id");
+            var answerId = TryGetLong(el, "answer_id");
+            if (id is null || answerId is null) continue;
+            var locale = ResolveEmitLocale(el, primaryKbLocaleId) ?? string.Empty;
+            var title = TryGetString(el, "title") ?? string.Empty;
+            // content_id points at the contents-row OR Zammad inlines
+            // the body directly (some versions). Try inline first, then
+            // resolved via content_id, then via the translation's own id.
+            var bodyHtml = TryGetString(el, "body");
+            if (string.IsNullOrEmpty(bodyHtml))
+            {
+                var contentId = TryGetLong(el, "content_id");
+                if (contentId is not null && contentsByTranslationId.TryGetValue(contentId.Value, out var byContent))
+                {
+                    bodyHtml = byContent;
+                }
+                else if (contentsByTranslationId.TryGetValue(id.Value, out var byTranslation))
+                {
+                    bodyHtml = byTranslation;
+                }
+            }
+            if (!result.TryGetValue(answerId.Value, out var bucket))
+            {
+                bucket = new List<ZammadKbAnswerTranslation>();
+                result[answerId.Value] = bucket;
+            }
+            bucket.Add(new ZammadKbAnswerTranslation(
+                Id: id.Value,
+                LocaleCode: locale,
+                Title: title,
+                BodyHtml: bodyHtml ?? string.Empty));
+        }
+        return result;
+    }
+
+    private static IReadOnlyList<ZammadKbAnswer> ParseAnswersFromElements(
+        IEnumerable<JsonElement> elements,
+        IReadOnlyDictionary<long, List<ZammadKbAnswerTranslation>> translationsByAnswerId)
+    {
+        var list = new List<ZammadKbAnswer>();
+        foreach (var el in elements)
+        {
+            if (el.ValueKind != JsonValueKind.Object) continue;
+            var id = TryGetLong(el, "id");
+            if (id is null) continue;
+            var translations = translationsByAnswerId.TryGetValue(id.Value, out var t)
+                ? (IReadOnlyList<ZammadKbAnswerTranslation>)t
+                : Array.Empty<ZammadKbAnswerTranslation>();
+            list.Add(new ZammadKbAnswer(
+                Id: id.Value,
+                KnowledgeBaseId: TryGetLong(el, "knowledge_base_id") ?? 0,
+                CategoryId: TryGetLong(el, "category_id") ?? 0,
+                Position: TryGetInt(el, "position") ?? 0,
+                Promoted: TryGetBool(el, "promoted") ?? false,
+                InternalAt: TryGetDateTimeOffset(el, "internal_at"),
+                PublishedAt: TryGetDateTimeOffset(el, "published_at"),
+                ArchivedAt: TryGetDateTimeOffset(el, "archived_at"),
+                CreatedById: TryGetLong(el, "created_by_id"),
+                InternalNote: TryGetString(el, "internal_note"),
+                Translations: translations,
+                Attachments: ParseKbAnswerAttachments(el)));
+        }
+        return list;
+    }
+
+    private static IReadOnlyList<ZammadKbAnswerAttachment> ParseKbAnswerAttachments(JsonElement answer)
+    {
+        if (!answer.TryGetProperty("attachments", out var arr)
+            || arr.ValueKind != JsonValueKind.Array
+            || arr.GetArrayLength() == 0)
+        {
+            return Array.Empty<ZammadKbAnswerAttachment>();
+        }
+        var list = new List<ZammadKbAnswerAttachment>(arr.GetArrayLength());
+        foreach (var el in arr.EnumerateArray())
+        {
+            if (el.ValueKind != JsonValueKind.Object) continue;
+            var recordId = TryGetLong(el, "id");
+            string? mime = null;
+            string? contentId = null;
+            string? disposition = null;
+            if (el.TryGetProperty("preferences", out var prefs)
+                && prefs.ValueKind == JsonValueKind.Object)
+            {
+                mime = TryGetString(prefs, "Mime-Type")
+                    ?? TryGetString(prefs, "Content-Type");
+                contentId = TryGetString(prefs, "Content-ID");
+                disposition = TryGetString(prefs, "Content-Disposition");
+            }
+            mime ??= TryGetString(el, "type") ?? "application/octet-stream";
+            var previewUrl = TryGetString(el, "preview_url")
+                ?? TryGetString(el, "url");
+
+            // The numeric id in Zammad's body HTML img-src is the
+            // Store::File id (e.g. `/api/v1/attachments/253306`), which
+            // is what we extract from preview_url/url here. The
+            // attachment's own `id` field is a different identifier
+            // (the KnowledgeBase::Answer::Attachment record id) and
+            // does NOT match the body's reference. We use the URL-
+            // derived id everywhere downstream — both as the fetch
+            // path id and as the rewriter map key — so the body's
+            // `<img src="/api/v1/attachments/X">` finds X in the map.
+            // Falls back to the record id when no URL is present (no
+            // known Zammad version emits attachments without a url,
+            // but the import treats it as a soft fallback).
+            var urlId = ExtractAttachmentIdFromUrl(previewUrl);
+            var effectiveId = urlId ?? recordId;
+            if (effectiveId is null) continue;
+
+            var normalisedCid = string.IsNullOrWhiteSpace(contentId)
+                ? null
+                : contentId.Trim().Trim('<', '>');
+            var isInline = string.Equals(disposition, "inline", StringComparison.OrdinalIgnoreCase)
+                || !string.IsNullOrEmpty(normalisedCid)
+                || mime.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+
+            list.Add(new ZammadKbAnswerAttachment(
+                Id: effectiveId.Value,
+                Filename: TryGetString(el, "filename") ?? string.Empty,
+                SizeBytes: TryGetLong(el, "size") ?? 0,
+                MimeType: mime,
+                IsInline: isInline,
+                ContentId: normalisedCid,
+                PreviewUrl: previewUrl));
+        }
+        return list;
+    }
+
+    /// Pulls the numeric id from a Zammad attachment URL like
+    /// <c>/api/v1/attachments/253306</c> or <c>.../253306?preview=1</c>.
+    /// Returns null when the input doesn't match the pattern.
+    internal static long? ExtractAttachmentIdFromUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return null;
+        var m = System.Text.RegularExpressions.Regex.Match(
+            url, @"/attachments/(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!m.Success) return null;
+        return long.TryParse(m.Groups[1].Value,
+            System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var id) ? id : null;
+    }
+
+    /// Parses the per-answer detail response. Expected shape (assets-
+    /// mode at root level, same as /init):
+    ///   { "KnowledgeBaseAnswer":      { "36": {...} },
+    ///     "KnowledgeBaseAnswerTranslation": { "37": {...} },
+    ///     "KnowledgeBaseAnswerTranslationContent": { "37": { "body": "..." } } }
+    /// We look up the content for <paramref name="translationId"/> in
+    /// the content collection (keyed by translation id) and pull the
+    /// attachments off the answer row.
+    internal static ZammadKbAnswerDetail ParseKnowledgeBaseAnswerDetail(
+        string body, long answerId, long translationId)
+    {
+        var emptyDetail = new ZammadKbAnswerDetail(
+            answerId, translationId, BodyHtml: null,
+            Attachments: Array.Empty<ZammadKbAnswerAttachment>());
+        if (string.IsNullOrWhiteSpace(body)) return emptyDetail;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return emptyDetail;
+
+            // Same root-or-assets detection as /init.
+            JsonElement? assets;
+            if (root.TryGetProperty("assets", out var assetsEl)
+                && assetsEl.ValueKind == JsonValueKind.Object)
+            {
+                assets = assetsEl;
+            }
+            else if (root.TryGetProperty("KnowledgeBaseAnswer", out _)
+                || root.TryGetProperty("KnowledgeBaseAnswerTranslationContent", out _))
+            {
+                assets = root;
+            }
+            else
+            {
+                assets = null;
+            }
+
+            // Body content: look it up by translation id in the content
+            // collection. Some Zammad versions also inline `body` on
+            // the translation row itself when include_contents was set,
+            // so we accept either source.
+            string? bodyHtml = null;
+            foreach (var el in EnumerateAssetCollection(assets,
+                "KnowledgeBaseAnswerTranslationContent",
+                "KnowledgeBase::Answer::Translation::Content"))
+            {
+                if (el.ValueKind != JsonValueKind.Object) continue;
+                var contentTranslationId = TryGetLong(el, "translation_id") ?? TryGetLong(el, "id");
+                if (contentTranslationId is null) continue;
+                if (contentTranslationId.Value != translationId) continue;
+                bodyHtml = TryGetString(el, "body");
+                if (string.IsNullOrEmpty(bodyHtml))
+                {
+                    var bodyText = TryGetString(el, "body_text");
+                    if (!string.IsNullOrEmpty(bodyText))
+                    {
+                        bodyHtml = "<p>" + System.Net.WebUtility.HtmlEncode(bodyText).Replace("\n", "<br/>") + "</p>";
+                    }
+                }
+                break;
+            }
+            if (bodyHtml is null)
+            {
+                // Fallback: scan translation rows for an inlined body.
+                foreach (var el in EnumerateAssetCollection(assets,
+                    "KnowledgeBaseAnswerTranslation", "KnowledgeBase::Answer::Translation"))
+                {
+                    if (el.ValueKind != JsonValueKind.Object) continue;
+                    var tid = TryGetLong(el, "id");
+                    if (tid is null || tid.Value != translationId) continue;
+                    bodyHtml = TryGetString(el, "body");
+                    if (!string.IsNullOrEmpty(bodyHtml)) break;
+                }
+            }
+
+            // Attachments: live on the answer row. Pull the answer whose
+            // id matches the requested answerId and reuse the existing
+            // attachment parser so the rewriter sees the same shape it
+            // does during the /init walk.
+            IReadOnlyList<ZammadKbAnswerAttachment> attachments = Array.Empty<ZammadKbAnswerAttachment>();
+            foreach (var el in EnumerateAssetCollection(assets,
+                "KnowledgeBaseAnswer", "KnowledgeBase::Answer"))
+            {
+                if (el.ValueKind != JsonValueKind.Object) continue;
+                var aid = TryGetLong(el, "id");
+                if (aid is null || aid.Value != answerId) continue;
+                attachments = ParseKbAnswerAttachments(el);
+                break;
+            }
+
+            return new ZammadKbAnswerDetail(answerId, translationId, bodyHtml, attachments);
+        }
+        catch (JsonException)
+        {
+            return emptyDetail;
+        }
+    }
+
+    private static IReadOnlyList<string> ParseLocalesFromElements(IEnumerable<JsonElement> elements)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var el in elements)
+        {
+            if (el.ValueKind != JsonValueKind.Object) continue;
+            var locale = TryGetString(el, "system_locale")
+                ?? TryGetString(el, "locale")
+                ?? TryGetString(el, "name");
+            if (!string.IsNullOrWhiteSpace(locale)) set.Add(locale);
+        }
+        return set.ToArray();
     }
 }

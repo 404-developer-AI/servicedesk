@@ -35,6 +35,7 @@ import {
   type ZammadTicketSearchPage,
 } from "@/lib/api";
 import { ZammadMappingSection, MAPPING_QK } from "./zammad/ZammadMappingSection";
+import { ZammadKbImportSection } from "./zammad/ZammadKbImportSection";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -447,6 +448,9 @@ export function ZammadIntegrationPage() {
         </p>
         <IntegrationAuditLog integration="zammad" />
       </section>
+
+      {/* ---- KB import (v0.0.43) ----------------------------------- */}
+      <ZammadKbImportSection />
     </div>
   );
 }

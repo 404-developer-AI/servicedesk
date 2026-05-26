@@ -3254,6 +3254,138 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_compose_templates_auto_insert
             ON compose_templates (is_active, updated_utc DESC)
             WHERE auto_insert_on_note = TRUE;
+
+        -- ===================================================================
+        -- v0.0.43 — Zammad Knowledge Base import (one-way bridge)
+        --
+        -- Reuses the existing Zammad token + base URL + integration_audit
+        -- pipeline from the ticket-import (v0.0.41). KB-side runs live in
+        -- their own tables so the existing zammad_import_runs / records
+        -- table stays focused on tickets — the two flows have different
+        -- shapes (categories+articles vs tickets+articles) and different
+        -- result-vocabularies.
+        --
+        -- Flow: admin starts a run → worker fetches Zammad categories +
+        -- builds proposed_tree JSONB → admin approves/edits in UI → worker
+        -- materialises kb_sections + writes section mappings → admin
+        -- picks articles via search/filter → worker imports articles with
+        -- author email-match, slug regen, HTML sanitize, image rewrite.
+        --
+        -- Idempotency: kb_article_import_mappings rows guard against
+        -- re-imports. Re-runs skip mapped articles with 'already_imported'.
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS kb_import_runs (
+            id                       UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            status                   TEXT        NOT NULL DEFAULT 'pending',
+            started_by_user_id       UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            started_utc              TIMESTAMPTZ NOT NULL DEFAULT now(),
+            finished_utc             TIMESTAMPTZ NULL,
+            source_kb_id             BIGINT      NULL,
+            source_kb_name           TEXT        NULL,
+            -- Section proposal — produced in the Categories phase, edited
+            -- by the admin in the UI, frozen on Apply. Shape:
+            -- { "nodes": [ { "zammadCategoryId", "zammadParentId",
+            --                "proposedTitle", "proposedSlug", "depth",
+            --                "action": "create" | "merge" | "skip",
+            --                "targetSectionId": "<uuid>"|null } ] }
+            proposed_tree            JSONB       NOT NULL DEFAULT '{}'::jsonb,
+            -- Article picker snapshot — captured when admin clicks "Start
+            -- import" so the run is reproducible even after the picker is
+            -- refilled. Shape: { "answerIds": [...], "filters": {...} }
+            article_selection        JSONB       NOT NULL DEFAULT '{}'::jsonb,
+            totals                   JSONB       NOT NULL DEFAULT '{}'::jsonb,
+            error_message            TEXT        NULL,
+            CONSTRAINT chk_kb_import_run_status
+                CHECK (status IN ('pending','proposing','awaiting_approval','approved','importing','completed','failed','cancelled'))
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_kb_import_runs_started
+            ON kb_import_runs (started_utc DESC, id DESC);
+
+        -- Per-article result — one row per Zammad answer the worker
+        -- attempted to import. Vocabulary mirrors the ticket-import
+        -- variant for UI consistency. mapping JSONB carries the resolved
+        -- target_section_id, status, author resolution outcome and any
+        -- per-article warnings (e.g. "html_sanitized: <count> nodes
+        -- stripped", "attachment_skipped: too_large").
+        CREATE TABLE IF NOT EXISTS kb_import_records (
+            id                       UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            run_id                   UUID        NOT NULL REFERENCES kb_import_runs(id) ON DELETE CASCADE,
+            zammad_answer_id         BIGINT      NOT NULL,
+            zammad_category_id       BIGINT      NULL,
+            zammad_title             TEXT        NULL,
+            result                   TEXT        NOT NULL,
+            unresolved_reasons       TEXT[]      NOT NULL DEFAULT '{}',
+            mapping                  JSONB       NOT NULL DEFAULT '{}'::jsonb,
+            target_article_id        UUID        NULL,
+            created_utc              TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT chk_kb_import_record_result
+                CHECK (result IN (
+                    'imported',
+                    'already_imported',
+                    'skipped_no_section_mapping',
+                    'skipped_no_translation',
+                    'skipped_section_skipped',
+                    'failed'
+                ))
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_kb_import_records_run
+            ON kb_import_records (run_id, id);
+        CREATE INDEX IF NOT EXISTS ix_kb_import_records_run_result
+            ON kb_import_records (run_id, result);
+        CREATE INDEX IF NOT EXISTS ix_kb_import_records_answer
+            ON kb_import_records (zammad_answer_id);
+
+        -- Section mapping: Zammad category id → local KbSection. action
+        -- captures the admin's decision in the proposal-review step:
+        --   'create' — section was created by the import, target_section_id
+        --              points at the new row.
+        --   'merge'  — articles in this Zammad category should land in an
+        --              existing KbSection (admin-picked target).
+        --   'skip'   — category is not imported. Articles under it are
+        --              recorded as skipped_section_skipped.
+        -- Unique on zammad_category_id so re-runs converge on the same
+        -- target row (idempotent UPSERT).
+        CREATE TABLE IF NOT EXISTS kb_section_import_mappings (
+            id                       UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            zammad_category_id       BIGINT      NOT NULL UNIQUE,
+            zammad_parent_id         BIGINT      NULL,
+            zammad_title             TEXT        NOT NULL,
+            target_section_id        UUID        NULL REFERENCES kb_sections(id) ON DELETE SET NULL,
+            action                   TEXT        NOT NULL,
+            run_id                   UUID        NULL REFERENCES kb_import_runs(id) ON DELETE SET NULL,
+            created_utc              TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc              TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT chk_kb_section_mapping_action
+                CHECK (action IN ('create','merge','skip'))
+        );
+
+        -- Per-article idempotency mapping. content_hash is a SHA-256 of
+        -- the upstream title + body so a future "rebuild detected
+        -- changes" feature can be layered without schema change. v0.0.43
+        -- only writes it; reads are limited to "exists?" lookups.
+        CREATE TABLE IF NOT EXISTS kb_article_import_mappings (
+            id                       UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            zammad_answer_id         BIGINT      NOT NULL UNIQUE,
+            target_article_id        UUID        NOT NULL REFERENCES kb_articles(id) ON DELETE CASCADE,
+            content_hash             BYTEA       NULL,
+            run_id                   UUID        NULL REFERENCES kb_import_runs(id) ON DELETE SET NULL,
+            imported_utc             TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_kb_article_import_mappings_target
+            ON kb_article_import_mappings (target_article_id);
+
+        -- External-author metadata for articles that were imported but
+        -- whose Zammad author could not be email-matched to a local user.
+        -- Shape: { "source":"zammad", "email":"...", "name":"...",
+        --          "zammadUserId": <id>, "importedUtc":"..." }
+        -- Null on locally-authored articles. Surfaced read-only in the
+        -- article-detail UI ("Originally authored by X" tooltip) — a
+        -- future admin-flow can offer a "remap to user" action.
+        ALTER TABLE kb_articles
+            ADD COLUMN IF NOT EXISTS external_author_metadata JSONB NULL;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

@@ -364,15 +364,26 @@ export function RichTextEditor({
   }
 
   // Sync content prop into the editor when it changes externally
-  // (e.g. after a save updates the query cache). Only for read-only editors
-  // to avoid fighting with the user's cursor in editable mode.
+  // (e.g. after a save updates the query cache, or when an async load
+  // hydrates an edit-page that mounted before the query resolved).
+  //
+  // Read-only editors always sync — they only ever render upstream
+  // content, never user input.
+  //
+  // Editable editors sync only while the editor is empty. The first
+  // non-empty content arrival hydrates the composer; subsequent prop
+  // changes are ignored so the user's cursor isn't clobbered mid-typing.
+  // Previously editable mode skipped sync entirely, which made
+  // edit-pages stay empty when the article body arrived after mount
+  // (the case for imported articles whose `?include=body` query
+  // resolves on the next tick).
   useEffect(() => {
-    if (!editor || editable) return;
+    if (!editor) return;
     const current = editor.getHTML();
     const incoming = content ?? "";
-    if (current !== incoming) {
-      editor.commands.setContent(incoming);
-    }
+    if (current === incoming) return;
+    if (editable && !editor.isEmpty) return;
+    editor.commands.setContent(incoming);
   }, [editor, content, editable]);
 
   // v0.0.35-F — hand the live editor instance to the parent once it

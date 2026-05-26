@@ -479,6 +479,7 @@ app.MapTelavoxEndpoints();
 app.MapZammadEndpoints();
 app.MapZammadMappingEndpoints();
 app.MapZammadDryRunEndpoints();
+app.MapZammadKbImportEndpoints();
 app.MapAdminMailDiagnosticsEndpoints();
 app.MapHealthEndpoints();
 app.MapKbConfigEndpoints();

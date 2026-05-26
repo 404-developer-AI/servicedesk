@@ -187,6 +187,14 @@ public static class DependencyInjection
         services.AddSingleton<IZammadImportWriter, ZammadImportWriter>();
         services.AddHostedService<ZammadDryRunWorker>();
 
+        // v0.0.43 — Zammad Knowledge Base import. Reuses the same
+        // IZammadApiClient + integration_audit pipeline; separate
+        // worker so the KB-import lifecycle doesn't share status state
+        // with the ticket-side importer.
+        services.AddSingleton<IZammadKbImportQueue, ZammadKbImportQueue>();
+        services.AddSingleton<IZammadKbImportService, ZammadKbImportService>();
+        services.AddHostedService<ZammadKbImportWorker>();
+
         // Healthcheck-BackgroundService writes integration_audit rows and
         // pushes resolved status over SignalR. The notifier defaults to
         // the no-op implementation; the Api project overrides it with
