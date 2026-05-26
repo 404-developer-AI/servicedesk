@@ -122,4 +122,42 @@ public static class ZammadEventTypes
 
     /// Admin cancelled a running real import.
     public const string ImportCancelled = "integration.zammad.import.cancelled";
+
+    // ---- KB import (v0.0.43) ------------------------------------------
+
+    /// GET /api/v1/knowledge_bases — list of Knowledge Bases on the
+    /// source install. Many installs have just one; multi-KB shops are
+    /// rare but the picker still asks before the section-proposal step.
+    public const string KbList = "api.kb.list";
+
+    /// GET /api/v1/knowledge_bases/init — bulk-fetch endpoint Zammad's
+    /// own admin UI uses. Returns the full KB structure (categories,
+    /// answers, translations, translation-contents, locales, assets) in
+    /// a single call so the importer doesn't fan out per-category.
+    public const string KbInit = "api.kb.init";
+
+    /// GET /api/v1/knowledge_bases/{kbId}/answers/{answerId}/attachments/{id}
+    /// — raw bytes for one Zammad KB attachment. Payload records the
+    /// local attachment row id + byte count, never the bytes themselves.
+    public const string KbAttachmentFetch = "api.kb.attachment.fetch";
+
+    /// GET /api/v1/knowledge_bases/answers/{id}?include_contents={tid}
+    /// — per-answer detail with the translation body HTML inlined.
+    /// One row per answer fetched during the import phase.
+    public const string KbAnswerGet = "api.kb.answer.get";
+
+    /// Admin started a KB-import run. Payload records the source KB id.
+    public const string KbImportStarted = "integration.zammad.kb_import.started";
+
+    /// Admin approved the section proposal — categories were created /
+    /// merged / skipped per their decision. Payload carries the run id +
+    /// section-mapping count.
+    public const string KbSectionsApproved = "integration.zammad.kb_import.sections_approved";
+
+    /// Worker finished a KB-import run (any terminal status). Payload
+    /// carries the run id + final totals.
+    public const string KbImportFinished = "integration.zammad.kb_import.finished";
+
+    /// Admin cancelled a running KB-import.
+    public const string KbImportCancelled = "integration.zammad.kb_import.cancelled";
 }

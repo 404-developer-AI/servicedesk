@@ -78,4 +78,45 @@ public interface IZammadApiClient
         long articleId,
         long attachmentId,
         CancellationToken ct);
+
+    // ---- v0.0.43 — Knowledge Base import -----------------------------
+
+    /// <c>GET /api/v1/knowledge_bases</c> — list of Knowledge Bases on
+    /// the source install. The vast majority of Zammad installs have a
+    /// single KB but multi-KB tenants exist. The importer asks the admin
+    /// to pick one before running the section proposal.
+    Task<IReadOnlyList<ZammadKnowledgeBase>> ListKnowledgeBasesAsync(CancellationToken ct);
+
+    /// <c>GET /api/v1/knowledge_bases/init</c> — bulk endpoint that
+    /// returns the entire KB graph (categories, answers, translations,
+    /// translation-contents, locales). This is what Zammad's own admin
+    /// editor uses; one call replaces N category/answer fetches and
+    /// keeps the importer's audit footprint to a single row per phase.
+    /// Filter to a specific KB by id on the consumer side — the response
+    /// carries data for every KB on the install.
+    Task<ZammadKbInit> GetKnowledgeBaseInitAsync(CancellationToken ct);
+
+    /// <c>GET /api/v1/knowledge_bases/{kbId}/answers/{answerId}/attachments/{attId}</c>
+    /// — raw bytes for one KB-answer attachment (inline image or file).
+    /// Returns a read-open stream; caller disposes. Throws
+    /// <see cref="ZammadApiException"/> on any non-2xx.
+    Task<Stream> FetchKnowledgeBaseAttachmentBytesAsync(
+        long knowledgeBaseId,
+        long answerId,
+        long attachmentId,
+        CancellationToken ct);
+
+    /// <c>GET /api/v1/knowledge_bases/{kbId}/answers/{answerId}?include_contents={translationId}</c>
+    /// — fetches one answer's full payload <i>with</i> the translation
+    /// content (body HTML) inlined. The /init bulk endpoint carries
+    /// translation metadata (titles, ids) but not the body — that
+    /// requires a per-answer call. The kb-id prefix is required on the
+    /// path (the un-prefixed variant in the upstream routes file is
+    /// not registered on real installs and 404s).
+    /// Returns null when the answer is not found (404).
+    Task<ZammadKbAnswerDetail?> GetKnowledgeBaseAnswerWithContentAsync(
+        long knowledgeBaseId,
+        long answerId,
+        long translationId,
+        CancellationToken ct);
 }
