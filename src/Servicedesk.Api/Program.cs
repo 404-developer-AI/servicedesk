@@ -107,7 +107,15 @@ builder.Services.Configure<ForwardedHeadersOptions>(o =>
 // loopback Host header with 400 and the container never reaches "healthy".
 // Loopback is only reachable from inside the container, so always-listing
 // it does not widen the public attack surface.
-builder.Services.Configure<HostFilteringOptions>(o =>
+//
+// Must be PostConfigure, not Configure: ASP.NET's HostFilteringOptionsSetup
+// only populates AllowedHosts from config when the list is currently empty.
+// A plain Configure<> runs before PostConfigure but after the framework's
+// own IConfigureOptions in some registration orders — if ours ran first and
+// seeded loopback, the framework setup would see Count > 0 and skip reading
+// SERVICEDESK_AllowedHosts entirely, dropping the public domain from the
+// allow-list (which is what happened in v0.0.46).
+builder.Services.PostConfigure<HostFilteringOptions>(o =>
 {
     foreach (var loopback in new[] { "localhost", "127.0.0.1", "[::1]" })
     {
