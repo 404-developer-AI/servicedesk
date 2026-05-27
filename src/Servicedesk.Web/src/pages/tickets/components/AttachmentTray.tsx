@@ -58,8 +58,8 @@ export function AttachmentTray({ items, onRemove, className }: Props) {
               isFailed
                 ? "border-red-500/30 bg-red-500/5 text-red-300"
                 : isPending
-                  ? "border-white/10 bg-white/[0.03] text-muted-foreground"
-                  : "border-white/15 bg-white/[0.04] text-foreground/90",
+                  ? "border-glass bg-glass text-muted-foreground"
+                  : "border-glass-strong bg-glass text-foreground/90",
             )}
             title={isFailed ? it.errorMessage : `${it.filename} · ${sizeLabel}`}
           >
@@ -77,7 +77,7 @@ export function AttachmentTray({ items, onRemove, className }: Props) {
             <button
               type="button"
               onClick={() => onRemove(it.localId)}
-              className="ml-0.5 rounded p-0.5 text-muted-foreground/60 hover:bg-white/[0.06] hover:text-foreground transition-colors"
+              className="ml-0.5 rounded p-0.5 text-muted-foreground/60 hover:bg-glass-hover hover:text-foreground transition-colors"
               title="Remove"
             >
               <X className="h-3 w-3" />

@@ -341,7 +341,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
             "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
             kind === "Reply"
               ? "bg-sky-500/15 text-sky-300 border border-sky-500/30"
-              : "text-muted-foreground hover:text-foreground hover:bg-white/[0.05]",
+              : "text-muted-foreground hover:text-foreground hover:bg-glass-hover",
             !canReply && "opacity-40 cursor-not-allowed",
           )}
         >
@@ -356,7 +356,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
             "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
             kind === "ReplyAll"
               ? "bg-sky-500/15 text-sky-300 border border-sky-500/30"
-              : "text-muted-foreground hover:text-foreground hover:bg-white/[0.05]",
+              : "text-muted-foreground hover:text-foreground hover:bg-glass-hover",
             !canReply && "opacity-40 cursor-not-allowed",
           )}
         >
@@ -370,7 +370,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
             "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
             kind === "Forward"
               ? "bg-sky-500/15 text-sky-300 border border-sky-500/30"
-              : "text-muted-foreground hover:text-foreground hover:bg-white/[0.05]",
+              : "text-muted-foreground hover:text-foreground hover:bg-glass-hover",
           )}
         >
           <ForwardIcon className="h-3.5 w-3.5" />
@@ -383,7 +383,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
             "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
             kind === "New"
               ? "bg-sky-500/15 text-sky-300 border border-sky-500/30"
-              : "text-muted-foreground hover:text-foreground hover:bg-white/[0.05]",
+              : "text-muted-foreground hover:text-foreground hover:bg-glass-hover",
           )}
         >
           <Mail className="h-3.5 w-3.5" />
@@ -399,13 +399,13 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
             value={to}
             onChange={(e) => setTo(e.target.value)}
             placeholder="name@example.com, …"
-            className="flex-1 bg-white/[0.03] border border-white/10 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-white/25"
+            className="flex-1 bg-glass border border-glass rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-glass-strong"
           />
           {!showCc ? (
             <button
               type="button"
               onClick={() => setShowCc(true)}
-              className="text-xs text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-white/[0.05]"
+              className="text-xs text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-glass-hover"
             >
               Cc
             </button>
@@ -414,7 +414,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
             <button
               type="button"
               onClick={() => setShowBcc(true)}
-              className="text-xs text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-white/[0.05]"
+              className="text-xs text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-glass-hover"
             >
               Bcc
             </button>
@@ -428,7 +428,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
               value={cc}
               onChange={(e) => setCc(e.target.value)}
               placeholder="cc@example.com, …"
-              className="flex-1 bg-white/[0.03] border border-white/10 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-white/25"
+              className="flex-1 bg-glass border border-glass rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-glass-strong"
             />
           </div>
         ) : null}
@@ -440,7 +440,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
               value={bcc}
               onChange={(e) => setBcc(e.target.value)}
               placeholder="bcc@example.com, …"
-              className="flex-1 bg-white/[0.03] border border-white/10 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-white/25"
+              className="flex-1 bg-glass border border-glass rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-glass-strong"
             />
           </div>
         ) : null}
@@ -453,7 +453,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             placeholder="Subject"
-            className="flex-1 bg-white/[0.03] border border-white/10 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-white/25"
+            className="flex-1 bg-glass border border-glass rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-glass-strong"
           />
         </div>
       </div>
@@ -541,7 +541,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
         <button
           type="button"
           onClick={onCancel}
-          className="px-3 py-1.5 text-xs rounded-md text-muted-foreground hover:bg-white/[0.06] transition-colors"
+          className="px-3 py-1.5 text-xs rounded-md text-muted-foreground hover:bg-glass-hover transition-colors"
         >
           Cancel
         </button>

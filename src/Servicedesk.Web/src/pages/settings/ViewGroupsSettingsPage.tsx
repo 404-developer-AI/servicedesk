@@ -178,7 +178,7 @@ function ChipList<T extends { id: string; label: string }>({
           <button
             type="button"
             onClick={() => setAdding((p) => !p)}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
           >
             <Plus className="h-3 w-3" />
             Add
@@ -187,7 +187,7 @@ function ChipList<T extends { id: string; label: string }>({
       </div>
 
       {adding && unselected.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.02] p-2">
+        <div className="flex flex-wrap gap-1.5 rounded-md border border-glass-strong bg-glass p-2">
           {unselected.map((item) => (
             <button
               key={item.id}
@@ -197,7 +197,7 @@ function ChipList<T extends { id: string; label: string }>({
                 onAdd(item.id);
                 setAdding(false);
               }}
-              className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-[11px] text-muted-foreground hover:border-primary/30 hover:bg-primary/10 hover:text-primary transition-colors disabled:opacity-50"
+              className="inline-flex items-center rounded-full border border-glass bg-glass px-2.5 py-0.5 text-[11px] text-muted-foreground hover:border-primary/30 hover:bg-primary/10 hover:text-primary transition-colors disabled:opacity-50"
             >
               {item.label}
             </button>
@@ -334,7 +334,7 @@ function GroupDetailPanel({
         </div>
       ) : (
         <>
-          <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4 space-y-3">
+          <div className="rounded-lg border border-glass-strong bg-glass p-4 space-y-3">
             <ChipList
               title="Members"
               items={agentItems}
@@ -346,7 +346,7 @@ function GroupDetailPanel({
             />
           </div>
 
-          <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4 space-y-3">
+          <div className="rounded-lg border border-glass-strong bg-glass p-4 space-y-3">
             <ChipList
               title="Views"
               items={viewItems}
@@ -382,7 +382,7 @@ function GroupListItem({
         "w-full rounded-lg border px-3 py-2.5 text-left transition-colors",
         selected
           ? "border-primary/30 bg-primary/10"
-          : "border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/10",
+          : "border-glass-strong bg-glass hover:bg-glass-hover hover:border-glass-strong",
       )}
     >
       <p className={cn("text-sm font-medium", selected ? "text-primary" : "text-foreground")}>
@@ -402,7 +402,7 @@ function GroupListSkeleton() {
   return (
     <div className="space-y-2">
       {Array.from({ length: 3 }).map((_, i) => (
-        <div key={i} className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+        <div key={i} className="rounded-lg border border-glass-strong bg-glass px-3 py-2.5">
           <Skeleton className="h-4 w-32 mb-1.5" />
           <Skeleton className="h-3 w-20" />
         </div>
@@ -468,7 +468,7 @@ export function ViewGroupsSettingsPage() {
             )}
           </div>
         </div>
-        <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+        <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
           Admin only
         </Badge>
       </header>
@@ -483,7 +483,7 @@ export function ViewGroupsSettingsPage() {
             <button
               type="button"
               onClick={() => setFormGroup("new")}
-              className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
             >
               <Plus className="h-3 w-3" />
               New
@@ -493,7 +493,7 @@ export function ViewGroupsSettingsPage() {
           {groupsLoading ? (
             <GroupListSkeleton />
           ) : !groups || groups.length === 0 ? (
-            <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-6 flex flex-col items-center gap-3 text-center">
+            <div className="rounded-lg border border-glass-strong bg-glass px-4 py-6 flex flex-col items-center gap-3 text-center">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 border border-primary/20">
                 <Users className="h-4 w-4 text-primary/60" />
               </div>
@@ -523,7 +523,7 @@ export function ViewGroupsSettingsPage() {
         </div>
 
         {/* Right: detail panel */}
-        <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
+        <div className="rounded-lg border border-glass-strong bg-glass p-4">
           {selectedGroup ? (
             <GroupDetailPanel
               group={selectedGroup}
@@ -534,7 +534,7 @@ export function ViewGroupsSettingsPage() {
             />
           ) : (
             <div className="flex h-full min-h-[200px] flex-col items-center justify-center gap-3 text-center">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.04] border border-white/[0.06]">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-glass border border-glass-strong">
                 <Users className="h-4 w-4 text-muted-foreground/40" />
               </div>
               <p className="text-sm text-muted-foreground">

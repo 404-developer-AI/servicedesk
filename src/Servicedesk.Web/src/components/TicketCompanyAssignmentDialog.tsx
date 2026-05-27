@@ -149,7 +149,7 @@ export function TicketCompanyAssignmentDialog({
           />
         </div>
 
-        <div className="max-h-64 overflow-y-auto rounded-md border border-white/10 bg-white/[0.02] divide-y divide-white/5">
+        <div className="max-h-64 overflow-y-auto rounded-md border border-glass bg-glass divide-y divide-glass">
           {!isSearching && (
             <>
               {loadingDefault && (
@@ -278,7 +278,7 @@ function OptionRow({
       className={cn(
         "flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors",
         disabled && "cursor-not-allowed opacity-50",
-        !disabled && "hover:bg-white/[0.04]",
+        !disabled && "hover:bg-glass-hover",
         selected && "bg-primary/10 hover:bg-primary/15",
       )}
     >

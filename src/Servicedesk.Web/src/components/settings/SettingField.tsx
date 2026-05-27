@@ -34,7 +34,7 @@ function ToggleSwitch({
         "disabled:cursor-not-allowed disabled:opacity-50",
         checked
           ? "bg-gradient-to-r from-violet-600 to-indigo-600"
-          : "bg-white/[0.08]",
+          : "bg-glass-strong",
       )}
     >
       <span
@@ -93,7 +93,7 @@ export function SettingField({ entry, queryKey, label, hint, readOnly }: Props) 
   const hasDescription = !!description && description.trim().length > 0;
 
   return (
-    <div className="flex items-start justify-between gap-4 py-3 border-b border-white/[0.04] last:border-b-0">
+    <div className="flex items-start justify-between gap-4 py-3 border-b border-glass last:border-b-0">
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex items-center gap-1.5">
           <p className="text-sm font-medium text-foreground">{label ?? entry.key}</p>
@@ -112,7 +112,7 @@ export function SettingField({ entry, queryKey, label, hint, readOnly }: Props) 
                 <TooltipContent
                   side="right"
                   align="start"
-                  className="max-w-sm whitespace-normal border border-white/10 bg-zinc-900/95 text-xs leading-relaxed text-muted-foreground shadow-xl backdrop-blur"
+                  className="max-w-sm whitespace-normal border border-glass bg-popover/95 text-xs leading-relaxed text-muted-foreground shadow-xl backdrop-blur"
                 >
                   {description}
                 </TooltipContent>
@@ -150,7 +150,7 @@ export function SettingField({ entry, queryKey, label, hint, readOnly }: Props) 
                 e.currentTarget.blur();
               }
             }}
-            className="h-9 w-56 bg-white/[0.03] font-mono text-sm"
+            className="h-9 w-56 bg-glass font-mono text-sm"
           />
         )}
       </div>

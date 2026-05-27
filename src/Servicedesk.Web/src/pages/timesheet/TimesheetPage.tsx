@@ -41,7 +41,7 @@ export function TimesheetPage() {
             non-ticket task for absence, meetings or administration.
           </p>
         </div>
-        <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+        <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
           {isManager ? "Agent + manager" : "Own registration"}
         </Badge>
       </header>
@@ -97,8 +97,8 @@ function TabButton({
       className={cn(
         "inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors",
         active
-          ? "bg-white/[0.08] text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
-          : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
+          ? "bg-glass-strong text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+          : "text-muted-foreground hover:bg-glass-hover hover:text-foreground",
         disabled && "cursor-not-allowed opacity-40 hover:bg-transparent hover:text-muted-foreground",
       )}
       title={disabled ? "Requires Timesheet manager access" : undefined}

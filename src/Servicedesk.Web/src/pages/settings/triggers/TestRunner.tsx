@@ -67,13 +67,13 @@ export function TestRunner({ triggerId, dirty }: Props) {
             placeholder="Search by ticket #, subject, requester…"
           />
           {pickerQ.data && pickerQ.data.items.length > 0 ? (
-            <ul className="max-h-64 overflow-y-auto rounded-md border border-white/10 bg-white/[0.02]">
+            <ul className="max-h-64 overflow-y-auto rounded-md border border-glass bg-glass">
               {pickerQ.data.items.map((t) => (
                 <li key={t.id}>
                   <button
                     type="button"
                     onClick={() => { setPicked(t); setResult(null); }}
-                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-white/[0.04]"
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-glass-hover"
                   >
                     <span className="flex min-w-0 flex-1 items-center gap-2">
                       <span className="font-mono text-xs text-muted-foreground">#{t.number}</span>
@@ -100,7 +100,7 @@ export function TestRunner({ triggerId, dirty }: Props) {
           ) : null}
         </div>
       ) : (
-        <div className="flex items-center justify-between gap-3 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2">
+        <div className="flex items-center justify-between gap-3 rounded-md border border-glass bg-glass px-3 py-2">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 text-sm">
               <span className="font-mono text-xs text-muted-foreground">#{picked.number}</span>
@@ -158,7 +158,7 @@ function DryRunDiff({ result }: { result: TriggerDryRunResult }) {
 
   if (!result.matched) {
     return (
-      <div className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-muted-foreground">
+      <div className="rounded-md border border-glass bg-glass px-3 py-2 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">
           <MinusCircle className="h-3.5 w-3.5" />
           Conditions did not match — trigger would not fire on this ticket.
@@ -247,8 +247,8 @@ function toneFor(status: TriggerDryRunAction["status"]) {
       };
     case "wouldnoop":
       return {
-        border: "border-white/10",
-        bg: "bg-white/[0.03]",
+        border: "border-glass",
+        bg: "bg-glass",
         icon: "text-muted-foreground",
         label: "text-muted-foreground",
       };

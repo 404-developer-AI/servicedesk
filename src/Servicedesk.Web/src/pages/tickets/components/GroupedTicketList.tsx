@@ -10,6 +10,7 @@ import { ALL_COLUMNS } from "./TicketTable";
 import { taxonomyApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
+import { useTheme } from "@/app/ThemeProvider";
 import type { TicketListItem, DisplayConfig } from "@/lib/ticket-api";
 import type { CSSProperties } from "react";
 
@@ -150,6 +151,7 @@ export function GroupedTicketList({
   onRowClick,
   footer,
 }: GroupedTicketListProps) {
+  const { theme } = useTheme();
   const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(
     new Set(),
   );
@@ -226,13 +228,13 @@ export function GroupedTicketList({
   return (
     <div className="glass-card h-full overflow-auto">
         <table className="w-full text-left text-sm">
-          <thead className="sticky top-0 z-10 bg-[hsl(245_14%_12%)]">
+          <thead className="sticky top-0 z-10 bg-[hsl(256deg_28.3%_89.61%)] dark:bg-[hsl(240_10%_8%)]">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
-                    className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground border-b border-white/10"
+                    className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground border-b border-glass"
                   >
                     {header.isPlaceholder
                       ? null
@@ -251,7 +253,7 @@ export function GroupedTicketList({
                 <React.Fragment key={group.key}>
                   {showGroupHeaders && (
                     <tr
-                      className="border-b border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] transition-colors cursor-pointer"
+                      className="border-b border-glass-strong bg-glass hover:bg-glass-hover transition-colors cursor-pointer"
                       onClick={() => toggleCollapse(group.key)}
                     >
                       <td colSpan={colCount} className="px-4 py-2">
@@ -264,7 +266,14 @@ export function GroupedTicketList({
                           />
                           <span
                             className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium"
-                            style={{ backgroundColor: `${color}20`, color }}
+                            style={
+                              theme === "light"
+                                ? {
+                                    backgroundColor: `color-mix(in srgb, ${color} 22%, transparent)`,
+                                    color: `color-mix(in srgb, ${color}, black 45%)`,
+                                  }
+                                : { backgroundColor: `${color}20`, color }
+                            }
                           >
                             {group.label}
                           </span>
@@ -294,7 +303,7 @@ export function GroupedTicketList({
                       return (
                         <tr
                           key={row.id}
-                          className="border-b border-white/5 hover:bg-white/[0.04] cursor-pointer transition-colors"
+                          className="border-b border-glass hover:bg-glass-hover cursor-pointer transition-colors"
                           style={rowStyle}
                           onClick={() => onRowClick(item.id)}
                         >

@@ -69,7 +69,7 @@ function PdfPreview({ url }: { url: string }) {
     <iframe
       src={url}
       title="PDF preview"
-      className="h-[85vh] w-full rounded-md border border-white/10 bg-black/40"
+      className="h-[85vh] w-full rounded-md border border-glass bg-black/40"
     />
   );
 }
@@ -108,7 +108,7 @@ function TextPreview({ url }: { url: string }) {
     );
   }
   return (
-    <pre className="max-h-[75vh] overflow-auto whitespace-pre-wrap break-words rounded-md border border-white/10 bg-black/40 p-4 font-mono text-xs text-foreground/90">
+    <pre className="max-h-[75vh] overflow-auto whitespace-pre-wrap break-words rounded-md border border-glass bg-black/40 p-4 font-mono text-xs text-foreground/90">
       {state.text}
     </pre>
   );
@@ -119,7 +119,7 @@ export function AttachmentPreviewDialog({ preview, onOpenChange }: Props) {
 
   return (
     <Dialog open={preview !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[95vh] w-[95vw] max-w-[1400px] overflow-hidden border-white/[0.06] bg-background/80 p-4 backdrop-blur-xl sm:rounded-lg">
+      <DialogContent className="max-h-[95vh] w-[95vw] max-w-[1400px] overflow-hidden border-glass-strong bg-background/80 p-4 backdrop-blur-xl sm:rounded-lg">
         {preview ? (
           <>
             <DialogHeader className="pr-10">
@@ -158,7 +158,7 @@ export function AttachmentPreviewDialog({ preview, onOpenChange }: Props) {
               ) : kind === "text" ? (
                 <TextPreview url={preview.url} />
               ) : (
-                <p className="rounded-md border border-white/10 bg-black/20 p-6 text-sm text-muted-foreground">
+                <p className="rounded-md border border-glass bg-black/20 p-6 text-sm text-muted-foreground">
                   Preview is not supported for this file type.
                 </p>
               )}

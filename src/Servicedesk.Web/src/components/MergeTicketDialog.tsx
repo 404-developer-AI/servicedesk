@@ -194,7 +194,7 @@ export function MergeTicketDialog({
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 flex-col space-y-4 overflow-y-auto">
-          <div className="rounded-md border border-white/10 bg-white/[0.02] px-3 py-2.5">
+          <div className="rounded-md border border-glass bg-glass px-3 py-2.5">
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 mb-1">
               From
             </div>
@@ -225,7 +225,7 @@ export function MergeTicketDialog({
                 className="pl-8"
               />
             </div>
-            <div className="mt-2 max-h-56 overflow-y-auto rounded-md border border-white/10 bg-white/[0.02]">
+            <div className="mt-2 max-h-56 overflow-y-auto rounded-md border border-glass bg-glass">
               {searching && (
                 <div className="px-3 py-2 text-xs text-muted-foreground/70">
                   Searching...
@@ -242,7 +242,7 @@ export function MergeTicketDialog({
                 </div>
               )}
               {!searching && !searchError && results.length > 0 && (
-                <ul className="divide-y divide-white/5">
+                <ul className="divide-y divide-glass">
                   {results.map((hit) => {
                     const isSelected = selected?.id === hit.id;
                     const requesterName = [hit.requesterFirstName, hit.requesterLastName]
@@ -257,7 +257,7 @@ export function MergeTicketDialog({
                             setAcknowledged(false);
                           }}
                           className={cn(
-                            "w-full text-left px-3 py-2 hover:bg-white/[0.04] transition-colors",
+                            "w-full text-left px-3 py-2 hover:bg-glass-hover transition-colors",
                             isSelected && "bg-primary/10",
                           )}
                         >

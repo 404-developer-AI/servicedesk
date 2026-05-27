@@ -237,7 +237,7 @@ export function ContactFormDialog({
                       className={cn(
                         "rounded-md border px-2.5 py-1.5 text-left transition-colors",
                         active ? t.activeClassName : t.className,
-                        !active && "hover:bg-white/[0.04]",
+                        !active && "hover:bg-glass-hover",
                       )}
                     >
                       <div className="text-xs font-medium">{t.label}</div>
@@ -334,7 +334,7 @@ function CompanyLinkPicker({
         <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1.5">
           Link company
         </div>
-        <div className="flex items-center justify-between gap-2 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm">
+        <div className="flex items-center justify-between gap-2 rounded-md border border-glass bg-glass px-3 py-2 text-sm">
           <span className="flex min-w-0 items-center gap-2">
             <Building2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <span className="truncate">{picked.shortName || picked.name}</span>
@@ -345,7 +345,7 @@ function CompanyLinkPicker({
           <button
             type="button"
             onClick={onClear}
-            className="shrink-0 rounded-md p-1 text-muted-foreground/70 hover:bg-white/[0.06] hover:text-foreground"
+            className="shrink-0 rounded-md p-1 text-muted-foreground/70 hover:bg-glass-hover hover:text-foreground"
             title="Unpick company"
           >
             <X className="h-3.5 w-3.5" />
@@ -360,7 +360,7 @@ function CompanyLinkPicker({
       <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1.5">
         Link company <span className="normal-case text-muted-foreground/60">(optional)</span>
       </div>
-      <div className="flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-2.5">
+      <div className="flex items-center gap-2 rounded-md border border-glass bg-glass px-2.5">
         <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <input
           value={search}
@@ -370,7 +370,7 @@ function CompanyLinkPicker({
         />
       </div>
       {(matches ?? []).length > 0 && (
-        <ul className="mt-1.5 max-h-40 space-y-0.5 overflow-auto rounded-md border border-white/5 bg-white/[0.02] p-1">
+        <ul className="mt-1.5 max-h-40 space-y-0.5 overflow-auto rounded-md border border-glass bg-glass p-1">
           {(matches ?? []).map((c) => (
             <li key={c.id}>
               <button
@@ -379,7 +379,7 @@ function CompanyLinkPicker({
                   onPick(c);
                   setSearch("");
                 }}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-white/[0.05]"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-glass-hover"
               >
                 <Building2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <span className="truncate">{c.shortName || c.name}</span>

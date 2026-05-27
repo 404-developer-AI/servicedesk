@@ -100,7 +100,7 @@ export function ActivityFeedPage() {
             to users with the activity-feed flag enabled.
           </p>
         </div>
-        <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+        <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
           Activity feed
         </Badge>
       </header>
@@ -112,7 +112,7 @@ export function ActivityFeedPage() {
             <select
               value={eventType}
               onChange={(e) => { setEventType(e.target.value); setCursor(undefined); }}
-              className="h-9 rounded-md border border-white/10 bg-white/[0.04] px-2 text-sm text-foreground outline-none focus:border-primary/60"
+              className="h-9 rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus:border-primary/60"
             >
               {EVENT_TYPES.map((t) => (
                 <option key={t.value} value={t.value} className="bg-background">
@@ -128,7 +128,7 @@ export function ActivityFeedPage() {
               type="date"
               value={fromDate}
               onChange={(e) => { setFromDate(e.target.value); setCursor(undefined); }}
-              className="h-9 rounded-md border border-white/10 bg-white/[0.04] px-2 text-sm text-foreground outline-none focus:border-primary/60"
+              className="h-9 rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus:border-primary/60"
             />
           </label>
 
@@ -138,7 +138,7 @@ export function ActivityFeedPage() {
               type="date"
               value={toDate}
               onChange={(e) => { setToDate(e.target.value); setCursor(undefined); }}
-              className="h-9 rounded-md border border-white/10 bg-white/[0.04] px-2 text-sm text-foreground outline-none focus:border-primary/60"
+              className="h-9 rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus:border-primary/60"
             />
           </label>
 
@@ -175,7 +175,7 @@ export function ActivityFeedPage() {
             Failed to load the activity feed. Is your account enabled for this feature?
           </div>
         ) : data && data.items.length > 0 ? (
-          <ul className="divide-y divide-white/[0.04]">
+          <ul className="divide-y divide-glass">
             {data.items.map((entry) => (
               <ActivityRow
                 key={entry.id}
@@ -229,7 +229,7 @@ function ActivityRow({
   const meta = useMemo(() => parseMetadata(entry.metadataJson), [entry.metadataJson]);
 
   return (
-    <li className="flex items-start gap-4 p-4 transition-colors hover:bg-white/[0.02]">
+    <li className="flex items-start gap-4 p-4 transition-colors hover:bg-glass-hover">
       <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[11px] font-medium uppercase text-primary">
         {localPartOf(entry.agentEmail).substring(0, 2)}
       </div>
@@ -259,7 +259,7 @@ function ActivityRow({
           )}
         </div>
         <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground/70">
-          <Badge className="border border-white/10 bg-white/[0.05] font-mono text-[10px] font-normal text-foreground">
+          <Badge className="border border-glass bg-glass font-mono text-[10px] font-normal text-foreground">
             {entry.eventType}
           </Badge>
           <span>{toServerLocal(entry.occurredUtc, offsetMinutes, true)}</span>

@@ -37,8 +37,8 @@ function PinnedItem({
   const [remarkDraft, setRemarkDraft] = React.useState(pin.remark);
 
   const config = event
-    ? EVENT_CONFIG[event.eventType] ?? { icon: Pin, dotColor: "bg-white/30", label: event.eventType }
-    : { icon: Pin, dotColor: "bg-white/30", label: "Event" };
+    ? EVENT_CONFIG[event.eventType] ?? { icon: Pin, dotColor: "bg-glass-strong", label: event.eventType }
+    : { icon: Pin, dotColor: "bg-glass-strong", label: "Event" };
   const Icon = config.icon;
 
   const unpinMutation = useMutation({
@@ -82,7 +82,7 @@ function PinnedItem({
 
   return (
     <div
-      className="flex items-start gap-3 px-3 py-2.5 hover:bg-white/[0.04] transition-colors group/item cursor-pointer"
+      className="flex items-start gap-3 px-3 py-2.5 hover:bg-glass-hover transition-colors group/item cursor-pointer"
       onClick={onJump}
       role="button"
       tabIndex={0}
@@ -126,7 +126,7 @@ function PinnedItem({
                   setEditingRemark(false);
                 }
               }}
-              className="flex-1 min-w-0 rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-foreground outline-none focus:border-primary/50"
+              className="flex-1 min-w-0 rounded border border-glass bg-glass px-2 py-1 text-xs text-foreground outline-none focus:border-primary/50"
               autoFocus
             />
             <button
@@ -142,7 +142,7 @@ function PinnedItem({
                 setRemarkDraft(pin.remark);
                 setEditingRemark(false);
               }}
-              className="p-0.5 rounded text-muted-foreground hover:bg-white/[0.06]"
+              className="p-0.5 rounded text-muted-foreground hover:bg-glass-hover"
             >
               <X className="h-3 w-3" />
             </button>
@@ -222,7 +222,7 @@ export function PinnedEventsSummary({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="w-full flex items-center gap-2 rounded-[var(--radius)] border border-amber-500/20 bg-amber-500/[0.04] px-3 py-2 text-sm text-amber-300/80 hover:bg-amber-500/[0.08] hover:border-amber-500/30 transition-colors"
+          className="w-full flex items-center gap-2 rounded-[var(--radius)] border px-3 py-2 text-sm transition-colors border-amber-400/60 bg-amber-100/80 text-amber-800 hover:bg-amber-100 hover:border-amber-500/70 dark:border-amber-500/20 dark:bg-amber-500/[0.04] dark:text-amber-300/80 dark:hover:bg-amber-500/[0.08] dark:hover:border-amber-500/30"
         >
           <Pin className="h-3.5 w-3.5 shrink-0" />
           <span className="font-medium">{label}</span>
@@ -230,16 +230,16 @@ export function PinnedEventsSummary({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-[400px] p-0 border-white/10 bg-background/95 backdrop-blur-xl"
+        className="w-[400px] p-0 border-glass bg-background/95 backdrop-blur-xl"
       >
-        <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-glass">
           <span className="text-xs font-medium text-foreground/80">
             Pinned events
           </span>
           <span className="text-[11px] text-muted-foreground/50">{count}</span>
         </div>
         <div className="max-h-[480px] overflow-y-auto">
-          <div className="divide-y divide-white/[0.06]">
+          <div className="divide-y divide-glass">
             {pinnedEvents.map((pin) => (
               <PinnedItem
                 key={pin.id}

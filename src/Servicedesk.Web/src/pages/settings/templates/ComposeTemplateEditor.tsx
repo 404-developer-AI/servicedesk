@@ -216,7 +216,7 @@ export function TemplateEditor({
                     className="flex items-center justify-between gap-3"
                   >
                     <span className="truncate text-sm">{t.label}</span>
-                    <code className="shrink-0 rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                    <code className="shrink-0 rounded bg-glass-strong px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                       {t.token}
                     </code>
                   </DropdownMenuItem>
@@ -277,7 +277,7 @@ export function TemplateEditor({
                     "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors",
                     selected
                       ? "border-primary/40 bg-primary/15 text-primary-foreground"
-                      : "border-white/[0.06] bg-white/[0.02] text-muted-foreground hover:bg-white/[0.05]",
+                      : "border-glass-strong bg-glass text-muted-foreground hover:bg-glass-hover",
                   )}
                   aria-pressed={selected}
                 >
@@ -328,7 +328,7 @@ export function TemplateEditor({
                     "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors",
                     selected
                       ? "border-primary/40 bg-primary/15 text-primary-foreground"
-                      : "border-white/[0.06] bg-white/[0.02] text-muted-foreground hover:bg-white/[0.05]",
+                      : "border-glass-strong bg-glass text-muted-foreground hover:bg-glass-hover",
                   )}
                   aria-pressed={selected}
                 >
@@ -341,7 +341,7 @@ export function TemplateEditor({
         )}
       </div>
 
-      <div className="flex items-start justify-between gap-4 rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+      <div className="flex items-start justify-between gap-4 rounded-lg border border-glass-strong bg-glass px-4 py-3">
         <div className="space-y-0.5">
           <p className="text-sm font-medium text-foreground">
             Auto-insert into the internal-note composer
@@ -364,7 +364,7 @@ export function TemplateEditor({
         />
       </div>
 
-      <div className="space-y-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+      <div className="space-y-2 rounded-lg border border-glass-strong bg-glass px-4 py-3">
         <div className="space-y-0.5">
           <p className="text-sm font-medium text-foreground">
             Linked survey (optional)
@@ -380,7 +380,7 @@ export function TemplateEditor({
           value={linkedSurveyId ?? "__none"}
           onValueChange={(v) => setLinkedSurveyId(v === "__none" ? null : v)}
         >
-          <SelectTrigger className="h-9 bg-white/[0.02]">
+          <SelectTrigger className="h-9 bg-glass">
             <SelectValue placeholder="No survey" />
           </SelectTrigger>
           <SelectContent>
@@ -394,7 +394,7 @@ export function TemplateEditor({
         </Select>
       </div>
 
-      <div className="flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+      <div className="flex items-center justify-between rounded-lg border border-glass-strong bg-glass px-4 py-3">
         <div className="space-y-0.5">
           <p className="text-sm font-medium text-foreground">Active</p>
           <p className="text-xs text-muted-foreground">

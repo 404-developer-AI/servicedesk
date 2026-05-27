@@ -102,7 +102,7 @@ export function AddContactLinkDialog({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <div className="mt-2 max-h-[220px] space-y-1 overflow-auto rounded-md border border-white/5 bg-white/[0.02] p-1">
+            <div className="mt-2 max-h-[220px] space-y-1 overflow-auto rounded-md border border-glass bg-glass p-1">
               {(matches ?? []).length === 0 ? (
                 <div className="px-3 py-3 text-xs text-muted-foreground">No matches.</div>
               ) : (
@@ -119,7 +119,7 @@ export function AddContactLinkDialog({
                         "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm",
                         selected
                           ? "border border-purple-400/50 bg-purple-500/10"
-                          : "hover:bg-white/[0.05]",
+                          : "hover:bg-glass-hover",
                         alreadyLinked && "cursor-not-allowed opacity-40",
                       )}
                     >
@@ -233,7 +233,7 @@ function RoleTile({
       className={cn(
         "rounded-md border px-2.5 py-1.5 text-left transition-colors",
         active ? activeByRole[role] : baseByRole[role],
-        !active && "hover:bg-white/[0.04]",
+        !active && "hover:bg-glass-hover",
       )}
     >
       <div className="text-xs font-medium">{label}</div>

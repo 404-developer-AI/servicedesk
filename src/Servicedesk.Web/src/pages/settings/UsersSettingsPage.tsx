@@ -113,7 +113,7 @@ export function UsersSettingsPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+          <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
             Admin only
           </Badge>
           <Button
@@ -197,7 +197,7 @@ export function UsersSettingsPage() {
             />
           ))}
           {filtered.length === 0 && (
-            <div className="rounded-lg border border-dashed border-white/[0.08] bg-white/[0.02] px-6 py-8 text-center text-sm text-muted-foreground">
+            <div className="rounded-lg border border-dashed border-glass-strong bg-glass px-6 py-8 text-center text-sm text-muted-foreground">
               No users match “{search}”.
             </div>
           )}
@@ -254,7 +254,7 @@ function EmptyState({
   m365Enabled: boolean;
 }) {
   return (
-    <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-6 py-10 flex flex-col items-center justify-center gap-3 text-center">
+    <div className="rounded-lg border border-glass-strong bg-glass px-6 py-10 flex flex-col items-center justify-center gap-3 text-center">
       <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 border border-primary/20">
         <UserCog className="h-5 w-5 text-primary/60" />
       </div>
@@ -325,7 +325,7 @@ function UserRow({
   return (
     <div
       className={cn(
-        "group flex items-center gap-4 rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3 transition-colors",
+        "group flex items-center gap-4 rounded-lg border border-glass-strong bg-glass px-4 py-3 transition-colors",
         !user.isActive && "opacity-60",
       )}
     >
@@ -340,7 +340,7 @@ function UserRow({
             </Badge>
           )}
           {!user.isActive && (
-            <Badge className="border border-white/10 bg-white/[0.04] text-[10px] font-medium text-muted-foreground px-1.5 py-0">
+            <Badge className="border border-glass bg-glass text-[10px] font-medium text-muted-foreground px-1.5 py-0">
               Inactive
             </Badge>
           )}
@@ -422,7 +422,7 @@ function UserRow({
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-white/[0.04] hover:text-foreground"
+            className="h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-glass-hover hover:text-foreground"
             aria-label="Row actions"
           >
             <MoreHorizontal className="h-4 w-4" />
@@ -492,7 +492,7 @@ function RoleChip({
 }) {
   if (role === "Customer") {
     return (
-      <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-0.5 text-[11px] text-muted-foreground">
+      <span className="shrink-0 rounded-full border border-glass bg-glass px-2.5 py-0.5 text-[11px] text-muted-foreground">
         Customer
       </span>
     );
@@ -511,7 +511,7 @@ function RoleChip({
         "disabled:opacity-50 disabled:cursor-not-allowed",
         role === "Admin"
           ? "border-amber-400/40 bg-amber-400/15 text-amber-300 hover:bg-amber-400/20"
-          : "border-white/[0.08] bg-white/[0.02] text-foreground hover:bg-white/[0.05]",
+          : "border-glass-strong bg-glass text-foreground hover:bg-glass-hover",
       )}
     >
       {role}
@@ -547,7 +547,7 @@ function ActiveToggle({
         "disabled:opacity-50 disabled:cursor-not-allowed",
         active
           ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/20"
-          : "border-white/[0.08] bg-white/[0.02] text-muted-foreground hover:bg-white/[0.05]",
+          : "border-glass-strong bg-glass text-muted-foreground hover:bg-glass-hover",
       )}
     >
       {active ? (
@@ -641,7 +641,7 @@ function AddFromM365Dialog({
                 : "Could not reach Microsoft Graph."}
             </div>
           ) : (
-            <div className="max-h-[300px] overflow-y-auto rounded-lg border border-white/[0.06] bg-white/[0.02]">
+            <div className="max-h-[300px] overflow-y-auto rounded-lg border border-glass-strong bg-glass">
               {(!results || results.length === 0) && !isFetching && (
                 <div className="px-4 py-6 text-center text-xs text-muted-foreground">
                   {query ? "No matches." : "Type to search."}
@@ -655,7 +655,7 @@ function AddFromM365Dialog({
                     type="button"
                     onClick={() => setSelected(u)}
                     className={cn(
-                      "flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-white/[0.04]",
+                      "flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-glass-hover",
                       isPicked && "bg-primary/10",
                     )}
                   >
@@ -696,7 +696,7 @@ function AddFromM365Dialog({
                       "flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors",
                       role === r
                         ? "border-primary/50 bg-primary/15 text-primary"
-                        : "border-white/[0.08] bg-white/[0.02] text-muted-foreground hover:bg-white/[0.04]",
+                        : "border-glass-strong bg-glass text-muted-foreground hover:bg-glass-hover",
                     )}
                   >
                     {r}
@@ -811,7 +811,7 @@ function UpgradeToM365Dialog({
             )}
           </div>
 
-          <div className="max-h-[260px] overflow-y-auto rounded-lg border border-white/[0.06] bg-white/[0.02]">
+          <div className="max-h-[260px] overflow-y-auto rounded-lg border border-glass-strong bg-glass">
             {(!results || results.length === 0) && !isFetching && (
               <div className="px-4 py-6 text-center text-xs text-muted-foreground">
                 No matches.
@@ -825,7 +825,7 @@ function UpgradeToM365Dialog({
                   type="button"
                   onClick={() => setSelected(u)}
                   className={cn(
-                    "flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-white/[0.04]",
+                    "flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-glass-hover",
                     isPicked && "bg-primary/10",
                   )}
                 >
@@ -1021,7 +1021,7 @@ function AddLocalDialog({
               <button
                 type="button"
                 onClick={() => setShowPw((v) => !v)}
-                className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
+                className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-glass-hover hover:text-foreground"
                 aria-label={showPw ? "Hide password" : "Show password"}
               >
                 {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -1038,7 +1038,7 @@ function AddLocalDialog({
             </p>
           </div>
 
-          <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
+          <div className="rounded-lg border border-glass-strong bg-glass p-3">
             <p className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
               Role
             </p>
@@ -1052,7 +1052,7 @@ function AddLocalDialog({
                     "flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors",
                     role === r
                       ? "border-primary/50 bg-primary/15 text-primary"
-                      : "border-white/[0.08] bg-white/[0.02] text-muted-foreground hover:bg-white/[0.04]",
+                      : "border-glass-strong bg-glass text-muted-foreground hover:bg-glass-hover",
                   )}
                 >
                   {r}

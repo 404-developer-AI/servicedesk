@@ -88,7 +88,7 @@ export function MailDiagnosticsPage() {
             or a file attachment never surfaces as a download link.
           </p>
         </div>
-        <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+        <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
           Admin only
         </Badge>
       </header>
@@ -115,21 +115,21 @@ export function MailDiagnosticsPage() {
         {recent.isLoading ? (
           <Skeleton className="h-24 w-full" />
         ) : filteredRecent.length === 0 ? (
-          <div className="rounded-md border border-white/5 bg-white/[0.02] px-3 py-4 text-center text-xs text-muted-foreground">
+          <div className="rounded-md border border-glass bg-glass px-3 py-4 text-center text-xs text-muted-foreground">
             {onlyIssues
               ? "Geen mails met hangende of gefaalde bijlagen."
               : "Geen mails gevonden."}
           </div>
         ) : (
-          <ul className="max-h-72 divide-y divide-white/5 overflow-y-auto rounded-md border border-white/5 bg-white/[0.02]">
+          <ul className="max-h-72 divide-y divide-glass overflow-y-auto rounded-md border border-glass bg-glass">
             {filteredRecent.map((m) => (
               <li key={m.mailMessageId}>
                 <button
                   type="button"
                   onClick={() => pick(m.mailMessageId)}
                   className={cn(
-                    "flex w-full flex-col gap-1 px-3 py-2 text-left transition-colors hover:bg-white/[0.04]",
-                    submitted === m.mailMessageId && "bg-white/[0.06]",
+                    "flex w-full flex-col gap-1 px-3 py-2 text-left transition-colors hover:bg-glass-hover",
+                    submitted === m.mailMessageId && "bg-glass-strong",
                   )}
                 >
                   <div className="flex items-center justify-between gap-2">
@@ -257,7 +257,7 @@ function DiagnosticsView({ data, offset }: { data: MailAttachmentDiagnostic; off
       </section>
 
       <section className="glass-panel overflow-hidden p-0 text-sm">
-        <header className="flex items-center justify-between border-b border-white/5 px-4 py-3">
+        <header className="flex items-center justify-between border-b border-glass px-4 py-3">
           <div className="font-medium text-foreground">
             Attachments ({data.attachments.length})
           </div>
@@ -274,7 +274,7 @@ function DiagnosticsView({ data, offset }: { data: MailAttachmentDiagnostic; off
             whether it was sent as an attachment at all.
           </div>
         ) : (
-          <ul className="divide-y divide-white/5">
+          <ul className="divide-y divide-glass">
             {data.attachments.map((a) => (
               <AttachmentRow key={a.id} attachment={a} offset={offset} />
             ))}
@@ -292,8 +292,8 @@ function AttachmentRow({
   attachment: MailAttachmentDiagnosticItem;
   offset: number;
 }) {
-  const stateClass = STATE_BADGE[a.processingState] ?? "border-white/10 bg-white/5 text-muted-foreground";
-  const jobClass = a.job ? JOB_BADGE[a.job.state] ?? "border-white/10 bg-white/5" : "";
+  const stateClass = STATE_BADGE[a.processingState] ?? "border-glass bg-glass text-muted-foreground";
+  const jobClass = a.job ? JOB_BADGE[a.job.state] ?? "border-glass bg-glass" : "";
   return (
     <li className="flex flex-col gap-2 px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">

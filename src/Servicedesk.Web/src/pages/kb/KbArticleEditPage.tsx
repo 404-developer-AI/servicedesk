@@ -209,7 +209,7 @@ export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
               onChange={(e) => setEditorNotes(e.target.value)}
               placeholder="Internal context for editors. Never shown to customers."
               rows={3}
-              className="w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm outline-none focus:border-white/20"
+              className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm outline-none focus:border-glass-strong"
             />
           </div>
         </div>
@@ -232,7 +232,7 @@ export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
               </Select>
             </div>
 
-            <div className="border-t border-white/5 pt-3">
+            <div className="border-t border-glass pt-3">
               <Button
                 onClick={() => (isCreate ? create.mutate() : update.mutate())}
                 disabled={!canSubmit || create.isPending || update.isPending}
@@ -299,7 +299,7 @@ function FlipButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="flex items-center justify-center gap-1.5 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+      className="flex items-center justify-center gap-1.5 rounded-md border border-glass bg-glass px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-glass-hover hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
     >
       {icon} {label}
     </button>

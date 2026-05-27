@@ -41,9 +41,9 @@ const ADSOLUT_COVERAGE_QUERY_KEY = ["integrations", "adsolut", "coverage"] as co
 
 const STATE_LABEL: Record<AdsolutState, { tone: string; text: string; dot: string }> = {
   not_configured: {
-    tone: "border-white/15 bg-white/[0.06] text-muted-foreground",
+    tone: "border-glass-strong bg-glass-strong text-muted-foreground",
     text: "Not configured",
-    dot: "bg-white/40",
+    dot: "bg-glass-strong",
   },
   not_connected: {
     tone: "border-amber-400/30 bg-amber-500/[0.08] text-amber-200",
@@ -522,13 +522,13 @@ export function AdsolutIntegrationPage() {
             administration links to this servicedesk install.
           </p>
         </div>
-        <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+        <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
           Admin only
         </Badge>
       </header>
 
       {/* Connection status */}
-      <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+      <section className="rounded-lg border border-glass-strong bg-glass p-5">
         <header className="mb-4 flex items-start justify-between gap-4">
           <div className="space-y-1">
             <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
@@ -661,7 +661,7 @@ export function AdsolutIntegrationPage() {
       </section>
 
       {/* Configuration */}
-      <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+      <section className="rounded-lg border border-glass-strong bg-glass p-5">
         <header className="mb-4 space-y-1">
           <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
             Configuration
@@ -693,7 +693,7 @@ export function AdsolutIntegrationPage() {
             needsReconnect={s.scopesNeedReconnect}
           />
 
-          <div className="flex items-center justify-between gap-3 rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2">
+          <div className="flex items-center justify-between gap-3 rounded-md border border-glass-strong bg-glass px-3 py-2">
             <div className="min-w-0 flex-1">
               <div className="text-sm">Client secret</div>
               <div className="text-xs text-muted-foreground">
@@ -726,7 +726,7 @@ export function AdsolutIntegrationPage() {
             )}
           </div>
 
-          <div className="flex items-center justify-between gap-3 rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2">
+          <div className="flex items-center justify-between gap-3 rounded-md border border-glass-strong bg-glass px-3 py-2">
             <div className="min-w-0 flex-1">
               <div className="text-sm">Redirect URI</div>
               <div className="text-xs text-muted-foreground">
@@ -734,7 +734,7 @@ export function AdsolutIntegrationPage() {
                 <span className="font-mono">App.PublicBaseUrl</span>.
               </div>
             </div>
-            <code className="truncate rounded bg-white/[0.04] px-2 py-1 font-mono text-xs">
+            <code className="truncate rounded bg-glass px-2 py-1 font-mono text-xs">
               {s.redirectUri}
             </code>
             <Button
@@ -754,7 +754,7 @@ export function AdsolutIntegrationPage() {
           administration before sync ticks do real work; the worker skips
           ticks while administrationId is null. */}
       {isConnectedState && (
-        <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+        <section className="rounded-lg border border-glass-strong bg-glass p-5">
           <header className="mb-4 space-y-1">
             <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
               Dossier
@@ -838,7 +838,7 @@ export function AdsolutIntegrationPage() {
           button so admins do not have to wait the full interval after
           changing a toggle. */}
       {isConnectedState && s.administrationId && (
-        <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+        <section className="rounded-lg border border-glass-strong bg-glass p-5">
           <header className="mb-4 flex items-start justify-between gap-4">
             <div className="space-y-1">
               <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
@@ -1045,7 +1045,7 @@ export function AdsolutIntegrationPage() {
           without one. Strict whitelist on the backend means this card cannot
           be turned into a generic API proxy. */}
       {isConnectedState && s.administrationId && (
-        <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+        <section className="rounded-lg border border-glass-strong bg-glass p-5">
           <header className="mb-4 space-y-1">
             <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
               API debug
@@ -1062,7 +1062,7 @@ export function AdsolutIntegrationPage() {
             <div
               role="tablist"
               aria-label="Lookup kind"
-              className="inline-flex rounded-md border border-white/[0.08] bg-white/[0.03] p-0.5 text-xs"
+              className="inline-flex rounded-md border border-glass-strong bg-glass p-0.5 text-xs"
             >
               {(["customer", "supplier"] as const).map((k) => (
                 <button
@@ -1074,7 +1074,7 @@ export function AdsolutIntegrationPage() {
                   className={cn(
                     "rounded px-3 py-1 capitalize transition-colors",
                     debugKind === k
-                      ? "bg-white/[0.08] text-foreground shadow-sm"
+                      ? "bg-glass-strong text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
@@ -1117,7 +1117,7 @@ export function AdsolutIntegrationPage() {
                   {debugResult.status === 0 ? "no response" : `HTTP ${debugResult.status}`}
                 </span>
                 {debugResult.upstreamErrorCode && (
-                  <span className="rounded border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+                  <span className="rounded border border-glass-strong bg-glass px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
                     {debugResult.upstreamErrorCode}
                   </span>
                 )}
@@ -1135,7 +1135,7 @@ export function AdsolutIntegrationPage() {
                 >
                   <Copy className="h-3.5 w-3.5" />
                 </Button>
-                <pre className="max-h-[28rem] overflow-auto rounded-md border border-white/[0.06] bg-black/30 p-3 pr-10 font-mono text-[11px] leading-relaxed text-foreground/90">
+                <pre className="max-h-[28rem] overflow-auto rounded-md border border-glass-strong bg-black/30 p-3 pr-10 font-mono text-[11px] leading-relaxed text-foreground/90">
                   {debugFormattedBody || "(empty body)"}
                 </pre>
               </div>
@@ -1149,7 +1149,7 @@ export function AdsolutIntegrationPage() {
           send. Each call lands in the audit log as debug.put_preview /
           debug.customer_put. */}
       {isConnectedState && s.administrationId && (
-        <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+        <section className="rounded-lg border border-glass-strong bg-glass p-5">
           <header className="mb-4 space-y-1">
             <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
               PUT debug · customers
@@ -1207,7 +1207,7 @@ export function AdsolutIntegrationPage() {
                     {putPreview.getStatus === 0 ? "no response" : `HTTP ${putPreview.getStatus}`}
                   </span>
                   {putPreview.upstreamErrorCode && (
-                    <span className="rounded border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+                    <span className="rounded border border-glass-strong bg-glass px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
                       {putPreview.upstreamErrorCode}
                     </span>
                   )}
@@ -1225,7 +1225,7 @@ export function AdsolutIntegrationPage() {
                   >
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
-                  <pre className="max-h-[20rem] overflow-auto rounded-md border border-white/[0.06] bg-black/30 p-3 pr-10 font-mono text-[11px] leading-relaxed text-foreground/90">
+                  <pre className="max-h-[20rem] overflow-auto rounded-md border border-glass-strong bg-black/30 p-3 pr-10 font-mono text-[11px] leading-relaxed text-foreground/90">
                     {putGetFormatted || "(empty body)"}
                   </pre>
                 </div>
@@ -1270,7 +1270,7 @@ export function AdsolutIntegrationPage() {
                     className={cn(
                       "block w-full resize-y rounded-md border bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-foreground/90 focus:outline-none focus:ring-1 focus:ring-primary/40",
                       putBodyParses || putBodyDraft.trim().length === 0
-                        ? "border-white/[0.06]"
+                        ? "border-glass-strong"
                         : "border-amber-400/40",
                     )}
                     rows={20}
@@ -1314,7 +1314,7 @@ export function AdsolutIntegrationPage() {
                       {putResult.status === 0 ? "no response" : `HTTP ${putResult.status}`}
                     </span>
                     {putResult.upstreamErrorCode && (
-                      <span className="rounded border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+                      <span className="rounded border border-glass-strong bg-glass px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
                         {putResult.upstreamErrorCode}
                       </span>
                     )}
@@ -1332,7 +1332,7 @@ export function AdsolutIntegrationPage() {
                     >
                       <Copy className="h-3.5 w-3.5" />
                     </Button>
-                    <pre className="max-h-[20rem] overflow-auto rounded-md border border-white/[0.06] bg-black/30 p-3 pr-10 font-mono text-[11px] leading-relaxed text-foreground/90">
+                    <pre className="max-h-[20rem] overflow-auto rounded-md border border-glass-strong bg-black/30 p-3 pr-10 font-mono text-[11px] leading-relaxed text-foreground/90">
                       {putResultFormatted || "(empty body)"}
                     </pre>
                   </div>
@@ -1350,7 +1350,7 @@ export function AdsolutIntegrationPage() {
           ~1h validity; the same button re-fetches when expired. Each
           reveal is audited in the security audit_log. */}
       {isConnectedState && (
-        <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+        <section className="rounded-lg border border-glass-strong bg-glass p-5">
           <header className="mb-4 space-y-1">
             <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
               External client (Postman / curl)
@@ -1417,7 +1417,7 @@ export function AdsolutIntegrationPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 truncate rounded-md border border-white/[0.06] bg-black/30 px-3 py-2 font-mono text-[11px] text-foreground/90">
+                  <code className="flex-1 truncate rounded-md border border-glass-strong bg-black/30 px-3 py-2 font-mono text-[11px] text-foreground/90">
                     {externalTokenVisible
                       ? externalToken.accessToken
                       : "•".repeat(64)}
@@ -1451,7 +1451,7 @@ export function AdsolutIntegrationPage() {
               <dl className="grid grid-cols-1 gap-y-2 text-xs sm:grid-cols-[140px_1fr]">
                 <dt className="text-muted-foreground/70">API base URL</dt>
                 <dd className="flex items-center gap-2">
-                  <code className="flex-1 truncate rounded-md border border-white/[0.06] bg-black/30 px-2 py-1 font-mono text-[11px] text-foreground/90">
+                  <code className="flex-1 truncate rounded-md border border-glass-strong bg-black/30 px-2 py-1 font-mono text-[11px] text-foreground/90">
                     {externalToken.baseUrl || "(not configured)"}
                   </code>
                   {externalToken.baseUrl && (
@@ -1468,7 +1468,7 @@ export function AdsolutIntegrationPage() {
                 </dd>
                 <dt className="text-muted-foreground/70">Administration id</dt>
                 <dd className="flex items-center gap-2">
-                  <code className="flex-1 truncate rounded-md border border-white/[0.06] bg-black/30 px-2 py-1 font-mono text-[11px] text-foreground/90">
+                  <code className="flex-1 truncate rounded-md border border-glass-strong bg-black/30 px-2 py-1 font-mono text-[11px] text-foreground/90">
                     {externalToken.administrationId ?? "(no dossier active)"}
                   </code>
                   {externalToken.administrationId && (
@@ -1497,7 +1497,7 @@ export function AdsolutIntegrationPage() {
                     Example — list first 10 customers
                   </div>
                   <div className="flex items-center gap-2">
-                    <code className="flex-1 truncate rounded-md border border-white/[0.06] bg-black/30 px-2 py-1 font-mono text-[11px] text-foreground/90">
+                    <code className="flex-1 truncate rounded-md border border-glass-strong bg-black/30 px-2 py-1 font-mono text-[11px] text-foreground/90">
                       GET {externalToken.baseUrl}/acc/v1/adm/{externalToken.administrationId}/customers?Limit=10
                     </code>
                     <Button
@@ -1523,7 +1523,7 @@ export function AdsolutIntegrationPage() {
       )}
 
       {/* Audit log — operational call history (placeholder marker) */}
-      <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+      <section className="rounded-lg border border-glass-strong bg-glass p-5">
         <header className="mb-4 space-y-1">
           <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
             Audit log
@@ -1563,7 +1563,7 @@ function CoverageTile({
 }: CoverageTileProps) {
   if (isLoading || !counts) {
     return (
-      <div className="rounded-md border border-white/[0.06] bg-white/[0.02] p-4">
+      <div className="rounded-md border border-glass-strong bg-glass p-4">
         <div className="mb-2 text-xs font-medium uppercase tracking-widest text-muted-foreground/70">
           Sync coverage
         </div>
@@ -1624,7 +1624,7 @@ function CoverageTile({
   const totalGaps = cells.reduce((sum, c) => sum + c.count, 0);
 
   return (
-    <div className="rounded-md border border-white/[0.06] bg-white/[0.02] p-4">
+    <div className="rounded-md border border-glass-strong bg-glass p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground/70">
           Sync coverage
@@ -1659,7 +1659,7 @@ function CoverageTile({
             className={cn(
               "group flex items-center justify-between rounded-md border px-3 py-2 transition-colors",
               c.count === 0
-                ? "border-white/[0.06] bg-white/[0.02] text-muted-foreground/70 hover:text-muted-foreground"
+                ? "border-glass-strong bg-glass text-muted-foreground/70 hover:text-muted-foreground"
                 : "border-amber-400/30 bg-amber-500/[0.06] text-amber-200 hover:bg-amber-500/[0.10]",
             )}
           >

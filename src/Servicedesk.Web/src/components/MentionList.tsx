@@ -58,8 +58,8 @@ export const MentionList = React.forwardRef<MentionListHandle, MentionListProps>
       <div
         className={cn(
           "min-w-[16rem] max-w-[22rem] max-h-64 overflow-auto",
-          "rounded-[var(--radius)] border border-white/10",
-          "bg-[hsl(240_10%_6%/0.96)] backdrop-blur-xl shadow-2xl",
+          "rounded-[var(--radius)] border border-glass",
+          "bg-popover/95 backdrop-blur-xl shadow-2xl",
           "py-1 text-sm",
         )}
         role="listbox"
@@ -91,7 +91,7 @@ export const MentionList = React.forwardRef<MentionListHandle, MentionListProps>
                   "w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors",
                   isSelected
                     ? "bg-purple-500/15 text-purple-100"
-                    : "text-foreground/80 hover:bg-white/[0.04]",
+                    : "text-foreground/80 hover:bg-glass-hover",
                 )}
               >
                 <span className="font-medium shrink-0">@{localPart}</span>

@@ -57,9 +57,9 @@ export function TemplateVariablePicker({ variables, onPick }: Props) {
       </PopoverTrigger>
       <PopoverContent
         align="end"
-        className="w-80 p-0 border border-white/10 bg-[hsl(240_10%_6%/0.96)] backdrop-blur-xl"
+        className="w-80 p-0 border border-glass bg-popover/95 backdrop-blur-xl"
       >
-        <div className="border-b border-white/[0.06] px-2 py-2">
+        <div className="border-b border-glass-strong px-2 py-2">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
             <input
@@ -68,7 +68,7 @@ export function TemplateVariablePicker({ variables, onPick }: Props) {
               placeholder="Search variables…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="w-full rounded-md border border-white/10 bg-white/[0.04] py-1.5 pl-7 pr-2 text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+              className="w-full rounded-md border border-glass bg-glass py-1.5 pl-7 pr-2 text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
             />
           </div>
         </div>
@@ -89,7 +89,7 @@ export function TemplateVariablePicker({ variables, onPick }: Props) {
                 }}
                 className={cn(
                   "w-full flex items-start gap-2 px-3 py-1.5 text-left transition-colors",
-                  "text-foreground/85 hover:bg-white/[0.04]",
+                  "text-foreground/85 hover:bg-glass-hover",
                 )}
               >
                 <span className="mt-0.5 text-muted-foreground/60">

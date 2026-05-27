@@ -123,7 +123,7 @@ export function TwoFactorSection() {
             "rounded-full border px-2.5 py-0.5 text-[10px] uppercase tracking-[0.14em] " +
             (enabled
               ? "border-emerald-400/30 bg-emerald-400/[0.08] text-emerald-200/90"
-              : "border-white/10 bg-white/[0.03] text-muted-foreground")
+              : "border-glass bg-glass text-muted-foreground")
           }
         >
           {enabled ? "Enabled" : "Disabled"}
@@ -145,11 +145,11 @@ export function TwoFactorSection() {
       {stage === "enrolling" && (
         <div className="space-y-4">
           <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start">
-            <div className="rounded-lg border border-white/10 bg-white p-2">
+            <div className="rounded-lg border border-glass bg-white p-2">
               {qrDataUrl ? (
                 <img src={qrDataUrl} alt="TOTP QR code" width={196} height={196} />
               ) : (
-                <div className="h-[196px] w-[196px] animate-pulse rounded bg-white/10" />
+                <div className="h-[196px] w-[196px] animate-pulse rounded bg-glass-strong" />
               )}
             </div>
             <div className="min-w-0 flex-1 space-y-3 text-xs text-muted-foreground">
@@ -157,7 +157,7 @@ export function TwoFactorSection() {
                 Scan this code with Google Authenticator, 1Password, Bitwarden, or
                 any other RFC 6238 app. You can also enter the secret manually:
               </p>
-              <code className="block break-all rounded border border-white/10 bg-white/[0.03] px-2 py-1.5 font-mono text-[11px] text-foreground">
+              <code className="block break-all rounded border border-glass bg-glass px-2 py-1.5 font-mono text-[11px] text-foreground">
                 {secret}
               </code>
             </div>
@@ -207,7 +207,7 @@ export function TwoFactorSection() {
             {recoveryCodes.map((c) => (
               <code
                 key={c}
-                className="rounded border border-white/10 bg-white/[0.03] px-2 py-1.5"
+                className="rounded border border-glass bg-glass px-2 py-1.5"
               >
                 {c}
               </code>

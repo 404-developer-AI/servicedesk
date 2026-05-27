@@ -46,7 +46,7 @@ export function TriggerEditorSheet({ triggerId, metadata, onClose }: Props) {
     <Sheet open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
       <SheetContent
         side="right"
-        className="!w-[min(720px,95vw)] !max-w-none overflow-y-auto bg-[hsl(240_10%_5%/0.96)] backdrop-blur-xl border-l border-white/10 sm:!max-w-none"
+        className="!w-[min(720px,95vw)] !max-w-none overflow-y-auto bg-popover/95 backdrop-blur-xl border-l border-glass sm:!max-w-none"
       >
         <SheetHeader className="space-y-1">
           <SheetTitle>{triggerId === "new" ? "New trigger" : "Edit trigger"}</SheetTitle>
@@ -255,7 +255,7 @@ function EditorBody({
             onChange={(e) => setDescription(e.target.value)}
             placeholder="What does this trigger do, and why was it added?"
             rows={2}
-            className="w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+            className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
           />
         </Field>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -282,7 +282,7 @@ function EditorBody({
           <select
             value={activatorPair}
             onChange={(e) => setActivatorPair(e.target.value)}
-            className="w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
+            className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
           >
             {metadata.activatorPairs.map((p) => (
               <option key={p} value={p}>{prettifyActivator(p)}</option>
@@ -294,7 +294,7 @@ function EditorBody({
             <select
               value={manualTicketTypeId ?? ""}
               onChange={(e) => setManualTicketTypeId(e.target.value || null)}
-              className="w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
+              className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
             >
               <option value="">— select a ticket type —</option>
               {(ticketTypesQ.data ?? []).filter((t) => t.isActive).map((t) => (
@@ -361,7 +361,7 @@ function EditorBody({
           to="/settings/triggers/$triggerId/runs"
           params={{ triggerId: triggerId as string }}
           onClick={onClose}
-          className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-white/[0.04] hover:text-foreground"
+          className="flex items-center gap-2 rounded-lg border border-glass-strong bg-glass px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-glass-hover hover:text-foreground"
         >
           <History className="h-4 w-4" />
           <span className="flex-1">View run history</span>
@@ -370,7 +370,7 @@ function EditorBody({
       )}
 
       {/* Sticky footer */}
-      <div className="sticky bottom-0 -mx-6 mt-2 flex items-center justify-end gap-2 border-t border-white/10 bg-[hsl(240_10%_5%/0.95)] px-6 py-3 backdrop-blur-xl">
+      <div className="sticky bottom-0 -mx-6 mt-2 flex items-center justify-end gap-2 border-t border-glass bg-popover/95 px-6 py-3 backdrop-blur-xl">
         <Button variant="ghost" onClick={onClose}>
           <X className="h-4 w-4" />
           Cancel
@@ -398,7 +398,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-4">
+    <section className="rounded-lg border border-glass-strong bg-glass px-4 py-4">
       <header className="mb-3 space-y-0.5">
         <h3 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
           {title}

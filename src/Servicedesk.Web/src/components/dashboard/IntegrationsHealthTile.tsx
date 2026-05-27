@@ -28,20 +28,26 @@ const STATUS_STYLES: Record<
   { badge: string; dot: string; label: string; icon: React.ReactNode }
 > = {
   Ok: {
-    badge: "border-emerald-400/30 bg-emerald-500/10 text-emerald-300",
-    dot: "bg-emerald-400",
+    badge:
+      "border-emerald-400/60 bg-emerald-100 text-emerald-800 " +
+      "dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-300",
+    dot: "bg-emerald-500 dark:bg-emerald-400",
     label: "OK",
     icon: <CheckCircle2 className="h-3.5 w-3.5" />,
   },
   Warning: {
-    badge: "border-amber-400/30 bg-amber-500/10 text-amber-300",
-    dot: "bg-amber-400",
+    badge:
+      "border-amber-400/60 bg-amber-100 text-amber-800 " +
+      "dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-300",
+    dot: "bg-amber-500 dark:bg-amber-400",
     label: "Warning",
     icon: <AlertTriangle className="h-3.5 w-3.5" />,
   },
   Critical: {
-    badge: "border-rose-400/40 bg-rose-500/10 text-rose-300",
-    dot: "bg-rose-400",
+    badge:
+      "border-rose-400/60 bg-rose-100 text-rose-800 " +
+      "dark:border-rose-400/40 dark:bg-rose-500/10 dark:text-rose-300",
+    dot: "bg-rose-500 dark:bg-rose-400",
     label: "Critical",
     icon: <AlertTriangle className="h-3.5 w-3.5" />,
   },
@@ -131,7 +137,7 @@ function IntegrationCard({ integration }: { integration: IntegrationHealth }) {
   };
 
   return (
-    <article className="group flex flex-col rounded-lg border border-white/[0.06] bg-white/[0.02] p-4 transition-colors hover:border-white/[0.10] hover:bg-white/[0.03]">
+    <article className="group flex flex-col rounded-lg border border-glass-strong bg-glass p-4 transition-colors hover:border-glass-strong hover:bg-glass-hover">
       <header className="mb-3 flex items-center justify-between gap-3">
         <button
           type="button"
@@ -139,7 +145,7 @@ function IntegrationCard({ integration }: { integration: IntegrationHealth }) {
           disabled={!detailRoute}
           className={cn(
             "-m-1 flex items-center gap-2.5 rounded-md p-1 text-left transition-colors",
-            detailRoute && "hover:bg-white/[0.04]",
+            detailRoute && "hover:bg-glass-hover",
             !detailRoute && "cursor-default",
           )}
         >
@@ -152,7 +158,7 @@ function IntegrationCard({ integration }: { integration: IntegrationHealth }) {
               className="h-8 w-8 select-none rounded-sm object-contain"
             />
           ) : (
-            <div className="h-8 w-8 rounded-sm border border-white/10 bg-white/[0.03]" />
+            <div className="h-8 w-8 rounded-sm border border-glass bg-glass" />
           )}
           <div className="min-w-0">
             <div className="text-sm font-semibold text-foreground">{integration.name}</div>
@@ -182,7 +188,7 @@ function IntegrationCard({ integration }: { integration: IntegrationHealth }) {
           is broken — the connection-cell already calls out the bigger
           problem). */}
       {integration.key === "adsolut" && integration.status !== "Critical" ? (
-        <div className="mt-3 border-t border-white/[0.04] pt-3">
+        <div className="mt-3 border-t border-glass pt-3">
           <AdsolutCoverageStrip />
         </div>
       ) : null}

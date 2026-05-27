@@ -59,8 +59,8 @@ function SettingsRail() {
                 className={cn(
                   "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all",
                   active
-                    ? "bg-white/[0.07] text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
-                    : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
+                    ? "bg-glass-strong text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+                    : "text-muted-foreground hover:bg-glass-hover hover:text-foreground",
                 )}
                 data-testid={`settings-nav-${section.slug}`}
               >
@@ -75,7 +75,7 @@ function SettingsRail() {
               {section.separatorAfter && (
                 <div
                   aria-hidden
-                  className="mx-3 my-1 h-px bg-white/[0.06]"
+                  className="mx-3 my-1 h-px bg-glass-strong"
                 />
               )}
             </Fragment>

@@ -81,7 +81,7 @@ function PlainField({
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring focus:border-white/20"
+        className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring focus:border-glass-strong"
       />
       <div className="flex justify-end">
         <TemplateVariablePicker variables={variables} onPick={insertAtCursor} />
@@ -148,8 +148,8 @@ function HtmlField({
 
   return (
     <div className={cn("space-y-1.5", className)}>
-      <div className="rounded-md border border-white/10 bg-white/[0.04] overflow-hidden">
-        <div className="flex items-center gap-1 px-2 py-1.5 border-b border-white/10 bg-white/[0.02] flex-wrap">
+      <div className="rounded-md border border-glass bg-glass overflow-hidden">
+        <div className="flex items-center gap-1 px-2 py-1.5 border-b border-glass bg-glass flex-wrap">
           <ToolbarBtn
             onClick={() => editor?.chain().focus().toggleBold().run()}
             active={editor?.isActive("bold")}
@@ -214,7 +214,7 @@ function ToolbarBtn({
       title={title}
       className={cn(
         "p-1.5 rounded-md transition-colors",
-        active ? "bg-white/10 text-white" : "text-muted-foreground hover:bg-white/10 hover:text-white",
+        active ? "bg-glass-strong text-foreground" : "text-muted-foreground hover:bg-glass-hover hover:text-foreground",
       )}
     >
       {children}
@@ -223,5 +223,5 @@ function ToolbarBtn({
 }
 
 function Sep() {
-  return <div className="w-px h-4 bg-white/10 mx-0.5 shrink-0" />;
+  return <div className="w-px h-4 bg-glass-strong mx-0.5 shrink-0" />;
 }

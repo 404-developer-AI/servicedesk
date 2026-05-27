@@ -87,7 +87,7 @@ export function LinkedTicketTypeDialog({
 }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md border-white/[0.06] bg-background/85 backdrop-blur-xl">
+      <DialogContent className="max-w-md border-glass-strong bg-background/85 backdrop-blur-xl">
         <DialogHeader>
           <DialogTitle className="font-display">Create linked ticket</DialogTitle>
           <DialogDescription>Select the type of ticket to link</DialogDescription>
@@ -101,7 +101,7 @@ export function LinkedTicketTypeDialog({
           )}
 
           {!loading && presets?.length === 0 && (
-            <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-6 text-center text-sm text-muted-foreground">
+            <div className="rounded-lg border border-glass-strong bg-glass px-4 py-6 text-center text-sm text-muted-foreground">
               No linked-ticket presets configured yet.
               <p className="mt-1 text-xs text-muted-foreground/80">
                 An admin can add a manual trigger under Settings → Triggers
@@ -118,7 +118,7 @@ export function LinkedTicketTypeDialog({
                 type="button"
                 onClick={() => onSelect(preset)}
                 className={cn(
-                  "group relative flex items-start gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3 text-left transition",
+                  "group relative flex items-start gap-3 rounded-lg border border-glass-strong bg-glass px-4 py-3 text-left transition",
                   "hover:border-primary/40 hover:bg-primary/[0.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
                 )}
               >

@@ -73,12 +73,12 @@ export function SearchPage() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Waar zoek je naar?"
-          className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-base outline-none ring-1 ring-inset ring-white/5 focus:ring-white/20"
+          className="w-full rounded-xl border border-glass bg-glass px-4 py-3 text-base outline-none ring-1 ring-inset ring-white/5 focus:ring-white/20"
         />
       </form>
 
       {tabs.length > 0 && (
-        <div className="mt-6 flex gap-1 border-b border-white/10">
+        <div className="mt-6 flex gap-1 border-b border-glass">
           {tabs.map((t) => {
             const isActive = t === activeType;
             return (
@@ -118,7 +118,7 @@ export function SearchPage() {
                 : `${pageStart}–${pageEnd} van ${total} resultaten`}
             </div>
 
-            <ul className="divide-y divide-white/5 rounded-xl border border-white/10 bg-white/[0.02]">
+            <ul className="divide-y divide-glass rounded-xl border border-glass bg-glass">
               {group.hits.map((hit) => (
                 <HitRow key={`${hit.kind}:${hit.entityId}`} hit={hit} query={q} />
               ))}
@@ -129,14 +129,14 @@ export function SearchPage() {
                 <button
                   disabled={offset === 0}
                   onClick={() => updateUrl({ offset: Math.max(0, offset - PAGE_SIZE) })}
-                  className="rounded-md border border-white/10 px-3 py-1 disabled:opacity-40"
+                  className="rounded-md border border-glass px-3 py-1 disabled:opacity-40"
                 >
                   ← Vorige
                 </button>
                 <button
                   disabled={!group.hasMore}
                   onClick={() => updateUrl({ offset: offset + PAGE_SIZE })}
-                  className="rounded-md border border-white/10 px-3 py-1 disabled:opacity-40"
+                  className="rounded-md border border-glass px-3 py-1 disabled:opacity-40"
                 >
                   Volgende →
                 </button>
@@ -168,7 +168,7 @@ function HitRow({ hit, query }: { hit: SearchHit; query: string }) {
 
   return (
     <li
-      className="cursor-pointer px-4 py-3 transition-colors hover:bg-white/5"
+      className="cursor-pointer px-4 py-3 transition-colors hover:bg-glass-hover"
       onClick={go}
     >
       <div className="flex items-baseline gap-2">

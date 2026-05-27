@@ -189,8 +189,8 @@ function NativeSelect({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className={cn(
-        "w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-foreground",
-        "focus:outline-none focus:ring-1 focus:ring-ring focus:border-white/20",
+        "w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground",
+        "focus:outline-none focus:ring-1 focus:ring-ring focus:border-glass-strong",
         "disabled:opacity-50",
         "[&_option]:bg-zinc-900 [&_option]:text-foreground",
       )}
@@ -253,7 +253,7 @@ function MultiSelectPills({
               "rounded-full border px-2.5 py-0.5 text-[11px] transition-colors select-none",
               active
                 ? "border-primary/50 bg-primary/20 text-foreground"
-                : "border-white/10 bg-white/[0.03] text-muted-foreground hover:border-white/20 hover:text-foreground",
+                : "border-glass bg-glass text-muted-foreground hover:border-glass-strong hover:text-foreground",
             )}
           >
             {item.name}
@@ -337,14 +337,14 @@ function GroupOrderEditor({
         {items.map((item, i) => (
           <div
             key={item.id}
-            className="flex items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-1.5 text-sm"
+            className="flex items-center gap-2 rounded-md border border-glass-strong bg-glass px-3 py-1.5 text-sm"
           >
             <span className="flex-1 text-foreground/90">{item.name}</span>
             <button
               type="button"
               onClick={() => move(i, -1)}
               disabled={i === 0}
-              className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-white/[0.06] disabled:opacity-30 disabled:pointer-events-none transition-colors"
+              className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-glass-hover disabled:opacity-30 disabled:pointer-events-none transition-colors"
             >
               <ArrowUp className="h-3 w-3" />
             </button>
@@ -352,7 +352,7 @@ function GroupOrderEditor({
               type="button"
               onClick={() => move(i, 1)}
               disabled={i === items.length - 1}
-              className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-white/[0.06] disabled:opacity-30 disabled:pointer-events-none transition-colors"
+              className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-glass-hover disabled:opacity-30 disabled:pointer-events-none transition-colors"
             >
               <ArrowDown className="h-3 w-3" />
             </button>
@@ -547,7 +547,7 @@ function ViewDialog({
               type="checkbox"
               checked={filters.openOnly ?? false}
               onChange={(e) => patch({ openOnly: e.target.checked || undefined })}
-              className="rounded border-white/20"
+              className="rounded border-glass-strong"
             />
             Open only (hide resolved &amp; closed tickets)
           </label>
@@ -570,7 +570,7 @@ function ViewDialog({
                       "rounded-full border px-2.5 py-0.5 text-[11px] transition-colors select-none",
                       active
                         ? "border-primary/50 bg-primary/20 text-foreground"
-                        : "border-white/10 bg-white/[0.03] text-muted-foreground hover:border-white/20 hover:text-foreground",
+                        : "border-glass bg-glass text-muted-foreground hover:border-glass-strong hover:text-foreground",
                     )}
                   >
                     {col.label}
@@ -581,7 +581,7 @@ function ViewDialog({
           </div>
 
           {/* ---- Display config: Sorting ---- */}
-          <div className="space-y-2 pt-2 border-t border-white/[0.06]">
+          <div className="space-y-2 pt-2 border-t border-glass-strong">
             <span className="text-xs font-medium text-muted-foreground">Sorting</span>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Sort by">
@@ -607,7 +607,7 @@ function ViewDialog({
           </div>
 
           {/* ---- Display config: Grouping ---- */}
-          <div className="space-y-2 pt-2 border-t border-white/[0.06]">
+          <div className="space-y-2 pt-2 border-t border-glass-strong">
             <span className="text-xs font-medium text-muted-foreground">Grouping</span>
             <Field label="Group by">
               <NativeSelect value={groupBy} onChange={setGroupBy}>
@@ -633,7 +633,7 @@ function ViewDialog({
           </div>
 
           {/* ---- Display config: Priority float ---- */}
-          <div className="flex items-center justify-between pt-2 border-t border-white/[0.06]">
+          <div className="flex items-center justify-between pt-2 border-t border-glass-strong">
             <div className="space-y-0.5">
               <span className="text-xs font-medium text-muted-foreground">Priority float</span>
               <p className="text-[10px] text-muted-foreground/60 leading-tight">
@@ -739,13 +739,13 @@ function ViewRow({
   const summaryParts = [...filterParts, ...dcParts];
 
   return (
-    <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] transition-colors hover:bg-white/[0.04]">
+    <div className="rounded-lg border border-glass-strong bg-glass transition-colors hover:bg-glass-hover">
       {/* Main bar */}
       <div className="flex items-center gap-3 px-4 py-2.5">
         <button
           type="button"
           onClick={onToggle}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
           aria-label={expanded ? "Collapse" : "Expand"}
         >
           <ChevronDown
@@ -763,7 +763,7 @@ function ViewRow({
         >
           <Eye className="h-3.5 w-3.5 shrink-0 text-primary/60" />
           <span
-            className="shrink-0 rounded-md border border-white/8 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground"
+            className="shrink-0 rounded-md border border-glass bg-glass px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground"
             title="Sidebar priority (0 = top, 100 = bottom)"
           >
             {view.sortOrder}
@@ -777,7 +777,7 @@ function ViewRow({
               {summaryParts.map((part) => (
                 <span
                   key={part}
-                  className="rounded-full border border-white/8 bg-white/[0.04] px-2 py-0.5 text-[10px] text-muted-foreground whitespace-nowrap"
+                  className="rounded-full border border-glass bg-glass px-2 py-0.5 text-[10px] text-muted-foreground whitespace-nowrap"
                 >
                   {part}
                 </span>
@@ -789,7 +789,7 @@ function ViewRow({
 
       {/* Expanded actions */}
       {expanded && (
-        <div className="flex items-center gap-2 border-t border-white/[0.04] px-4 py-2">
+        <div className="flex items-center gap-2 border-t border-glass px-4 py-2">
           <Button
             variant="ghost"
             size="sm"
@@ -815,7 +815,7 @@ function ViewRow({
               {summaryParts.map((part) => (
                 <span
                   key={part}
-                  className="rounded-full border border-white/8 bg-white/[0.04] px-2 py-0.5 text-[10px] text-muted-foreground"
+                  className="rounded-full border border-glass bg-glass px-2 py-0.5 text-[10px] text-muted-foreground"
                 >
                   {part}
                 </span>
@@ -832,7 +832,7 @@ function ViewRow({
 
 function ViewRowSkeleton() {
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
+    <div className="flex items-center gap-3 rounded-lg border border-glass-strong bg-glass px-4 py-2.5">
       <Skeleton className="h-4 w-4 rounded" />
       <Skeleton className="h-4 w-48" />
       <Skeleton className="ml-auto h-4 w-20 rounded-full" />
@@ -944,7 +944,7 @@ export function ViewsPage() {
           ))}
         </div>
       ) : (
-        <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-6 py-10 flex flex-col items-center justify-center gap-4 text-center">
+        <div className="rounded-lg border border-glass-strong bg-glass px-6 py-10 flex flex-col items-center justify-center gap-4 text-center">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 border border-primary/20">
             <Eye className="h-5 w-5 text-primary/60" />
           </div>

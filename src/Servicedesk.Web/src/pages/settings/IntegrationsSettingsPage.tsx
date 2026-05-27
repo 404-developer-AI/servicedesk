@@ -107,13 +107,13 @@ export function IntegrationsSettingsPage() {
             polling and retention knobs it controls.
           </p>
         </div>
-        <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+        <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
           Admin only
         </Badge>
       </header>
 
       {noneConfigured ? (
-        <div className="rounded-lg border border-white/[0.08] bg-gradient-to-br from-white/[0.04] to-white/[0.01] p-5">
+        <div className="rounded-lg border border-glass-strong bg-gradient-to-br from-white/[0.04] to-white/[0.01] p-5">
           <div className="flex items-start gap-3">
             <div className="rounded-md border border-primary/20 bg-primary/[0.08] p-2 text-primary">
               <Sparkles className="h-4 w-4" />

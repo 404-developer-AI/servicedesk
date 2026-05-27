@@ -186,7 +186,7 @@ export function TemplateEditor({
             onChange={(e) => setName(e.target.value)}
             maxLength={200}
             placeholder="e.g. Intake — laptop"
-            className="h-9 rounded-md border border-white/[0.08] bg-white/[0.02] px-3 text-sm text-foreground outline-none focus:border-primary/40"
+            className="h-9 rounded-md border border-glass-strong bg-glass px-3 text-sm text-foreground outline-none focus:border-primary/40"
           />
         </label>
         <label className="flex flex-col gap-1.5">
@@ -197,7 +197,7 @@ export function TemplateEditor({
             onChange={(e) => setDescription(e.target.value)}
             maxLength={2000}
             placeholder="Optional — shown at the top of the public form"
-            className="h-9 rounded-md border border-white/[0.08] bg-white/[0.02] px-3 text-sm text-foreground outline-none focus:border-primary/40"
+            className="h-9 rounded-md border border-glass-strong bg-glass px-3 text-sm text-foreground outline-none focus:border-primary/40"
           />
         </label>
       </div>
@@ -227,7 +227,7 @@ export function TemplateEditor({
           {questions.map((q, idx) => (
             <li
               key={q.clientId}
-              className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4"
+              className="rounded-lg border border-glass-strong bg-glass p-4"
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/60">
@@ -242,10 +242,10 @@ export function TemplateEditor({
                     })
                   }
                 >
-                  <SelectTrigger className="h-8 w-auto min-w-[12rem] border-white/10 bg-white/[0.04] text-sm focus:border-white/20 focus:bg-white/[0.06] focus:ring-0">
+                  <SelectTrigger className="h-8 w-auto min-w-[12rem] border-glass bg-glass text-sm focus:border-glass-strong focus:bg-glass-strong focus:ring-0">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="border-white/10 bg-popover/80 backdrop-blur-xl">
+                  <SelectContent className="border-glass bg-popover/80 backdrop-blur-xl">
                     {QUESTION_TYPES.map((t) => (
                       <SelectItem key={t.value} value={t.value}>
                         {t.label}
@@ -293,7 +293,7 @@ export function TemplateEditor({
                       updateQuestion(q.clientId, { label: e.target.value })
                     }
                     maxLength={500}
-                    className="h-9 rounded-md border border-white/[0.08] bg-white/[0.02] px-3 text-sm text-foreground outline-none focus:border-primary/40"
+                    className="h-9 rounded-md border border-glass-strong bg-glass px-3 text-sm text-foreground outline-none focus:border-primary/40"
                   />
                 </label>
                 <label className="flex flex-col gap-1">
@@ -305,7 +305,7 @@ export function TemplateEditor({
                       updateQuestion(q.clientId, { helpText: e.target.value })
                     }
                     maxLength={2000}
-                    className="h-9 rounded-md border border-white/[0.08] bg-white/[0.02] px-3 text-sm text-foreground outline-none focus:border-primary/40"
+                    className="h-9 rounded-md border border-glass-strong bg-glass px-3 text-sm text-foreground outline-none focus:border-primary/40"
                   />
                 </label>
               </div>
@@ -333,7 +333,7 @@ export function TemplateEditor({
                           defaultValue: e.target.value,
                         })
                       }
-                      className="h-9 rounded-md border border-white/[0.08] bg-white/[0.02] px-3 text-sm text-foreground outline-none focus:border-primary/40"
+                      className="h-9 rounded-md border border-glass-strong bg-glass px-3 text-sm text-foreground outline-none focus:border-primary/40"
                     />
                   </label>
                   <label className="flex flex-col gap-1">
@@ -346,10 +346,10 @@ export function TemplateEditor({
                         })
                       }
                     >
-                      <SelectTrigger className="h-9 border-white/10 bg-white/[0.04] text-sm focus:border-white/20 focus:bg-white/[0.06] focus:ring-0">
+                      <SelectTrigger className="h-9 border-glass bg-glass text-sm focus:border-glass-strong focus:bg-glass-strong focus:ring-0">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="border-white/10 bg-popover/80 backdrop-blur-xl">
+                      <SelectContent className="border-glass bg-popover/80 backdrop-blur-xl">
                         <SelectItem value="__none">
                           <span className="text-muted-foreground">(none)</span>
                         </SelectItem>
@@ -375,7 +375,7 @@ export function TemplateEditor({
         </ul>
       </div>
 
-      <footer className="flex justify-end gap-2 border-t border-white/[0.06] pt-4">
+      <footer className="flex justify-end gap-2 border-t border-glass-strong pt-4">
         <Button variant="ghost" onClick={onDone}>
           <X className="h-4 w-4" />
           Cancel
@@ -402,7 +402,7 @@ function DropdownOptionsEditor({
   ) => void;
 }) {
   return (
-    <div className="mt-3 rounded-md border border-white/[0.06] bg-white/[0.01] p-3">
+    <div className="mt-3 rounded-md border border-glass-strong bg-glass p-3">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-xs font-medium text-muted-foreground">
           Dropdown options
@@ -439,7 +439,7 @@ function DropdownOptionsEditor({
                 onChange(next);
               }}
               maxLength={200}
-              className="h-8 rounded-md border border-white/[0.08] bg-white/[0.02] px-2 text-sm text-foreground outline-none focus:border-primary/40"
+              className="h-8 rounded-md border border-glass-strong bg-glass px-2 text-sm text-foreground outline-none focus:border-primary/40"
             />
             <input
               type="text"
@@ -451,7 +451,7 @@ function DropdownOptionsEditor({
                 onChange(next);
               }}
               maxLength={200}
-              className="h-8 rounded-md border border-white/[0.08] bg-white/[0.02] px-2 text-sm text-foreground outline-none focus:border-primary/40"
+              className="h-8 rounded-md border border-glass-strong bg-glass px-2 text-sm text-foreground outline-none focus:border-primary/40"
             />
             <Button
               variant="ghost"

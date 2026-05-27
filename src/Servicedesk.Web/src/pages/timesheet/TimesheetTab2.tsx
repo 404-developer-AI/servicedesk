@@ -152,7 +152,7 @@ export function TimesheetTab2() {
       <section className="glass-card overflow-hidden">
         <div className="overflow-x-auto">
         <table className="w-full min-w-[1410px] text-left text-sm">
-          <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-white/10">
+          <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-glass">
             <tr>
               <th className="w-28 px-3 py-2 font-medium">Date</th>
               <th className="w-44 px-3 py-2 font-medium">User</th>
@@ -271,7 +271,7 @@ function FilterBar({
             type="date"
             value={draft.from ?? ""}
             onChange={(e) => setDraft({ ...draft, from: e.target.value || undefined })}
-            className="h-8 rounded-md border border-white/10 bg-white/[0.03] px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            className="h-8 rounded-md border border-glass bg-glass px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </FieldGroup>
         <FieldGroup label="To">
@@ -279,7 +279,7 @@ function FilterBar({
             type="date"
             value={draft.to ?? ""}
             onChange={(e) => setDraft({ ...draft, to: e.target.value || undefined })}
-            className="h-8 rounded-md border border-white/10 bg-white/[0.03] px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            className="h-8 rounded-md border border-glass bg-glass px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </FieldGroup>
         <FieldGroup label="User">
@@ -359,7 +359,7 @@ function FilterBar({
           </Button>
         </div>
       </div>
-      <div className="flex items-center justify-between border-t border-white/10 pt-2 text-xs text-muted-foreground">
+      <div className="flex items-center justify-between border-t border-glass pt-2 text-xs text-muted-foreground">
         <div className="flex items-center gap-2">
           <CalendarRange className="h-3.5 w-3.5" />
           <span>Showing {totalCount} {totalCount === 1 ? "entry" : "entries"}</span>
@@ -415,7 +415,7 @@ function ManagerDisplayRow({
   });
 
   return (
-    <tr className="border-b border-white/5 last:border-b-0 hover:bg-white/[0.03]">
+    <tr className="border-b border-glass last:border-b-0 hover:bg-glass-hover">
       <td className="px-3 py-2 font-mono text-xs text-foreground/90">
         {entry.entryDate.slice(0, 10)}
       </td>
@@ -502,7 +502,7 @@ function TaskPill({ name, isAbsence }: { name: string; isAbsence: boolean }) {
         "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
         isAbsence
           ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
-          : "border-white/10 bg-white/[0.04] text-foreground/80",
+          : "border-glass bg-glass text-foreground/80",
       )}
     >
       {name}
@@ -645,7 +645,7 @@ function ManagerEditableRow({
   };
 
   return (
-    <tr className="border-b border-white/10 bg-primary/[0.04]" onKeyDown={onRowKeyDown}>
+    <tr className="border-b border-glass bg-primary/[0.04]" onKeyDown={onRowKeyDown}>
       <td className="px-3 py-2 align-top">
         <Input
           type="date"
@@ -803,7 +803,7 @@ function BilledPill({ invoiced }: { invoiced: boolean }) {
   }
   return (
     <span
-      className="inline-flex items-center rounded-md border border-white/[0.08] bg-white/[0.02] px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/70"
+      className="inline-flex items-center rounded-md border border-glass-strong bg-glass px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/70"
       title="Not billed yet"
     >
       —
@@ -941,7 +941,7 @@ function TicketAutocomplete({
 
   if (disabled) {
     return (
-      <div className="h-8 rounded-md border border-dashed border-white/10 bg-white/[0.02] px-2 py-1 text-xs text-muted-foreground/60">
+      <div className="h-8 rounded-md border border-dashed border-glass bg-glass px-2 py-1 text-xs text-muted-foreground/60">
         — (task has no ticket)
       </div>
     );
@@ -952,8 +952,8 @@ function TicketAutocomplete({
       {value ? (
         <div
           className={cn(
-            "flex h-8 items-center justify-between gap-2 rounded-md border bg-white/[0.03] px-2 text-xs",
-            error ? "border-red-400/60" : "border-white/10",
+            "flex h-8 items-center justify-between gap-2 rounded-md border bg-glass px-2 text-xs",
+            error ? "border-red-400/60" : "border-glass",
           )}
         >
           <span className="truncate font-mono">
@@ -989,7 +989,7 @@ function TicketAutocomplete({
       {!value && open && anchor &&
         createPortal(
           <div
-            className="fixed z-50 overflow-y-auto rounded-md border border-white/10 bg-[hsl(var(--background))] p-1 shadow-2xl backdrop-blur-xl"
+            className="fixed z-50 overflow-y-auto rounded-md border border-glass bg-[hsl(var(--background))] p-1 shadow-2xl backdrop-blur-xl"
             style={{
               ...(anchor.top !== undefined ? { top: anchor.top } : {}),
               ...(anchor.bottom !== undefined ? { bottom: anchor.bottom } : {}),
@@ -1015,7 +1015,7 @@ function TicketAutocomplete({
                   setQuery("");
                   setOpen(false);
                 }}
-                className="flex w-full flex-col items-start gap-0 rounded px-2 py-1.5 text-left text-xs hover:bg-white/[0.06]"
+                className="flex w-full flex-col items-start gap-0 rounded px-2 py-1.5 text-left text-xs hover:bg-glass-hover"
               >
                 <span className="font-mono">
                   #{r.number}
@@ -1094,7 +1094,7 @@ function TicketFilterPicker({
 
   if (selected) {
     return (
-      <div className="flex h-8 min-w-[12rem] items-center justify-between gap-2 rounded-md border border-white/10 bg-white/[0.03] px-2 text-xs">
+      <div className="flex h-8 min-w-[12rem] items-center justify-between gap-2 rounded-md border border-glass bg-glass px-2 text-xs">
         <span className="truncate font-mono">#{selected.number}</span>
         <button
           type="button"
@@ -1129,7 +1129,7 @@ function TicketFilterPicker({
       {open && !selected && anchor &&
         createPortal(
           <div
-            className="fixed z-50 overflow-y-auto rounded-md border border-white/10 bg-[hsl(var(--background))] p-1 shadow-2xl backdrop-blur-xl"
+            className="fixed z-50 overflow-y-auto rounded-md border border-glass bg-[hsl(var(--background))] p-1 shadow-2xl backdrop-blur-xl"
             style={{
               ...(anchor.top !== undefined ? { top: anchor.top } : {}),
               ...(anchor.bottom !== undefined ? { bottom: anchor.bottom } : {}),
@@ -1152,7 +1152,7 @@ function TicketFilterPicker({
                   onChange(r.id);
                   setOpen(false);
                 }}
-                className="flex w-full flex-col items-start rounded px-2 py-1.5 text-left text-xs hover:bg-white/[0.06]"
+                className="flex w-full flex-col items-start rounded px-2 py-1.5 text-left text-xs hover:bg-glass-hover"
               >
                 <span className="font-mono">
                   #{r.number}

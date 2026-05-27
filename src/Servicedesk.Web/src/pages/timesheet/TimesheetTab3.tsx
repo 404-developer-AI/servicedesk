@@ -122,7 +122,7 @@ export function TimesheetTab3() {
           </div>
         </div>
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <Badge className="border border-white/10 bg-white/[0.05] font-normal">
+          <Badge className="border border-glass bg-glass font-normal">
             Work {formatDuration(totals.work)}
           </Badge>
           <Badge className="border border-amber-400/30 bg-amber-400/10 font-normal text-amber-200">
@@ -131,7 +131,7 @@ export function TimesheetTab3() {
           <a
             href={exportUrl}
             className={cn(
-              "inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-foreground hover:bg-white/[0.08]",
+              "inline-flex items-center gap-1 rounded-md border border-glass bg-glass px-2 py-1 text-xs text-foreground hover:bg-glass-hover",
               !userId && "pointer-events-none opacity-40",
             )}
             aria-disabled={!userId}
@@ -145,7 +145,7 @@ export function TimesheetTab3() {
       <section className="glass-card overflow-hidden">
         <div className="overflow-x-auto">
         <table className="w-full min-w-[900px] text-left text-sm">
-          <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-white/10">
+          <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-glass">
             <tr>
               <th className="w-28 px-3 py-2 font-medium">Date</th>
               <th className="w-24 px-3 py-2 font-medium">Day</th>
@@ -167,7 +167,7 @@ export function TimesheetTab3() {
           </tbody>
           {!monthQuery.isLoading && data && (
             <tfoot>
-              <tr className="border-t border-white/10 bg-white/[0.02]">
+              <tr className="border-t border-glass bg-glass">
                 <td className="px-3 py-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Month
                 </td>
@@ -221,8 +221,8 @@ function renderWeeks(
       <tr
         key={`wk-${anchorKey}`}
         className={cn(
-          "border-b border-white/10",
-          failed ? "bg-red-500/[0.06]" : "bg-white/[0.02]",
+          "border-b border-glass",
+          failed ? "bg-red-500/[0.06]" : "bg-glass",
         )}
       >
         <td
@@ -331,7 +331,7 @@ function DayRow({
   return (
     <tr
       className={cn(
-        "border-b border-white/5 last:border-b-0",
+        "border-b border-glass last:border-b-0",
         status === "missing" && "bg-red-500/[0.04]",
         isWeekend && "text-muted-foreground/70",
       )}
@@ -355,7 +355,7 @@ function DayRow({
                   "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium",
                   b.isAbsence
                     ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
-                    : "border-white/10 bg-white/[0.04] text-foreground/80",
+                    : "border-glass bg-glass text-foreground/80",
                 )}
               >
                 <span>{b.taskName}</span>
@@ -433,7 +433,7 @@ function UserPicker({
 }) {
   if (users.length === 0) {
     return (
-      <div className="flex h-8 min-w-[14rem] items-center rounded-md border border-white/10 bg-white/[0.03] px-3 text-sm text-muted-foreground">
+      <div className="flex h-8 min-w-[14rem] items-center rounded-md border border-glass bg-glass px-3 text-sm text-muted-foreground">
         No timesheet users
       </div>
     );

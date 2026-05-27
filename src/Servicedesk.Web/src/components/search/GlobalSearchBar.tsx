@@ -149,7 +149,7 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
               }
             }}
             title="Search (Ctrl+K)"
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-foreground"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-glass bg-glass text-muted-foreground transition-colors hover:bg-glass-hover hover:text-foreground"
           >
             <Search className="h-4 w-4" />
           </button>
@@ -157,7 +157,7 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
           <div
             ref={(el) => { anchorRef.current = el; }}
             className={cn(
-              "flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2",
+              "flex items-center gap-2 rounded-lg border border-glass bg-glass px-3 py-2",
               "ring-1 ring-inset ring-white/5 transition focus-within:ring-white/20",
             )}
           >
@@ -173,7 +173,7 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
               placeholder="Zoeken…"
               className="flex-1 min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             />
-            <kbd className="shrink-0 rounded border border-white/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+            <kbd className="shrink-0 rounded border border-glass px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
               ⌘K
             </kbd>
           </div>
@@ -188,17 +188,17 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
               width: anchorRect.width,
             }}
             className={cn(
-              "z-50 overflow-hidden rounded-xl border border-white/10 bg-background/95 shadow-2xl backdrop-blur",
+              "z-50 overflow-hidden rounded-xl border border-glass bg-background/95 shadow-2xl backdrop-blur",
               "ring-1 ring-inset ring-white/5",
             )}
             onMouseDown={(e) => e.preventDefault()}
           >
             {collapsed && (
               <div
-                className="border-b border-white/10 p-2"
+                className="border-b border-glass p-2"
                 onMouseDown={(e) => e.stopPropagation()}
               >
-                <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 ring-1 ring-inset ring-white/5 transition focus-within:ring-white/20">
+                <div className="flex items-center gap-2 rounded-lg border border-glass bg-glass px-3 py-2 ring-1 ring-inset ring-white/5 transition focus-within:ring-white/20">
                   <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <Command.Input
                     ref={inputRef}
@@ -225,7 +225,7 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
                   <Command.Item
                     value="__show-details__"
                     onSelect={goFullPage}
-                    className="flex cursor-pointer items-center justify-between rounded-md px-3 py-2 text-sm font-medium aria-selected:bg-white/10"
+                    className="flex cursor-pointer items-center justify-between rounded-md px-3 py-2 text-sm font-medium aria-selected:bg-glass-strong"
                   >
                     <span>Toon zoekdetails →</span>
                     <span className="text-xs text-muted-foreground">alle resultaten</span>
@@ -265,7 +265,7 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
                               key={`${hit.kind}:${hit.entityId}`}
                               value={`${hit.kind}:${hit.entityId}`}
                               onSelect={() => goHit(hit)}
-                              className="flex cursor-pointer flex-col gap-0.5 rounded-md px-3 py-2 text-sm aria-selected:bg-white/10"
+                              className="flex cursor-pointer flex-col gap-0.5 rounded-md px-3 py-2 text-sm aria-selected:bg-glass-strong"
                             >
                               <div className="flex items-baseline gap-2">
                                 <span className="truncate font-medium">{hit.title}</span>

@@ -63,7 +63,7 @@ export function PendingTillField({
           }
         }}
         className={cn(
-          "w-full h-9 px-2 text-sm rounded-md border border-white/10 bg-white/[0.04] text-foreground outline-none focus:border-primary/60",
+          "w-full h-9 px-2 text-sm rounded-md border border-glass bg-glass text-foreground outline-none focus:border-primary/60",
           dirty && "border-emerald-400/40 ring-1 ring-emerald-400/30",
           className,
         )}

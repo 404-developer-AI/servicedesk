@@ -163,7 +163,7 @@ export function CreateContactFromZammadDialog({
 
         <div className="space-y-3 py-2">
           <Field label="Email">
-            <Input value={email} readOnly disabled className="bg-white/[0.02] font-mono text-xs" />
+            <Input value={email} readOnly disabled className="bg-glass font-mono text-xs" />
           </Field>
           <div className="grid grid-cols-2 gap-2">
             <Field
@@ -222,7 +222,7 @@ export function CreateContactFromZammadDialog({
                 value={companyRole}
                 onValueChange={(v) => setCompanyRole(v as ContactCompanyRole)}
               >
-                <SelectTrigger className="h-9 bg-white/[0.02] text-xs">
+                <SelectTrigger className="h-9 bg-glass text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -323,7 +323,7 @@ function CompanyPicker({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="flex-1 rounded-md border border-white/10 bg-white/[0.02] px-3 py-2 text-left text-sm text-foreground hover:border-white/20"
+          className="flex-1 rounded-md border border-glass bg-glass px-3 py-2 text-left text-sm text-foreground hover:border-glass-strong"
         >
           {selectedLabel ? (
             <span>{selectedLabel}</span>
@@ -383,7 +383,7 @@ function PickerResults({
   onClose: () => void;
 }) {
   return (
-    <div className="max-h-44 overflow-y-auto rounded-md border border-white/[0.06] bg-white/[0.02]">
+    <div className="max-h-44 overflow-y-auto rounded-md border border-glass-strong bg-glass">
       {loading ? (
         <div className="px-3 py-2 text-xs text-muted-foreground">Loading…</div>
       ) : items.length === 0 ? (
@@ -398,14 +398,14 @@ function PickerResults({
           </button>
         </div>
       ) : (
-        <ul className="divide-y divide-white/[0.04]">
+        <ul className="divide-y divide-glass">
           {items.map((c) => (
             <li key={c.id}>
               <button
                 type="button"
                 onClick={() => onSelect(c.id)}
                 className={cn(
-                  "w-full px-3 py-2 text-left text-xs hover:bg-white/[0.03]",
+                  "w-full px-3 py-2 text-left text-xs hover:bg-glass-hover",
                 )}
               >
                 <div className="text-foreground">{c.name}</div>

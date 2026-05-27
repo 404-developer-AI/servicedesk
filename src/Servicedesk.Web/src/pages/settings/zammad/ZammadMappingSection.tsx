@@ -65,7 +65,7 @@ export function ZammadMappingSection({ ready }: Props) {
 
   if (!ready) {
     return (
-      <section className="space-y-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-5">
+      <section className="space-y-2 rounded-xl border border-glass-strong bg-glass p-5">
         <SectionHeader />
         <div className="rounded-md border border-amber-400/20 bg-amber-500/[0.05] p-3 text-xs text-amber-200">
           Save a base URL + token and toggle <span className="font-mono">Zammad.Enabled</span>{" "}
@@ -77,18 +77,18 @@ export function ZammadMappingSection({ ready }: Props) {
 
   if (overview.isLoading) {
     return (
-      <section className="space-y-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-5">
+      <section className="space-y-3 rounded-xl border border-glass-strong bg-glass p-5">
         <SectionHeader />
-        <Skeleton className="h-16 w-full bg-white/[0.04]" />
-        <Skeleton className="h-16 w-full bg-white/[0.04]" />
-        <Skeleton className="h-16 w-full bg-white/[0.04]" />
+        <Skeleton className="h-16 w-full bg-glass" />
+        <Skeleton className="h-16 w-full bg-glass" />
+        <Skeleton className="h-16 w-full bg-glass" />
       </section>
     );
   }
 
   if (overview.isError) {
     return (
-      <section className="space-y-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-5">
+      <section className="space-y-3 rounded-xl border border-glass-strong bg-glass p-5">
         <SectionHeader />
         <div className="rounded-md border border-rose-400/30 bg-rose-500/[0.08] p-3 text-xs text-rose-200">
           Could not load mappings — {overview.error.message}
@@ -99,7 +99,7 @@ export function ZammadMappingSection({ ready }: Props) {
 
   const data = overview.data!;
   return (
-    <section className="space-y-5 rounded-xl border border-white/[0.06] bg-white/[0.02] p-5">
+    <section className="space-y-5 rounded-xl border border-glass-strong bg-glass p-5">
       <SectionHeader
         unmappedGroupCount={data.unmappedGroupCount}
         unmappedStateCount={data.unmappedStateCount}
@@ -191,10 +191,10 @@ function MappingBlock({
         </div>
       </div>
       <p className="text-[11px] text-muted-foreground/60">{meta.subtitle}</p>
-      <div className="overflow-hidden rounded-md border border-white/[0.06] bg-white/[0.02]">
+      <div className="overflow-hidden rounded-md border border-glass-strong bg-glass">
         <table className="w-full text-xs">
           <thead className="text-[10px] uppercase tracking-widest text-muted-foreground/60">
-            <tr className="border-b border-white/[0.04]">
+            <tr className="border-b border-glass">
               <th className="px-3 py-2 text-left">Zammad</th>
               <th className="px-3 py-2 text-left">Local target</th>
               <th className="px-3 py-2 text-right">Actions</th>
@@ -284,12 +284,12 @@ function MappingRow({
   }
 
   return (
-    <tr className="border-b border-white/[0.03] last:border-b-0">
+    <tr className="border-b border-glass last:border-b-0">
       <td className="px-3 py-1.5 align-middle">
         <div className="flex items-center gap-2">
           <span className="text-foreground">{row.zammadName}</span>
           {!row.zammadActive ? (
-            <span className="rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground/60">
+            <span className="rounded bg-glass px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground/60">
               inactive
             </span>
           ) : null}
@@ -302,7 +302,7 @@ function MappingRow({
         <Select value={row.mappedToId ?? ""} onValueChange={handleChange}>
           <SelectTrigger
             className={cn(
-              "h-8 w-full bg-white/[0.02] text-xs",
+              "h-8 w-full bg-glass text-xs",
               row.mappedToId
                 ? ""
                 : "border-amber-400/30 text-amber-200 hover:border-amber-300/40",

@@ -84,7 +84,7 @@ export function SearchContextBar({ ticketId }: { ticketId: string }) {
       <div
         className={cn(
           "glass-card flex items-center gap-2 px-3 py-1.5",
-          "border border-white/10 bg-white/[0.04] backdrop-blur",
+          "border border-glass bg-glass backdrop-blur",
         )}
       >
         <button
@@ -92,7 +92,7 @@ export function SearchContextBar({ ticketId }: { ticketId: string }) {
           onClick={() => setExpanded((v) => !v)}
           className={cn(
             "group flex flex-1 items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors",
-            "hover:bg-white/[0.05]",
+            "hover:bg-glass-hover",
           )}
           title={expanded ? "Collapse results" : "Expand results"}
         >
@@ -109,7 +109,7 @@ export function SearchContextBar({ ticketId }: { ticketId: string }) {
           onClick={dismiss}
           title="Dismiss"
           aria-label="Dismiss search context"
-          className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-foreground"
+          className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-glass-hover hover:text-foreground"
         >
           <X className="h-3.5 w-3.5" />
         </button>

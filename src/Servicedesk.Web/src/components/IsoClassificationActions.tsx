@@ -194,7 +194,7 @@ function MotivationDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && !mutation.isPending && onClose()}>
-      <DialogContent className="max-w-md border-white/[0.06] bg-background/85 backdrop-blur-xl">
+      <DialogContent className="max-w-md border-glass-strong bg-background/85 backdrop-blur-xl">
         <DialogHeader>
           <DialogTitle className="font-display">{cfg.title}</DialogTitle>
           <DialogDescription>{cfg.description}</DialogDescription>
@@ -209,7 +209,7 @@ function MotivationDialog({
             onChange={(e) => setMotivation(e.target.value)}
             placeholder={cfg.placeholder}
             rows={4}
-            className="w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+            className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
           />
           <p className="text-[11px] text-muted-foreground/70">
             {trimmed.length < 5

@@ -188,13 +188,13 @@ function SecurityActivitySettingsCard() {
   }, [settings.data]);
 
   return (
-    <section className="rounded-lg border border-white/[0.06] bg-white/[0.02]">
+    <section className="rounded-lg border border-glass-strong bg-glass">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-3 px-5 py-4 text-left"
       >
-        <div className="rounded-md bg-white/[0.04] p-2 text-primary">
+        <div className="rounded-md bg-glass p-2 text-primary">
           <ShieldAlert className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
@@ -212,7 +212,7 @@ function SecurityActivitySettingsCard() {
         )}
       </button>
       {open ? (
-        <div className="border-t border-white/[0.04] px-5 py-4">
+        <div className="border-t border-glass px-5 py-4">
           {settings.isLoading ? (
             <Skeleton className="h-24 w-full" />
           ) : settings.isError ? (
@@ -266,7 +266,7 @@ function SubsystemCard({
   const archive = archiveQuery.data?.items ?? [];
 
   return (
-    <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+    <section className="rounded-lg border border-glass-strong bg-glass p-5">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 space-y-1">
           <div className="flex items-center gap-2">
@@ -307,7 +307,7 @@ function SubsystemCard({
       ) : null}
 
       {openIncidents.length > 0 ? (
-        <div className="mt-4 rounded-md border border-white/[0.06] bg-black/20">
+        <div className="mt-4 rounded-md border border-glass-strong bg-black/20">
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
@@ -330,7 +330,7 @@ function SubsystemCard({
             </Button>
           </button>
           {expanded ? (
-            <ul className="divide-y divide-white/[0.04] border-t border-white/[0.04]">
+            <ul className="divide-y divide-glass border-t border-glass">
               {openIncidents.map((inc) => (
                 <IncidentEntry
                   key={inc.id}
@@ -344,7 +344,7 @@ function SubsystemCard({
         </div>
       ) : null}
 
-      <div className="mt-3 rounded-md border border-white/[0.04] bg-black/10">
+      <div className="mt-3 rounded-md border border-glass bg-black/10">
         <button
           type="button"
           onClick={() => setArchiveOpen((v) => !v)}
@@ -359,15 +359,15 @@ function SubsystemCard({
         </button>
         {archiveOpen ? (
           archiveQuery.isLoading ? (
-            <div className="border-t border-white/[0.04] px-3 py-3">
+            <div className="border-t border-glass px-3 py-3">
               <Skeleton className="h-10 w-full" />
             </div>
           ) : archive.length === 0 ? (
-            <p className="border-t border-white/[0.04] px-3 py-3 text-xs text-muted-foreground">
+            <p className="border-t border-glass px-3 py-3 text-xs text-muted-foreground">
               No archived incidents.
             </p>
           ) : (
-            <ul className="divide-y divide-white/[0.04] border-t border-white/[0.04]">
+            <ul className="divide-y divide-glass border-t border-glass">
               {archive.map((inc) => (
                 <IncidentEntry key={inc.id} incident={inc} onAck={() => {}} pending={pending} />
               ))}
@@ -400,7 +400,7 @@ function IncidentEntry({
               {incident.severity}
             </Badge>
             {acked ? (
-              <Badge className="border border-white/10 bg-white/[0.02] text-[10px] font-normal text-muted-foreground">
+              <Badge className="border border-glass bg-glass text-[10px] font-normal text-muted-foreground">
                 Acknowledged
               </Badge>
             ) : null}
@@ -422,7 +422,7 @@ function IncidentEntry({
             </button>
           ) : null}
           {showDetails && incident.details ? (
-            <pre className="mt-1 max-h-64 overflow-auto rounded border border-white/[0.06] bg-black/40 p-2 text-[11px] text-foreground/80">
+            <pre className="mt-1 max-h-64 overflow-auto rounded border border-glass-strong bg-black/40 p-2 text-[11px] text-foreground/80">
               {incident.details}
             </pre>
           ) : null}

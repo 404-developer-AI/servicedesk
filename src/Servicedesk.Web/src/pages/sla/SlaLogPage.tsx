@@ -109,7 +109,7 @@ export function SlaLogPage() {
         </p>
       </header>
 
-      <section className="flex flex-wrap items-end gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
+      <section className="flex flex-wrap items-end gap-3 rounded-lg border border-glass-strong bg-glass p-4">
         <div className="flex items-center gap-2 text-xs text-muted-foreground"><Filter className="h-3 w-3" /> Filters</div>
         <Select
           value={queueId || ALL_QUEUES}
@@ -174,12 +174,12 @@ export function SlaLogPage() {
         </label>
       </section>
 
-      <section className="overflow-x-auto rounded-lg border border-white/[0.06]">
+      <section className="overflow-x-auto rounded-lg border border-glass-strong">
         {log.isLoading ? (
           <Skeleton className="h-48 w-full" />
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-white/[0.02] text-xs uppercase tracking-wider text-muted-foreground/60">
+            <thead className="bg-glass text-xs uppercase tracking-wider text-muted-foreground/60">
               <tr>
                 <th className="px-3 py-2 text-left">#</th>
                 <th className="px-3 py-2 text-left">Subject</th>
@@ -198,7 +198,7 @@ export function SlaLogPage() {
                 const anyBreached = row.firstResponseBreached || row.resolutionBreached;
 
                 return (
-                  <tr key={row.ticketId} className="border-t border-white/[0.04]">
+                  <tr key={row.ticketId} className="border-t border-glass">
                     <td className="px-3 py-2 font-mono text-xs">#{row.number}</td>
                     <td className="px-3 py-2">
                       <Link to="/tickets/$ticketId" params={{ ticketId: row.ticketId }} className="text-foreground hover:underline">

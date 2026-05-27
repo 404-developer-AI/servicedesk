@@ -65,7 +65,7 @@ export function KnowledgeBaseSettingsPage() {
             App-wide KB config, supported locales, and the section tree articles live in.
           </p>
         </div>
-        <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+        <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
           Admin only
         </Badge>
       </header>
@@ -200,12 +200,12 @@ function LocalesCard({
       {loading ? (
         <Skeleton className="h-20" />
       ) : locales.length === 0 ? (
-        <div className="rounded-md border border-dashed border-white/10 px-4 py-6 text-center text-sm text-muted-foreground">
+        <div className="rounded-md border border-dashed border-glass px-4 py-6 text-center text-sm text-muted-foreground">
           No locales — at least one must exist.
         </div>
       ) : (
         <table className="w-full text-left text-sm">
-          <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-white/10">
+          <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-glass">
             <tr>
               <th className="px-3 py-2 font-medium">Code</th>
               <th className="px-3 py-2 font-medium">Display name</th>
@@ -216,7 +216,7 @@ function LocalesCard({
           </thead>
           <tbody>
             {locales.map((l) => (
-              <tr key={l.code} className="border-b border-white/5 last:border-b-0">
+              <tr key={l.code} className="border-b border-glass last:border-b-0">
                 <td className="px-3 py-2 font-mono text-xs">{l.code}</td>
                 <td className="px-3 py-2 text-foreground">{l.displayName}</td>
                 <td className="px-3 py-2 text-muted-foreground">{l.isActive ? "Yes" : "No"}</td>
@@ -370,11 +370,11 @@ function SectionsCard({
       {loading ? (
         <Skeleton className="h-32" />
       ) : flat.length === 0 ? (
-        <div className="rounded-md border border-dashed border-white/10 px-4 py-6 text-center text-sm text-muted-foreground">
+        <div className="rounded-md border border-dashed border-glass px-4 py-6 text-center text-sm text-muted-foreground">
           No sections yet.
         </div>
       ) : (
-        <ul className="divide-y divide-white/5">
+        <ul className="divide-y divide-glass">
           {flat.map((row) => (
             <li key={row.id} className="flex items-center justify-between gap-3 py-2">
               <div className="flex min-w-0 items-center gap-2">
@@ -494,7 +494,7 @@ function SectionDialog({
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Short description (optional, plain text)"
             rows={3}
-            className="w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm outline-none focus:border-white/20"
+            className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm outline-none focus:border-glass-strong"
           />
         </div>
         <DialogFooter>

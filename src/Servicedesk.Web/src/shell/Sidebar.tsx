@@ -149,7 +149,7 @@ export function Sidebar() {
           draggable={false}
           className="h-9 w-9 shrink-0 select-none"
         />
-        {!collapsed && !inView && (
+        {!collapsed && (
           <div className="min-w-0">
             <div className="truncate font-display text-base font-semibold tracking-tight">Servicedesk</div>
             <div className="truncate text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{role}</div>
@@ -160,7 +160,7 @@ export function Sidebar() {
       {(role === "Agent" || role === "Admin") && user?.searchEnabled && (
         <div
           className={cn(
-            "mx-3 mb-3 border-b border-white/5 pb-3",
+            "mx-3 mb-3 border-b border-glass pb-3",
             collapsed && "flex justify-center",
           )}
         >
@@ -179,8 +179,8 @@ export function Sidebar() {
               className={cn(
                 "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all",
                 active
-                  ? "bg-white/[0.07] text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
-                  : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
+                  ? "bg-glass-strong text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+                  : "text-muted-foreground hover:bg-glass-hover hover:text-foreground",
                 collapsed && "justify-center px-2"
               )}
             >
@@ -190,7 +190,7 @@ export function Sidebar() {
           );
         })}
         {!collapsed && views && views.length > 0 && (
-          <div className="mt-2 border-t border-white/5 pt-2">
+          <div className="mt-2 border-t border-glass pt-2">
             <div className="px-3 pb-1 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">
               Views
             </div>
@@ -207,8 +207,8 @@ export function Sidebar() {
                     className={cn(
                       "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors",
                       isActive
-                        ? "bg-white/[0.07] text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
-                        : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
+                        ? "bg-glass-strong text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+                        : "text-muted-foreground hover:bg-glass-hover hover:text-foreground",
                     )}
                   >
                     <Eye className={cn("h-3.5 w-3.5 shrink-0", isActive && "text-primary")} />
@@ -247,8 +247,8 @@ export function Sidebar() {
               className={cn(
                 "flex h-9 w-9 items-center justify-center rounded-lg border transition-colors",
                 settingsActive
-                  ? "border-white/15 bg-white/[0.07] text-foreground"
-                  : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06] hover:text-foreground",
+                  ? "border-glass-strong bg-glass-strong text-foreground"
+                  : "border-glass bg-glass text-muted-foreground hover:bg-glass-hover hover:text-foreground",
               )}
             >
               <SettingsIcon className="h-4 w-4" />
@@ -263,8 +263,8 @@ export function Sidebar() {
                   className={cn(
                     "flex h-9 w-9 items-center justify-center rounded-lg border transition-colors",
                     profileActive
-                      ? "border-white/15 bg-white/[0.07] text-foreground"
-                      : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06] hover:text-foreground",
+                      ? "border-glass-strong bg-glass-strong text-foreground"
+                      : "border-glass bg-glass text-muted-foreground hover:bg-glass-hover hover:text-foreground",
                   )}
                   data-testid="profile-menu-trigger"
                 >
@@ -293,7 +293,7 @@ export function Sidebar() {
               type="button"
               title="New ticket"
               aria-label="New ticket"
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-gradient-to-br from-accent-purple to-accent-blue text-white shadow-[0_6px_20px_-8px_hsl(var(--primary)/0.55)] transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-glass bg-gradient-to-br from-accent-purple to-accent-blue text-white shadow-[0_6px_20px_-8px_hsl(var(--primary)/0.55)] transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Plus className="h-4 w-4" />
             </button>
@@ -305,7 +305,7 @@ export function Sidebar() {
         type="button"
         onClick={toggle}
         aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        className="mx-3 mt-3 flex h-8 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] text-xs text-muted-foreground transition-colors hover:bg-white/[0.07] hover:text-foreground"
+        className="mx-3 mt-3 flex h-8 items-center justify-center gap-2 rounded-lg border border-glass bg-glass text-xs text-muted-foreground transition-colors hover:bg-glass-hover hover:text-foreground"
       >
         {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
         {!collapsed && <span>Collapse</span>}
@@ -313,7 +313,7 @@ export function Sidebar() {
 
       <div
         className={cn(
-          "mx-3 mb-3 mt-2 border-t border-white/5 pt-2 font-mono text-[10px] text-muted-foreground",
+          "mx-3 mb-3 mt-2 border-t border-glass pt-2 font-mono text-[10px] text-muted-foreground",
           collapsed ? "text-center" : "",
         )}
         data-testid="sidebar-status"
@@ -343,8 +343,8 @@ export function Sidebar() {
                 className={cn(
                   "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors",
                   settingsActive
-                    ? "border-white/15 bg-white/[0.07] text-foreground"
-                    : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06] hover:text-foreground",
+                    ? "border-glass-strong bg-glass-strong text-foreground"
+                    : "border-glass bg-glass text-muted-foreground hover:bg-glass-hover hover:text-foreground",
                 )}
               >
                 <SettingsIcon className="h-4 w-4" />
@@ -359,8 +359,8 @@ export function Sidebar() {
                     className={cn(
                       "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors",
                       profileActive
-                        ? "border-white/15 bg-white/[0.07] text-foreground"
-                        : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06] hover:text-foreground",
+                        ? "border-glass-strong bg-glass-strong text-foreground"
+                        : "border-glass bg-glass text-muted-foreground hover:bg-glass-hover hover:text-foreground",
                     )}
                     data-testid="profile-menu-trigger"
                   >
@@ -389,7 +389,7 @@ export function Sidebar() {
                 type="button"
                 title="New ticket"
                 aria-label="New ticket"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-gradient-to-br from-accent-purple to-accent-blue text-white shadow-[0_6px_18px_-8px_hsl(var(--primary)/0.55)] transition-transform hover:scale-[1.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-glass bg-gradient-to-br from-accent-purple to-accent-blue text-white shadow-[0_6px_18px_-8px_hsl(var(--primary)/0.55)] transition-transform hover:scale-[1.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <Plus className="h-4 w-4" />
               </button>

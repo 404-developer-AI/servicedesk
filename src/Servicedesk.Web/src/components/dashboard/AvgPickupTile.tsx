@@ -41,7 +41,7 @@ export function AvgPickupTile() {
               className={`rounded-md border px-2 py-0.5 text-xs transition ${
                 days === r.days
                   ? "border-primary/40 bg-primary/10 text-foreground"
-                  : "border-white/[0.06] bg-white/[0.02] text-muted-foreground hover:bg-white/[0.04]"
+                  : "border-glass-strong bg-glass text-muted-foreground hover:bg-glass-hover"
               }`}
             >
               {r.label}
@@ -63,7 +63,7 @@ export function AvgPickupTile() {
           </thead>
           <tbody>
             {q.data?.items.map((row) => (
-              <tr key={row.queueId} className="border-t border-white/[0.04]">
+              <tr key={row.queueId} className="border-t border-glass">
                 <td className="py-2 text-foreground">{row.queueName}</td>
                 <td className="py-2 text-right text-muted-foreground">{row.ticketCount}</td>
                 <td className="py-2 text-right font-mono text-foreground">

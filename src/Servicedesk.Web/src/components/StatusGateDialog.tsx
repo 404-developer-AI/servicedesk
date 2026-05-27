@@ -77,7 +77,7 @@ export function StatusGateDialog({ gate, onConfirm, onCancel }: Props) {
         if (!o) onCancel();
       }}
     >
-      <DialogContent className="sm:max-w-lg border border-white/10 bg-[hsl(240_10%_5%/0.96)] backdrop-blur-xl">
+      <DialogContent className="sm:max-w-lg border border-glass bg-popover/95 backdrop-blur-xl">
         <DialogHeader>
           <DialogTitle>{gate.title}</DialogTitle>
           {gate.message ? (
@@ -148,7 +148,7 @@ function QuestionRow({
           value={textValue}
           onChange={(e) => onTextChange(e.target.value)}
           rows={3}
-          className="w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+          className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
         />
       </div>
     );
@@ -168,7 +168,7 @@ function QuestionRow({
               "rounded-md border px-3 py-1.5 text-sm transition-colors",
               selected
                 ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-100 shadow-[0_0_12px_rgba(16,185,129,0.25)]"
-                : "border-white/10 bg-white/[0.04] text-foreground/80 hover:border-emerald-400/30 hover:bg-emerald-500/10",
+                : "border-glass bg-glass text-foreground/80 hover:border-emerald-400/30 hover:bg-emerald-500/10",
             )}
           >
             {question.yesLabel}
@@ -178,7 +178,7 @@ function QuestionRow({
           <button
             type="button"
             onClick={onNoClick}
-            className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-sm text-foreground/80 transition-colors hover:border-rose-400/30 hover:bg-rose-500/10 hover:text-rose-100"
+            className="rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground/80 transition-colors hover:border-rose-400/30 hover:bg-rose-500/10 hover:text-rose-100"
           >
             {question.noLabel}
           </button>

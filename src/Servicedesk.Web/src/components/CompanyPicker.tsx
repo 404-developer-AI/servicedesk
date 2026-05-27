@@ -55,8 +55,8 @@ export function CompanyPicker({
         <button
           type="button"
           className={cn(
-            "h-9 px-3 rounded-[var(--radius)] border border-white/10 bg-white/[0.04] text-sm",
-            "hover:bg-white/[0.07] transition-colors w-full text-left",
+            "h-9 px-3 rounded-[var(--radius)] border border-glass bg-glass text-sm",
+            "hover:bg-glass-hover transition-colors w-full text-left",
             "flex items-center justify-between gap-2",
             !selectedCompany && "text-muted-foreground",
             className
@@ -83,7 +83,7 @@ export function CompanyPicker({
                     onChange(null)
                   }
                 }}
-                className="rounded p-0.5 hover:bg-white/10 transition-colors"
+                className="rounded p-0.5 hover:bg-glass-hover transition-colors"
                 aria-label="Clear company"
               >
                 <X className="h-3 w-3 opacity-40 hover:opacity-70" />
@@ -94,8 +94,8 @@ export function CompanyPicker({
         </button>
       </PopoverTrigger>
 
-      <PopoverContent className="w-[350px] p-0 glass-card border-white/10">
-        <div className="flex items-center border-b border-white/10 px-3">
+      <PopoverContent className="w-[350px] p-0 glass-card border-glass">
+        <div className="flex items-center border-b border-glass px-3">
           <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <input
             ref={searchRef}
@@ -105,7 +105,7 @@ export function CompanyPicker({
             className="flex h-9 w-full bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground"
           />
           {isFetching && (
-            <div className="h-3 w-3 animate-spin rounded-full border border-white/20 border-t-white/60" />
+            <div className="h-3 w-3 animate-spin rounded-full border border-glass-strong border-t-white/60" />
           )}
         </div>
 
@@ -116,8 +116,8 @@ export function CompanyPicker({
               onClick={() => handleSelect(null)}
               className={cn(
                 "w-full rounded-[calc(var(--radius)-2px)] px-3 py-2 text-left text-sm text-muted-foreground",
-                "transition-colors hover:bg-white/[0.07] hover:text-white",
-                value === null && "bg-white/[0.07] text-white"
+                "transition-colors hover:bg-glass-hover hover:text-foreground",
+                value === null && "bg-glass-strong text-foreground"
               )}
             >
               None
@@ -140,9 +140,9 @@ export function CompanyPicker({
                   type="button"
                   onClick={() => handleSelect(company.id)}
                   className={cn(
-                    "w-full rounded-[calc(var(--radius)-2px)] px-3 py-2 text-left text-sm font-medium text-white",
-                    "transition-colors hover:bg-white/[0.07]",
-                    company.id === value && "bg-white/[0.07]"
+                    "w-full rounded-[calc(var(--radius)-2px)] px-3 py-2 text-left text-sm font-medium text-foreground",
+                    "transition-colors hover:bg-glass-hover",
+                    company.id === value && "bg-glass-strong"
                   )}
                 >
                   {company.name}

@@ -53,7 +53,7 @@ export function KbHomePage() {
             Internal articles agents can browse, write, and link from tickets.
           </p>
         </div>
-        <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+        <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
           Agents only
         </Badge>
       </header>
@@ -69,7 +69,7 @@ export function KbHomePage() {
         />
         <button
           type="submit"
-          className="rounded-md border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-white/[0.08] hover:text-foreground"
+          className="rounded-md border border-glass bg-glass px-3 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-glass-hover hover:text-foreground"
         >
           Search
         </button>
@@ -111,7 +111,7 @@ export function KbHomePage() {
                     <Link
                       to="/kb/articles/$articleId"
                       params={{ articleId: f.id }}
-                      className="block rounded-lg border border-white/5 bg-white/[0.02] p-3 transition-colors hover:border-white/15 hover:bg-white/[0.04]"
+                      className="block rounded-lg border border-glass bg-glass p-3 transition-colors hover:border-glass-strong hover:bg-glass-hover"
                     >
                       <div className="line-clamp-2 text-sm font-medium text-foreground">
                         {f.title}
@@ -139,7 +139,7 @@ export function KbHomePage() {
             {recentLoading ? (
               <Skeleton className="h-40" />
             ) : recent && recent.items.length > 0 ? (
-              <ul className="divide-y divide-white/5">
+              <ul className="divide-y divide-glass">
                 {recent.items.map((a) => (
                   <RecentRow key={a.id} item={a} />
                 ))}
@@ -165,7 +165,7 @@ function SectionTreeNode({ node, depth }: { node: KbSectionNode; depth: number }
       <Link
         to="/kb/sections/$sectionId"
         params={{ sectionId: node.id }}
-        className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-white/[0.04] hover:text-foreground"
+        className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-glass-hover hover:text-foreground"
         style={indent}
       >
         <span className="truncate">{node.title}</span>
@@ -187,7 +187,7 @@ function RecentRow({ item }: { item: KbArticleListItem }) {
       <Link
         to="/kb/articles/$articleId"
         params={{ articleId: item.id }}
-        className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 transition-colors hover:bg-white/[0.04]"
+        className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 transition-colors hover:bg-glass-hover"
       >
         <div className="min-w-0">
           <div className="truncate text-sm text-foreground">{item.title}</div>
@@ -206,7 +206,7 @@ export function StatusPill({ status }: { status: string }) {
     Draft: "border-amber-300/30 bg-amber-300/10 text-amber-200",
     Internal: "border-sky-300/30 bg-sky-300/10 text-sky-200",
     Published: "border-emerald-300/30 bg-emerald-300/10 text-emerald-200",
-    Archived: "border-white/10 bg-white/[0.04] text-muted-foreground",
+    Archived: "border-glass bg-glass text-muted-foreground",
   };
   return (
     <span
@@ -232,7 +232,7 @@ function SectionsSkeleton() {
 
 function EmptyState({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-white/10 px-4 py-8 text-center">
+    <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-glass px-4 py-8 text-center">
       <div className="text-muted-foreground">{icon}</div>
       <div className="text-sm font-medium text-foreground">{title}</div>
       <div className="text-xs text-muted-foreground">{description}</div>

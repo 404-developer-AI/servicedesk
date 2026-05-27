@@ -86,7 +86,7 @@ export function ContactCompanyGateDialog({ gate, onConfirm, onCancel }: Props) {
         if (!o) onCancel();
       }}
     >
-      <DialogContent className="sm:max-w-lg border border-white/10 bg-[hsl(240_10%_5%/0.96)] backdrop-blur-xl">
+      <DialogContent className="sm:max-w-lg border border-glass bg-popover/95 backdrop-blur-xl">
         <DialogHeader>
           <DialogTitle>{gate.title}</DialogTitle>
           {gate.message ? (
@@ -97,7 +97,7 @@ export function ContactCompanyGateDialog({ gate, onConfirm, onCancel }: Props) {
         </DialogHeader>
 
         <div className="space-y-3.5">
-          <div className="flex items-center gap-2 rounded-md border border-white/[0.08] bg-white/[0.02] px-3 py-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 rounded-md border border-glass-strong bg-glass px-3 py-2 text-xs text-muted-foreground">
             <User className="h-3.5 w-3.5 shrink-0 opacity-60" />
             <span className="truncate">
               Requester: <span className="text-foreground/90">{gate.requesterDisplayName}</span>
@@ -130,7 +130,7 @@ export function ContactCompanyGateDialog({ gate, onConfirm, onCancel }: Props) {
                     "rounded-md border px-3 py-2 text-left text-sm transition-colors",
                     role === opt.value
                       ? "border-violet-400/60 bg-violet-500/15 text-violet-100 shadow-[0_0_12px_rgba(124,58,237,0.25)]"
-                      : "border-white/10 bg-white/[0.04] text-foreground/80 hover:border-violet-400/30 hover:bg-violet-500/10",
+                      : "border-glass bg-glass text-foreground/80 hover:border-violet-400/30 hover:bg-violet-500/10",
                   )}
                 >
                   <div className="flex items-center gap-1.5 font-medium">

@@ -141,7 +141,7 @@ function PrefillEditor({
 
   return (
     <div className="flex flex-1 flex-col gap-4 overflow-hidden">
-      <div className="rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-xs text-muted-foreground">
+      <div className="rounded-md border border-glass-strong bg-glass px-3 py-2 text-xs text-muted-foreground">
         <div>
           <span className="font-medium text-foreground">
             {view.template.name}
@@ -153,7 +153,7 @@ function PrefillEditor({
           )}
         </div>
         <div className="mt-1 flex items-center gap-2">
-          <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wider">
+          <span className="rounded-full bg-glass-strong px-2 py-0.5 text-[10px] uppercase tracking-wider">
             {view.instance.status}
           </span>
           {view.instance.sentToEmail && (
@@ -176,7 +176,7 @@ function PrefillEditor({
               return (
                 <div
                   key={q.id}
-                  className="border-b border-white/[0.06] pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground/80"
+                  className="border-b border-glass-strong pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground/80"
                 >
                   {q.label}
                 </div>
@@ -242,7 +242,7 @@ function PrefillField({
   onChange: (v: unknown) => void;
 }) {
   const inputCn =
-    "rounded-md border border-white/[0.08] bg-white/[0.02] px-3 text-sm text-foreground outline-none focus:border-primary/40 disabled:opacity-60";
+    "rounded-md border border-glass-strong bg-glass px-3 text-sm text-foreground outline-none focus:border-primary/40 disabled:opacity-60";
   switch (question.type) {
     case "ShortText":
       return (
@@ -348,10 +348,10 @@ function PrefillField({
             value={current}
             onValueChange={(v) => onChange(v === "__none" ? null : v)}
           >
-            <SelectTrigger className="h-9 border-white/10 bg-white/[0.04] text-sm focus:border-white/20 focus:bg-white/[0.06] focus:ring-0 disabled:opacity-60">
+            <SelectTrigger className="h-9 border-glass bg-glass text-sm focus:border-glass-strong focus:bg-glass-strong focus:ring-0 disabled:opacity-60">
               <SelectValue placeholder="—" />
             </SelectTrigger>
-            <SelectContent className="border-white/10 bg-popover/80 backdrop-blur-xl">
+            <SelectContent className="border-glass bg-popover/80 backdrop-blur-xl">
               <SelectItem value="__none">
                 <span className="text-muted-foreground">—</span>
               </SelectItem>
@@ -370,7 +370,7 @@ function PrefillField({
       return (
         <div className="flex flex-col gap-1">
           <LabelRow q={question} />
-          <div className="flex flex-col gap-1 rounded-md border border-white/[0.08] bg-white/[0.02] p-2">
+          <div className="flex flex-col gap-1 rounded-md border border-glass-strong bg-glass p-2">
             {question.options.map((o) => {
               const checked = selected.includes(o.value);
               return (

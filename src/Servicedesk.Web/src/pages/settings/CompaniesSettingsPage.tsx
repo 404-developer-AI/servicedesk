@@ -42,7 +42,7 @@ export function CompaniesSettingsPage() {
             pops up when linked tickets are created or opened.
           </p>
         </div>
-        <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+        <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
           Admin only
         </Badge>
       </header>
@@ -72,7 +72,7 @@ export function CompaniesSettingsPage() {
       ) : (
         <section className="glass-card overflow-hidden">
           <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-white/10">
+            <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-glass">
               <tr>
                 <th className="px-4 py-3 font-medium">Code</th>
                 <th className="px-4 py-3 font-medium">Name</th>
@@ -85,7 +85,7 @@ export function CompaniesSettingsPage() {
             </thead>
             <tbody>
               {data?.map((c) => (
-                <tr key={c.id} className="border-b border-white/5 hover:bg-white/[0.03]">
+                <tr key={c.id} className="border-b border-glass hover:bg-glass-hover">
                   <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{c.code}</td>
                   <td className="px-4 py-3 text-foreground">{c.name}</td>
                   <td className="px-4 py-3 text-muted-foreground">{c.shortName || "—"}</td>
@@ -117,7 +117,7 @@ export function CompaniesSettingsPage() {
                         active
                       </Badge>
                     ) : (
-                      <Badge className="border border-white/10 bg-white/[0.05] text-[10px] font-normal text-muted-foreground">
+                      <Badge className="border border-glass bg-glass text-[10px] font-normal text-muted-foreground">
                         inactive
                       </Badge>
                     )}
@@ -291,7 +291,7 @@ function CompanyDialog({
             </Field>
           </div>
 
-          <details className="group rounded-md border border-white/10 bg-white/[0.02] px-3 py-2">
+          <details className="group rounded-md border border-glass bg-glass px-3 py-2">
             <summary className="cursor-pointer text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Address (optional)
             </summary>
@@ -328,7 +328,7 @@ function CompanyDialog({
                 value={form.alertText ?? ""}
                 onChange={(e) => setForm((f) => ({ ...f, alertText: e.target.value }))}
                 rows={3}
-                className="w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm outline-none focus:border-white/20"
+                className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm outline-none focus:border-glass-strong"
                 placeholder="E.g. VIP customer — always call back by phone."
               />
             </Field>
@@ -348,7 +348,7 @@ function CompanyDialog({
                 />
               </label>
               {form.alertOnOpen && (
-                <div className="rounded-md bg-white/[0.03] p-3">
+                <div className="rounded-md bg-glass p-3">
                   <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     How often on open?
                   </div>
@@ -443,7 +443,7 @@ function ModeOption({
       className={`rounded-md border p-3 text-left transition-colors ${
         active
           ? "border-amber-400/40 bg-amber-400/[0.06]"
-          : "border-white/10 bg-white/[0.02] hover:bg-white/[0.04]"
+          : "border-glass bg-glass hover:bg-glass-hover"
       }`}
     >
       <div className="text-sm font-medium text-foreground">{title}</div>

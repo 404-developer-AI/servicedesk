@@ -61,7 +61,7 @@ export function SetupWizardPage() {
         transition={{ duration: 0.35, ease: "easeOut" }}
         className="glass-card w-full max-w-[520px] overflow-hidden"
       >
-        <div className="flex items-center gap-3 border-b border-white/5 px-7 pt-6 pb-5">
+        <div className="flex items-center gap-3 border-b border-glass px-7 pt-6 pb-5">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[calc(var(--radius)-4px)] bg-gradient-to-br from-accent-purple to-accent-blue shadow-[0_0_22px_-4px_hsl(var(--primary)/0.6)]">
             <Sparkles className="h-5 w-5 text-white" />
           </div>

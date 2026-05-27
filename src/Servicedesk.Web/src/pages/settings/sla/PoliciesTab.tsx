@@ -66,7 +66,7 @@ export function PoliciesTab() {
       <div className="flex items-center gap-3">
         <label className="text-xs text-muted-foreground">Default business-hours for new policies</label>
         <select
-          className="h-9 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 text-sm"
+          className="h-9 rounded-md border border-glass-strong bg-glass px-2 text-sm"
           value={activeSchemaId}
           onChange={(e) => setDefaultSchemaId(e.target.value)}
         >
@@ -76,9 +76,9 @@ export function PoliciesTab() {
         </select>
       </div>
 
-      <div className="overflow-x-auto rounded-md border border-white/[0.06]">
+      <div className="overflow-x-auto rounded-md border border-glass-strong">
         <table className="w-full text-sm">
-          <thead className="bg-white/[0.02] text-xs uppercase tracking-wider text-muted-foreground/60">
+          <thead className="bg-glass text-xs uppercase tracking-wider text-muted-foreground/60">
             <tr>
               <th className="px-3 py-2 text-left">Queue</th>
               {priorities.map((p) => (
@@ -88,7 +88,7 @@ export function PoliciesTab() {
           </thead>
           <tbody>
             {[{ id: null, name: "All queues (fallback)" }, ...queues.map((q) => ({ id: q.id, name: q.name }))].map((q) => (
-              <tr key={q.id ?? "-"} className="border-t border-white/[0.04]">
+              <tr key={q.id ?? "-"} className="border-t border-glass">
                 <td className="px-3 py-2 font-medium">{q.name}</td>
                 {priorities.map((p) => {
                   const key = `${q.id ?? "-"}:${p.id}`;
@@ -164,7 +164,7 @@ function PolicyCell({
         <select
           value={schemaId}
           onChange={(e) => setSchemaId(e.target.value)}
-          className="h-7 rounded-md border border-white/[0.06] bg-white/[0.02] px-1 text-xs"
+          className="h-7 rounded-md border border-glass-strong bg-glass px-1 text-xs"
         >
           {schemas.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>

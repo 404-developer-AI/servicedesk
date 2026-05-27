@@ -16,7 +16,7 @@ const STATUS_TONE: Record<ZammadImportRunStatus, { dot: string; text: string }> 
   Running: { dot: "bg-sky-400", text: "text-sky-300" },
   Completed: { dot: "bg-emerald-400", text: "text-emerald-300" },
   Failed: { dot: "bg-rose-400", text: "text-rose-300" },
-  Cancelled: { dot: "bg-white/40", text: "text-muted-foreground" },
+  Cancelled: { dot: "bg-glass-strong", text: "text-muted-foreground" },
 };
 
 function formatDateTime(iso: string | null) {
@@ -66,13 +66,13 @@ export function ZammadImportRunsListPage() {
       </div>
 
       {query.isLoading ? (
-        <Skeleton className="h-48 w-full bg-white/[0.04]" />
+        <Skeleton className="h-48 w-full bg-glass" />
       ) : query.isError ? (
         <div className="rounded-md border border-rose-400/30 bg-rose-500/[0.08] p-3 text-xs text-rose-200">
           Could not load runs — {query.error.message}
         </div>
       ) : (query.data?.items.length ?? 0) === 0 ? (
-        <div className="rounded-md border border-white/[0.06] bg-white/[0.02] p-4 text-xs text-muted-foreground">
+        <div className="rounded-md border border-glass-strong bg-glass p-4 text-xs text-muted-foreground">
           No runs yet. Start a dry-run from the Ticket picker on the
           integration page.
         </div>
@@ -85,10 +85,10 @@ export function ZammadImportRunsListPage() {
 
 function RunsTable({ rows }: { rows: ZammadImportRunSummary[] }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02]">
+    <div className="overflow-hidden rounded-xl border border-glass-strong bg-glass">
       <table className="w-full text-xs">
         <thead className="text-[10px] uppercase tracking-widest text-muted-foreground/60">
-          <tr className="border-b border-white/[0.04]">
+          <tr className="border-b border-glass">
             <th className="px-3 py-2 text-left">Started</th>
             <th className="px-3 py-2 text-left">By</th>
             <th className="px-3 py-2 text-left">Kind</th>
@@ -121,7 +121,7 @@ function RunsTable({ rows }: { rows: ZammadImportRunSummary[] }) {
             return (
               <tr
                 key={row.id}
-                className="cursor-pointer border-b border-white/[0.03] last:border-b-0 hover:bg-white/[0.02]"
+                className="cursor-pointer border-b border-glass last:border-b-0 hover:bg-glass-hover"
               >
                 <td className="px-3 py-2 align-middle">
                   <Link

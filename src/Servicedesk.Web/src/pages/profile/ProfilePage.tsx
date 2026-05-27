@@ -1,10 +1,13 @@
 import { Link } from "@tanstack/react-router";
-import { AtSign, ChevronRight } from "lucide-react";
+import { AtSign, ChevronRight, Moon, Sun } from "lucide-react";
 import { useAuth } from "@/auth/authStore";
 import { TwoFactorSection } from "@/pages/profile/TwoFactorSection";
+import { useTheme } from "@/app/ThemeProvider";
+import { cn } from "@/lib/utils";
 
 export function ProfilePage() {
   const { user } = useAuth();
+  const { theme, setTheme } = useTheme();
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 py-4">
@@ -33,10 +36,55 @@ export function ProfilePage() {
         </dl>
       </section>
 
+      <section className="glass-card space-y-3 p-6">
+        <div className="flex items-baseline justify-between gap-3">
+          <div className="text-sm font-medium">Appearance</div>
+          <div className="text-[11px] text-muted-foreground">
+            Saved to your account — applies on every device.
+          </div>
+        </div>
+        <div
+          role="radiogroup"
+          aria-label="Theme"
+          className="inline-flex rounded-lg border border-glass bg-glass p-1"
+        >
+          <button
+            type="button"
+            role="radio"
+            aria-checked={theme === "light"}
+            onClick={() => setTheme("light")}
+            className={cn(
+              "flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              theme === "light"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <Sun className="h-3.5 w-3.5" />
+            Light
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={theme === "dark"}
+            onClick={() => setTheme("dark")}
+            className={cn(
+              "flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              theme === "dark"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <Moon className="h-3.5 w-3.5" />
+            Dark
+          </button>
+        </div>
+      </section>
+
       {(user?.role === "Agent" || user?.role === "Admin") ? (
         <Link
           to="/profile/mentions"
-          className="glass-card flex items-center gap-3 p-4 transition-colors hover:bg-white/[0.04]"
+          className="glass-card flex items-center gap-3 p-4 transition-colors hover:bg-glass-hover"
         >
           <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-purple-500/30 bg-purple-500/15">
             <AtSign className="h-4 w-4 text-purple-200" />

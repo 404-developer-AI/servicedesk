@@ -119,7 +119,7 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
 
       <header className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
-          <div className="rounded-lg bg-white/[0.05] p-2.5">
+          <div className="rounded-lg bg-glass p-2.5">
             <Building2 className="h-5 w-5 text-foreground" />
           </div>
           <div>
@@ -141,7 +141,7 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
                 </>
               )}
               {!company.isActive && (
-                <Badge className="border border-white/10 bg-white/[0.05] text-[10px] font-normal text-muted-foreground">
+                <Badge className="border border-glass bg-glass text-[10px] font-normal text-muted-foreground">
                   inactive
                 </Badge>
               )}
@@ -184,8 +184,8 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
               className={cn(
                 "flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors",
                 tab === t.key
-                  ? "bg-white/[0.08] text-foreground shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
-                  : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
+                  ? "bg-glass-strong text-foreground shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
+                  : "text-muted-foreground hover:bg-glass-hover hover:text-foreground",
               )}
             >
               {t.label}
@@ -417,7 +417,7 @@ function ContactsTab({
       </div>
 
       {linking && (
-        <div className="rounded-md border border-white/10 bg-white/[0.02] p-3">
+        <div className="rounded-md border border-glass bg-glass p-3">
           <Input
             value={linkQuery}
             onChange={(e) => setLinkQuery(e.target.value)}
@@ -431,7 +431,7 @@ function ContactsTab({
               {candidates.data.map((c: Contact) => (
                 <li
                   key={c.id}
-                  className="flex items-center justify-between rounded-md px-2 py-1 text-sm hover:bg-white/[0.04]"
+                  className="flex items-center justify-between rounded-md px-2 py-1 text-sm hover:bg-glass-hover"
                 >
                   <span>
                     {c.firstName} {c.lastName}{" "}
@@ -460,7 +460,7 @@ function ContactsTab({
       {isLoading ? (
         <Skeleton className="h-24 w-full" />
       ) : contacts && contacts.length > 0 ? (
-        <ul className="divide-y divide-white/5">
+        <ul className="divide-y divide-glass">
           {contacts.map((c) => {
             const role = roleByContact.get(c.id) ?? "secondary";
             return (
@@ -674,7 +674,7 @@ function DomainsTab({
           No domains yet.
         </p>
       ) : (
-        <ul className="divide-y divide-white/5">
+        <ul className="divide-y divide-glass">
           {domains.map((d) => (
             <li key={d.id} className="flex items-center justify-between py-2 text-sm">
               <span className="font-mono text-foreground">{d.domain}</span>

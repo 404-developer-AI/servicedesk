@@ -85,7 +85,7 @@ export function GraphSection() {
     (findEntry(graph.data, "Graph.ClientId")?.value ?? "").length > 0;
 
   return (
-    <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+    <section className="rounded-lg border border-glass-strong bg-glass p-5">
       <header className="mb-4 flex items-start justify-between gap-4">
         <div className="space-y-1">
           <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
@@ -94,20 +94,20 @@ export function GraphSection() {
           <p className="text-xs text-muted-foreground">
             App-registration credentials for mailbox polling, outbound mail, and
             Microsoft 365 sign-in. One app covers all three. See{" "}
-            <code className="rounded bg-white/[0.04] px-1">docs/microsoft-graph-setup.md</code>{" "}
+            <code className="rounded bg-glass px-1">docs/microsoft-graph-setup.md</code>{" "}
             for the Azure Portal walkthrough.
           </p>
           <p className="text-[11px] text-muted-foreground/80">
             Required permissions — application:{" "}
-            <code className="rounded bg-white/[0.04] px-1">Mail.ReadWrite</code>,{" "}
-            <code className="rounded bg-white/[0.04] px-1">Mail.Send</code>,{" "}
-            <code className="rounded bg-white/[0.04] px-1">User.Read.All</code>. Delegated
+            <code className="rounded bg-glass px-1">Mail.ReadWrite</code>,{" "}
+            <code className="rounded bg-glass px-1">Mail.Send</code>,{" "}
+            <code className="rounded bg-glass px-1">User.Read.All</code>. Delegated
             (only if M365 login is enabled):{" "}
-            <code className="rounded bg-white/[0.04] px-1">openid</code>,{" "}
-            <code className="rounded bg-white/[0.04] px-1">profile</code>,{" "}
-            <code className="rounded bg-white/[0.04] px-1">email</code>,{" "}
-            <code className="rounded bg-white/[0.04] px-1">User.Read</code>. Redirect URI:{" "}
-            <code className="rounded bg-white/[0.04] px-1">&lt;public-host&gt;/api/auth/microsoft/callback</code>.
+            <code className="rounded bg-glass px-1">openid</code>,{" "}
+            <code className="rounded bg-glass px-1">profile</code>,{" "}
+            <code className="rounded bg-glass px-1">email</code>,{" "}
+            <code className="rounded bg-glass px-1">User.Read</code>. Redirect URI:{" "}
+            <code className="rounded bg-glass px-1">&lt;public-host&gt;/api/auth/microsoft/callback</code>.
           </p>
         </div>
       </header>
@@ -119,7 +119,7 @@ export function GraphSection() {
           return <SettingField key={key} entry={entry} queryKey={GRAPH_QUERY_KEY} />;
         })}
 
-        <div className="flex items-center justify-between gap-3 rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2">
+        <div className="flex items-center justify-between gap-3 rounded-md border border-glass-strong bg-glass px-3 py-2">
           <div className="min-w-0 flex-1">
             <div className="text-sm">Client secret</div>
             <div className="text-xs text-muted-foreground">
@@ -152,7 +152,7 @@ export function GraphSection() {
           )}
         </div>
 
-        <div className="flex items-center gap-3 rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2">
+        <div className="flex items-center gap-3 rounded-md border border-glass-strong bg-glass px-3 py-2">
           <div className="shrink-0 text-sm">Test connection</div>
           <Input
             type="email"
@@ -181,16 +181,16 @@ export function GraphSection() {
           )}
         </div>
 
-        <div className="mt-2 border-t border-white/[0.04] pt-4">
+        <div className="mt-2 border-t border-glass pt-4">
           <h3 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60 mb-2">
             Microsoft 365 sign-in
           </h3>
           <p className="text-xs text-muted-foreground mb-3">
             When on, the login page shows a "Sign in with Microsoft" button and
             the callback endpoint is active. The app registration must carry
-            the delegated <code className="rounded bg-white/[0.04] px-1">openid / profile / email / User.Read</code>{" "}
+            the delegated <code className="rounded bg-glass px-1">openid / profile / email / User.Read</code>{" "}
             permissions and have a redirect URI pointing at{" "}
-            <code className="rounded bg-white/[0.04] px-1">&lt;App.PublicBaseUrl&gt;/api/auth/microsoft/callback</code>.
+            <code className="rounded bg-glass px-1">&lt;App.PublicBaseUrl&gt;/api/auth/microsoft/callback</code>.
             See the setup guide for details.
           </p>
 
@@ -226,7 +226,7 @@ export function GraphSection() {
               readOnly={!isFullyConfigured}
             />
           ) : (
-            <div className="rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-xs text-muted-foreground">
+            <div className="rounded-md border border-glass-strong bg-glass px-3 py-2 text-xs text-muted-foreground">
               Setting row not yet seeded. Restart the API once to seed the new
               Auth defaults.
             </div>

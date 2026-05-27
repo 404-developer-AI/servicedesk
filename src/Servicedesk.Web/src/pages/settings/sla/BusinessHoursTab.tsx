@@ -126,7 +126,7 @@ export function BusinessHoursTab() {
             className={`rounded-md border px-3 py-2 text-left text-sm transition ${
               selected?.id === s.id
                 ? "border-primary/40 bg-primary/10 text-foreground"
-                : "border-white/[0.06] bg-white/[0.02] text-muted-foreground hover:bg-white/[0.05]"
+                : "border-glass-strong bg-glass text-muted-foreground hover:bg-glass-hover"
             }`}
           >
             <div className="font-medium text-foreground">{s.name}</div>
@@ -193,7 +193,7 @@ export function BusinessHoursTab() {
             {DAYS.map((dayName, dayIdx) => {
               const daySlots = draft.slots.map((s, i) => ({ ...s, i })).filter((s) => s.dayOfWeek === dayIdx);
               return (
-                <div key={dayIdx} className="flex flex-wrap items-center gap-2 border-b border-white/[0.04] py-2">
+                <div key={dayIdx} className="flex flex-wrap items-center gap-2 border-b border-glass py-2">
                   <div className="w-12 text-sm text-muted-foreground">{dayName}</div>
                   {daySlots.length === 0 && (
                     <div className="text-xs text-muted-foreground/60">Closed</div>

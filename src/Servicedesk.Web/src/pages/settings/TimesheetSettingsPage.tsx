@@ -99,7 +99,7 @@ export function TimesheetSettingsPage() {
             <span className="text-foreground/80">Users → row action → "Timesheet overrides"</span>.
           </p>
         </div>
-        <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+        <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
           Admin only
         </Badge>
       </header>
@@ -289,7 +289,7 @@ function HtmlTemplateField({
   const dirty = draft !== entry.value;
 
   return (
-    <div className="border-b border-white/[0.04] py-3 last:border-b-0 space-y-2">
+    <div className="border-b border-glass py-3 last:border-b-0 space-y-2">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-foreground">{label}</p>
@@ -325,7 +325,7 @@ function HtmlTemplateField({
         rows={4}
         spellCheck={false}
         className={cn(
-          "w-full rounded-md border border-white/10 bg-white/[0.03] px-3 py-2",
+          "w-full rounded-md border border-glass bg-glass px-3 py-2",
           "font-mono text-[11px] leading-relaxed text-foreground/90",
           "focus:outline-none focus:ring-1 focus:ring-violet-400/40 focus:border-violet-400/40",
           "disabled:opacity-50",
@@ -339,7 +339,7 @@ function HtmlTemplateField({
           {placeholders.map((p) => (
             <code
               key={p}
-              className="rounded bg-white/[0.05] px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+              className="rounded bg-glass px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
             >
               {p}
             </code>
@@ -363,7 +363,7 @@ function SectionHeader({
 }) {
   return (
     <div className="mb-4 flex items-center gap-3">
-      <div className="rounded-md bg-white/[0.04] p-2 text-primary">{icon}</div>
+      <div className="rounded-md bg-glass p-2 text-primary">{icon}</div>
       <div>
         <h2 className="text-base font-semibold text-foreground">{title}</h2>
         <p className="text-xs text-muted-foreground">{description}</p>
@@ -557,7 +557,7 @@ function WorkDaysField({ entry }: { entry: SettingEntry }) {
                 "disabled:cursor-not-allowed disabled:opacity-50",
                 on
                   ? "border-violet-400/40 bg-violet-400/15 text-violet-200 hover:bg-violet-400/20"
-                  : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.05]",
+                  : "border-glass bg-glass text-muted-foreground hover:bg-glass-hover",
               )}
               aria-pressed={on}
             >
@@ -624,7 +624,7 @@ function FieldRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-white/[0.04] py-3 last:border-b-0">
+    <div className="flex items-start justify-between gap-4 border-b border-glass py-3 last:border-b-0">
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-foreground">{label}</p>
         <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>
@@ -654,7 +654,7 @@ function TasksSection() {
     <section className="glass-card p-6">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="rounded-md bg-white/[0.04] p-2 text-primary">
+          <div className="rounded-md bg-glass p-2 text-primary">
             <ListChecks className="h-5 w-5" />
           </div>
           <div>
@@ -685,9 +685,9 @@ function TasksSection() {
           ))}
         </div>
       ) : (
-        <div className="overflow-hidden rounded-md border border-white/10">
+        <div className="overflow-hidden rounded-md border border-glass">
           <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-white/10 [&_th]:bg-white/[0.02]">
+            <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-glass [&_th]:bg-glass">
               <tr>
                 <th className="px-4 py-3 font-medium">Name</th>
                 <th className="px-4 py-3 font-medium">Requires ticket</th>
@@ -699,7 +699,7 @@ function TasksSection() {
             </thead>
             <tbody>
               {tasks.map((t) => (
-                <tr key={t.id} className="border-b border-white/5 hover:bg-white/[0.03]">
+                <tr key={t.id} className="border-b border-glass hover:bg-glass-hover">
                   <td className="px-4 py-3 text-foreground">
                     <span className={cn("inline-flex items-center gap-2", t.archived && "text-muted-foreground line-through")}>
                       <Clock className="h-3.5 w-3.5 text-muted-foreground" />
@@ -727,7 +727,7 @@ function TasksSection() {
                   <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{t.sortOrder}</td>
                   <td className="px-4 py-3">
                     {t.archived ? (
-                      <Badge className="border border-white/10 bg-white/[0.05] text-[10px] font-normal text-muted-foreground">
+                      <Badge className="border border-glass bg-glass text-[10px] font-normal text-muted-foreground">
                         archived
                       </Badge>
                     ) : (
@@ -836,7 +836,7 @@ function TaskDialog({ task, onClose }: { task: TimesheetTask | null; onClose: ()
           </label>
 
           <div className="grid grid-cols-2 gap-3">
-            <label className="flex items-center justify-between rounded-md border border-white/10 bg-white/[0.02] px-3 py-2 text-xs">
+            <label className="flex items-center justify-between rounded-md border border-glass bg-glass px-3 py-2 text-xs">
               <span>
                 <span className="block text-foreground">Requires ticket</span>
                 <span className="text-muted-foreground">Agent must link a ticket.</span>
@@ -846,7 +846,7 @@ function TaskDialog({ task, onClose }: { task: TimesheetTask | null; onClose: ()
                 onCheckedChange={(v) => setForm({ ...form, requiresTicket: v })}
               />
             </label>
-            <label className="flex items-center justify-between rounded-md border border-white/10 bg-white/[0.02] px-3 py-2 text-xs">
+            <label className="flex items-center justify-between rounded-md border border-glass bg-glass px-3 py-2 text-xs">
               <span>
                 <span className="block text-foreground">Absence</span>
                 <span className="text-muted-foreground">Rolls up separately.</span>
@@ -868,7 +868,7 @@ function TaskDialog({ task, onClose }: { task: TimesheetTask | null; onClose: ()
           </label>
 
           {task !== null && (
-            <label className="flex items-center justify-between rounded-md border border-white/10 bg-white/[0.02] px-3 py-2 text-xs">
+            <label className="flex items-center justify-between rounded-md border border-glass bg-glass px-3 py-2 text-xs">
               <span className="inline-flex items-center gap-2 text-foreground">
                 {form.archived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
                 {form.archived ? "Archived (hidden from pickers)" : "Active"}

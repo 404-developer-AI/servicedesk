@@ -29,9 +29,9 @@ export function ColumnSelector() {
         <button
           type="button"
           className={cn(
-            "flex items-center gap-1.5 h-8 px-3 rounded-md border border-white/10",
-            "bg-white/[0.04] text-sm text-muted-foreground",
-            "hover:bg-white/[0.07] hover:text-foreground transition-colors",
+            "flex items-center gap-1.5 h-8 px-3 rounded-md border border-glass",
+            "bg-glass text-sm text-muted-foreground",
+            "hover:bg-glass-hover hover:text-foreground transition-colors",
           )}
         >
           <Columns3 className="h-3.5 w-3.5" />
@@ -46,13 +46,13 @@ export function ColumnSelector() {
             return (
               <label
                 key={col.id}
-                className="flex items-center gap-2.5 rounded px-2 py-1.5 text-sm cursor-pointer hover:bg-white/[0.07] transition-colors"
+                className="flex items-center gap-2.5 rounded px-2 py-1.5 text-sm cursor-pointer hover:bg-glass-hover transition-colors"
               >
                 <input
                   type="checkbox"
                   checked={checked}
                   onChange={() => toggleColumn(col.id)}
-                  className="rounded border-white/20 bg-white/[0.04] accent-primary"
+                  className="rounded border-glass-strong bg-glass accent-primary"
                 />
                 <span className={checked ? "text-foreground" : "text-muted-foreground"}>
                   {col.label}
@@ -62,14 +62,14 @@ export function ColumnSelector() {
           })}
         </div>
 
-        <div className="mt-2 border-t border-white/10 pt-2">
+        <div className="mt-2 border-t border-glass pt-2">
           <button
             type="button"
             onClick={() => {
               resetToDefaults();
               setOpen(false);
             }}
-            className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.07] transition-colors"
+            className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
           >
             <RotateCcw className="h-3 w-3" />
             Reset to defaults

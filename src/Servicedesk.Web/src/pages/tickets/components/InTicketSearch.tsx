@@ -156,7 +156,7 @@ function SearchBar({
 
   return (
     <div
-      className="fixed top-6 left-1/2 z-50 w-[min(640px,90vw)] -translate-x-1/2 rounded-xl border border-white/10 bg-background/95 p-2 shadow-2xl backdrop-blur ring-1 ring-inset ring-white/5"
+      className="fixed top-6 left-1/2 z-50 w-[min(640px,90vw)] -translate-x-1/2 rounded-xl border border-glass bg-background/95 p-2 shadow-2xl backdrop-blur ring-1 ring-inset ring-white/5"
       role="dialog"
       aria-label="Zoeken in dit ticket"
     >
@@ -179,7 +179,7 @@ function SearchBar({
           className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         />
 
-        <div className="flex items-center rounded-md border border-white/10 bg-white/5 p-0.5 text-xs">
+        <div className="flex items-center rounded-md border border-glass bg-glass p-0.5 text-xs">
           <ToggleButton active={mode === "filter"} onClick={() => setMode("filter")}>
             Filter
           </ToggleButton>
@@ -195,14 +195,14 @@ function SearchBar({
             </span>
             <button
               onClick={() => jump(-1)}
-              className="rounded px-1 hover:bg-white/10"
+              className="rounded px-1 hover:bg-glass-hover"
               aria-label="Vorige match"
             >
               ↑
             </button>
             <button
               onClick={() => jump(1)}
-              className="rounded px-1 hover:bg-white/10"
+              className="rounded px-1 hover:bg-glass-hover"
               aria-label="Volgende match"
             >
               ↓
@@ -212,7 +212,7 @@ function SearchBar({
 
         <button
           onClick={close}
-          className="rounded p-1 text-muted-foreground hover:bg-white/10"
+          className="rounded p-1 text-muted-foreground hover:bg-glass-hover"
           aria-label="Sluiten"
         >
           <X className="h-4 w-4" />
@@ -236,7 +236,7 @@ function ToggleButton({
       onClick={onClick}
       className={cn(
         "rounded px-2 py-1 transition-colors",
-        active ? "bg-white/15 text-foreground" : "text-muted-foreground hover:text-foreground",
+        active ? "bg-glass-strong text-foreground" : "text-muted-foreground hover:text-foreground",
       )}
     >
       {children}

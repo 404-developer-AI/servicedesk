@@ -88,7 +88,7 @@ export function CompanyFormFields({
             value={form.alertText ?? ""}
             onChange={(e) => setForm((f) => ({ ...f, alertText: e.target.value }))}
             rows={3}
-            className="w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm outline-none focus:border-white/20"
+            className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm outline-none focus:border-glass-strong"
           />
         </Field>
         <div className="mt-3 space-y-2">

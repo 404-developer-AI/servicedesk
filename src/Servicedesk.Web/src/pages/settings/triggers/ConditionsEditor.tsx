@@ -150,7 +150,7 @@ function SimpleList({
   return (
     <div className="space-y-2">
       {items.length === 0 && (
-        <p className="rounded-md border border-dashed border-white/[0.08] bg-white/[0.01] px-3 py-3 text-xs text-muted-foreground/70">
+        <p className="rounded-md border border-dashed border-glass-strong bg-glass px-3 py-3 text-xs text-muted-foreground/70">
           No conditions — the trigger fires on every event of its activator.
         </p>
       )}
@@ -158,7 +158,7 @@ function SimpleList({
         isGroup(item) ? (
           <div
             key={idx}
-            className="rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-xs text-muted-foreground"
+            className="rounded-md border border-glass-strong bg-glass px-3 py-2 text-xs text-muted-foreground"
           >
             Nested group ({item.op}, {item.items.length} item
             {item.items.length === 1 ? "" : "s"}) — switch to expert mode to edit.
@@ -243,15 +243,15 @@ function GroupNode({
   return (
     <div
       className={cn(
-        "rounded-lg border bg-white/[0.02] px-3 py-3",
-        depth === 0 ? "border-white/[0.08]" : "border-white/[0.05]",
+        "rounded-lg border bg-glass px-3 py-3",
+        depth === 0 ? "border-glass-strong" : "border-glass",
       )}
     >
       <div className="mb-2 flex items-center gap-2">
         <select
           value={group.op}
           onChange={(e) => setOp(e.target.value as ConditionGroup["op"])}
-          className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
+          className="rounded-md border border-glass bg-glass px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
         >
           <option value="AND">All must match (AND)</option>
           <option value="OR">Any may match (OR)</option>
@@ -269,7 +269,7 @@ function GroupNode({
         )}
       </div>
 
-      <div className="space-y-2 pl-2 border-l border-white/[0.06]">
+      <div className="space-y-2 pl-2 border-l border-glass-strong">
         {group.items.length === 0 && (
           <p className="text-xs text-muted-foreground/60">Empty.</p>
         )}
@@ -381,7 +381,7 @@ function LeafRow({
       <select
         value={leaf.field}
         onChange={(e) => setField(e.target.value)}
-        className="min-w-[10rem] rounded-md border border-white/10 bg-white/[0.04] px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
+        className="min-w-[10rem] rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
       >
         {fields.map((f) => (
           <option key={f.key} value={f.key}>{f.label}</option>
@@ -390,7 +390,7 @@ function LeafRow({
       <select
         value={leaf.operator}
         onChange={(e) => onChange({ ...leaf, operator: e.target.value })}
-        className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
+        className="rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
       >
         {applicableOps.map((o) => (
           <option key={o} value={o}>{prettifyOp(o)}</option>
@@ -472,7 +472,7 @@ function ValueInput({
       <select
         value={typeof value === "string" ? value : ""}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
+        className="rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
       >
         <option value="">—</option>
         {SENDER_OPTIONS.map((o) => (
@@ -499,7 +499,7 @@ function ValueInput({
               .filter(Boolean),
           )
         }
-        className="min-w-[12rem] rounded-md border border-white/10 bg-white/[0.04] px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+        className="min-w-[12rem] rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
       />
     );
   }
@@ -514,7 +514,7 @@ function ValueInput({
       <select
         value={typeof value === "string" ? value : ""}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
+        className="rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
       >
         <option value="">—</option>
         {ARTICLE_TYPE_OPTIONS.map((o) => (
@@ -529,7 +529,7 @@ function ValueInput({
       value={typeof value === "string" ? value : ""}
       onChange={(e) => onChange(e.target.value)}
       placeholder="value"
-      className="min-w-[12rem] rounded-md border border-white/10 bg-white/[0.04] px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+      className="min-w-[12rem] rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
     />
   );
 }
@@ -560,7 +560,7 @@ function BooleanValueInput({
     <select
       value={normalized}
       onChange={(e) => onChange(e.target.value)}
-      className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
+      className="rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
     >
       <option value="true">true</option>
       <option value="false">false</option>
@@ -584,7 +584,7 @@ function TaxonomySelect({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="min-w-[10rem] flex items-center justify-between gap-2 rounded-md border border-white/10 bg-white/[0.04] px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          className="min-w-[10rem] flex items-center justify-between gap-2 rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
         >
           <span className={cn(!selected && "text-muted-foreground/60")}>
             {selected?.name ?? "Select…"}
@@ -592,7 +592,7 @@ function TaxonomySelect({
           <ChevronDown className="h-3 w-3 text-muted-foreground/60" />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-56 p-1 border border-white/10 bg-[hsl(240_10%_6%/0.96)] backdrop-blur-xl">
+      <PopoverContent className="w-56 p-1 border border-glass bg-popover/95 backdrop-blur-xl">
         {items.length === 0 ? (
           <div className="px-2 py-1 text-xs text-muted-foreground/70">No options.</div>
         ) : (
@@ -603,7 +603,7 @@ function TaxonomySelect({
               onClick={() => { onChange(item.id); setOpen(false); }}
               className={cn(
                 "w-full text-left rounded px-2 py-1.5 text-xs",
-                item.id === value ? "bg-white/[0.06] text-foreground" : "text-foreground/80 hover:bg-white/[0.04]",
+                item.id === value ? "bg-glass-strong text-foreground" : "text-foreground/80 hover:bg-glass-hover",
               )}
             >
               {item.name}

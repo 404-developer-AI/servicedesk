@@ -31,7 +31,7 @@ export function TemplatesSettingsPage() {
         <h1 className="text-display-md font-semibold text-foreground">Templates</h1>
         <p className="max-w-xl text-sm text-muted-foreground">
           Pre-canned text blocks agents drop into an internal note, public
-          reply, or outgoing mail by typing <code className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[0.8em]">::</code>.
+          reply, or outgoing mail by typing <code className="rounded bg-glass-strong px-1.5 py-0.5 font-mono text-[0.8em]">::</code>.
           Scope a template to one or more queues to keep the picker tight.
         </p>
       </header>
@@ -100,7 +100,7 @@ function ListPanel({
   const rows = listQ.data ?? [];
 
   return (
-    <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+    <section className="rounded-lg border border-glass-strong bg-glass p-5">
       <header className="mb-4 flex items-center justify-between gap-4">
         <div className="space-y-1">
           <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
@@ -182,8 +182,8 @@ function TemplateRow({
       className={cn(
         "flex items-center justify-between gap-4 rounded-lg border px-4 py-3",
         template.isActive
-          ? "border-white/[0.06] bg-white/[0.02]"
-          : "border-white/[0.04] bg-white/[0.01] opacity-70",
+          ? "border-glass-strong bg-glass"
+          : "border-glass bg-glass opacity-70",
       )}
     >
       <div className="min-w-0 flex-1">
@@ -201,7 +201,7 @@ function TemplateRow({
             </span>
           )}
           {!template.isActive && (
-            <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+            <span className="rounded-full bg-glass-strong px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
               Inactive
             </span>
           )}
@@ -259,7 +259,7 @@ function EditorPanel({
   }
 
   return (
-    <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+    <section className="rounded-lg border border-glass-strong bg-glass p-5">
       <header className="mb-4 flex items-center justify-between gap-4">
         <div className="space-y-1">
           <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">

@@ -190,7 +190,7 @@ export function TicketSidePanel({
     <div className="glass-card w-[320px] shrink-0 flex flex-col min-h-0 h-full">
       {/* Tab bar — pin button on the trailing edge controls the
           per-user "always open" preference for this panel across all tickets. */}
-      <div className="flex items-stretch border-b border-white/10 shrink-0">
+      <div className="flex items-stretch border-b border-glass shrink-0">
         <div className="flex flex-1 min-w-0">
           {tabs.map((tab) => (
             <button
@@ -221,10 +221,10 @@ export function TicketSidePanel({
                   aria-pressed={pinned}
                   aria-label={pinned ? "Unpin side panel" : "Pin side panel open"}
                   className={cn(
-                    "shrink-0 px-2.5 flex items-center justify-center transition-colors border-l border-white/10",
+                    "shrink-0 px-2.5 flex items-center justify-center transition-colors border-l border-glass",
                     pinned
                       ? "text-primary hover:text-primary/80 bg-primary/[0.08]"
-                      : "text-muted-foreground/50 hover:text-foreground hover:bg-white/[0.06]",
+                      : "text-muted-foreground/50 hover:text-foreground hover:bg-glass-hover",
                   )}
                 >
                   {pinned
@@ -521,7 +521,7 @@ function ZammadImportBadge({ ticket }: { ticket: Ticket }) {
   if (ticket.zammadTicketId == null) return null;
   const upstreamLabel = ticket.zammadTicketNumber ?? String(ticket.zammadTicketId);
   return (
-    <div className="rounded-md border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5 text-[11px] text-muted-foreground">
+    <div className="rounded-md border border-glass-strong bg-glass px-2.5 py-1.5 text-[11px] text-muted-foreground">
       <div className="text-[9px] uppercase tracking-wider text-muted-foreground/60">
         Provenance
       </div>
@@ -570,7 +570,7 @@ function RelationshipsBlock({
   // redirects all activity to the merge target.
   const isMerged = !!ticket.mergedIntoTicketId;
   return (
-    <div className="space-y-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-2.5 py-2">
+    <div className="space-y-2 rounded-md border border-glass-strong bg-glass px-2.5 py-2">
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
         Relationships
       </div>
@@ -900,7 +900,7 @@ function ContactTab({
         </FieldRow>
       )}
 
-      <div className="border-t border-white/10" />
+      <div className="border-t border-glass" />
 
       <div>
         <FieldLabel>Status</FieldLabel>
@@ -909,7 +909,7 @@ function ContactTab({
             "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border",
             contact.isActive
               ? "border-green-500/30 bg-green-500/10 text-green-400"
-              : "border-white/10 bg-white/[0.05] text-muted-foreground",
+              : "border-glass bg-glass text-muted-foreground",
           )}
         >
           {contact.isActive ? "Active" : "Inactive"}
@@ -921,7 +921,7 @@ function ContactTab({
         <div className="text-sm text-foreground/80"><ServerDate iso={contact.createdUtc} /></div>
       </div>
 
-      <div className="border-t border-white/10" />
+      <div className="border-t border-glass" />
 
       <ContactCompanyLinks
         contactId={contact.id}
@@ -988,7 +988,7 @@ function ContactCompanyLinks({
               <Link
                 to="/companies/$companyId"
                 params={{ companyId: l.companyId }}
-                className="flex items-center gap-1.5 rounded-md border border-white/5 bg-white/[0.02] px-1.5 py-1 text-xs hover:border-white/10 hover:bg-white/[0.05]"
+                className="flex items-center gap-1.5 rounded-md border border-glass bg-glass px-1.5 py-1 text-xs hover:border-glass-strong hover:bg-glass-hover"
               >
                 <span
                   className={cn(
@@ -1230,14 +1230,14 @@ function CompanyTab({
 
       {domains.length > 0 && (
         <>
-          <div className="border-t border-white/10" />
+          <div className="border-t border-glass" />
           <div>
             <FieldLabel>Domains</FieldLabel>
             <div className="flex flex-wrap gap-1.5">
               {domains.map((d) => (
                 <span
                   key={d.id}
-                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs border border-white/10 bg-white/[0.05] text-muted-foreground"
+                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs border border-glass bg-glass text-muted-foreground"
                 >
                   <Globe className="h-3 w-3" />
                   {d.domain}
@@ -1248,7 +1248,7 @@ function CompanyTab({
         </>
       )}
 
-      <div className="border-t border-white/10" />
+      <div className="border-t border-glass" />
 
       <div>
         <FieldLabel>Status</FieldLabel>
@@ -1257,14 +1257,14 @@ function CompanyTab({
             "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border",
             company.isActive
               ? "border-green-500/30 bg-green-500/10 text-green-400"
-              : "border-white/10 bg-white/[0.05] text-muted-foreground",
+              : "border-glass bg-glass text-muted-foreground",
           )}
         >
           {company.isActive ? "Active" : "Inactive"}
         </span>
       </div>
 
-      <div className="border-t border-white/10" />
+      <div className="border-t border-glass" />
 
       <CompanyContactLinks
         companyId={company.id}
@@ -1360,7 +1360,7 @@ function CompanyContactLinks({
                 <Link
                   to="/contacts/$contactId"
                   params={{ contactId: c.id }}
-                  className="flex items-center gap-1.5 rounded-md border border-white/5 bg-white/[0.02] px-1.5 py-1 text-xs hover:border-white/10 hover:bg-white/[0.05]"
+                  className="flex items-center gap-1.5 rounded-md border border-glass bg-glass px-1.5 py-1 text-xs hover:border-glass-strong hover:bg-glass-hover"
                 >
                   {role ? (
                     <span
@@ -1372,7 +1372,7 @@ function CompanyContactLinks({
                       {role[0]}
                     </span>
                   ) : (
-                    <span className="inline-flex items-center rounded-sm border border-white/10 bg-white/[0.04] px-1 py-0 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <span className="inline-flex items-center rounded-sm border border-glass bg-glass px-1 py-0 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
                       ?
                     </span>
                   )}
@@ -1409,7 +1409,7 @@ function TicketPresence({ ticketId }: { ticketId: string }) {
   return (
     <TooltipProvider delayDuration={200}>
       <>
-        <div className="border-t border-white/10" />
+        <div className="border-t border-glass" />
         <div>
           <FieldLabel>Also viewing</FieldLabel>
           <div className="flex flex-wrap gap-2">
@@ -1435,7 +1435,7 @@ function PresenceChip({ user }: { user: PresenceUser }) {
             "flex items-center gap-1.5 rounded-full px-2 py-1 text-xs border transition-colors",
             isViewing
               ? "bg-primary/20 border-primary/40 text-foreground"
-              : "bg-white/[0.04] border-white/10 text-muted-foreground/60",
+              : "bg-glass border-glass text-muted-foreground/60",
           )}
         >
           <span
@@ -1443,7 +1443,7 @@ function PresenceChip({ user }: { user: PresenceUser }) {
               "inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-medium",
               isViewing
                 ? "bg-primary/40 text-white"
-                : "bg-white/[0.08] text-muted-foreground/50",
+                : "bg-glass-strong text-muted-foreground/50",
             )}
           >
             {initial}
@@ -1454,7 +1454,7 @@ function PresenceChip({ user }: { user: PresenceUser }) {
           <span
             className={cn(
               "h-1.5 w-1.5 rounded-full shrink-0",
-              isViewing ? "bg-green-400" : "bg-white/20",
+              isViewing ? "bg-green-400" : "bg-glass-strong",
             )}
           />
         </div>

@@ -61,7 +61,7 @@ export function TaxonomySelect({
     >
       <SelectTrigger
         className={cn(
-          "h-9 border-white/10 bg-white/[0.04] focus:border-white/20 focus:bg-white/[0.06] transition-colors",
+          "h-9 border-glass bg-glass focus:border-glass-strong focus:bg-glass-strong transition-colors",
           !value && "text-muted-foreground",
           triggerClassName,
         )}
@@ -84,7 +84,7 @@ export function TaxonomySelect({
           )}
         </div>
       </SelectTrigger>
-      <SelectContent className="border-white/10 bg-background/95 backdrop-blur-xl">
+      <SelectContent className="border-glass bg-background/95 backdrop-blur-xl">
         {allowEmpty && (
           <SelectItem value="__empty__">{emptyLabel}</SelectItem>
         )}
