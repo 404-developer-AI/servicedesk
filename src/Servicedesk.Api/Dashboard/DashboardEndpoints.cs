@@ -10,14 +10,16 @@ public static class DashboardEndpoints
     {
         var group = app.MapGroup("/api/dashboard")
             .WithTags("Dashboard")
-            .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
         // Initial snapshot for the AgentActivity dashboard tile. Returns
         // every Agent + Admin with an online flag and the tickets they
         // are currently viewing / have in their recent list. Live
         // updates afterwards arrive over the TicketPresenceHub via the
         // "AgentActivity" event broadcast to the
-        // "agent-activity-admins" group.
+        // "agent-activity-broadcast" group. v0.0.44 — opened to Agents
+        // (admin-grantable per user) since the same cross-agent presence
+        // is already visible via the in-ticket presence chips.
         group.MapGet("/agent-activity", async (
             IAgentActivityService service,
             CancellationToken ct) =>

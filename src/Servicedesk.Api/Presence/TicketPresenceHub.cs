@@ -19,11 +19,13 @@ public sealed class TicketPresenceHub : Hub
     private static readonly ConcurrentDictionary<string, ConnectionState> Connections = new();
 
     /// SignalR group that receives the per-agent AgentActivity broadcasts
-    /// powering the dashboard tile. Admin-only — agents already see the
-    /// per-ticket pill in the status bar; the cross-agent roll-up is for
-    /// admins. The broadcaster owns the canonical constant; the hub
-    /// references it for group enrollment on connect.
-    private const string AgentActivityAdminsGroup =
+    /// powering the dashboard tile. v0.0.44 opened the tile to Agents
+    /// (admin-grantable per user), so any non-customer connection joins
+    /// this group on connect. Customers never see the tile and never get
+    /// enrolled — the in-ticket presence chips remain the only cross-
+    /// agent surface available to them. The broadcaster owns the
+    /// canonical constant; the hub references it for group enrollment.
+    private const string AgentActivityBroadcastGroup =
         SignalRAgentActivityBroadcaster.AdminsGroup;
 
     private readonly IAgentActivityBroadcaster _agentActivityBroadcaster;
@@ -46,12 +48,14 @@ public sealed class TicketPresenceHub : Hub
         // receive lightweight "something changed" pings for the list view.
         await Groups.AddToGroupAsync(Context.ConnectionId, "ticket-list");
 
-        // Admins additionally join the agent-activity broadcast group so
-        // the dashboard AgentActivity tile receives live per-agent updates.
+        // Agents + Admins join the agent-activity broadcast group so the
+        // dashboard AgentActivity tile (admin-grantable per user since
+        // v0.0.44) receives live per-agent updates. Customers stay out.
         var role = Context.User?.FindFirstValue(ClaimTypes.Role);
-        if (string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(role, "Agent", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
         {
-            await Groups.AddToGroupAsync(Context.ConnectionId, AgentActivityAdminsGroup);
+            await Groups.AddToGroupAsync(Context.ConnectionId, AgentActivityBroadcastGroup);
         }
 
         // The newly-online agent's status changed (or this is a second tab
