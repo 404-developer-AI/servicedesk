@@ -94,6 +94,20 @@ if (cd "$INSTALL_DIR/deploy" && \
             -d "$DOMAIN" \
             --email "$EMAIL" \
             --agree-tos --non-interactive --no-eff-email) > "$log" 2>&1; then
+    # Relax dir perms so the app container (uid 10001) can still read
+    # fullchain.pem after the renewal. certbot recreates the archive/live
+    # dirs as 0700 root-only on each renewal, which silently flips the
+    # tls-cert health card to Warning ("not readable"). The public cert
+    # (fullchain.pem, 0644) is not secret; privkey.pem stays 0600 root-only.
+    docker run --rm -v servicedesk_certs:/etc/letsencrypt alpine sh -c '
+        for top in /etc/letsencrypt/live /etc/letsencrypt/archive; do
+            [ -d "$top" ] && chmod 0755 "$top"
+            for d in "$top"/*; do
+                [ -d "$d" ] && chmod 0755 "$d"
+            done
+        done
+    ' >/dev/null 2>&1 || true
+
     # HUP makes nginx re-read its config + ssl_certificate / ssl_certificate_key
     # files without dropping active connections. Old workers finish in-flight
     # requests; new workers pick up the fresh cert.

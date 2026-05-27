@@ -639,6 +639,37 @@ bootstrap_certbot() {
 }
 
 # ===========================================================================
+# 13b. relax Let's Encrypt dir perms so the app container (uid 10001) can read
+#      fullchain.pem for the tls-cert health card.
+#
+# certbot creates `/etc/letsencrypt/live` and `/etc/letsencrypt/archive` as
+# 0700 root-only (and the per-domain subdirs same). nginx runs as root inside
+# its container so doesn't care, but the app container runs as `sd` (uid
+# 10001) and the tls-cert health-card reads the cert's notAfter from inside
+# the app — which silently flips to Warning ("not readable") without these
+# dirs being traversable.
+#
+# Idempotent: chmod 0755 on an already-0755 dir is a no-op. fullchain.pem
+# itself is 0644 by default (the public cert is not secret); privkey.pem
+# stays 0600 root-only — the app never touches it.
+# ===========================================================================
+relax_letsencrypt_perms() {
+    if [[ "$SSL" != "yes" ]]; then
+        return
+    fi
+    log "Relaxing /etc/letsencrypt dir perms (app container needs to read fullchain.pem)…"
+    docker run --rm -v servicedesk_certs:/etc/letsencrypt alpine sh -c '
+        for top in /etc/letsencrypt/live /etc/letsencrypt/archive; do
+            [ -d "$top" ] && chmod 0755 "$top"
+            for d in "$top"/*; do
+                [ -d "$d" ] && chmod 0755 "$d"
+            done
+        done
+    ' >/dev/null
+    ok "letsencrypt dir perms relaxed."
+}
+
+# ===========================================================================
 # 14. start nginx
 # ===========================================================================
 start_nginx() {
@@ -781,6 +812,7 @@ main() {
     post_install_revoke_audit_log
     seed_public_base_url
     bootstrap_certbot
+    relax_letsencrypt_perms
     start_nginx
     install_cert_renew_units
     write_summary
