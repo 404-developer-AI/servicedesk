@@ -5,6 +5,7 @@ import { searchApi, type SearchHit } from "@/lib/api";
 import { sanitizeSnippet } from "@/lib/sanitize";
 import { KIND_ORDER, labelForKind, hitHref } from "@/components/search/searchMeta";
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/app/ThemeProvider";
 
 const PAGE_SIZE = 25;
 
@@ -151,9 +152,26 @@ export function SearchPage() {
 
 function HitRow({ hit, query }: { hit: SearchHit; query: string }) {
   const navigate = useNavigate();
+  const { theme } = useTheme();
   const requester = hit.meta?.requester;
   const company = hit.meta?.company;
   const subtitle = [requester, company].filter(Boolean).join(" · ");
+  const statusName = hit.meta?.statusName;
+  const statusColor = hit.meta?.statusColor;
+  const statusPillStyle =
+    statusColor
+      ? theme === "light"
+        ? {
+            backgroundColor: `color-mix(in srgb, ${statusColor} 22%, transparent)`,
+            color: `color-mix(in srgb, ${statusColor}, black 45%)`,
+            borderColor: `color-mix(in srgb, ${statusColor} 40%, transparent)`,
+          }
+        : {
+            backgroundColor: `${statusColor}20`,
+            color: statusColor,
+            borderColor: `${statusColor}55`,
+          }
+      : undefined;
 
   function go() {
     if (hit.kind === "tickets") {
@@ -172,7 +190,23 @@ function HitRow({ hit, query }: { hit: SearchHit; query: string }) {
       onClick={go}
     >
       <div className="flex items-baseline gap-2">
+        {hit.kind === "tickets" && statusColor && (
+          <span
+            className="h-2 w-2 shrink-0 self-center rounded-full"
+            style={{ backgroundColor: statusColor }}
+            title={statusName ?? undefined}
+            aria-label={statusName ?? undefined}
+          />
+        )}
         <span className="truncate font-medium">{hit.title}</span>
+        {hit.kind === "tickets" && statusName && (
+          <span
+            className="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider"
+            style={statusPillStyle}
+          >
+            {statusName}
+          </span>
+        )}
         {subtitle && (
           <span className="shrink-0 text-xs text-muted-foreground">{subtitle}</span>
         )}

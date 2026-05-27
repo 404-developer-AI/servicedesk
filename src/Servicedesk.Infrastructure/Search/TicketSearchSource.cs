@@ -116,11 +116,14 @@ public sealed class TicketSearchSource : ISearchSource
                    r.body_snippet   AS "BodySnippet",
                    r.total_hits     AS "TotalHits",
                    COALESCE(c.first_name || ' ' || c.last_name, c.email, '') AS "RequesterName",
-                   COALESCE(co.name, '')  AS "CompanyName"
+                   COALESCE(co.name, '')  AS "CompanyName",
+                   COALESCE(s.name, '')   AS "StatusName",
+                   COALESCE(s.color, '')  AS "StatusColor"
             FROM ranked r
             LEFT JOIN contacts c  ON c.id = r.requester_contact_id
             LEFT JOIN tickets t2  ON t2.id = r.id
             LEFT JOIN companies co ON co.id = t2.company_id
+            LEFT JOIN statuses s  ON s.id = t2.status_id
             ORDER BY r.rank DESC, r.updated_utc DESC, r.id DESC
             LIMIT @limit OFFSET @offset;
             """;
@@ -150,6 +153,8 @@ public sealed class TicketSearchSource : ISearchSource
                 ["updatedUtc"] = r.UpdatedUtc.ToString("O"),
                 ["requester"] = string.IsNullOrWhiteSpace(r.RequesterName) ? null : r.RequesterName.Trim(),
                 ["company"] = string.IsNullOrWhiteSpace(r.CompanyName) ? null : r.CompanyName,
+                ["statusName"] = string.IsNullOrWhiteSpace(r.StatusName) ? null : r.StatusName,
+                ["statusColor"] = string.IsNullOrWhiteSpace(r.StatusColor) ? null : r.StatusColor,
             })).ToList();
 
         var totalInGroup = rows.Count > 0 ? (int)rows[0].TotalHits : 0;
@@ -180,5 +185,7 @@ public sealed class TicketSearchSource : ISearchSource
         string? BodySnippet,
         long TotalHits,
         string? RequesterName,
-        string? CompanyName);
+        string? CompanyName,
+        string? StatusName,
+        string? StatusColor);
 }

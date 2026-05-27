@@ -107,14 +107,16 @@ export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, Intak
                 className={cn(
                   "w-full flex items-start gap-3 px-3 py-2 text-left transition-colors",
                   isSelected
-                    ? "bg-emerald-500/15 text-emerald-100"
+                    ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-100"
                     : "text-foreground/80 hover:bg-glass-hover",
                 )}
               >
                 <Icon
                   className={cn(
                     "mt-0.5 h-4 w-4 shrink-0",
-                    item.kind === "template" ? "text-violet-300" : "text-cyan-300",
+                    item.kind === "template"
+                      ? "text-violet-700 dark:text-violet-300"
+                      : "text-cyan-700 dark:text-cyan-300",
                   )}
                 />
                 <div className="min-w-0 flex-1">
@@ -122,10 +124,10 @@ export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, Intak
                     <span className="truncate font-medium">{item.name}</span>
                     <span
                       className={cn(
-                        "shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] uppercase tracking-wider",
+                        "shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider",
                         item.kind === "template"
-                          ? "border-violet-400/30 bg-violet-400/10 text-violet-200"
-                          : "border-cyan-400/30 bg-cyan-400/10 text-cyan-200",
+                          ? "border-violet-400/60 bg-violet-100 text-violet-800 dark:border-violet-400/30 dark:bg-violet-400/10 dark:text-violet-200"
+                          : "border-cyan-400/60 bg-cyan-100 text-cyan-800 dark:border-cyan-400/30 dark:bg-cyan-400/10 dark:text-cyan-200",
                       )}
                     >
                       {kindLabel}

@@ -282,7 +282,7 @@ function EditorBody({
           <select
             value={activatorPair}
             onChange={(e) => setActivatorPair(e.target.value)}
-            className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
+            className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
           >
             {metadata.activatorPairs.map((p) => (
               <option key={p} value={p}>{prettifyActivator(p)}</option>
@@ -294,7 +294,7 @@ function EditorBody({
             <select
               value={manualTicketTypeId ?? ""}
               onChange={(e) => setManualTicketTypeId(e.target.value || null)}
-              className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-zinc-900"
+              className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
             >
               <option value="">— select a ticket type —</option>
               {(ticketTypesQ.data ?? []).filter((t) => t.isActive).map((t) => (

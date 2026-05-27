@@ -260,6 +260,8 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
                           const requester = hit.meta?.requester;
                           const company = hit.meta?.company;
                           const subtitle = [requester, company].filter(Boolean).join(" · ");
+                          const statusName = hit.meta?.statusName;
+                          const statusColor = hit.meta?.statusColor;
                           return (
                             <Command.Item
                               key={`${hit.kind}:${hit.entityId}`}
@@ -268,6 +270,14 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
                               className="flex cursor-pointer flex-col gap-0.5 rounded-md px-3 py-2 text-sm aria-selected:bg-glass-strong"
                             >
                               <div className="flex items-baseline gap-2">
+                                {hit.kind === "tickets" && statusColor && (
+                                  <span
+                                    className="mt-0.5 h-2 w-2 shrink-0 self-center rounded-full"
+                                    style={{ backgroundColor: statusColor }}
+                                    title={statusName ?? undefined}
+                                    aria-label={statusName ?? undefined}
+                                  />
+                                )}
                                 <span className="truncate font-medium">{hit.title}</span>
                                 {subtitle && (
                                   <span className="shrink-0 text-xs text-muted-foreground">{subtitle}</span>
