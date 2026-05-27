@@ -340,6 +340,28 @@ rebuild_and_restart_app() {
     (cd "${INSTALL_DIR}/deploy" && DOMAIN="$DOMAIN" docker compose up -d app)
 }
 
+# Relax /etc/letsencrypt/{live,archive} dir perms so the app container (uid
+# 10001) can read fullchain.pem for the tls-cert health card. certbot
+# defaults those dirs to 0700 root-only, which silently flips the card to
+# Warning ("not readable"). fullchain.pem is 0644 (public cert is not
+# secret); privkey.pem stays 0600. Idempotent — chmod on already-0755 is a
+# no-op. Pre-v0.0.49 installs upgrade through this on the first update.
+relax_letsencrypt_perms() {
+    if [[ -z "${DOMAIN:-}" ]] || ! docker run --rm -v servicedesk_certs:/etc/letsencrypt alpine \
+            test -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" 2>/dev/null; then
+        return
+    fi
+    log "Relaxing /etc/letsencrypt dir perms (app container reads fullchain.pem) …"
+    docker run --rm -v servicedesk_certs:/etc/letsencrypt alpine sh -c '
+        for top in /etc/letsencrypt/live /etc/letsencrypt/archive; do
+            [ -d "$top" ] && chmod 0755 "$top"
+            for d in "$top"/*; do
+                [ -d "$d" ] && chmod 0755 "$d"
+            done
+        done
+    ' >/dev/null 2>&1 || true
+}
+
 wait_for_health_or_rollback() {
     local tries=60
     for ((i=1; i<=tries; i++)); do
@@ -440,6 +462,7 @@ main() {
     reconcile_env_vars
     ensure_env_conf
     ensure_cert_renew_bridge
+    relax_letsencrypt_perms
     rebuild_and_restart_app
     if ! wait_for_health_or_rollback; then
         exit 1
