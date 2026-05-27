@@ -108,19 +108,21 @@ builder.Services.Configure<ForwardedHeadersOptions>(o =>
 // Loopback is only reachable from inside the container, so always-listing
 // it does not widen the public attack surface.
 //
-// Must be PostConfigure, not Configure: ASP.NET's HostFilteringOptionsSetup
-// only populates AllowedHosts from config when the list is currently empty.
-// A plain Configure<> runs before PostConfigure but after the framework's
-// own IConfigureOptions in some registration orders — if ours ran first and
-// seeded loopback, the framework setup would see Count > 0 and skip reading
-// SERVICEDESK_AllowedHosts entirely, dropping the public domain from the
-// allow-list (which is what happened in v0.0.46).
+// Must be PostConfigure (runs after every IConfigureOptions) so the
+// framework's own HostFilteringOptionsSetup has already populated the list
+// from SERVICEDESK_AllowedHosts. That setup assigns `options.AllowedHosts =
+// hosts.Split(';')`, which is a fixed-size `string[]` exposed as
+// `IList<string>`. Mutating it in place throws NotSupportedException at
+// startup (v0.0.47 regression), so we always rebuild into a fresh
+// List<string> instead.
 builder.Services.PostConfigure<HostFilteringOptions>(o =>
 {
+    var merged = new List<string>(o.AllowedHosts);
     foreach (var loopback in new[] { "localhost", "127.0.0.1", "[::1]" })
     {
-        if (!o.AllowedHosts.Contains(loopback)) o.AllowedHosts.Add(loopback);
+        if (!merged.Contains(loopback)) merged.Add(loopback);
     }
+    o.AllowedHosts = merged;
 });
 
 // Data Protection keyring lives in Postgres, AES-GCM encrypted with a master
