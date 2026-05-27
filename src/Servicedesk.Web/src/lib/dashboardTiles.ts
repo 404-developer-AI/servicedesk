@@ -77,7 +77,11 @@ export const DASHBOARD_TILES: DashboardTile[] = [
     label: "Agent activity",
     description:
       "Live overview of agents with their actively-viewed and recently-opened tickets. Click an agent to see their ticket list.",
-    minRole: "Admin",
+    // v0.0.44 — opened up to Agents too so admins can grant the tile to
+    // selected agents (e.g. a dispatcher). Existing in-ticket presence
+    // chips already reveal cross-agent activity per ticket; this tile is
+    // the roll-up of that same information.
+    minRole: "Agent",
     icon: UsersRound,
     defaultSize: "full",
     allowedSizes: ["medium", "wide", "full"],

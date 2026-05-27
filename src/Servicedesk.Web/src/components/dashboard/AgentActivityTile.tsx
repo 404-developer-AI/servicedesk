@@ -15,11 +15,13 @@ import { cn } from "@/lib/utils";
 
 const QUERY_KEY = ["dashboard", "agent-activity"] as const;
 
-/// Admin-only dashboard tile. Master-detail layout: agent roster on the
-/// left, the selected agent's tickets on the right. Live-updated via the
-/// AgentActivity event broadcast by TicketPresenceHub to the
-/// "agent-activity-admins" group — each event replaces a single agent's
-/// entry in the cached snapshot, no full refetch needed.
+/// Agent + Admin dashboard tile. Master-detail layout: agent roster on
+/// the left, the selected agent's tickets on the right. Admin-grantable
+/// per user via Settings → Users → Features (since v0.0.44; was admin-
+/// only before). Live-updated via the AgentActivity event broadcast by
+/// TicketPresenceHub to the "agent-activity-admins" group — each event
+/// replaces a single agent's entry in the cached snapshot, no full
+/// refetch needed.
 export function AgentActivityTile() {
   const queryClient = useQueryClient();
   const query = useQuery({
