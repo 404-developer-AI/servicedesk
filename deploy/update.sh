@@ -346,9 +346,15 @@ rebuild_and_restart_app() {
 # Warning ("not readable"). fullchain.pem is 0644 (public cert is not
 # secret); privkey.pem stays 0600. Idempotent — chmod on already-0755 is a
 # no-op. Pre-v0.0.49 installs upgrade through this on the first update.
+#
+# Probe is DOMAIN-independent: preflight's DOMAIN detection grep extracts
+# the literal `${DOMAIN}` placeholder out of the nginx template, not the
+# resolved value, so a DOMAIN-keyed probe (v0.0.49) silently skipped. We
+# instead check whether any populated subdir exists under
+# /etc/letsencrypt/live and act on that.
 relax_letsencrypt_perms() {
-    if [[ -z "${DOMAIN:-}" ]] || ! docker run --rm -v servicedesk_certs:/etc/letsencrypt alpine \
-            test -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" 2>/dev/null; then
+    if ! docker run --rm -v servicedesk_certs:/etc/letsencrypt alpine \
+            sh -c '[ -d /etc/letsencrypt/live ] && [ -n "$(ls -A /etc/letsencrypt/live 2>/dev/null)" ]' 2>/dev/null; then
         return
     fi
     log "Relaxing /etc/letsencrypt dir perms (app container reads fullchain.pem) …"
