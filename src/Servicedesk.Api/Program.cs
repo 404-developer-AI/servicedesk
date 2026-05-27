@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Reflection;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.HostFiltering;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.OpenApi.Models;
 using Serilog;
@@ -97,6 +98,20 @@ builder.Services.Configure<ForwardedHeadersOptions>(o =>
         address = addr;
         prefix = p;
         return true;
+    }
+});
+
+// install.sh pins SERVICEDESK_AllowedHosts to the public domain, but the
+// Docker HEALTHCHECK calls http://localhost:8080/api/system/health from
+// inside the container. Without this, Kestrel's HostFiltering rejects the
+// loopback Host header with 400 and the container never reaches "healthy".
+// Loopback is only reachable from inside the container, so always-listing
+// it does not widen the public attack surface.
+builder.Services.Configure<HostFilteringOptions>(o =>
+{
+    foreach (var loopback in new[] { "localhost", "127.0.0.1", "[::1]" })
+    {
+        if (!o.AllowedHosts.Contains(loopback)) o.AllowedHosts.Add(loopback);
     }
 });
 
