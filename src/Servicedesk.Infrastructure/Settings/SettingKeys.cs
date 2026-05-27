@@ -37,6 +37,15 @@ public static class SettingKeys
         public const string ShowOpenTickets = "Navigation.ShowOpenTickets";
     }
 
+    /// v0.0.44 — UI-wide preferences. The default theme applies to new users
+    /// and to existing users who have not yet picked a theme via Profile.
+    /// Per-user override lives in <c>user_preferences</c> under the
+    /// <c>ui:theme</c> key. Allowed values: <c>light</c> | <c>dark</c>.
+    public static class Ui
+    {
+        public const string DefaultTheme = "Ui.DefaultTheme";
+    }
+
     public static class Tickets
     {
         public const string DefaultPrioritySlug = "Tickets.DefaultPrioritySlug";
@@ -664,6 +673,13 @@ public static class SettingDefaults
 
         new SettingDefault(SettingKeys.Navigation.ShowOpenTickets, "true", "bool", "Navigation",
             "Show the 'Open Tickets' link in the sidebar navigation."),
+
+        // Ui — v0.0.44 theming. Drives the initial theme for new users and for
+        // existing users who have not yet chosen a theme on their Profile page.
+        // Allowed values: 'light' | 'dark'. Unknown values fall back to 'light'
+        // on read (factory default) so a hand-edited DB row can't break paint.
+        new SettingDefault(SettingKeys.Ui.DefaultTheme, "light", "string", "Ui",
+            "Default theme applied to new users and to users who have not yet picked a theme on their Profile page. Allowed values: 'light' or 'dark'. A user who has explicitly picked a theme keeps that choice across all devices via their saved preference; this setting only applies until they do."),
 
         new SettingDefault(SettingKeys.Tickets.DefaultPrioritySlug, "normal", "string", "Tickets",
             "Slug of the priority assigned to new tickets when none is specified."),

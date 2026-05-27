@@ -12,7 +12,7 @@ type TicketFiltersProps = {
 };
 
 const SELECT_CLASS =
-  "h-8 px-2 text-sm rounded-md border border-white/10 bg-white/[0.04] text-foreground outline-none focus:border-primary/60 cursor-pointer";
+  "h-8 px-2 text-sm rounded-md border border-glass bg-glass text-foreground outline-none focus:border-primary/60 cursor-pointer";
 
 export function TicketFilters({ filters, onChange }: TicketFiltersProps) {
   const [searchInput, setSearchInput] = React.useState(filters.search ?? "");
@@ -136,7 +136,7 @@ export function TicketFilters({ filters, onChange }: TicketFiltersProps) {
           onChange={(e) =>
             onChange({ ...filters, openOnly: e.target.checked || undefined, cursorUpdatedUtc: undefined, cursorId: undefined })
           }
-          className="rounded border-white/20 bg-white/[0.04] accent-primary"
+          className="rounded border-glass-strong bg-glass accent-primary"
         />
         Open only
       </label>

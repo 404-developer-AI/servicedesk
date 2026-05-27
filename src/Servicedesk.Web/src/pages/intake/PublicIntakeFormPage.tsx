@@ -167,7 +167,7 @@ function PublicIntakeContent({
           </div>
         </header>
 
-        <section className="mt-6 rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+        <section className="mt-6 rounded-lg border border-glass-strong bg-glass p-5">
           <h2 className="mb-3 text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
             Overzicht
           </h2>
@@ -253,7 +253,7 @@ function QuestionField({
 }) {
   if (question.type === "SectionHeader") {
     return (
-      <div className="border-b border-white/[0.06] pb-1">
+      <div className="border-b border-glass-strong pb-1">
         <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground/80">
           {question.label}
         </h3>
@@ -275,8 +275,8 @@ function QuestionField({
   ) : null;
 
   const baseInputCn = cn(
-    "rounded-md border bg-white/[0.02] px-3 text-sm text-foreground outline-none focus:border-primary/40",
-    error ? "border-red-400/50" : "border-white/[0.08]",
+    "rounded-md border bg-glass px-3 text-sm text-foreground outline-none focus:border-primary/40",
+    error ? "border-red-400/50" : "border-glass-strong",
   );
 
   switch (question.type) {
@@ -386,13 +386,13 @@ function QuestionField({
           >
             <SelectTrigger
               className={cn(
-                "h-9 bg-white/[0.02] focus:ring-0",
-                error ? "border-red-400/50" : "border-white/[0.08] focus:border-primary/40",
+                "h-9 bg-glass focus:ring-0",
+                error ? "border-red-400/50" : "border-glass-strong focus:border-primary/40",
               )}
             >
               <SelectValue placeholder="— kies een optie —" />
             </SelectTrigger>
-            <SelectContent className="border-white/10 bg-popover/80 backdrop-blur-xl">
+            <SelectContent className="border-glass bg-popover/80 backdrop-blur-xl">
               {question.options.map((o) => (
                 <SelectItem key={o.value} value={o.value}>
                   {o.label}
@@ -410,7 +410,7 @@ function QuestionField({
         <div className="flex flex-col gap-1.5">
           {labelEl}
           {helpEl}
-          <div className="flex flex-col gap-1 rounded-md border border-white/[0.08] bg-white/[0.02] p-2">
+          <div className="flex flex-col gap-1 rounded-md border border-glass-strong bg-glass p-2">
             {question.options.map((o) => {
               const checked = selected.includes(o.value);
               return (
@@ -495,7 +495,7 @@ function formatAnswer(
 function PublicShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen w-full bg-gradient-to-br from-[#0b0420] via-[#100636] to-[#050817] px-4 py-12">
-      <div className="mx-auto max-w-xl rounded-2xl border border-white/[0.06] bg-white/[0.03] p-8 shadow-2xl backdrop-blur-xl">
+      <div className="mx-auto max-w-xl rounded-2xl border border-glass-strong bg-glass p-8 shadow-2xl backdrop-blur-xl">
         {children}
       </div>
     </div>

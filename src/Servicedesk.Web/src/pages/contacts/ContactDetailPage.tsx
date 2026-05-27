@@ -132,7 +132,7 @@ export function ContactDetailPage({ contactId }: Props) {
   }
   if (!contact) {
     return (
-      <div className="rounded-md border border-white/10 bg-white/[0.04] p-6 text-center text-sm text-muted-foreground">
+      <div className="rounded-md border border-glass bg-glass p-6 text-center text-sm text-muted-foreground">
         Contact not found.{" "}
         <BackLink isAdmin={isAdmin} className="text-primary hover:underline">
           {backLabel}
@@ -170,7 +170,7 @@ export function ContactDetailPage({ contactId }: Props) {
               </span>
             )}
             {!contact.isActive && (
-              <Badge className="border border-white/10 bg-white/[0.05] text-[10px] font-normal text-muted-foreground">
+              <Badge className="border border-glass bg-glass text-[10px] font-normal text-muted-foreground">
                 inactive
               </Badge>
             )}
@@ -193,8 +193,8 @@ export function ContactDetailPage({ contactId }: Props) {
             className={cn(
               "flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors",
               tab === t.key
-                ? "bg-white/[0.08] text-foreground shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
-                : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
+                ? "bg-glass-strong text-foreground shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
+                : "text-muted-foreground hover:bg-glass-hover hover:text-foreground",
             )}
           >
             {t.label}
@@ -404,7 +404,7 @@ function CompanyLinksCard({
               <MoveRight className="h-3.5 w-3.5" /> Move primary
             </Button>
           )}
-          <Badge className="border border-white/10 bg-white/[0.05] text-[10px] font-normal text-muted-foreground">
+          <Badge className="border border-glass bg-glass text-[10px] font-normal text-muted-foreground">
             {companies.length} total
           </Badge>
         </div>
@@ -427,7 +427,7 @@ function CompanyLinksCard({
         </div>
       )}
       {primary && (
-        <p className="mt-4 rounded-md border border-white/10 bg-white/[0.03] p-3 text-xs text-muted-foreground">
+        <p className="mt-4 rounded-md border border-glass bg-glass p-3 text-xs text-muted-foreground">
           Moving the primary link demotes the current primary to <em>secondary</em> in
           one atomic step. Tickets created before the move stay on the old company —
           <code className="ml-1 font-mono text-[10px]">tickets.company_id</code> is
@@ -513,7 +513,7 @@ function MovePrimaryDialog({
         </DialogHeader>
 
         <div className="space-y-3">
-          <div className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-sm">
+          <div className="rounded-md border border-glass bg-glass p-3 text-sm">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
               From
             </div>
@@ -536,7 +536,7 @@ function MovePrimaryDialog({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <div className="mt-2 max-h-[220px] space-y-1 overflow-auto rounded-md border border-white/5 bg-white/[0.02] p-1">
+            <div className="mt-2 max-h-[220px] space-y-1 overflow-auto rounded-md border border-glass bg-glass p-1">
               {(matches ?? []).length === 0 ? (
                 <div className="px-3 py-3 text-xs text-muted-foreground">No matches.</div>
               ) : (
@@ -553,7 +553,7 @@ function MovePrimaryDialog({
                         "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm",
                         selected
                           ? "border border-purple-400/50 bg-purple-500/10"
-                          : "hover:bg-white/[0.05]",
+                          : "hover:bg-glass-hover",
                         isCurrent && "cursor-not-allowed opacity-40",
                       )}
                     >
@@ -620,7 +620,7 @@ function RoleGroup({
             <Link
               to="/companies/$companyId"
               params={{ companyId: c.companyId }}
-              className="group flex items-center justify-between gap-3 rounded-md border border-white/5 bg-white/[0.02] px-3 py-2 text-sm transition-colors hover:border-white/10 hover:bg-white/[0.05]"
+              className="group flex items-center justify-between gap-3 rounded-md border border-glass bg-glass px-3 py-2 text-sm transition-colors hover:border-glass-strong hover:bg-glass-hover"
             >
               <span className="flex items-center gap-2">
                 <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
@@ -629,7 +629,7 @@ function RoleGroup({
                   {c.companyCode}
                 </span>
                 {!c.companyIsActive && (
-                  <Badge className="border border-white/10 bg-white/[0.05] text-[10px] font-normal text-muted-foreground">
+                  <Badge className="border border-glass bg-glass text-[10px] font-normal text-muted-foreground">
                     inactive
                   </Badge>
                 )}
@@ -676,7 +676,7 @@ function AuditHistoryCard({
 function AuditRow({ entry }: { entry: ContactAuditEntry }) {
   const summary = summarizeEvent(entry);
   return (
-    <li className="flex items-start gap-3 rounded-md border border-white/5 bg-white/[0.02] px-3 py-2">
+    <li className="flex items-start gap-3 rounded-md border border-glass bg-glass px-3 py-2">
       <div className="mt-0.5 shrink-0 text-muted-foreground">
         <EventIcon eventType={entry.eventType} />
       </div>
@@ -695,7 +695,7 @@ function AuditRow({ entry }: { entry: ContactAuditEntry }) {
             {entry.actor}{" "}
             <span className="text-muted-foreground/60">· {entry.actorRole}</span>
           </span>
-          <code className="rounded bg-white/[0.04] px-1 py-0.5 font-mono text-[10px]">
+          <code className="rounded bg-glass px-1 py-0.5 font-mono text-[10px]">
             {entry.eventType}
           </code>
         </div>

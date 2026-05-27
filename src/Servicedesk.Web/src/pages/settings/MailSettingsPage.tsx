@@ -119,7 +119,7 @@ export function MailSettingsPage() {
             lands with v0.0.8 step 4 — for now these are the knobs the future pipeline will read.
           </p>
         </div>
-        <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+        <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
           Admin only
         </Badge>
       </header>
@@ -135,7 +135,7 @@ export function MailSettingsPage() {
         {SECTIONS.map((section) => (
           <section
             key={section.title}
-            className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5"
+            className="rounded-lg border border-glass-strong bg-glass p-5"
           >
             <header className="mb-4 space-y-1">
               <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">

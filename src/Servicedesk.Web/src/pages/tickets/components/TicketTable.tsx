@@ -6,6 +6,7 @@ import {
   createColumnHelper,
 } from "@tanstack/react-table";
 import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
+import { useTheme } from "@/app/ThemeProvider";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TicketTypeBadge } from "@/components/TicketTypeBadge";
 import type { TicketListItem } from "@/lib/ticket-api";
@@ -40,10 +41,24 @@ type ColoredBadgeProps = {
 };
 
 function ColoredBadge({ label, color }: ColoredBadgeProps) {
+  // Status/priority colours are database-provided hex strings, so the
+  // palette is computed at render time. Light mode bumps the tint alpha
+  // and darkens the text toward black so any admin-picked hue stays
+  // recognisable while remaining readable on a near-white row. Dark mode
+  // keeps the original 12.5% tint + full-saturation text, which already
+  // reads cleanly on the deep canvas.
+  const { theme } = useTheme();
+  const style =
+    theme === "light"
+      ? {
+          backgroundColor: `color-mix(in srgb, ${color} 22%, transparent)`,
+          color: `color-mix(in srgb, ${color}, black 45%)`,
+        }
+      : { backgroundColor: `${color}20`, color };
   return (
     <span
       className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium"
-      style={{ backgroundColor: `${color}20`, color }}
+      style={style}
     >
       {label}
     </span>
@@ -106,7 +121,7 @@ export const ALL_COLUMNS = [
       // queueId is available but we don't have queue colors here without
       // loading taxonomy. Use a muted generic badge style for now.
       return (
-        <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-white/[0.07] text-foreground/80">
+        <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-glass-strong text-foreground/80">
           {row.queueName}
         </span>
       );
@@ -197,13 +212,13 @@ export function TicketTable({ data, onRowClick }: TicketTableProps) {
     <div className="glass-card overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead className="bg-white/[0.03] sticky top-0 z-10">
+          <thead className="bg-[hsl(256deg_28.3%_89.61%)] dark:bg-[hsl(240_10%_8%)] sticky top-0 z-10">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
-                    className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground border-b border-white/10"
+                    className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground border-b border-glass"
                   >
                     {header.isPlaceholder
                       ? null
@@ -230,7 +245,7 @@ export function TicketTable({ data, onRowClick }: TicketTableProps) {
               return (
                 <tr
                   key={row.id}
-                  className="border-b border-white/5 hover:bg-white/[0.04] cursor-pointer transition-colors"
+                  className="border-b border-glass hover:bg-glass-hover cursor-pointer transition-colors"
                   style={rowStyle}
                   onClick={() => onRowClick(orig.id)}
                 >

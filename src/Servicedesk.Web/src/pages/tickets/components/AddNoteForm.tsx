@@ -247,7 +247,7 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
       <button
         type="button"
         onClick={() => setExpanded(true)}
-        className="w-full flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border border-white/10 bg-white/[0.03] text-muted-foreground/60 hover:bg-white/[0.06] hover:text-muted-foreground hover:border-white/15 transition-colors text-sm"
+        className="w-full flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border border-glass bg-glass text-muted-foreground/60 hover:bg-glass-hover hover:text-muted-foreground hover:border-glass-strong transition-colors text-sm"
       >
         <MessageCircle className="h-4 w-4 shrink-0" />
         Write an internal note...
@@ -274,8 +274,8 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
           className={cn(
             "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
             tab === "note"
-              ? "bg-white/10 text-foreground"
-              : "text-muted-foreground hover:text-foreground hover:bg-white/[0.05]"
+              ? "bg-glass-strong text-foreground"
+              : "text-muted-foreground hover:text-foreground hover:bg-glass-hover"
           )}
         >
           Internal note
@@ -290,7 +290,7 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
             "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
             tab === "reply"
               ? "bg-amber-500/15 text-amber-300 border border-amber-500/30"
-              : "text-muted-foreground hover:text-foreground hover:bg-white/[0.05]"
+              : "text-muted-foreground hover:text-foreground hover:bg-glass-hover"
           )}
         >
           Reply
@@ -302,7 +302,7 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
             "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
             tab === "mail"
               ? "bg-sky-500/15 text-sky-300 border border-sky-500/30"
-              : "text-muted-foreground hover:text-foreground hover:bg-white/[0.05]"
+              : "text-muted-foreground hover:text-foreground hover:bg-glass-hover"
           )}
         >
           Send mail
@@ -319,7 +319,7 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
               const features = "width=900,height=820,menubar=no,toolbar=no,location=no,resizable=yes,scrollbars=yes";
               window.open(url, `sd-compose-${ticketId}`, features);
             }}
-            className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-white/[0.05] hover:text-foreground"
+            className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-glass-hover hover:text-foreground"
           >
             <ExternalLink className="h-3.5 w-3.5" />
             Pop out
@@ -453,7 +453,7 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
             }
             setExpanded(false);
           }}
-          className="px-3 py-1.5 text-xs rounded-md text-muted-foreground hover:bg-white/[0.06] transition-colors"
+          className="px-3 py-1.5 text-xs rounded-md text-muted-foreground hover:bg-glass-hover transition-colors"
         >
           Cancel
         </button>

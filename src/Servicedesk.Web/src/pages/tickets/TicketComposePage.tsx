@@ -83,7 +83,7 @@ export function TicketComposePage({ ticketId }: { ticketId: string }) {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-10 border-b border-white/5 bg-background/95 px-5 py-3 backdrop-blur">
+      <header className="sticky top-0 z-10 border-b border-glass bg-background/95 px-5 py-3 backdrop-blur">
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
@@ -99,7 +99,7 @@ export function TicketComposePage({ ticketId }: { ticketId: string }) {
             type="button"
             title="Close window"
             onClick={() => window.close()}
-            className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-foreground"
+            className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-glass-hover hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </button>

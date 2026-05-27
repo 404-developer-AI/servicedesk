@@ -158,8 +158,8 @@ function AgentList({
               className={cn(
                 "group flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors",
                 isSelected
-                  ? "border-white/15 bg-white/[0.05]"
-                  : "border-white/[0.04] bg-white/[0.015] hover:border-white/10 hover:bg-white/[0.04]",
+                  ? "border-glass-strong bg-glass"
+                  : "border-glass bg-glass hover:border-glass-strong hover:bg-glass-hover",
                 !a.online && "opacity-70",
               )}
             >
@@ -168,7 +168,7 @@ function AgentList({
                 {a.email}
               </span>
               {ticketCount > 0 ? (
-                <span className="shrink-0 rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] font-medium tabular-nums text-foreground/80">
+                <span className="shrink-0 rounded-full bg-glass-strong px-2 py-0.5 text-[11px] font-medium tabular-nums text-foreground/80">
                   {ticketCount}
                 </span>
               ) : null}
@@ -198,7 +198,7 @@ function AgentPresenceIndicator({
     return (
       <span
         aria-hidden
-        className="inline-block h-2 w-2 shrink-0 rounded-full bg-white/20"
+        className="inline-block h-2 w-2 shrink-0 rounded-full bg-glass-strong"
         title="Offline"
       />
     );
@@ -238,7 +238,7 @@ function AgentTickets({ agent }: { agent: AgentActivity | null }) {
   const hasAny = agent.viewing !== null || agent.recent.length > 0;
   if (!hasAny) {
     return (
-      <div className="flex min-h-[10rem] flex-col items-center justify-center gap-1 rounded-lg border border-white/[0.04] bg-white/[0.01] px-4 py-6 text-center">
+      <div className="flex min-h-[10rem] flex-col items-center justify-center gap-1 rounded-lg border border-glass bg-glass px-4 py-6 text-center">
         <p className="text-sm text-foreground/80">{agent.email}</p>
         <p className="text-xs text-muted-foreground">
           {agent.online ? "No active or recent tickets." : "Currently offline."}
@@ -297,8 +297,8 @@ function TicketRow({
       className={cn(
         "group relative flex w-full items-center gap-3 overflow-hidden rounded-md border py-2 pl-4 pr-3 text-left transition-colors",
         viewing
-          ? "border-white/10 bg-white/[0.04] hover:border-white/15 hover:bg-white/[0.06]"
-          : "border-white/[0.04] bg-white/[0.015] opacity-70 hover:border-white/10 hover:bg-white/[0.04] hover:opacity-100",
+          ? "border-glass bg-glass hover:border-glass-strong hover:bg-glass-hover"
+          : "border-glass bg-glass opacity-70 hover:border-glass-strong hover:bg-glass-hover hover:opacity-100",
       )}
     >
       <span

@@ -89,7 +89,7 @@ export function TicketTimesheetPanel({ ticketId }: Props) {
                     "inline-flex max-w-[10rem] items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px]",
                     t.isAbsence
                       ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
-                      : "border-white/10 bg-white/[0.04] text-foreground/80",
+                      : "border-glass bg-glass text-foreground/80",
                   )}
                   title={`${t.name} — ${formatDuration(t.minutes)}`}
                 >
@@ -116,7 +116,7 @@ export function TicketTimesheetPanel({ ticketId }: Props) {
       </button>
 
       {open && (
-        <div className="border-t border-white/10">
+        <div className="border-t border-glass">
           {isLoading && (
             <div className="px-3 py-3 text-xs text-muted-foreground">
               Loading time entries…
@@ -167,7 +167,7 @@ function EntriesGrid({
           {items.map((entry) => (
             <tr
               key={entry.id}
-              className="border-t border-white/[0.05] hover:bg-white/[0.02]"
+              className="border-t border-glass hover:bg-glass-hover"
             >
               <td className="px-3 py-1.5 text-muted-foreground/90">
                 {entry.userEmail || "—"}
@@ -187,7 +187,7 @@ function EntriesGrid({
                     "inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
                     entry.taskIsAbsence
                       ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
-                      : "border-white/10 bg-white/[0.04] text-muted-foreground",
+                      : "border-glass bg-glass text-muted-foreground",
                   )}
                 >
                   {entry.taskName}
@@ -206,7 +206,7 @@ function EntriesGrid({
           ))}
         </tbody>
         <tfoot className="sticky bottom-0 bg-background/95 backdrop-blur-sm">
-          <tr className="border-t border-white/10">
+          <tr className="border-t border-glass">
             <td
               colSpan={7}
               className="px-3 py-2 text-right text-muted-foreground"
@@ -237,7 +237,7 @@ function BilledPill({ invoiced }: { invoiced: boolean }) {
   }
   return (
     <span
-      className="inline-flex items-center rounded-md border border-white/[0.08] bg-white/[0.02] px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/70"
+      className="inline-flex items-center rounded-md border border-glass-strong bg-glass px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/70"
       title="Not billed yet"
     >
       —

@@ -68,7 +68,7 @@ export function FirstContactTab() {
         {TRIGGERS.map((t) => (
           <label
             key={t.key}
-            className="flex cursor-pointer items-start gap-3 rounded-md border border-white/[0.06] bg-white/[0.02] p-3 hover:bg-white/[0.04]"
+            className="flex cursor-pointer items-start gap-3 rounded-md border border-glass-strong bg-glass p-3 hover:bg-glass-hover"
           >
             <input
               type="checkbox"
@@ -84,7 +84,7 @@ export function FirstContactTab() {
         ))}
       </div>
 
-      <label className="flex items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] p-3 text-sm">
+      <label className="flex items-center gap-2 rounded-md border border-glass-strong bg-glass p-3 text-sm">
         <input type="checkbox" checked={pauseOnPending} onChange={(e) => setPauseOnPending(e.target.checked)} />
         Pause SLA timers while ticket is in <span className="font-medium">Pending</span> (waiting on customer)
       </label>

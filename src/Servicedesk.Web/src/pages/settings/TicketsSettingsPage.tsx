@@ -104,7 +104,7 @@ export function TicketsSettingsPage() {
             point.
           </p>
         </div>
-        <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+        <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
           Admin only
         </Badge>
       </header>
@@ -118,8 +118,8 @@ export function TicketsSettingsPage() {
             className={cn(
               "flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors",
               tab === t.key
-                ? "bg-white/[0.08] text-foreground shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
-                : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
+                ? "bg-glass-strong text-foreground shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
+                : "text-muted-foreground hover:bg-glass-hover hover:text-foreground",
             )}
           >
             {t.label}
@@ -210,7 +210,7 @@ function ToggleRow({
   onCheckedChange: (v: boolean) => void;
 }) {
   return (
-    <label className="flex items-start justify-between gap-4 rounded-md border border-white/5 bg-white/[0.02] px-3 py-2.5">
+    <label className="flex items-start justify-between gap-4 rounded-md border border-glass bg-glass px-3 py-2.5">
       <div className="min-w-0 space-y-0.5">
         <div className="text-sm font-medium text-foreground">{label}</div>
         <div className="text-xs text-muted-foreground">{description}</div>
@@ -237,7 +237,7 @@ function TableShell({ children }: { children: React.ReactNode }) {
 function ColorSwatch({ color }: { color: string }) {
   return (
     <span
-      className="inline-block h-4 w-4 rounded-sm border border-white/10"
+      className="inline-block h-4 w-4 rounded-sm border border-glass"
       style={{ backgroundColor: color }}
       aria-hidden
     />
@@ -297,7 +297,7 @@ function QueuesTab() {
         <LoadingSkeleton />
       ) : (
         <TableShell>
-          <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-white/10">
+          <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-glass">
             <tr>
               <th className="px-4 py-3 font-medium">Name</th>
               <th className="px-4 py-3 font-medium">Color</th>
@@ -308,7 +308,7 @@ function QueuesTab() {
           </thead>
           <tbody>
             {data?.map((q) => (
-              <tr key={q.id} className="border-b border-white/5 hover:bg-white/[0.03]">
+              <tr key={q.id} className="border-b border-glass hover:bg-glass-hover">
                 <td className="px-4 py-3 text-foreground">
                   <div className="flex items-center gap-2">
                     {q.name}
@@ -330,7 +330,7 @@ function QueuesTab() {
                       active
                     </Badge>
                   ) : (
-                    <Badge className="border border-white/10 bg-white/[0.05] text-[10px] font-normal text-muted-foreground">
+                    <Badge className="border border-glass bg-glass text-[10px] font-normal text-muted-foreground">
                       inactive
                     </Badge>
                   )}
@@ -489,7 +489,7 @@ function QueueDialog({
                   type="color"
                   value={form.color ?? "#7c7cff"}
                   onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
-                  className="h-9 w-12 cursor-pointer rounded-md border border-white/10 bg-transparent"
+                  className="h-9 w-12 cursor-pointer rounded-md border border-glass bg-transparent"
                 />
                 <Input
                   value={form.color ?? ""}
@@ -520,7 +520,7 @@ function QueueDialog({
               to filter the status dropdown and the trigger set_status
               picker. Default status is the auto-flip target when a
               ticket moves into this queue on a status not in the list. */}
-          <div className="mt-2 space-y-3 rounded-md border border-white/[0.06] bg-white/[0.02] p-3">
+          <div className="mt-2 space-y-3 rounded-md border border-glass-strong bg-glass p-3">
             <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
               Status scope
             </div>
@@ -554,7 +554,7 @@ function QueueDialog({
                         "rounded-md border px-2 py-0.5 text-[11px] transition",
                         selected
                           ? "border-violet-400/40 bg-violet-400/15 text-violet-200"
-                          : "border-white/10 bg-white/[0.04] text-muted-foreground hover:bg-white/[0.07]",
+                          : "border-glass bg-glass text-muted-foreground hover:bg-glass-hover",
                       )}
                       style={selected ? { color: s.color } : undefined}
                     >
@@ -574,10 +574,10 @@ function QueueDialog({
                   }))
                 }
               >
-                <SelectTrigger className="h-9 border-white/10 bg-white/[0.04]">
+                <SelectTrigger className="h-9 border-glass bg-glass">
                   <SelectValue placeholder="— no auto-flip —" />
                 </SelectTrigger>
-                <SelectContent className="border-white/10 bg-popover/80 backdrop-blur-xl">
+                <SelectContent className="border-glass bg-popover/80 backdrop-blur-xl">
                   <SelectItem value="__none__">— no auto-flip —</SelectItem>
                   {(statuses ?? [])
                     .filter((s) => s.isActive)
@@ -595,7 +595,7 @@ function QueueDialog({
             </p>
           </div>
 
-          <div className="mt-2 space-y-3 rounded-md border border-white/[0.06] bg-white/[0.02] p-3">
+          <div className="mt-2 space-y-3 rounded-md border border-glass-strong bg-glass p-3">
             <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
               Microsoft Graph mailbox
             </div>
@@ -634,14 +634,14 @@ function QueueDialog({
                     }));
                   }}
                 >
-                  <SelectTrigger className="h-9 flex-1 border-white/10 bg-white/[0.04] focus:border-white/20 focus:bg-white/[0.06] transition-colors">
+                  <SelectTrigger className="h-9 flex-1 border-glass bg-glass focus:border-glass-strong focus:bg-glass-strong transition-colors">
                     <SelectValue
                       placeholder="Select a folder…"
                     >
                       {form.inboundFolderName || form.inboundFolderId || "Select a folder…"}
                     </SelectValue>
                   </SelectTrigger>
-                  <SelectContent className="border-white/10 bg-popover/80 backdrop-blur-xl">
+                  <SelectContent className="border-glass bg-popover/80 backdrop-blur-xl">
                     {folders.map((f) => (
                       <SelectItem key={f.id} value={f.id}>
                         <span className="flex items-center gap-2">
@@ -668,7 +668,7 @@ function QueueDialog({
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="shrink-0 border-white/10 bg-white/[0.04] hover:bg-white/[0.08]"
+                  className="shrink-0 border-glass bg-glass hover:bg-glass-hover"
                   disabled={!hasMailbox || foldersLoading}
                   onClick={loadFolders}
                 >
@@ -733,7 +733,7 @@ function PrioritiesTab() {
         <LoadingSkeleton />
       ) : (
         <TableShell>
-          <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-white/10">
+          <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-glass">
             <tr>
               <th className="px-4 py-3 font-medium">Name</th>
               <th className="px-4 py-3 font-medium">Level</th>
@@ -745,7 +745,7 @@ function PrioritiesTab() {
           </thead>
           <tbody>
             {data?.map((p) => (
-              <tr key={p.id} className="border-b border-white/5 hover:bg-white/[0.03]">
+              <tr key={p.id} className="border-b border-glass hover:bg-glass-hover">
                 <td className="px-4 py-3 text-foreground">{p.name}</td>
                 <td className="px-4 py-3 text-muted-foreground">{p.level}</td>
                 <td className="px-4 py-3">
@@ -763,7 +763,7 @@ function PrioritiesTab() {
                       active
                     </Badge>
                   ) : (
-                    <Badge className="border border-white/10 bg-white/[0.05] text-[10px] font-normal text-muted-foreground">
+                    <Badge className="border border-glass bg-glass text-[10px] font-normal text-muted-foreground">
                       inactive
                     </Badge>
                   )}
@@ -877,7 +877,7 @@ function PriorityDialog({
                 type="color"
                 value={form.color ?? "#7c7cff"}
                 onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
-                className="h-9 w-full cursor-pointer rounded-md border border-white/10 bg-transparent"
+                className="h-9 w-full cursor-pointer rounded-md border border-glass bg-transparent"
               />
             </Field>
           </div>
@@ -950,7 +950,7 @@ function StatusesTab() {
         <LoadingSkeleton />
       ) : (
         <TableShell>
-          <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-white/10">
+          <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-glass">
             <tr>
               <th className="px-4 py-3 font-medium">Name</th>
               <th className="px-4 py-3 font-medium">Semantic</th>
@@ -961,12 +961,12 @@ function StatusesTab() {
           </thead>
           <tbody>
             {data?.map((s) => (
-              <tr key={s.id} className="border-b border-white/5 hover:bg-white/[0.03]">
+              <tr key={s.id} className="border-b border-glass hover:bg-glass-hover">
                 <td className="px-4 py-3 text-foreground">
                   <div className="flex items-center gap-2">
                     {s.name}
                     {s.isSystem && (
-                      <Badge className="border border-white/10 bg-white/[0.05] text-[10px] font-normal text-muted-foreground">
+                      <Badge className="border border-glass bg-glass text-[10px] font-normal text-muted-foreground">
                         system
                       </Badge>
                     )}
@@ -1087,7 +1087,7 @@ function StatusDialog({
               onChange={(e) =>
                 setForm((f) => ({ ...f, stateCategory: e.target.value as StatusStateCategory }))
               }
-              className="h-9 w-full rounded-md border border-white/10 bg-white/[0.04] px-2 text-sm text-foreground outline-none focus:border-primary/60"
+              className="h-9 w-full rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus:border-primary/60"
             >
               {STATE_CATEGORIES.map((c) => (
                 <option key={c} value={c} className="bg-background">
@@ -1109,7 +1109,7 @@ function StatusDialog({
                 type="color"
                 value={form.color ?? "#7c7cff"}
                 onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
-                className="h-9 w-full cursor-pointer rounded-md border border-white/10 bg-transparent"
+                className="h-9 w-full cursor-pointer rounded-md border border-glass bg-transparent"
               />
             </Field>
           </div>
@@ -1174,7 +1174,7 @@ function CategoriesTab() {
         <LoadingSkeleton />
       ) : (
         <TableShell>
-          <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-white/10">
+          <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-glass">
             <tr>
               <th className="px-4 py-3 font-medium">Name</th>
               <th className="px-4 py-3 font-medium">Parent</th>
@@ -1187,12 +1187,12 @@ function CategoriesTab() {
             {data?.map((c) => {
               const parent = data.find((x) => x.id === c.parentId);
               return (
-                <tr key={c.id} className="border-b border-white/5 hover:bg-white/[0.03]">
+                <tr key={c.id} className="border-b border-glass hover:bg-glass-hover">
                   <td className="px-4 py-3 text-foreground">
                     <div className="flex items-center gap-2">
                       {c.name}
                       {c.isSystem && (
-                        <Badge className="border border-white/10 bg-white/[0.05] text-[10px] font-normal text-muted-foreground">
+                        <Badge className="border border-glass bg-glass text-[10px] font-normal text-muted-foreground">
                           system
                         </Badge>
                       )}
@@ -1211,7 +1211,7 @@ function CategoriesTab() {
                         active
                       </Badge>
                     ) : (
-                      <Badge className="border border-white/10 bg-white/[0.05] text-[10px] font-normal text-muted-foreground">
+                      <Badge className="border border-glass bg-glass text-[10px] font-normal text-muted-foreground">
                         inactive
                       </Badge>
                     )}
@@ -1318,7 +1318,7 @@ function CategoryDialog({
               onChange={(e) =>
                 setForm((f) => ({ ...f, parentId: e.target.value || null }))
               }
-              className="h-9 w-full rounded-md border border-white/10 bg-white/[0.04] px-2 text-sm text-foreground outline-none focus:border-primary/60"
+              className="h-9 w-full rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus:border-primary/60"
             >
               <option value="" className="bg-background">
                 — top level —
@@ -1456,10 +1456,10 @@ function Iso27001Tab() {
                 update.mutate({ value: v === "__none__" ? "" : v })
               }
             >
-              <SelectTrigger className="h-9 w-full border-white/10 bg-white/[0.04]">
+              <SelectTrigger className="h-9 w-full border-glass bg-glass">
                 <SelectValue placeholder="— disabled —" />
               </SelectTrigger>
-              <SelectContent className="border-white/10 bg-popover/80 backdrop-blur-xl">
+              <SelectContent className="border-glass bg-popover/80 backdrop-blur-xl">
                 <SelectItem value="__none__">— disabled —</SelectItem>
                 {(queues ?? [])
                   .filter((q) => q.isActive)
@@ -1471,7 +1471,7 @@ function Iso27001Tab() {
               </SelectContent>
             </Select>
           </label>
-          <div className="rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-xs text-muted-foreground">
+          <div className="rounded-md border border-glass-strong bg-glass px-3 py-2 text-xs text-muted-foreground">
             {isConfigured ? (
               <>
                 <span className="text-emerald-300">Active.</span>{" "}
@@ -1517,7 +1517,7 @@ function TicketTypesTab() {
         <LoadingSkeleton />
       ) : (
         <TableShell>
-          <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-white/10">
+          <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-glass">
             <tr>
               <th className="px-4 py-3 font-medium">Label</th>
               <th className="px-4 py-3 font-medium">Code</th>
@@ -1530,12 +1530,12 @@ function TicketTypesTab() {
           </thead>
           <tbody>
             {data?.map((t) => (
-              <tr key={t.id} className="border-b border-white/5 hover:bg-white/[0.03]">
+              <tr key={t.id} className="border-b border-glass hover:bg-glass-hover">
                 <td className="px-4 py-3 text-foreground">
                   <div className="flex items-center gap-2">
                     {t.label}
                     {t.isSystem && (
-                      <Badge className="border border-white/10 bg-white/[0.05] text-[10px] font-normal text-muted-foreground">
+                      <Badge className="border border-glass bg-glass text-[10px] font-normal text-muted-foreground">
                         system
                       </Badge>
                     )}
@@ -1563,7 +1563,7 @@ function TicketTypesTab() {
                       active
                     </Badge>
                   ) : (
-                    <Badge className="border border-white/10 bg-white/[0.05] text-[10px] font-normal text-muted-foreground">
+                    <Badge className="border border-glass bg-glass text-[10px] font-normal text-muted-foreground">
                       inactive
                     </Badge>
                   )}
@@ -1700,7 +1700,7 @@ function TicketTypeDialog({
                   type="color"
                   value={form.color ?? "#7c7cff"}
                   onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
-                  className="h-9 w-12 cursor-pointer rounded-md border border-white/10 bg-transparent"
+                  className="h-9 w-12 cursor-pointer rounded-md border border-glass bg-transparent"
                 />
                 <Input
                   value={form.color ?? ""}

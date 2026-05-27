@@ -99,7 +99,7 @@ export function KbSectionPage({ sectionId }: Props) {
               key={child.id}
               to="/kb/sections/$sectionId"
               params={{ sectionId: child.id }}
-              className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-white/20 hover:bg-white/[0.06] hover:text-foreground"
+              className="rounded-lg border border-glass bg-glass px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-glass-strong hover:bg-glass-hover hover:text-foreground"
             >
               {child.title}
             </Link>
@@ -118,7 +118,7 @@ export function KbSectionPage({ sectionId }: Props) {
                 "rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wider transition-colors " +
                 (statusFilter === s
                   ? "border-primary/40 bg-primary/15 text-foreground"
-                  : "border-white/10 bg-white/[0.03] text-muted-foreground hover:border-white/20 hover:text-foreground")
+                  : "border-glass bg-glass text-muted-foreground hover:border-glass-strong hover:text-foreground")
               }
             >
               {s}
@@ -126,7 +126,7 @@ export function KbSectionPage({ sectionId }: Props) {
           ))}
         </div>
         {articles && (
-          <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+          <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
             {articles.totalHits} article{articles.totalHits === 1 ? "" : "s"}
           </Badge>
         )}
@@ -137,7 +137,7 @@ export function KbSectionPage({ sectionId }: Props) {
       ) : articles && articles.items.length > 0 ? (
         <section className="glass-card overflow-hidden">
           <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-white/10">
+            <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-glass">
               <tr>
                 <th className="px-4 py-3 font-medium">Title</th>
                 <th className="px-4 py-3 font-medium">Status</th>
@@ -149,7 +149,7 @@ export function KbSectionPage({ sectionId }: Props) {
               {articles.items.map((a) => (
                 <tr
                   key={a.id}
-                  className="border-b border-white/5 last:border-b-0 hover:bg-white/[0.03]"
+                  className="border-b border-glass last:border-b-0 hover:bg-glass-hover"
                 >
                   <td className="px-4 py-3">
                     <Link
@@ -175,7 +175,7 @@ export function KbSectionPage({ sectionId }: Props) {
           </table>
         </section>
       ) : (
-        <div className="rounded-lg border border-dashed border-white/10 px-6 py-12 text-center text-sm text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-glass px-6 py-12 text-center text-sm text-muted-foreground">
           No articles in this section yet.{" "}
           <button
             type="button"

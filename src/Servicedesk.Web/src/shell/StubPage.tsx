@@ -19,7 +19,7 @@ export function StubPage({ title, description, comingIn, icon }: StubPageProps) 
             <h1 className="text-display-md font-semibold text-foreground">{title}</h1>
             <p className="text-sm text-muted-foreground">{description}</p>
           </div>
-          <Badge variant="secondary" className="shrink-0 border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+          <Badge variant="secondary" className="shrink-0 border border-glass bg-glass text-xs font-normal text-muted-foreground">
             Coming in {comingIn}
           </Badge>
         </div>

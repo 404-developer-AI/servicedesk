@@ -86,8 +86,8 @@ export function ContactPicker({
           <button
             type="button"
             className={cn(
-              "h-9 px-3 rounded-[var(--radius)] border border-white/10 bg-white/[0.04] text-sm",
-              "hover:bg-white/[0.07] transition-colors w-full text-left",
+              "h-9 px-3 rounded-[var(--radius)] border border-glass bg-glass text-sm",
+              "hover:bg-glass-hover transition-colors w-full text-left",
               "flex items-center justify-between gap-2",
               !displayLabel && "text-muted-foreground",
               className
@@ -108,8 +108,8 @@ export function ContactPicker({
           </button>
         </PopoverTrigger>
 
-        <PopoverContent className="w-[350px] p-0 glass-card border-white/10">
-          <div className="flex items-center border-b border-white/10 px-3">
+        <PopoverContent className="w-[350px] p-0 glass-card border-glass">
+          <div className="flex items-center border-b border-glass px-3">
             <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <input
               ref={searchRef}
@@ -119,7 +119,7 @@ export function ContactPicker({
               className="flex h-9 w-full bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground"
             />
             {isFetching && (
-              <div className="h-3 w-3 animate-spin rounded-full border border-white/20 border-t-white/60" />
+              <div className="h-3 w-3 animate-spin rounded-full border border-glass-strong border-t-white/60" />
             )}
           </div>
 
@@ -148,14 +148,14 @@ export function ContactPicker({
                       onClick={() => handleSelect(contact)}
                       className={cn(
                         "w-full rounded-[calc(var(--radius)-2px)] px-3 py-2 text-left text-sm",
-                        "transition-colors hover:bg-white/[0.07]",
-                        isSelected && "bg-white/[0.07]"
+                        "transition-colors hover:bg-glass-hover",
+                        isSelected && "bg-glass-strong"
                       )}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0">
                           {name && (
-                            <div className="truncate font-medium text-white">
+                            <div className="truncate font-medium text-foreground">
                               {name}
                             </div>
                           )}
@@ -166,7 +166,7 @@ export function ContactPicker({
                         {contact.primaryCompanyId && (
                           <Badge
                             variant="outline"
-                            className="shrink-0 border-white/10 text-xs text-muted-foreground"
+                            className="shrink-0 border-glass text-xs text-muted-foreground"
                           >
                             {contact.companyRole || "Contact"}
                           </Badge>
@@ -179,14 +179,14 @@ export function ContactPicker({
             )}
           </div>
 
-          <div className="border-t border-white/10 p-1">
+          <div className="border-t border-glass p-1">
             <button
               type="button"
               onClick={() => {
                 setDialogOpen(true)
                 setOpen(false)
               }}
-              className="flex w-full items-center gap-2 rounded-[calc(var(--radius)-2px)] px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-white/[0.07] hover:text-white"
+              className="flex w-full items-center gap-2 rounded-[calc(var(--radius)-2px)] px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-glass-hover hover:text-foreground"
             >
               <Plus className="h-3.5 w-3.5" />
               New contact

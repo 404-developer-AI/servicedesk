@@ -155,8 +155,8 @@ export function DateTimePicker({
           type="button"
           disabled={disabled}
           className={cn(
-            "group flex h-9 w-full items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 text-left text-sm font-mono shadow-sm transition-colors",
-            "hover:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            "group flex h-9 w-full items-center gap-2 rounded-md border border-glass bg-glass px-3 text-left text-sm font-mono shadow-sm transition-colors",
+            "hover:bg-glass-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             "disabled:cursor-not-allowed disabled:opacity-50",
             !hasValue && "text-muted-foreground",
             className,
@@ -181,7 +181,7 @@ export function DateTimePicker({
                   onChange(null);
                 }
               }}
-              className="rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-white/10 hover:text-foreground"
+              className="rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-glass-hover hover:text-foreground"
             >
               <X className="h-3 w-3" />
             </span>
@@ -191,13 +191,13 @@ export function DateTimePicker({
       <PopoverContent
         align="start"
         sideOffset={6}
-        className="w-[280px] border-white/10 bg-[hsl(240_12%_8%)]/95 p-3 backdrop-blur-md"
+        className="w-[280px] border-glass bg-popover/95 p-3 backdrop-blur-md"
       >
         <div className="mb-2 flex items-center justify-between">
           <button
             type="button"
             onClick={() => setView(prevMonth(view))}
-            className="rounded p-1 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+            className="rounded p-1 text-muted-foreground transition-colors hover:bg-glass-hover hover:text-foreground"
             aria-label="Previous month"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -208,7 +208,7 @@ export function DateTimePicker({
           <button
             type="button"
             onClick={() => setView(nextMonth(view))}
-            className="rounded p-1 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+            className="rounded p-1 text-muted-foreground transition-colors hover:bg-glass-hover hover:text-foreground"
             aria-label="Next month"
           >
             <ChevronRight className="h-4 w-4" />
@@ -239,7 +239,7 @@ export function DateTimePicker({
                 className={cn(
                   "flex h-8 w-full items-center justify-center rounded-md text-xs font-mono transition-colors",
                   cell.outside ? "text-muted-foreground/30" : "text-foreground/80",
-                  !isSelected && !beforeMin && "hover:bg-white/[0.06]",
+                  !isSelected && !beforeMin && "hover:bg-glass-hover",
                   isToday && !isSelected && "ring-1 ring-inset ring-white/15",
                   isSelected &&
                     "bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-[0_0_12px_-2px_rgba(139,92,246,0.6)]",
@@ -252,7 +252,7 @@ export function DateTimePicker({
           })}
         </div>
 
-        <div className="mt-3 flex items-center gap-2 border-t border-white/5 pt-3">
+        <div className="mt-3 flex items-center gap-2 border-t border-glass pt-3">
           <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
             Time
           </span>
@@ -332,7 +332,7 @@ function NumericSpinner({
           (e.target as HTMLInputElement).blur();
         }
       }}
-      className="h-7 w-10 rounded border border-white/10 bg-white/[0.04] text-center font-mono text-xs tabular-nums text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+      className="h-7 w-10 rounded border border-glass bg-glass text-center font-mono text-xs tabular-nums text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
     />
   );
 }

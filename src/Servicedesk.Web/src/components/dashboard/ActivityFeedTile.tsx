@@ -35,7 +35,7 @@ function ActivityRow({ entry, onTicketClick }: {
   const isTicket = entry.entityType === "ticket" && entry.entityId !== null;
 
   return (
-    <li className="flex items-start gap-3 border-t border-white/[0.04] py-2 first:border-t-0">
+    <li className="flex items-start gap-3 border-t border-glass py-2 first:border-t-0">
       <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[10px] font-medium uppercase text-primary">
         {localPartOf(entry.agentEmail).substring(0, 2)}
       </div>
@@ -93,7 +93,7 @@ export function ActivityFeedTile() {
         <button
           type="button"
           onClick={() => navigate({ to: "/activity" })}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
+          className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs text-muted-foreground hover:bg-glass-hover hover:text-foreground"
         >
           Open page
           <ChevronRight className="h-3 w-3" />

@@ -85,7 +85,7 @@ export function IntakeSubmissionPanel({
           // and no extra tab; works identically on every modern browser.
           href={intakeFormsApi.pdfUrl(ticketId, instanceId)}
           download
-          className="flex items-center gap-1 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
+          className="flex items-center gap-1 rounded-md border border-glass-strong bg-glass px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-glass-hover hover:text-foreground"
         >
           <Download className="h-3 w-3" />
           PDF
@@ -113,7 +113,7 @@ function SubmissionDetails({
 
   if (q.isLoading) {
     return (
-      <div className="flex items-center gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-xs text-muted-foreground">
+      <div className="flex items-center gap-2 rounded-md border border-glass-strong bg-glass px-3 py-2 text-xs text-muted-foreground">
         <Loader2 className="h-3 w-3 animate-spin" />
         Loading answers…
       </div>
@@ -136,7 +136,7 @@ function SubmissionTable({ view }: { view: IntakeFormAgentView }) {
   const hasAny = Object.keys(answers).length > 0;
 
   return (
-    <div className="rounded-md border border-white/[0.06] bg-white/[0.02] p-3">
+    <div className="rounded-md border border-glass-strong bg-glass p-3">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
           Submitted answers

@@ -332,7 +332,7 @@ const EVENT_CONFIG: Record<string, EventConfig> = {
   },
   SystemNote: {
     icon: Info,
-    dotColor: "bg-white/30",
+    dotColor: "bg-glass-strong",
     label: "System",
   },
   IntakeFormSent: {
@@ -613,7 +613,7 @@ function EventBody({ event }: { event: TicketEvent }) {
             <button
               type="button"
               onClick={() => startOutboundAction("Reply")}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
             >
               <Reply className="h-3 w-3" />
               Reply
@@ -622,7 +622,7 @@ function EventBody({ event }: { event: TicketEvent }) {
               <button
                 type="button"
                 onClick={() => startOutboundAction("ReplyAll")}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
               >
                 <ReplyAll className="h-3 w-3" />
                 Reply all
@@ -631,7 +631,7 @@ function EventBody({ event }: { event: TicketEvent }) {
             <button
               type="button"
               onClick={() => startOutboundAction("Forward")}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
             >
               <ForwardIcon className="h-3 w-3" />
               Forward
@@ -719,7 +719,7 @@ function EventBody({ event }: { event: TicketEvent }) {
             <button
               type="button"
               onClick={() => startMailAction("Reply")}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
             >
               <Reply className="h-3 w-3" />
               Reply
@@ -727,7 +727,7 @@ function EventBody({ event }: { event: TicketEvent }) {
             <button
               type="button"
               onClick={() => startMailAction("ReplyAll")}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
             >
               <ReplyAll className="h-3 w-3" />
               Reply all
@@ -735,7 +735,7 @@ function EventBody({ event }: { event: TicketEvent }) {
             <button
               type="button"
               onClick={() => startMailAction("Forward")}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
             >
               <ForwardIcon className="h-3 w-3" />
               Forward
@@ -743,7 +743,7 @@ function EventBody({ event }: { event: TicketEvent }) {
             <button
               type="button"
               onClick={() => setSplitOpen(true)}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
             >
               <GitBranch className="h-3 w-3" />
               Split
@@ -753,7 +753,7 @@ function EventBody({ event }: { event: TicketEvent }) {
                 href={`/api/tickets/${event.ticketId}/mail/${mailId}/raw`}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors ml-auto"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors ml-auto"
               >
                 <Download className="h-3 w-3" />
                 .eml
@@ -816,7 +816,7 @@ function TimelineEvent({
 
   const config = EVENT_CONFIG[event.eventType] ?? {
     icon: Info,
-    dotColor: "bg-white/30",
+    dotColor: "bg-glass-strong",
     label: event.eventType,
   };
   const Icon = config.icon;
@@ -986,7 +986,7 @@ function TimelineEvent({
                     "shrink-0 p-1 rounded-md transition-all",
                     isPinned
                       ? "text-amber-400 opacity-100 hover:text-amber-300 hover:bg-amber-500/10"
-                      : "text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-white/[0.06]"
+                      : "text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-glass-hover"
                   )}
                   title={isPinned ? "Unpin" : "Pin"}
                 >
@@ -997,7 +997,7 @@ function TimelineEvent({
                 <button
                   type="button"
                   onClick={startEdit}
-                  className="shrink-0 p-1 rounded-md text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-white/[0.06] transition-all"
+                  className="shrink-0 p-1 rounded-md text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-glass-hover transition-all"
                   title="Edit"
                 >
                   <Pencil className="h-3 w-3" />
@@ -1016,8 +1016,8 @@ function TimelineEvent({
                   className={cn(
                     "px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
                     draftInternal
-                      ? "bg-white/10 text-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-white/[0.05]"
+                      ? "bg-glass-strong text-foreground"
+                      : "text-muted-foreground hover:text-foreground hover:bg-glass-hover"
                   )}
                 >
                   Internal
@@ -1029,7 +1029,7 @@ function TimelineEvent({
                     "px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
                     !draftInternal
                       ? "bg-amber-500/15 text-amber-300 border border-amber-500/30"
-                      : "text-muted-foreground hover:text-foreground hover:bg-white/[0.05]"
+                      : "text-muted-foreground hover:text-foreground hover:bg-glass-hover"
                   )}
                 >
                   Public
@@ -1047,7 +1047,7 @@ function TimelineEvent({
                 <button
                   type="button"
                   onClick={cancelEdit}
-                  className="px-2.5 py-1 text-xs rounded-md text-muted-foreground hover:bg-white/[0.06] transition-colors"
+                  className="px-2.5 py-1 text-xs rounded-md text-muted-foreground hover:bg-glass-hover transition-colors"
                 >
                   Cancel
                 </button>
@@ -1098,7 +1098,7 @@ function TimelineEvent({
                   if (e.key === "Enter") pinMutation.mutate(pinRemark);
                 }}
                 placeholder="Why is this important?"
-                className="w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/50"
+                className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/50"
                 autoFocus
               />
             </div>
@@ -1106,7 +1106,7 @@ function TimelineEvent({
               <button
                 type="button"
                 onClick={() => setPinDialogOpen(false)}
-                className="px-3 py-1.5 text-xs rounded-md text-muted-foreground hover:bg-white/[0.06] transition-colors"
+                className="px-3 py-1.5 text-xs rounded-md text-muted-foreground hover:bg-glass-hover transition-colors"
               >
                 Cancel
               </button>
@@ -1145,7 +1145,7 @@ export function TicketTimeline({ ticketId, events, pinnedEventIds }: TicketTimel
 
   return (
     <PreviewContext.Provider value={previewApi}>
-      <div className="relative border-l-2 border-white/10 space-y-4 ml-[9px]">
+      <div className="relative border-l-2 border-glass space-y-4 ml-[9px]">
         {events.map((event) => (
           <TimelineEvent
             key={event.id}

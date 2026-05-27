@@ -64,7 +64,7 @@ export function MentionHistoryPage() {
           </div>
         ) : (
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-white/5 text-[11px] uppercase tracking-[0.14em] text-muted-foreground/70">
+            <thead className="border-b border-glass text-[11px] uppercase tracking-[0.14em] text-muted-foreground/70">
               <tr>
                 <th className="px-3 py-2 font-medium">Tijd</th>
                 <th className="px-3 py-2 font-medium">Van</th>
@@ -73,7 +73,7 @@ export function MentionHistoryPage() {
                 <th className="px-3 py-2 font-medium">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="divide-y divide-glass">
               {pages.map((n) => (
                 <Row
                   key={n.id}
@@ -85,12 +85,12 @@ export function MentionHistoryPage() {
           </table>
         )}
         {nextCursor ? (
-          <div className="flex justify-center border-t border-white/5 px-3 py-3">
+          <div className="flex justify-center border-t border-glass px-3 py-3">
             <button
               type="button"
               onClick={loadMore}
               disabled={query.isFetching}
-              className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.07] disabled:opacity-50"
+              className="rounded-md border border-glass bg-glass px-3 py-1.5 text-xs text-foreground hover:bg-glass-hover disabled:opacity-50"
             >
               {query.isFetching ? "Laden…" : "Meer laden"}
             </button>
@@ -109,11 +109,11 @@ function Row({ n, offsetMinutes }: { n: UserNotification; offsetMinutes: number 
     n.viewedUtc !== null
       ? { label: "Bekeken", tone: "bg-sky-500/15 text-sky-300 border-sky-500/30" }
       : n.ackedUtc !== null
-        ? { label: "Gedismiss", tone: "bg-white/[0.05] text-muted-foreground border-white/10" }
+        ? { label: "Gedismiss", tone: "bg-glass text-muted-foreground border-glass" }
         : { label: "Open", tone: "bg-amber-500/15 text-amber-300 border-amber-500/30" };
 
   return (
-    <tr className="hover:bg-white/[0.02]">
+    <tr className="hover:bg-glass-hover">
       <td className="px-3 py-2 text-xs text-muted-foreground">{when}</td>
       <td className="px-3 py-2 text-xs">
         <span className="inline-flex items-center gap-1">

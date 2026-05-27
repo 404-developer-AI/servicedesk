@@ -130,7 +130,7 @@ export function DashboardPage() {
               "inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors",
               editing
                 ? "border-primary/40 bg-primary/15 text-foreground"
-                : "border-white/10 bg-white/[0.04] text-muted-foreground hover:bg-white/[0.08]",
+                : "border-glass bg-glass text-muted-foreground hover:bg-glass-hover",
             )}
           >
             {editing ? <Check className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
@@ -217,7 +217,7 @@ function SortableTile({
             type="button"
             onClick={onCycleSize}
             title={`Resize (currently ${size})`}
-            className="inline-flex h-7 items-center gap-1 rounded-md border border-white/10 bg-background/80 px-2 text-[11px] font-medium text-foreground backdrop-blur hover:bg-white/[0.1]"
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-glass bg-background/80 px-2 text-[11px] font-medium text-foreground backdrop-blur hover:bg-glass-hover"
           >
             <Maximize2 className="h-3 w-3" />
             {size}
@@ -228,7 +228,7 @@ function SortableTile({
             {...listeners}
             title="Drag to reorder"
             aria-label="Drag handle"
-            className="inline-flex h-7 cursor-grab items-center rounded-md border border-white/10 bg-background/80 px-2 text-[11px] font-medium text-foreground backdrop-blur hover:bg-white/[0.1] active:cursor-grabbing"
+            className="inline-flex h-7 cursor-grab items-center rounded-md border border-glass bg-background/80 px-2 text-[11px] font-medium text-foreground backdrop-blur hover:bg-glass-hover active:cursor-grabbing"
           >
             ⠿
           </button>
@@ -244,7 +244,7 @@ function SortableTile({
 function EmptyDashboard() {
   return (
     <div className="glass-panel mx-auto mt-8 flex max-w-xl flex-col items-center gap-3 px-8 py-12 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04]">
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-glass bg-glass">
         <LayoutDashboard className="h-5 w-5 text-muted-foreground" />
       </div>
       <h2 className="text-base font-semibold text-foreground">

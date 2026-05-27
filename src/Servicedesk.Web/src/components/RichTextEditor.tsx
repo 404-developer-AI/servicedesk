@@ -103,8 +103,8 @@ function ToolbarButton({ onClick, active, title, children }: ToolbarButtonProps)
       className={cn(
         "p-1.5 rounded-md transition-colors",
         active
-          ? "bg-white/10 text-white"
-          : "text-muted-foreground hover:bg-white/10 hover:text-white"
+          ? "bg-glass-strong text-foreground"
+          : "text-muted-foreground hover:bg-glass-hover hover:text-foreground"
       )}
     >
       {children}
@@ -113,7 +113,7 @@ function ToolbarButton({ onClick, active, title, children }: ToolbarButtonProps)
 }
 
 function ToolbarSeparator() {
-  return <div className="w-px h-4 bg-white/10 mx-1 shrink-0" />;
+  return <div className="w-px h-4 bg-glass-strong mx-1 shrink-0" />;
 }
 
 export function RichTextEditor({
@@ -558,12 +558,12 @@ export function RichTextEditor({
 
       <div
         className={cn(
-          "rounded-[var(--radius)] border border-white/10 bg-white/[0.04] overflow-hidden",
+          "rounded-[var(--radius)] border border-glass bg-glass overflow-hidden",
           className
         )}
       >
         {editable && (
-          <div className="flex items-center gap-1 px-3 py-2 border-b border-white/10 bg-white/[0.02] flex-wrap">
+          <div className="flex items-center gap-1 px-3 py-2 border-b border-glass bg-glass flex-wrap">
             <ToolbarButton
               onClick={() => editor?.chain().focus().toggleBold().run()}
               active={editor?.isActive("bold")}

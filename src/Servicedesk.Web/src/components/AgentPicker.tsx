@@ -39,8 +39,8 @@ export function AgentPicker({
         <button
           type="button"
           className={cn(
-            "h-9 px-3 rounded-[var(--radius)] border border-white/10 bg-white/[0.04] text-sm",
-            "hover:bg-white/[0.07] transition-colors w-full text-left",
+            "h-9 px-3 rounded-[var(--radius)] border border-glass bg-glass text-sm",
+            "hover:bg-glass-hover transition-colors w-full text-left",
             "flex items-center justify-between gap-2",
             !selectedAgent && "text-muted-foreground",
             className
@@ -56,7 +56,7 @@ export function AgentPicker({
         </button>
       </PopoverTrigger>
 
-      <PopoverContent className="w-[320px] p-0 glass-card border-white/10">
+      <PopoverContent className="w-[320px] p-0 glass-card border-glass">
         <div className="max-h-[280px] overflow-y-auto">
           <div className="p-1">
             <button
@@ -64,8 +64,8 @@ export function AgentPicker({
               onClick={() => handleSelect(null)}
               className={cn(
                 "w-full rounded-[calc(var(--radius)-2px)] px-3 py-2 text-left text-sm text-muted-foreground",
-                "transition-colors hover:bg-white/[0.07] hover:text-white",
-                value === null && "bg-white/[0.07] text-white"
+                "transition-colors hover:bg-glass-hover hover:text-foreground",
+                value === null && "bg-glass-strong text-foreground"
               )}
             >
               Unassigned
@@ -87,12 +87,12 @@ export function AgentPicker({
                     onClick={() => handleSelect(agent.id)}
                     className={cn(
                       "w-full rounded-[calc(var(--radius)-2px)] px-3 py-2 text-left text-sm",
-                      "transition-colors hover:bg-white/[0.07]",
-                      agent.id === value && "bg-white/[0.07]"
+                      "transition-colors hover:bg-glass-hover",
+                      agent.id === value && "bg-glass-strong"
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-white">{agent.email}</span>
+                      <span className="truncate text-foreground">{agent.email}</span>
                       <span
                         className={cn(
                           "shrink-0 rounded px-1.5 py-0.5 text-xs font-medium",

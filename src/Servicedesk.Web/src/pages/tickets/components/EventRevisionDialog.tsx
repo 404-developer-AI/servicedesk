@@ -50,7 +50,7 @@ function RevisionEntry({
             Revision {revision.revisionNumber}
           </span>
           {revision.isInternalBefore !== undefined && (
-            <span className="rounded px-1.5 py-0.5 text-[10px] font-medium border border-white/10 bg-white/[0.04] text-muted-foreground/60">
+            <span className="rounded px-1.5 py-0.5 text-[10px] font-medium border border-glass bg-glass text-muted-foreground/60">
               {revision.isInternalBefore ? "Internal" : "Public"}
             </span>
           )}
@@ -77,7 +77,7 @@ function RevisionEntry({
             {expanded ? "Hide previous content" : "Show previous content"}
           </button>
           {expanded && (
-            <div className="rounded-md border border-white/10 bg-white/[0.02] p-3 text-sm">
+            <div className="rounded-md border border-glass bg-glass p-3 text-sm">
               {danger ? (
                 <div
                   className="prose-sm text-foreground/70 [&_a]:text-primary [&_a]:underline [&_p]:my-1 [&_ul]:list-disc [&_ul]:list-outside [&_ul]:pl-6 [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:list-outside [&_ol]:pl-6 [&_ol]:ml-4"
@@ -114,7 +114,7 @@ export function EventRevisionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="glass-card border-white/10 bg-background/95 backdrop-blur-xl max-w-xl max-h-[70vh] flex flex-col">
+      <DialogContent className="glass-card border-glass bg-background/95 backdrop-blur-xl max-w-xl max-h-[70vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <History className="h-4 w-4 text-muted-foreground" />

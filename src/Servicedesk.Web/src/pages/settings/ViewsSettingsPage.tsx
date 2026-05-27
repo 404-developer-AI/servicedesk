@@ -27,7 +27,7 @@ function ToggleSwitch({
         "disabled:cursor-not-allowed disabled:opacity-50",
         checked
           ? "bg-gradient-to-r from-violet-600 to-indigo-600"
-          : "bg-white/[0.08]",
+          : "bg-glass-strong",
       )}
     >
       <span
@@ -63,7 +63,7 @@ export function ViewsSettingsPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* System navigation section */}
-      <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
+      <div className="rounded-lg border border-glass-strong bg-glass p-4">
         <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60 mb-3">
           Sidebar navigation
         </h2>

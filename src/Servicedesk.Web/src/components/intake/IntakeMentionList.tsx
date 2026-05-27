@@ -74,8 +74,8 @@ export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, Intak
       <div
         className={cn(
           "min-w-[20rem] max-w-[28rem] max-h-72 overflow-auto",
-          "rounded-[var(--radius)] border border-white/10",
-          "bg-[hsl(240_10%_6%/0.96)] backdrop-blur-xl shadow-2xl",
+          "rounded-[var(--radius)] border border-glass",
+          "bg-popover/95 backdrop-blur-xl shadow-2xl",
           "py-1 text-sm",
         )}
         role="listbox"
@@ -108,7 +108,7 @@ export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, Intak
                   "w-full flex items-start gap-3 px-3 py-2 text-left transition-colors",
                   isSelected
                     ? "bg-emerald-500/15 text-emerald-100"
-                    : "text-foreground/80 hover:bg-white/[0.04]",
+                    : "text-foreground/80 hover:bg-glass-hover",
                 )}
               >
                 <Icon

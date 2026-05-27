@@ -108,7 +108,7 @@ export function ContactsPage() {
             narrow down by company, role or status.
           </p>
         </div>
-        <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+        <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
           Admin only
         </Badge>
       </header>
@@ -178,7 +178,7 @@ export function ContactsPage() {
           )}
         >
           <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-white/10">
+            <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-glass">
               <tr>
                 <th className="px-4 py-3 font-medium">Name</th>
                 <th className="px-4 py-3 font-medium">Email</th>
@@ -193,7 +193,7 @@ export function ContactsPage() {
               {items.map((c) => {
                 const fullName = [c.firstName, c.lastName].filter(Boolean).join(" ").trim();
                 return (
-                  <tr key={c.id} className="border-b border-white/5 hover:bg-white/[0.03]">
+                  <tr key={c.id} className="border-b border-glass hover:bg-glass-hover">
                     <td className="px-4 py-3 text-foreground">
                       <Link
                         to="/contacts/$contactId"
@@ -231,7 +231,7 @@ export function ContactsPage() {
                     </td>
                     <td className="px-4 py-3">
                       {c.extraLinkCount > 0 ? (
-                        <Badge className="border border-white/10 bg-white/[0.05] text-[10px] font-normal text-muted-foreground">
+                        <Badge className="border border-glass bg-glass text-[10px] font-normal text-muted-foreground">
                           +{c.extraLinkCount}
                         </Badge>
                       ) : (
@@ -249,7 +249,7 @@ export function ContactsPage() {
                           active
                         </Badge>
                       ) : (
-                        <Badge className="border border-white/10 bg-white/[0.05] text-[10px] font-normal text-muted-foreground">
+                        <Badge className="border border-glass bg-glass text-[10px] font-normal text-muted-foreground">
                           inactive
                         </Badge>
                       )}
@@ -347,8 +347,8 @@ function CompanyFilterPicker({
         <button
           type="button"
           className={cn(
-            "h-9 px-3 rounded-[var(--radius)] border border-white/10 bg-white/[0.04] text-sm",
-            "hover:bg-white/[0.07] transition-colors text-left min-w-[180px]",
+            "h-9 px-3 rounded-[var(--radius)] border border-glass bg-glass text-sm",
+            "hover:bg-glass-hover transition-colors text-left min-w-[180px]",
             "flex items-center justify-between gap-2",
           )}
         >
@@ -401,7 +401,7 @@ function CompanyFilterPicker({
                   onChange(c);
                   setOpen(false);
                 }}
-                className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-white/[0.05]"
+                className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-glass-hover"
               >
                 <span className="truncate">{c.shortName || c.name}</span>
                 <span className="font-mono text-[10px] text-muted-foreground">{c.code}</span>

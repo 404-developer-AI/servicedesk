@@ -6,7 +6,9 @@ import { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { LockKeyhole, Mail, ShieldCheck, AlertTriangle } from "lucide-react";
-import ticksyWordmark from "@/assets/brand/ticksy-dark.svg";
+import ticksyWordmarkDark from "@/assets/brand/ticksy-dark.svg";
+import ticksyWordmarkLight from "@/assets/brand/ticksy-light.svg";
+import { useTheme } from "@/app/ThemeProvider";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +34,7 @@ type Stage = "credentials" | "two-factor";
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const { theme } = useTheme();
   const [stage, setStage] = useState<Stage>("credentials");
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -123,9 +126,9 @@ export function LoginPage() {
         transition={{ duration: 0.35, ease: "easeOut" }}
         className="glass-card w-full max-w-[420px] overflow-hidden"
       >
-        <div className="flex items-center justify-center border-b border-white/5 px-7 py-3">
+        <div className="flex items-center justify-center border-b border-glass px-7 py-3">
           <img
-            src={ticksyWordmark}
+            src={theme === "dark" ? ticksyWordmarkDark : ticksyWordmarkLight}
             alt="Ticksy"
             draggable={false}
             className="h-24 w-auto select-none"
@@ -242,7 +245,7 @@ export function LoginPage() {
           {config?.microsoftEnabled && stage === "credentials" && (
             <>
               <div className="relative py-1 text-center">
-                <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-white/5" />
+                <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-glass" />
                 <span className="relative inline-block bg-transparent px-3 text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
                   or
                 </span>

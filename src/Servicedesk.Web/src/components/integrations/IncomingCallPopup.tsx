@@ -60,7 +60,7 @@ const ROLE_LABEL: Record<NonNullable<ContactPhoneLookupItem["linkedCompanyRole"]
 /// earlier iterations. `px-1.5` is the tightest padding that still feels
 /// like a button.
 const CALL_ACTION_BTN =
-  "h-8 flex-1 min-w-0 border border-white/15 bg-white/[0.05] text-foreground hover:bg-white/[0.10] hover:border-white/25 px-1.5 text-[11px] whitespace-nowrap";
+  "h-8 flex-1 min-w-0 border border-glass-strong bg-glass text-foreground hover:bg-glass-hover hover:border-glass-strong px-1.5 text-[11px] whitespace-nowrap";
 
 /// Glassmorphism corner card surfaced on every TelavoxCall push. Mounts
 /// once at AppShell level; reads the latest event from the store and
@@ -158,8 +158,8 @@ export function IncomingCallPopup() {
         transition={{ type: "spring", stiffness: 280, damping: 26 }}
         className={cn(
           "fixed bottom-6 right-6 z-[60] w-[360px] overflow-hidden",
-          "rounded-2xl border border-white/[0.08] shadow-2xl",
-          "bg-gradient-to-br from-zinc-900/90 to-zinc-950/90 backdrop-blur-xl",
+          "rounded-2xl border border-glass-strong shadow-2xl",
+          "bg-popover/95 backdrop-blur-xl",
           interacting ? "pointer-events-none" : "pointer-events-auto",
         )}
         role="dialog"
@@ -180,7 +180,7 @@ export function IncomingCallPopup() {
             <div
               className={cn(
                 "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
-                "border border-white/[0.08]",
+                "border border-glass-strong",
                 ringing
                   ? "bg-violet-500/15 text-violet-300"
                   : "bg-emerald-500/15 text-emerald-300",
@@ -205,7 +205,7 @@ export function IncomingCallPopup() {
                       <Building2 className="h-3 w-3 shrink-0 text-muted-foreground/70" />
                       <span className="truncate">{primary.linkedCompanyName}</span>
                       {primary.linkedCompanyRole && primary.linkedCompanyRole !== "primary" ? (
-                        <span className="shrink-0 rounded-sm border border-white/10 bg-white/[0.04] px-1 py-px text-[9px] uppercase tracking-wider text-muted-foreground/70">
+                        <span className="shrink-0 rounded-sm border border-glass bg-glass px-1 py-px text-[9px] uppercase tracking-wider text-muted-foreground/70">
                           {ROLE_LABEL[primary.linkedCompanyRole]}
                         </span>
                       ) : null}
@@ -234,7 +234,7 @@ export function IncomingCallPopup() {
             type="button"
             onClick={() => dismiss(current.callId)}
             aria-label="Dismiss call popup"
-            className="rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-white/[0.05] hover:text-foreground"
+            className="rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-glass-hover hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </button>
@@ -497,7 +497,7 @@ function LinkCallerToContactDialog({
                     setPicked(null);
                   }
                 }}
-                className="rounded-md p-1 text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
+                className="rounded-md p-1 text-muted-foreground hover:bg-glass-hover hover:text-foreground"
                 aria-label="Back"
               >
                 <ArrowLeft className="h-4 w-4" />
@@ -523,9 +523,9 @@ function LinkCallerToContactDialog({
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search contacts…"
               autoFocus
-              className="border-white/10 bg-white/[0.04]"
+              className="border-glass bg-glass"
             />
-            <div className="max-h-[280px] overflow-y-auto rounded border border-white/10">
+            <div className="max-h-[280px] overflow-y-auto rounded border border-glass">
               {!contacts ? (
                 <p className="p-4 text-sm text-muted-foreground">Loading…</p>
               ) : contacts.length === 0 ? (
@@ -549,7 +549,7 @@ function LinkCallerToContactDialog({
                       onClick={() => handleSelectContact(c)}
                       className={cn(
                         "block w-full px-3 py-2 text-left text-sm transition-colors",
-                        "hover:bg-white/[0.05] disabled:opacity-50",
+                        "hover:bg-glass-hover disabled:opacity-50",
                       )}
                     >
                       <div className="font-medium text-foreground">
@@ -652,11 +652,11 @@ function SlotTile({
       disabled={disabled}
       className={cn(
         "flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-3 text-left transition-colors",
-        "border-white/10 bg-white/[0.04] hover:bg-white/[0.07] disabled:opacity-50",
+        "border-glass bg-glass hover:bg-glass-hover disabled:opacity-50",
       )}
     >
       <span className="flex items-center gap-3 min-w-0">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-muted-foreground">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-glass bg-glass text-muted-foreground">
           {icon}
         </span>
         <span className="min-w-0">

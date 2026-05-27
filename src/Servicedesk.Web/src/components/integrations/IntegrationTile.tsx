@@ -22,8 +22,8 @@ const STATUS_STYLES: Record<
     label: "Error",
   },
   "not-configured": {
-    pill: "border-white/15 bg-white/[0.06] text-muted-foreground",
-    dot: "bg-white/40",
+    pill: "border-glass-strong bg-glass-strong text-muted-foreground",
+    dot: "bg-glass-strong",
     label: "Not configured",
   },
 };
@@ -57,7 +57,7 @@ export function IntegrationTile({
   const baseClasses = cn(
     "glass-card group relative flex aspect-square items-center justify-center overflow-hidden px-5 pb-12 pt-5",
     interactive &&
-      "cursor-pointer transition duration-200 hover:-translate-y-0.5 hover:border-white/15 hover:bg-white/[0.07]",
+      "cursor-pointer transition duration-200 hover:-translate-y-0.5 hover:border-glass-strong hover:bg-glass-hover",
     className,
   );
 

@@ -17,20 +17,26 @@ const STATUS_STYLES: Record<
   { badge: string; dot: string; label: string; icon: React.ReactNode }
 > = {
   Ok: {
-    badge: "border-emerald-400/30 bg-emerald-500/10 text-emerald-300",
-    dot: "bg-emerald-400",
+    badge:
+      "border-emerald-400/60 bg-emerald-100 text-emerald-800 " +
+      "dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-300",
+    dot: "bg-emerald-500 dark:bg-emerald-400",
     label: "OK",
     icon: <CheckCircle2 className="h-3.5 w-3.5" />,
   },
   Warning: {
-    badge: "border-amber-400/30 bg-amber-500/10 text-amber-300",
-    dot: "bg-amber-400",
+    badge:
+      "border-amber-400/60 bg-amber-100 text-amber-800 " +
+      "dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-300",
+    dot: "bg-amber-500 dark:bg-amber-400",
     label: "Warning",
     icon: <AlertTriangle className="h-3.5 w-3.5" />,
   },
   Critical: {
-    badge: "border-rose-400/40 bg-rose-500/10 text-rose-300",
-    dot: "bg-rose-400",
+    badge:
+      "border-rose-400/60 bg-rose-100 text-rose-800 " +
+      "dark:border-rose-400/40 dark:bg-rose-500/10 dark:text-rose-300",
+    dot: "bg-rose-500 dark:bg-rose-400",
     label: "Critical",
     icon: <AlertTriangle className="h-3.5 w-3.5" />,
   },
@@ -74,7 +80,7 @@ export function SystemHealthTile() {
         </p>
       ) : query.data ? (
         <>
-          <ul className="divide-y divide-white/[0.04]">
+          <ul className="divide-y divide-glass">
             {query.data.subsystems.map((s) => (
               <SubsystemRow key={s.key} subsystem={s} />
             ))}
@@ -82,7 +88,7 @@ export function SystemHealthTile() {
           <button
             type="button"
             onClick={() => void navigate({ to: "/settings/health" })}
-            className="mt-auto flex w-full items-center justify-between rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-xs text-muted-foreground transition hover:bg-white/[0.04] hover:text-foreground"
+            className="mt-auto flex w-full items-center justify-between rounded-md border border-glass-strong bg-glass px-3 py-2 text-xs text-muted-foreground transition hover:bg-glass-hover hover:text-foreground"
           >
             <span>Open Health page</span>
             <ChevronRight className="h-3.5 w-3.5" />

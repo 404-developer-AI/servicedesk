@@ -88,7 +88,7 @@ export function SplitMailDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="rounded-md border border-white/10 bg-white/[0.02] px-3 py-2.5">
+          <div className="rounded-md border border-glass bg-glass px-3 py-2.5">
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 mb-1">
               Splitting from this mail
             </div>

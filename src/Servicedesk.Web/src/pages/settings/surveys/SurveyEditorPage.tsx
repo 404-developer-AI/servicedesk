@@ -272,7 +272,7 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
         </div>
       </header>
 
-      <section className="grid gap-4 rounded-lg border border-white/[0.06] bg-white/[0.02] p-5 md:grid-cols-2">
+      <section className="grid gap-4 rounded-lg border border-glass-strong bg-glass p-5 md:grid-cols-2">
         <div className="md:col-span-2">
           <Label>Name</Label>
           <Input
@@ -302,7 +302,7 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
             max={365}
           />
         </div>
-        <div className="flex items-center justify-between rounded-md border border-white/[0.08] bg-white/[0.02] px-3 py-2">
+        <div className="flex items-center justify-between rounded-md border border-glass-strong bg-glass px-3 py-2">
           <div>
             <Label className="mb-0">Active</Label>
             <p className="text-xs text-muted-foreground">
@@ -314,7 +314,7 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
         </div>
       </section>
 
-      <section className="flex flex-col gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+      <section className="flex flex-col gap-3 rounded-lg border border-glass-strong bg-glass p-5">
         <header>
           <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
             Invitation email
@@ -340,7 +340,7 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
             value={inviteBodyHtml}
             onChange={(e) => setInviteBodyHtml(e.target.value)}
             rows={6}
-            className="w-full resize-y rounded-md border border-white/[0.08] bg-white/[0.02] px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40"
+            className="w-full resize-y rounded-md border border-glass-strong bg-glass px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40"
             placeholder={
               '<p>Hi {{contact.firstName}},</p><p>...</p><p><a href="{{survey.link}}">Open the survey</a></p>'
             }
@@ -352,13 +352,13 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
             value={introHtml}
             onChange={(e) => setIntroHtml(e.target.value)}
             rows={4}
-            className="w-full resize-y rounded-md border border-white/[0.08] bg-white/[0.02] px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40"
+            className="w-full resize-y rounded-md border border-glass-strong bg-glass px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40"
             placeholder="Optional — leave blank for no intro paragraph."
           />
         </div>
       </section>
 
-      <section className="flex flex-col gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+      <section className="flex flex-col gap-3 rounded-lg border border-glass-strong bg-glass p-5">
         <header>
           <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
             Survey page labels
@@ -383,7 +383,7 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
             value={thankYouMessage}
             onChange={(e) => setThankYouMessage(e.target.value)}
             rows={3}
-            className="w-full resize-y rounded-md border border-white/[0.08] bg-white/[0.02] px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40"
+            className="w-full resize-y rounded-md border border-glass-strong bg-glass px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40"
             placeholder="Shown after the customer submits."
             maxLength={5000}
           />
@@ -394,7 +394,7 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
             value={expiredMessage}
             onChange={(e) => setExpiredMessage(e.target.value)}
             rows={3}
-            className="w-full resize-y rounded-md border border-white/[0.08] bg-white/[0.02] px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40"
+            className="w-full resize-y rounded-md border border-glass-strong bg-glass px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40"
             placeholder="Shown when the survey link has expired."
             maxLength={5000}
           />
@@ -405,7 +405,7 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
             value={notFoundMessage}
             onChange={(e) => setNotFoundMessage(e.target.value)}
             rows={3}
-            className="w-full resize-y rounded-md border border-white/[0.08] bg-white/[0.02] px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40"
+            className="w-full resize-y rounded-md border border-glass-strong bg-glass px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40"
             placeholder="Shown when the token does not match a known survey."
             maxLength={5000}
           />
@@ -450,7 +450,7 @@ function QuestionListSection({
   setQuestions: React.Dispatch<React.SetStateAction<DraftQuestion[]>>;
 }) {
   return (
-    <section className="flex flex-col gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+    <section className="flex flex-col gap-3 rounded-lg border border-glass-strong bg-glass p-5">
       <header className="flex items-center justify-between">
         <div>
           <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
@@ -534,7 +534,7 @@ function QuestionRow({
   onMove: (direction: 1 | -1) => void;
 }) {
   return (
-    <li className="flex flex-col gap-3 rounded-md border border-white/[0.06] bg-white/[0.02] p-3">
+    <li className="flex flex-col gap-3 rounded-md border border-glass-strong bg-glass p-3">
       <div className="flex items-start gap-3">
         <div className="flex flex-col gap-1 pt-1">
           <button
@@ -542,7 +542,7 @@ function QuestionRow({
             aria-label="Move up"
             onClick={() => onMove(-1)}
             disabled={index === 0}
-            className="rounded-md p-1 text-muted-foreground hover:bg-white/[0.06] disabled:opacity-30"
+            className="rounded-md p-1 text-muted-foreground hover:bg-glass-hover disabled:opacity-30"
           >
             <ArrowUp className="h-3.5 w-3.5" />
           </button>
@@ -551,7 +551,7 @@ function QuestionRow({
             aria-label="Move down"
             onClick={() => onMove(1)}
             disabled={index === total - 1}
-            className="rounded-md p-1 text-muted-foreground hover:bg-white/[0.06] disabled:opacity-30"
+            className="rounded-md p-1 text-muted-foreground hover:bg-glass-hover disabled:opacity-30"
           >
             <ArrowDown className="h-3.5 w-3.5" />
           </button>
@@ -699,7 +699,7 @@ function QuestionRow({
             </div>
           )}
 
-          <div className="flex items-center justify-between rounded-md border border-white/[0.08] bg-white/[0.02] px-3 py-2">
+          <div className="flex items-center justify-between rounded-md border border-glass-strong bg-glass px-3 py-2">
             <Label className="mb-0">Required</Label>
             <Switch
               checked={question.isRequired}

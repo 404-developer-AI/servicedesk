@@ -452,6 +452,33 @@ app.MapGet("/api/system/login-banner", async (ISettingsService settings, Cancell
 .WithName("GetLoginBanner")
 .WithOpenApi();
 
+// Default theme — public derived-settings endpoint. The login page reads
+// this before authentication so anonymous users land on the admin-configured
+// default theme on their first ever visit (when no localStorage exists).
+// Unknown / corrupt values silently fall back to 'light' (factory default)
+// so a hand-edited DB row can't break paint. Settings-store failures are
+// swallowed and reported as 'light' — the login page must always load.
+app.MapGet("/api/system/default-theme", async (ISettingsService settings, CancellationToken ct) =>
+{
+    string raw = "light";
+    try
+    {
+        raw = await settings.GetAsync<string>(SettingKeys.Ui.DefaultTheme, ct);
+    }
+    catch
+    {
+        // Fall through with light default.
+    }
+    var theme = (raw ?? "light").Trim().ToLowerInvariant() switch
+    {
+        "dark" => "dark",
+        _ => "light",
+    };
+    return Results.Ok(new { theme });
+})
+.WithName("GetSystemDefaultTheme")
+.WithOpenApi();
+
 app.MapCspReportEndpoint();
 app.MapAuditEndpoints();
 app.MapAuthEndpoints();

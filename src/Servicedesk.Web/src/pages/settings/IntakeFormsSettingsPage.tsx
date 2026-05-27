@@ -69,9 +69,9 @@ function SubmissionBehaviourPanel() {
   );
 
   return (
-    <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+    <section className="rounded-lg border border-glass-strong bg-glass p-5">
       <header className="mb-4 flex items-center gap-3">
-        <div className="rounded-md bg-white/[0.04] p-2 text-primary">
+        <div className="rounded-md bg-glass p-2 text-primary">
           <Pin className="h-5 w-5" />
         </div>
         <div className="space-y-1">
@@ -128,7 +128,7 @@ function TemplateListPanel({
   const rows = useMemo(() => templatesQ.data ?? [], [templatesQ.data]);
 
   return (
-    <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+    <section className="rounded-lg border border-glass-strong bg-glass p-5">
       <header className="mb-4 flex items-center justify-between gap-4">
         <div className="space-y-1">
           <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
@@ -166,8 +166,8 @@ function TemplateListPanel({
             className={cn(
               "flex items-center justify-between gap-4 rounded-lg border px-4 py-3",
               t.isActive
-                ? "border-white/[0.06] bg-white/[0.02]"
-                : "border-white/[0.04] bg-white/[0.01] opacity-70",
+                ? "border-glass-strong bg-glass"
+                : "border-glass bg-glass opacity-70",
             )}
           >
             <div className="min-w-0 flex-1">
@@ -176,7 +176,7 @@ function TemplateListPanel({
                   {t.name}
                 </span>
                 {!t.isActive && (
-                  <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <span className="rounded-full bg-glass-strong px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
                     Inactive
                   </span>
                 )}
@@ -249,7 +249,7 @@ function EditorPanel({
   }
 
   return (
-    <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+    <section className="rounded-lg border border-glass-strong bg-glass p-5">
       <header className="mb-4 flex items-center justify-between gap-4">
         <div className="space-y-1">
           <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">

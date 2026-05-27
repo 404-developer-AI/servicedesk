@@ -2,11 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/app/ThemeProvider";
 
 // Animated purple/blue "mesh gradient" on a full-screen quad. Cheap fragment
 // shader, no post-processing. Scoped to "low-work" surfaces only (stub pages,
 // login, 404) — inside the working app the cheaper CSS `.app-background` is
-// used instead. See ARCHITECTURE.md § UI shell & navigation.
+// used instead. Only rendered in dark mode; light mode falls back to the
+// static CSS `.app-background` because the shader palette is tuned for a
+// near-black canvas. See ARCHITECTURE.md § UI shell & navigation.
 
 const vertexShader = /* glsl */ `
   varying vec2 vUv;
@@ -133,8 +136,12 @@ type MeshSurfaceProps = {
 export function MeshSurface({ className }: MeshSurfaceProps) {
   const reduced = usePrefersReducedMotion();
   const visible = useDocumentVisible();
+  const { theme } = useTheme();
 
-  if (reduced) {
+  // The shader palette is calibrated for a dark canvas — running it in
+  // light mode produces muddy purple haze on a near-white background. Fall
+  // back to the static CSS gradient, which already has a light-mode look.
+  if (reduced || theme === "light") {
     return <div className={cn("app-background", className)} aria-hidden />;
   }
 

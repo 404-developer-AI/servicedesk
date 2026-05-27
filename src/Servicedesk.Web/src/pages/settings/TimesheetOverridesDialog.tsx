@@ -334,7 +334,7 @@ function Body({ target, onClose }: { target: UserAdminRow; onClose: () => void }
                     !overrideActive && "opacity-40",
                     on
                       ? "border-violet-400/40 bg-violet-400/15 text-violet-200 hover:bg-violet-400/20"
-                      : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.05]",
+                      : "border-glass bg-glass text-muted-foreground hover:bg-glass-hover",
                   )}
                   aria-pressed={on}
                 >
@@ -382,7 +382,7 @@ function OverrideRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+    <div className="flex items-start justify-between gap-3 rounded-md border border-glass-strong bg-glass px-3 py-2.5">
       <div className="min-w-0 flex-1">
         <p className="text-xs font-medium text-foreground">{label}</p>
         <p className="mt-0.5 text-[10px] text-muted-foreground">{hint}</p>

@@ -119,7 +119,7 @@ function RunRow({ run }: { run: TriggerRun }) {
   const hasDiff = !!run.appliedChangesJson && run.appliedChangesJson !== "[]" && run.appliedChangesJson !== "{}";
 
   return (
-    <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] transition-colors hover:bg-white/[0.04]">
+    <div className="rounded-lg border border-glass-strong bg-glass transition-colors hover:bg-glass-hover">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -165,7 +165,7 @@ function RunRow({ run }: { run: TriggerRun }) {
         )}
       </button>
       {open && hasDiff && (
-        <div className="border-t border-white/[0.06] bg-black/20 px-4 py-3">
+        <div className="border-t border-glass-strong bg-black/20 px-4 py-3">
           <pre className="overflow-x-auto whitespace-pre-wrap break-all text-[11px] leading-relaxed text-muted-foreground">
             {prettyJson(run.appliedChangesJson)}
           </pre>
@@ -177,7 +177,7 @@ function RunRow({ run }: { run: TriggerRun }) {
 
 function EmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-6 py-12 text-center">
+    <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-glass-strong bg-glass px-6 py-12 text-center">
       <Activity className="h-5 w-5 text-muted-foreground/40" />
       <div>
         <p className="text-sm font-medium text-foreground">No runs yet</p>
@@ -209,7 +209,7 @@ function outcomeTone(outcome: string): Tone {
     case "skipped_no_match":
       return {
         label: "No match",
-        bg: "border-white/10 bg-white/[0.02]",
+        bg: "border-glass bg-glass",
         fg: "text-muted-foreground",
         icon: MinusCircle,
       };
@@ -230,7 +230,7 @@ function outcomeTone(outcome: string): Tone {
     default:
       return {
         label: outcome,
-        bg: "border-white/10 bg-white/[0.02]",
+        bg: "border-glass bg-glass",
         fg: "text-muted-foreground",
         icon: Activity,
       };

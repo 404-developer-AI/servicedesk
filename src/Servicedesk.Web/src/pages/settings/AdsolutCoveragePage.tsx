@@ -174,16 +174,16 @@ export function AdsolutCoveragePage() {
             rows — force-pushing it now.
           </p>
         </div>
-        <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+        <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
           Admin only
         </Badge>
       </header>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-glass-strong bg-glass p-3">
         <div
           role="tablist"
           aria-label="Coverage tab"
-          className="inline-flex rounded-md border border-white/[0.08] bg-white/[0.03] p-0.5 text-xs"
+          className="inline-flex rounded-md border border-glass-strong bg-glass p-0.5 text-xs"
         >
           {(["companies", "contacts"] as const).map((t) => (
             <button
@@ -195,7 +195,7 @@ export function AdsolutCoveragePage() {
               className={cn(
                 "rounded px-3 py-1 capitalize transition-colors",
                 tab === t
-                  ? "bg-white/[0.08] text-foreground shadow-sm"
+                  ? "bg-glass-strong text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -207,7 +207,7 @@ export function AdsolutCoveragePage() {
         <div
           role="tablist"
           aria-label="Bucket"
-          className="inline-flex rounded-md border border-white/[0.08] bg-white/[0.03] p-0.5 text-xs"
+          className="inline-flex rounded-md border border-glass-strong bg-glass p-0.5 text-xs"
         >
           {(tab === "companies" ? COMPANIES_BUCKETS : CONTACTS_BUCKETS).map((b) => {
             const active = (rawSearch.bucket ?? "") === b.value;
@@ -221,7 +221,7 @@ export function AdsolutCoveragePage() {
                 className={cn(
                   "rounded px-3 py-1 transition-colors",
                   active
-                    ? "bg-white/[0.08] text-foreground shadow-sm"
+                    ? "bg-glass-strong text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >
@@ -329,7 +329,7 @@ function CompaniesTable({ bucket, search, page, onPageChange }: CompaniesTablePr
   const allSelected = items.length > 0 && items.every((i) => selected.has(i.id));
 
   return (
-    <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
+    <section className="rounded-lg border border-glass-strong bg-glass p-3">
       {list.isLoading ? (
         <Skeleton className="h-32 w-full" />
       ) : items.length === 0 ? (
@@ -361,7 +361,7 @@ function CompaniesTable({ bucket, search, page, onPageChange }: CompaniesTablePr
 
           <table className="w-full text-xs">
             <thead className="text-muted-foreground/70">
-              <tr className="border-b border-white/[0.04]">
+              <tr className="border-b border-glass">
                 {bucket === "drift" && (
                   <th className="w-8 px-2 py-2 text-left">
                     <input
@@ -391,7 +391,7 @@ function CompaniesTable({ bucket, search, page, onPageChange }: CompaniesTablePr
               {items.map((row) => (
                 <tr
                   key={row.id}
-                  className="border-b border-white/[0.04] hover:bg-white/[0.02]"
+                  className="border-b border-glass hover:bg-glass-hover"
                 >
                   {bucket === "drift" && (
                     <td className="px-2 py-2">
@@ -426,7 +426,7 @@ function CompaniesTable({ bucket, search, page, onPageChange }: CompaniesTablePr
                         Linked{row.adsolutNumber ? ` · ${row.adsolutNumber}` : ""}
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[10px] text-muted-foreground">
+                      <span className="inline-flex items-center gap-1 rounded-full border border-glass-strong bg-glass px-2 py-0.5 text-[10px] text-muted-foreground">
                         Not linked
                       </span>
                     )}
@@ -603,7 +603,7 @@ function ContactsTable({ bucket, search, page, onPageChange }: ContactsTableProp
   const linkableLinkBucket = bucket === "links-unsynced";
 
   return (
-    <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
+    <section className="rounded-lg border border-glass-strong bg-glass p-3">
       {list.isLoading ? (
         <Skeleton className="h-32 w-full" />
       ) : items.length === 0 ? (
@@ -635,7 +635,7 @@ function ContactsTable({ bucket, search, page, onPageChange }: ContactsTableProp
 
           <table className="w-full text-xs">
             <thead className="text-muted-foreground/70">
-              <tr className="border-b border-white/[0.04]">
+              <tr className="border-b border-glass">
                 {driftBucket && <th className="w-8 px-2 py-2 text-left"></th>}
                 <th className="px-2 py-2 text-left font-medium">Name</th>
                 <th className="px-2 py-2 text-left font-medium">Email</th>
@@ -653,7 +653,7 @@ function ContactsTable({ bucket, search, page, onPageChange }: ContactsTableProp
                 return (
                   <tr
                     key={row.linkId ?? row.contactId}
-                    className="border-b border-white/[0.04] hover:bg-white/[0.02]"
+                    className="border-b border-glass hover:bg-glass-hover"
                   >
                     {driftBucket && (
                       <td className="px-2 py-2">
@@ -702,7 +702,7 @@ function ContactsTable({ bucket, search, page, onPageChange }: ContactsTableProp
                           Linked
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[10px] text-muted-foreground">
+                        <span className="inline-flex items-center gap-1 rounded-full border border-glass-strong bg-glass px-2 py-0.5 text-[10px] text-muted-foreground">
                           Not linked
                         </span>
                       )}

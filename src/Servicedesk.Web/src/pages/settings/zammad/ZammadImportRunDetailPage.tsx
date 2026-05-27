@@ -190,7 +190,7 @@ export function ZammadImportRunDetailPage() {
   });
 
   if (detail.isLoading) {
-    return <Skeleton className="h-64 w-full bg-white/[0.04]" />;
+    return <Skeleton className="h-64 w-full bg-glass" />;
   }
   if (detail.isError) {
     return (
@@ -408,7 +408,7 @@ export function ZammadImportRunDetailPage() {
       />
 
       {filter ? (
-        <details className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-xs">
+        <details className="rounded-xl border border-glass-strong bg-glass p-3 text-xs">
           <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
             Source filter snapshot
           </summary>
@@ -521,7 +521,7 @@ function SummaryCard({
     sky: "text-sky-300",
   };
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+    <div className="rounded-xl border border-glass-strong bg-glass p-3">
       <div className="text-[10px] uppercase tracking-widest text-muted-foreground/60">
         {label}
       </div>
@@ -560,7 +560,7 @@ function FilterChip({
         "rounded-full border px-2.5 py-1 text-[11px] transition",
         active
           ? "border-violet-400/40 bg-violet-500/[0.12] text-violet-100"
-          : "border-white/10 bg-white/[0.02] text-muted-foreground hover:border-white/20 hover:text-foreground",
+          : "border-glass bg-glass text-muted-foreground hover:border-glass-strong hover:text-foreground",
       )}
     >
       {label}
@@ -583,19 +583,19 @@ function RecordsTable({
     zammadCustomerId: number | null,
   ) => void;
 }) {
-  if (loading) return <Skeleton className="h-32 w-full bg-white/[0.04]" />;
+  if (loading) return <Skeleton className="h-32 w-full bg-glass" />;
   if (items.length === 0) {
     return (
-      <div className="rounded-md border border-white/[0.06] bg-white/[0.02] p-4 text-xs text-muted-foreground">
+      <div className="rounded-md border border-glass-strong bg-glass p-4 text-xs text-muted-foreground">
         {emptyReason}
       </div>
     );
   }
   return (
-    <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02]">
+    <div className="overflow-hidden rounded-xl border border-glass-strong bg-glass">
       <table className="w-full text-xs">
         <thead className="text-[10px] uppercase tracking-widest text-muted-foreground/60">
-          <tr className="border-b border-white/[0.04]">
+          <tr className="border-b border-glass">
             <th className="w-8 px-2 py-2"></th>
             <th className="px-2 py-2 text-left">Ticket</th>
             <th className="px-2 py-2 text-left">Title</th>
@@ -641,7 +641,7 @@ function RecordRow({
   return (
     <>
       <tr
-        className="cursor-pointer border-b border-white/[0.03] last:border-b-0 hover:bg-white/[0.02]"
+        className="cursor-pointer border-b border-glass last:border-b-0 hover:bg-glass-hover"
         onClick={() => setExpanded((v) => !v)}
       >
         <td className="px-2 py-1.5 align-top text-muted-foreground/40">
@@ -704,7 +704,7 @@ function RecordRow({
         </td>
       </tr>
       {expanded ? (
-        <tr className="border-b border-white/[0.03] bg-black/20">
+        <tr className="border-b border-glass bg-black/20">
           <td colSpan={6} className="px-4 py-3">
             {row.unresolvedReasons.length > 0 ? (
               <div className="mb-2 text-[11px]">

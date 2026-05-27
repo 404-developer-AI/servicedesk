@@ -168,11 +168,83 @@ public static class UserPreferencesEndpoints
             return Results.NoContent();
         }).WithName("DeleteWorkspacePreference").WithOpenApi();
 
+        // ── UI theme preference (v0.0.44) ──
+        //
+        // Cascade on GET: user override (user_preferences.ui:theme) →
+        // admin default (Ui.DefaultTheme) → factory 'light'. The source
+        // field lets the SPA show the right tooltip ("inherited from
+        // organisation default" vs "your choice").
+        //
+        // Auth scope: same RequireAgent gate as the rest of /api/preferences.
+        // The v0.1.x customer portal will gain a separate endpoint with
+        // RequireCustomer when it lands.
+
+        group.MapGet("/ui-theme", async (
+            HttpContext http, [FromServices] NpgsqlDataSource dataSource, [FromServices] ISettingsService settings, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            await using var conn = await dataSource.OpenConnectionAsync(ct);
+
+            var userPref = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
+                "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'ui:theme'",
+                new { userId }, cancellationToken: ct));
+            if (NormalizeTheme(userPref) is { } user)
+                return Results.Ok(new ThemePreference(user, "user"));
+
+            var adminDefault = NormalizeTheme(await settings.GetAsync<string>(SettingKeys.Ui.DefaultTheme, ct));
+            return Results.Ok(new ThemePreference(adminDefault ?? "light", "default"));
+        }).WithName("GetUiThemePreference").WithOpenApi();
+
+        group.MapPut("/ui-theme", async (
+            [FromBody] UpdateUiThemeRequest req,
+            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+        {
+            var normalized = NormalizeTheme(req.Theme);
+            if (normalized is null)
+                return Results.BadRequest(new { error = "Theme must be 'light' or 'dark'." });
+
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            await using var conn = await dataSource.OpenConnectionAsync(ct);
+            await conn.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO user_preferences (user_id, pref_key, pref_value)
+                VALUES (@userId, 'ui:theme', @value)
+                ON CONFLICT (user_id, pref_key) DO UPDATE
+                    SET pref_value = @value, updated_utc = now()
+                """,
+                new { userId, value = normalized }, cancellationToken: ct));
+
+            return Results.NoContent();
+        }).WithName("UpdateUiThemePreference").WithOpenApi();
+
+        group.MapDelete("/ui-theme", async (
+            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            await using var conn = await dataSource.OpenConnectionAsync(ct);
+            await conn.ExecuteAsync(new CommandDefinition(
+                "DELETE FROM user_preferences WHERE user_id = @userId AND pref_key = 'ui:theme'",
+                new { userId }, cancellationToken: ct));
+            return Results.NoContent();
+        }).WithName("ResetUiThemePreference").WithOpenApi();
+
         return app;
+    }
+
+    /// Returns the trimmed lowercase form when input is 'light' or 'dark',
+    /// otherwise null. Used both at write time (reject bad input) and at
+    /// read time (silently coerce a hand-edited DB row).
+    private static string? NormalizeTheme(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var v = raw.Trim().ToLowerInvariant();
+        return v is "light" or "dark" ? v : null;
     }
 
     public sealed record ColumnPreference(string Columns, string Source);
     public sealed record UpdateColumnPreferenceRequest(string Columns);
     public sealed record WorkspaceEntry(string Key, string Value);
     public sealed record SaveWorkspaceRequest(WorkspaceEntry[] Entries);
+    public sealed record ThemePreference(string Theme, string Source);
+    public sealed record UpdateUiThemeRequest(string Theme);
 }

@@ -32,6 +32,11 @@ export type AuthUser = {
   /// hidden on the Dashboard page. Size cycles small/medium/wide/full
   /// via the edit-mode UI; default empty (no tiles) on first upgrade.
   dashboardTiles: { tileId: string; size: DashboardTileSize }[];
+  /// v0.0.44 — Server-resolved effective theme (user preference falling
+  /// back to admin default, then to 'light'). The ThemeProvider syncs
+  /// from this on bootstrap so the first authenticated paint matches
+  /// the saved choice across devices.
+  effectiveTheme: "light" | "dark";
 };
 
 export type DashboardTileSize = "small" | "medium" | "wide" | "full";

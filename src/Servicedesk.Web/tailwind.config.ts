@@ -48,6 +48,25 @@ export default {
         },
         input: "hsl(var(--input))",
       },
+      // Semantic glass/overlay utilities — the alpha is baked into each CSS
+      // variable so Tailwind's opacity-modifier syntax (bg-glass/50) is NOT
+      // supported here. These exist as backgroundColor / borderColor and not
+      // under the generic `colors` map so they don't accidentally show up
+      // wherever a colour is consumed.
+      backgroundColor: {
+        glass: "hsl(var(--glass-bg))",
+        "glass-strong": "hsl(var(--glass-bg-strong))",
+        "glass-hover": "hsl(var(--glass-hover))",
+        overlay: "hsl(var(--overlay))",
+      },
+      borderColor: {
+        glass: "hsl(var(--glass-border))",
+        "glass-strong": "hsl(var(--glass-border-strong))",
+      },
+      divideColor: {
+        glass: "hsl(var(--glass-border))",
+        "glass-strong": "hsl(var(--glass-border-strong))",
+      },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",

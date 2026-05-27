@@ -422,15 +422,15 @@ export function NewTicketDrawer({
       {children && <Drawer.Trigger asChild>{children}</Drawer.Trigger>}
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
-        <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[90vh] max-w-2xl flex-col rounded-t-[var(--radius)] border border-white/10 bg-background/90 backdrop-blur-xl">
+        <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[90vh] max-w-2xl flex-col rounded-t-[var(--radius)] border border-glass bg-background/90 backdrop-blur-xl">
           <Drawer.Title className="sr-only">New ticket</Drawer.Title>
           <Drawer.Description className="sr-only">
             Create a new support ticket.
           </Drawer.Description>
 
-          <div className="mx-auto mt-3 h-1 w-10 shrink-0 rounded-full bg-white/20" aria-hidden />
+          <div className="mx-auto mt-3 h-1 w-10 shrink-0 rounded-full bg-glass-strong" aria-hidden />
 
-          <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 shrink-0">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-glass shrink-0">
             <h2 className="font-display text-display-sm font-semibold">New ticket</h2>
             {!taxonomyReady && (
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -447,13 +447,13 @@ export function NewTicketDrawer({
             <div className="flex min-h-0 flex-1 overflow-y-auto">
               <div className="flex flex-1 flex-col gap-0 min-[560px]:flex-row">
                 {/* Left column — Subject + Body */}
-                <div className="flex flex-1 flex-col gap-4 p-6 min-[560px]:border-r min-[560px]:border-white/10">
+                <div className="flex flex-1 flex-col gap-4 p-6 min-[560px]:border-r min-[560px]:border-glass">
                   <div>
                     <FormLabel>Subject *</FormLabel>
                     <Input
                       {...register("subject")}
                       placeholder="Brief summary of the issue"
-                      className="border-white/10 bg-white/[0.04] focus:border-white/20 focus:bg-white/[0.06]"
+                      className="border-glass bg-glass focus:border-glass-strong focus:bg-glass-strong"
                     />
                     <FieldError message={errors.subject?.message} />
                   </div>
@@ -506,10 +506,10 @@ export function NewTicketDrawer({
                       or flip internal/public; clearing removes the note
                       from the create payload entirely. */}
                   {noteState !== null && (
-                    <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
+                    <div className="rounded-lg border border-glass-strong bg-glass p-4">
                       <div className="mb-2 flex items-center justify-between">
                         <FormLabel>Initial note</FormLabel>
-                        <div className="flex items-center gap-1 rounded-md border border-white/[0.06] bg-white/[0.04] p-0.5 text-[11px]">
+                        <div className="flex items-center gap-1 rounded-md border border-glass-strong bg-glass p-0.5 text-[11px]">
                           <button
                             type="button"
                             onClick={() => setNoteState((s) => s ? { ...s, isInternal: true } : s)}
@@ -711,7 +711,7 @@ export function NewTicketDrawer({
             </div>
 
             {/* Footer */}
-            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-white/10 px-6 py-4">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-glass px-6 py-4">
               <div className="flex items-center gap-2">
                 {Object.keys(errors).length > 0 && (
                   <p className="text-xs text-destructive">

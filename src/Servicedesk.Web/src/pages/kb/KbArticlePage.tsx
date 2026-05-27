@@ -190,7 +190,7 @@ export function KbArticlePage({ articleId }: Props) {
             <button
               type="button"
               onClick={() => featured.mutate(!article.isFeatured)}
-              className="flex items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-foreground"
+              className="flex items-center justify-center gap-2 rounded-md border border-glass bg-glass px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-glass-hover hover:text-foreground"
             >
               {article.isFeatured ? (
                 <><StarOff className="h-3.5 w-3.5" /> Remove from featured</>
@@ -230,7 +230,7 @@ function StatusFlipButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="flex items-center justify-center gap-1.5 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+      className="flex items-center justify-center gap-1.5 rounded-md border border-glass bg-glass px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-glass-hover hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
     >
       {icon} {label}
     </button>

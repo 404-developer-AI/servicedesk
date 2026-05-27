@@ -311,6 +311,8 @@ public static class AuthEndpoints
         ITotpService totp,
         IUserService users,
         Servicedesk.Infrastructure.Dashboard.IDashboardTilesService dashboardTiles,
+        ISettingsService settings,
+        Npgsql.NpgsqlDataSource dataSource,
         CancellationToken ct)
     {
         var userIdClaim = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -349,6 +351,13 @@ public static class AuthEndpoints
         // size — the order returned here is the saved order.
         var tiles = await dashboardTiles.GetForUserAsync(userId, ct);
 
+        // v0.0.44 — Effective light/dark theme resolved server-side so the
+        // first paint after login agrees with the saved preference (or the
+        // admin default when the user has not yet picked). Cascade: user
+        // pref → Ui.DefaultTheme → 'light'. ThemeProvider on the client
+        // uses this to override the localStorage cache value if they differ.
+        var effectiveTheme = await ResolveEffectiveThemeAsync(userId, dataSource, settings, ct);
+
         return Results.Ok(new
         {
             user = new
@@ -366,9 +375,41 @@ public static class AuthEndpoints
                 searchEnabled,
                 activityFeedEnabled,
                 dashboardTiles = tiles.Select(t => new { tileId = t.TileId, size = t.Size }).ToList(),
+                effectiveTheme,
             },
             serverTimeUtc = DateTimeOffset.UtcNow,
         });
+    }
+
+    private static async Task<string> ResolveEffectiveThemeAsync(
+        Guid userId,
+        Npgsql.NpgsqlDataSource dataSource,
+        ISettingsService settings,
+        CancellationToken ct)
+    {
+        try
+        {
+            await using var conn = await dataSource.OpenConnectionAsync(ct);
+            var raw = await Dapper.SqlMapper.ExecuteScalarAsync<string?>(conn, new Dapper.CommandDefinition(
+                "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'ui:theme'",
+                new { userId }, cancellationToken: ct));
+            var user = Normalize(raw);
+            if (user is not null) return user;
+
+            var adminDefault = Normalize(await settings.GetAsync<string>(SettingKeys.Ui.DefaultTheme, ct));
+            return adminDefault ?? "light";
+        }
+        catch
+        {
+            return "light";
+        }
+
+        static string? Normalize(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return null;
+            var v = raw.Trim().ToLowerInvariant();
+            return v is "light" or "dark" ? v : null;
+        }
     }
 
     // ---- TOTP enrollment ---------------------------------------------------

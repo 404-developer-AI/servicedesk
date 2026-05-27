@@ -6,21 +6,23 @@ import { authStore } from "@/auth/authStore";
 const HEALTH_QUERY_KEY = ["system", "health"] as const;
 const REFETCH_MS = 30_000;
 
+// Light mode reads the dot+label as deeper jewel tones (700) for contrast on
+// a near-white pill; dark mode keeps the existing pale-300 glow palette.
 const STATUS_STYLES: Record<HealthStatus, { dot: string; label: string; text: string }> = {
   Ok: {
-    dot: "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]",
+    dot: "bg-emerald-500 dark:bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]",
     label: "All systems OK",
-    text: "text-emerald-300",
+    text: "text-emerald-700 dark:text-emerald-300",
   },
   Warning: {
-    dot: "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]",
+    dot: "bg-amber-500 dark:bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]",
     label: "Attention needed",
-    text: "text-amber-300",
+    text: "text-amber-700 dark:text-amber-300",
   },
   Critical: {
-    dot: "bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.7)]",
+    dot: "bg-rose-600 dark:bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.7)]",
     label: "Critical",
-    text: "text-rose-300",
+    text: "text-rose-700 dark:text-rose-300",
   },
 };
 
@@ -37,8 +39,8 @@ export function HealthPill() {
 
   if (isLoading || !data) {
     return (
-      <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-muted-foreground">
-        <span className="h-2 w-2 rounded-full bg-white/20" />
+      <div className="inline-flex items-center gap-2 rounded-full border border-glass bg-glass px-3 py-1.5 text-xs text-muted-foreground">
+        <span className="h-2 w-2 rounded-full bg-glass-strong" />
         Checking health…
       </div>
     );
@@ -54,7 +56,7 @@ export function HealthPill() {
 
   if (!isAdmin) {
     return (
-      <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs">
+      <div className="inline-flex items-center gap-2 rounded-full border border-glass bg-glass px-3 py-1.5 text-xs">
         {content}
       </div>
     );
@@ -64,7 +66,7 @@ export function HealthPill() {
     <button
       type="button"
       onClick={() => navigate({ to: "/settings/health" })}
-      className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs transition-colors hover:border-white/20 hover:bg-white/[0.08]"
+      className="inline-flex items-center gap-2 rounded-full border border-glass bg-glass px-3 py-1.5 text-xs transition-colors hover:border-glass-strong hover:bg-glass-hover"
     >
       {content}
       <span className="text-muted-foreground">›</span>

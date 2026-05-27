@@ -48,7 +48,7 @@ function AgentQueueRow({
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+    <div className="flex flex-col gap-2 rounded-lg border border-glass-strong bg-glass px-4 py-3">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-foreground">{agent.email}</p>
@@ -77,7 +77,7 @@ function AgentQueueRow({
                   "disabled:opacity-50 disabled:cursor-not-allowed",
                   granted
                     ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-400"
-                    : "border-white/[0.08] bg-white/[0.02] text-muted-foreground hover:border-white/20 hover:text-foreground",
+                    : "border-glass-strong bg-glass text-muted-foreground hover:border-glass-strong hover:text-foreground",
                 )}
               >
                 <span
@@ -98,7 +98,7 @@ function AgentQueueRow({
 
 function AgentRowSkeleton() {
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+    <div className="flex flex-col gap-2 rounded-lg border border-glass-strong bg-glass px-4 py-3">
       <div className="flex items-center justify-between">
         <Skeleton className="h-4 w-48" />
         <Skeleton className="h-4 w-16" />
@@ -146,7 +146,7 @@ export function QueueAccessSettingsPage() {
             )}
           </div>
         </div>
-        <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+        <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
           Admin only
         </Badge>
       </header>
@@ -163,7 +163,7 @@ export function QueueAccessSettingsPage() {
             ))}
           </div>
         ) : !agents || agents.length === 0 ? (
-          <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-6 py-10 flex flex-col items-center justify-center gap-3 text-center">
+          <div className="rounded-lg border border-glass-strong bg-glass px-6 py-10 flex flex-col items-center justify-center gap-3 text-center">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 border border-primary/20">
               <Shield className="h-5 w-5 text-primary/60" />
             </div>

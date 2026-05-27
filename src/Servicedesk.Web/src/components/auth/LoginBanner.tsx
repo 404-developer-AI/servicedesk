@@ -71,29 +71,45 @@ type Palette = {
   title: string;
 };
 
+// Palette pairs: light-mode reads dark text on a pale tinted background;
+// dark-mode reads pale text on a translucent tint over the dark canvas.
+// Both keep the same hue so the semantic colour (info=sky, warning=amber,
+// error=rose) is recognisable regardless of theme.
 const PALETTES: Record<LoginBannerType, Palette> = {
   info: {
-    container: "border-sky-500/30 bg-sky-500/[0.08] text-sky-100",
+    container:
+      "border-sky-400/50 bg-sky-50 text-sky-900 " +
+      "dark:border-sky-500/30 dark:bg-sky-500/[0.08] dark:text-sky-100",
     icon: Info,
-    icon_: "text-sky-300",
-    label: "text-sky-200/90",
-    body: "text-sky-100/90 [&_a]:underline [&_a]:underline-offset-2 [&_a]:text-sky-100 [&_a:hover]:text-white",
+    icon_: "text-sky-600 dark:text-sky-300",
+    label: "text-sky-700 dark:text-sky-200/90",
+    body:
+      "text-sky-900 [&_a]:underline [&_a]:underline-offset-2 [&_a]:text-sky-700 [&_a:hover]:text-sky-900 " +
+      "dark:text-sky-100/90 dark:[&_a]:text-sky-100 dark:[&_a:hover]:text-white",
     title: "Notice",
   },
   warning: {
-    container: "border-amber-500/30 bg-amber-500/[0.08] text-amber-100",
+    container:
+      "border-amber-400/60 bg-amber-50 text-amber-900 " +
+      "dark:border-amber-500/30 dark:bg-amber-500/[0.08] dark:text-amber-100",
     icon: AlertTriangle,
-    icon_: "text-amber-300",
-    label: "text-amber-200/90",
-    body: "text-amber-100/90 [&_a]:underline [&_a]:underline-offset-2 [&_a]:text-amber-100 [&_a:hover]:text-white",
+    icon_: "text-amber-600 dark:text-amber-300",
+    label: "text-amber-700 dark:text-amber-200/90",
+    body:
+      "text-amber-900 [&_a]:underline [&_a]:underline-offset-2 [&_a]:text-amber-700 [&_a:hover]:text-amber-900 " +
+      "dark:text-amber-100/90 dark:[&_a]:text-amber-100 dark:[&_a:hover]:text-white",
     title: "Warning",
   },
   error: {
-    container: "border-rose-500/40 bg-rose-500/[0.10] text-rose-100",
+    container:
+      "border-rose-400/60 bg-rose-50 text-rose-900 " +
+      "dark:border-rose-500/40 dark:bg-rose-500/[0.10] dark:text-rose-100",
     icon: AlertCircle,
-    icon_: "text-rose-300",
-    label: "text-rose-200/90",
-    body: "text-rose-100/90 [&_a]:underline [&_a]:underline-offset-2 [&_a]:text-rose-100 [&_a:hover]:text-white",
+    icon_: "text-rose-600 dark:text-rose-300",
+    label: "text-rose-700 dark:text-rose-200/90",
+    body:
+      "text-rose-900 [&_a]:underline [&_a]:underline-offset-2 [&_a]:text-rose-700 [&_a:hover]:text-rose-900 " +
+      "dark:text-rose-100/90 dark:[&_a]:text-rose-100 dark:[&_a:hover]:text-white",
     title: "Error",
   },
 };

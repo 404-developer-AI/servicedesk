@@ -54,7 +54,7 @@ export function AuditLogPage() {
               tampering with any earlier row invalidates every subsequent hash.
             </p>
           </div>
-          <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+          <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
             Admin only
           </Badge>
         </header>
@@ -69,7 +69,7 @@ export function AuditLogPage() {
                   setEventType(e.target.value);
                   setCursor(undefined);
                 }}
-                className="h-9 rounded-md border border-white/10 bg-white/[0.04] px-2 text-sm text-foreground outline-none focus:border-primary/60"
+                className="h-9 rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus:border-primary/60"
               >
                 {EVENT_TYPES.map((t) => (
                   <option key={t} value={t} className="bg-background">
@@ -117,7 +117,7 @@ export function AuditLogPage() {
             </div>
           ) : data && data.items.length > 0 ? (
             <table data-testid="audit-table" className="w-full text-left text-sm">
-              <thead className="sticky top-0 z-10 bg-[hsl(245_14%_12%)] text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-white/10">
+              <thead className="sticky top-0 z-10 bg-glass-strong text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-glass">
                 <tr>
                   <th className="px-4 py-3 font-medium">Time</th>
                   <th className="px-4 py-3 font-medium">Event</th>
@@ -131,7 +131,7 @@ export function AuditLogPage() {
                 {data.items.map((entry) => (
                   <tr
                     key={entry.id}
-                    className="cursor-pointer border-b border-white/5 transition-colors hover:bg-white/[0.04]"
+                    className="cursor-pointer border-b border-glass transition-colors hover:bg-glass-hover"
                     onClick={() => setSelected(entry)}
                   >
                     <td className="px-4 py-3 font-mono text-xs">
@@ -143,7 +143,7 @@ export function AuditLogPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge className="border border-white/10 bg-white/[0.05] font-mono text-[10px] font-normal text-foreground">
+                      <Badge className="border border-glass bg-glass font-mono text-[10px] font-normal text-foreground">
                         {entry.eventType}
                       </Badge>
                     </td>

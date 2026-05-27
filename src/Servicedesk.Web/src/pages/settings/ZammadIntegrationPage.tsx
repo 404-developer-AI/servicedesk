@@ -60,9 +60,9 @@ const STATE_LABEL: Record<
   { tone: string; text: string; dot: string }
 > = {
   Disabled: {
-    tone: "border-white/15 bg-white/[0.06] text-muted-foreground",
+    tone: "border-glass-strong bg-glass-strong text-muted-foreground",
     text: "Disabled",
-    dot: "bg-white/40",
+    dot: "bg-glass-strong",
   },
   NotConfigured: {
     tone: "border-amber-400/30 bg-amber-500/[0.08] text-amber-200",
@@ -214,14 +214,14 @@ export function ZammadIntegrationPage() {
             <span className={cn("h-1.5 w-1.5 rounded-full", stateMeta.dot)} />
             {stateMeta.text}
           </span>
-          <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+          <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
             Admin only
           </Badge>
         </div>
       </header>
 
       {/* ---- Base URL ------------------------------------------------ */}
-      <section className="space-y-4 rounded-xl border border-white/[0.06] bg-white/[0.02] p-5">
+      <section className="space-y-4 rounded-xl border border-glass-strong bg-glass p-5">
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <Globe className="h-4 w-4 text-muted-foreground" />
           Base URL
@@ -239,7 +239,7 @@ export function ZammadIntegrationPage() {
             placeholder={baseUrl || "https://desk.example.com"}
             value={urlDraft}
             onChange={(e) => setUrlDraft(e.target.value)}
-            className="h-9 w-96 bg-white/[0.03] font-mono text-sm"
+            className="h-9 w-96 bg-glass font-mono text-sm"
           />
           <Button
             size="sm"
@@ -267,7 +267,7 @@ export function ZammadIntegrationPage() {
       </section>
 
       {/* ---- API token ----------------------------------------------- */}
-      <section className="space-y-4 rounded-xl border border-white/[0.06] bg-white/[0.02] p-5">
+      <section className="space-y-4 rounded-xl border border-glass-strong bg-glass p-5">
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <KeyRound className="h-4 w-4 text-muted-foreground" />
           API token
@@ -284,7 +284,7 @@ export function ZammadIntegrationPage() {
             placeholder={hasToken ? "Replace token…" : "Paste API token…"}
             value={tokenDraft}
             onChange={(e) => setTokenDraft(e.target.value)}
-            className="h-9 w-80 bg-white/[0.03] font-mono text-sm"
+            className="h-9 w-80 bg-glass font-mono text-sm"
           />
           <Button
             size="sm"
@@ -385,13 +385,13 @@ export function ZammadIntegrationPage() {
       <TicketPickerSection ready={state === "Ready"} />
 
       {/* ---- Behaviour ----------------------------------------------- */}
-      <section className="space-y-1 rounded-xl border border-white/[0.06] bg-white/[0.02] p-5">
+      <section className="space-y-1 rounded-xl border border-glass-strong bg-glass p-5">
         <div className="mb-3 text-sm font-medium text-foreground">Behaviour</div>
         {settingsList.isLoading ? (
           <div className="space-y-2">
-            <Skeleton className="h-10 w-full bg-white/[0.04]" />
-            <Skeleton className="h-10 w-full bg-white/[0.04]" />
-            <Skeleton className="h-10 w-full bg-white/[0.04]" />
+            <Skeleton className="h-10 w-full bg-glass" />
+            <Skeleton className="h-10 w-full bg-glass" />
+            <Skeleton className="h-10 w-full bg-glass" />
           </div>
         ) : (
           <>
@@ -436,7 +436,7 @@ export function ZammadIntegrationPage() {
       </section>
 
       {/* ---- Integration audit log ---------------------------------- */}
-      <section className="space-y-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-5">
+      <section className="space-y-3 rounded-xl border border-glass-strong bg-glass p-5">
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <History className="h-4 w-4 text-muted-foreground" />
           Audit log
@@ -549,7 +549,7 @@ function TicketPickerSection({ ready }: { ready: boolean }) {
     : selectedTicketIds.size;
 
   return (
-    <section className="space-y-4 rounded-xl border border-white/[0.06] bg-white/[0.02] p-5">
+    <section className="space-y-4 rounded-xl border border-glass-strong bg-glass p-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <Ticket className="h-4 w-4 text-muted-foreground" />
@@ -581,7 +581,7 @@ function TicketPickerSection({ ready }: { ready: boolean }) {
                   if (e.key === "Enter") runSearch();
                 }}
                 placeholder="Free text (ticket number, subject, customer)…"
-                className="h-9 w-72 bg-white/[0.03] pl-8 text-sm"
+                className="h-9 w-72 bg-glass pl-8 text-sm"
               />
             </div>
             <MultiSelectFilter
@@ -671,7 +671,7 @@ function TicketPickerSection({ ready }: { ready: boolean }) {
                   if (e.target.checked) setSelectedTicketIds(new Set());
                 }}
                 disabled={!result || !result.total || result.total === 0}
-                className="h-3.5 w-3.5 rounded border-white/20 bg-white/[0.04] accent-violet-500"
+                className="h-3.5 w-3.5 rounded border-glass-strong bg-glass accent-violet-500"
               />
               <span>Select all matching ({result?.total?.toLocaleString() ?? "—"})</span>
             </label>
@@ -805,7 +805,7 @@ function DryRunActions({
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.04] pt-3">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-glass pt-3">
       <Link
         to="/settings/integrations/zammad/runs"
         className="text-xs text-muted-foreground/70 underline-offset-2 hover:text-foreground hover:underline"
@@ -829,7 +829,7 @@ function DryRunActions({
             <>
               Dry-run
               {selectionCount && selectionCount > 0 ? (
-                <span className="ml-1.5 rounded-md bg-white/10 px-1.5 py-0.5 text-[10px]">
+                <span className="ml-1.5 rounded-md bg-glass-strong px-1.5 py-0.5 text-[10px]">
                   {selectionCount.toLocaleString()}
                 </span>
               ) : null}
@@ -871,7 +871,7 @@ function SelectionBadge({
     );
   }
   return (
-    <Badge className="border border-white/10 bg-white/[0.04] text-xs font-normal text-muted-foreground">
+    <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
       Nothing selected
     </Badge>
   );
@@ -917,7 +917,7 @@ function MultiSelectFilter({
         <Button
           size="sm"
           variant="ghost"
-          className="h-9 gap-1.5 border border-white/[0.08] bg-white/[0.03] text-xs"
+          className="h-9 gap-1.5 border border-glass-strong bg-glass text-xs"
         >
           {icon}
           <span className="text-muted-foreground">{label}:</span>
@@ -927,13 +927,13 @@ function MultiSelectFilter({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="max-h-72 w-64 overflow-y-auto border-white/[0.08] bg-zinc-950/95 p-2 backdrop-blur"
+        className="max-h-72 w-64 overflow-y-auto border-glass-strong bg-popover/95 p-2 backdrop-blur"
       >
         {loading ? (
           <div className="space-y-1">
-            <Skeleton className="h-5 w-full bg-white/[0.04]" />
-            <Skeleton className="h-5 w-full bg-white/[0.04]" />
-            <Skeleton className="h-5 w-full bg-white/[0.04]" />
+            <Skeleton className="h-5 w-full bg-glass" />
+            <Skeleton className="h-5 w-full bg-glass" />
+            <Skeleton className="h-5 w-full bg-glass" />
           </div>
         ) : options.length === 0 ? (
           <p className="px-2 py-3 text-xs text-muted-foreground/60">None available.</p>
@@ -943,7 +943,7 @@ function MultiSelectFilter({
               <button
                 type="button"
                 onClick={() => onChange([])}
-                className="mb-1 w-full rounded px-2 py-1 text-left text-[11px] text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
+                className="mb-1 w-full rounded px-2 py-1 text-left text-[11px] text-muted-foreground hover:bg-glass-hover hover:text-foreground"
               >
                 Clear selection
               </button>
@@ -955,14 +955,14 @@ function MultiSelectFilter({
                   key={opt.id}
                   className={cn(
                     "flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs",
-                    checked ? "bg-white/[0.04] text-foreground" : "text-muted-foreground hover:bg-white/[0.02]",
+                    checked ? "bg-glass text-foreground" : "text-muted-foreground hover:bg-glass-hover",
                   )}
                 >
                   <input
                     type="checkbox"
                     checked={checked}
                     onChange={() => toggleId(opt.id)}
-                    className="h-3.5 w-3.5 rounded border-white/20 bg-white/[0.04] accent-violet-500"
+                    className="h-3.5 w-3.5 rounded border-glass-strong bg-glass accent-violet-500"
                   />
                   <span className="truncate">{opt.label}</span>
                 </label>
@@ -1009,7 +1009,7 @@ function ResultTable({
     return m;
   }, [states]);
   if (loading && !page) {
-    return <Skeleton className="h-48 w-full bg-white/[0.04]" />;
+    return <Skeleton className="h-48 w-full bg-glass" />;
   }
   if (error) {
     return (
@@ -1020,16 +1020,16 @@ function ResultTable({
   }
   if (!page || page.items.length === 0) {
     return (
-      <div className="rounded-md border border-white/[0.06] bg-white/[0.02] p-4 text-xs text-muted-foreground/70">
+      <div className="rounded-md border border-glass-strong bg-glass p-4 text-xs text-muted-foreground/70">
         No matches. Adjust the filters or run the search again.
       </div>
     );
   }
   return (
-    <div className="overflow-hidden rounded-md border border-white/[0.06] bg-white/[0.02]">
+    <div className="overflow-hidden rounded-md border border-glass-strong bg-glass">
       <table className="w-full text-xs">
         <thead className="text-[10px] uppercase tracking-widest text-muted-foreground/60">
-          <tr className="border-b border-white/[0.04]">
+          <tr className="border-b border-glass">
             <th className="w-8 px-2 py-2"></th>
             <th className="px-2 py-2 text-left">#</th>
             <th className="px-2 py-2 text-left">Title</th>
@@ -1046,9 +1046,9 @@ function ResultTable({
               <tr
                 key={t.id}
                 className={cn(
-                  "border-b border-white/[0.03] last:border-b-0",
+                  "border-b border-glass last:border-b-0",
                   checked ? "bg-violet-500/[0.05]" : "",
-                  "hover:bg-white/[0.02]",
+                  "hover:bg-glass-hover",
                 )}
               >
                 <td className="px-2 py-1.5 align-top">
@@ -1057,7 +1057,7 @@ function ResultTable({
                     checked={checked}
                     onChange={() => onToggleRow(t.id)}
                     disabled={selectAllMatching}
-                    className="h-3.5 w-3.5 rounded border-white/20 bg-white/[0.04] accent-violet-500 disabled:opacity-40"
+                    className="h-3.5 w-3.5 rounded border-glass-strong bg-glass accent-violet-500 disabled:opacity-40"
                   />
                 </td>
                 <td className="px-2 py-1.5 align-top whitespace-nowrap font-mono text-muted-foreground">

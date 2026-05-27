@@ -5,7 +5,22 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Servicedesk</title>
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      // Anti-FOUC: apply the persisted theme to <html> before any CSS/JS so
+      // the first paint matches the user's last choice. Light is the factory
+      // default (v0.0.44 decision); only an explicit "dark" value flips us.
+      (function () {
+        try {
+          var t = window.localStorage.getItem("sd-theme");
+          var dark = t === "dark";
+          if (dark) document.documentElement.classList.add("dark");
+          document.documentElement.style.colorScheme = dark ? "dark" : "light";
+        } catch (_) {
+          /* localStorage blocked — Light default applies. */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

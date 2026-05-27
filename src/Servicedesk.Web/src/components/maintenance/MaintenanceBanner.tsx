@@ -42,17 +42,19 @@ export function MaintenanceBanner({ variant = "shell", className }: Props) {
     return (
       <div
         className={cn(
-          "mx-auto mb-4 flex w-full max-w-[420px] items-start gap-3 rounded-[var(--radius)] border border-amber-500/30 bg-amber-500/[0.08] px-4 py-3 text-xs text-amber-100 backdrop-blur",
+          "mx-auto mb-4 flex w-full max-w-[420px] items-start gap-3 rounded-[var(--radius)] border px-4 py-3 text-xs backdrop-blur",
+          "border-amber-400/60 bg-amber-50 text-amber-900",
+          "dark:border-amber-500/30 dark:bg-amber-500/[0.08] dark:text-amber-100",
           className,
         )}
         role="status"
       >
-        <Wrench className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+        <Wrench className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
         <div className="space-y-1">
-          <p className="font-medium uppercase tracking-wider text-amber-200/90 text-[10px]">
+          <p className="font-medium uppercase tracking-wider text-[10px] text-amber-700 dark:text-amber-200/90">
             Maintenance{window ? ` · ${window}` : ""}
           </p>
-          <p className="leading-snug text-amber-100/90">{message}</p>
+          <p className="leading-snug text-amber-900 dark:text-amber-100/90">{message}</p>
         </div>
       </div>
     );
@@ -61,17 +63,19 @@ export function MaintenanceBanner({ variant = "shell", className }: Props) {
   return (
     <div
       className={cn(
-        "border-b border-amber-500/30 bg-gradient-to-r from-amber-500/[0.10] via-amber-500/[0.07] to-transparent px-6 py-2 text-sm text-amber-100 backdrop-blur",
+        "border-b px-6 py-2 text-sm backdrop-blur",
+        "border-amber-400/60 bg-amber-50 text-amber-900",
+        "dark:border-amber-500/30 dark:bg-gradient-to-r dark:from-amber-500/[0.10] dark:via-amber-500/[0.07] dark:to-transparent dark:text-amber-100",
         className,
       )}
       role="status"
     >
       <div className="flex items-center gap-3">
-        <Wrench className="h-4 w-4 shrink-0 text-amber-300" />
+        <Wrench className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
         <div className="flex-1 min-w-0">
-          <span className="font-medium text-amber-200">Maintenance</span>
-          {window && <span className="ml-2 text-amber-200/80">· {window}</span>}
-          <span className="ml-3 text-amber-100/90">{message}</span>
+          <span className="font-medium text-amber-800 dark:text-amber-200">Maintenance</span>
+          {window && <span className="ml-2 text-amber-700 dark:text-amber-200/80">· {window}</span>}
+          <span className="ml-3 text-amber-900 dark:text-amber-100/90">{message}</span>
         </div>
       </div>
     </div>

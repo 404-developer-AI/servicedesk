@@ -274,7 +274,7 @@ export function TriggersSettingsPage({ initialEditId }: { initialEditId?: string
           <Button
             variant="outline"
             onClick={() => setGroupDialog("new")}
-            className="border-white/10 bg-white/[0.04] hover:bg-white/[0.08]"
+            className="border-glass bg-glass hover:bg-glass-hover"
           >
             <FolderPlus className="h-4 w-4" />
             New group
@@ -355,7 +355,7 @@ export function TriggersSettingsPage({ initialEditId }: { initialEditId?: string
                 toggleLoading={false}
               />
             ) : activeDrag?.kind === "group" ? (
-              <div className="rounded-lg border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-medium shadow-lg">
+              <div className="rounded-lg border border-glass bg-glass-strong px-4 py-3 text-sm font-medium shadow-lg">
                 {activeDrag.group.name}
               </div>
             ) : null}
@@ -449,7 +449,7 @@ function UngroupedSection({
 }) {
   if (items.length === 0) return null;
   return (
-    <section className="rounded-xl border border-white/[0.05] bg-white/[0.01]">
+    <section className="rounded-xl border border-glass bg-glass">
       <button
         type="button"
         onClick={onToggleCollapsed}
@@ -509,8 +509,8 @@ function SortableGroupSection(props: {
       ref={sortable.setNodeRef}
       style={style}
       className={cn(
-        "rounded-xl border bg-white/[0.02]",
-        sortable.isDragging ? "border-violet-400/40 opacity-50" : "border-white/[0.06]",
+        "rounded-xl border bg-glass",
+        sortable.isDragging ? "border-violet-400/40 opacity-50" : "border-glass-strong",
       )}
     >
       <div className="flex items-center gap-2 px-3 py-2.5">
@@ -518,7 +518,7 @@ function SortableGroupSection(props: {
           type="button"
           {...sortable.attributes}
           {...sortable.listeners}
-          className="cursor-grab touch-none rounded p-1 text-muted-foreground/50 hover:bg-white/[0.04] hover:text-muted-foreground"
+          className="cursor-grab touch-none rounded p-1 text-muted-foreground/50 hover:bg-glass-hover hover:text-muted-foreground"
           aria-label="Drag group"
         >
           <GripVertical className="h-4 w-4" />
@@ -555,7 +555,7 @@ function SortableGroupSection(props: {
           <DropZone id={group.id}>
             <div className="space-y-2 px-2 pb-2">
               {items.length === 0 ? (
-                <div className="rounded-md border border-dashed border-white/10 px-3 py-6 text-center text-xs text-muted-foreground/60">
+                <div className="rounded-md border border-dashed border-glass px-3 py-6 text-center text-xs text-muted-foreground/60">
                   Drop triggers here
                 </div>
               ) : (
@@ -645,11 +645,11 @@ function TriggerRow({
   return (
     <div
       className={cn(
-        "rounded-lg border bg-white/[0.02] px-3 py-3 transition-colors",
+        "rounded-lg border bg-glass px-3 py-3 transition-colors",
         item.isActive
-          ? "border-white/[0.06] hover:bg-white/[0.04]"
-          : "border-white/[0.04] opacity-70",
-        isOverlay && "border-violet-400/40 bg-[hsl(240_10%_5%/0.95)] shadow-2xl",
+          ? "border-glass-strong hover:bg-glass-hover"
+          : "border-glass opacity-70",
+        isOverlay && "border-violet-400/40 bg-popover/95 shadow-2xl",
       )}
     >
       <div className="flex items-center gap-2">
@@ -658,7 +658,7 @@ function TriggerRow({
             type="button"
             {...(dragAttributes ?? {})}
             {...(dragListeners ?? {})}
-            className="cursor-grab touch-none rounded p-1 text-muted-foreground/40 hover:bg-white/[0.04] hover:text-muted-foreground"
+            className="cursor-grab touch-none rounded p-1 text-muted-foreground/40 hover:bg-glass-hover hover:text-muted-foreground"
             aria-label="Drag trigger"
           >
             <GripVertical className="h-4 w-4" />
@@ -680,7 +680,7 @@ function TriggerRow({
             </button>
             <ActivatorBadge kind={item.activatorKind} mode={item.activatorMode} />
             {item.locale && (
-              <span className="rounded-full border border-white/8 bg-white/[0.04] px-2 py-0.5 text-[10px] text-muted-foreground">
+              <span className="rounded-full border border-glass bg-glass px-2 py-0.5 text-[10px] text-muted-foreground">
                 {item.locale}
               </span>
             )}
@@ -772,7 +772,7 @@ function ActivatorBadge({ kind, mode }: { kind: string; mode: string }) {
 
 function EmptyState({ onNew }: { onNew: () => void }) {
   return (
-    <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-6 py-12 flex flex-col items-center justify-center gap-4 text-center">
+    <div className="rounded-lg border border-glass-strong bg-glass px-6 py-12 flex flex-col items-center justify-center gap-4 text-center">
       <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 border border-primary/20">
         <Zap className="h-5 w-5 text-primary/60" />
       </div>
@@ -875,7 +875,7 @@ function GroupDialog({
                 type="color"
                 value={color}
                 onChange={(e) => setColor(e.target.value)}
-                className="h-9 w-12 cursor-pointer rounded-md border border-white/10 bg-transparent"
+                className="h-9 w-12 cursor-pointer rounded-md border border-glass bg-transparent"
               />
               <Input value={color} onChange={(e) => setColor(e.target.value)} className="font-mono text-xs" />
             </div>

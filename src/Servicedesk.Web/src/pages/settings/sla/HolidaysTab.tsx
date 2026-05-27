@@ -63,7 +63,7 @@ export function HolidaysTab() {
         <label className="space-y-1 text-xs text-muted-foreground">
           Schema
           <select
-            className="h-9 w-full rounded-md border border-white/[0.06] bg-white/[0.02] px-2 text-sm"
+            className="h-9 w-full rounded-md border border-glass-strong bg-glass px-2 text-sm"
             value={active.id}
             onChange={(e) => setSchemaId(e.target.value)}
           >
@@ -79,7 +79,7 @@ export function HolidaysTab() {
         <label className="space-y-1 text-xs text-muted-foreground">
           Country (auto-sync)
           <select
-            className="h-9 w-full rounded-md border border-white/[0.06] bg-white/[0.02] px-2 text-sm"
+            className="h-9 w-full rounded-md border border-glass-strong bg-glass px-2 text-sm"
             value={active.countryCode}
             onChange={(e) => sync.mutate(e.target.value)}
           >
@@ -101,7 +101,7 @@ export function HolidaysTab() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-end gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] p-3">
+      <div className="flex flex-wrap items-end gap-2 rounded-md border border-glass-strong bg-glass p-3">
         <label className="space-y-1 text-xs text-muted-foreground">
           Add date
           <Input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} />
@@ -118,9 +118,9 @@ export function HolidaysTab() {
         </Button>
       </div>
 
-      <div className="overflow-hidden rounded-md border border-white/[0.06]">
+      <div className="overflow-hidden rounded-md border border-glass-strong">
         <table className="w-full text-sm">
-          <thead className="bg-white/[0.02] text-xs uppercase tracking-wider text-muted-foreground/60">
+          <thead className="bg-glass text-xs uppercase tracking-wider text-muted-foreground/60">
             <tr>
               <th className="px-3 py-2 text-left">Date</th>
               <th className="px-3 py-2 text-left">Name</th>
@@ -130,7 +130,7 @@ export function HolidaysTab() {
           </thead>
           <tbody>
             {(holidays.data ?? []).map((h) => (
-              <tr key={h.id} className="border-t border-white/[0.04]">
+              <tr key={h.id} className="border-t border-glass">
                 <td className="px-3 py-2">{h.date.substring(0, 10)}</td>
                 <td className="px-3 py-2">{h.name}</td>
                 <td className="px-3 py-2 text-xs text-muted-foreground">{h.source}</td>

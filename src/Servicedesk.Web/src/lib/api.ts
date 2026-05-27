@@ -69,6 +69,9 @@ export type AuthUserPayload = {
   kbEnabled: boolean;
   searchEnabled: boolean;
   dashboardTiles: string[];
+  // v0.0.44 — server-resolved theme (user pref → admin default → 'light').
+  // ThemeProvider on the client uses this as the source of truth on bootstrap.
+  effectiveTheme: "light" | "dark";
 };
 
 export type MeResponse = {
@@ -210,6 +213,10 @@ export const systemApi = {
   health: () => request<{ status: HealthStatus }>("GET", "/api/system/health"),
   maintenance: () => request<MaintenanceState>("GET", "/api/system/maintenance"),
   loginBanner: () => request<LoginBannerState>("GET", "/api/system/login-banner"),
+  // v0.0.44 — anonymous read of the admin-wide default theme so the login
+  // page can paint with the right palette on first visit (no localStorage yet).
+  defaultTheme: () =>
+    request<{ theme: "light" | "dark" }>("GET", "/api/system/default-theme"),
 };
 
 export type IncidentSeverity = "Warning" | "Critical";
@@ -1816,6 +1823,17 @@ export const preferencesApi = {
       body: JSON.stringify({ entries }),
     });
   },
+  // v0.0.44 — user-level light/dark theme override. Source = "user" when the
+  // value comes from the user_preferences row, "default" when it falls back
+  // to the admin-wide Ui.DefaultTheme setting.
+  getUiTheme: () =>
+    request<{ theme: "light" | "dark"; source: "user" | "default" }>(
+      "GET",
+      "/api/preferences/ui-theme",
+    ),
+  setUiTheme: (theme: "light" | "dark") =>
+    request<void>("PUT", "/api/preferences/ui-theme", { theme }),
+  resetUiTheme: () => request<void>("DELETE", "/api/preferences/ui-theme"),
 };
 
 // ---- SLA ----

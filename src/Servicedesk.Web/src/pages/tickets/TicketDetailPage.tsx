@@ -78,7 +78,7 @@ function TicketNumber({ number }: { number: number }) {
       type="button"
       onClick={handleCopy}
       title="Click to copy"
-      className="group flex items-center gap-1 text-xs font-mono font-medium px-2 py-0.5 rounded border border-white/10 bg-white/[0.05] text-muted-foreground hover:bg-white/[0.08] transition-colors"
+      className="group flex items-center gap-1 text-xs font-mono font-medium px-2 py-0.5 rounded border border-glass bg-glass text-muted-foreground hover:bg-glass-hover transition-colors"
     >
       #{number}
       {copied ? (
@@ -142,7 +142,7 @@ function EditableSubject({
         <button
           type="button"
           onClick={() => setEditing(true)}
-          className="shrink-0 p-1 rounded-md text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-white/[0.06] transition-all"
+          className="shrink-0 p-1 rounded-md text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-glass-hover transition-all"
           title="Edit subject"
         >
           <Pencil className="h-3.5 w-3.5" />
@@ -177,7 +177,7 @@ function EditableSubject({
       <button
         type="button"
         onClick={cancel}
-        className="shrink-0 p-1.5 rounded-md text-muted-foreground hover:bg-white/[0.06] transition-colors"
+        className="shrink-0 p-1.5 rounded-md text-muted-foreground hover:bg-glass-hover transition-colors"
         title="Cancel"
       >
         <X className="h-4 w-4" />
@@ -225,7 +225,7 @@ function EditableDescription({
         <button
           type="button"
           onClick={() => setEditing(true)}
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border border-white/10 bg-white/[0.03] text-muted-foreground/60 hover:bg-white/[0.06] hover:text-muted-foreground hover:border-white/15 transition-colors text-sm"
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border border-glass bg-glass text-muted-foreground/60 hover:bg-glass-hover hover:text-muted-foreground hover:border-glass-strong transition-colors text-sm"
         >
           <Pencil className="h-4 w-4 shrink-0" />
           Add a description...
@@ -235,13 +235,13 @@ function EditableDescription({
 
     return (
       <div
-        className="group relative rounded-[var(--radius)] border border-white/10 bg-white/[0.03] px-4 py-3 cursor-pointer hover:bg-white/[0.06] hover:border-white/15 transition-colors max-h-32 overflow-y-auto"
+        className="group relative rounded-[var(--radius)] border border-glass bg-glass px-4 py-3 cursor-pointer hover:bg-glass-hover hover:border-glass-strong transition-colors max-h-32 overflow-y-auto"
         onClick={() => setEditing(true)}
         title="Click to edit description"
       >
         <button
           type="button"
-          className="absolute top-2 right-2 p-1 rounded-md text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-white/[0.06] transition-all z-10"
+          className="absolute top-2 right-2 p-1 rounded-md text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-glass-hover transition-all z-10"
         >
           <Pencil className="h-3.5 w-3.5" />
         </button>
@@ -256,7 +256,7 @@ function EditableDescription({
   }
 
   return (
-    <div className="rounded-[var(--radius)] border border-white/10 bg-white/[0.04] p-4 space-y-3">
+    <div className="rounded-[var(--radius)] border border-glass bg-glass p-4 space-y-3">
       <RichTextEditor
         content={draftHtml}
         onChange={setDraftHtml}
@@ -267,7 +267,7 @@ function EditableDescription({
         <button
           type="button"
           onClick={cancel}
-          className="px-3 py-1.5 text-xs rounded-md text-muted-foreground hover:bg-white/[0.06] transition-colors"
+          className="px-3 py-1.5 text-xs rounded-md text-muted-foreground hover:bg-glass-hover transition-colors"
         >
           Cancel
         </button>
@@ -310,20 +310,20 @@ function ExportPdfButton({ ticketId }: { ticketId: string }) {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md border border-white/10 bg-white/[0.04] text-muted-foreground hover:bg-white/[0.08] hover:text-foreground transition-colors"
+        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md border border-glass bg-glass text-muted-foreground hover:bg-glass-hover hover:text-foreground transition-colors"
         title="Export as PDF"
       >
         <FileDown className="h-3.5 w-3.5" />
         PDF
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1.5 z-50 w-56 rounded-lg border border-white/10 bg-background/95 backdrop-blur-xl p-3 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.6)]">
+        <div className="absolute right-0 top-full mt-1.5 z-50 w-56 rounded-lg border border-glass bg-background/95 backdrop-blur-xl p-3 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.6)]">
           <label className="flex items-center gap-2 text-xs text-foreground/80 cursor-pointer mb-3">
             <input
               type="checkbox"
               checked={includeInternal}
               onChange={(e) => setIncludeInternal(e.target.checked)}
-              className="rounded border-white/20 bg-white/[0.06] text-primary focus:ring-primary/50"
+              className="rounded border-glass-strong bg-glass-strong text-primary focus:ring-primary/50"
             />
             Include internal events
           </label>
@@ -825,7 +825,7 @@ function TicketDetailBody({
             <span className="text-xs uppercase tracking-wider text-muted-foreground">
               Description
             </span>
-            <span className="rounded px-1.5 py-0.5 text-[10px] font-medium border border-white/10 bg-white/[0.04] text-muted-foreground/60">
+            <span className="rounded px-1.5 py-0.5 text-[10px] font-medium border border-glass bg-glass text-muted-foreground/60">
               Internal
             </span>
           </div>
@@ -864,11 +864,11 @@ function TicketDetailBody({
         {/* Static: activity divider */}
         <div className="shrink-0 pb-3">
           <div className="flex items-center gap-3">
-            <div className="h-px flex-1 bg-white/10" />
+            <div className="h-px flex-1 bg-glass-strong" />
             <span className="text-xs uppercase tracking-wider text-muted-foreground">
               Activity
             </span>
-            <div className="h-px flex-1 bg-white/10" />
+            <div className="h-px flex-1 bg-glass-strong" />
           </div>
         </div>
 
@@ -889,7 +889,7 @@ function TicketDetailBody({
 
           <div className="pt-4 pb-2">
             {ticket.mergedIntoTicketId ? (
-              <div className="rounded-md border border-white/10 bg-white/[0.02] px-3 py-3 text-xs text-muted-foreground/70 text-center">
+              <div className="rounded-md border border-glass bg-glass px-3 py-3 text-xs text-muted-foreground/70 text-center">
                 This ticket is closed and merged. Reply on the target ticket
                 instead.
               </div>
@@ -920,7 +920,7 @@ function TicketDetailBody({
             onClick={() => setSidePanelExpanded((v) => !v)}
             title={sidePanelExpanded ? "Collapse side panel" : "Expand side panel"}
             aria-label={sidePanelExpanded ? "Collapse side panel" : "Expand side panel"}
-            className="p-1.5 rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-white/[0.06] transition-colors"
+            className="p-1.5 rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-glass-hover transition-colors"
           >
             {sidePanelExpanded
               ? <PanelRightClose className="h-4 w-4" />
@@ -1029,7 +1029,7 @@ function SplitBanners({
         </div>
       )}
       {hasChildren && (
-        <div className="rounded-md border border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-muted-foreground/80 flex items-center gap-2 flex-wrap">
+        <div className="rounded-md border border-glass bg-glass px-3 py-2 text-xs text-muted-foreground/80 flex items-center gap-2 flex-wrap">
           <GitBranch className="h-3.5 w-3.5 shrink-0 text-sky-300/80" />
           <span>Split into</span>
           {splitChildren.map((child, idx) => (

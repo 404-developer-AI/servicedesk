@@ -52,7 +52,7 @@ export function SurveysSettingsPage() {
         </p>
       </header>
 
-      <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+      <section className="rounded-lg border border-glass-strong bg-glass p-5">
         <header className="mb-4 flex items-center justify-between gap-4">
           <div className="space-y-1">
             <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
@@ -140,8 +140,8 @@ function SurveyRow({
       className={cn(
         "flex items-center justify-between gap-4 rounded-lg border px-4 py-3",
         survey.isActive
-          ? "border-white/[0.06] bg-white/[0.02]"
-          : "border-white/[0.04] bg-white/[0.01] opacity-70",
+          ? "border-glass-strong bg-glass"
+          : "border-glass bg-glass opacity-70",
       )}
     >
       <div className="min-w-0 flex-1">
@@ -150,7 +150,7 @@ function SurveyRow({
             {survey.name}
           </span>
           {!survey.isActive && (
-            <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+            <span className="rounded-full bg-glass-strong px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
               Inactive
             </span>
           )}

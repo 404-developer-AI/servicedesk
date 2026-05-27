@@ -226,7 +226,7 @@ function PublicSurveyForm({
         {hasAgentQuestions && (
           <section className="flex flex-col gap-4">
             {view.agentBlockHeading && (
-              <div className="border-b border-white/[0.06] pb-1">
+              <div className="border-b border-glass-strong pb-1">
                 <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground/80">
                   {view.agentBlockHeading}
                 </h3>
@@ -235,7 +235,7 @@ function PublicSurveyForm({
             {view.attributedAgents.map((agent) => (
               <article
                 key={agent.userId}
-                className="flex flex-col gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] p-4"
+                className="flex flex-col gap-3 rounded-lg border border-glass-strong bg-glass p-4"
               >
                 <header className="text-sm font-medium text-foreground">
                   {agent.displayName}
@@ -333,7 +333,7 @@ function ScalePicker({
                 "flex h-9 min-w-[36px] items-center justify-center gap-1 rounded-md border px-2 text-sm transition",
                 active
                   ? "border-primary/50 bg-primary/15 text-primary-foreground"
-                  : "border-white/[0.08] bg-white/[0.02] text-muted-foreground hover:bg-white/[0.06]",
+                  : "border-glass-strong bg-glass text-muted-foreground hover:bg-glass-hover",
               )}
             >
               <Star className={cn("h-4 w-4", active ? "fill-current" : "")} />
@@ -413,7 +413,7 @@ function QuestionField({
                     "h-9 w-9 rounded-md border text-sm transition",
                     selected
                       ? "border-primary/60 bg-primary/20 text-primary-foreground"
-                      : `${tint} bg-white/[0.02] text-muted-foreground`,
+                      : `${tint} bg-glass text-muted-foreground`,
                   )}
                 >
                   {n}
@@ -436,8 +436,8 @@ function QuestionField({
             maxLength={4000}
             rows={4}
             className={cn(
-              "resize-y rounded-md border bg-white/[0.02] px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40",
-              error ? "border-red-400/50" : "border-white/[0.08]",
+              "resize-y rounded-md border bg-glass px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40",
+              error ? "border-red-400/50" : "border-glass-strong",
             )}
           />
           {error && <span className="text-xs text-red-300">{error}</span>}
@@ -461,7 +461,7 @@ function QuestionField({
                     "flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition",
                     selected
                       ? "border-primary/50 bg-primary/15 text-primary-foreground"
-                      : "border-white/[0.08] bg-white/[0.02] text-muted-foreground hover:bg-white/[0.06]",
+                      : "border-glass-strong bg-glass text-muted-foreground hover:bg-glass-hover",
                   )}
                 >
                   <input
@@ -497,7 +497,7 @@ function QuestionField({
                     "flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition",
                     checked
                       ? "border-primary/50 bg-primary/15 text-primary-foreground"
-                      : "border-white/[0.08] bg-white/[0.02] text-muted-foreground hover:bg-white/[0.06]",
+                      : "border-glass-strong bg-glass text-muted-foreground hover:bg-glass-hover",
                   )}
                 >
                   <input
@@ -532,7 +532,7 @@ function QuestionField({
 function PublicShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen w-full bg-gradient-to-br from-[#0b0420] via-[#100636] to-[#050817] px-4 py-12">
-      <div className="mx-auto max-w-xl rounded-2xl border border-white/[0.06] bg-white/[0.03] p-8 shadow-2xl backdrop-blur-xl">
+      <div className="mx-auto max-w-xl rounded-2xl border border-glass-strong bg-glass p-8 shadow-2xl backdrop-blur-xl">
         {children}
       </div>
     </div>

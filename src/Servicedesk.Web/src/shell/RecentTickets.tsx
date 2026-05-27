@@ -93,7 +93,7 @@ export function RecentTickets({ collapsed }: { collapsed: boolean }) {
   }
 
   return (
-    <div className="mt-2 flex min-h-0 flex-1 flex-col border-t border-white/5 pt-2">
+    <div className="mt-2 flex min-h-0 flex-1 flex-col border-t border-glass pt-2">
       {!collapsed && (
         <div className="px-3 pb-1 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">
           Recent
@@ -140,8 +140,8 @@ export function RecentTickets({ collapsed }: { collapsed: boolean }) {
               className={cn(
                 "group flex items-center rounded-lg transition-colors",
                 active
-                  ? "bg-white/[0.07] text-foreground"
-                  : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground",
+                  ? "bg-glass-strong text-foreground"
+                  : "text-muted-foreground hover:bg-glass-hover hover:text-foreground",
                 // Without an inline boxShadow the active row keeps its
                 // original ring class. With one, the shadow already
                 // includes the ring, so skip the class to avoid stacking.
@@ -192,7 +192,7 @@ export function RecentTickets({ collapsed }: { collapsed: boolean }) {
                       navigate({ to: "/tickets" });
                     }
                   }}
-                  className="hidden shrink-0 rounded p-0.5 hover:bg-white/10 group-hover:inline-flex"
+                  className="hidden shrink-0 rounded p-0.5 hover:bg-glass-hover group-hover:inline-flex"
                   aria-label={`Remove #${t.number} from recent`}
                 >
                   <X className="h-3 w-3" />

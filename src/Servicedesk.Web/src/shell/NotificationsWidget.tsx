@@ -47,8 +47,8 @@ export function NotificationsWidget({ collapsed }: Props) {
               type="button"
               title={hasPending ? `${pendingCount} pending tag${pendingCount === 1 ? "" : "s"}` : "No pending tags"}
               className={cn(
-                "relative flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-muted-foreground transition-colors",
-                "hover:bg-white/[0.06] hover:text-foreground",
+                "relative flex h-9 w-9 items-center justify-center rounded-lg border border-glass bg-glass text-muted-foreground transition-colors",
+                "hover:bg-glass-hover hover:text-foreground",
                 hasPending && "text-purple-200",
               )}
             >
@@ -60,8 +60,8 @@ export function NotificationsWidget({ collapsed }: Props) {
               type="button"
               title={hasPending ? `${pendingCount} pending tag${pendingCount === 1 ? "" : "s"}` : "No pending tags"}
               className={cn(
-                "flex w-full items-center gap-2 rounded-[var(--radius)] border border-white/10 bg-white/[0.03] px-3 py-2 text-left transition-colors",
-                "hover:bg-white/[0.06]",
+                "flex w-full items-center gap-2 rounded-[var(--radius)] border border-glass bg-glass px-3 py-2 text-left transition-colors",
+                "hover:bg-glass-hover",
               )}
             >
               <div className="relative">
@@ -155,14 +155,14 @@ function NotificationPanel({
 
   return (
     <div className="flex flex-col">
-      <div className="max-h-[320px] overflow-y-auto divide-y divide-white/5">
+      <div className="max-h-[320px] overflow-y-auto divide-y divide-glass">
         {items.map((n) => {
           const localPart = n.sourceUserEmail?.split("@")[0] ?? "agent";
           const when = toServerLocal(n.createdUtc, offsetMinutes);
           return (
             <div
               key={n.id}
-              className="group flex items-start gap-2 px-3 py-2 transition-colors hover:bg-white/[0.04]"
+              className="group flex items-start gap-2 px-3 py-2 transition-colors hover:bg-glass-hover"
             >
               <button
                 type="button"
@@ -189,7 +189,7 @@ function NotificationPanel({
                 onClick={() => markAcked.mutate(n.id)}
                 disabled={markAcked.isPending}
                 title="Dismiss without opening"
-                className="shrink-0 rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-white/[0.08] hover:text-foreground opacity-0 group-hover:opacity-100"
+                className="shrink-0 rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-glass-hover hover:text-foreground opacity-0 group-hover:opacity-100"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -197,19 +197,19 @@ function NotificationPanel({
           );
         })}
       </div>
-      <div className="flex items-center justify-between border-t border-white/5 px-3 py-2 text-[11px]">
+      <div className="flex items-center justify-between border-t border-glass px-3 py-2 text-[11px]">
         <button
           type="button"
           onClick={() => ackAll.mutate()}
           disabled={ackAll.isPending || items.length === 0}
-          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground/80 transition-colors hover:bg-white/[0.06] hover:text-foreground disabled:opacity-40"
+          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground/80 transition-colors hover:bg-glass-hover hover:text-foreground disabled:opacity-40"
         >
           <CheckCheck className="h-3.5 w-3.5" /> Ack all
         </button>
         <button
           type="button"
           onClick={() => navigate({ to: "/profile/mentions" })}
-          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground/80 transition-colors hover:bg-white/[0.06] hover:text-foreground"
+          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground/80 transition-colors hover:bg-glass-hover hover:text-foreground"
         >
           All tags <ExternalLink className="h-3 w-3" />
         </button>

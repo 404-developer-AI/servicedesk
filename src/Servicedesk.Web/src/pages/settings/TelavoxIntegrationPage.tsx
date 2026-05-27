@@ -61,9 +61,9 @@ const STATE_LABEL: Record<
   { tone: string; text: string; dot: string }
 > = {
   Disabled: {
-    tone: "border-white/15 bg-white/[0.06] text-muted-foreground",
+    tone: "border-glass-strong bg-glass-strong text-muted-foreground",
     text: "Disabled",
-    dot: "bg-white/40",
+    dot: "bg-glass-strong",
   },
   NotConfigured: {
     tone: "border-amber-400/30 bg-amber-500/[0.08] text-amber-200",
@@ -241,14 +241,14 @@ export function TelavoxIntegrationPage() {
             <span className={cn("h-1.5 w-1.5 rounded-full", stateMeta.dot)} />
             {stateMeta.text}
           </span>
-          <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+          <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
             Admin only
           </Badge>
         </div>
       </header>
 
       {/* ---- Configuration ----------------------------------------- */}
-      <section className="space-y-4 rounded-xl border border-white/[0.06] bg-white/[0.02] p-5">
+      <section className="space-y-4 rounded-xl border border-glass-strong bg-glass p-5">
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <KeyRound className="h-4 w-4 text-muted-foreground" />
           Partner token
@@ -264,7 +264,7 @@ export function TelavoxIntegrationPage() {
             placeholder={hasToken ? "Replace token…" : "Paste partner token…"}
             value={tokenDraft}
             onChange={(e) => setTokenDraft(e.target.value)}
-            className="h-9 w-80 bg-white/[0.03] font-mono text-sm"
+            className="h-9 w-80 bg-glass font-mono text-sm"
           />
           <Button
             size="sm"
@@ -309,7 +309,7 @@ export function TelavoxIntegrationPage() {
       </section>
 
       {/* ---- Customer pin ------------------------------------------ */}
-      <section className="space-y-4 rounded-xl border border-white/[0.06] bg-white/[0.02] p-5">
+      <section className="space-y-4 rounded-xl border border-glass-strong bg-glass p-5">
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <LinkIcon className="h-4 w-4 text-muted-foreground" />
           Customer
@@ -325,7 +325,7 @@ export function TelavoxIntegrationPage() {
             onValueChange={setCustomerPick}
             disabled={!hasToken || customerOptions === null}
           >
-            <SelectTrigger className="h-9 w-80 bg-white/[0.03] text-sm">
+            <SelectTrigger className="h-9 w-80 bg-glass text-sm">
               <SelectValue
                 placeholder={
                   customerOptions === null
@@ -388,13 +388,13 @@ export function TelavoxIntegrationPage() {
       />
 
       {/* ---- Tunables ---------------------------------------------- */}
-      <section className="space-y-1 rounded-xl border border-white/[0.06] bg-white/[0.02] p-5">
+      <section className="space-y-1 rounded-xl border border-glass-strong bg-glass p-5">
         <div className="mb-3 text-sm font-medium text-foreground">Behaviour</div>
         {settingsList.isLoading ? (
           <div className="space-y-2">
-            <Skeleton className="h-10 w-full bg-white/[0.04]" />
-            <Skeleton className="h-10 w-full bg-white/[0.04]" />
-            <Skeleton className="h-10 w-full bg-white/[0.04]" />
+            <Skeleton className="h-10 w-full bg-glass" />
+            <Skeleton className="h-10 w-full bg-glass" />
+            <Skeleton className="h-10 w-full bg-glass" />
           </div>
         ) : (
           <>
@@ -448,7 +448,7 @@ export function TelavoxIntegrationPage() {
       </section>
 
       {/* ---- Integration audit log -------------------------------- */}
-      <section className="space-y-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-5">
+      <section className="space-y-3 rounded-xl border border-glass-strong bg-glass p-5">
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <History className="h-4 w-4 text-muted-foreground" />
           Audit log
@@ -585,7 +585,7 @@ function AgentMappingSection({
   });
 
   return (
-    <section className="space-y-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-5">
+    <section className="space-y-3 rounded-xl border border-glass-strong bg-glass p-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <LinkIcon className="h-4 w-4 text-muted-foreground" />
@@ -602,15 +602,15 @@ function AgentMappingSection({
         </p>
       ) : usersLoading || linksLoading ? (
         <div className="space-y-2">
-          <Skeleton className="h-10 w-full bg-white/[0.04]" />
-          <Skeleton className="h-10 w-full bg-white/[0.04]" />
+          <Skeleton className="h-10 w-full bg-glass" />
+          <Skeleton className="h-10 w-full bg-glass" />
         </div>
       ) : eligibleUsers.length === 0 ? (
         <p className="text-xs text-muted-foreground/70">
           No agents or admins exist yet. Add them under Settings → Users.
         </p>
       ) : (
-        <div className="divide-y divide-white/[0.04]">
+        <div className="divide-y divide-glass">
           {eligibleUsers.map((u) => {
             const link = linkByUser.get(u.id);
             return (
@@ -698,7 +698,7 @@ function AgentMappingRow({
       </div>
       <div className="flex items-center gap-2">
         <Select value={pick} onValueChange={setPick} disabled={busy || !!link}>
-          <SelectTrigger className="h-8 w-52 bg-white/[0.03] text-xs">
+          <SelectTrigger className="h-8 w-52 bg-glass text-xs">
             <SelectValue
               placeholder={
                 extensionsLoading
@@ -842,7 +842,7 @@ function ManualLinkDialog({
               value={token}
               onChange={(e) => setToken(e.target.value)}
               placeholder="Paste the bearer string here…"
-              className="bg-white/[0.03] font-mono text-xs"
+              className="bg-glass font-mono text-xs"
             />
             <p className="text-[10px] text-muted-foreground/50">
               Stored encrypted (DataProtection key-ring); never written to

@@ -9,6 +9,9 @@ import {
   Megaphone,
   Info,
   AlertCircle,
+  Palette,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +24,8 @@ import { useServerTime } from "@/hooks/useServerTime";
 import { cn } from "@/lib/utils";
 
 const APP_QUERY_KEY = ["settings", "list", "App"] as const;
+const UI_QUERY_KEY = ["settings", "list", "Ui"] as const;
+const DEFAULT_THEME_QUERY_KEY = ["system", "default-theme"] as const;
 const MAINTENANCE_QUERY_KEY = ["system", "maintenance"] as const;
 const LOGIN_BANNER_QUERY_KEY = ["system", "login-banner"] as const;
 
@@ -50,9 +55,14 @@ export function GeneralSettingsPage() {
     queryKey: APP_QUERY_KEY,
     queryFn: () => settingsApi.list("App"),
   });
+  const uiSettings = useQuery({
+    queryKey: UI_QUERY_KEY,
+    queryFn: () => settingsApi.list("Ui"),
+  });
   const { time } = useServerTime();
 
   const timeZoneEntry = findEntry(appSettings.data, "App.TimeZone");
+  const defaultThemeEntry = findEntry(uiSettings.data, "Ui.DefaultTheme");
 
   return (
     <div className="flex flex-col gap-6">
@@ -67,14 +77,19 @@ export function GeneralSettingsPage() {
             and display preferences.
           </p>
         </div>
-        <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+        <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
           Admin only
         </Badge>
       </header>
 
+      <DefaultThemeSection
+        entry={defaultThemeEntry}
+        loading={uiSettings.isLoading}
+      />
+
       <section className="glass-card p-6">
         <div className="mb-4 flex items-center gap-3">
-          <div className="rounded-md bg-white/[0.04] p-2 text-primary">
+          <div className="rounded-md bg-glass p-2 text-primary">
             <Globe2 className="h-5 w-5" />
           </div>
           <div>
@@ -97,7 +112,7 @@ export function GeneralSettingsPage() {
               label="Application timezone"
               hint="IANA id, e.g. Europe/Brussels, America/New_York, Asia/Tokyo. Leave empty to inherit the container's TZ env-var (set from the host timezone by install.sh). Invalid values silently fall back to the container default."
             />
-            <div className="mt-4 rounded-md border border-white/[0.06] bg-white/[0.02] p-3">
+            <div className="mt-4 rounded-md border border-glass-strong bg-glass p-3">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Clock className="h-3.5 w-3.5" />
                 <span className="font-medium uppercase tracking-wider">Currently resolved</span>
@@ -133,6 +148,93 @@ export function GeneralSettingsPage() {
         loading={appSettings.isLoading}
       />
     </div>
+  );
+}
+
+function DefaultThemeSection({
+  entry,
+  loading,
+}: {
+  entry: SettingEntry | undefined;
+  loading: boolean;
+}) {
+  const qc = useQueryClient();
+  const value = (entry?.value === "dark" ? "dark" : "light") as "light" | "dark";
+
+  const update = useMutation({
+    mutationFn: (next: "light" | "dark") =>
+      settingsApi.update("Ui.DefaultTheme", next),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: UI_QUERY_KEY });
+      qc.invalidateQueries({ queryKey: DEFAULT_THEME_QUERY_KEY });
+      toast.success("Default theme updated");
+    },
+    onError: () => {
+      toast.error("Failed to update default theme");
+    },
+  });
+
+  return (
+    <section className="glass-card p-6">
+      <div className="mb-4 flex items-start gap-3">
+        <div className="rounded-md bg-glass p-2 text-primary">
+          <Palette className="h-5 w-5" />
+        </div>
+        <div className="flex-1">
+          <h2 className="text-base font-semibold text-foreground">Default theme</h2>
+          <p className="text-xs text-muted-foreground">
+            Applies to new users and to existing users who have not yet picked a theme on
+            their Profile page. Once a user makes an explicit choice, their preference
+            follows them across devices and overrides this default.
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <Skeleton className="h-12 w-48" />
+      ) : (
+        <div
+          role="radiogroup"
+          aria-label="Default theme"
+          className="inline-flex rounded-lg border border-glass bg-glass p-1"
+        >
+          <button
+            type="button"
+            role="radio"
+            aria-checked={value === "light"}
+            disabled={update.isPending}
+            onClick={() => update.mutate("light")}
+            className={cn(
+              "flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              "disabled:cursor-not-allowed disabled:opacity-50",
+              value === "light"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <Sun className="h-3.5 w-3.5" />
+            Light
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={value === "dark"}
+            disabled={update.isPending}
+            onClick={() => update.mutate("dark")}
+            className={cn(
+              "flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              "disabled:cursor-not-allowed disabled:opacity-50",
+              value === "dark"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <Moon className="h-3.5 w-3.5" />
+            Dark
+          </button>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -200,7 +302,7 @@ function MaintenanceWindowSection({
   return (
     <section className="glass-card p-6">
       <div className="mb-4 flex items-start gap-3">
-        <div className="rounded-md bg-white/[0.04] p-2 text-amber-300">
+        <div className="rounded-md bg-glass p-2 text-amber-300">
           <Wrench className="h-5 w-5" />
         </div>
         <div className="flex-1">
@@ -253,7 +355,7 @@ function MaintenanceWindowSection({
               rows={3}
               maxLength={500}
               placeholder="e.g. We will be performing scheduled maintenance to upgrade the database. Some features may be temporarily unavailable."
-              className="w-full rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             />
           </FieldShell>
 
@@ -334,7 +436,7 @@ function LoginBannerSection({
   return (
     <section className="glass-card p-6">
       <div className="mb-4 flex items-start gap-3">
-        <div className="rounded-md bg-white/[0.04] p-2 text-sky-300">
+        <div className="rounded-md bg-glass p-2 text-sky-300">
           <Megaphone className="h-5 w-5" />
         </div>
         <div className="flex-1">
@@ -386,7 +488,7 @@ function LoginBannerSection({
               rows={3}
               maxLength={LOGIN_BANNER_MESSAGE_MAX}
               placeholder="e.g. Scheduled upgrade Saturday 21:00 — login may be briefly unavailable."
-              className="w-full rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             />
             <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground/70">
               <span>
@@ -403,7 +505,7 @@ function LoginBannerSection({
             {showPreview ? (
               <LoginBannerPreview type={type} html={previewHtml} />
             ) : (
-              <div className="rounded-md border border-dashed border-white/10 bg-white/[0.02] px-3 py-4 text-center text-[11px] text-muted-foreground/70">
+              <div className="rounded-md border border-dashed border-glass bg-glass px-3 py-4 text-center text-[11px] text-muted-foreground/70">
                 {enabled
                   ? "Enter a message to see the banner preview."
                   : "Banner is disabled — turn the toggle on to preview."}
@@ -444,7 +546,7 @@ function BannerTypeButton({
         "disabled:cursor-not-allowed disabled:opacity-50",
         selected
           ? cn(palette.selectedBorder, palette.selectedBg, palette.selectedText)
-          : "border-white/10 bg-white/[0.02] text-muted-foreground hover:text-foreground",
+          : "border-glass bg-glass text-muted-foreground hover:text-foreground",
       )}
     >
       <Icon className={cn("h-3.5 w-3.5", selected ? palette.selectedIcon : "opacity-70")} />
@@ -505,41 +607,44 @@ const LOGIN_BANNER_PREVIEW_PALETTES: Record<
   info: {
     icon: Info,
     title: "Notice",
-    selectedBorder: "border-sky-500/40",
-    selectedBg: "bg-sky-500/[0.12]",
-    selectedText: "text-sky-100",
-    selectedIcon: "text-sky-300",
-    previewContainer: "border-sky-500/30 bg-sky-500/[0.08]",
-    previewIcon: "text-sky-300",
-    previewLabel: "text-sky-200/90",
+    selectedBorder: "border-sky-400/60 dark:border-sky-500/40",
+    selectedBg: "bg-sky-100 dark:bg-sky-500/[0.12]",
+    selectedText: "text-sky-900 dark:text-sky-100",
+    selectedIcon: "text-sky-600 dark:text-sky-300",
+    previewContainer:
+      "border-sky-400/60 bg-sky-50 dark:border-sky-500/30 dark:bg-sky-500/[0.08]",
+    previewIcon: "text-sky-600 dark:text-sky-300",
+    previewLabel: "text-sky-700 dark:text-sky-200/90",
     previewBody:
-      "text-sky-100/90 [&_a]:underline [&_a]:underline-offset-2 [&_a]:text-sky-100",
+      "text-sky-900 [&_a]:underline [&_a]:underline-offset-2 [&_a]:text-sky-700 dark:text-sky-100/90 dark:[&_a]:text-sky-100",
   },
   warning: {
     icon: AlertTriangle,
     title: "Warning",
-    selectedBorder: "border-amber-500/40",
-    selectedBg: "bg-amber-500/[0.12]",
-    selectedText: "text-amber-100",
-    selectedIcon: "text-amber-300",
-    previewContainer: "border-amber-500/30 bg-amber-500/[0.08]",
-    previewIcon: "text-amber-300",
-    previewLabel: "text-amber-200/90",
+    selectedBorder: "border-amber-400/60 dark:border-amber-500/40",
+    selectedBg: "bg-amber-100 dark:bg-amber-500/[0.12]",
+    selectedText: "text-amber-900 dark:text-amber-100",
+    selectedIcon: "text-amber-600 dark:text-amber-300",
+    previewContainer:
+      "border-amber-400/60 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/[0.08]",
+    previewIcon: "text-amber-600 dark:text-amber-300",
+    previewLabel: "text-amber-700 dark:text-amber-200/90",
     previewBody:
-      "text-amber-100/90 [&_a]:underline [&_a]:underline-offset-2 [&_a]:text-amber-100",
+      "text-amber-900 [&_a]:underline [&_a]:underline-offset-2 [&_a]:text-amber-700 dark:text-amber-100/90 dark:[&_a]:text-amber-100",
   },
   error: {
     icon: AlertCircle,
     title: "Error",
-    selectedBorder: "border-rose-500/40",
-    selectedBg: "bg-rose-500/[0.14]",
-    selectedText: "text-rose-100",
-    selectedIcon: "text-rose-300",
-    previewContainer: "border-rose-500/40 bg-rose-500/[0.10]",
-    previewIcon: "text-rose-300",
-    previewLabel: "text-rose-200/90",
+    selectedBorder: "border-rose-400/60 dark:border-rose-500/40",
+    selectedBg: "bg-rose-100 dark:bg-rose-500/[0.14]",
+    selectedText: "text-rose-900 dark:text-rose-100",
+    selectedIcon: "text-rose-600 dark:text-rose-300",
+    previewContainer:
+      "border-rose-400/60 bg-rose-50 dark:border-rose-500/40 dark:bg-rose-500/[0.10]",
+    previewIcon: "text-rose-600 dark:text-rose-300",
+    previewLabel: "text-rose-700 dark:text-rose-200/90",
     previewBody:
-      "text-rose-100/90 [&_a]:underline [&_a]:underline-offset-2 [&_a]:text-rose-100",
+      "text-rose-900 [&_a]:underline [&_a]:underline-offset-2 [&_a]:text-rose-700 dark:text-rose-100/90 dark:[&_a]:text-rose-100",
   },
 };
 
@@ -576,7 +681,7 @@ function ToggleSwitch({
         "disabled:cursor-not-allowed disabled:opacity-50",
         checked
           ? "bg-gradient-to-r from-violet-600 to-indigo-600"
-          : "bg-white/[0.08]",
+          : "bg-glass-strong",
       )}
     >
       <span

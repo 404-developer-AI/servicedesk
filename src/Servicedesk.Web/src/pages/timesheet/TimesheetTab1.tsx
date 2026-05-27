@@ -181,7 +181,7 @@ export function TimesheetTab1() {
                 setEditingId(null);
                 setDraftRow(null);
               }}
-              className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              className="rounded-md border border-glass bg-glass px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
             <Button
               size="sm"
@@ -207,7 +207,7 @@ export function TimesheetTab1() {
           </Button>
         </div>
         <div className="flex items-center gap-3">
-          <Badge className="border border-white/10 bg-white/[0.05] text-xs font-normal text-muted-foreground">
+          <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
             {entries.length} {entries.length === 1 ? "entry" : "entries"}
           </Badge>
           <span className="text-sm text-muted-foreground">
@@ -222,7 +222,7 @@ export function TimesheetTab1() {
       <section className="glass-card flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto">
         <table className="w-full table-fixed text-left text-sm">
-          <thead className="sticky top-0 z-10 bg-[hsl(var(--background))]/85 text-xs uppercase tracking-wide text-muted-foreground backdrop-blur-md [&_th]:border-b [&_th]:border-white/10">
+          <thead className="sticky top-0 z-10 bg-[hsl(var(--background))]/85 text-xs uppercase tracking-wide text-muted-foreground backdrop-blur-md [&_th]:border-b [&_th]:border-glass">
             <tr>
               <th className="w-24 px-3 py-2 font-medium">Start</th>
               <th className="w-24 px-3 py-2 font-medium">End</th>
@@ -364,7 +364,7 @@ function DisplayRow({
   return (
     <tr
       className={cn(
-        "border-b border-white/5 last:border-b-0 hover:bg-white/[0.03]",
+        "border-b border-glass last:border-b-0 hover:bg-glass-hover",
         mismatch && "bg-red-500/[0.06] hover:bg-red-500/[0.09]",
       )}
     >
@@ -442,7 +442,7 @@ function TaskPill({ name, isAbsence }: { name: string; isAbsence: boolean }) {
         "inline-flex max-w-full items-center truncate rounded-full border px-2 py-0.5 text-[11px] font-medium",
         isAbsence
           ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
-          : "border-white/10 bg-white/[0.04] text-foreground/80",
+          : "border-glass bg-glass text-foreground/80",
       )}
       title={name}
     >
@@ -677,7 +677,7 @@ function EditableRow({
   };
 
   return (
-    <tr ref={trRef} className="border-b border-white/10 bg-primary/[0.04]" onKeyDown={onRowKeyDown}>
+    <tr ref={trRef} className="border-b border-glass bg-primary/[0.04]" onKeyDown={onRowKeyDown}>
       <td className="px-3 py-2 align-top">
         <Input
           value={startText}
@@ -925,7 +925,7 @@ function TicketAutocomplete({
 
   if (disabled) {
     return (
-      <div className="h-8 rounded-md border border-dashed border-white/10 bg-white/[0.02] px-2 py-1 text-xs text-muted-foreground/60">
+      <div className="h-8 rounded-md border border-dashed border-glass bg-glass px-2 py-1 text-xs text-muted-foreground/60">
         — (task has no ticket)
       </div>
     );
@@ -936,8 +936,8 @@ function TicketAutocomplete({
       {value ? (
         <div
           className={cn(
-            "flex h-8 items-center justify-between gap-2 rounded-md border bg-white/[0.03] px-2 text-xs",
-            error ? "border-red-400/60" : "border-white/10",
+            "flex h-8 items-center justify-between gap-2 rounded-md border bg-glass px-2 text-xs",
+            error ? "border-red-400/60" : "border-glass",
           )}
           title={`#${value.number} ${value.subject ?? ""}`}
         >
@@ -975,7 +975,7 @@ function TicketAutocomplete({
       {!value && open && anchor &&
         createPortal(
           <div
-            className="fixed z-50 overflow-y-auto rounded-md border border-white/10 bg-[hsl(var(--background))] p-1 shadow-2xl backdrop-blur-xl"
+            className="fixed z-50 overflow-y-auto rounded-md border border-glass bg-[hsl(var(--background))] p-1 shadow-2xl backdrop-blur-xl"
             style={{
               ...(anchor.top !== undefined ? { top: anchor.top } : {}),
               ...(anchor.bottom !== undefined ? { bottom: anchor.bottom } : {}),
@@ -1005,7 +1005,7 @@ function TicketAutocomplete({
                   setQuery("");
                   setOpen(false);
                 }}
-                className="flex w-full flex-col items-start gap-0 rounded px-2 py-1.5 text-left text-xs hover:bg-white/[0.06]"
+                className="flex w-full flex-col items-start gap-0 rounded px-2 py-1.5 text-left text-xs hover:bg-glass-hover"
               >
                 <span className="font-mono">
                   #{r.number}

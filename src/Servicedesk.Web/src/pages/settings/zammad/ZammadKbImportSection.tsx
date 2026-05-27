@@ -53,12 +53,12 @@ export function ZammadKbImportSection() {
   });
 
   return (
-    <section className="rounded-xl border border-white/10 bg-white/[0.03] p-6">
+    <section className="rounded-xl border border-glass bg-glass p-6">
       <header className="mb-4 flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <BookOpen className="h-4 w-4 text-purple-300" />
-            <h2 className="text-base font-semibold tracking-tight text-white">
+            <h2 className="text-base font-semibold tracking-tight text-foreground">
               Knowledge base import
             </h2>
             <Badge variant="outline" className="border-purple-400/30 bg-purple-500/10 text-purple-200">
@@ -86,7 +86,7 @@ export function ZammadKbImportSection() {
       {active ? (
         <ActiveRunCard runId={active.id} status={active.status} />
       ) : (
-        <p className="rounded-lg border border-dashed border-white/10 bg-white/[0.02] p-4 text-sm text-muted-foreground">
+        <p className="rounded-lg border border-dashed border-glass bg-glass p-4 text-sm text-muted-foreground">
           No active import. Click <em>New KB import</em> to begin.
         </p>
       )}
@@ -142,11 +142,11 @@ function KbPickerStep({ runId }: { runId: string }) {
   return (
     <div className="space-y-3">
       <StepHeader step={1} title="Choose a Zammad knowledge base" />
-      <ul className="divide-y divide-white/5 rounded-lg border border-white/10 bg-white/[0.02]">
+      <ul className="divide-y divide-glass rounded-lg border border-glass bg-glass">
         {items.map((kb) => (
           <li key={kb.id} className="flex items-center justify-between px-4 py-3">
             <div>
-              <div className="font-medium text-white">{kb.name}</div>
+              <div className="font-medium text-foreground">{kb.name}</div>
               <div className="text-xs text-muted-foreground">
                 ID {kb.id} · {kb.categoryCount} categories · {kb.answerCount} articles
                 {kb.active ? "" : " · inactive"}
@@ -225,7 +225,7 @@ function ProposalReviewStep({ runId }: { runId: string }) {
         {draft.map((node, idx) => (
           <li
             key={node.zammadCategoryId}
-            className="rounded-lg border border-white/10 bg-white/[0.02] p-3"
+            className="rounded-lg border border-glass bg-glass p-3"
             style={{ marginLeft: `${node.depth * 16}px` }}
           >
             <div className="flex flex-wrap items-center gap-2">
@@ -253,7 +253,7 @@ function ProposalReviewStep({ runId }: { runId: string }) {
                       "rounded px-2 py-1 text-xs font-medium capitalize transition",
                       node.action === action
                         ? "bg-purple-500/20 text-purple-200 ring-1 ring-purple-400/40"
-                        : "bg-white/[0.04] text-muted-foreground hover:bg-white/[0.08]",
+                        : "bg-glass text-muted-foreground hover:bg-glass-hover",
                     )}
                   >
                     {action}
@@ -355,7 +355,7 @@ function ArticlePickerStep({ runId }: { runId: string }) {
         <select
           value={status}
           onChange={(e) => setStatus(e.target.value)}
-          className="h-8 rounded-md border border-white/10 bg-white/[0.04] px-2 text-sm text-white"
+          className="h-8 rounded-md border border-glass bg-glass px-2 text-sm text-foreground"
         >
           <option value="">All statuses</option>
           <option value="Draft">Draft</option>
@@ -401,17 +401,17 @@ function ArticleList({
   if (loading) return <Loader />;
   if (items.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed border-white/10 p-4 text-center text-sm text-muted-foreground">
+      <p className="rounded-lg border border-dashed border-glass p-4 text-center text-sm text-muted-foreground">
         No articles match the current filter.
       </p>
     );
   }
   return (
-    <ul className="max-h-[400px] divide-y divide-white/5 overflow-y-auto rounded-lg border border-white/10 bg-white/[0.02]">
+    <ul className="max-h-[400px] divide-y divide-glass overflow-y-auto rounded-lg border border-glass bg-glass">
       {items.map((item) => (
         <li
           key={item.zammadAnswerId}
-          className="flex items-center gap-3 px-3 py-2 hover:bg-white/[0.03]"
+          className="flex items-center gap-3 px-3 py-2 hover:bg-glass-hover"
         >
           <input
             type="checkbox"
@@ -420,7 +420,7 @@ function ArticleList({
             className="h-4 w-4 cursor-pointer accent-purple-500"
           />
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium text-white">{item.title}</div>
+            <div className="truncate text-sm font-medium text-foreground">{item.title}</div>
             <div className="truncate text-xs text-muted-foreground">
               {item.categoryTitle ?? "—"} · id {item.zammadAnswerId}
               {item.promoted ? " · promoted" : ""}
@@ -434,7 +434,7 @@ function ArticleList({
               item.status === "Published" && "border-emerald-400/30 bg-emerald-500/10 text-emerald-200",
               item.status === "Internal" && "border-sky-400/30 bg-sky-500/10 text-sky-200",
               item.status === "Draft" && "border-amber-400/30 bg-amber-500/10 text-amber-200",
-              item.status === "Archived" && "border-white/15 bg-white/[0.06] text-muted-foreground",
+              item.status === "Archived" && "border-glass-strong bg-glass-strong text-muted-foreground",
             )}
           >
             {item.status}
@@ -480,14 +480,14 @@ function ProgressStep({ runId }: { runId: string }) {
         title={`Import ${summary.status.toLowerCase()}`}
         subtitle={summary.sourceKbName ?? undefined}
       />
-      <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
+      <div className="rounded-lg border border-glass bg-glass p-3">
         <div className="mb-2 flex items-center justify-between text-sm">
-          <span className="font-medium text-white">
+          <span className="font-medium text-foreground">
             {t.processed} / {t.plannedTotal ?? "?"} processed
           </span>
           <span className="text-xs text-muted-foreground">{progress}%</span>
         </div>
-        <div className="h-2 w-full overflow-hidden rounded-full bg-white/[0.06]">
+        <div className="h-2 w-full overflow-hidden rounded-full bg-glass-strong">
           <div
             className="h-full bg-gradient-to-r from-purple-500 to-sky-400 transition-[width] duration-500"
             style={{ width: `${progress}%` }}
@@ -540,7 +540,7 @@ function Stat({
       ? "text-amber-300"
       : tone === "danger"
       ? "text-red-300"
-      : "text-white";
+      : "text-foreground";
   return (
     <div>
       <div className={cn("text-lg font-semibold tabular-nums", colour)}>{value}</div>
@@ -580,7 +580,7 @@ function RunsHistoryTable({
             <th className="py-1 text-right">Failed</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-white/5">
+        <tbody className="divide-y divide-glass">
           {history.map((r) => (
             <tr key={r.id}>
               <td className="py-1.5 text-xs text-muted-foreground">
@@ -594,7 +594,7 @@ function RunsHistoryTable({
                     "text-xs",
                     r.status === "Completed" && "border-emerald-400/30 bg-emerald-500/10 text-emerald-200",
                     r.status === "Failed" && "border-red-400/30 bg-red-500/10 text-red-200",
-                    r.status === "Cancelled" && "border-white/15 bg-white/[0.06] text-muted-foreground",
+                    r.status === "Cancelled" && "border-glass-strong bg-glass-strong text-muted-foreground",
                   )}
                 >
                   {r.status}
@@ -627,7 +627,7 @@ function StepHeader({
         {step}
       </div>
       <div>
-        <div className="text-sm font-semibold text-white">{title}</div>
+        <div className="text-sm font-semibold text-foreground">{title}</div>
         {subtitle ? <div className="text-xs text-muted-foreground">{subtitle}</div> : null}
       </div>
       <ChevronRight className="ml-auto h-4 w-4 text-muted-foreground" />
@@ -637,7 +637,7 @@ function StepHeader({
 
 function Loader() {
   return (
-    <div className="flex items-center justify-center rounded-lg border border-white/10 bg-white/[0.02] p-8 text-sm text-muted-foreground">
+    <div className="flex items-center justify-center rounded-lg border border-glass bg-glass p-8 text-sm text-muted-foreground">
       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
       Loading…
     </div>

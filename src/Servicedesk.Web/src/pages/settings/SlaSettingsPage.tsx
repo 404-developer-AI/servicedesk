@@ -45,7 +45,7 @@ export function SlaSettingsPage() {
                 "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition",
                 isActive
                   ? "border-primary/40 bg-primary/10 text-foreground"
-                  : "border-white/[0.06] bg-white/[0.02] text-muted-foreground hover:bg-white/[0.05]",
+                  : "border-glass-strong bg-glass text-muted-foreground hover:bg-glass-hover",
               )}
             >
               <Icon className="h-4 w-4" />
@@ -55,7 +55,7 @@ export function SlaSettingsPage() {
         })}
       </nav>
 
-      <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+      <section className="rounded-lg border border-glass-strong bg-glass p-5">
         <header className="mb-4 space-y-1">
           <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
             {active.label}

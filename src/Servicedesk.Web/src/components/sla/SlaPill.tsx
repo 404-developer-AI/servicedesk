@@ -23,7 +23,7 @@ function pillClasses(remainingMs: number | null, met: boolean, metLate: boolean,
   if (met && metLate) return "border-red-500/30 bg-red-500/10 text-red-200";
   if (met) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-200";
   if (paused) return "border-sky-500/30 bg-sky-500/10 text-sky-200";
-  if (remainingMs === null) return "border-white/10 bg-white/[0.04] text-muted-foreground";
+  if (remainingMs === null) return "border-glass bg-glass text-muted-foreground";
   if (remainingMs < 0) return "border-red-500/40 bg-red-500/10 text-red-200";
   if (remainingMs < 15 * 60 * 1000) return "border-amber-500/40 bg-amber-500/10 text-amber-200";
   return "border-emerald-500/20 bg-emerald-500/[0.06] text-emerald-100/80";

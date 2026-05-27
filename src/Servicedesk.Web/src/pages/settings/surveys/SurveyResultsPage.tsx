@@ -70,7 +70,7 @@ export function SurveyResultsPage({ surveyId }: { surveyId: string }) {
       {aggQ.data && <StatsTiles agg={aggQ.data} />}
 
       {aggQ.data && aggQ.data.agentLeaderboard.length > 0 && (
-        <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+        <section className="rounded-lg border border-glass-strong bg-glass p-5">
           <header className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
             <Trophy className="h-4 w-4 text-primary" />
             Agent leaderboard
@@ -83,7 +83,7 @@ export function SurveyResultsPage({ surveyId }: { surveyId: string }) {
             {aggQ.data.agentLeaderboard.map((row, i) => (
               <li
                 key={row.agentUserId}
-                className="flex items-center justify-between gap-4 rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2"
+                className="flex items-center justify-between gap-4 rounded-md border border-glass-strong bg-glass px-3 py-2"
               >
                 <div className="flex items-center gap-3">
                   <span
@@ -95,7 +95,7 @@ export function SurveyResultsPage({ surveyId }: { surveyId: string }) {
                           ? "bg-slate-400/20 text-slate-200"
                           : i === 2
                             ? "bg-orange-700/20 text-orange-200"
-                            : "bg-white/[0.06] text-muted-foreground",
+                            : "bg-glass-strong text-muted-foreground",
                     )}
                   >
                     {i + 1}
@@ -122,7 +122,7 @@ export function SurveyResultsPage({ surveyId }: { surveyId: string }) {
       )}
 
       {aggQ.data && aggQ.data.questionAggregates.length > 0 && (
-        <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+        <section className="rounded-lg border border-glass-strong bg-glass p-5">
           <header className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
             <BarChart3 className="h-4 w-4 text-primary" />
             Survey questions
@@ -131,7 +131,7 @@ export function SurveyResultsPage({ surveyId }: { surveyId: string }) {
             {aggQ.data.questionAggregates.map((q) => (
               <div
                 key={q.questionId}
-                className="rounded-md border border-white/[0.06] bg-white/[0.02] p-3"
+                className="rounded-md border border-glass-strong bg-glass p-3"
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-medium text-foreground">
@@ -162,7 +162,7 @@ export function SurveyResultsPage({ surveyId }: { surveyId: string }) {
         />
       )}
 
-      <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+      <section className="rounded-lg border border-glass-strong bg-glass p-5">
         <header className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
           <MailQuestion className="h-4 w-4 text-primary" />
           Recent invitations
@@ -185,7 +185,7 @@ export function SurveyResultsPage({ surveyId }: { surveyId: string }) {
                   <th className="text-left font-medium">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/[0.04]">
+              <tbody className="divide-y divide-glass">
                 {invitationsQ.data.map((inv) => (
                   <tr key={inv.id}>
                     <td className="py-2 text-foreground">
@@ -249,7 +249,7 @@ function PerAgentQuestionSection({
   }
 
   return (
-    <section className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+    <section className="rounded-lg border border-glass-strong bg-glass p-5">
       <header className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
         <Users className="h-4 w-4 text-primary" />
         Per-agent questions
@@ -264,7 +264,7 @@ function PerAgentQuestionSection({
           return (
             <div
               key={questionId}
-              className="rounded-md border border-white/[0.06] bg-white/[0.02] p-3"
+              className="rounded-md border border-glass-strong bg-glass p-3"
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-medium text-foreground">
@@ -278,7 +278,7 @@ function PerAgentQuestionSection({
                 {group.map((row) => (
                   <li
                     key={`${row.questionId}:${row.agentUserId}`}
-                    className="rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2"
+                    className="rounded-md border border-glass-strong bg-glass px-3 py-2"
                   >
                     <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                       <span className="text-sm font-medium text-foreground">
@@ -321,7 +321,7 @@ function StatsTiles({ agg }: { agg: SurveyResultsAggregate }) {
       {tiles.map((t) => (
         <div
           key={t.label}
-          className="rounded-lg border border-white/[0.06] bg-gradient-to-br from-white/[0.03] to-white/[0.01] p-4"
+          className="rounded-lg border border-glass-strong bg-gradient-to-br from-white/[0.03] to-white/[0.01] p-4"
         >
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
             {t.label}
@@ -348,7 +348,7 @@ function StatusBadge({
       : status === "Expired"
         ? "bg-orange-500/15 text-orange-200"
         : status === "Cancelled"
-          ? "bg-white/10 text-muted-foreground"
+          ? "bg-glass-strong text-muted-foreground"
           : "bg-primary/15 text-primary-foreground";
   const className = cn(
     "rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider transition",
@@ -379,7 +379,7 @@ function TallyBars({ tally }: { tally: Record<string, number> }) {
       {entries.map(([key, count]) => (
         <div key={key} className="flex items-center gap-3 text-xs">
           <span className="w-20 truncate text-muted-foreground">{key}</span>
-          <div className="relative flex-1 overflow-hidden rounded-full bg-white/[0.05]">
+          <div className="relative flex-1 overflow-hidden rounded-full bg-glass">
             <div
               className="h-2 rounded-full bg-primary/60"
               style={{ width: `${Math.round((count / max) * 100)}%` }}
@@ -483,7 +483,7 @@ function ResponseDetailBody({ detail }: { detail: SurveyResponseDetail }) {
       </header>
 
       {surveyQs.length > 0 && (
-        <section className="flex flex-col gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] p-3">
+        <section className="flex flex-col gap-2 rounded-md border border-glass-strong bg-glass p-3">
           <header className="text-[10px] uppercase tracking-wider text-muted-foreground">
             Survey questions
           </header>
@@ -493,7 +493,7 @@ function ResponseDetailBody({ detail }: { detail: SurveyResponseDetail }) {
               return (
                 <li
                   key={q.id}
-                  className="rounded-md border border-white/[0.06] bg-white/[0.02] p-2"
+                  className="rounded-md border border-glass-strong bg-glass p-2"
                 >
                   <div className="text-xs text-muted-foreground">{q.label}</div>
                   <div className="text-sm text-foreground">
@@ -507,7 +507,7 @@ function ResponseDetailBody({ detail }: { detail: SurveyResponseDetail }) {
       )}
 
       {agentQs.length > 0 && agents.length > 0 && (
-        <section className="flex flex-col gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] p-3">
+        <section className="flex flex-col gap-2 rounded-md border border-glass-strong bg-glass p-3">
           <header className="text-[10px] uppercase tracking-wider text-muted-foreground">
             Per-agent questions
           </header>
@@ -521,7 +521,7 @@ function ResponseDetailBody({ detail }: { detail: SurveyResponseDetail }) {
               return (
                 <div
                   key={agent.id}
-                  className="flex flex-col gap-2 rounded-md border border-white/[0.06] bg-white/[0.02] p-2"
+                  className="flex flex-col gap-2 rounded-md border border-glass-strong bg-glass p-2"
                 >
                   <div className="text-sm font-medium text-foreground">
                     {agent.name}
@@ -549,7 +549,7 @@ function ResponseDetailBody({ detail }: { detail: SurveyResponseDetail }) {
       )}
 
       {detail.comment && (
-        <section className="rounded-md border border-white/[0.06] bg-white/[0.02] p-3">
+        <section className="rounded-md border border-glass-strong bg-glass p-3">
           <header className="text-[10px] uppercase tracking-wider text-muted-foreground">
             Comment
           </header>

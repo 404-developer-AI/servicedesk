@@ -8,6 +8,7 @@ import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/app/ThemeProvider";
 
 const PAGE_SIZE = 25;
 const DEBOUNCE_MS = 200;
@@ -151,7 +152,7 @@ export function EntityTicketsList(props: Props) {
 
       <div className="mt-4">
         {!enabled ? (
-          <p className="rounded-md border border-white/5 bg-white/[0.02] p-6 text-center text-sm text-muted-foreground">
+          <p className="rounded-md border border-glass bg-glass p-6 text-center text-sm text-muted-foreground">
             {emptyMessage}
           </p>
         ) : isLoading ? (
@@ -165,7 +166,7 @@ export function EntityTicketsList(props: Props) {
             Could not load tickets. Try refreshing.
           </p>
         ) : items.length === 0 ? (
-          <p className="rounded-md border border-white/5 bg-white/[0.02] p-6 text-center text-sm text-muted-foreground">
+          <p className="rounded-md border border-glass bg-glass p-6 text-center text-sm text-muted-foreground">
             {emptyMessage}
           </p>
         ) : (
@@ -181,11 +182,11 @@ export function EntityTicketsList(props: Props) {
 
             {closedItems.length > 0 && (
               <div className="flex items-center gap-3 px-1 pt-3 pb-1">
-                <div className="h-px flex-1 bg-white/5" />
+                <div className="h-px flex-1 bg-glass" />
                 <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground/60">
                   Resolved &amp; closed
                 </span>
-                <div className="h-px flex-1 bg-white/5" />
+                <div className="h-px flex-1 bg-glass" />
               </div>
             )}
             {closedItems.map((t) => (
@@ -233,8 +234,8 @@ function TicketRow({
       type="button"
       onClick={onOpen}
       className={cn(
-        "group relative flex w-full items-center gap-3 overflow-hidden rounded-md border border-white/5 bg-white/[0.02] py-2 pl-4 pr-3 text-left transition-colors",
-        "hover:border-white/10 hover:bg-white/[0.05]",
+        "group relative flex w-full items-center gap-3 overflow-hidden rounded-md border border-glass bg-glass py-2 pl-4 pr-3 text-left transition-colors",
+        "hover:border-glass-strong hover:bg-glass-hover",
       )}
     >
       <span
@@ -274,10 +275,18 @@ function TicketRow({
 }
 
 function ColoredPill({ label, color }: { label: string; color: string }) {
+  const { theme } = useTheme();
+  const style =
+    theme === "light"
+      ? {
+          backgroundColor: `color-mix(in srgb, ${color} 22%, transparent)`,
+          color: `color-mix(in srgb, ${color}, black 45%)`,
+        }
+      : { backgroundColor: `${color}20`, color };
   return (
     <span
       className="shrink-0 rounded px-2 py-0.5 text-[11px] font-medium"
-      style={{ backgroundColor: `${color}20`, color }}
+      style={style}
     >
       {label}
     </span>

@@ -99,7 +99,7 @@ export function IntegrationAuditLog({ integration }: Props) {
   const items = query.data?.pages.flatMap((p) => p.items) ?? [];
   if (items.length === 0) {
     return (
-      <div className="rounded-md border border-white/[0.06] bg-white/[0.02] p-4 text-xs text-muted-foreground">
+      <div className="rounded-md border border-glass-strong bg-glass p-4 text-xs text-muted-foreground">
         No integration calls logged yet. Connect or run a test refresh to populate this view.
       </div>
     );
@@ -125,10 +125,10 @@ export function IntegrationAuditLog({ integration }: Props) {
           {query.isFetching ? "Refreshing…" : "Refresh"}
         </Button>
       </div>
-      <div className="overflow-hidden rounded-md border border-white/[0.06] bg-white/[0.02]">
+      <div className="overflow-hidden rounded-md border border-glass-strong bg-glass">
         <table className="w-full text-xs">
           <thead className="text-[10px] uppercase tracking-widest text-muted-foreground/60">
-            <tr className="border-b border-white/[0.04]">
+            <tr className="border-b border-glass">
               <th className="w-8 px-2 py-2"></th>
               <th className="px-2 py-2 text-left">When</th>
               <th className="px-2 py-2 text-left">Event</th>
@@ -171,8 +171,8 @@ function Row({ row }: { row: IntegrationAuditEntry }) {
     <>
       <tr
         className={cn(
-          "border-b border-white/[0.03] last:border-b-0",
-          hasPayload ? "cursor-pointer hover:bg-white/[0.02]" : "",
+          "border-b border-glass last:border-b-0",
+          hasPayload ? "cursor-pointer hover:bg-glass-hover" : "",
         )}
         onClick={hasPayload ? () => setExpanded((v) => !v) : undefined}
       >
@@ -215,7 +215,7 @@ function Row({ row }: { row: IntegrationAuditEntry }) {
         </td>
       </tr>
       {expanded && hasPayload && (
-        <tr className="border-b border-white/[0.03] bg-black/20">
+        <tr className="border-b border-glass bg-black/20">
           <td colSpan={8} className="px-4 py-3">
             <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px] text-muted-foreground">
               {tryPretty(row.payload)}
