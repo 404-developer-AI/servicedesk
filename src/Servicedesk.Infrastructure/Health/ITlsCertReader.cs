@@ -43,10 +43,17 @@ public sealed class FileTlsCertReader : ITlsCertReader
 
         try
         {
-            // X509Certificate2.CreateFromPemFile reads the LEAF — which is
-            // what we want for notAfter. fullchain.pem starts with the leaf
-            // and appends intermediates; the loader picks the first one.
-            using var cert = X509Certificate2.CreateFromPemFile(path);
+            // X509Certificate2.CreateFromPem(string) parses cert-only PEM —
+            // which is what fullchain.pem is (leaf + intermediates, no key).
+            // Do NOT call CreateFromPemFile(path): with a single arg it
+            // requires the file to contain BOTH a CERTIFICATE block AND a
+            // PRIVATE KEY block, and silently throws (then we return null)
+            // on a key-less fullchain.pem — which is what shipped in v0.0.18
+            // through v0.0.49 and made the tls-cert card permanently say
+            // "not readable" on every install. The privkey lives at
+            // privkey.pem (0600 root-only) and is correctly never touched
+            // by the app.
+            using var cert = X509Certificate2.CreateFromPem(File.ReadAllText(path));
             return new TlsCertInfo(cert.Subject, cert.NotAfter.ToUniversalTime());
         }
         catch
