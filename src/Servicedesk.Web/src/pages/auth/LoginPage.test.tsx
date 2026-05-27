@@ -37,6 +37,7 @@ vi.mock("sonner", () => ({
 
 import { LoginPage } from "./LoginPage";
 import { authStore } from "@/auth/authStore";
+import { ThemeProvider } from "@/app/ThemeProvider";
 
 function renderLogin(ui: ReactNode = <LoginPage />) {
   // Fresh QueryClient per test so one test's cached config doesn't
@@ -44,7 +45,11 @@ function renderLogin(ui: ReactNode = <LoginPage />) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+  return render(
+    <QueryClientProvider client={client}>
+      <ThemeProvider>{ui}</ThemeProvider>
+    </QueryClientProvider>,
+  );
 }
 
 describe("LoginPage", () => {

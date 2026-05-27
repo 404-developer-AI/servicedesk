@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Auth.Sessions;
@@ -312,7 +313,6 @@ public static class AuthEndpoints
         IUserService users,
         Servicedesk.Infrastructure.Dashboard.IDashboardTilesService dashboardTiles,
         ISettingsService settings,
-        Npgsql.NpgsqlDataSource dataSource,
         CancellationToken ct)
     {
         var userIdClaim = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -354,8 +354,11 @@ public static class AuthEndpoints
         // v0.0.44 — Effective light/dark theme resolved server-side so the
         // first paint after login agrees with the saved preference (or the
         // admin default when the user has not yet picked). Cascade: user
-        // pref → Ui.DefaultTheme → 'light'. ThemeProvider on the client
-        // uses this to override the localStorage cache value if they differ.
+        // pref → Ui.DefaultTheme → 'light'. The NpgsqlDataSource is
+        // resolved lazily off `RequestServices` so test fixtures that
+        // don't register it (the anonymous-/me round-trip never reaches
+        // this branch) still build the endpoint without a DI failure.
+        var dataSource = httpContext.RequestServices.GetService<Npgsql.NpgsqlDataSource>();
         var effectiveTheme = await ResolveEffectiveThemeAsync(userId, dataSource, settings, ct);
 
         return Results.Ok(new
@@ -383,18 +386,24 @@ public static class AuthEndpoints
 
     private static async Task<string> ResolveEffectiveThemeAsync(
         Guid userId,
-        Npgsql.NpgsqlDataSource dataSource,
+        Npgsql.NpgsqlDataSource? dataSource,
         ISettingsService settings,
         CancellationToken ct)
     {
         try
         {
-            await using var conn = await dataSource.OpenConnectionAsync(ct);
-            var raw = await Dapper.SqlMapper.ExecuteScalarAsync<string?>(conn, new Dapper.CommandDefinition(
-                "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'ui:theme'",
-                new { userId }, cancellationToken: ct));
-            var user = Normalize(raw);
-            if (user is not null) return user;
+            // Tests can run without a real Postgres registered — in that
+            // case the per-user override lookup is skipped and we fall
+            // straight through to the admin default → 'light' floor.
+            if (dataSource is not null)
+            {
+                await using var conn = await dataSource.OpenConnectionAsync(ct);
+                var raw = await Dapper.SqlMapper.ExecuteScalarAsync<string?>(conn, new Dapper.CommandDefinition(
+                    "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'ui:theme'",
+                    new { userId }, cancellationToken: ct));
+                var user = Normalize(raw);
+                if (user is not null) return user;
+            }
 
             var adminDefault = Normalize(await settings.GetAsync<string>(SettingKeys.Ui.DefaultTheme, ct));
             return adminDefault ?? "light";
