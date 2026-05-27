@@ -41,14 +41,6 @@ type CreateTicketForm = z.infer<typeof createTicketSchema>;
 
 const STALE_TIME = 60_000;
 
-const STATE_CATEGORY_COLORS: Record<string, string> = {
-  New: "bg-blue-500/20 text-blue-300 border-blue-500/30",
-  Open: "bg-green-500/20 text-green-300 border-green-500/30",
-  Pending: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
-  Resolved: "bg-purple-500/20 text-purple-300 border-purple-500/30",
-  Closed: "bg-zinc-500/20 text-zinc-300 border-zinc-500/30",
-};
-
 function FormLabel({ children }: { children: ReactNode }) {
   return (
     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">
@@ -578,29 +570,13 @@ export function NewTicketDrawer({
                       name="statusId"
                       control={control}
                       render={({ field }) => (
-                        <>
-                          <TaxonomySelect
-                            value={field.value}
-                            onChange={field.onChange}
-                            options={statusOptions}
-                            placeholder="Select status…"
-                            disabled={!taxonomyReady}
-                          />
-                          {field.value && (() => {
-                            const st = statuses?.find((s) => s.id === field.value);
-                            return st ? (
-                              <span
-                                className={cn(
-                                  "mt-1.5 inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium",
-                                  STATE_CATEGORY_COLORS[st.stateCategory] ??
-                                    "bg-zinc-500/20 text-zinc-300 border-zinc-500/30",
-                                )}
-                              >
-                                {st.stateCategory}
-                              </span>
-                            ) : null;
-                          })()}
-                        </>
+                        <TaxonomySelect
+                          value={field.value}
+                          onChange={field.onChange}
+                          options={statusOptions}
+                          placeholder="Select status…"
+                          disabled={!taxonomyReady}
+                        />
                       )}
                     />
                     <FieldError message={errors.statusId?.message} />

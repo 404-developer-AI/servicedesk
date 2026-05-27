@@ -90,7 +90,7 @@ export const MentionList = React.forwardRef<MentionListHandle, MentionListProps>
                 className={cn(
                   "w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors",
                   isSelected
-                    ? "bg-purple-500/15 text-purple-100"
+                    ? "bg-purple-100 text-purple-900 dark:bg-purple-500/15 dark:text-purple-100"
                     : "text-foreground/80 hover:bg-glass-hover",
                 )}
               >
@@ -100,8 +100,10 @@ export const MentionList = React.forwardRef<MentionListHandle, MentionListProps>
                 </span>
                 <span
                   className={cn(
-                    "ml-auto text-[10px] uppercase tracking-wide shrink-0 opacity-60",
-                    item.roleName === "Admin" ? "text-amber-300" : "text-sky-300",
+                    "ml-auto shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider",
+                    item.roleName === "Admin"
+                      ? "border-amber-400/60 bg-amber-100 text-amber-800 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
+                      : "border-sky-400/60 bg-sky-100 text-sky-800 dark:border-sky-400/30 dark:bg-sky-400/10 dark:text-sky-200",
                   )}
                 >
                   {item.roleName}

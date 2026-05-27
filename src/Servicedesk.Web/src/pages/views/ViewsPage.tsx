@@ -192,7 +192,7 @@ function NativeSelect({
         "w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground",
         "focus:outline-none focus:ring-1 focus:ring-ring focus:border-glass-strong",
         "disabled:opacity-50",
-        "[&_option]:bg-zinc-900 [&_option]:text-foreground",
+        "[&_option]:bg-popover [&_option]:text-popover-foreground",
       )}
     >
       {children}

@@ -20,13 +20,18 @@ function formatDuration(ms: number): string {
 }
 
 function pillClasses(remainingMs: number | null, met: boolean, metLate: boolean, paused: boolean) {
-  if (met && metLate) return "border-red-500/30 bg-red-500/10 text-red-200";
-  if (met) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-200";
-  if (paused) return "border-sky-500/30 bg-sky-500/10 text-sky-200";
+  if (met && metLate)
+    return "border-red-400/60 bg-red-100/80 text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200";
+  if (met)
+    return "border-emerald-400/60 bg-emerald-100/80 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200";
+  if (paused)
+    return "border-sky-400/60 bg-sky-100/80 text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200";
   if (remainingMs === null) return "border-glass bg-glass text-muted-foreground";
-  if (remainingMs < 0) return "border-red-500/40 bg-red-500/10 text-red-200";
-  if (remainingMs < 15 * 60 * 1000) return "border-amber-500/40 bg-amber-500/10 text-amber-200";
-  return "border-emerald-500/20 bg-emerald-500/[0.06] text-emerald-100/80";
+  if (remainingMs < 0)
+    return "border-red-400/70 bg-red-100/80 text-red-800 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200";
+  if (remainingMs < 15 * 60 * 1000)
+    return "border-amber-400/70 bg-amber-100/80 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200";
+  return "border-emerald-400/50 bg-emerald-100/70 text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/[0.06] dark:text-emerald-100/80";
 }
 
 export function SlaPill({ ticketId, className }: Props) {
@@ -46,7 +51,7 @@ export function SlaPill({ ticketId, className }: Props) {
       <Row label="First response" nowMs={nowMs} deadline={state.firstResponseDeadlineUtc} met={state.firstResponseMetUtc} businessMinutes={state.firstResponseBusinessMinutes} paused={state.isPaused} />
       <Row label="Resolution" nowMs={nowMs} deadline={state.resolutionDeadlineUtc} met={state.resolutionMetUtc} businessMinutes={state.resolutionBusinessMinutes} paused={state.isPaused} />
       {state.isPaused && (
-        <span className="flex items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-sky-200">
+        <span className="flex items-center gap-1 rounded-md border border-sky-400/60 bg-sky-100/80 px-2 py-1 text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
           <PauseCircle className="h-3 w-3" /> Paused (waiting)
         </span>
       )}
