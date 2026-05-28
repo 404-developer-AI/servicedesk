@@ -358,6 +358,12 @@ public static class SettingKeys
         /// freeze on; that payload is bulky on a 5k-ticket migration, so
         /// we sweep aggressively. Clamped to [1, 90]. Default 14.
         public const string DryRunRetentionDays = "Zammad.DryRunRetentionDays";
+
+        /// Hard cap on tickets walked per "Select all matching" dry-run
+        /// / import. Stops a runaway filter (e.g. a free-text that
+        /// accidentally matches the whole upstream) from blocking the
+        /// worker for hours. Clamped to [100, 200000]. Default 20000.
+        public const string SelectAllMatchingHardCap = "Zammad.SelectAllMatchingHardCap";
     }
 
     /// Generic integration-framework knobs shared by every connector. The
@@ -868,6 +874,8 @@ public static class SettingDefaults
             "Maximum retry attempts before a Zammad call surfaces as a hard failure. Clamped to [0, 8]. Default 3 covers a short upstream blip without dragging an admin-facing Test connection out minutes deep."),
         new SettingDefault(SettingKeys.Zammad.DryRunRetentionDays, "14", "int", "Zammad",
             "Retention window (days) for dry-run snapshots in zammad_import_runs. Dry-run payloads carry the full per-ticket mapping verdict + frozen id-list and are heavy on large migrations, so the sweeper retires them aggressively. Clamped to [1, 90]. Default 14."),
+        new SettingDefault(SettingKeys.Zammad.SelectAllMatchingHardCap, "20000", "int", "Zammad",
+            "Hard cap on tickets walked per \"Select all matching\" dry-run / import. Stops a runaway filter from blocking the worker for hours on a free-text query that accidentally matches the whole upstream. Clamped to [100, 200000]. Default 20000 — generous enough for full-customer migrations while still preventing a worst-case 1M-ticket walk."),
 
         // Integrations — v0.0.25 healthcheck framework. Cross-integration
         // knobs only; per-connector specifics live under their own
