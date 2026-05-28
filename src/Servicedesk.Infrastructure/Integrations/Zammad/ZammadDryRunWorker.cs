@@ -46,11 +46,13 @@ public sealed class ZammadDryRunWorker : BackgroundService
     /// 2s progress polling smooth.
     private const int TotalsFlushBatchSize = 10;
 
-    /// Maximum tickets walked per "Select all matching" dry-run. Hard
-    /// stop to keep a runaway filter from chewing 100K tickets on the
-    /// upstream. Setting-driven later; in fase 3 a generous 5K is plenty
-    /// for the first migration test.
-    private const int SelectAllMatchingHardCap = 5_000;
+    /// Fallback for <see cref="SettingKeys.Zammad.SelectAllMatchingHardCap"/>
+    /// when the setting is missing or out-of-range. Kept in sync with
+    /// the default in <see cref="SettingKeys"/>; the per-run resolver
+    /// reads the setting and clamps to [100, 200_000].
+    private const int SelectAllMatchingHardCapDefault = 20_000;
+    private const int SelectAllMatchingHardCapMin = 100;
+    private const int SelectAllMatchingHardCapMax = 200_000;
 
     public ZammadDryRunWorker(
         IServiceProvider sp,
@@ -174,11 +176,19 @@ public sealed class ZammadDryRunWorker : BackgroundService
             // lookups + a contact-by-email DB hit per ticket.
             var dict = await mappings.LoadDictionaryAsync(stoppingToken);
 
+            // Resolve the hard cap from settings per-run so an admin can
+            // raise it for a one-off bulk migration without touching code.
+            // Out-of-range → fall back to the default; clamp at the edges.
+            var rawCap = await settings.GetAsync<int>(SettingKeys.Zammad.SelectAllMatchingHardCap, stoppingToken);
+            var hardCap = rawCap <= 0
+                ? SelectAllMatchingHardCapDefault
+                : Math.Clamp(rawCap, SelectAllMatchingHardCapMin, SelectAllMatchingHardCapMax);
+
             // Resolve ticket-id list: explicit selection, or re-search.
             IReadOnlyList<long> ticketIds;
             try
             {
-                ticketIds = await ResolveTicketIdsAsync(filter, zammad, stoppingToken);
+                ticketIds = await ResolveTicketIdsAsync(filter, zammad, hardCap, stoppingToken);
             }
             catch (ZammadApiException ex)
             {
@@ -671,6 +681,7 @@ public sealed class ZammadDryRunWorker : BackgroundService
     private async Task<IReadOnlyList<long>> ResolveTicketIdsAsync(
         ZammadImportSourceFilter? filter,
         IZammadApiClient zammad,
+        int hardCap,
         CancellationToken ct)
     {
         if (filter is null) return Array.Empty<long>();
@@ -706,7 +717,7 @@ public sealed class ZammadDryRunWorker : BackgroundService
             foreach (var it in pageResult.Items)
             {
                 ids.Add(it.Id);
-                if (ids.Count >= SelectAllMatchingHardCap) return ids;
+                if (ids.Count >= hardCap) return ids;
             }
             if (pageResult.Items.Count < perPage) break;
             page++;

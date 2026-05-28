@@ -431,6 +431,12 @@ export function ZammadIntegrationPage() {
               label="Dry-run retention (days)"
               hint="Dry-run snapshots are heavy (full per-ticket mapping verdict). The sweeper prunes anything older than this. Range 1–90."
             />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Zammad.SelectAllMatchingHardCap")}
+              queryKey={SETTINGS_QK}
+              label="Select-all-matching hard cap"
+              hint="Maximum tickets walked per &quot;Select all matching&quot; dry-run or import. Stops a runaway free-text filter from chewing the whole upstream. Range 100–200000."
+            />
           </>
         )}
       </section>
