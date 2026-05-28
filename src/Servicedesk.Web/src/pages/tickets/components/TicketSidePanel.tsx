@@ -248,6 +248,8 @@ export function TicketSidePanel({
           <StatusTab
             ticket={ticket}
             onUpdate={onUpdate}
+            companyDetail={companyDetail ?? null}
+            onRequestCompanyAssign={onRequestCompanyAssign}
             onRequestMerge={() => setMergeOpen(true)}
             onRequestLinkParent={() => setLinkParentOpen(true)}
             mergedIntoTicketNumber={mergedIntoTicketNumber ?? null}
@@ -294,6 +296,8 @@ export function TicketSidePanel({
 function StatusTab({
   ticket,
   onUpdate,
+  companyDetail,
+  onRequestCompanyAssign,
   onRequestMerge,
   onRequestLinkParent,
   mergedIntoTicketNumber,
@@ -306,6 +310,8 @@ function StatusTab({
 }: {
   ticket: Ticket;
   onUpdate: (fields: TicketFieldUpdate) => Promise<void>;
+  companyDetail: CompanyDetail | null;
+  onRequestCompanyAssign?: () => void;
   onRequestMerge: () => void;
   onRequestLinkParent: () => void;
   mergedIntoTicketNumber: string | null;
@@ -475,6 +481,43 @@ function StatusTab({
           value={ticket.assigneeUserId}
           onChange={(userId) => onUpdate({ assigneeUserId: userId ?? undefined })}
         />
+      </div>
+
+      {/* v0.0.51 — company quick-view + change. Click to open the same
+          dialog the Company-tab banner uses. The tab itself still
+          carries the full company detail (address, contacts, domains). */}
+      <div>
+        <FieldLabel>Company</FieldLabel>
+        <button
+          type="button"
+          onClick={onRequestCompanyAssign}
+          disabled={!onRequestCompanyAssign}
+          className={cn(
+            "flex w-full items-center gap-2 rounded-md border border-glass bg-glass px-3 py-2 text-left text-sm transition-colors",
+            onRequestCompanyAssign
+              ? "hover:bg-glass-hover"
+              : "cursor-default",
+          )}
+        >
+          <Building2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span
+            className={cn(
+              "flex-1 truncate",
+              !companyDetail && "text-muted-foreground",
+            )}
+          >
+            {companyDetail?.company.name ?? "No company linked"}
+          </span>
+          {onRequestCompanyAssign && (
+            <Pencil className="h-3 w-3 shrink-0 text-muted-foreground/70" />
+          )}
+        </button>
+        <div className="mt-1">
+          <ResolutionBadge
+            ticket={ticket}
+            onRequestCompanyAssign={onRequestCompanyAssign}
+          />
+        </div>
       </div>
 
       <RelationshipsBlock

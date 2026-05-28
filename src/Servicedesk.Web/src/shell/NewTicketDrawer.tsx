@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Drawer } from "vaul";
-import { Loader2 } from "lucide-react";
+import { Building2, Loader2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -16,8 +16,9 @@ import { AgentPicker } from "@/components/AgentPicker";
 import { CompanyAlertDialog } from "@/components/CompanyAlertDialog";
 import { TaxonomySelect } from "@/components/TaxonomySelect";
 import { PendingTillField } from "@/components/PendingTillField";
+import { TicketCompanyAssignmentDialog } from "@/components/TicketCompanyAssignmentDialog";
 import { agentQueueApi, taxonomyApi } from "@/lib/api";
-import { ticketApi, type CompanyAlert } from "@/lib/ticket-api";
+import { ticketApi, type CompanyAlert, type ContactCompanyRole } from "@/lib/ticket-api";
 import { composeTemplatesApi } from "@/lib/composeTemplates-api";
 import { cn } from "@/lib/utils";
 
@@ -245,6 +246,21 @@ export function NewTicketDrawer({
   // open transition alongside the form reset and cleared on close.
   const [noteState, setNoteState] = useState<{ bodyHtml: string; isInternal: boolean } | null>(null);
 
+  // v0.0.51 — agent-supplied company linked to the new ticket. The
+  // picker auto-opens whenever the requester changes (including the
+  // initial open if a contact was pre-filled). Empty selection ↔ no
+  // explicit choice; backend then falls back to the cascade. Tracked
+  // by a ref so a rerender that doesn't change the requester doesn't
+  // re-open the dialog or wipe a confirmed choice.
+  const [companyDialogOpen, setCompanyDialogOpen] = useState(false);
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
+  const [selectedCompanyName, setSelectedCompanyName] = useState<string | null>(null);
+  // Role for a brand-new contact_companies link. Null when the agent
+  // picked a company that's already on the contact's link list (no
+  // new row needed) OR cleared the choice.
+  const [selectedNewLinkRole, setSelectedNewLinkRole] = useState<ContactCompanyRole | null>(null);
+  const lastProcessedRequesterRef = useRef<string | null>(null);
+
   const previousOpenRef = useRef(false);
   useEffect(() => {
     const wasOpen = previousOpenRef.current;
@@ -268,8 +284,30 @@ export function NewTicketDrawer({
       // doesn't inherit a stale body. The form's reset() is handled
       // by handleClose / the mutation onSuccess.
       setNoteState(null);
+      // v0.0.51 — close the company picker and drop any agent-picked
+      // company so re-opening for a different requester starts clean.
+      setCompanyDialogOpen(false);
+      setSelectedCompanyId(null);
+      setSelectedCompanyName(null);
+      setSelectedNewLinkRole(null);
+      lastProcessedRequesterRef.current = null;
     }
   });
+
+  // v0.0.51 — open the company-picker when the requester changes to a
+  // new non-empty value. Triggers on first open with an `initialContactId`
+  // and on every subsequent edit through the ContactPicker. Clearing the
+  // requester wipes the prior selection so it can't leak across contacts.
+  useEffect(() => {
+    if (!open) return;
+    const requesterId = watchedRequesterContactId || null;
+    if (requesterId === lastProcessedRequesterRef.current) return;
+    lastProcessedRequesterRef.current = requesterId;
+    setSelectedCompanyId(null);
+    setSelectedCompanyName(null);
+    setSelectedNewLinkRole(null);
+    setCompanyDialogOpen(!!requesterId);
+  }, [open, watchedRequesterContactId]);
 
   // Taxonomy defaults (priority / status) can arrive AFTER the drawer is
   // already open if the agent clicked the trigger before the first
@@ -347,6 +385,13 @@ export function NewTicketDrawer({
       initialNote: noteState && stripEmptyHtml(noteState.bodyHtml).length > 0
         ? { bodyHtml: noteState.bodyHtml, isInternal: noteState.isInternal }
         : undefined,
+      // v0.0.51 — agent's explicit company pick from the create-time
+      // popup. Omitted when the agent cancelled the popup; the backend
+      // then runs its cascade (same as mail-intake). newLinkRole rides
+      // along when the picked company wasn't yet on the contact's
+      // link list, so the backend can upsert the row in the same call.
+      companyId: selectedCompanyId ?? undefined,
+      newLinkRole: selectedCompanyId && selectedNewLinkRole ? selectedNewLinkRole : undefined,
     });
   }
 
@@ -564,6 +609,33 @@ export function NewTicketDrawer({
                     <FieldError message={errors.requesterContactId?.message} />
                   </div>
 
+                  {/* v0.0.51 — agent-picked company for this ticket.
+                      Visible once a requester is selected. Opens the
+                      same dialog the side panel uses, in 'create' mode
+                      so the choice flows back into the form instead of
+                      committing immediately. */}
+                  {watchedRequesterContactId && (
+                    <div>
+                      <FormLabel>Company</FormLabel>
+                      <button
+                        type="button"
+                        onClick={() => setCompanyDialogOpen(true)}
+                        className="flex w-full items-center gap-2 rounded-md border border-glass bg-glass px-3 py-2 text-left text-sm transition-colors hover:bg-glass-hover focus:border-glass-strong focus:bg-glass-strong"
+                      >
+                        <Building2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className={cn("flex-1 truncate", !selectedCompanyName && "text-muted-foreground")}>
+                          {selectedCompanyName ?? "No company linked"}
+                        </span>
+                        <Pencil className="h-3 w-3 shrink-0 text-muted-foreground/70" />
+                      </button>
+                      {selectedCompanyId && selectedNewLinkRole && (
+                        <p className="mt-1 text-[10px] text-muted-foreground/70">
+                          Will also link this contact as {selectedNewLinkRole}.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   <div>
                     <FormLabel>Status *</FormLabel>
                     <Controller
@@ -724,6 +796,24 @@ export function NewTicketDrawer({
         </Drawer.Content>
       </Drawer.Portal>
     </Drawer.Root>
+    {/* v0.0.51 — company picker for the create-time flow. Receives the
+        agent's choice into local state; the actual write happens with
+        POST /api/tickets in onSubmit. Cancelling leaves selection null
+        and the backend falls back to the cascade. */}
+    {watchedRequesterContactId && (
+      <TicketCompanyAssignmentDialog
+        open={companyDialogOpen}
+        contactId={watchedRequesterContactId}
+        mode="create"
+        onClose={() => setCompanyDialogOpen(false)}
+        onAssigned={() => setCompanyDialogOpen(false)}
+        submit={async (companyId, companyName, newLinkRole) => {
+          setSelectedCompanyId(companyId);
+          setSelectedCompanyName(companyName);
+          setSelectedNewLinkRole(newLinkRole);
+        }}
+      />
+    )}
     </>
   );
 }

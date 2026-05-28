@@ -220,11 +220,33 @@ public static class TicketEndpoints
                     return Results.Conflict(new { error = "Parent ticket is merged.", code = "parent_is_merged" });
             }
 
-            // Run the same resolution tree the mail-intake uses so an
-            // agent-created ticket freezes its company_id identically. An
-            // ambiguous contact → awaiting_company_assignment=true and the
-            // Ticket dialog (ToDo #4) prompts the agent to pick explicitly.
-            var resolution = await contactLookup.ResolveCompanyForNewTicketAsync(req.RequesterContactId, ct);
+            // v0.0.51 — when the UI passed an explicit CompanyId the
+            // agent already made the decision in the create-time popup,
+            // so the cascade is skipped. Mail-intake leaves CompanyId
+            // null and falls through to the same ResolveCompanyForNewTicketAsync
+            // path it has always used. NewLinkRole carries the learn-
+            // flow choice (primary/secondary/supplier) for picks that
+            // aren't yet on the contact's link list.
+            Guid? resolvedCompanyId;
+            bool awaitingCompany;
+            string? resolvedVia;
+            if (req.CompanyId is Guid pickedCompanyId)
+            {
+                var linkResult = await ApplyTicketCompanyChoiceAsync(
+                    companies, req.RequesterContactId, pickedCompanyId, req.NewLinkRole, ct);
+                if (linkResult.ErrorResult is not null) return linkResult.ErrorResult;
+
+                resolvedCompanyId = pickedCompanyId;
+                awaitingCompany = false;
+                resolvedVia = "manual";
+            }
+            else
+            {
+                var resolution = await contactLookup.ResolveCompanyForNewTicketAsync(req.RequesterContactId, ct);
+                resolvedCompanyId = resolution.CompanyId;
+                awaitingCompany = resolution.Awaiting;
+                resolvedVia = resolution.ResolvedVia;
+            }
 
             var pendingTillUtc = req.PendingTillUtc;
 
@@ -239,9 +261,9 @@ public static class TicketEndpoints
                 CategoryId: req.CategoryId,
                 AssigneeUserId: req.AssigneeUserId,
                 Source: req.Source ?? "Api",
-                CompanyId: resolution.CompanyId,
-                AwaitingCompanyAssignment: resolution.Awaiting,
-                CompanyResolvedVia: resolution.ResolvedVia,
+                CompanyId: resolvedCompanyId,
+                AwaitingCompanyAssignment: awaitingCompany,
+                CompanyResolvedVia: resolvedVia,
                 PendingTillUtc: pendingTillUtc,
                 TicketTypeId: req.TicketTypeId,
                 InitialNote: req.InitialNote is { } note && !string.IsNullOrWhiteSpace(note.BodyHtml)
@@ -594,11 +616,18 @@ public static class TicketEndpoints
             if (!await queueAccess.HasQueueAccessAsync(userId, userRole, current.Ticket.QueueId, ct))
                 return Results.NotFound();
 
+            // v0.0.51 — validate the company + handle the learn-flow link
+            // role choice with the same rules the create-time POST uses.
+            // Failure responses (400/409) come back before we touch the
+            // ticket so a rejected role can't leave an orphan link behind.
+            var linkChoice = await ApplyTicketCompanyChoiceAsync(
+                companies, current.Ticket.RequesterContactId, req.CompanyId, req.NewLinkRole, ct);
+            if (linkChoice.ErrorResult is not null) return linkChoice.ErrorResult;
+
             var targetCompany = await companies.GetCompanyAsync(req.CompanyId, ct);
-            if (targetCompany is null)
-                return Results.BadRequest(new { error = "Unknown company." });
-            if (!targetCompany.IsActive)
-                return Results.BadRequest(new { error = "Cannot assign an inactive company." });
+            // Helper already validated existence + active — re-fetch only
+            // to surface the name in the audit payload below.
+            if (targetCompany is null) return Results.BadRequest(new { error = "Unknown company." });
 
             // Infer the resolution reason from the contact's current link set.
             // supplier_only → contact has links but none are primary/secondary.
@@ -621,20 +650,6 @@ public static class TicketEndpoints
             var detail = await tickets.AssignCompanyAsync(id, req.CompanyId, userId, ct);
             if (detail is null) return Results.NotFound();
 
-            // Optional side-effect: link the requester contact to this company
-            // as 'supplier' so the learn-flow grows the contact's link set
-            // without stepping on an existing primary/secondary.
-            if (req.LinkAsSupplier)
-            {
-                var existingLinks = await companies.ListContactLinksAsync(current.Ticket.RequesterContactId, ct);
-                var alreadyLinked = existingLinks.Any(l => l.CompanyId == req.CompanyId);
-                if (!alreadyLinked)
-                {
-                    await companies.UpsertContactLinkAsync(
-                        current.Ticket.RequesterContactId, req.CompanyId, "supplier", ct);
-                }
-            }
-
             var (actor, actorRole) = ActorContext.Resolve(http);
             await audit.LogAsync(new AuditEvent(
                 EventType: "ticket.company.manually_assigned",
@@ -649,7 +664,7 @@ public static class TicketEndpoints
                     companyName = targetCompany.Name,
                     previousCompanyId = current.Ticket.CompanyId,
                     reason,
-                    linkAsSupplier = req.LinkAsSupplier,
+                    newLinkRole = linkChoice.NewLinkCreated ? req.NewLinkRole : null,
                     contactId = current.Ticket.RequesterContactId,
                 }));
 
@@ -1775,7 +1790,23 @@ public static class TicketEndpoints
         // ticket exists. Used by the "Create linked X ticket" flow to
         // drop an opening note (internal or public) into the timeline
         // alongside the ticket body.
-        InitialNoteRequest? InitialNote = null);
+        InitialNoteRequest? InitialNote = null,
+        // v0.0.51 — agent-supplied company at create-time (UI flow).
+        // When set the handler skips the ContactLookupService cascade
+        // and freezes this company on the new ticket with
+        // company_resolved_via='manual'. Mail-intake leaves this null
+        // and keeps the cascade. NewLinkRole pairs with CompanyId:
+        //   * required ('primary' | 'secondary' | 'supplier') when the
+        //     picked company is not yet on the contact's link list —
+        //     the handler upserts the link with that role so future
+        //     intake knows the relationship;
+        //   * must be null when the picked company is already linked
+        //     to the contact (no learn-flow needed; trying to set it
+        //     yields 400).
+        // 'primary' conflicts with an existing primary link to a
+        // different company → 409.
+        Guid? CompanyId = null,
+        string? NewLinkRole = null);
 
     public sealed record InitialNoteRequest(string BodyHtml, bool IsInternal);
 
@@ -1864,12 +1895,15 @@ public static class TicketEndpoints
 
     public sealed record PinEventRequest(string? Remark);
 
-    /// v0.0.9 ToDo #4: manual company-assignment payload. <c>LinkAsSupplier</c>
-    /// is the opt-in learn-flow that also adds the requester contact to the
-    /// target company as a supplier link in the same call.
+    /// v0.0.9 ToDo #4 / v0.0.51 — manual company-assignment payload.
+    /// <c>NewLinkRole</c> is required when the picked company is not
+    /// yet on the contact's link list ('primary' | 'secondary' |
+    /// 'supplier'); it must be null when the company is already
+    /// linked (no learn-flow needed). 'primary' is rejected with 409
+    /// when the contact already has a primary on a different company.
     public sealed record AssignTicketCompanyRequest(
         Guid CompanyId,
-        bool LinkAsSupplier);
+        string? NewLinkRole);
 
     public sealed record UpdatePinRemarkRequest(string Remark);
 
@@ -1922,6 +1956,102 @@ public static class TicketEndpoints
             .Where(e => !string.Equals(e.EventType, nameof(Servicedesk.Domain.Tickets.TicketEventType.SurveySubmitted), StringComparison.Ordinal)
                      && !string.Equals(e.EventType, nameof(Servicedesk.Domain.Tickets.TicketEventType.SurveyExpired), StringComparison.Ordinal))
             .ToList();
+    }
+
+    /// v0.0.51 — shared validation + side-effect for the two endpoints
+    /// that let the agent attach a ticket to a specific company
+    /// (POST /api/tickets and PATCH /api/tickets/{id}/company).
+    ///
+    /// Rules:
+    ///   * Company must exist and be active.
+    ///   * If the company is already on the contact's link list →
+    ///     newLinkRole must be null/empty (anything else = 400).
+    ///   * If the company is NOT yet linked → newLinkRole must be
+    ///     'primary' | 'secondary' | 'supplier' (anything else = 400).
+    ///   * newLinkRole='primary' while the contact already has a
+    ///     primary link to another company → 409 (no silent demotion;
+    ///     the agent must change the existing primary on the Contact
+    ///     page first).
+    ///
+    /// Returns a non-null <c>ErrorResult</c> when validation rejects
+    /// the request — caller must return it before persisting the
+    /// ticket / company-assignment. <c>NewLinkCreated</c> is true when
+    /// a fresh contact_companies row was upserted.
+    private static async Task<TicketCompanyChoiceResult> ApplyTicketCompanyChoiceAsync(
+        ICompanyRepository companies,
+        Guid contactId,
+        Guid pickedCompanyId,
+        string? newLinkRole,
+        CancellationToken ct)
+    {
+        if (pickedCompanyId == Guid.Empty)
+            return TicketCompanyChoiceResult.Error(Results.BadRequest(new { error = "companyId is empty." }));
+
+        var picked = await companies.GetCompanyAsync(pickedCompanyId, ct);
+        if (picked is null)
+            return TicketCompanyChoiceResult.Error(Results.BadRequest(new { error = "Unknown company." }));
+        if (!picked.IsActive)
+            return TicketCompanyChoiceResult.Error(Results.BadRequest(new { error = "Cannot assign an inactive company." }));
+
+        var trimmedRole = string.IsNullOrWhiteSpace(newLinkRole) ? null : newLinkRole.Trim().ToLowerInvariant();
+        var links = await companies.ListContactLinksAsync(contactId, ct);
+        var alreadyLinked = links.Any(l => l.CompanyId == pickedCompanyId);
+
+        if (alreadyLinked)
+        {
+            if (trimmedRole is not null)
+            {
+                return TicketCompanyChoiceResult.Error(Results.BadRequest(new
+                {
+                    error = "newLinkRole must be omitted when the company is already linked to the contact.",
+                    code = "company_already_linked",
+                }));
+            }
+            return TicketCompanyChoiceResult.Ok(NewLinkCreated: false);
+        }
+
+        // Company is not yet linked → a role choice is mandatory.
+        if (trimmedRole is null)
+        {
+            return TicketCompanyChoiceResult.Error(Results.BadRequest(new
+            {
+                error = "newLinkRole is required when picking a company that is not yet linked to the contact.",
+                code = "new_link_role_required",
+            }));
+        }
+        if (trimmedRole is not ("primary" or "secondary" or "supplier"))
+        {
+            return TicketCompanyChoiceResult.Error(Results.BadRequest(new
+            {
+                error = "newLinkRole must be one of 'primary', 'secondary', 'supplier'.",
+                code = "new_link_role_invalid",
+            }));
+        }
+
+        // Primary slot is unique per contact. Refuse rather than
+        // silently demote so the agent always knows what changes.
+        if (trimmedRole == "primary")
+        {
+            var existingPrimary = links.FirstOrDefault(l => l.Role == "primary");
+            if (existingPrimary is not null)
+            {
+                return TicketCompanyChoiceResult.Error(Results.Conflict(new
+                {
+                    error = "This contact already has a primary company. Pick a different role, or change the primary on the contact page first.",
+                    code = "primary_already_set",
+                    existingPrimaryCompanyId = existingPrimary.CompanyId,
+                }));
+            }
+        }
+
+        await companies.UpsertContactLinkAsync(contactId, pickedCompanyId, trimmedRole, ct);
+        return TicketCompanyChoiceResult.Ok(NewLinkCreated: true);
+    }
+
+    private readonly record struct TicketCompanyChoiceResult(IResult? ErrorResult, bool NewLinkCreated)
+    {
+        public static TicketCompanyChoiceResult Ok(bool NewLinkCreated) => new(null, NewLinkCreated);
+        public static TicketCompanyChoiceResult Error(IResult result) => new(result, false);
     }
 
     private static async Task<TicketCompanyAlert?> BuildCompanyAlertAsync(

@@ -365,6 +365,17 @@ export type CreateTicketRequest = {
   /// an opening note (internal or public) into the timeline alongside
   /// the ticket body.
   initialNote?: { bodyHtml: string; isInternal: boolean };
+  /// v0.0.51 — UI-supplied company when the agent picked one in the
+  /// create-time popup. When omitted the backend falls back to the
+  /// same cascade mail-intake uses (primary → single secondary →
+  /// awaiting). Picking a company here always lands resolved_via='manual'.
+  companyId?: string;
+  /// v0.0.51 — role for a brand-new contact_companies link, set when
+  /// the picked company isn't yet on the requester's link list. Must
+  /// be omitted when the picked company is already linked.
+  /// 'primary' yields 409 if the contact already has a primary on a
+  /// different company.
+  newLinkRole?: ContactCompanyRole;
 };
 
 // v0.0.39 — server-side preset summary used by the LinkedTicketTypeDialog.
@@ -801,7 +812,11 @@ export type CompanyPickerItem = {
 
 export type AssignTicketCompanyRequest = {
   companyId: string;
-  linkAsSupplier: boolean;
+  /// v0.0.51 — role for a new contact_companies link when the picked
+  /// company isn't yet on the contact. Must be omitted when the
+  /// company is already linked. 'primary' is rejected (409) if the
+  /// contact already has a primary on a different company.
+  newLinkRole?: ContactCompanyRole;
 };
 
 // ---- API functions ----

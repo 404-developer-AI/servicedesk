@@ -583,22 +583,26 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
   }, [awaiting, ticketId]);
 
   const assignMutation = useMutation({
-    mutationFn: (vars: { companyId: string; linkAsSupplier: boolean }) =>
+    mutationFn: (vars: { companyId: string; newLinkRole: ContactCompanyRole | null }) =>
       ticketApi.assignCompany(ticketId, {
         companyId: vars.companyId,
-        linkAsSupplier: vars.linkAsSupplier,
+        newLinkRole: vars.newLinkRole ?? undefined,
       }),
     onSuccess: (updated) => {
       queryClient.setQueryData(["ticket", ticketId], updated);
       queryClient.invalidateQueries({ queryKey: ["tickets"] });
-      toast.success("Company toegewezen");
+      toast.success("Company assigned");
     },
-    onError: () => toast.error("Kon company niet toewijzen"),
+    onError: () => toast.error("Could not assign company"),
   });
 
   const submitAssignment = React.useCallback(
-    async (companyId: string, linkAsSupplier: boolean) => {
-      await assignMutation.mutateAsync({ companyId, linkAsSupplier });
+    async (
+      companyId: string,
+      _companyName: string,
+      newLinkRole: ContactCompanyRole | null,
+    ) => {
+      await assignMutation.mutateAsync({ companyId, newLinkRole });
     },
     [assignMutation],
   );

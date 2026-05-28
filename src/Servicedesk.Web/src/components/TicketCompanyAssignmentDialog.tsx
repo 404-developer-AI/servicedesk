@@ -21,11 +21,32 @@ import type {
 
 type Props = {
   open: boolean;
-  ticketId: string;
+  /// Only set in 'assign' mode where a ticket already exists. The
+  /// create-time popup (mode='create') leaves this undefined — the
+  /// callback returns the picked company to the drawer, which sends
+  /// it along with POST /api/tickets.
+  ticketId?: string;
   contactId: string;
+  /// 'assign' (default) = post-create reassignment via PATCH /api/tickets/{id}/company.
+  /// 'create' = pre-create selection used by NewTicketDrawer; copy changes
+  /// from "wijs toe" → "selecteer voor dit ticket" so the agent doesn't
+  /// think the action commits before submit.
+  mode?: "create" | "assign";
   onClose: () => void;
   onAssigned: () => void;
-  submit: (companyId: string, linkAsSupplier: boolean) => Promise<void>;
+  /// Receives the agent's choice. In 'assign' mode the parent calls
+  /// the API and resolves on success; in 'create' mode the parent
+  /// stashes the selection and the API call happens later via
+  /// POST /api/tickets. `companyName` is included so the parent can
+  /// render a readable badge without a second round-trip. `newLinkRole`
+  /// is the role for a brand-new contact_companies row when the
+  /// picked company isn't yet on the contact's link list; null when
+  /// the company is already linked (no new row needed).
+  submit: (
+    companyId: string,
+    companyName: string,
+    newLinkRole: ContactCompanyRole | null,
+  ) => Promise<void>;
 };
 
 const ROLE_BADGE: Record<ContactCompanyRole, { label: string; className: string }> = {
@@ -51,14 +72,20 @@ export function TicketCompanyAssignmentDialog({
   open,
   ticketId,
   contactId,
+  mode = "assign",
   onClose,
   onAssigned,
   submit,
 }: Props) {
+  const isCreateMode = mode === "create";
   const [search, setSearch] = React.useState("");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [selectedName, setSelectedName] = React.useState<string | null>(null);
-  const [linkAsSupplier, setLinkAsSupplier] = React.useState(false);
+  // v0.0.51 — agent picks the role for a brand-new contact_companies
+  // link when the chosen company isn't on the contact's list yet.
+  // Null = no choice made yet (save is blocked); also null when the
+  // picked company is already linked (no new row needed).
+  const [selectedRole, setSelectedRole] = React.useState<ContactCompanyRole | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -80,46 +107,69 @@ export function TicketCompanyAssignmentDialog({
   });
 
   // Reset ephemeral state whenever the dialog closes so the next open for a
-  // different ticket starts clean.
+  // different ticket starts clean. In create-mode `ticketId` is undefined
+  // so we key the reset on `contactId` — picking a different requester in
+  // the drawer should clear any stale company selection.
   React.useEffect(() => {
     if (!open) {
       setSearch("");
       setSelectedId(null);
       setSelectedName(null);
-      setLinkAsSupplier(false);
+      setSelectedRole(null);
       setSaving(false);
       setError(null);
     }
-  }, [open, ticketId]);
+  }, [open, ticketId, contactId]);
 
   const selectContactOption = (option: ContactCompanyOption) => {
     setSelectedId(option.companyId);
     setSelectedName(option.companyName);
-    // Supplier-link already exists for this option if role is 'supplier'; the
-    // learn-flow only makes sense when we're about to create a *new* bond.
-    setLinkAsSupplier(false);
+    // Existing link → no new contact_companies row needed; role is
+    // whatever it already is, the dialog doesn't change it here.
+    setSelectedRole(null);
   };
   const selectSearchResult = (company: CompanyPickerItem) => {
     setSelectedId(company.id);
     setSelectedName(company.name);
-    setLinkAsSupplier(false);
+    // Picked an unlinked company: agent must pick a role next.
+    setSelectedRole(null);
   };
 
   const selectedIsInContactLinks = React.useMemo(
     () => contactOptions?.some((o) => o.companyId === selectedId) ?? false,
     [contactOptions, selectedId],
   );
-  const canOfferSupplierLink = !!selectedId && !selectedIsInContactLinks;
+  const requiresRoleChoice = !!selectedId && !selectedIsInContactLinks;
+  const existingPrimary = React.useMemo(
+    () => contactOptions?.find((o) => o.role === "primary") ?? null,
+    [contactOptions],
+  );
+  const primaryBlocked = !!existingPrimary;
+  // Submit is gated by mode-specific rules: an existing-link pick is
+  // ready as soon as a company is selected; a new-link pick also
+  // needs a role, and 'primary' is blocked when one already exists.
+  const canSubmit =
+    !!selectedId &&
+    !saving &&
+    (!requiresRoleChoice ||
+      (selectedRole !== null && !(selectedRole === "primary" && primaryBlocked)));
 
   const handleSubmit = async () => {
-    if (!selectedId || saving) return;
+    if (!canSubmit || !selectedId) return;
     setSaving(true);
     setError(null);
     try {
-      await submit(selectedId, canOfferSupplierLink && linkAsSupplier);
+      const newLinkRole: ContactCompanyRole | null = requiresRoleChoice ? selectedRole : null;
+      await submit(selectedId, selectedName ?? "", newLinkRole);
       onAssigned();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Kon ticket niet toewijzen.");
+      setError(
+        e instanceof Error
+          ? e.message
+          : isCreateMode
+            ? "Could not select company."
+            : "Could not assign ticket.",
+      );
       setSaving(false);
     }
   };
@@ -130,11 +180,14 @@ export function TicketCompanyAssignmentDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Building2 className="h-4 w-4 text-primary" />
-            Wijs een company toe aan dit ticket
+            {isCreateMode
+              ? "Select a company for this ticket"
+              : "Assign a company to this ticket"}
           </DialogTitle>
           <DialogDescription>
-            Deze contact is niet éénduidig aan een company gekoppeld — kies
-            aan welke company dit ticket toegewezen wordt.
+            {isCreateMode
+              ? "Pick which company this ticket belongs to. The contact's existing links are listed first; you can also search for any other company."
+              : "This contact is not unambiguously linked to one company — pick which company this ticket belongs to."}
           </DialogDescription>
         </DialogHeader>
 
@@ -212,20 +265,46 @@ export function TicketCompanyAssignmentDialog({
           )}
         </div>
 
-        {canOfferSupplierLink && (
-          <label className="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={linkAsSupplier}
-              onChange={(e) => setLinkAsSupplier(e.target.checked)}
-              className="mt-0.5 h-3.5 w-3.5 accent-primary"
-            />
-            <span>
-              Koppel dit contact ook als <strong className="font-medium text-foreground/80">supplier</strong>{" "}
-              aan <span className="text-foreground/80">{selectedName}</span> —
-              volgende mail van dit contact kent deze company dan automatisch.
-            </span>
-          </label>
+        {requiresRoleChoice && (
+          <div className="space-y-2">
+            <div className="text-xs text-muted-foreground">
+              <span className="text-foreground/80">{selectedName}</span> is not yet
+              linked to this contact. Pick which role to give it:
+            </div>
+            <div className="flex gap-2">
+              {(["primary", "secondary", "supplier"] as ContactCompanyRole[]).map((role) => {
+                const meta = ROLE_BADGE[role];
+                const disabled = role === "primary" && primaryBlocked;
+                const active = selectedRole === role;
+                return (
+                  <button
+                    key={role}
+                    type="button"
+                    onClick={() => !disabled && setSelectedRole(role)}
+                    disabled={disabled}
+                    title={
+                      disabled
+                        ? `This contact already has a primary (${existingPrimary?.companyName}). Change it on the contact page first.`
+                        : undefined
+                    }
+                    className={cn(
+                      "flex-1 rounded-md border px-2.5 py-1.5 text-xs font-medium uppercase tracking-wider transition-colors",
+                      disabled && "cursor-not-allowed opacity-40",
+                      !disabled && !active && "border-glass bg-glass hover:bg-glass-hover",
+                      active && meta.className,
+                    )}
+                  >
+                    {meta.label}
+                  </button>
+                );
+              })}
+            </div>
+            {primaryBlocked && selectedRole !== "primary" && (
+              <p className="text-[11px] text-muted-foreground/70">
+                Primary is unavailable — already on {existingPrimary?.companyName}.
+              </p>
+            )}
+          </div>
         )}
 
         {error && (
@@ -236,18 +315,18 @@ export function TicketCompanyAssignmentDialog({
 
         <DialogFooter>
           <Button variant="ghost" onClick={onClose} disabled={saving}>
-            Annuleer
+            Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={!selectedId || saving}>
+          <Button onClick={handleSubmit} disabled={!canSubmit}>
             {saving ? (
-              "Toewijzen..."
+              isCreateMode ? "Selecting…" : "Assigning…"
             ) : (
               <>
                 <CheckCircle2 className="h-4 w-4 mr-1.5" />
-                Toewijzen
+                {isCreateMode ? "Select" : "Assign"}
                 {selectedName && (
                   <span className="ml-1 text-primary-foreground/70">
-                    aan {selectedName}
+                    {selectedName}
                   </span>
                 )}
               </>
