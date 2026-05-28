@@ -870,12 +870,29 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             editorUserId = input.EditorUserId,
         }, tx, cancellationToken: ct));
 
-        // Update the event with new values
+        // v0.0.51 — keep event_type in sync with is_internal for the
+        // Note/Comment pair. The timeline + PDF + customer-portal
+        // filters render labels and visibility from event_type (Note =
+        // "Internal note", Comment = "Reply"), so toggling is_internal
+        // without flipping the type leaves a hybrid row that *looks*
+        // unchanged in the UI even though the DB write succeeded. Mail
+        // events keep their own type — flipping a sent mail to Note
+        // would lose its provenance and the OutboundMailService /
+        // MailIngestService rely on event_type='Mail' downstream.
+        // RepostAsPublicReplyHandler already enforces the same pairing
+        // when it duplicates an internal note as a public reply (see
+        // its comment), so this brings the agent-edit path in line.
+        var resolvedIsInternal = input.IsInternal ?? current.IsInternal;
+        var resolvedEventType = current.EventType is "Note" or "Comment"
+            ? (resolvedIsInternal ? "Note" : "Comment")
+            : current.EventType;
+
         const string updateSql = """
             UPDATE ticket_events
             SET body_text = @bodyText,
                 body_html = @bodyHtml,
                 is_internal = @isInternal,
+                event_type = @eventType,
                 edited_utc = now(),
                 edited_by_user_id = @editorUserId
             WHERE id = @eventId AND ticket_id = @ticketId
@@ -894,7 +911,8 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         {
             bodyText = input.BodyText ?? current.BodyText,
             bodyHtml = input.BodyHtml ?? current.BodyHtml,
-            isInternal = input.IsInternal ?? current.IsInternal,
+            isInternal = resolvedIsInternal,
+            eventType = resolvedEventType,
             editorUserId = input.EditorUserId,
             eventId,
             ticketId,
