@@ -9,6 +9,9 @@ export type SearchKind =
   | "kb-articles"
   | "contacts"
   | "companies"
+  | "assets"
+  | "surveys"
+  | "timesheet"
   | "settings"
   | "intake-templates"
   | "intake-submissions"
@@ -20,6 +23,9 @@ export const KIND_LABELS: Record<string, string> = {
   "kb-articles": "Knowledge Base",
   contacts: "Contacten",
   companies: "Bedrijven",
+  assets: "Assets",
+  surveys: "Surveys",
+  timesheet: "Timesheet",
   settings: "Settings",
   "intake-templates": "Intake Templates",
   "intake-submissions": "Intake Submissions",
@@ -31,6 +37,9 @@ export const KIND_ORDER: string[] = [
   "kb-articles",
   "contacts",
   "companies",
+  "assets",
+  "surveys",
+  "timesheet",
   "settings",
   "intake-templates",
   "intake-submissions",

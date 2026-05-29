@@ -284,7 +284,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         const string eventsSql = """
             SELECT e.id AS Id, e.ticket_id AS TicketId, e.event_type AS EventType,
                    e.author_user_id AS AuthorUserId, e.author_contact_id AS AuthorContactId,
-                   COALESCE(au.email, CONCAT_WS(' ', ac.first_name, ac.last_name)) AS AuthorName,
+                   COALESCE(au.email, NULLIF(CONCAT_WS(' ', ac.first_name, ac.last_name), ''), e.metadata->>'authorName') AS AuthorName,
                    e.body_text AS BodyText, e.body_html AS BodyHtml,
                    e.metadata::text AS MetadataJson, e.is_internal AS IsInternal,
                    e.created_utc AS CreatedUtc,
