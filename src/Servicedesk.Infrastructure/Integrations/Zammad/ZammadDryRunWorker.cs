@@ -330,6 +330,11 @@ public sealed class ZammadDryRunWorker : BackgroundService
             await PersistTotalsAsync(ds, runId, totals, ct);
         }
 
+        // Resolved upstream authors are cached for the whole run: the same
+        // agent typically posts across many tickets, so one /users/{id}
+        // fetch + local-email match per distinct Zammad user is plenty.
+        var authorCache = new Dictionary<long, ZammadAuthorAttribution>();
+
         var pending = 0;
         foreach (var snapshot in inputs)
         {
@@ -354,6 +359,7 @@ public sealed class ZammadDryRunWorker : BackgroundService
                 var (plans, attachmentReasons) = await StageAttachmentsAsync(
                     zammad, blobs, snapshot.ZammadTicketId, articles,
                     maxAttachmentBytes, ct);
+                var authors = await ResolveArticleAuthorsAsync(ds, zammad, articles, authorCache, ct);
 
                 var input = new ZammadImportWriteInput(
                     ZammadTicketId: snapshot.ZammadTicketId,
@@ -365,7 +371,8 @@ public sealed class ZammadDryRunWorker : BackgroundService
                     PriorityId: snapshot.PriorityId,
                     Articles: articles,
                     Attachments: plans,
-                    PendingTillUtc: snapshot.PendingTillUtc);
+                    PendingTillUtc: snapshot.PendingTillUtc,
+                    Authors: authors);
                 writeResult = await writer.WriteAsync(input, ct);
 
                 // Attachment-level skips don't fail the ticket — surface
@@ -414,6 +421,72 @@ public sealed class ZammadDryRunWorker : BackgroundService
             status = "completed",
             totals,
         }, ct);
+    }
+
+    /// Resolves the upstream author for the agent/system articles in one
+    /// ticket. Customer articles are skipped — they keep their contact
+    /// attribution in the writer. Results are memoised in <paramref name="cache"/>
+    /// so the same Zammad user is fetched + email-matched at most once per
+    /// run. The returned map is keyed by Zammad user id (created_by_id) and
+    /// only contains entries the writer needs for this ticket.
+    private static async Task<IReadOnlyDictionary<long, ZammadAuthorAttribution>> ResolveArticleAuthorsAsync(
+        NpgsqlDataSource ds,
+        IZammadApiClient zammad,
+        IReadOnlyList<ZammadArticle> articles,
+        Dictionary<long, ZammadAuthorAttribution> cache,
+        CancellationToken ct)
+    {
+        var map = new Dictionary<long, ZammadAuthorAttribution>();
+        foreach (var a in articles)
+        {
+            if (string.Equals(a.Sender, "Customer", StringComparison.OrdinalIgnoreCase)) continue;
+            if (a.CreatedById is not long zammadUserId) continue;
+            if (map.ContainsKey(zammadUserId)) continue;
+
+            if (!cache.TryGetValue(zammadUserId, out var attribution))
+            {
+                attribution = await ResolveOneAuthorAsync(ds, zammad, zammadUserId, ct);
+                cache[zammadUserId] = attribution;
+            }
+            map[zammadUserId] = attribution;
+        }
+        return map;
+    }
+
+    /// One upstream-author lookup. Mirrors the KB-import rule: a Zammad user
+    /// whose email matches a local user links the real user (live identity);
+    /// otherwise we keep a display name ("First Last", falling back to email
+    /// then login) as a plain label. Both null when the user can't be
+    /// fetched, leaving the event anonymous as before.
+    private static async Task<ZammadAuthorAttribution> ResolveOneAuthorAsync(
+        NpgsqlDataSource ds,
+        IZammadApiClient zammad,
+        long zammadUserId,
+        CancellationToken ct)
+    {
+        ZammadUser? zUser;
+        try { zUser = await zammad.GetUserAsync(zammadUserId, ct); }
+        catch { zUser = null; }
+        if (zUser is null) return new ZammadAuthorAttribution(null, null);
+
+        if (!string.IsNullOrWhiteSpace(zUser.Email))
+        {
+            await using var conn = await ds.OpenConnectionAsync(ct);
+            var localId = await conn.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+                "SELECT id FROM users WHERE LOWER(email) = LOWER(@Email)",
+                new { Email = zUser.Email!.Trim() }, cancellationToken: ct));
+            if (localId is not null) return new ZammadAuthorAttribution(localId, null);
+        }
+
+        var name = string.Join(" ", new[] { zUser.FirstName, zUser.LastName }
+            .Where(s => !string.IsNullOrWhiteSpace(s)));
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            name = !string.IsNullOrWhiteSpace(zUser.Email) ? zUser.Email!.Trim()
+                 : !string.IsNullOrWhiteSpace(zUser.Login) ? zUser.Login!.Trim()
+                 : null;
+        }
+        return new ZammadAuthorAttribution(null, string.IsNullOrWhiteSpace(name) ? null : name);
     }
 
     /// Walks every attachment manifest entry on every article and streams

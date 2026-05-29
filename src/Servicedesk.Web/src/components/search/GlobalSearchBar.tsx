@@ -106,8 +106,11 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
   }
 
   function goFullPage() {
-    const firstKind = data?.availableKinds?.[0] ?? "tickets";
-    resetAndNavigate("/search", { q: query, type: firstKind, offset: undefined });
+    // Default to the tickets category when the user can see it; otherwise
+    // fall back to the first kind they're authorized for.
+    const kinds = data?.availableKinds ?? [];
+    const defaultKind = kinds.includes("tickets") ? "tickets" : kinds[0] ?? "tickets";
+    resetAndNavigate("/search", { q: query, type: defaultKind, offset: undefined });
   }
 
   function goHit(hit: SearchHit) {

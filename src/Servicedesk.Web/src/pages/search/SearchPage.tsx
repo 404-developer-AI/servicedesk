@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { searchApi, type SearchHit } from "@/lib/api";
 import { sanitizeSnippet } from "@/lib/sanitize";
 import { KIND_ORDER, labelForKind, hitHref } from "@/components/search/searchMeta";
-import { cn } from "@/lib/utils";
 import { useTheme } from "@/app/ThemeProvider";
 
 const PAGE_SIZE = 25;
@@ -35,12 +34,16 @@ export function SearchPage() {
     staleTime: 10_000,
   });
 
-  const tabs = useMemo(() => {
-    const kinds = data?.availableKinds ?? [];
-    return kinds
+  // The category dropdown lives in the search bar. Options come from the
+  // server-provided availableKinds so a non-admin never sees a tab (e.g.
+  // Settings) they aren't authorized for. Falls back to the active type
+  // until the first response lands, so the dropdown is never empty.
+  const typeOptions = useMemo(() => {
+    const kinds = (data?.availableKinds ?? [])
       .slice()
       .sort((a, b) => KIND_ORDER.indexOf(a) - KIND_ORDER.indexOf(b));
-  }, [data?.availableKinds]);
+    return kinds.length > 0 ? kinds : [activeType];
+  }, [data?.availableKinds, activeType]);
 
   function updateUrl(next: { q?: string; type?: string; offset?: number }) {
     navigate({
@@ -62,43 +65,36 @@ export function SearchPage() {
     <div className="mx-auto w-full max-w-5xl py-6">
       <h1 className="font-display text-display-sm font-semibold">Zoekresultaten</h1>
 
-      <form
-        className="mt-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          updateUrl({ q: input.trim(), offset: 0 });
-        }}
-      >
-        <input
-          autoFocus
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Waar zoek je naar?"
-          className="w-full rounded-xl border border-glass bg-glass px-4 py-3 text-base outline-none ring-1 ring-inset ring-white/5 focus:ring-white/20"
-        />
-      </form>
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-stretch">
+        <form
+          className="flex-1"
+          onSubmit={(e) => {
+            e.preventDefault();
+            updateUrl({ q: input.trim(), offset: 0 });
+          }}
+        >
+          <input
+            autoFocus
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Waar zoek je naar?"
+            className="w-full rounded-xl border border-glass bg-glass px-4 py-3 text-base outline-none ring-1 ring-inset ring-white/5 focus:ring-white/20"
+          />
+        </form>
 
-      {tabs.length > 0 && (
-        <div className="mt-6 flex gap-1 border-b border-glass">
-          {tabs.map((t) => {
-            const isActive = t === activeType;
-            return (
-              <button
-                key={t}
-                onClick={() => updateUrl({ type: t, offset: 0 })}
-                className={cn(
-                  "px-4 py-2 text-sm transition-colors",
-                  isActive
-                    ? "border-b-2 border-primary text-foreground"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {labelForKind(t)}
-              </button>
-            );
-          })}
-        </div>
-      )}
+        <select
+          value={activeType}
+          onChange={(e) => updateUrl({ type: e.target.value, offset: 0 })}
+          aria-label="Zoeken in"
+          className="rounded-xl border border-glass bg-glass px-4 py-3 text-base text-foreground outline-none ring-1 ring-inset ring-white/5 focus:ring-white/20 cursor-pointer sm:w-56"
+        >
+          {typeOptions.map((t) => (
+            <option key={t} value={t} className="bg-background">
+              {labelForKind(t)}
+            </option>
+          ))}
+        </select>
+      </div>
 
       <div className="mt-4">
         {q.length === 0 && (

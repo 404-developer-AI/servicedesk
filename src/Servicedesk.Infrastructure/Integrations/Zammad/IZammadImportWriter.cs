@@ -24,7 +24,23 @@ public sealed record ZammadImportWriteInput(
     System.Guid PriorityId,
     System.Collections.Generic.IReadOnlyList<ZammadArticle> Articles,
     System.Collections.Generic.IReadOnlyList<ZammadImportAttachmentPlan> Attachments,
-    System.DateTime? PendingTillUtc = null);
+    System.DateTime? PendingTillUtc = null,
+    // Resolved upstream authors for the agent/system articles, keyed by the
+    // Zammad user id (created_by_id). Null/empty means "no attribution
+    // available" — those events stay anonymous as before. Customer articles
+    // are not keyed here; they keep their contact attribution.
+    System.Collections.Generic.IReadOnlyDictionary<long, ZammadAuthorAttribution>? Authors = null);
+
+/// Resolved upstream author for one Zammad agent/system article. Mirrors the
+/// KB-import author rule: when the upstream agent matches a local user by
+/// email we link the real user (<see cref="LocalUserId"/>) so the timeline
+/// shows the live identity; otherwise <see cref="DisplayName"/> carries the
+/// upstream name as a plain label so imported notes/replies are no longer
+/// anonymous. Exactly one of the two is set; both null means the lookup
+/// failed and the event stays anonymous.
+public sealed record ZammadAuthorAttribution(
+    System.Guid? LocalUserId,
+    string? DisplayName);
 
 /// One attachment that has already been streamed into the blob store and
 /// is ready for the writer to materialise as an <c>attachments</c> row.

@@ -209,7 +209,7 @@ public sealed class ZammadImportWriter : IZammadImportWriter
         const string insertEvent = """
             INSERT INTO ticket_events (ticket_id, event_type, author_user_id, author_contact_id,
                                        body_text, body_html, metadata, is_internal, created_utc)
-            VALUES (@TicketId, @EventType, NULL, @AuthorContactId,
+            VALUES (@TicketId, @EventType, @AuthorUserId, @AuthorContactId,
                     @BodyText, @BodyHtml, @MetadataJson::jsonb, @IsInternal,
                     COALESCE(@CreatedUtc, now()))
             RETURNING id
@@ -219,10 +219,28 @@ public sealed class ZammadImportWriter : IZammadImportWriter
             var a = input.Articles[i];
             var (et, isInternal, authorContact) = MapArticle(a, input.ContactId);
             var (bodyText, bodyHtml) = SplitBody(a);
+
+            // Agent / system articles carry no contact attribution. Resolve
+            // their upstream author (matched local user, or a plain display
+            // name) so the timeline no longer shows them as anonymous.
+            // metadata.authorName is the read-side fallback the AuthorName
+            // COALESCE picks up when there's no linked user/contact.
+            Guid? authorUserId = null;
+            string? authorName = null;
+            if (authorContact is null
+                && a.CreatedById is long zammadUserId
+                && input.Authors is { } authors
+                && authors.TryGetValue(zammadUserId, out var attribution))
+            {
+                authorUserId = attribution.LocalUserId;
+                authorName = attribution.LocalUserId is null ? attribution.DisplayName : null;
+            }
+
             var eventId = await conn.ExecuteScalarAsync<long>(new CommandDefinition(insertEvent, new
             {
                 TicketId = newTicketId.Value,
                 EventType = et,
+                AuthorUserId = authorUserId,
                 AuthorContactId = authorContact,
                 BodyText = bodyText,
                 BodyHtml = bodyHtml,
@@ -237,6 +255,7 @@ public sealed class ZammadImportWriter : IZammadImportWriter
                     zammadTo = a.To,
                     zammadSubject = a.Subject,
                     zammadCreatedBy = a.CreatedByEmail,
+                    authorName,
                 }),
                 CreatedUtc = a.CreatedAt?.UtcDateTime,
             }, tx, cancellationToken: ct));
