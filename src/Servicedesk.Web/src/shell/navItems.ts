@@ -6,6 +6,7 @@ import {
   Settings,
   Timer,
   Activity,
+  Server,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "@/lib/roles";
@@ -82,6 +83,19 @@ export const NAV_ITEMS: readonly NavItem[] = [
     roles: ["Agent", "Admin"],
     comingIn: "",
     description: "Append-only feed of every agent + admin action across the app, with filters and search.",
+    section: "main",
+  },
+  // v0.0.52 — Assets. Mirrored from Tactical RMM (one TRMM install per
+  // Servicedesk install). Role gate is Agent+Admin; the per-user
+  // `assets_enabled` flag is checked in Sidebar.tsx, and the backend
+  // /api/assets endpoints carry the matching RequireAgent policy.
+  {
+    label: "Assets",
+    to: "/assets",
+    icon: Server,
+    roles: ["Agent", "Admin"],
+    comingIn: "",
+    description: "Servers and workstations mirrored from Tactical RMM, with filters for Windows build and online state.",
     section: "main",
   },
   // Profile is reachable from the header avatar dropdown (top-right) and via

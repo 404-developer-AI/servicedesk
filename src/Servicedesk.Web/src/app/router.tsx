@@ -19,6 +19,8 @@ import { AdsolutIntegrationPage } from "@/pages/settings/AdsolutIntegrationPage"
 import { AdsolutCoveragePage } from "@/pages/settings/AdsolutCoveragePage";
 import { TelavoxIntegrationPage } from "@/pages/settings/TelavoxIntegrationPage";
 import { ZammadIntegrationPage } from "@/pages/settings/ZammadIntegrationPage";
+import { TrmmIntegrationPage } from "@/pages/settings/TrmmIntegrationPage";
+import { AssetsPage } from "@/pages/assets/AssetsPage";
 import { ZammadImportRunsListPage } from "@/pages/settings/zammad/ZammadImportRunsListPage";
 import { ZammadImportRunDetailPage } from "@/pages/settings/zammad/ZammadImportRunDetailPage";
 import { MailSettingsPage } from "@/pages/settings/MailSettingsPage";
@@ -297,6 +299,18 @@ const activityFeedRoute = createRoute({
   component: ActivityFeedPage,
 });
 
+// v0.0.52 — Assets page (Tactical RMM mirror). Same gate pattern as
+// Activity feed: Agent + Admin role gate at the route, per-user
+// `assets_enabled` flag enforced both server-side (RequireAgent on
+// /api/assets and the per-user flag on /auth/me) and via the sidebar
+// hide so a flag-off user never sees a dead link.
+const assetsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/assets",
+  beforeLoad: authGate(["Agent", "Admin"]),
+  component: AssetsPage,
+});
+
 // v0.0.12 stap 4 — history of @@-mentions received by the caller.
 // Agent+Admin only; customers never receive mentions in this release.
 const profileMentionsRoute = createRoute({
@@ -461,6 +475,15 @@ const settingsZammadIntegrationRoute = createRoute({
   component: ZammadIntegrationPage,
 });
 
+// v0.0.52 — Tactical RMM integration. Admin-only. Houses base URL,
+// API key, enable toggle, sync interval, manual sync trigger, client
+// mappings UI and the integration_audit log reader.
+const settingsTrmmIntegrationRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "integrations/trmm",
+  component: TrmmIntegrationPage,
+});
+
 // v0.0.41 phase 3 — dry-run engine pages. Runs-list lives on its own
 // URL so admins can deep-link to past runs from a separate tab; the
 // detail page renders the per-ticket mapping verdict for one run.
@@ -621,6 +644,7 @@ const routeTree = rootRoute.addChildren([
   profileRoute,
   profileMentionsRoute,
   activityFeedRoute,
+  assetsRoute,
   settingsRoute.addChildren([
     settingsIndexRoute,
     settingsGeneralRoute,
@@ -644,6 +668,7 @@ const routeTree = rootRoute.addChildren([
     settingsZammadIntegrationRoute,
     settingsZammadRunsListRoute,
     settingsZammadRunDetailRoute,
+    settingsTrmmIntegrationRoute,
     settingsTicketsRoute,
     settingsCompaniesRoute,
     settingsContactsRoute,

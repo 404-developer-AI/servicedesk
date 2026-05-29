@@ -195,6 +195,32 @@ public static class DependencyInjection
         services.AddSingleton<IZammadKbImportService, ZammadKbImportService>();
         services.AddHostedService<ZammadKbImportWorker>();
 
+        // Tactical RMM integration (v0.0.52). One install-wide API key +
+        // base URL; background poller refreshes the local mirror tables
+        // on the cadence configured in Settings. Notifier defaults to a
+        // no-op; the Api project overrides it with a SignalR broadcaster
+        // on TicketPresenceHub.
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.Trmm.ITrmmApiClient,
+            Servicedesk.Infrastructure.Integrations.Trmm.TrmmApiClient>();
+        services.AddHttpClient(Servicedesk.Infrastructure.Integrations.Trmm.TrmmApiClient.HttpClientName);
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.Trmm.ITrmmSyncService,
+            Servicedesk.Infrastructure.Integrations.Trmm.TrmmSyncService>();
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.Trmm.ITrmmSyncNotifier,
+            Servicedesk.Infrastructure.Integrations.Trmm.NullTrmmSyncNotifier>();
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.Trmm.IAssetRepository,
+            Servicedesk.Infrastructure.Integrations.Trmm.AssetRepository>();
+        services.AddHostedService<Servicedesk.Infrastructure.Integrations.Trmm.TrmmSyncWorker>();
+
+        // EOL data feed (v0.0.52) — pulls endoflife.date weekly into the
+        // local eol_releases mirror so the Assets page can tint rows
+        // past or near end-of-support without a live API call on render.
+        services.AddSingleton<Servicedesk.Infrastructure.Eol.IEolDataClient,
+            Servicedesk.Infrastructure.Eol.EolDataClient>();
+        services.AddHttpClient(Servicedesk.Infrastructure.Eol.EolDataClient.HttpClientName);
+        services.AddSingleton<Servicedesk.Infrastructure.Eol.IEolDataRefreshService,
+            Servicedesk.Infrastructure.Eol.EolDataRefreshService>();
+        services.AddHostedService<Servicedesk.Infrastructure.Eol.EolDataRefreshWorker>();
+
         // Healthcheck-BackgroundService writes integration_audit rows and
         // pushes resolved status over SignalR. The notifier defaults to
         // the no-op implementation; the Api project overrides it with
@@ -288,11 +314,13 @@ public static class DependencyInjection
         services.AddSingleton<CompanySearchSource>();
         services.AddSingleton<SettingsSearchSource>();
         services.AddSingleton<KbArticleSearchSource>();
+        services.AddSingleton<AssetSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<TicketSearchSource>()));
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<ContactSearchSource>()));
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<CompanySearchSource>()));
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<SettingsSearchSource>()));
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<KbArticleSearchSource>()));
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<AssetSearchSource>()));
         services.AddSingleton<ISearchService, SearchService>();
 
         services.AddSingleton<ISlaRepository, SlaRepository>();

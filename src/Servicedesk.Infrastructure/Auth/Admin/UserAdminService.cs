@@ -48,7 +48,8 @@ public sealed class UserAdminService : IUserAdminService
                     u.is_iso_dpo        AS IsIsoDpo,
                     u.kb_enabled        AS KbEnabled,
                     u.search_enabled    AS SearchEnabled,
-                    u.activity_feed_enabled AS ActivityFeedEnabled
+                    u.activity_feed_enabled AS ActivityFeedEnabled,
+                    u.assets_enabled    AS AssetsEnabled
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             ORDER BY u.created_utc ASC
@@ -90,7 +91,8 @@ public sealed class UserAdminService : IUserAdminService
                     u.is_iso_dpo        AS IsIsoDpo,
                     u.kb_enabled        AS KbEnabled,
                     u.search_enabled    AS SearchEnabled,
-                    u.activity_feed_enabled AS ActivityFeedEnabled
+                    u.activity_feed_enabled AS ActivityFeedEnabled,
+                    u.assets_enabled    AS AssetsEnabled
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             WHERE u.id = @id
@@ -742,7 +744,8 @@ public sealed class UserAdminService : IUserAdminService
             && update.IsIsoDpo is null
             && update.KbEnabled is null
             && update.SearchEnabled is null
-            && update.ActivityFeedEnabled is null)
+            && update.ActivityFeedEnabled is null
+            && update.AssetsEnabled is null)
         {
             return new UpdateFeatureFlagsResult.NoChange();
         }
@@ -781,7 +784,8 @@ public sealed class UserAdminService : IUserAdminService
                 is_iso_dpo            = COALESCE(@isIsoDpo,             is_iso_dpo),
                 kb_enabled            = COALESCE(@kbEnabled,            kb_enabled),
                 search_enabled        = COALESCE(@searchEnabled,        search_enabled),
-                activity_feed_enabled = COALESCE(@activityFeedEnabled,  activity_feed_enabled)
+                activity_feed_enabled = COALESCE(@activityFeedEnabled,  activity_feed_enabled),
+                assets_enabled        = COALESCE(@assetsEnabled,        assets_enabled)
             WHERE id = @id
             """,
             new
@@ -794,6 +798,7 @@ public sealed class UserAdminService : IUserAdminService
                 kbEnabled = update.KbEnabled,
                 searchEnabled = update.SearchEnabled,
                 activityFeedEnabled = update.ActivityFeedEnabled,
+                assetsEnabled = update.AssetsEnabled,
             },
             tx,
             cancellationToken: ct));

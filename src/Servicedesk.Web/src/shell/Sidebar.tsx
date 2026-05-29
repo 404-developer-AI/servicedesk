@@ -98,6 +98,13 @@ export function Sidebar() {
     if (item.to === "/activity" && !user?.activityFeedEnabled) {
       return false;
     }
+    // v0.0.52 — Assets is per-user opt-in (Tactical RMM mirror). The
+    // backend route is gated by AuthorizationPolicies.RequireAgent so a
+    // Customer never reaches it; the per-user flag adds the role-side
+    // visibility filter.
+    if (item.to === "/assets" && !user?.assetsEnabled) {
+      return false;
+    }
     return true;
   });
 

@@ -390,7 +390,8 @@ public static class AdminUserEndpoints
         bool? IsIsoDpo,
         bool? KbEnabled,
         bool? SearchEnabled,
-        bool? ActivityFeedEnabled);
+        bool? ActivityFeedEnabled,
+        bool? AssetsEnabled);
 
     private static async Task<IResult> UpdateFeatureFlags(
         Guid id,
@@ -410,7 +411,8 @@ public static class AdminUserEndpoints
             request.IsIsoDpo,
             request.KbEnabled,
             request.SearchEnabled,
-            request.ActivityFeedEnabled);
+            request.ActivityFeedEnabled,
+            request.AssetsEnabled);
 
         var result = await admin.UpdateFeatureFlagsAsync(id, update, adminId.Value, ct);
         return result switch
@@ -429,6 +431,7 @@ public static class AdminUserEndpoints
                         kb_enabled = updated.Row.KbEnabled,
                         search_enabled = updated.Row.SearchEnabled,
                         activity_feed_enabled = updated.Row.ActivityFeedEnabled,
+                        assets_enabled = updated.Row.AssetsEnabled,
                     },
                     body: updated.Row,
                     statusCode: StatusCodes.Status200OK,

@@ -344,6 +344,10 @@ public static class AuthEndpoints
         // the dashboard tile + /admin/activity nav visibility and the
         // SignalR hub's group enrollment.
         var activityFeedEnabled = await users.GetActivityFeedEnabledAsync(userId, ct);
+        // v0.0.52 — per-user opt-in for the Assets page (Tactical RMM
+        // mirror). Drives the sidebar nav entry. Backend /api/assets
+        // routes carry RequireAgent so the gate is enforced on both ends.
+        var assetsEnabled = await users.GetAssetsEnabledAsync(userId, ct);
         // Per-user Dashboard tile preferences. Empty array = no tiles
         // enabled; DashboardPage renders an empty-state in that case.
         // Shape: ordered [{tileId, size}] so the frontend can render the
@@ -377,6 +381,7 @@ public static class AuthEndpoints
                 kbEnabled,
                 searchEnabled,
                 activityFeedEnabled,
+                assetsEnabled,
                 dashboardTiles = tiles.Select(t => new { tileId = t.TileId, size = t.Size }).ToList(),
                 effectiveTheme,
             },

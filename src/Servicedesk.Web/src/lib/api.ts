@@ -68,6 +68,8 @@ export type AuthUserPayload = {
   isIsoDpo: boolean;
   kbEnabled: boolean;
   searchEnabled: boolean;
+  activityFeedEnabled: boolean;
+  assetsEnabled: boolean;
   dashboardTiles: string[];
   // v0.0.44 — server-resolved theme (user pref → admin default → 'light').
   // ThemeProvider on the client uses this as the source of truth on bootstrap.
@@ -1237,6 +1239,211 @@ export const zammadAdminApi = {
       `/api/admin/integrations/zammad/audit?${qs.toString()}`,
     );
   },
+};
+
+// ---- Tactical RMM admin (v0.0.52) ----
+
+export type TrmmConnectionState = "disabled" | "not-configured" | "ready";
+
+export type TrmmStatus = {
+  state: TrmmConnectionState;
+  enabled: boolean;
+  apiKeyConfigured: boolean;
+  baseUrl: string | null;
+  syncIntervalMinutes: number;
+  lastSyncUtc: string | null;
+  lastStatus: "ok" | "failed" | null;
+  lastError: string | null;
+};
+
+export type TrmmSecretStatus = { configured: boolean };
+
+export type TrmmTestResult = {
+  success: boolean;
+  clientCount?: number;
+  latencyMs: number;
+  errorCode?: string;
+  message?: string;
+};
+
+export type TrmmSyncResult = {
+  success: boolean;
+  clients: number;
+  sites: number;
+  agents: number;
+  autoLinkedCompanies: number;
+  latencyMs: number;
+  errorCode: string | null;
+  errorMessage: string | null;
+};
+
+export type TrmmClientMapping = {
+  trmmClientId: number;
+  name: string;
+  code: string | null;
+  autoMatched: boolean;
+  companyId: string | null;
+  companyName: string | null;
+  companyCode: string | null;
+  agentCount: number;
+};
+
+export const trmmAdminApi = {
+  status: () =>
+    request<TrmmStatus>("GET", "/api/admin/integrations/trmm/status"),
+  secretStatus: () =>
+    request<TrmmSecretStatus>("GET", "/api/admin/integrations/trmm/secret"),
+  setSecret: (value: string) =>
+    request<void>("PUT", "/api/admin/integrations/trmm/secret", { value }),
+  deleteSecret: () =>
+    request<void>("DELETE", "/api/admin/integrations/trmm/secret"),
+  setBaseUrl: (baseUrl: string) =>
+    request<{ baseUrl: string }>(
+      "PUT",
+      "/api/admin/integrations/trmm/base-url",
+      { baseUrl },
+    ),
+  setEnabled: (enabled: boolean) =>
+    request<{ enabled: boolean }>(
+      "PUT",
+      "/api/admin/integrations/trmm/enabled",
+      { enabled },
+    ),
+  setSyncInterval: (minutes: number) =>
+    request<{ syncIntervalMinutes: number }>(
+      "PUT",
+      "/api/admin/integrations/trmm/sync-interval",
+      { minutes },
+    ),
+  testConnection: () =>
+    request<TrmmTestResult>(
+      "POST",
+      "/api/admin/integrations/trmm/test-connection",
+    ),
+  triggerSync: () =>
+    request<TrmmSyncResult>("POST", "/api/admin/integrations/trmm/sync"),
+  listClientMappings: () =>
+    request<{ items: TrmmClientMapping[] }>(
+      "GET",
+      "/api/admin/integrations/trmm/client-mappings",
+    ),
+  setClientMapping: (
+    trmmClientId: number,
+    body: { companyId: string | null; clearOverride: boolean },
+  ) =>
+    request<void>(
+      "PUT",
+      `/api/admin/integrations/trmm/client-mappings/${trmmClientId}`,
+      body,
+    ),
+  auditLog: (cursor: number | null, limit = 50) => {
+    const qs = new URLSearchParams();
+    if (cursor !== null) qs.set("cursor", String(cursor));
+    qs.set("limit", String(limit));
+    return request<IntegrationAuditPage>(
+      "GET",
+      `/api/admin/integrations/trmm/audit?${qs.toString()}`,
+    );
+  },
+};
+
+// ---- Assets (v0.0.52) ----
+
+export type AssetType = "server" | "workstation";
+
+export type AssetEolStatus = "active" | "soon" | "expired" | "unknown";
+
+export type AssetListItem = {
+  id: string;
+  trmmAgentId: string;
+  hostname: string;
+  agentType: AssetType;
+  osName: string | null;
+  osFamily: string | null;
+  osBuild: string | null;
+  lastSeenUtc: string | null;
+  online: boolean;
+  publicIp: string | null;
+  trmmClientId: number;
+  clientName: string;
+  clientCode: string | null;
+  companyId: string | null;
+  companyName: string | null;
+  trmmSiteId: number;
+  siteName: string;
+  eolUtc: string | null;
+  eolStatus: AssetEolStatus;
+};
+
+export type AssetDetail = AssetListItem & {
+  createdUtc: string;
+  updatedUtc: string;
+  lastSyncUtc: string;
+};
+
+export type AssetListResponse = {
+  items: AssetListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  warnThresholdDays: number;
+};
+
+export type AssetSort =
+  | "hostname_asc"
+  | "hostname_desc"
+  | "build_asc"
+  | "build_desc"
+  | "last_seen_asc"
+  | "last_seen_desc"
+  | "client_asc"
+  | "client_desc";
+
+export type AssetListParams = {
+  search?: string;
+  type?: AssetType | "";
+  builds?: string[];
+  companyIds?: string[];
+  online?: boolean;
+  eolStatus?: AssetEolStatus | "";
+  sort?: AssetSort;
+  page?: number;
+  pageSize?: number;
+};
+
+export type AssetSyncState = {
+  enabled: boolean;
+  lastSyncUtc: string | null;
+  lastStatus: "ok" | "failed" | null;
+  lastError: string | null;
+  syncIntervalMinutes: number;
+};
+
+export const assetsApi = {
+  list: (params: AssetListParams) => {
+    const qs = new URLSearchParams();
+    if (params.search?.trim()) qs.set("search", params.search.trim());
+    if (params.type) qs.set("type", params.type);
+    if (params.builds && params.builds.length > 0)
+      qs.set("builds", params.builds.join(","));
+    if (params.companyIds && params.companyIds.length > 0)
+      qs.set("companyIds", params.companyIds.join(","));
+    if (params.online !== undefined) qs.set("online", String(params.online));
+    if (params.eolStatus) qs.set("eolStatus", params.eolStatus);
+    if (params.sort) qs.set("sort", params.sort);
+    if (params.page) qs.set("page", String(params.page));
+    if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+    const suffix = qs.toString();
+    return request<AssetListResponse>(
+      "GET",
+      suffix.length > 0 ? `/api/assets/?${suffix}` : "/api/assets/",
+    );
+  },
+  listBuilds: () =>
+    request<{ items: string[] }>("GET", "/api/assets/builds"),
+  syncState: () =>
+    request<AssetSyncState>("GET", "/api/assets/sync-state"),
+  get: (id: string) => request<AssetDetail>("GET", `/api/assets/${id}`),
 };
 
 // ---- Zammad mapping (v0.0.41 phase 3) ----

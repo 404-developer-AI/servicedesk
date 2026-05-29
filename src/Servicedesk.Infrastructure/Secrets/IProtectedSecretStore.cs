@@ -39,6 +39,12 @@ public static class ProtectedSecretKeys
     // agent has.
     public const string ZammadToken = "Zammad.Token";
 
+    /// Tactical RMM integration (v0.0.52). One API key per Servicedesk
+    /// install — minted in TRMM under an admin account that has read
+    /// access to clients, sites and agents. Sent on every TRMM call via
+    /// the <c>X-API-KEY</c> header.
+    public const string TrmmApiKey = "Trmm.ApiKey";
+
     /// Encrypted-secret key for a per-agent Telavox CAPI token. Returns a
     /// stable string built from the SD user-id so the protected_secrets
     /// row can be located on every poll and cleared on de-provision.
