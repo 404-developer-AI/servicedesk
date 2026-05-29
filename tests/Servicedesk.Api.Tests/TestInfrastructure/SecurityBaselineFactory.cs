@@ -298,6 +298,9 @@ public sealed class FakeUserService : IUserService
 
     public Task<bool> GetActivityFeedEnabledAsync(Guid userId, CancellationToken ct = default) =>
         Task.FromResult(false);
+
+    public Task<bool> GetAssetsEnabledAsync(Guid userId, CancellationToken ct = default) =>
+        Task.FromResult(false);
 }
 
 public sealed class FakeSessionService : ISessionService

@@ -1,12 +1,9 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  ArrowDown,
-  ArrowUp,
   Filter,
-  Globe,
   Plug,
   RefreshCw,
   Search,
@@ -83,7 +80,6 @@ function buildTone(build: string | null): string {
 
 export function AssetsPage() {
   const qc = useQueryClient();
-  const navigate = useNavigate();
 
   const [search, setSearch] = useState("");
   const [type, setType] = useState<string>("all");
