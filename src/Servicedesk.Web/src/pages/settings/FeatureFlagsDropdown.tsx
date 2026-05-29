@@ -10,6 +10,7 @@ import {
   ChevronDown,
   Lock,
   Activity,
+  Server,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -52,6 +53,10 @@ const FLAG_GROUPS: Group[] = [
   {
     title: "Activity feed",
     flags: [{ key: "activityFeedEnabled", label: "Activity feed", icon: Activity }],
+  },
+  {
+    title: "Assets",
+    flags: [{ key: "assetsEnabled", label: "Assets", icon: Server }],
   },
 ];
 

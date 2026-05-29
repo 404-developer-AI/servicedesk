@@ -91,6 +91,11 @@ public interface IUserService
     /// missing rows so a session outliving a deleted user cannot keep a
     /// stale subscription open.
     Task<bool> GetActivityFeedEnabledAsync(Guid userId, CancellationToken ct = default);
+
+    /// v0.0.52 — per-user opt-in for the Assets page (Tactical RMM mirror).
+    /// Used by /auth/me so the sidebar can hide the nav entry on first
+    /// paint. Returns false on missing rows.
+    Task<bool> GetAssetsEnabledAsync(Guid userId, CancellationToken ct = default);
 }
 
 /// Per-user Timesheet feature flags. Empty struct-y record so the call
@@ -421,6 +426,15 @@ public sealed class UserService : IUserService
     public async Task<bool> GetActivityFeedEnabledAsync(Guid userId, CancellationToken ct = default)
     {
         const string sql = "SELECT activity_feed_enabled FROM users WHERE id = @id";
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var value = await connection.QuerySingleOrDefaultAsync<bool?>(
+            new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
+        return value ?? false;
+    }
+
+    public async Task<bool> GetAssetsEnabledAsync(Guid userId, CancellationToken ct = default)
+    {
+        const string sql = "SELECT assets_enabled FROM users WHERE id = @id";
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         var value = await connection.QuerySingleOrDefaultAsync<bool?>(
             new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));

@@ -9,9 +9,11 @@ import {
 import {
   adsolutApi,
   telavoxAdminApi,
+  trmmAdminApi,
   zammadAdminApi,
   type AdsolutState,
   type TelavoxConnectionState,
+  type TrmmConnectionState,
   type ZammadConnectionState,
 } from "@/lib/api";
 import adsolutLogo from "@/assets/integrations/adsolut.ico";
@@ -60,6 +62,17 @@ function zammadTileStatus(
   }
 }
 
+function trmmTileStatus(state: TrmmConnectionState | undefined): IntegrationStatus {
+  switch (state) {
+    case "ready":
+      return "online";
+    case "not-configured":
+      return "warning";
+    default:
+      return "not-configured";
+  }
+}
+
 export function IntegrationsSettingsPage() {
   const navigate = useNavigate();
 
@@ -79,14 +92,17 @@ export function IntegrationsSettingsPage() {
     queryFn: () => zammadAdminApi.status(),
     staleTime: 30_000,
   });
+  const trmmStatus = useQuery({
+    queryKey: ["integrations", "trmm", "status"] as const,
+    queryFn: () => trmmAdminApi.status(),
+    staleTime: 30_000,
+  });
 
   const adsolutTileStatus = tileStatusFor(adsolutStatus.data?.state);
   const telavoxStatusTile = telavoxTileStatus(telavoxStatus.data?.state);
   const zammadStatusTile = zammadTileStatus(zammadStatus.data?.state);
-  // "Connected" for the counter = the integration has at least started
-  // configuration. Tactical RMM stays a placeholder that always reads
-  // "not-configured", so it doesn't tip the counter.
-  const tilesConfigured = [adsolutTileStatus, telavoxStatusTile, zammadStatusTile].filter(
+  const trmmStatusTile = trmmTileStatus(trmmStatus.data?.state);
+  const tilesConfigured = [adsolutTileStatus, telavoxStatusTile, zammadStatusTile, trmmStatusTile].filter(
     (s) => s === "online" || s === "warning",
   ).length;
   const totalCount = 4;
@@ -158,7 +174,13 @@ export function IntegrationsSettingsPage() {
           status={telavoxStatusTile}
           onClick={() => navigate({ to: "/settings/integrations/telavox" })}
         />
-        <IntegrationTile name="Tactical RMM" logo={trmmLogo} variant="icon" status="not-configured" />
+        <IntegrationTile
+          name="Tactical RMM"
+          logo={trmmLogo}
+          variant="icon"
+          status={trmmStatusTile}
+          onClick={() => navigate({ to: "/settings/integrations/trmm" })}
+        />
         <IntegrationTile
           name="Zammad Servicedesk"
           logo={zammadLogo}

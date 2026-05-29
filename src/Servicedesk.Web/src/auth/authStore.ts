@@ -27,6 +27,9 @@ export type AuthUser = {
   /// Gates the dashboard tile, the /activity page nav entry,
   /// and the SignalR hub's group enrollment.
   activityFeedEnabled: boolean;
+  /// v0.0.52 — per-user opt-in for the Assets page (Tactical RMM
+  /// mirror). Backfilled to true for Agent + Admin on first upgrade.
+  assetsEnabled: boolean;
   /// Per-user Dashboard tile preferences. Ordered list of
   /// {tileId, size} pairs; tiles whose id is not in this list are
   /// hidden on the Dashboard page. Size cycles small/medium/wide/full

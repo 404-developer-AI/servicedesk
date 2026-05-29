@@ -366,6 +366,70 @@ public static class SettingKeys
         public const string SelectAllMatchingHardCap = "Zammad.SelectAllMatchingHardCap";
     }
 
+    /// Tactical RMM integration (v0.0.52). One TRMM install per servicedesk
+    /// install: a single base URL + a single API key drive a background
+    /// poller that mirrors clients/sites/agents into our DB so the Assets
+    /// page can filter and sort offline. Client name format is
+    /// <c>[CODE] Customer Name</c> — the bracketed code matches a Company
+    /// row's <c>code</c> field and is used for auto-linking.
+    public static class Trmm
+    {
+        /// Master kill-switch. When false the sync worker is dormant and
+        /// every Assets endpoint returns 409. The integration page stays
+        /// editable for setup. Default off so a fresh install is silent
+        /// until the admin opts in.
+        public const string Enabled = "Trmm.Enabled";
+
+        /// Base URL of the Tactical RMM API (e.g.
+        /// <c>https://api.trmm.example.com</c>). The HTTP client appends
+        /// <c>/clients/</c>, <c>/sites/</c>, <c>/agents/</c> below it.
+        /// Trailing slashes are normalised. Non-https hosts other than
+        /// localhost are rejected at write time so a typo can't route
+        /// the API key over plaintext.
+        public const string BaseUrl = "Trmm.BaseUrl";
+
+        /// Background sync cadence (minutes). The worker pulls clients +
+        /// sites + agents once per tick and upserts via DO UPDATE …
+        /// RETURNING id so concurrent ticks are race-safe. Clamped to
+        /// [1, 1440] on read. Default 15.
+        public const string SyncIntervalMinutes = "Trmm.SyncIntervalMinutes";
+
+        /// HTTP timeout (seconds) per TRMM API call. Clamped to [5, 300].
+        /// Default 30. Lower = fail-fast on a slow upstream; higher =
+        /// tolerate occasional latency without aborting a full sync.
+        public const string RequestTimeoutSeconds = "Trmm.RequestTimeoutSeconds";
+    }
+
+    /// End-of-life data feed (v0.0.52). Background worker pulls the
+    /// Microsoft Windows + Windows Server registries from
+    /// <c>endoflife.date</c> on a configurable cadence and caches them
+    /// in <c>eol_releases</c>. The Assets page then flags agents whose
+    /// OS is past or near end-of-support — row tint + chip — without a
+    /// live network call on render.
+    public static class Eol
+    {
+        /// Master kill-switch. When false the refresh worker is dormant
+        /// and the Assets page falls back to <c>unknown</c> for every
+        /// agent (no row tint, no chip). Default on — the data source is
+        /// public and free.
+        public const string Enabled = "Eol.Enabled";
+
+        /// Refresh cadence in days. Microsoft updates the registries
+        /// infrequently, so a weekly poll is plenty. Clamped to [1, 90].
+        public const string RefreshIntervalDays = "Eol.RefreshIntervalDays";
+
+        /// How many days before the EOL date an agent gets flagged with
+        /// the amber "soon" tint instead of the green "active" tint.
+        /// Default 180 (6 months). Clamped to [1, 3650].
+        public const string WarnThresholdDays = "Eol.WarnThresholdDays";
+
+        /// Base URL of the endoflife.date API. Exposed as a setting so an
+        /// air-gapped install can later point at a private mirror without
+        /// a code change. Trailing slashes are normalised; the worker
+        /// appends <c>/api/&lt;product&gt;.json</c>.
+        public const string BaseUrl = "Eol.BaseUrl";
+    }
+
     /// Generic integration-framework knobs shared by every connector. The
     /// per-integration tunables (Adsolut.*, Graph.*) stay in their own
     /// section; this group only carries the cross-cutting ones.
@@ -1113,5 +1177,32 @@ public static class SettingDefaults
             "</tbody><tfoot><tr style=\"background:#f9fafb;font-weight:600;\"><td style=\"padding:6px 10px;border:1px solid #e5e7eb;\" colspan=\"4\">Total ({{count}} entries)</td><td style=\"padding:6px 10px;border:1px solid #e5e7eb;text-align:right;\">{{total_duration}}</td></tr></tfoot></table>",
             "string", "Timesheet",
             "HTML emitted once after the rows. Placeholders: {{total_duration}}, {{total_minutes}}, {{total_hours}}, {{count}}."),
+
+        // Tactical RMM — v0.0.52. Master switch defaults off so a fresh
+        // install is silent until the admin opts in. Sync cadence is
+        // settings-driven (no hardcoded magic number) so an ops team can
+        // dial it up/down without a redeploy.
+        new SettingDefault(SettingKeys.Trmm.Enabled, "false", "bool", "Tactical RMM",
+            "Master kill-switch for the Tactical RMM integration. When false the sync worker is dormant and the Assets endpoints refuse with 409. Flip to true once base URL + API key are configured."),
+        new SettingDefault(SettingKeys.Trmm.BaseUrl, "", "string", "Tactical RMM",
+            "Base URL of the Tactical RMM API (e.g. https://api.trmm.example.com). Clients/sites/agents paths are appended below. Non-https hosts other than localhost are rejected so a typo cannot route the API key over plaintext."),
+        new SettingDefault(SettingKeys.Trmm.SyncIntervalMinutes, "15", "int", "Tactical RMM",
+            "Background sync cadence (minutes). The worker pulls clients + sites + agents per tick and upserts into the local mirror tables. Clamped to [1, 1440]."),
+        new SettingDefault(SettingKeys.Trmm.RequestTimeoutSeconds, "30", "int", "Tactical RMM",
+            "HTTP timeout per TRMM API call, in seconds. Clamped to [5, 300]. Lower = fail-fast on a slow upstream; higher = tolerate occasional latency without aborting a sync."),
+
+        // End-of-life data feed — v0.0.52. The Assets page row-tint
+        // depends on these knobs (red = expired, amber = within
+        // WarnThresholdDays). All four sit under the "Tactical RMM"
+        // category so an admin manages OS lifecycle alongside the rest
+        // of the RMM integration.
+        new SettingDefault(SettingKeys.Eol.Enabled, "true", "bool", "Tactical RMM",
+            "When on, a background worker refreshes the Microsoft Windows + Windows Server end-of-life data from endoflife.date and the Assets page tints rows past or near support end. Off = no tint, no chip; the column shows 'Unknown' for every agent."),
+        new SettingDefault(SettingKeys.Eol.RefreshIntervalDays, "7", "int", "Tactical RMM",
+            "How often (days) the EOL data refresh runs. The endoflife.date registry changes infrequently — 7 is plenty. Clamped to [1, 90]."),
+        new SettingDefault(SettingKeys.Eol.WarnThresholdDays, "180", "int", "Tactical RMM",
+            "How many days before the EOL date an agent gets the amber 'soon' tint. Default 180 (6 months). Anything past EOL is always red regardless of this value. Clamped to [1, 3650]."),
+        new SettingDefault(SettingKeys.Eol.BaseUrl, "https://endoflife.date", "string", "Tactical RMM",
+            "Base URL of the endoflife.date API. Change this only for an air-gapped install that mirrors the registry internally. Trailing slashes are normalised."),
     };
 }

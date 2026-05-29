@@ -15,6 +15,7 @@ public static class SearchSourceKind
     public const string KbArticles = "kb-articles";
     public const string Timesheet = "timesheet";
     public const string Surveys = "surveys";
+    public const string Assets = "assets";
 }
 
 /// A single request to the search façade. <see cref="Type"/> is null for

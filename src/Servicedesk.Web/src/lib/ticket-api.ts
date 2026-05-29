@@ -1017,6 +1017,10 @@ export type UserAdminRow = {
   // false on insert; admins flip it on for the users who should see
   // the dashboard tile + /activity admin page.
   activityFeedEnabled: boolean;
+  // v0.0.52 — per-user opt-in for the Assets page (Tactical RMM
+  // mirror). Backfilled to true for Agent + Admin on first upgrade;
+  // false on new insert until an admin flips it.
+  assetsEnabled: boolean;
   // Per-user Dashboard tile preferences. Empty array on insert
   // (admins opt the user in to specific tiles).
   dashboardTiles: string[];
@@ -1030,6 +1034,7 @@ export type FeatureFlagsUpdate = Partial<{
   kbEnabled: boolean;
   searchEnabled: boolean;
   activityFeedEnabled: boolean;
+  assetsEnabled: boolean;
 }>;
 
 export type M365PickerUser = {

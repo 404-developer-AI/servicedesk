@@ -142,7 +142,8 @@ public sealed record UserAdminRow(
     bool IsIsoDpo = false,
     bool KbEnabled = false,
     bool SearchEnabled = true,
-    bool ActivityFeedEnabled = false)
+    bool ActivityFeedEnabled = false,
+    bool AssetsEnabled = false)
 {
     /// Per-user Dashboard tile preferences sourced from
     /// `user_dashboard_tiles`. Empty list = no tiles enabled
@@ -245,7 +246,8 @@ public sealed record FeatureFlagsUpdate(
     bool? IsIsoDpo,
     bool? KbEnabled,
     bool? SearchEnabled,
-    bool? ActivityFeedEnabled);
+    bool? ActivityFeedEnabled,
+    bool? AssetsEnabled);
 
 public abstract record UpdateFeatureFlagsResult
 {

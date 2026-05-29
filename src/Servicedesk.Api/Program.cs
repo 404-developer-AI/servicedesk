@@ -165,6 +165,10 @@ builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.ITelavoxCallNo
 // (TicketTimesheetPanel) via the existing TicketPresenceHub.
 builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.ITimesheetEntryNotifier,
     Servicedesk.Api.Presence.SignalRTimesheetEntryNotifier>();
+// v0.0.52 — Tactical RMM sync worker emits an AssetsChanged ping on
+// TicketPresenceHub so the Assets page invalidates after every cycle.
+builder.Services.AddSingleton<Servicedesk.Infrastructure.Integrations.Trmm.ITrmmSyncNotifier,
+    Servicedesk.Api.Presence.SignalRTrmmSyncNotifier>();
 // v0.0.42 — dashboard AgentActivity tile broadcaster. Sends per-user
 // activity updates to the agent-activity-admins SignalR group. Used by
 // TicketPresenceHub (presence transitions) and TelavoxPollingWorker
@@ -532,6 +536,8 @@ app.MapZammadEndpoints();
 app.MapZammadMappingEndpoints();
 app.MapZammadDryRunEndpoints();
 app.MapZammadKbImportEndpoints();
+app.MapTrmmEndpoints();
+app.MapAssetsEndpoints();
 app.MapAdminMailDiagnosticsEndpoints();
 app.MapHealthEndpoints();
 app.MapKbConfigEndpoints();

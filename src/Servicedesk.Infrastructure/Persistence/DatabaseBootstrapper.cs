@@ -3386,6 +3386,155 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- future admin-flow can offer a "remap to user" action.
         ALTER TABLE kb_articles
             ADD COLUMN IF NOT EXISTS external_author_metadata JSONB NULL;
+
+        -- ===================================================================
+        -- v0.0.52 — Tactical RMM integration & Assets
+        --
+        -- One TRMM install per Servicedesk install. A background poller
+        -- mirrors clients/sites/agents into the three tables below so the
+        -- Assets page can filter and sort offline and the global search
+        -- can register a search-source against the local rows.
+        --
+        -- Client name format in TRMM is <c>[CODE] Customer Name</c>. The
+        -- bracketed code is matched (case-insensitive) against
+        -- <c>companies.code</c> for auto-linking — admins can override
+        -- per client via the Integrations page; manual overrides survive
+        -- re-syncs (auto_matched = FALSE pins the link).
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS trmm_clients (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            trmm_client_id      BIGINT      NOT NULL UNIQUE,
+            name                TEXT        NOT NULL,
+            code                TEXT        NULL,
+            company_id          UUID        NULL REFERENCES companies(id) ON DELETE SET NULL,
+            auto_matched        BOOLEAN     NOT NULL DEFAULT TRUE,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_trmm_clients_company
+            ON trmm_clients (company_id);
+        CREATE INDEX IF NOT EXISTS ix_trmm_clients_code
+            ON trmm_clients (code);
+
+        CREATE TABLE IF NOT EXISTS trmm_sites (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            trmm_site_id        BIGINT      NOT NULL UNIQUE,
+            trmm_client_id      BIGINT      NOT NULL,
+            name                TEXT        NOT NULL,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_trmm_sites_client
+            ON trmm_sites (trmm_client_id);
+
+        CREATE TABLE IF NOT EXISTS trmm_agents (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            -- TRMM agent_id is a string UUID, not a numeric id. Stored as
+            -- TEXT so the schema doesn't have to know the upstream shape.
+            trmm_agent_id       TEXT        NOT NULL UNIQUE,
+            hostname            TEXT        NOT NULL,
+            agent_type          TEXT        NOT NULL,
+            os_name             TEXT        NULL,
+            os_family           TEXT        NULL,
+            os_build            TEXT        NULL,
+            last_seen_utc       TIMESTAMPTZ NULL,
+            online              BOOLEAN     NOT NULL DEFAULT FALSE,
+            public_ip           TEXT        NULL,
+            trmm_client_id      BIGINT      NOT NULL,
+            trmm_site_id        BIGINT      NOT NULL,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_sync_utc       TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT chk_trmm_agent_type
+                CHECK (agent_type IN ('server','workstation'))
+        );
+
+        -- Idempotent column-add for installs that ran a pre-os_family
+        -- bootstrap (i.e. early v0.0.52 testers). New installs get the
+        -- column from the CREATE TABLE above and this is a no-op.
+        ALTER TABLE trmm_agents
+            ADD COLUMN IF NOT EXISTS os_family TEXT NULL;
+
+        CREATE INDEX IF NOT EXISTS ix_trmm_agents_client
+            ON trmm_agents (trmm_client_id);
+        CREATE INDEX IF NOT EXISTS ix_trmm_agents_site
+            ON trmm_agents (trmm_site_id);
+        CREATE INDEX IF NOT EXISTS ix_trmm_agents_type
+            ON trmm_agents (agent_type);
+        CREATE INDEX IF NOT EXISTS ix_trmm_agents_build
+            ON trmm_agents (os_build);
+        CREATE INDEX IF NOT EXISTS ix_trmm_agents_family
+            ON trmm_agents (os_family);
+        CREATE INDEX IF NOT EXISTS ix_trmm_agents_last_seen
+            ON trmm_agents (last_seen_utc DESC NULLS LAST);
+        CREATE INDEX IF NOT EXISTS ix_trmm_agents_hostname_trgm
+            ON trmm_agents USING GIN (hostname gin_trgm_ops);
+
+        -- Sync metadata — single row keyed on a constant so the poller
+        -- can read/write the last-sync timestamp + status without a
+        -- second table for one value pair.
+        CREATE TABLE IF NOT EXISTS trmm_sync_state (
+            id                  TEXT        PRIMARY KEY DEFAULT 'singleton',
+            last_sync_utc       TIMESTAMPTZ NULL,
+            last_status         TEXT        NULL,
+            last_error          TEXT        NULL,
+            last_counts         JSONB       NOT NULL DEFAULT '{}'::jsonb,
+            CONSTRAINT chk_trmm_sync_singleton CHECK (id = 'singleton')
+        );
+
+        INSERT INTO trmm_sync_state (id)
+            VALUES ('singleton')
+            ON CONFLICT (id) DO NOTHING;
+
+        -- Per-user opt-in flag for the Assets page (mirrors kb_enabled,
+        -- timesheet_enabled, activity_feed_enabled). Customer-rol blijft
+        -- altijd geblokkeerd op route- en search-source-niveau; deze flag
+        -- bestaat alleen voor Agent en Admin.
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS assets_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+        -- One-shot backfill for existing agent + admin rows. Idempotent:
+        -- re-runs on every boot but only flips rows currently false, so a
+        -- user who explicitly switched themselves off does not get
+        -- re-enabled. Customer rows are never touched.
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM settings WHERE key = 'Trmm.AgentsAdminsBackfilled') THEN
+                UPDATE users SET assets_enabled = TRUE
+                    WHERE role_name IN ('Agent','Admin') AND assets_enabled = FALSE;
+                INSERT INTO settings (key, value, value_type, category, description, default_value, updated_utc)
+                    VALUES ('Trmm.AgentsAdminsBackfilled', 'true', 'bool', 'Tactical RMM',
+                            'Internal marker: agents + admins were backfilled to assets_enabled=true on first upgrade.',
+                            'true', now())
+                    ON CONFLICT (key) DO NOTHING;
+            END IF;
+        END $$;
+
+        -- ===================================================================
+        -- v0.0.52 — End-of-life data (endoflife.date mirror)
+        --
+        -- A background worker pulls the Microsoft Windows + Windows Server
+        -- registries from endoflife.date weekly and upserts the rows below
+        -- so the Assets page can flag agents whose OS is past or near
+        -- end-of-support without a live network call on every render.
+        -- Composite key (product, cycle) lets us share the table between
+        -- the desktop and server feeds without name collisions.
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS eol_releases (
+            product             TEXT        NOT NULL,
+            cycle               TEXT        NOT NULL,
+            release_label       TEXT        NULL,
+            eol_utc             TIMESTAMPTZ NULL,
+            lts                 BOOLEAN     NOT NULL DEFAULT FALSE,
+            last_refreshed_utc  TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (product, cycle),
+            CONSTRAINT chk_eol_product
+                CHECK (product IN ('windows','windows-server'))
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_eol_releases_eol
+            ON eol_releases (eol_utc);
         """;
 
     private readonly NpgsqlDataSource _dataSource;
