@@ -236,6 +236,7 @@ public sealed class MentionNotificationServiceTests
         public Task<bool> GetKbEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetSearchEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(true);
         public Task<bool> GetActivityFeedEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
+        public Task<bool> GetAssetsEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
     }
 
     private sealed class StubTaxonomy : ITaxonomyRepository
