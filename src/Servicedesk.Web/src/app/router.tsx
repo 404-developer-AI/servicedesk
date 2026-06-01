@@ -93,6 +93,19 @@ function anyAuthenticatedGate() {
 
 const UNAUTHENTICATED_PATHS = new Set(["/login", "/setup"]);
 
+/// Paths reachable without a session. Everything else — including unknown /
+/// not-found paths that fall through to the root's notFoundComponent — requires
+/// authentication, so an anonymous visitor bounces to /login instead of seeing
+/// the app shell. The server-side authorization policies remain the actual
+/// security boundary (every data endpoint returns 401); this just stops the
+/// client from painting the shell + role chrome for a logged-out visitor.
+function isPublicPath(path: string): boolean {
+  if (UNAUTHENTICATED_PATHS.has(path)) return true;
+  if (path.startsWith("/intake/")) return true;
+  if (path.startsWith("/surveys/")) return true;
+  return false;
+}
+
 /// Routes that render OUTSIDE AppShell — no sidebar, no CriticalBanner.
 /// Used for the pop-out compose window so the agent can park it next to
 /// the main tab with just the form visible. Public tokenised intake-form
@@ -125,6 +138,15 @@ const rootRoute = createRootRoute({
     }
     if (!setupAvailable && path === "/setup") {
       throw redirect({ to: user ? "/" : "/login" });
+    }
+    // Require a session for every non-public path. Without this, an unknown
+    // path (e.g. /123) matches no child route and falls through to the
+    // notFoundComponent below, which renders INSIDE the AppShell — exposing the
+    // shell + role chrome to an anonymous visitor. Per-route gates only cover
+    // declared routes; this closes the not-found gap. Public paths (login,
+    // setup, tokenised intake/survey links) stay exempt.
+    if (!user && !isPublicPath(path)) {
+      throw redirect({ to: "/login", search: { from: path } });
     }
   },
   component: RootLayout,
