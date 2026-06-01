@@ -33,9 +33,21 @@ public sealed class HolidaySyncService : IHolidaySyncService
         _logger = logger;
     }
 
+    // ISO 3166-1 alpha-2: exactly two letters. Validating here keeps untrusted
+    // input out of both the outbound URL (path-injection) and the log line
+    // (log-forging) — the value flows into both below.
+    private static readonly System.Text.RegularExpressions.Regex CountryCodePattern = new(
+        "^[A-Za-z]{2}$",
+        System.Text.RegularExpressions.RegexOptions.NonBacktracking
+        | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
     public async Task SyncAsync(Guid schemaId, string countryCode, int year, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(countryCode)) return;
+        if (string.IsNullOrWhiteSpace(countryCode) || !CountryCodePattern.IsMatch(countryCode))
+        {
+            _logger.LogWarning("Holiday sync skipped: invalid country code for schema {Schema}.", schemaId);
+            return;
+        }
         var url = new Uri(ApiBase, $"PublicHolidays/{year}/{countryCode.ToUpperInvariant()}");
         using var http = _httpFactory.CreateClient();
         http.Timeout = TimeSpan.FromSeconds(15);
