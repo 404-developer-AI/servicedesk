@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Clock, Users as UsersIcon, CalendarRange } from "lucide-react";
+import { Clock, Users as UsersIcon, CalendarRange, Receipt } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/authStore";
@@ -7,16 +7,18 @@ import { useTimesheetManagerRealtime } from "@/hooks/useTimesheetRealtime";
 import { TimesheetTab1 } from "@/pages/timesheet/TimesheetTab1";
 import { TimesheetTab2 } from "@/pages/timesheet/TimesheetTab2";
 import { TimesheetTab3 } from "@/pages/timesheet/TimesheetTab3";
+import { TimesheetTabAdsolut } from "@/pages/timesheet/TimesheetTabAdsolut";
 
-type Tab = "day" | "manager" | "month";
+type Tab = "day" | "manager" | "month" | "adsolut";
 
-/// Top-level Timesheet page. Hosts three tabs:
+/// Top-level Timesheet page. Hosts up to four tabs:
 ///   1. **My day** (Tab 1) — the agent's own daily registration. Always
 ///      visible for users with `timesheet_enabled` or `timesheet_manager`.
 ///   2. **Manager** (Tab 2) — manager-only overview across all users.
-///      Wires up in commit C; for v0.0.35-B it renders a coming-soon stub
-///      so the tab strip already has its final shape.
-///   3. **Month** (Tab 3) — manager-only month-per-agent rollup, ditto.
+///   3. **Month** (Tab 3) — manager-only month-per-agent rollup.
+///   4. **Adsolut** — only shown when the Adsolut integration is connected
+///      AND the user carries the "Adsolut Timesheet" feature flag. Data
+///      lands in a follow-up step; for now it's a placeholder shell.
 ///
 /// The tabs are role/flag-gated client-side AND the underlying APIs
 /// enforce the same scope on the server, so a non-manager that hand-picks
@@ -24,6 +26,9 @@ type Tab = "day" | "manager" | "month";
 export function TimesheetPage() {
   const { user } = useAuth();
   const isManager = !!user?.timesheetManager;
+  // The Adsolut tab needs both the live integration connection and the
+  // per-user opt-in flag; either one alone keeps it hidden.
+  const showAdsolut = !!user?.adsolutConnected && !!user?.adsolutTimesheetEnabled;
   const [tab, setTab] = useState<Tab>("day");
 
   // v0.0.35 commit H — live-refresh Tab 2 / Tab 3 on any mutation from
@@ -67,11 +72,20 @@ export function TimesheetPage() {
           label="Month"
           disabled={!isManager}
         />
+        {showAdsolut && (
+          <TabButton
+            active={tab === "adsolut"}
+            onClick={() => setTab("adsolut")}
+            icon={<Receipt className="h-3.5 w-3.5" />}
+            label="Adsolut"
+          />
+        )}
       </div>
 
       {tab === "day" && <TimesheetTab1 />}
       {tab === "manager" && isManager && <TimesheetTab2 />}
       {tab === "month" && isManager && <TimesheetTab3 />}
+      {tab === "adsolut" && showAdsolut && <TimesheetTabAdsolut />}
     </div>
   );
 }

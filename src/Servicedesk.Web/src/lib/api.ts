@@ -70,6 +70,8 @@ export type AuthUserPayload = {
   searchEnabled: boolean;
   activityFeedEnabled: boolean;
   assetsEnabled: boolean;
+  adsolutTimesheetEnabled: boolean;
+  adsolutConnected: boolean;
   dashboardTiles: string[];
   // v0.0.44 — server-resolved theme (user pref → admin default → 'light').
   // ThemeProvider on the client uses this as the source of truth on bootstrap.

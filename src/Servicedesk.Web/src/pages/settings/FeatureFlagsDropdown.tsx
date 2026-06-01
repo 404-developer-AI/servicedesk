@@ -11,6 +11,7 @@ import {
   Lock,
   Activity,
   Server,
+  Receipt,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -37,6 +38,7 @@ const FLAG_GROUPS: Group[] = [
     flags: [
       { key: "timesheetEnabled", label: "Timesheet", icon: Clock },
       { key: "timesheetManager", label: "TS manager", icon: UsersIcon },
+      { key: "adsolutTimesheetEnabled", label: "Adsolut Timesheet", icon: Receipt },
     ],
   },
   {
