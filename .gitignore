@@ -20,6 +20,9 @@ secrets.*
 appsettings.*.json
 !appsettings.json
 !appsettings.Example.json
+# Operator-generated Zammad/timesheet migration mapping — carries employee
+# names + emails (PII). Never commit; the tool regenerates it locally.
+mapping.json
 
 # Certificates and keys
 *.pem

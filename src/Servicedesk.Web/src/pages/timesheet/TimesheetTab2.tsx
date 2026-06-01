@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   CalendarRange,
+  ChevronLeft,
+  ChevronRight,
   Pencil,
   Search,
   Trash2,
@@ -96,6 +98,8 @@ export function TimesheetTab2() {
   const qc = useQueryClient();
   const [filter, setFilter] = React.useState<ManagerEntryFilter>(() => defaultFilter());
   const [draft, setDraft] = React.useState<ManagerEntryFilter>(filter);
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE);
   const [editingId, setEditingId] = React.useState<string | null>(null);
 
   const tasksQuery = useQuery({
@@ -113,25 +117,43 @@ export function TimesheetTab2() {
   const users = usersQuery.data ?? [];
 
   const entriesQuery = useQuery({
-    queryKey: ["timesheet", "manager", "entries", filter],
-    queryFn: () => timesheetManagerApi.listEntries(filter),
+    queryKey: ["timesheet", "manager", "entries", filter, page, pageSize],
+    queryFn: () => timesheetManagerApi.listEntries({ ...filter, page, pageSize }),
   });
   const entries = entriesQuery.data?.items ?? [];
+  const total = entriesQuery.data?.total ?? 0;
+  const totalMinutes = entriesQuery.data?.totalMinutes ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  // Keep the page in range when the result set shrinks under it — e.g. after
+  // deleting the last row on the final page, or widening the page size.
+  React.useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["timesheet", "manager", "entries"] });
   };
 
-  const totalMinutes = entries.reduce((sum, e) => sum + e.minutes, 0);
-
   const applyFilter = () => {
     setFilter({ ...draft });
+    setPage(1);
     setEditingId(null);
   };
   const resetFilter = () => {
     const d = defaultFilter();
     setDraft(d);
     setFilter(d);
+    setPage(1);
+    setEditingId(null);
+  };
+  const changePageSize = (next: number) => {
+    setPageSize(next);
+    setPage(1);
+    setEditingId(null);
+  };
+  const goToPage = (next: number) => {
+    setPage(Math.min(Math.max(1, next), totalPages));
     setEditingId(null);
   };
 
@@ -145,8 +167,13 @@ export function TimesheetTab2() {
         onApply={applyFilter}
         onReset={resetFilter}
         loading={entriesQuery.isFetching}
-        totalCount={entries.length}
+        total={total}
         totalMinutes={totalMinutes}
+        page={page}
+        pageSize={pageSize}
+        totalPages={totalPages}
+        onPageSizeChange={changePageSize}
+        onGoToPage={goToPage}
       />
 
       <section className="glass-card overflow-hidden">
@@ -223,14 +250,17 @@ export function TimesheetTab2() {
 const ALL_USERS = "__all_users__";
 const ALL_TASKS = "__all_tasks__";
 
+// Page-size choices for the manager grid. 10 is the default so the table
+// stays light even when the date filter is cleared (= every day, which can
+// be tens of thousands of imported rows).
+const PAGE_SIZES = [10, 20, 50, 100] as const;
+const DEFAULT_PAGE_SIZE = 10;
+
 function defaultFilter(): ManagerEntryFilter {
-  // Default to "last 7 days" — same window the server falls back to when
-  // the client sends no dates. Stating it explicitly here keeps the UI
-  // honest about the current window.
-  const today = new Date();
-  const from = new Date(today);
-  from.setDate(from.getDate() - 6);
-  return { from: localIso(from), to: localIso(today) };
+  // Default to today. Clearing the day field widens the grid to every day
+  // (still paginated). This keeps the first paint to a single day rather
+  // than the whole table.
+  return { day: localIso(new Date()) };
 }
 
 function localIso(d: Date): string {
@@ -250,8 +280,13 @@ function FilterBar({
   onApply,
   onReset,
   loading,
-  totalCount,
+  total,
   totalMinutes,
+  page,
+  pageSize,
+  totalPages,
+  onPageSizeChange,
+  onGoToPage,
 }: {
   draft: ManagerEntryFilter;
   setDraft: (next: ManagerEntryFilter) => void;
@@ -260,25 +295,33 @@ function FilterBar({
   onApply: () => void;
   onReset: () => void;
   loading: boolean;
-  totalCount: number;
+  total: number;
   totalMinutes: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  onPageSizeChange: (next: number) => void;
+  onGoToPage: (next: number) => void;
 }) {
+  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const rangeEnd = Math.min(page * pageSize, total);
   return (
     <div className="glass-panel flex flex-col gap-3 p-3">
       <div className="flex flex-wrap items-end gap-3">
-        <FieldGroup label="From">
+        <FieldGroup label="Day">
           <input
             type="date"
-            value={draft.from ?? ""}
-            onChange={(e) => setDraft({ ...draft, from: e.target.value || undefined })}
-            className="h-8 rounded-md border border-glass bg-glass px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-          />
-        </FieldGroup>
-        <FieldGroup label="To">
-          <input
-            type="date"
-            value={draft.to ?? ""}
-            onChange={(e) => setDraft({ ...draft, to: e.target.value || undefined })}
+            value={draft.day ?? ""}
+            onChange={(e) => setDraft({ ...draft, day: e.target.value || undefined })}
+            onKeyDown={(e) => {
+              // Escape clears the day field entirely (= show all days once
+              // applied), rather than the browser's default revert-to-prior.
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setDraft({ ...draft, day: undefined });
+              }
+            }}
+            title="Leave empty to show all days · Esc clears"
             className="h-8 rounded-md border border-glass bg-glass px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </FieldGroup>
@@ -359,17 +402,71 @@ function FilterBar({
           </Button>
         </div>
       </div>
-      <div className="flex items-center justify-between border-t border-glass pt-2 text-xs text-muted-foreground">
-        <div className="flex items-center gap-2">
-          <CalendarRange className="h-3.5 w-3.5" />
-          <span>Showing {totalCount} {totalCount === 1 ? "entry" : "entries"}</span>
-        </div>
-        <span>
-          Total:{" "}
-          <span className="font-mono font-medium text-foreground">
-            {formatDuration(totalMinutes)}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-glass pt-2 text-xs text-muted-foreground">
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-2">
+            <CalendarRange className="h-3.5 w-3.5" />
+            {total === 0 ? (
+              <span>No entries</span>
+            ) : (
+              <span>
+                Showing {rangeStart}–{rangeEnd} of {total}{" "}
+                {total === 1 ? "entry" : "entries"}
+              </span>
+            )}
           </span>
-        </span>
+          <span className="flex items-center gap-1.5">
+            <span className="uppercase tracking-wider text-[10px]">Per page</span>
+            <Select
+              value={String(pageSize)}
+              onValueChange={(v) => onPageSizeChange(Number(v))}
+            >
+              <SelectTrigger className="h-7 w-[4.25rem] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PAGE_SIZES.map((n) => (
+                  <SelectItem key={n} value={String(n)}>
+                    {n}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span>
+            Total:{" "}
+            <span className="font-mono font-medium text-foreground">
+              {formatDuration(totalMinutes)}
+            </span>
+          </span>
+          <div className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 p-0"
+              onClick={() => onGoToPage(page - 1)}
+              disabled={loading || page <= 1}
+              aria-label="Previous page"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </Button>
+            <span className="min-w-[5rem] text-center font-mono text-foreground/90">
+              {page} / {totalPages}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 p-0"
+              onClick={() => onGoToPage(page + 1)}
+              disabled={loading || page >= totalPages}
+              aria-label="Next page"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

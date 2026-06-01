@@ -11,7 +11,7 @@ namespace Servicedesk.Infrastructure.Timesheet;
 /// endpoint layer — this service trusts its caller.
 public interface IManagerTimesheetService
 {
-    Task<IReadOnlyList<TimesheetEntryRow>> ListAsync(
+    Task<ManagerEntryPage> ListAsync(
         ManagerEntryFilter filter,
         CancellationToken ct = default);
 
@@ -41,9 +41,10 @@ public interface IManagerTimesheetService
         CancellationToken ct = default);
 }
 
-/// Filter for the Tab-2 grid. All fields optional; the service treats
-/// the empty filter as "all rows for the last 7 days" so an unbounded
-/// query never accidentally returns the full table.
+/// Filter for the Tab-2 grid. All filter fields optional. With no date
+/// bounds the grid spans every day (the UI's "clear the date = all
+/// records" mode); the result set is always bounded by pagination, so an
+/// open query can never return the full table in one response.
 public sealed record ManagerEntryFilter(
     DateOnly? From,
     DateOnly? To,
@@ -51,7 +52,18 @@ public sealed record ManagerEntryFilter(
     Guid? TicketId,
     Guid? TaskId,
     string? Search,
-    int Limit = 500);
+    int Page = 1,
+    int PageSize = 10);
+
+/// One page of manager entries plus the totals across the whole filtered
+/// set — <see cref="Total"/> drives the pager, <see cref="TotalMinutes"/>
+/// the footer sum (not just the visible page).
+public sealed record ManagerEntryPage(
+    IReadOnlyList<TimesheetEntryRow> Items,
+    int Total,
+    int TotalMinutes,
+    int Page,
+    int PageSize);
 
 public sealed record TimesheetUser(Guid Id, string Email, bool Enabled, bool Manager);
 

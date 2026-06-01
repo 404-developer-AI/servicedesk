@@ -224,13 +224,23 @@ export type TimesheetUser = {
 };
 
 export type ManagerEntryFilter = {
-  from?: string;
-  to?: string;
+  /// Single day (YYYY-MM-DD). Empty = every day (paged). Sent to the
+  /// server as from=to=day so one date narrows to that one day.
+  day?: string;
   userId?: string;
   ticketId?: string;
   taskId?: string;
   search?: string;
-  limit?: number;
+  page?: number;
+  pageSize?: number;
+};
+
+export type ManagerEntriesResponse = {
+  items: TimesheetEntry[];
+  total: number;
+  totalMinutes: number;
+  page: number;
+  pageSize: number;
 };
 
 export type MonthDayBreakdown = {
@@ -315,14 +325,18 @@ export const timesheetManagerApi = {
 
   listEntries: (filter: ManagerEntryFilter) => {
     const p = new URLSearchParams();
-    if (filter.from) p.set("from", filter.from);
-    if (filter.to) p.set("to", filter.to);
+    // One day narrows to that day; an empty day sends no bound = all days.
+    if (filter.day) {
+      p.set("from", filter.day);
+      p.set("to", filter.day);
+    }
     if (filter.userId) p.set("userId", filter.userId);
     if (filter.ticketId) p.set("ticketId", filter.ticketId);
     if (filter.taskId) p.set("taskId", filter.taskId);
     if (filter.search && filter.search.trim()) p.set("search", filter.search.trim());
-    if (filter.limit) p.set("limit", String(filter.limit));
-    return request<{ items: TimesheetEntry[] }>(
+    if (filter.page) p.set("page", String(filter.page));
+    if (filter.pageSize) p.set("pageSize", String(filter.pageSize));
+    return request<ManagerEntriesResponse>(
       "GET",
       `/api/timesheet/manager/entries?${p.toString()}`,
     );

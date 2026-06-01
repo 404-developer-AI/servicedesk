@@ -18,7 +18,9 @@ using Servicedesk.Infrastructure.Auth.Totp;
 using Servicedesk.Infrastructure.Dashboard;
 using Servicedesk.Infrastructure.DataProtection;
 using Servicedesk.Infrastructure.Persistence;
+using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Timesheet;
 
 namespace Servicedesk.Api.Tests.TestInfrastructure;
 
@@ -33,6 +35,7 @@ public sealed class SecurityBaselineFactory : WebApplicationFactory<Program>
     public readonly FakeSessionService Sessions = new();
     public readonly FakeTotpService Totp = new();
     public readonly InMemorySettingsService Settings = new();
+    public readonly InMemorySecretStore Secrets = new();
 
     private readonly Dictionary<string, string?> _overrides = new()
     {
@@ -79,6 +82,17 @@ public sealed class SecurityBaselineFactory : WebApplicationFactory<Program>
 
             services.RemoveAll<ISettingsService>();
             services.AddSingleton<ISettingsService>(Settings);
+
+            // ProtectedSecretStore is Npgsql-backed; swap an in-memory one so
+            // secret-gated surfaces are testable without a database.
+            services.RemoveAll<IProtectedSecretStore>();
+            services.AddSingleton<IProtectedSecretStore>(Secrets);
+
+            // Timesheet import service is Npgsql-backed and is injected as a
+            // handler parameter on the import endpoints, so it must resolve
+            // even for requests the auth gate rejects. No-op fake.
+            services.RemoveAll<ITimesheetImportService>();
+            services.AddSingleton<ITimesheetImportService, FakeTimesheetImportService>();
 
             // Auth services: swap out the DB-backed impls for in-memory fakes.
             // Tests that exercise login/session flow poke these directly; tests
@@ -167,6 +181,51 @@ public sealed class InMemorySettingsService : ISettingsService
 
     public Task<IReadOnlyList<SettingEntry>> ListAsync(string? category = null, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<SettingEntry>>(Array.Empty<SettingEntry>());
+}
+
+/// In-memory <see cref="IProtectedSecretStore"/> so secret-gated endpoints
+/// can be exercised without the Npgsql-backed store. Set values via
+/// <see cref="Set"/> before issuing the request.
+public sealed class InMemorySecretStore : IProtectedSecretStore
+{
+    private readonly ConcurrentDictionary<string, string> _values = new();
+
+    public void Set(string key, string value) => _values[key] = value;
+
+    public Task<string?> GetAsync(string key, CancellationToken ct = default) =>
+        Task.FromResult(_values.TryGetValue(key, out var v) ? v : null);
+
+    public Task SetAsync(string key, string plaintext, CancellationToken ct = default)
+    {
+        _values[key] = plaintext;
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> HasAsync(string key, CancellationToken ct = default) =>
+        Task.FromResult(_values.ContainsKey(key));
+
+    public Task DeleteAsync(string key, CancellationToken ct = default)
+    {
+        _values.TryRemove(key, out _);
+        return Task.CompletedTask;
+    }
+}
+
+/// No-op <see cref="ITimesheetImportService"/> so the import endpoints'
+/// handler parameters resolve without a database. The auth-gate tests never
+/// reach these methods; the happy-path test only asserts the empty shape.
+public sealed class FakeTimesheetImportService : ITimesheetImportService
+{
+    public Task<IReadOnlyList<TimesheetTask>> ListTasksAsync(CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<TimesheetTask>>(Array.Empty<TimesheetTask>());
+
+    public Task<IReadOnlyList<TimesheetImportUser>> ListUsersAsync(CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<TimesheetImportUser>>(Array.Empty<TimesheetImportUser>());
+
+    public Task<TimesheetImportBatchResult> ImportBatchAsync(
+        string importSource, IReadOnlyList<TimesheetImportRow> rows, CancellationToken ct = default) =>
+        Task.FromResult(new TimesheetImportBatchResult(
+            rows.Count, rows.Count, 0, Array.Empty<TimesheetImportSkip>()));
 }
 
 public sealed class FakeUserService : IUserService

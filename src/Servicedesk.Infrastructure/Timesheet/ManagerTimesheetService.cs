@@ -8,7 +8,7 @@ public sealed class ManagerTimesheetService : IManagerTimesheetService
 {
     /// Same projection as the own-row service, plus the agent's email so
     /// the manager grid can show "who" on every row.
-    private const string SelectFromJoin = """
+    private const string SelectColumns = """
         SELECT  e.id              AS Id,
                 e.user_id         AS UserId,
                 u.email           AS UserEmail,
@@ -29,12 +29,20 @@ public sealed class ManagerTimesheetService : IManagerTimesheetService
                 e.invoiced        AS Invoiced,
                 e.created_utc     AS CreatedUtc,
                 e.updated_utc     AS UpdatedUtc
+        """;
+
+    /// The shared FROM + joins. Both the page query and the count/sum query
+    /// build on this so a search predicate touching c/k/u resolves the same
+    /// way in either.
+    private const string FromJoins = """
         FROM timesheet_entries e
         JOIN timesheet_tasks   t ON t.id = e.task_id
         JOIN users             u ON u.id = e.user_id
         LEFT JOIN tickets      k ON k.id = e.ticket_id
         LEFT JOIN companies    c ON c.id = k.company_id
         """;
+
+    private const string SelectFromJoin = SelectColumns + "\n" + FromJoins;
 
     private readonly NpgsqlDataSource _dataSource;
     private readonly ITimesheetTaskService _tasks;
@@ -45,37 +53,54 @@ public sealed class ManagerTimesheetService : IManagerTimesheetService
         _tasks = tasks;
     }
 
-    public async Task<IReadOnlyList<TimesheetEntryRow>> ListAsync(
+    /// Page sizes the UI offers. Any other value is clamped into this range
+    /// so a hand-crafted request can't ask for an unbounded page.
+    private const int MaxPageSize = 100;
+    private const int DefaultPageSize = 10;
+
+    public async Task<ManagerEntryPage> ListAsync(
         ManagerEntryFilter filter, CancellationToken ct = default)
     {
-        // Default range = last 7 days inclusive. Prevents an empty filter
-        // from yielding "all rows in the database" on a busy install.
-        var from = filter.From ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-6));
-        var to = filter.To ?? DateOnly.FromDateTime(DateTime.UtcNow);
-        if (to < from) (from, to) = (to, from);
+        var pageSize = filter.PageSize switch
+        {
+            <= 0 => DefaultPageSize,
+            > MaxPageSize => MaxPageSize,
+            _ => filter.PageSize,
+        };
+        var page = filter.Page < 1 ? 1 : filter.Page;
 
-        var limit = filter.Limit <= 0 ? 500 : Math.Min(filter.Limit, 2000);
-        var sql = new StringBuilder(SelectFromJoin);
-        sql.AppendLine();
-        sql.AppendLine("WHERE e.entry_date BETWEEN @from AND @to");
-
+        // Build the shared predicate once. No date bound = every day; the
+        // pager (LIMIT/OFFSET) is what keeps an open query bounded.
+        var where = new StringBuilder("WHERE 1 = 1\n");
         var p = new DynamicParameters();
-        p.Add("from", from.ToDateTime(TimeOnly.MinValue));
-        p.Add("to", to.ToDateTime(TimeOnly.MinValue));
+
+        var from = filter.From;
+        var to = filter.To;
+        if (from is not null && to is not null && to < from) (from, to) = (to, from);
+        if (from is not null)
+        {
+            where.AppendLine("  AND e.entry_date >= @from");
+            p.Add("from", from.Value.ToDateTime(TimeOnly.MinValue));
+        }
+        if (to is not null)
+        {
+            where.AppendLine("  AND e.entry_date <= @to");
+            p.Add("to", to.Value.ToDateTime(TimeOnly.MinValue));
+        }
 
         if (filter.UserId is { } uid && uid != Guid.Empty)
         {
-            sql.AppendLine("  AND e.user_id = @userId");
+            where.AppendLine("  AND e.user_id = @userId");
             p.Add("userId", uid);
         }
         if (filter.TicketId is { } tid && tid != Guid.Empty)
         {
-            sql.AppendLine("  AND e.ticket_id = @ticketId");
+            where.AppendLine("  AND e.ticket_id = @ticketId");
             p.Add("ticketId", tid);
         }
         if (filter.TaskId is { } taskId && taskId != Guid.Empty)
         {
-            sql.AppendLine("  AND e.task_id = @taskId");
+            where.AppendLine("  AND e.task_id = @taskId");
             p.Add("taskId", taskId);
         }
 
@@ -85,7 +110,7 @@ public sealed class ManagerTimesheetService : IManagerTimesheetService
             // Free-text on company name, contact name (via tickets.requester_contact_id),
             // ticket subject, and the entry's own description. ILIKE is fine
             // here because the dataset per manager session is small.
-            sql.AppendLine("""
+            where.AppendLine("""
                   AND (
                        c.name        ILIKE @search
                     OR k.subject     ILIKE @search
@@ -104,14 +129,32 @@ public sealed class ManagerTimesheetService : IManagerTimesheetService
             p.Add("search", "%" + EscapeLike(trimmedSearch) + "%");
         }
 
-        sql.AppendLine("ORDER BY e.entry_date DESC, e.start_minutes ASC, u.email ASC");
-        sql.AppendLine("LIMIT @limit");
-        p.Add("limit", limit);
+        var whereSql = where.ToString();
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
+
+        // Totals across the whole filtered set drive the pager and footer sum.
+        var totals = await conn.QuerySingleAsync<TotalsRow>(new CommandDefinition(
+            "SELECT COUNT(*)::int AS Total, COALESCE(SUM(e.minutes), 0)::int AS TotalMinutes\n"
+            + FromJoins + "\n" + whereSql,
+            p, cancellationToken: ct));
+
+        var dataSql = SelectColumns + "\n" + FromJoins + "\n" + whereSql
+            + "ORDER BY e.entry_date DESC, e.start_minutes ASC, u.email ASC\n"
+            + "LIMIT @pageSize OFFSET @offset";
+        p.Add("pageSize", pageSize);
+        p.Add("offset", (page - 1) * pageSize);
+
         var rows = await conn.QueryAsync<TimesheetEntryRow>(
-            new CommandDefinition(sql.ToString(), p, cancellationToken: ct));
-        return rows.ToList();
+            new CommandDefinition(dataSql, p, cancellationToken: ct));
+
+        return new ManagerEntryPage(rows.ToList(), totals.Total, totals.TotalMinutes, page, pageSize);
+    }
+
+    private sealed class TotalsRow
+    {
+        public int Total { get; set; }
+        public int TotalMinutes { get; set; }
     }
 
     public async Task<IReadOnlyList<TimesheetUser>> ListTimesheetUsersAsync(CancellationToken ct = default)

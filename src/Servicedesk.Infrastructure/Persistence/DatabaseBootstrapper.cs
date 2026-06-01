@@ -2367,6 +2367,20 @@ public sealed class DatabaseBootstrapper : IHostedService
         ALTER TABLE timesheet_entries
             ADD COLUMN IF NOT EXISTS invoiced BOOLEAN NOT NULL DEFAULT FALSE;
 
+        -- v0.0.54 — migration provenance. `import_source` names the source
+        -- system (e.g. 'legacy-mssql-timesheet'); `import_ref` is that
+        -- system's primary key for the row. The partial UNIQUE index makes a
+        -- re-run idempotent: the import UPSERTs on (import_source, import_ref)
+        -- instead of duplicating. Both are NULL on every normally-created
+        -- row, so the partial index imposes no cost on the hot path and the
+        -- columns stay invisible to the rest of the app.
+        ALTER TABLE timesheet_entries
+            ADD COLUMN IF NOT EXISTS import_source TEXT NULL,
+            ADD COLUMN IF NOT EXISTS import_ref    TEXT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_timesheet_entries_import
+            ON timesheet_entries (import_source, import_ref)
+            WHERE import_source IS NOT NULL;
+
         -- Drop the old global pending-till defaults. Pending-till is now
         -- entirely trigger-driven (set_pending_till action, chained
         -- next_trigger_id for snap-on-expiry). These rows are orphaned

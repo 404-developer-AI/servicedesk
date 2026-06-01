@@ -654,6 +654,14 @@ public static class SettingKeys
         public const string ReplyHeaderHtml = "Timesheet.ReplyHeaderHtml";
         public const string ReplyRowHtml = "Timesheet.ReplyRowHtml";
         public const string ReplyFooterHtml = "Timesheet.ReplyFooterHtml";
+
+        /// v0.0.54 — master switch for the secret-gated migration import
+        /// surface (Settings → Timesheet → Migration import). Defaults to
+        /// FALSE (missing key reads as false), so a fresh install exposes
+        /// nothing until an admin explicitly opts in AND configures the
+        /// import token. The surface is only live when this is TRUE and the
+        /// <c>Timesheet.ImportToken</c> protected-secret is set.
+        public const string ImportEnabled = "Timesheet.ImportEnabled";
     }
 
     /// v0.0.42 — Agent activity feed. Append-only event stream that
@@ -1177,6 +1185,11 @@ public static class SettingDefaults
             "</tbody><tfoot><tr style=\"background:#f9fafb;font-weight:600;\"><td style=\"padding:6px 10px;border:1px solid #e5e7eb;\" colspan=\"4\">Total ({{count}} entries)</td><td style=\"padding:6px 10px;border:1px solid #e5e7eb;text-align:right;\">{{total_duration}}</td></tr></tfoot></table>",
             "string", "Timesheet",
             "HTML emitted once after the rows. Placeholders: {{total_duration}}, {{total_minutes}}, {{total_hours}}, {{count}}."),
+        // v0.0.54 — migration import master switch. Off by default; the
+        // secret-gated import surface stays invisible until an admin enables
+        // it AND configures the import token.
+        new SettingDefault(SettingKeys.Timesheet.ImportEnabled, "false", "bool", "Timesheet",
+            "Master switch for the one-time migration import surface (Settings → Timesheet → Migration import). When off, the import endpoints return 404."),
 
         // Tactical RMM — v0.0.52. Master switch defaults off so a fresh
         // install is silent until the admin opts in. Sync cadence is
