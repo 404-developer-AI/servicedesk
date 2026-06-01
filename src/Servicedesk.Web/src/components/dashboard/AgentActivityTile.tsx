@@ -11,6 +11,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { getConnection } from "@/hooks/usePresence";
+import { HubConnectionState } from "@microsoft/signalr";
 import { cn } from "@/lib/utils";
 
 const QUERY_KEY = ["dashboard", "agent-activity"] as const;
@@ -36,6 +37,7 @@ export function AgentActivityTile() {
   // full refetch.
   React.useEffect(() => {
     const hub = getConnection();
+    let active = true;
     const handler = (incoming: AgentActivity) => {
       queryClient.setQueryData<AgentActivitySnapshot | undefined>(
         QUERY_KEY,
@@ -56,8 +58,34 @@ export function AgentActivityTile() {
       );
     };
     hub.on("AgentActivity", handler);
+
+    // Opt this connection into the broadcast group only while the tile is
+    // mounted (the server no longer auto-joins every agent/admin). Retry
+    // until connected for the hard-refresh-on-dashboard case where the
+    // shared connection is still starting.
+    const join = () => {
+      if (!active) return;
+      if (hub.state === HubConnectionState.Connected) {
+        hub.invoke("JoinAgentActivity").catch(() => {});
+      } else {
+        window.setTimeout(join, 500);
+      }
+    };
+    join();
+
+    // Group membership is per-connection, so re-join after a reconnect.
+    // SignalR has no offReconnected; the `active` guard neutralises this
+    // callback once the tile unmounts.
+    hub.onreconnected(() => {
+      if (active) hub.invoke("JoinAgentActivity").catch(() => {});
+    });
+
     return () => {
+      active = false;
       hub.off("AgentActivity", handler);
+      if (hub.state === HubConnectionState.Connected) {
+        hub.invoke("LeaveAgentActivity").catch(() => {});
+      }
     };
   }, [queryClient]);
 
