@@ -102,4 +102,7 @@ Open `http://localhost:5173`. The Vite proxy forwards `/api/*` and `/hubs/*` to 
 
 ## License
 
-TBD.
+Licensed under the Apache License, Version 2.0 — see [LICENSE](LICENSE).
+
+Provided as is, without warranty or liability of any kind. See [SECURITY.md](SECURITY.md)
+for how to report a vulnerability.
