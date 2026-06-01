@@ -86,6 +86,21 @@ const SANITIZE_CONFIG = {
   ADD_ATTR: ["data-type", "data-id", "data-label"],
 };
 
+// Lazy-load + async-decode every inline image. A content-rich imported mail
+// thread can embed 150+ inline images (repeated signatures/logos across each
+// quoted reply); without this the browser fires every attachment GET at once
+// on open. `loading="lazy"` defers off-screen images until they scroll into
+// view, `decoding="async"` keeps decode off the main thread. Set via an
+// afterSanitizeAttributes hook so the attrs survive the allow-list pass
+// (DOMPurify retains attributes added in this hook). Registered once at module
+// load; it only ever touches <img>, so other sanitiser callers are unaffected.
+DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+  if (node.nodeName === "IMG") {
+    node.setAttribute("loading", "lazy");
+    node.setAttribute("decoding", "async");
+  }
+});
+
 function SafeHtml({ html }: { html: string }) {
   const preview = usePreview();
   const onClick = React.useCallback(
