@@ -1021,6 +1021,9 @@ export type UserAdminRow = {
   // mirror). Backfilled to true for Agent + Admin on first upgrade;
   // false on new insert until an admin flips it.
   assetsEnabled: boolean;
+  // Per-user opt-in for the Adsolut timesheet tab. False on insert;
+  // the tab also requires the Adsolut integration to be connected.
+  adsolutTimesheetEnabled: boolean;
   // Per-user Dashboard tile preferences. Empty array on insert
   // (admins opt the user in to specific tiles).
   dashboardTiles: string[];
@@ -1035,6 +1038,7 @@ export type FeatureFlagsUpdate = Partial<{
   searchEnabled: boolean;
   activityFeedEnabled: boolean;
   assetsEnabled: boolean;
+  adsolutTimesheetEnabled: boolean;
 }>;
 
 export type M365PickerUser = {

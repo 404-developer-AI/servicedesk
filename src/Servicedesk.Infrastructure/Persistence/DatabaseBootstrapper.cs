@@ -3525,6 +3525,16 @@ public sealed class DatabaseBootstrapper : IHostedService
             END IF;
         END $$;
 
+        -- Per-user opt-in flag for the Adsolut timesheet tab (mirrors
+        -- kb_enabled, timesheet_enabled, assets_enabled). The tab is only
+        -- shown when this flag is TRUE *and* the Adsolut integration is
+        -- connected; the flag alone surfaces nothing without the
+        -- integration. Default FALSE — no backfill, this is strictly
+        -- opt-in per user. Customer rows stay blocked at the feature-flags
+        -- update path (Agent/Admin only).
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS adsolut_timesheet_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
         -- ===================================================================
         -- v0.0.52 — End-of-life data (endoflife.date mirror)
         --

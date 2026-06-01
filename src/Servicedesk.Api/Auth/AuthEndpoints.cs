@@ -7,6 +7,8 @@ using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Auth.Sessions;
 using Servicedesk.Infrastructure.Auth.Totp;
+using Servicedesk.Infrastructure.Integrations.Adsolut;
+using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Api.Auth;
@@ -348,6 +350,17 @@ public static class AuthEndpoints
         // mirror). Drives the sidebar nav entry. Backend /api/assets
         // routes carry RequireAgent so the gate is enforced on both ends.
         var assetsEnabled = await users.GetAssetsEnabledAsync(userId, ct);
+        // Per-user opt-in for the Adsolut timesheet tab. Paired below with
+        // the live Adsolut connection state — the tab only renders when
+        // both are true.
+        var adsolutTimesheetEnabled = await users.GetAdsolutTimesheetEnabledAsync(userId, ct);
+        // Whether the Adsolut integration is connected (configured + valid
+        // refresh token, no refresh error). Resolved here so a non-admin
+        // agent can gate the Adsolut timesheet tab without the admin-only
+        // integrations status endpoint. The stores are pulled off
+        // RequestServices so test fixtures that don't register the Adsolut
+        // surface still build the endpoint; any failure floors to false.
+        var adsolutConnected = await ResolveAdsolutConnectedAsync(httpContext, settings, ct);
         // Per-user Dashboard tile preferences. Empty array = no tiles
         // enabled; DashboardPage renders an empty-state in that case.
         // Shape: ordered [{tileId, size}] so the frontend can render the
@@ -382,11 +395,40 @@ public static class AuthEndpoints
                 searchEnabled,
                 activityFeedEnabled,
                 assetsEnabled,
+                adsolutTimesheetEnabled,
+                adsolutConnected,
                 dashboardTiles = tiles.Select(t => new { tileId = t.TileId, size = t.Size }).ToList(),
                 effectiveTheme,
             },
             serverTimeUtc = DateTimeOffset.UtcNow,
         });
+    }
+
+    /// True only when the Adsolut integration is fully connected (client
+    /// configured + valid refresh token + no refresh error). Reuses the
+    /// single source of truth in <see cref="AdsolutStateResolver"/> so this
+    /// can never drift from the admin status tile. The two stores are
+    /// resolved off RequestServices — when either is absent (test
+    /// fixtures, or a build without the Adsolut surface registered) we
+    /// floor to false rather than failing the whole /auth/me call.
+    private static async Task<bool> ResolveAdsolutConnectedAsync(
+        HttpContext httpContext,
+        ISettingsService settings,
+        CancellationToken ct)
+    {
+        try
+        {
+            var secrets = httpContext.RequestServices.GetService<IProtectedSecretStore>();
+            var connections = httpContext.RequestServices.GetService<IAdsolutConnectionStore>();
+            if (secrets is null || connections is null) return false;
+
+            var state = await AdsolutStateResolver.ComputeAsync(settings, secrets, connections, ct);
+            return string.Equals(state, AdsolutStateResolver.Connected, StringComparison.Ordinal);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static async Task<string> ResolveEffectiveThemeAsync(

@@ -143,7 +143,8 @@ public sealed record UserAdminRow(
     bool KbEnabled = false,
     bool SearchEnabled = true,
     bool ActivityFeedEnabled = false,
-    bool AssetsEnabled = false)
+    bool AssetsEnabled = false,
+    bool AdsolutTimesheetEnabled = false)
 {
     /// Per-user Dashboard tile preferences sourced from
     /// `user_dashboard_tiles`. Empty list = no tiles enabled
@@ -247,7 +248,8 @@ public sealed record FeatureFlagsUpdate(
     bool? KbEnabled,
     bool? SearchEnabled,
     bool? ActivityFeedEnabled,
-    bool? AssetsEnabled);
+    bool? AssetsEnabled,
+    bool? AdsolutTimesheetEnabled = null);
 
 public abstract record UpdateFeatureFlagsResult
 {

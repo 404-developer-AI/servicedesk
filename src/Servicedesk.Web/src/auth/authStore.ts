@@ -30,6 +30,15 @@ export type AuthUser = {
   /// v0.0.52 — per-user opt-in for the Assets page (Tactical RMM
   /// mirror). Backfilled to true for Agent + Admin on first upgrade.
   assetsEnabled: boolean;
+  /// Per-user opt-in for the Adsolut timesheet tab. Gates the 4th
+  /// Timesheet tab, but only in combination with `adsolutConnected` —
+  /// the flag on its own surfaces nothing.
+  adsolutTimesheetEnabled: boolean;
+  /// Whether the Adsolut integration is currently connected (server-
+  /// resolved at /auth/me time). Tenant-global rather than per-user, but
+  /// surfaced here so the Adsolut timesheet tab can gate without the
+  /// admin-only integrations status endpoint.
+  adsolutConnected: boolean;
   /// Per-user Dashboard tile preferences. Ordered list of
   /// {tileId, size} pairs; tiles whose id is not in this list are
   /// hidden on the Dashboard page. Size cycles small/medium/wide/full

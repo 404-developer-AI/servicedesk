@@ -96,6 +96,11 @@ public interface IUserService
     /// Used by /auth/me so the sidebar can hide the nav entry on first
     /// paint. Returns false on missing rows.
     Task<bool> GetAssetsEnabledAsync(Guid userId, CancellationToken ct = default);
+
+    /// Per-user opt-in for the Adsolut timesheet tab. The /auth/me payload
+    /// pairs this with the live Adsolut connection state — the tab only
+    /// renders when both are true. Returns false on missing rows.
+    Task<bool> GetAdsolutTimesheetEnabledAsync(Guid userId, CancellationToken ct = default);
 }
 
 /// Per-user Timesheet feature flags. Empty struct-y record so the call
@@ -435,6 +440,15 @@ public sealed class UserService : IUserService
     public async Task<bool> GetAssetsEnabledAsync(Guid userId, CancellationToken ct = default)
     {
         const string sql = "SELECT assets_enabled FROM users WHERE id = @id";
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var value = await connection.QuerySingleOrDefaultAsync<bool?>(
+            new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
+        return value ?? false;
+    }
+
+    public async Task<bool> GetAdsolutTimesheetEnabledAsync(Guid userId, CancellationToken ct = default)
+    {
+        const string sql = "SELECT adsolut_timesheet_enabled FROM users WHERE id = @id";
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         var value = await connection.QuerySingleOrDefaultAsync<bool?>(
             new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));

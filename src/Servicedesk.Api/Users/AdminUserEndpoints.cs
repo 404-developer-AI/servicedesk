@@ -391,7 +391,8 @@ public static class AdminUserEndpoints
         bool? KbEnabled,
         bool? SearchEnabled,
         bool? ActivityFeedEnabled,
-        bool? AssetsEnabled);
+        bool? AssetsEnabled,
+        bool? AdsolutTimesheetEnabled);
 
     private static async Task<IResult> UpdateFeatureFlags(
         Guid id,
@@ -412,7 +413,8 @@ public static class AdminUserEndpoints
             request.KbEnabled,
             request.SearchEnabled,
             request.ActivityFeedEnabled,
-            request.AssetsEnabled);
+            request.AssetsEnabled,
+            request.AdsolutTimesheetEnabled);
 
         var result = await admin.UpdateFeatureFlagsAsync(id, update, adminId.Value, ct);
         return result switch
@@ -432,6 +434,7 @@ public static class AdminUserEndpoints
                         search_enabled = updated.Row.SearchEnabled,
                         activity_feed_enabled = updated.Row.ActivityFeedEnabled,
                         assets_enabled = updated.Row.AssetsEnabled,
+                        adsolut_timesheet_enabled = updated.Row.AdsolutTimesheetEnabled,
                     },
                     body: updated.Row,
                     statusCode: StatusCodes.Status200OK,
