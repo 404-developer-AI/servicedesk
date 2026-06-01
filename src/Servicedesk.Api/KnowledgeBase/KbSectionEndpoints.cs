@@ -172,8 +172,16 @@ public static class KbSectionEndpoints
         return app;
     }
 
+    // Shared, single-compiled matcher. NonBacktracking guarantees linear-time
+    // evaluation (no ReDoS), and the length cap rejects absurd input before the
+    // regex even runs — 200 is far above any real section slug.
+    private static readonly global::System.Text.RegularExpressions.Regex SlugPattern = new(
+        "^[a-z0-9]+(-[a-z0-9]+)*$",
+        global::System.Text.RegularExpressions.RegexOptions.NonBacktracking
+        | global::System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
     private static bool IsValidSlug(string slug) =>
-        global::System.Text.RegularExpressions.Regex.IsMatch(slug, "^[a-z0-9]+(-[a-z0-9]+)*$");
+        slug.Length <= 200 && SlugPattern.IsMatch(slug);
 
     /// Produce a sibling-unique slug for a new section. Returns `null` only
     /// when an explicitly-supplied slug fails the format check; an empty/

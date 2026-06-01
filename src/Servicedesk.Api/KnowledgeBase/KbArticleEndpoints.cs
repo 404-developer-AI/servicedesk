@@ -276,8 +276,16 @@ public static class KbArticleEndpoints
         return app;
     }
 
+    // Shared, single-compiled matcher. NonBacktracking guarantees linear-time
+    // evaluation (no ReDoS), and the length cap rejects absurd input before the
+    // regex even runs — 200 is far above any real article slug.
+    private static readonly global::System.Text.RegularExpressions.Regex SlugPattern = new(
+        "^[a-z0-9]+(-[a-z0-9]+)*$",
+        global::System.Text.RegularExpressions.RegexOptions.NonBacktracking
+        | global::System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
     private static bool IsValidSlug(string slug) =>
-        global::System.Text.RegularExpressions.Regex.IsMatch(slug, "^[a-z0-9]+(-[a-z0-9]+)*$");
+        slug.Length <= 200 && SlugPattern.IsMatch(slug);
 
     /// Resolve a clash-free slug for a new article. Empty/missing input
     /// derives from the title; an explicit override is validated. The
