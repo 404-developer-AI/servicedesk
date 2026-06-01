@@ -40,7 +40,8 @@ public static class TimesheetManagerEndpoints
 
         // -- entries list (Tab 2) ----------------------------------------
         group.MapGet("/entries", async (
-            string? from, string? to, Guid? userId, Guid? ticketId, Guid? taskId, string? search, int? limit,
+            string? from, string? to, Guid? userId, Guid? ticketId, Guid? taskId, string? search,
+            int? page, int? pageSize,
             HttpContext http,
             IUserService users,
             IManagerTimesheetService svc,
@@ -55,10 +56,18 @@ public static class TimesheetManagerEndpoints
                 From: fromDate, To: toDate,
                 UserId: userId, TicketId: ticketId, TaskId: taskId,
                 Search: search,
-                Limit: limit ?? 500);
+                Page: page ?? 1,
+                PageSize: pageSize ?? 10);
 
-            var rows = await svc.ListAsync(filter, ct);
-            return Results.Ok(new { items = rows });
+            var result = await svc.ListAsync(filter, ct);
+            return Results.Ok(new
+            {
+                items = result.Items,
+                total = result.Total,
+                totalMinutes = result.TotalMinutes,
+                page = result.Page,
+                pageSize = result.PageSize,
+            });
         }).WithName("ListManagerTimesheetEntries").WithOpenApi();
 
         // -- update (Tab 2 inline edit) ----------------------------------

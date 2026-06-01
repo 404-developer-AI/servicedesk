@@ -189,13 +189,55 @@ builder.Services.AddRateLimiter(options =>
 
     // Values read from configuration at startup. Live-reload on change is a
     // v0.0.x concern — see Security.RateLimit.* keys in SettingKeys.
-    var globalPermit = builder.Configuration.GetValue<int?>("Security:RateLimit:Global:PermitPerWindow") ?? 120;
+    // 240/60s per IP: a single content-rich page (a ticket with many inline
+    // images, each a separate authenticated GET) legitimately fires dozens of
+    // requests at once, so the old 120 tripped on normal use. Still per-IP and
+    // bounded; tune via Security:RateLimit:Global:* without a rebuild.
+    var globalPermit = builder.Configuration.GetValue<int?>("Security:RateLimit:Global:PermitPerWindow") ?? 240;
     var globalWindow = builder.Configuration.GetValue<int?>("Security:RateLimit:Global:WindowSeconds") ?? 60;
+    // Inline-image GETs get their own generous bucket: one content-rich ticket
+    // (a long imported email thread) can embed 150+ inline images, each a
+    // separate authenticated GET fired at once on open. They're queue-access
+    // gated and ETag-cached (304 on revisit), so the tight API budget doesn't
+    // apply — but a per-IP ceiling still bounds abuse.
+    var attachmentPermit = builder.Configuration.GetValue<int?>("Security:RateLimit:Attachments:PermitPerWindow") ?? 1200;
+    var attachmentWindow = builder.Configuration.GetValue<int?>("Security:RateLimit:Attachments:WindowSeconds") ?? 60;
     var authPermit = builder.Configuration.GetValue<int?>("Security:RateLimit:Auth:PermitPerWindow") ?? 10;
     var authWindow = builder.Configuration.GetValue<int?>("Security:RateLimit:Auth:WindowSeconds") ?? 60;
 
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
     {
+        // The always-on lightweight polls — the live server clock
+        // (/api/system/time) and the dashboard status pill
+        // (/api/system/health) — must never be throttled. They drive
+        // globally-visible UI and are cheap, read-only, and carry no attack
+        // surface worth limiting. Without this, a burst elsewhere on the same
+        // IP (e.g. a content-heavy ticket) exhausts the window and freezes the
+        // whole UI's clock/status. /api/system/version is deliberately NOT
+        // exempt — it's fetched once per load, not on a timer.
+        var path = ctx.Request.Path.Value ?? string.Empty;
+        if (path.StartsWith("/api/system/time", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/api/system/health", StringComparison.OrdinalIgnoreCase))
+        {
+            return RateLimitPartition.GetNoLimiter("system-poll");
+        }
+
+        // Inline-image / attachment downloads (GET …/attachments/{id}) run on
+        // their own generous per-IP bucket so an image-heavy ticket doesn't
+        // exhaust the main API budget and 429 the rest of the page.
+        if (HttpMethods.IsGet(ctx.Request.Method)
+            && path.Contains("/attachments/", StringComparison.OrdinalIgnoreCase))
+        {
+            var attKey = "att:" + (ctx.Connection.RemoteIpAddress?.ToString() ?? "anon");
+            return RateLimitPartition.GetFixedWindowLimiter(attKey, _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = attachmentPermit,
+                Window = TimeSpan.FromSeconds(attachmentWindow),
+                QueueLimit = 0,
+                AutoReplenishment = true,
+            });
+        }
+
         var key = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
         return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
         {
@@ -548,6 +590,7 @@ app.MapTimesheetTaskEndpoints();
 app.MapTimesheetEntryEndpoints();
 app.MapTimesheetManagerEndpoints();
 app.MapTicketTimesheetEndpoints();
+app.MapTimesheetImportEndpoints();
 app.MapViewEndpoints();
 app.MapQueueAccessEndpoints();
 app.MapViewGroupEndpoints();

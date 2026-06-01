@@ -45,6 +45,13 @@ public static class ProtectedSecretKeys
     /// the <c>X-API-KEY</c> header.
     public const string TrmmApiKey = "Trmm.ApiKey";
 
+    /// Timesheet migration import (v0.0.54). One install-wide pre-shared
+    /// secret minted by an admin under Settings → Timesheet → Migration
+    /// import. The standalone migration tool sends it on every call to the
+    /// secret-gated import surface (X-Timesheet-Import-Token). Rotatable and
+    /// clearable from the same panel; clearing it disables the surface.
+    public const string TimesheetImportToken = "Timesheet.ImportToken";
+
     /// Encrypted-secret key for a per-agent Telavox CAPI token. Returns a
     /// stable string built from the SD user-id so the protected_secrets
     /// row can be located on every poll and cleared on de-provision.

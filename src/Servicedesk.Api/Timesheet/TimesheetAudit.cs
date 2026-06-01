@@ -21,6 +21,15 @@ internal static class TimesheetAudit
     public const string EntryEditedByManager = "timesheet.entry.edited_by_manager";
     public const string EntryDeletedByManager = "timesheet.entry.deleted_by_manager";
 
+    // v0.0.54 — migration import surface. The enable/secret events carry a
+    // session actor (admin config panel); the batch event is written by the
+    // secret-gated surface, which has no session, so it stamps a fixed
+    // synthetic actor instead.
+    public const string ImportEnabledChanged = "timesheet.import.enabled_changed";
+    public const string ImportSecretUpdated = "timesheet.import.secret_updated";
+    public const string ImportSecretDeleted = "timesheet.import.secret_deleted";
+    public const string ImportBatch = "timesheet.import.batch";
+
     public static async Task WriteAsync(
         IAuditLogger audit, HttpContext http, string eventType, string target, object payload)
     {

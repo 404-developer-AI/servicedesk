@@ -43,6 +43,14 @@ public sealed class DoubleSubmitCsrfMiddleware
         // customer hitting the link has no session and the token-hash
         // gate + rate limiter together provide the defence.
         "/api/public/surveys/",
+        // v0.0.54 — the secret-gated timesheet migration surface is called
+        // by the standalone migrator with no session and no cookie; the
+        // X-Timesheet-Import-Token header (constant-time compared) plus the
+        // admin enable-toggle are the defence. A browser CSRF attack cannot
+        // forge that header. The admin config endpoints under
+        // /api/admin/timesheet/import/ are NOT covered by this prefix and
+        // stay session + CSRF enforced.
+        "/api/timesheet/import/",
         "/hubs/",
     };
 

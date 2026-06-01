@@ -1,0 +1,6 @@
+bin/
+obj/
+# Local operator config — never commit connection strings or tokens.
+mapping.json
+*.local.json
+.env

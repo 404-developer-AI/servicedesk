@@ -196,8 +196,21 @@ public sealed class ZammadImportWriter : IZammadImportWriter
         }
         if (firstArticle is not null && attachmentsByArticle.TryGetValue(firstArticle.Id, out var firstPlans))
         {
-            await InsertAttachmentsForEventAsync(
+            var firstMap = await InsertAttachmentsForEventAsync(
                 conn, tx, newTicketId.Value, createdEventId, firstMailId, firstPlans, ct);
+
+            // Relink any Zammad inline-image URLs in the description block now
+            // that we know the local attachment ids. ticket_bodies was written
+            // with the upstream HTML above; UPDATE in place when anything
+            // actually changed.
+            var firstRewrite = ZammadTicketHtmlRewriter.Rewrite(firstBodyHtml, newTicketId.Value, firstMap);
+            if (firstRewrite.RewriteCount > 0)
+            {
+                await conn.ExecuteAsync(new CommandDefinition(
+                    "UPDATE ticket_bodies SET body_html = @Html WHERE ticket_id = @TicketId",
+                    new { Html = firstRewrite.RewrittenHtml, TicketId = newTicketId.Value },
+                    tx, cancellationToken: ct));
+            }
         }
 
         // Subsequent articles → timeline events. Sender + type drive the
@@ -275,8 +288,19 @@ public sealed class ZammadImportWriter : IZammadImportWriter
 
             if (attachmentsByArticle.TryGetValue(a.Id, out var plans))
             {
-                await InsertAttachmentsForEventAsync(
+                var map = await InsertAttachmentsForEventAsync(
                     conn, tx, newTicketId.Value, eventId, mailId, plans, ct);
+
+                // Relink Zammad inline-image URLs in this event's body to the
+                // local attachment ids just inserted, then UPDATE in place.
+                var rewrite = ZammadTicketHtmlRewriter.Rewrite(bodyHtml, newTicketId.Value, map);
+                if (rewrite.RewriteCount > 0)
+                {
+                    await conn.ExecuteAsync(new CommandDefinition(
+                        "UPDATE ticket_events SET body_html = @Html WHERE id = @EventId",
+                        new { Html = rewrite.RewrittenHtml, EventId = eventId },
+                        tx, cancellationToken: ct));
+                }
             }
         }
 
@@ -457,7 +481,10 @@ public sealed class ZammadImportWriter : IZammadImportWriter
     /// Imports that skipped a too-large attachment never enter this method
     /// — the worker drops the plan and adds the upstream id to the
     /// per-record reasons list instead.
-    private static async Task InsertAttachmentsForEventAsync(
+    /// Returns a map of Zammad-attachment-id → the local attachment row id
+    /// inserted for it, so the caller can relink inline-image URLs in the
+    /// article body (see <see cref="ZammadTicketHtmlRewriter"/>).
+    private static async Task<Dictionary<long, Guid>> InsertAttachmentsForEventAsync(
         Npgsql.NpgsqlConnection conn,
         System.Data.Common.DbTransaction tx,
         Guid ticketId,
@@ -466,7 +493,8 @@ public sealed class ZammadImportWriter : IZammadImportWriter
         IReadOnlyList<ZammadImportAttachmentPlan> plans,
         CancellationToken ct)
     {
-        if (plans.Count == 0) return;
+        var map = new Dictionary<long, Guid>();
+        if (plans.Count == 0) return map;
 
         var ownerKind = mailMessageId is not null ? "Mail" : "Ticket";
         var ownerId = mailMessageId ?? ticketId;
@@ -481,6 +509,7 @@ public sealed class ZammadImportWriter : IZammadImportWriter
                  @OwnerKind, @OwnerId,
                  @IsInline, @ContentId, @EventId,
                  'Ready')
+            RETURNING id
             """;
 
         foreach (var p in plans)
@@ -493,7 +522,7 @@ public sealed class ZammadImportWriter : IZammadImportWriter
             var inline = mailMessageId is not null && p.IsInline;
             var contentId = mailMessageId is not null ? p.ContentId : null;
 
-            await conn.ExecuteAsync(new CommandDefinition(sql, new
+            var localId = await conn.ExecuteScalarAsync<Guid>(new CommandDefinition(sql, new
             {
                 p.ContentHash,
                 p.SizeBytes,
@@ -505,7 +534,14 @@ public sealed class ZammadImportWriter : IZammadImportWriter
                 ContentId = contentId,
                 EventId = (long?)eventId,
             }, tx, cancellationToken: ct));
+
+            // Last write wins if Zammad ever lists the same attachment id
+            // twice on one article — both rows point at identical bytes
+            // (content-addressed), so either local id renders the same image.
+            map[p.ZammadAttachmentId] = localId;
         }
+
+        return map;
     }
 
     /// Pulls the bare email address out of an RFC-5322 From header value.

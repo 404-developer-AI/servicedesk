@@ -290,6 +290,8 @@ public static class DependencyInjection
         services.AddSingleton<Timesheet.IManagerTimesheetService, Timesheet.ManagerTimesheetService>();
         services.AddSingleton<Timesheet.ITimesheetPreferencesService, Timesheet.TimesheetPreferencesService>();
         services.AddSingleton<Timesheet.ITicketTimesheetService, Timesheet.TicketTimesheetService>();
+        // v0.0.54 — migration import surface backend.
+        services.AddSingleton<Timesheet.ITimesheetImportService, Timesheet.TimesheetImportService>();
         // Default to the no-op notifier; the Api project overrides this
         // with the SignalR-backed implementation.
         services.AddSingleton<Realtime.ITimesheetEntryNotifier, Realtime.NullTimesheetEntryNotifier>();
