@@ -48,15 +48,12 @@ public sealed class TicketPresenceHub : Hub
         // receive lightweight "something changed" pings for the list view.
         await Groups.AddToGroupAsync(Context.ConnectionId, "ticket-list");
 
-        // Agents + Admins join the agent-activity broadcast group so the
-        // dashboard AgentActivity tile (admin-grantable per user since
-        // v0.0.44) receives live per-agent updates. Customers stay out.
-        var role = Context.User?.FindFirstValue(ClaimTypes.Role);
-        if (string.Equals(role, "Agent", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
-        {
-            await Groups.AddToGroupAsync(Context.ConnectionId, AgentActivityBroadcastGroup);
-        }
+        // Agent-activity broadcasts are opt-in per connection: the dashboard
+        // tile calls JoinAgentActivity on mount and LeaveAgentActivity on
+        // unmount. Auto-joining every agent/admin here meant connections that
+        // never render the tile still received the stream — SignalR logs a
+        // "No client method 'AgentActivity'" warning for each. Scoping the
+        // group to mounted tiles removes both the warning and the waste.
 
         // The newly-online agent's status changed (or this is a second tab
         // that just opened — still worth a refresh for admins to see).
@@ -84,6 +81,34 @@ public sealed class TicketPresenceHub : Hub
             await BroadcastAgentActivity(state.UserId);
         }
         await base.OnDisconnectedAsync(exception);
+    }
+
+    /// <summary>
+    /// Opt this connection into the agent-activity broadcast stream — the
+    /// dashboard tile calls this on mount. Agents/Admins only (customers
+    /// never see the tile); a customer call is a silent no-op. On join we
+    /// push a fresh record for the caller so a just-mounted tile reflects
+    /// the caller's own state immediately, before any other change fires.
+    /// </summary>
+    public async Task JoinAgentActivity()
+    {
+        var role = Context.User?.FindFirstValue(ClaimTypes.Role);
+        if (!string.Equals(role, "Agent", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+        await Groups.AddToGroupAsync(Context.ConnectionId, AgentActivityBroadcastGroup);
+    }
+
+    /// <summary>
+    /// Opt this connection back out of the agent-activity stream — the
+    /// dashboard tile calls this on unmount. Removing a connection that was
+    /// never in the group is harmless.
+    /// </summary>
+    public async Task LeaveAgentActivity()
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, AgentActivityBroadcastGroup);
     }
 
     /// <summary>
