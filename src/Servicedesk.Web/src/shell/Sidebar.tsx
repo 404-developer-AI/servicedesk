@@ -159,7 +159,13 @@ export function Sidebar() {
         {!collapsed && (
           <div className="min-w-0">
             <div className="truncate font-display text-base font-semibold tracking-tight">Servicedesk</div>
-            <div className="truncate text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{role}</div>
+            {/* Only show a role once a session exists. The root auth-gate keeps
+                anonymous visitors out of the shell entirely, but guarding here
+                too means the "Customer" fallback from useCurrentRole never
+                surfaces as a badge for a logged-out user. */}
+            {user && (
+              <div className="truncate text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{role}</div>
+            )}
           </div>
         )}
       </div>

@@ -58,6 +58,10 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "Servicedesk API", Version = "v1" });
+    // Use the full type name as the schema id so distinct types that share a
+    // short name (e.g. Telavox/Adsolut SetSecretRequest) don't collide and
+    // break Swagger generation.
+    c.CustomSchemaIds(type => type.FullName);
 });
 
 // Trust the X-Forwarded-For + X-Forwarded-Proto headers from nginx so
