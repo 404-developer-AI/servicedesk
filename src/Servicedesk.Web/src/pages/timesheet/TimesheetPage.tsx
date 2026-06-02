@@ -17,8 +17,9 @@ type Tab = "day" | "manager" | "month" | "adsolut";
 ///   2. **Manager** (Tab 2) — manager-only overview across all users.
 ///   3. **Month** (Tab 3) — manager-only month-per-agent rollup.
 ///   4. **Adsolut** — only shown when the Adsolut integration is connected
-///      AND the user carries the "Adsolut Timesheet" feature flag. Data
-///      lands in a follow-up step; for now it's a placeholder shell.
+///      AND the user carries the "Adsolut Timesheet" feature flag. Lists the
+///      mirrored sales receipts (verkoopbonnen) with expandable product +
+///      performance lines and a per-row resync.
 ///
 /// The tabs are role/flag-gated client-side AND the underlying APIs
 /// enforce the same scope on the server, so a non-manager that hand-picks

@@ -77,6 +77,16 @@ public static class AdsolutEndpoints
             .WithName("ForcePushAdsolutCoverageContact").WithOpenApi();
 
         admin.MapGet("/debug/lookup", DebugLookup).WithName("AdsolutDebugLookup").WithOpenApi();
+        admin.MapGet("/debug/erp-sales-receipts", DebugErpSalesReceipts).WithName("AdsolutDebugErpSalesReceipts").WithOpenApi();
+
+        // ERP SalesReceipts (verkoopbonnen) mirror — admin controls on the
+        // integration page. The toggle + interval are plain settings (edited
+        // via the settings API); these endpoints expose the sync state +
+        // discovered statuses, a "sync now" trigger, and the status-filter
+        // selection.
+        admin.MapGet("/erp/sales-receipts/state", GetErpSalesReceiptsState).WithName("GetAdsolutErpSalesReceiptsState").WithOpenApi();
+        admin.MapPost("/erp/sales-receipts/sync", TriggerErpSalesReceiptsSync).WithName("TriggerAdsolutErpSalesReceiptsSync").WithOpenApi();
+        admin.MapPut("/erp/sales-receipts/status-filter", SetErpSalesReceiptsStatusFilter).WithName("SetAdsolutErpSalesReceiptsStatusFilter").WithOpenApi();
         admin.MapGet("/debug/put-preview", DebugPutPreview).WithName("AdsolutDebugPutPreview").WithOpenApi();
         admin.MapPost("/debug/put", DebugPutCustomer).WithName("AdsolutDebugPutCustomer").WithOpenApi();
         admin.MapGet("/debug/access-token", DebugAccessToken).WithName("AdsolutDebugAccessToken").WithOpenApi()
@@ -806,6 +816,177 @@ public static class AdsolutEndpoints
                 body = ex.Message,
             });
         }
+    }
+
+    // ---- /debug/erp-sales-receipts -------------------------------------
+    //
+    // Diagnostic-only preview of the ERP SalesReceiptInfos ("verkoopbonnen")
+    // list endpoint, the read path for the upcoming Timesheet → Adsolut tab.
+    // Hits a single small page through the shared invoker and shows the raw
+    // JSON verbatim so an admin can confirm the real `state` codes and which
+    // fields WK actually serialises (notably whether a created-by/modified-by
+    // *user* exists) before any mirror schema is committed. Like /debug/lookup
+    // this is NOT a generic proxy: the path is fixed, only PageSize and the
+    // IncludeFinishedState flag are forwarded, both clamped/coerced here.
+    //
+    // Requires the WK.BE.Erp.Read scope on the active refresh token — without
+    // it WK answers 403; the raw body surfaces that cleanly for the admin.
+
+    private static async Task<IResult> DebugErpSalesReceipts(
+        IAdsolutConnectionStore connections,
+        AdsolutHttpInvoker invoker,
+        CancellationToken ct)
+    {
+        var connection = await connections.GetAsync(ct);
+        if (connection is null)
+        {
+            return Results.BadRequest(new { error = "not_connected" });
+        }
+        if (connection.AdministrationId is not Guid administrationId)
+        {
+            return Results.BadRequest(new { error = "no_administration", message = "Activate a dossier first." });
+        }
+
+        var baseUrl = await invoker.ResolveBaseUrlAsync(ct);
+        var erpAdm = $"{baseUrl}/erp/v1/adm/{administrationId}";
+
+        // WK answered an earlier single-variant probe with an empty-body 500
+        // (no error envelope), so this fans out a fixed set of read-only GETs
+        // to localise the failure in one click: is it a single query param WK
+        // chokes on, or the whole ERP data path for this dossier?
+        //   - list (finished)  — full call (PageSize + IncludeFinishedState)
+        //   - list (open only) — drop IncludeFinishedState
+        //   - list (bare)      — no query params at all
+        //   - count            — simplest ERP read; if this 500s too the
+        //                        problem is the ERP module/provisioning, not params
+        var probes = new (string Label, string Url)[]
+        {
+            ("list (finished)", $"{erpAdm}/SalesReceiptInfos?PageSize=5&IncludeFinishedState=true"),
+            ("list (open only)", $"{erpAdm}/SalesReceiptInfos?PageSize=5"),
+            ("list (bare)", $"{erpAdm}/SalesReceiptInfos"),
+            ("count", $"{erpAdm}/SalesReceiptInfos/count"),
+        };
+
+        var attempts = new List<object>(probes.Length);
+        foreach (var (label, url) in probes)
+        {
+            try
+            {
+                var raw = await invoker.SendRawAsync(
+                    eventType: AdsolutEventTypes.DebugErpSalesReceipts,
+                    buildRequest: () => new HttpRequestMessage(HttpMethod.Get, url),
+                    auditPayload: new { administrationId, probe = label },
+                    ct: ct);
+                attempts.Add(new
+                {
+                    label,
+                    status = raw.Status,
+                    requestUrl = raw.RequestUrl,
+                    upstreamErrorCode = raw.UpstreamErrorCode,
+                    body = raw.Body,
+                });
+            }
+            catch (AdsolutApiException ex)
+            {
+                attempts.Add(new
+                {
+                    label,
+                    status = ex.HttpStatus ?? 0,
+                    requestUrl = url,
+                    upstreamErrorCode = ex.UpstreamErrorCode ?? "transport_or_refresh_failed",
+                    body = ex.Message,
+                });
+            }
+        }
+
+        return Results.Ok(new { attempts });
+    }
+
+    // ---- /erp/sales-receipts (verkoopbonnen) mirror controls -----------
+
+    private static async Task<IResult> GetErpSalesReceiptsState(
+        IAdsolutSalesReceiptRepository repo,
+        ISettingsService settings,
+        CancellationToken ct)
+    {
+        var enabled = await settings.GetAsync<bool>(SettingKeys.Adsolut.ErpSalesReceiptsEnabled, ct);
+        var intervalMinutes = await settings.GetAsync<int>(SettingKeys.Adsolut.ErpSalesReceiptsSyncIntervalMinutes, ct);
+        if (intervalMinutes <= 0) intervalMinutes = 60;
+        var filterRaw = await settings.GetAsync<string>(SettingKeys.Adsolut.ErpSalesReceiptsStatusFilter, ct) ?? string.Empty;
+        var selected = filterRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        var state = await repo.GetSyncStateAsync(ct);
+        var options = await repo.GetStatusOptionsAsync(ct);
+        var total = await repo.GetCountAsync(ct);
+        var nextSyncUtc = Servicedesk.Infrastructure.Health.IntegrationsHealthAggregator
+            .ComputeNextSyncUtc(state?.LastDeltaSyncUtc, Math.Max(5, intervalMinutes));
+
+        return Results.Ok(new
+        {
+            enabled,
+            intervalMinutes,
+            statusFilter = selected,
+            totalMirrored = total,
+            lastFullSyncUtc = state?.LastFullSyncUtc,
+            lastDeltaSyncUtc = state?.LastDeltaSyncUtc,
+            lastError = state?.LastError,
+            lastErrorUtc = state?.LastErrorUtc,
+            receiptsSeen = state?.ReceiptsSeen ?? 0,
+            receiptsUpserted = state?.ReceiptsUpserted ?? 0,
+            updatedUtc = state?.UpdatedUtc,
+            nextSyncUtc,
+            statusOptions = options.Select(o => new { code = o.Code, description = o.Description, count = o.Count }),
+        });
+    }
+
+    private static async Task<IResult> TriggerErpSalesReceiptsSync(
+        HttpContext http,
+        IAdsolutSalesReceiptsSyncSignal signal,
+        ISettingsService settings,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        var enabled = await settings.GetAsync<bool>(SettingKeys.Adsolut.ErpSalesReceiptsEnabled, ct);
+        if (!enabled)
+        {
+            return Results.BadRequest(new { error = "disabled", message = "Enable 'Pull sales receipts' first." });
+        }
+        signal.RequestImmediateRun();
+        var (actor, role) = ActorContext.Resolve(http);
+        await audit.LogAsync(new AuditEvent(
+            EventType: "integration.adsolut.erp_sales_receipts.sync_requested",
+            Actor: actor,
+            ActorRole: role,
+            ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString()), ct);
+        return Results.Accepted();
+    }
+
+    public sealed record SetErpStatusFilterRequest(string[]? Codes);
+
+    private static async Task<IResult> SetErpSalesReceiptsStatusFilter(
+        [FromBody] SetErpStatusFilterRequest req,
+        HttpContext http,
+        ISettingsService settings,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        var codes = (req?.Codes ?? Array.Empty<string>())
+            .Select(c => (c ?? string.Empty).Trim())
+            .Where(c => c.Length is > 0 and <= 32)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var csv = string.Join(",", codes);
+        var (actor, role) = ActorContext.Resolve(http);
+        await settings.SetAsync(SettingKeys.Adsolut.ErpSalesReceiptsStatusFilter, csv, actor, role, ct);
+        await audit.LogAsync(new AuditEvent(
+            EventType: "integration.adsolut.erp_sales_receipts.status_filter_updated",
+            Actor: actor,
+            ActorRole: role,
+            ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString(),
+            Payload: new { codes }), ct);
+        return Results.Ok(new { statusFilter = codes });
     }
 
     // ---- /debug/put-preview + /debug/put ------------------------------

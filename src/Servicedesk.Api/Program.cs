@@ -595,6 +595,7 @@ app.MapTimesheetEntryEndpoints();
 app.MapTimesheetManagerEndpoints();
 app.MapTicketTimesheetEndpoints();
 app.MapTimesheetImportEndpoints();
+app.MapAdsolutTimesheetEndpoints();
 app.MapViewEndpoints();
 app.MapQueueAccessEndpoints();
 app.MapViewGroupEndpoints();

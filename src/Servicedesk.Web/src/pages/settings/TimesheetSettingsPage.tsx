@@ -8,6 +8,7 @@ import {
   CalendarCheck,
   Clock,
   DatabaseBackup,
+  Euro,
   FileCode,
   ListChecks,
   Pencil,
@@ -49,6 +50,7 @@ const KEY_WORK_DAYS = "Timesheet.DefaultWorkDays";
 const KEY_MAX_ABSENCE_DAY = "Timesheet.DefaultMaxAbsenceMinutesPerDay";
 const KEY_OFFICE_START = "Timesheet.DefaultOfficeStartMinutes";
 const KEY_OFFICE_END = "Timesheet.DefaultOfficeEndMinutes";
+const KEY_HOURLY_RATE = "Timesheet.HourlyRate";
 const KEY_REPLY_HEADER = "Timesheet.ReplyHeaderHtml";
 const KEY_REPLY_ROW = "Timesheet.ReplyRowHtml";
 const KEY_REPLY_FOOTER = "Timesheet.ReplyFooterHtml";
@@ -80,6 +82,7 @@ export function TimesheetSettingsPage() {
   const officeStartEntry = findEntry(query.data, KEY_OFFICE_START);
   const officeEndEntry = findEntry(query.data, KEY_OFFICE_END);
   const workDaysEntry = findEntry(query.data, KEY_WORK_DAYS);
+  const hourlyRateEntry = findEntry(query.data, KEY_HOURLY_RATE);
   const replyHeaderEntry = findEntry(query.data, KEY_REPLY_HEADER);
   const replyRowEntry = findEntry(query.data, KEY_REPLY_ROW);
   const replyFooterEntry = findEntry(query.data, KEY_REPLY_FOOTER);
@@ -195,6 +198,19 @@ export function TimesheetSettingsPage() {
                 <MissingEntry keyName={KEY_OFFICE_END} />
               )}
             </div>
+          </section>
+
+          <section className="glass-card p-6">
+            <SectionHeader
+              icon={<Euro className="h-5 w-5" />}
+              title="Hourly rate"
+              description="Gross hourly rate used to price registered hours. Drives the 'Bruto Price' column on the Timesheet → Adsolut tab (rate × registered hours, per receipt and broken down per task). Leave at 0 to keep that column blank."
+            />
+            {hourlyRateEntry ? (
+              <HourlyRateField entry={hourlyRateEntry} />
+            ) : (
+              <MissingEntry keyName={KEY_HOURLY_RATE} />
+            )}
           </section>
 
           <TasksSection />
@@ -676,6 +692,66 @@ function MinutesField({
           disabled={save.isPending}
         />
         <span className="text-xs text-muted-foreground">= {hourSummary}</span>
+      </div>
+    </FieldRow>
+  );
+}
+
+// ---- Hourly-rate (money) field ----------------------------------------
+
+function HourlyRateField({ entry }: { entry: SettingEntry }) {
+  const qc = useQueryClient();
+  const [draft, setDraft] = React.useState(entry.value);
+  React.useEffect(() => setDraft(entry.value), [entry.value]);
+
+  const save = useMutation({
+    mutationFn: (val: string) => settingsApi.update(entry.key, val),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QUERY_KEY });
+      toast.success("Hourly rate updated");
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+      setDraft(entry.value);
+    },
+  });
+
+  // Accept "75", "75.50" or the Belgian "75,50"; normalise to a dot for storage.
+  const parseRate = (raw: string): number | null => {
+    const n = Number.parseFloat(raw.trim().replace(",", "."));
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+
+  const commit = () => {
+    if (draft === entry.value) return;
+    const parsed = parseRate(draft);
+    if (parsed === null) {
+      toast.error("Enter a non-negative amount, e.g. 75 or 75.50");
+      setDraft(entry.value);
+      return;
+    }
+    save.mutate(String(parsed));
+  };
+
+  return (
+    <FieldRow
+      label="Gross hourly rate (EUR)"
+      hint="Used for the Bruto Price column. Enter a number like 75 or 75.50 (comma also accepted). 0 = column stays blank."
+    >
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-muted-foreground">€</span>
+        <Input
+          inputMode="decimal"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          }}
+          className="h-9 w-32 font-mono"
+          placeholder="0"
+          disabled={save.isPending}
+        />
       </div>
     </FieldRow>
   );

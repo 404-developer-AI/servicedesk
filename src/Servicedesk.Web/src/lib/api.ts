@@ -745,6 +745,153 @@ export type AdsolutDebugLookupResponse = {
   body: string;
 };
 
+export type AdsolutErpProbeAttempt = {
+  label: string;
+  status: number;
+  requestUrl: string;
+  upstreamErrorCode: string | null;
+  body: string;
+};
+
+export type AdsolutErpProbeResponse = {
+  attempts: AdsolutErpProbeAttempt[];
+};
+
+export type AdsolutErpSalesReceiptStatusOption = {
+  code: string;
+  description: string | null;
+  count: number;
+};
+
+export type AdsolutErpSalesReceiptsState = {
+  enabled: boolean;
+  intervalMinutes: number;
+  statusFilter: string[];
+  totalMirrored: number;
+  lastFullSyncUtc: string | null;
+  lastDeltaSyncUtc: string | null;
+  lastError: string | null;
+  lastErrorUtc: string | null;
+  receiptsSeen: number;
+  receiptsUpserted: number;
+  updatedUtc: string | null;
+  // Server-computed next tick — never trust the client clock.
+  nextSyncUtc: string | null;
+  statusOptions: AdsolutErpSalesReceiptStatusOption[];
+};
+
+export type AdsolutSalesReceiptHeader = {
+  id: string;
+  docNr: number | null;
+  bookCode: string | null;
+  customerName: string | null;
+  customerCode: string | null;
+  stateCode: string | null;
+  stateDescription: string | null;
+  salesReceiptDate: string | null;
+  description: string | null;
+  employeeName: string | null;
+  employeeCode: string | null;
+  representativeName: string | null;
+  totalExclVat: number;
+  currencyIso: string | null;
+  adsolutCreatedUtc: string | null;
+  adsolutLastModified: string | null;
+  syncedUtc: string;
+  // Ticket number parsed from the description ("Ticket#<n>"), or null.
+  ticketNumber: number | null;
+  // Total registered timesheet minutes on the matched ticket, computed live.
+  // null = no Ticket# ref, no matching ticket, or no registered hours.
+  totalMinutes: number | null;
+  // Gross price = hourly rate × registered hours. null when no hours or no
+  // rate configured (Settings → Timesheet → Hourly rate).
+  brutoPrice: number | null;
+};
+
+export type AdsolutReceiptHours = {
+  totalMinutes: number;
+  totalBrutoPrice: number | null;
+  byTask: {
+    taskName: string;
+    isAbsence: boolean;
+    minutes: number;
+    brutoPrice: number | null;
+  }[];
+};
+
+export type AdsolutSalesReceiptLine = {
+  id: string;
+  lineNr: number | null;
+  productCode: string | null;
+  name: string | null;
+  description: string | null;
+  quantity: number | null;
+  unitCode: string | null;
+  unitPrice: number | null;
+  totalExclVat: number | null;
+  totalInclVat: number | null;
+  vatCode: string | null;
+};
+
+export type AdsolutSalesReceiptPerformance = {
+  id: string;
+  employeeCode: string | null;
+  performanceDate: string | null;
+  fromTime: string | null;
+  untilTime: string | null;
+  durationMinutes: number | null;
+  invoiceDurationMinutes: number | null;
+  invoiceUnitPrice: number | null;
+  invoiceTotal: number | null;
+  performanceCode: string | null;
+  description: string | null;
+};
+
+export type AdsolutSalesReceiptListResponse = {
+  items: AdsolutSalesReceiptHeader[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type AdsolutSalesReceiptDetail = {
+  header: AdsolutSalesReceiptHeader;
+  lines: AdsolutSalesReceiptLine[];
+  performances: AdsolutSalesReceiptPerformance[];
+};
+
+/// Agent-facing Timesheet → Adsolut tab data (mirrored sales receipts).
+export const adsolutTimesheetApi = {
+  listReceipts: (
+    search: string,
+    page: number,
+    pageSize = 50,
+    sort = "date",
+    dir: "asc" | "desc" = "desc",
+  ) => {
+    const qs = new URLSearchParams({
+      page: String(page),
+      pageSize: String(pageSize),
+      sort,
+      dir,
+    });
+    if (search.trim()) qs.set("search", search.trim());
+    return request<AdsolutSalesReceiptListResponse>(
+      "GET",
+      `/api/timesheet/adsolut/receipts?${qs.toString()}`,
+    );
+  },
+  receiptDetail: (id: string) =>
+    request<AdsolutSalesReceiptDetail>("GET", `/api/timesheet/adsolut/receipts/${id}`),
+  receiptHours: (id: string) =>
+    request<AdsolutReceiptHours>("GET", `/api/timesheet/adsolut/receipts/${id}/hours`),
+  resyncReceipt: (id: string) =>
+    request<AdsolutSalesReceiptDetail>(
+      "POST",
+      `/api/timesheet/adsolut/receipts/${id}/resync`,
+    ),
+};
+
 export type AdsolutDebugPutPreview = {
   getStatus: number;
   getRequestUrl: string;
@@ -824,6 +971,30 @@ export const adsolutApi = {
       `/api/admin/integrations/adsolut/debug/lookup?${qs.toString()}`,
     );
   },
+  /// ERP SalesReceipts ("verkoopbonnen") preview — fans out a fixed set of
+  /// read-only GETs against the ERP SalesReceiptInfos endpoint so an admin
+  /// can inspect the real response shape (and localise a WK-side failure)
+  /// before the mirror/sync slice is built. Each attempt reuses the
+  /// debug-lookup envelope (status + requestUrl + upstreamErrorCode + body).
+  debugErpSalesReceipts: () =>
+    request<AdsolutErpProbeResponse>(
+      "GET",
+      "/api/admin/integrations/adsolut/debug/erp-sales-receipts",
+    ),
+  /// ERP SalesReceipts (verkoopbonnen) mirror — integration-page controls.
+  erpSalesReceiptsState: () =>
+    request<AdsolutErpSalesReceiptsState>(
+      "GET",
+      "/api/admin/integrations/adsolut/erp/sales-receipts/state",
+    ),
+  triggerErpSalesReceiptsSync: () =>
+    request<void>("POST", "/api/admin/integrations/adsolut/erp/sales-receipts/sync"),
+  setErpSalesReceiptsStatusFilter: (codes: string[]) =>
+    request<{ statusFilter: string[] }>(
+      "PUT",
+      "/api/admin/integrations/adsolut/erp/sales-receipts/status-filter",
+      { codes },
+    ),
   debugPutPreview: (customerId: string) => {
     const qs = new URLSearchParams({ customerId });
     return request<AdsolutDebugPutPreview>(

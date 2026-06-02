@@ -217,4 +217,27 @@ public static class AdsolutEventTypes
     /// Admin manually triggered a force-push of one contact-link from
     /// the coverage page.
     public const string CoverageForcePushContact = "coverage.force_push.contact";
+
+    // ---- ERP SalesReceipts (verkoopbonnen) ----------------------------
+
+    /// Admin-triggered raw-API preview of the ERP SalesReceiptInfos list
+    /// endpoint (GET /erp/v1/adm/{adm}/SalesReceiptInfos) from the Adsolut
+    /// settings page. Hits a single small page and shows the response body
+    /// verbatim so an admin can confirm the real `state` codes + which
+    /// fields WK actually serialises before the mirror/sync slice is built.
+    /// Distinct from the operational sync ticks so diagnostic probes stay
+    /// separable in the audit table.
+    public const string DebugErpSalesReceipts = "debug.erp_sales_receipts";
+
+    /// GET /erp/v1/adm/{adm}/SalesReceiptInfos — one page of the cursor-paged
+    /// list during a SalesReceipts sync tick. Each page is one audit row.
+    public const string ErpSalesReceiptsList = "erp.sales_receipts.list";
+
+    /// GET /erp/v1/adm/{adm}/SalesReceiptInfos/{id} — full by-id fetch the
+    /// sync does per receipt (the list view omits performance lines).
+    public const string ErpSalesReceiptsGet = "erp.sales_receipts.get";
+
+    /// One SalesReceipts sync-worker tick summary (seen / upserted / skipped
+    /// + duration + outcome).
+    public const string ErpSalesReceiptsSyncTick = "erp.sales_receipts.sync_tick";
 }

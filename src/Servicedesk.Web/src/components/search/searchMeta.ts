@@ -16,6 +16,7 @@ export type SearchKind =
   | "intake-templates"
   | "intake-submissions"
   | "triggers"
+  | "adsolut-sales-receipts"
   | (string & {});
 
 export const KIND_LABELS: Record<string, string> = {
@@ -30,6 +31,7 @@ export const KIND_LABELS: Record<string, string> = {
   "intake-templates": "Intake Templates",
   "intake-submissions": "Intake Submissions",
   triggers: "Triggers",
+  "adsolut-sales-receipts": "Verkoopbonnen",
 };
 
 export const KIND_ORDER: string[] = [
@@ -44,6 +46,7 @@ export const KIND_ORDER: string[] = [
   "intake-templates",
   "intake-submissions",
   "triggers",
+  "adsolut-sales-receipts",
 ];
 
 export function labelForKind(kind: string): string {
@@ -76,6 +79,10 @@ export function hitHref(hit: SearchHit): string {
       return `/settings/triggers/${hit.entityId}`;
     case "kb-articles":
       return `/kb/articles/${hit.entityId}`;
+    case "adsolut-sales-receipts":
+      // The receipts live in the Timesheet → Adsolut tab (no standalone
+      // detail page); land the user on the timesheet area.
+      return "/timesheet";
     default:
       return "#";
   }

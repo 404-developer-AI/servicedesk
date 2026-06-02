@@ -1749,6 +1749,125 @@ public sealed class DatabaseBootstrapper : IHostedService
         ALTER TABLE adsolut_sync_state
             ADD COLUMN IF NOT EXISTS acknowledged_utc TIMESTAMPTZ NULL;
 
+        -- ERP SalesReceipts (verkoopbonnen) mirror. Read-only mirror of the
+        -- Adsolut ERP API SalesReceiptInfos endpoint, feeding the Timesheet →
+        -- Adsolut tab. Header + two child line-sets (product details +
+        -- labour performances). The API exposes NO header total, so
+        -- total_excl_vat is computed at sync time as
+        --   sum(detail.total_price_excl_vat) + sum(performance.invoice_total).
+        -- The list endpoint is "light" (omits performances), so the sync
+        -- fetches each receipt by-id; children are replaced wholesale per
+        -- receipt on each upsert. ON DELETE CASCADE keeps the child rows in
+        -- lockstep when a receipt is removed.
+        CREATE TABLE IF NOT EXISTS adsolut_sales_receipts (
+            id                      UUID          PRIMARY KEY,
+            doc_nr                  INTEGER       NULL,
+            book_code               TEXT          NULL,
+            customer_adsolut_id     UUID          NULL,
+            customer_code           TEXT          NULL,
+            customer_name           TEXT          NULL,
+            state_id                UUID          NULL,
+            state_code              TEXT          NULL,
+            state_description       TEXT          NULL,
+            sales_receipt_date      TIMESTAMPTZ   NULL,
+            description             TEXT          NULL,
+            internal_memo           TEXT          NULL,
+            memo                    TEXT          NULL,
+            employee_code           TEXT          NULL,
+            employee_name           TEXT          NULL,
+            employee_email          TEXT          NULL,
+            representative_code     TEXT          NULL,
+            representative_name     TEXT          NULL,
+            currency_iso            TEXT          NULL,
+            vat_included            BOOLEAN       NOT NULL DEFAULT FALSE,
+            total_excl_vat          NUMERIC(18,2) NOT NULL DEFAULT 0,
+            adsolut_created_utc     TIMESTAMPTZ   NULL,
+            adsolut_last_modified   TIMESTAMPTZ   NULL,
+            synced_utc              TIMESTAMPTZ   NOT NULL DEFAULT now()
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_adsolut_sales_receipts_state
+            ON adsolut_sales_receipts (state_code);
+        CREATE INDEX IF NOT EXISTS ix_adsolut_sales_receipts_date
+            ON adsolut_sales_receipts (sales_receipt_date DESC);
+        CREATE INDEX IF NOT EXISTS ix_adsolut_sales_receipts_customer
+            ON adsolut_sales_receipts (customer_adsolut_id);
+
+        CREATE TABLE IF NOT EXISTS adsolut_sales_receipt_lines (
+            id                      UUID          PRIMARY KEY,
+            receipt_id              UUID          NOT NULL
+                REFERENCES adsolut_sales_receipts (id) ON DELETE CASCADE,
+            line_nr                 INTEGER       NULL,
+            product_code            TEXT          NULL,
+            name                    TEXT          NULL,
+            description             TEXT          NULL,
+            quantity                NUMERIC(18,4) NULL,
+            unit_code               TEXT          NULL,
+            unit_price              NUMERIC(18,4) NULL,
+            total_excl_vat          NUMERIC(18,2) NULL,
+            total_incl_vat          NUMERIC(18,2) NULL,
+            vat_code                TEXT          NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_adsolut_sales_receipt_lines_receipt
+            ON adsolut_sales_receipt_lines (receipt_id);
+
+        CREATE TABLE IF NOT EXISTS adsolut_sales_receipt_performances (
+            id                       UUID          PRIMARY KEY,
+            receipt_id               UUID          NOT NULL
+                REFERENCES adsolut_sales_receipts (id) ON DELETE CASCADE,
+            employee_code            TEXT          NULL,
+            performance_date         TIMESTAMPTZ   NULL,
+            from_time                TEXT          NULL,
+            until_time               TEXT          NULL,
+            duration_minutes         NUMERIC(18,4) NULL,
+            invoice_duration_minutes NUMERIC(18,4) NULL,
+            invoice_unit_price       NUMERIC(18,4) NULL,
+            invoice_total            NUMERIC(18,2) NULL,
+            performance_code         TEXT          NULL,
+            description              TEXT          NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_adsolut_sales_receipt_perf_receipt
+            ON adsolut_sales_receipt_performances (receipt_id);
+
+        -- Singleton sync-state for the SalesReceipts mirror. Separate from
+        -- adsolut_sync_state (Companies) so the two delta cursors are
+        -- independent — pausing/enabling one never disturbs the other.
+        CREATE TABLE IF NOT EXISTS adsolut_sales_receipt_sync_state (
+            id                  INTEGER     PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+            last_full_sync_utc  TIMESTAMPTZ NULL,
+            last_delta_sync_utc TIMESTAMPTZ NULL,
+            last_error          TEXT        NULL,
+            last_error_utc      TIMESTAMPTZ NULL,
+            receipts_seen       INTEGER     NOT NULL DEFAULT 0,
+            receipts_upserted   INTEGER     NOT NULL DEFAULT 0,
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        -- Ticket number parsed from the receipt description (pattern
+        -- "Ticket#<digits>"). Stored at sync time so the Timesheet → Adsolut
+        -- tab can join to tickets and sum the registered timesheet hours live
+        -- (the hours themselves are never cached — they change independently
+        -- of the receipt). NULL when the description carries no Ticket# ref.
+        ALTER TABLE adsolut_sales_receipts
+            ADD COLUMN IF NOT EXISTS ticket_number BIGINT NULL;
+
+        CREATE INDEX IF NOT EXISTS ix_adsolut_sales_receipts_ticket_number
+            ON adsolut_sales_receipts (ticket_number) WHERE ticket_number IS NOT NULL;
+
+        -- One-shot backfill: receipts mirrored before the ticket_number column
+        -- existed have it NULL. Parse it from the already-stored description
+        -- ("Ticket#<digits>", case-tolerant on the T) so the registered-hours
+        -- column works without forcing a full re-sync from Adsolut. Bounded +
+        -- idempotent: only touches rows that are still NULL and actually carry
+        -- a Ticket# reference, so it does meaningful work once and then
+        -- updates zero rows on subsequent startups.
+        UPDATE adsolut_sales_receipts
+           SET ticket_number = NULLIF(substring(description from '[Tt]icket#([0-9]+)'), '')::bigint
+         WHERE ticket_number IS NULL
+           AND description ~ '[Tt]icket#[0-9]';
+
         -- v0.0.27 (push prep) — companies.adsolut_synced_hash carries the
         -- SHA-256 of the field-set we mirror to/from Adsolut (name, code,
         -- combined VAT, address-blok, phone, email). Set on every successful
