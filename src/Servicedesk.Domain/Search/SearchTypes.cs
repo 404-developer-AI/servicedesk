@@ -16,6 +16,7 @@ public static class SearchSourceKind
     public const string Timesheet = "timesheet";
     public const string Surveys = "surveys";
     public const string Assets = "assets";
+    public const string AdsolutSalesReceipts = "adsolut-sales-receipts";
 }
 
 /// A single request to the search façade. <see cref="Type"/> is null for

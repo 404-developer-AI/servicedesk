@@ -13,6 +13,7 @@ import {
   type AdsolutDebugLookupResponse,
   type AdsolutDebugPutPreview,
   type AdsolutDebugPutResponse,
+  type AdsolutErpProbeResponse,
   type AdsolutState,
   type SettingEntry,
 } from "@/lib/api";
@@ -161,6 +162,10 @@ export function AdsolutIntegrationPage() {
   const [debugCode, setDebugCode] = useState<string>("");
   const [debugResult, setDebugResult] = useState<AdsolutDebugLookupResponse | null>(null);
 
+  // ERP sales-receipts preview card — fans out a fixed set of read-only
+  // probes so an empty-body 500 can be localised (param vs whole data path).
+  const [erpResult, setErpResult] = useState<AdsolutErpProbeResponse | null>(null);
+
   // PUT-debug card — separate from the lookup card so an in-progress edit
   // is not lost when the admin runs another lookup.
   const [putCustomerId, setPutCustomerId] = useState<string>("");
@@ -289,6 +294,17 @@ export function AdsolutIntegrationPage() {
     },
   });
 
+  const erpPreview = useMutation({
+    mutationFn: () => adsolutApi.debugErpSalesReceipts(),
+    onSuccess: (r) => setErpResult(r),
+    onError: (err) => {
+      setErpResult(null);
+      toast.error(
+        err instanceof ApiError ? `Preview failed (${err.status})` : "Preview failed",
+      );
+    },
+  });
+
   const buildPutPreview = useMutation({
     mutationFn: () => adsolutApi.debugPutPreview(putCustomerId.trim()),
     onSuccess: (r) => {
@@ -386,6 +402,22 @@ export function AdsolutIntegrationPage() {
 
   const debugCanLookup =
     debugCode.trim().length > 0 && debugCode.trim().length <= 32 && !debugLookup.isPending;
+
+  // Per-attempt helpers (the ERP probe returns several attempts at once).
+  const erpFormatBody = (body: string) => {
+    if (!body) return "";
+    try {
+      return JSON.stringify(JSON.parse(body), null, 2);
+    } catch {
+      return body;
+    }
+  };
+  const httpStatusTone = (s: number) => {
+    if (s === 0) return "border-rose-400/40 bg-rose-500/10 text-rose-300";
+    if (s >= 200 && s < 300) return "border-emerald-400/30 bg-emerald-500/10 text-emerald-300";
+    if (s >= 400 && s < 500) return "border-amber-400/30 bg-amber-500/[0.08] text-amber-200";
+    return "border-rose-400/40 bg-rose-500/10 text-rose-300";
+  };
 
   const isUuid = (v: string) =>
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim());
@@ -1144,6 +1176,93 @@ export function AdsolutIntegrationPage() {
         </section>
       )}
 
+      {/* ERP sales-receipts mirror controls — enable toggle, interval,
+          dynamic status filter, sync state + "Sync now". Feeds the
+          Timesheet → Adsolut tab. */}
+      {isConnectedState && s.administrationId && (
+        <ErpSalesReceiptsPanel
+          settingsEntries={settingsList.data}
+          settingsQueryKey={ADSOLUT_SETTINGS_QUERY_KEY}
+        />
+      )}
+
+      {/* ERP sales-receipts preview — read-only probe of the ERP
+          SalesReceiptInfos list endpoint (verkoopbonnen), the read path for
+          the upcoming Timesheet → Adsolut tab. Surfaces the raw response so
+          we can confirm the real `state` codes + which fields WK serialises
+          before committing a mirror schema. Needs the WK.BE.Erp.Read scope
+          on the active token (tick it in the scopes picker + reconnect) and
+          the client subscribed to the ERP product at Wolters Kluwer. Each
+          call lands in the audit log as debug.erp_sales_receipts. */}
+      {isConnectedState && s.administrationId && (
+        <section className="rounded-lg border border-glass-strong bg-glass p-5">
+          <header className="mb-4 space-y-1">
+            <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
+              ERP sales receipts · preview
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Probes the ERP sales-receipts (verkoopbonnen) endpoint with a small set
+              of read-only calls and shows each raw response — used to confirm the real
+              status codes + field shape, and to localise a Wolters Kluwer error (one
+              probe works → it's a query param; all fail → the ERP data path / module
+              for this dossier). Requires the{" "}
+              <span className="font-mono">WK.BE.ERP.Read</span> scope (ticked above and
+              reconnected). Each call is audited as{" "}
+              <span className="font-mono">debug.erp_sales_receipts</span>.
+            </p>
+          </header>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Button size="sm" onClick={() => erpPreview.mutate()} disabled={erpPreview.isPending}>
+              <Search className="mr-1.5 h-3.5 w-3.5" />
+              {erpPreview.isPending ? "Probing…" : "Run ERP probes"}
+            </Button>
+          </div>
+
+          {erpResult && (
+            <div className="mt-4 space-y-4">
+              {erpResult.attempts.map((a) => (
+                <div key={a.label} className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="font-medium text-foreground">{a.label}</span>
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5",
+                        httpStatusTone(a.status),
+                      )}
+                    >
+                      {a.status === 0 ? "no response" : `HTTP ${a.status}`}
+                    </span>
+                    {a.upstreamErrorCode && (
+                      <span className="rounded border border-glass-strong bg-glass px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+                        {a.upstreamErrorCode}
+                      </span>
+                    )}
+                    <code className="truncate text-[11px] text-muted-foreground/80">
+                      GET {a.requestUrl}
+                    </code>
+                  </div>
+                  <div className="relative">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => copyDebugBody(erpFormatBody(a.body))}
+                      aria-label="Copy response body"
+                      className="absolute right-2 top-2 h-7 w-7 p-0"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                    <pre className="max-h-[20rem] overflow-auto rounded-md border border-glass-strong bg-black/30 p-3 pr-10 font-mono text-[11px] leading-relaxed text-foreground/90">
+                      {erpFormatBody(a.body) || "(empty body)"}
+                    </pre>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       {/* PUT debug — Postman-lite for /customers/{id}. Build the canonical
           PUT body from the upstream GET, optionally edit it in-place, then
           send. Each call lands in the audit log as debug.put_preview /
@@ -1538,6 +1657,194 @@ export function AdsolutIntegrationPage() {
         <IntegrationAuditLog integration="adsolut" />
       </section>
     </div>
+  );
+}
+
+const ERP_RECEIPTS_QUERY_KEY = ["integrations", "adsolut", "erp-sales-receipts"] as const;
+
+/// ERP SalesReceipts (verkoopbonnen) mirror controls. The enable toggle +
+/// sync interval are plain settings (rendered via SettingField); the status
+/// filter is a dynamic checkbox set discovered from the receipts seen during
+/// sync, persisted through a dedicated endpoint. Surfaces the sync state +
+/// a "Sync now" trigger.
+function ErpSalesReceiptsPanel({
+  settingsEntries,
+  settingsQueryKey,
+}: {
+  settingsEntries: SettingEntry[] | undefined;
+  settingsQueryKey: readonly unknown[];
+}) {
+  const qc = useQueryClient();
+  const state = useQuery({
+    queryKey: ERP_RECEIPTS_QUERY_KEY,
+    queryFn: () => adsolutApi.erpSalesReceiptsState(),
+  });
+
+  const enabledEntry = findEntry(settingsEntries, "Adsolut.Erp.SalesReceipts.Enabled");
+  const intervalEntry = findEntry(settingsEntries, "Adsolut.Erp.SalesReceipts.SyncIntervalMinutes");
+
+  const [selected, setSelected] = useState<string[]>([]);
+  const [dirty, setDirty] = useState(false);
+  const savedFilter = state.data?.statusFilter;
+  // Re-sync the local checkbox state whenever the server's saved filter
+  // changes (e.g. another admin saved, or the first sync surfaced statuses).
+  useEffect(() => {
+    setSelected(savedFilter ?? []);
+    setDirty(false);
+  }, [savedFilter?.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const saveFilter = useMutation({
+    mutationFn: () => adsolutApi.setErpSalesReceiptsStatusFilter(selected),
+    onSuccess: () => {
+      toast.success("Status filter saved");
+      setDirty(false);
+      qc.invalidateQueries({ queryKey: ERP_RECEIPTS_QUERY_KEY });
+    },
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? `Save failed (${err.status})` : "Save failed"),
+  });
+
+  const triggerSync = useMutation({
+    mutationFn: () => adsolutApi.triggerErpSalesReceiptsSync(),
+    onSuccess: () => {
+      toast.success("Sync queued — runs within a few seconds");
+      // The tick writes its state shortly after; refetch once it likely landed.
+      window.setTimeout(() => qc.invalidateQueries({ queryKey: ERP_RECEIPTS_QUERY_KEY }), 3500);
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? `Sync request failed (${err.status})` : "Sync request failed",
+      ),
+  });
+
+  const toggleStatus = (code: string) => {
+    setSelected((prev) =>
+      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code],
+    );
+    setDirty(true);
+  };
+
+  const d = state.data;
+  const options = d?.statusOptions ?? [];
+
+  return (
+    <section className="rounded-lg border border-glass-strong bg-glass p-5">
+      <header className="mb-4 flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
+            Sales receipts (verkoopbonnen)
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            Mirror Adsolut ERP sales receipts into the Timesheet → Adsolut tab. Needs the{" "}
+            <span className="font-mono">WK.BE.ERP.Read</span> scope (ticked above + reconnected).
+            Each tick lists receipts, fetches each by-id for the full line detail, and stores
+            header + product + performance lines. The total shown is excl. VAT.
+          </p>
+        </div>
+        <Button
+          size="sm"
+          onClick={() => triggerSync.mutate()}
+          disabled={triggerSync.isPending || enabledEntry?.value !== "true"}
+        >
+          <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+          {triggerSync.isPending ? "Queueing…" : "Sync now"}
+        </Button>
+      </header>
+
+      <div className="space-y-2">
+        {enabledEntry && (
+          <SettingField entry={enabledEntry} queryKey={settingsQueryKey} />
+        )}
+        {intervalEntry && (
+          <SettingField entry={intervalEntry} queryKey={settingsQueryKey} />
+        )}
+      </div>
+
+      {/* Status filter — dynamic checkboxes from the statuses seen in the
+          mirror. Empty selection = keep all statuses. */}
+      <div className="mt-4 rounded-md border border-glass-strong bg-glass p-4">
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <h3 className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
+            Status filter
+          </h3>
+          {dirty && <span className="text-[11px] text-amber-300/80">Unsaved changes</span>}
+        </div>
+        <p className="mb-3 text-xs text-muted-foreground/70">
+          Tick the statuses to keep. None ticked = keep all. Deselected statuses are removed
+          from the mirror on the next sync.
+        </p>
+        {options.length === 0 ? (
+          <div className="rounded-md border border-glass bg-glass px-3 py-2 text-xs text-muted-foreground">
+            No statuses discovered yet — enable the toggle and run a sync; the statuses found in
+            your dossier will appear here.
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {options.map((o) => (
+              <label
+                key={o.code}
+                className="flex cursor-pointer items-center gap-3 rounded-md border border-glass bg-glass px-3 py-2 transition-colors hover:border-glass-strong"
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.includes(o.code)}
+                  onChange={() => toggleStatus(o.code)}
+                  className="h-3.5 w-3.5 shrink-0 rounded border border-glass-strong bg-glass accent-purple-400"
+                />
+                <span className="flex-1 text-sm text-foreground">
+                  {o.description ?? o.code}
+                  <code className="ml-2 rounded bg-glass px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                    {o.code}
+                  </code>
+                </span>
+                <span className="tabular-nums text-xs text-muted-foreground/70">{o.count}</span>
+              </label>
+            ))}
+            <div className="flex justify-end pt-1">
+              <Button
+                size="sm"
+                onClick={() => saveFilter.mutate()}
+                disabled={!dirty || saveFilter.isPending}
+              >
+                {saveFilter.isPending ? "Saving…" : "Save status filter"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Sync state */}
+      <dl className="mt-4 grid grid-cols-1 gap-y-2 text-xs sm:grid-cols-2">
+        <dt className="text-muted-foreground/70">Receipts mirrored</dt>
+        <dd className="text-foreground tabular-nums">{d?.totalMirrored ?? 0}</dd>
+        <dt className="text-muted-foreground/70">Last sync</dt>
+        <dd className="text-foreground">{formatDate(d?.lastDeltaSyncUtc)}</dd>
+        {d?.nextSyncUtc && enabledEntry?.value === "true" ? (
+          <>
+            <dt className="text-muted-foreground/70">Next sync</dt>
+            <dd className="text-foreground">
+              {formatDate(d.nextSyncUtc)}
+              <span className="ml-2 text-muted-foreground/60">(every {d.intervalMinutes} min)</span>
+            </dd>
+          </>
+        ) : null}
+        <dt className="text-muted-foreground/70">Seen / upserted (last tick)</dt>
+        <dd className="text-foreground tabular-nums">
+          {(d?.receiptsSeen ?? 0)} / {(d?.receiptsUpserted ?? 0)}
+        </dd>
+        {d?.lastError && (
+          <>
+            <dt className="text-muted-foreground/70">Last error</dt>
+            <dd className="text-rose-300">
+              {d.lastError}
+              {d.lastErrorUtc && (
+                <span className="ml-2 text-muted-foreground/60">({formatDate(d.lastErrorUtc)})</span>
+              )}
+            </dd>
+          </>
+        )}
+      </dl>
+    </section>
   );
 }
 

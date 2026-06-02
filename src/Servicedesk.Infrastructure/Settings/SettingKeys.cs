@@ -211,6 +211,26 @@ public static class SettingKeys
         /// no UAT mirror is documented today, but a future change can swap
         /// this without a code change. Trailing slash is normalised away.
         public const string ApiBaseUrl = "Adsolut.ApiBaseUrl";
+
+        // ERP SalesReceipts (verkoopbonnen) pull. Separate, opt-in slice on
+        // top of the Accounting integration: needs the WK.BE.ERP.Read scope
+        // + a reconnect. Default OFF so Accounting-only installs are silent.
+        /// Master toggle for mirroring Adsolut ERP sales receipts into the
+        /// Timesheet → Adsolut tab. Off by default; flipping it on starts the
+        /// SalesReceipts sync worker ticking (provided the integration is
+        /// connected, a dossier is active, and the ERP scope is granted).
+        public const string ErpSalesReceiptsEnabled = "Adsolut.Erp.SalesReceipts.Enabled";
+
+        /// How often (minutes) the SalesReceipts sync worker ticks. Floor 5.
+        public const string ErpSalesReceiptsSyncIntervalMinutes = "Adsolut.Erp.SalesReceipts.SyncIntervalMinutes";
+
+        /// Comma-separated list of Adsolut state codes (e.g. "GEFAKT,AFG") the
+        /// mirror keeps. EMPTY = keep all statuses. The admin ticks the
+        /// statuses on the integration page; the list is populated dynamically
+        /// from the state codes actually seen during sync. The Adsolut ERP API
+        /// has no per-status query parameter, so filtering happens on our side
+        /// during the sync (receipts whose state is not selected are skipped).
+        public const string ErpSalesReceiptsStatusFilter = "Adsolut.Erp.SalesReceipts.StatusFilter";
     }
 
     /// Telavox call-popup integration (v0.0.34). Single-install model: one
@@ -662,6 +682,13 @@ public static class SettingKeys
         /// import token. The surface is only live when this is TRUE and the
         /// <c>Timesheet.ImportToken</c> protected-secret is set.
         public const string ImportEnabled = "Timesheet.ImportEnabled";
+
+        /// Gross hourly rate (EUR) used to price registered hours. Drives the
+        /// "Bruto Price" column on the Timesheet → Adsolut tab
+        /// (rate × registered hours, per receipt and per task). Stored as a
+        /// decimal string; read tolerantly (comma or dot). 0 / empty = the
+        /// Bruto Price column stays blank.
+        public const string HourlyRate = "Timesheet.HourlyRate";
     }
 
     /// v0.0.42 — Agent activity feed. Append-only event stream that
@@ -892,7 +919,14 @@ public static class SettingDefaults
             "When true, the sync worker creates Adsolut customer-contacts from SD contact_companies links that have no adsolut_contact_id yet (POST /customers/{customer}/contacts), provided the parent company is already Adsolut-linked. Independent of the update-toggle: an admin can have updates pushing while never auto-creating fresh rows in Adsolut. Default off + force-reset on every (re)connect."),
 
         new SettingDefault(SettingKeys.Adsolut.ApiBaseUrl, "https://api.adsolut.com", "string", "Adsolut",
-            "Base URL of the Adsolut API. The Administrations service lives under /adm/v1, the Accounting service under /acc/v1. Default targets api.adsolut.com (production); no UAT mirror is documented today but the value is exposed so a future change can swap it without a code release. Trailing slashes are normalised."),
+            "Base URL of the Adsolut API. The Administrations service lives under /adm/v1, the Accounting service under /acc/v1, the ERP service under /erp/v1. Default targets api.adsolut.com (production); no UAT mirror is documented today but the value is exposed so a future change can swap it without a code release. Trailing slashes are normalised."),
+
+        new SettingDefault(SettingKeys.Adsolut.ErpSalesReceiptsEnabled, "false", "bool", "Adsolut",
+            "When true, the SalesReceipts sync worker mirrors Adsolut ERP sales receipts (verkoopbonnen) into the Timesheet → Adsolut tab. Requires the WK.BE.ERP.Read scope on the active connection (tick it in the scopes picker + reconnect) and an active dossier. Off by default — Accounting-only installs stay silent. Each tick lists receipts (always IncludeFinishedState=true, since invoiced/finished receipts are excluded by default), fetches each by-id for the full line detail (the list view omits performance lines), and upserts the header + product lines + performance lines."),
+        new SettingDefault(SettingKeys.Adsolut.ErpSalesReceiptsSyncIntervalMinutes, "60", "int", "Adsolut",
+            "How often (minutes) the Adsolut SalesReceipts sync worker ticks. Floor 5 — set lower and the worker silently clamps. Independent from the Companies sync interval. Each tick is a delta-sync keyed on the receipt's lastModified (?ModifiedSince=lastSuccessfulSync)."),
+        new SettingDefault(SettingKeys.Adsolut.ErpSalesReceiptsStatusFilter, "", "string", "Adsolut",
+            "Comma-separated Adsolut state codes (e.g. 'GEFAKT,AFG') the SalesReceipts mirror keeps. Empty = keep all statuses. Ticked by the admin on the integration page; the available statuses are discovered dynamically from the receipts seen during sync. The Adsolut ERP API has no per-status query parameter, so receipts whose state is not selected are skipped on our side during the sync."),
 
         // Telavox — v0.0.34 call-popup integration. Sync-gating discipline:
         // Enabled defaults OFF so a fresh install is silent until an admin
@@ -1190,6 +1224,8 @@ public static class SettingDefaults
         // it AND configures the import token.
         new SettingDefault(SettingKeys.Timesheet.ImportEnabled, "false", "bool", "Timesheet",
             "Master switch for the one-time migration import surface (Settings → Timesheet → Migration import). When off, the import endpoints return 404."),
+        new SettingDefault(SettingKeys.Timesheet.HourlyRate, "0", "decimal", "Timesheet",
+            "Gross hourly rate in EUR used to price registered hours. Drives the 'Bruto Price' column on the Timesheet → Adsolut tab (rate × registered hours, per receipt and broken down per task). Enter a number like 75 or 75.50 (comma also accepted). 0 leaves the Bruto Price column blank."),
 
         // Tactical RMM — v0.0.52. Master switch defaults off so a fresh
         // install is silent until the admin opts in. Sync cadence is

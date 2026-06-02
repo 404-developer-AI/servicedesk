@@ -153,6 +153,14 @@ public static class DependencyInjection
         services.AddHostedService<AdsolutSyncWorker>();
         services.AddHostedService<AdsolutContactsReconcileWorker>();
 
+        // ERP SalesReceipts (verkoopbonnen) mirror → Timesheet → Adsolut tab.
+        // Opt-in via Adsolut.Erp.SalesReceipts.Enabled; reuses the shared
+        // AdsolutHttpInvoker (bearer + once-on-401 + audit).
+        services.AddSingleton<IAdsolutSalesReceiptsClient, AdsolutSalesReceiptsClient>();
+        services.AddSingleton<IAdsolutSalesReceiptRepository, AdsolutSalesReceiptRepository>();
+        services.AddSingleton<IAdsolutSalesReceiptsSyncSignal, AdsolutSalesReceiptsSyncSignal>();
+        services.AddHostedService<AdsolutSalesReceiptsSyncWorker>();
+
         // Telavox call-popup integration (v0.0.34). PAPI partner-token is
         // shared install-wide; CAPI tokens are auto-provisioned per linked
         // agent via /api/admin/integrations/telavox/agents/{userId}/provision
@@ -444,6 +452,12 @@ public static class DependencyInjection
         // flag (read per-query from the users row).
         services.AddSingleton<TimesheetSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<TimesheetSearchSource>()));
+
+        // Adsolut sales-receipts (verkoopbonnen) search-source. Customer sees
+        // zero hits; Agent/Admin see hits only when their own
+        // adsolut_timesheet_enabled flag is set (read per-query).
+        services.AddSingleton<Servicedesk.Infrastructure.Search.AdsolutSalesReceiptSearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<Servicedesk.Infrastructure.Search.AdsolutSalesReceiptSearchSource>()));
 
         services.AddHostedService<DatabaseBootstrapper>();
         services.AddHostedService<SettingsSeeder>();

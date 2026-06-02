@@ -62,6 +62,13 @@ const SCOPE_CATALOG: readonly ScopeCatalogEntry[] = [
       "Lets the id_token carry the authorizing user's display name + email. Cosmetic — you'll see 'Connected as <subject>' instead of '<email>' without it.",
     group: "recommended",
   },
+  {
+    name: "WK.BE.ERP.Read",
+    label: "ERP (read)",
+    description:
+      "Read-only access to the Adsolut ERP API — needed to pull sales receipts (verkoopbonnen) into the Timesheet → Adsolut tab. Least-privilege read scope (not the full WK.BE.ERP). Note the casing: ERP in capitals — Wolters Kluwer rejects the authorize request (you never reach the login page) if the casing is wrong or your client isn't subscribed to the ERP product. Tick it, then Reconnect to bind it to a fresh refresh token.",
+    group: "optional",
+  },
 ] as const;
 
 const REQUIRED_SCOPES = SCOPE_CATALOG.filter((s) => s.group === "required").map(
