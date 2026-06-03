@@ -22,6 +22,22 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             new CommandDefinition(sql, new { number }, cancellationToken: ct));
     }
 
+    public async Task<Guid?> GetIdByZammadNumberAsync(string zammadNumber, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(zammadNumber)) return null;
+        // Imported tickets only — zammad_ticket_number is NULL for native
+        // tickets. LIMIT 1 guards against a hand-edited duplicate; the import
+        // enforces uniqueness via ix_tickets_zammad_id.
+        const string sql = """
+            SELECT id FROM tickets
+            WHERE zammad_ticket_number = @zammadNumber AND is_deleted = FALSE
+            LIMIT 1
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.ExecuteScalarAsync<Guid?>(
+            new CommandDefinition(sql, new { zammadNumber }, cancellationToken: ct));
+    }
+
     /// Whitelist mapping frontend field names to SQL column expressions.
     /// Prevents SQL injection via dynamic ORDER BY.
     private static readonly Dictionary<string, string> SortFieldMap = new(StringComparer.OrdinalIgnoreCase)
@@ -196,7 +212,11 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         orderClauses.Add("t.id DESC");
         sql.Append(" ORDER BY ").Append(string.Join(", ", orderClauses));
 
-        var limit = Math.Clamp(query.Limit, 1, 500);
+        // Hard safety ceiling. The list/views load in a single page (no lazy
+        // loading) up to the admin-configurable Tickets.ListPageSize (default
+        // 1000); this clamp is the absolute backstop so a hand-crafted
+        // ?limit=999999 can never ask Postgres for an unbounded result set.
+        var limit = Math.Clamp(query.Limit, 1, 5000);
         sql.Append(" LIMIT @Limit");
         if (useOffset)
             sql.Append(" OFFSET @Offset");

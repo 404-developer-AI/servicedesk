@@ -2,6 +2,8 @@ using System.Text.RegularExpressions;
 using Dapper;
 using Npgsql;
 using Servicedesk.Domain.Search;
+using Servicedesk.Domain.Tickets;
+using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Search;
 
@@ -15,8 +17,13 @@ namespace Servicedesk.Infrastructure.Search;
 public sealed class TicketSearchSource : ISearchSource
 {
     private readonly NpgsqlDataSource _dataSource;
+    private readonly ISettingsService _settings;
 
-    public TicketSearchSource(NpgsqlDataSource dataSource) => _dataSource = dataSource;
+    public TicketSearchSource(NpgsqlDataSource dataSource, ISettingsService settings)
+    {
+        _dataSource = dataSource;
+        _settings = settings;
+    }
 
     public string Kind => SearchSourceKind.Tickets;
 
@@ -34,27 +41,39 @@ public sealed class TicketSearchSource : ISearchSource
         if (!principal.IsAdmin && (allowedQueues is null || allowedQueues.Count == 0))
             return new SearchGroup(Kind, Array.Empty<SearchHit>(), 0, false);
 
-        var normalized = request.Query.Trim().ToLowerInvariant();
+        var raw = request.Query.Trim();
+        var prefix = await GetPrefixAsync(ct);
         var limit = Math.Clamp(request.Limit, 1, 100);
         var offset = Math.Max(0, request.Offset);
 
-        // Ticket-number shortcut: if the whole query parses as a number, try
-        // an exact-match probe first so "1042" ranks a matching ticket #1042
-        // above anything else.
-        long? numberProbe = long.TryParse(normalized, out var n) ? n : null;
-        // Zammad-number probe: same gate, but we keep the raw string so a
-        // Zammad ticket whose number carried leading zeros ("00042") still
-        // matches against the TEXT zammad_ticket_number column. Rank-boost
-        // is 8.0 below — local number wins (rank 10) on ties, but imported
-        // tickets with the same digit-sequence still surface just under.
-        string? zammadNumberProbe = numberProbe is not null ? normalized : null;
+        // Ticket-number shortcut: accept the configured reference form
+        // ("Ticket#1042"), a bare "#1042", surrounding brackets, or plain
+        // digits — all resolve to the same number probe so a pasted reference
+        // ranks ticket #1042 (rank 10) above anything else.
+        var refDigits = TicketReference.TryParseDigits(raw, prefix);
+        long? numberProbe = refDigits is not null && long.TryParse(refDigits, out var n) ? n : null;
+        // Zammad-number probe: keep the raw digit string so a Zammad ticket
+        // whose number carried leading zeros ("00042") still matches against
+        // the TEXT zammad_ticket_number column. Rank-boost is 8.0 below —
+        // local number wins (rank 10) on ties, but imported tickets with the
+        // same digit-sequence still surface just under.
+        string? zammadNumberProbe = refDigits;
+
+        // When the user pasted a reference that carried a marker (prefix word,
+        // '#', or brackets) we skip FTS so the prefix word ("ticket") does not
+        // match unrelated subjects. A BARE number keeps FTS so "1042" can still
+        // surface a ticket whose body mentions 1042, preserving prior behaviour.
+        var isBareNumber = raw.Length > 0 && raw.All(char.IsDigit);
+        var skipFts = refDigits is not null && !isBareNumber;
+
+        var normalized = raw.ToLowerInvariant();
 
         // Build a prefix-matching tsquery: each alphanumeric token gets a `:*`
         // suffix so "bench" matches "benchmark". User-typed `*` chars act as
         // word separators (so `*bench`, `bench*`, plain `bench` all behave
         // the same). Empty after sanitization → tsq is NULL and only the
         // number probe applies.
-        var tsqueryText = BuildPrefixTsQuery(normalized);
+        var tsqueryText = skipFts ? string.Empty : BuildPrefixTsQuery(normalized);
 
         if (string.IsNullOrEmpty(tsqueryText) && numberProbe is null && zammadNumberProbe is null)
             return new SearchGroup(Kind, Array.Empty<SearchHit>(), 0, false);
@@ -161,6 +180,19 @@ public sealed class TicketSearchSource : ISearchSource
         var hasMore = totalInGroup > offset + hits.Count;
 
         return new SearchGroup(Kind, hits, totalInGroup, hasMore);
+    }
+
+    private async Task<string> GetPrefixAsync(CancellationToken ct)
+    {
+        try
+        {
+            var raw = await _settings.GetAsync<string>(SettingKeys.Tickets.ReferencePrefix, ct);
+            return string.IsNullOrWhiteSpace(raw) ? TicketReference.DefaultPrefix : raw;
+        }
+        catch
+        {
+            return TicketReference.DefaultPrefix;
+        }
     }
 
     private static readonly Regex s_tokenPattern = new(@"[\p{L}\p{N}]+", RegexOptions.Compiled);

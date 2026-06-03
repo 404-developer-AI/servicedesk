@@ -192,15 +192,19 @@ public sealed class SurveyDispatchService : ISurveyDispatchService
             [SurveyTokens.TicketAgentNames] = agentNames,
         };
 
+        var refPrefix = await _settings.GetAsync<string>(SettingKeys.Tickets.ReferencePrefix, ct);
+        if (string.IsNullOrWhiteSpace(refPrefix)) refPrefix = TicketReference.DefaultPrefix;
+        var ticketRef = TicketReference.Format(ticket.Number, refPrefix);
+
         var subject = ApplyTokens(survey.InviteSubject, tokens);
-        if (string.IsNullOrWhiteSpace(subject)) subject = $"How did we do? Ticket #{ticket.Number}";
+        if (string.IsNullOrWhiteSpace(subject)) subject = $"How did we do? {ticketRef}";
         var bodyHtml = ApplyTokens(survey.InviteBodyHtml, tokens);
         if (string.IsNullOrWhiteSpace(bodyHtml))
         {
             // Fallback body when an admin saved an empty invite template —
             // we still want the link to land. Plain HTML, no styling, gets
             // the job done.
-            bodyHtml = $"<p>Hi,</p><p>We'd like a minute of your time on ticket <strong>#{ticket.Number}</strong>.</p>" +
+            bodyHtml = $"<p>Hi,</p><p>We'd like a minute of your time on ticket <strong>{System.Net.WebUtility.HtmlEncode(ticketRef)}</strong>.</p>" +
                        $"<p><a href=\"{System.Net.WebUtility.HtmlEncode(surveyLink)}\">Open the survey</a></p>";
         }
 

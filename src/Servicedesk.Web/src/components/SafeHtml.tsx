@@ -28,7 +28,7 @@ export function SafeHtml({ html, className }: SafeHtmlProps) {
 
   return (
     <div
-      className={cn("kb-prose prose prose-invert max-w-none", className)}
+      className={cn("kb-prose prose dark:prose-invert max-w-none", className)}
       dangerouslySetInnerHTML={wrapper}
     />
   );

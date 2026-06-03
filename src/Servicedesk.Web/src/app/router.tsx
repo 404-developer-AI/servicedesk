@@ -66,17 +66,23 @@ import { ActivityFeedPage } from "@/pages/activity/ActivityFeedPage";
 // The router reads the "current role" outside of React here (for the
 // beforeLoad gate). The auth store is populated by bootstrapAuth() in
 // main.tsx before the router mounts, so these reads always see real state.
-function currentRole(): Role | null {
-  return authStore.get().user?.role ?? null;
+// A session that still owes its TOTP challenge (amr "mfa-pending") is NOT
+// treated as authenticated for app routes — the server rejects it anyway, so
+// letting it paint the shell would just 403 every data call. Such a user is
+// bounced to /login, where the page resumes the 2FA step.
+function authedUser() {
+  const { user } = authStore.get();
+  if (!user || user.amr === "mfa-pending") return null;
+  return user;
 }
 
 function authGate(allowed: readonly Role[]) {
   return ({ location }: { location: { pathname: string } }) => {
-    const role = currentRole();
-    if (role === null) {
+    const user = authedUser();
+    if (user === null) {
       throw redirect({ to: "/login", search: { from: location.pathname } });
     }
-    if (!allowed.includes(role)) {
+    if (!allowed.includes(user.role)) {
       throw redirect({ to: "/" });
     }
   };
@@ -84,8 +90,7 @@ function authGate(allowed: readonly Role[]) {
 
 function anyAuthenticatedGate() {
   return ({ location }: { location: { pathname: string } }) => {
-    const { user } = authStore.get();
-    if (!user) {
+    if (!authedUser()) {
       throw redirect({ to: "/login", search: { from: location.pathname } });
     }
   };
@@ -145,7 +150,7 @@ const rootRoute = createRootRoute({
     // shell + role chrome to an anonymous visitor. Per-route gates only cover
     // declared routes; this closes the not-found gap. Public paths (login,
     // setup, tokenised intake/survey links) stay exempt.
-    if (!user && !isPublicPath(path)) {
+    if (!authedUser() && !isPublicPath(path)) {
       throw redirect({ to: "/login", search: { from: path } });
     }
   },

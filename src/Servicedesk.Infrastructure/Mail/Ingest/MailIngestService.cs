@@ -110,7 +110,9 @@ public sealed class MailIngestService : IMailIngestService
 
         // Threading: plus-address → In-Reply-To/References → subject-token → new.
         var token = await _settings.GetAsync<string>(SettingKeys.Mail.PlusAddressToken, ct) ?? "TCK";
-        var existingTicketId = await ResolveExistingTicketAsync(msg, token, ct);
+        var refPrefix = await _settings.GetAsync<string>(SettingKeys.Tickets.ReferencePrefix, ct);
+        if (string.IsNullOrWhiteSpace(refPrefix)) refPrefix = TicketReference.DefaultPrefix;
+        var existingTicketId = await ResolveExistingTicketAsync(msg, token, refPrefix, ct);
 
         var bodyText = ExtractBodyText(msg);
         var snippet = Snippet(bodyText, 200);
@@ -243,15 +245,15 @@ public sealed class MailIngestService : IMailIngestService
         await _sla.OnTicketEventAsync(ticketId, evt.EventType, ct);
 
         // Trigger evaluator (v0.0.24 Blok 2). A new MailReceived event is
-        // an article addition — Selective triggers fire on this alone.
-        // Whether the ticket is freshly Created or just Appended is
-        // irrelevant to the evaluator: action-based triggers see the
-        // post-ingest state and the article-added signal.
+        // an article addition — Selective triggers fire on this alone. We
+        // flag whether THIS mail created the ticket (vs. appended a reply) so
+        // a trigger can condition on ticket.is_new — e.g. the default
+        // auto-reply fires on the first inbound mail only, never on replies.
         await _triggers.EvaluateAsync(
             ticketId: ticketId,
             ticketEventId: evt.Id,
             activatorKind: TriggerActivatorKind.Action,
-            changeSet: TriggerChangeSet.ArticleOnly(),
+            changeSet: TriggerChangeSet.ArticleOnly(isTicketCreation: existingTicketId is null),
             ct: ct);
 
         return new MailIngestResult(
@@ -259,7 +261,7 @@ public sealed class MailIngestService : IMailIngestService
             mailId, ticketId, evt.Id, null);
     }
 
-    private async Task<Guid?> ResolveExistingTicketAsync(GraphFullMessage msg, string token, CancellationToken ct)
+    private async Task<Guid?> ResolveExistingTicketAsync(GraphFullMessage msg, string token, string refPrefix, CancellationToken ct)
     {
         // 1. Plus-address in any recipient.
         var plusRegex = new Regex(
@@ -295,12 +297,19 @@ public sealed class MailIngestService : IMailIngestService
             if (t is not null) return await FollowMergeChainAsync(t.Value, ct);
         }
 
-        // 3. Subject token [TCK-1234].
-        var subjectRegex = new Regex($@"\[{Regex.Escape(token)}-(\d+)\]", RegexOptions.IgnoreCase);
-        var sm = subjectRegex.Match(msg.Subject ?? string.Empty);
-        if (sm.Success && long.TryParse(sm.Groups[1].Value, out var subjNumber))
+        // 3. Subject reference, e.g. "[Ticket#1234]". Header matching (step 2)
+        //    already covers migrated Zammad threads via their preserved
+        //    Message-IDs, so reaching this point means headers missed. We
+        //    therefore resolve the subject number against our LOCAL numbers
+        //    first; only if none matches do we treat it as a pre-migration
+        //    Zammad number and consult the imported mapping. This lets Zammad
+        //    notation ("[Ticket#<zammad-number>]") thread onto the migrated
+        //    ticket without hijacking an unrelated local ticket that happens
+        //    to share the digits.
+        if (TicketReference.FindNumberInText(msg.Subject, refPrefix, out var subjNumber, out var subjDigits))
         {
-            var id = await LookupTicketByNumberAsync(subjNumber, ct);
+            var id = await LookupTicketByNumberAsync(subjNumber, ct)
+                     ?? await LookupTicketByZammadNumberAsync(subjDigits, ct);
             return id is null ? null : await FollowMergeChainAsync(id.Value, ct);
         }
 
@@ -310,6 +319,11 @@ public sealed class MailIngestService : IMailIngestService
     private Task<Guid?> LookupTicketByNumberAsync(long number, CancellationToken ct)
         => _tickets is ITicketNumberLookup l
             ? l.GetIdByNumberAsync(number, ct)
+            : Task.FromResult<Guid?>(null);
+
+    private Task<Guid?> LookupTicketByZammadNumberAsync(string zammadNumber, CancellationToken ct)
+        => _tickets is ITicketNumberLookup l
+            ? l.GetIdByZammadNumberAsync(zammadNumber, ct)
             : Task.FromResult<Guid?>(null);
 
     /// Walks the merge pointer up to <c>maxHops</c> times so a reply on a
@@ -410,6 +424,16 @@ public sealed class MailIngestService : IMailIngestService
 public interface ITicketNumberLookup
 {
     Task<Guid?> GetIdByNumberAsync(long number, CancellationToken ct);
+
+    /// Resolves a Zammad-origin ticket number (the human number from the
+    /// source Zammad install, persisted at import in
+    /// <c>tickets.zammad_ticket_number</c>) to the local ticket id. Used as
+    /// the inbound subject-threading fallback so a reply to a pre-migration
+    /// Zammad notification — whose subject still carries "[Ticket#&lt;zammad
+    /// number&gt;]" — lands on the migrated ticket when header-based matching
+    /// has already missed. Returns null when no imported ticket carries that
+    /// Zammad number.
+    Task<Guid?> GetIdByZammadNumberAsync(string zammadNumber, CancellationToken ct);
 
     /// Returns the immediate merge target of a ticket, or null if it isn't
     /// merged. The caller is responsible for walking the chain — typical use

@@ -231,24 +231,29 @@ public sealed class MentionNotificationService : IMentionNotificationService
             ? relativePath
             : $"{publicBaseUrl.TrimEnd('/')}{relativePath}";
 
+        // Light, email-client-safe palette (most clients render on white and
+        // ignore prefers-color-scheme): white card on a soft canvas, dark text,
+        // a subtle purple/blue wash in the header and a purple CTA to keep the
+        // in-app mention-chip accent. Inline styles only — no <style> block,
+        // no CSS variables; Outlook/Gmail strip both.
         return $$"""
             <!DOCTYPE html>
-            <html><body style="margin:0;padding:24px;background:#0f0f14;font-family:Inter,-apple-system,Segoe UI,Roboto,sans-serif;color:#e9e9ec;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#16161c;border:1px solid rgba(255,255,255,0.08);border-radius:14px;overflow:hidden;">
-                <tr><td style="padding:20px 24px;background:linear-gradient(135deg,rgba(139,92,246,0.18),rgba(59,130,246,0.12));border-bottom:1px solid rgba(255,255,255,0.06);">
-                  <div style="font-size:12px;color:#a3a3ad;letter-spacing:0.04em;text-transform:uppercase;margin-bottom:6px;">You were tagged</div>
-                  <div style="font-size:18px;font-weight:600;color:#fafaff;">Ticket #{{source.TicketNumber}} — {{encodedSubject}}</div>
+            <html><body style="margin:0;padding:24px;background:#f4f5f9;font-family:Inter,-apple-system,Segoe UI,Roboto,sans-serif;color:#2a2d35;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e6e7ee;border-radius:14px;overflow:hidden;">
+                <tr><td style="padding:20px 24px;background:linear-gradient(135deg,rgba(139,92,246,0.12),rgba(59,130,246,0.08));border-bottom:1px solid #ececf3;">
+                  <div style="font-size:12px;color:#6b6f7a;letter-spacing:0.04em;text-transform:uppercase;margin-bottom:6px;">You were tagged</div>
+                  <div style="font-size:18px;font-weight:600;color:#1b1e27;">Ticket #{{source.TicketNumber}} — {{encodedSubject}}</div>
                 </td></tr>
                 <tr><td style="padding:20px 24px;">
-                  <div style="font-size:14px;color:#cfcfd5;margin-bottom:14px;">
-                    <strong style="color:#d7c5ff;">{{encodedSource}}</strong> tagged you in {{eventLabel}} on this ticket.
+                  <div style="font-size:14px;color:#3a3d47;margin-bottom:14px;">
+                    <strong style="color:#6d4ad1;">{{encodedSource}}</strong> tagged you in {{eventLabel}} on this ticket.
                   </div>
-                  <div style="padding:12px 14px;background:rgba(255,255,255,0.03);border-left:3px solid rgba(139,92,246,0.55);border-radius:6px;font-size:14px;color:#d5d5db;white-space:pre-wrap;line-height:1.5;">{{encodedPreview}}</div>
+                  <div style="padding:12px 14px;background:#f6f5fc;border-left:3px solid rgba(139,92,246,0.55);border-radius:6px;font-size:14px;color:#41444e;white-space:pre-wrap;line-height:1.5;">{{encodedPreview}}</div>
                   <div style="margin-top:22px;text-align:center;">
                     <a href="{{ctaHref}}" style="display:inline-block;padding:11px 22px;background:#8b5cf6;color:#fff;font-weight:600;text-decoration:none;border-radius:8px;font-size:14px;">Open ticket</a>
                   </div>
                 </td></tr>
-                <tr><td style="padding:14px 24px;border-top:1px solid rgba(255,255,255,0.06);font-size:12px;color:#8b8b92;">
+                <tr><td style="padding:14px 24px;border-top:1px solid #ececf3;font-size:12px;color:#8b8e99;">
                   Sent to {{encodedRecipient}} · Servicedesk
                 </td></tr>
               </table>

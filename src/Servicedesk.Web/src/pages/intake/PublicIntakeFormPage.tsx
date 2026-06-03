@@ -494,7 +494,7 @@ function formatAnswer(
 
 function PublicShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-[#0b0420] via-[#100636] to-[#050817] px-4 py-12">
+    <div className="app-background min-h-screen w-full px-4 py-12">
       <div className="mx-auto max-w-xl rounded-2xl border border-glass-strong bg-glass p-8 shadow-2xl backdrop-blur-xl">
         {children}
       </div>

@@ -112,6 +112,10 @@ public sealed class TriggerConditionMatcher : ITriggerConditionMatcher
             TriggerFieldKeys.TicketRequesterId => ctx.Ticket.RequesterContactId,
             TriggerFieldKeys.TicketCompanyId => ctx.Ticket.CompanyId,
             TriggerFieldKeys.TicketSubject => ctx.Ticket.Subject,
+            // True only when the triggering article is the ticket-creating
+            // event (first inbound mail). Lets an auto-reply fire once, not on
+            // every customer reply.
+            TriggerFieldKeys.TicketIsNew => ctx.ChangeSet.IsTicketCreation,
             TriggerFieldKeys.TicketTags => Array.Empty<string>(), // tags entity not introduced yet
             TriggerFieldKeys.ArticleSender => ResolveArticleSender(ctx.TriggeringEvent),
             TriggerFieldKeys.ArticleType => ctx.TriggeringEvent?.EventType,

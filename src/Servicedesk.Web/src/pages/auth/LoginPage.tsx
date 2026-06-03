@@ -62,10 +62,17 @@ export function LoginPage() {
   );
 
   useEffect(() => {
-    // If someone lands on /login with an active session, bounce to dashboard.
-    if (authStore.get().user) {
-      navigate({ to: "/" });
+    const user = authStore.get().user;
+    if (!user) return;
+    // A pending session (password accepted, TOTP still owed) must finish the
+    // challenge here — the server rejects it everywhere else. Resume the 2FA
+    // step instead of bouncing into the app (e.g. after a mid-challenge reload).
+    if (user.amr === "mfa-pending") {
+      setStage("two-factor");
+      return;
     }
+    // Fully-authenticated session landing on /login → bounce to dashboard.
+    navigate({ to: "/" });
   }, [navigate]);
 
   const loginForm = useForm<LoginValues>({

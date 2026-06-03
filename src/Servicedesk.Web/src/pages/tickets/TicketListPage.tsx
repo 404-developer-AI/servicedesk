@@ -1,7 +1,7 @@
 import * as React from "react";
-import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { Eye, Loader2, ShieldAlert, Ticket } from "lucide-react";
+import { Eye, ShieldAlert, Ticket } from "lucide-react";
 import { ColumnSelector } from "@/components/ColumnSelector";
 import { TicketTableSkeleton } from "./components/TicketTable";
 import { GroupedTicketList } from "./components/GroupedTicketList";
@@ -148,70 +148,39 @@ export function TicketListPage() {
     setViewApplied(true);
   }, [viewData, viewApplied]);
 
-  type PageParam =
-    | { type: "cursor"; updatedUtc: string; id: string }
-    | { type: "offset"; offset: number }
-    | null;
-
+  // Single-load model (v0.0.57): the list + saved views fetch ALL matching
+  // tickets in one request, up to the server cap (Tickets.ListPageSize). No
+  // lazy loading / infinite scroll — the list stays stable while scrolling and
+  // this sidesteps the keyset-cursor drift that live updates caused with paged
+  // loading. `truncated` is true when the server signalled there were more
+  // rows than the cap, so we can prompt the user to refine their filters.
   const {
     data,
     isLoading: ticketsLoading,
     isError,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-  } = useInfiniteQuery({
+  } = useQuery({
     queryKey: ["tickets", filters, displayConfig],
-    queryFn: ({ pageParam }: { pageParam: PageParam }) => {
+    queryFn: () => {
       const query: TicketListQuery = {
         ...filters,
         sortField: displayConfig.sort?.field,
         sortDirection: displayConfig.sort?.direction,
         priorityFloat: displayConfig.priorityFloat,
       };
-      if (pageParam?.type === "cursor") {
-        query.cursorUpdatedUtc = pageParam.updatedUtc;
-        query.cursorId = pageParam.id;
-      } else if (pageParam?.type === "offset") {
-        query.offset = pageParam.offset;
-      }
       return ticketApi.list(query);
-    },
-    initialPageParam: null as PageParam,
-    getNextPageParam: (lastPage): PageParam | undefined => {
-      if (lastPage.nextCursor)
-        return { type: "cursor", ...lastPage.nextCursor };
-      if (lastPage.nextOffset != null)
-        return { type: "offset", offset: lastPage.nextOffset };
-      return undefined;
     },
     staleTime: 30_000,
     enabled: viewApplied,
   });
 
-  // Infinite scroll: observe a sentinel element at the bottom of the list
-  const sentinelRef = React.useRef<HTMLDivElement>(null);
-  React.useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
-          fetchNextPage();
-        }
-      },
-      { rootMargin: "200px" },
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  const truncated = !!data?.nextCursor || data?.nextOffset != null;
 
   function handleRowClick(id: string) {
     navigate({ to: "/tickets/$id" as never, params: { id } as never });
   }
 
   const isLoading = ticketsLoading || (!!viewId && !viewApplied);
-  const allItems: TicketListItem[] = data?.pages.flatMap((p) => p.items) ?? [];
+  const allItems: TicketListItem[] = data?.items ?? [];
 
   const pageTitle = viewData?.name ?? "Tickets";
   const PageIcon = viewId ? Eye : Ticket;
@@ -248,7 +217,7 @@ export function TicketListPage() {
             {!isLoading && (
               <p className="text-xs text-muted-foreground">
                 {allItems.length} ticket{allItems.length !== 1 ? "s" : ""}
-                {hasNextPage ? "+" : ""}
+                {truncated ? "+" : ""}
               </p>
             )}
           </div>
@@ -269,14 +238,12 @@ export function TicketListPage() {
             displayConfig={displayConfig}
             onRowClick={handleRowClick}
             footer={
-              <>
-                <div ref={sentinelRef} className="h-1" />
-                {isFetchingNextPage && (
-                  <div className="flex items-center justify-center py-4">
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  </div>
-                )}
-              </>
+              truncated ? (
+                <div className="px-4 py-3 text-center text-xs text-muted-foreground">
+                  Showing the first {allItems.length} tickets. Refine your
+                  filters to narrow the list.
+                </div>
+              ) : undefined
             }
           />
         ) : (

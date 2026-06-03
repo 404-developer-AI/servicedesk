@@ -10,6 +10,7 @@ public static class TriggerTemplateVariableCatalog
     public static readonly IReadOnlyList<TriggerTemplateVariable> All = new TriggerTemplateVariable[]
     {
         new("ticket.number",            "Ticket number",      "string", "12345"),
+        new("ticket.reference",         "Ticket reference",   "string", "Ticket#12345"),
         new("ticket.subject",           "Ticket subject",     "string", "Printer not working"),
         new("ticket.url",               "Ticket deep-link",   "string", "https://servicedesk.example/tickets/12345"),
         new("ticket.queue.name",        "Queue name",         "string", "Support"),

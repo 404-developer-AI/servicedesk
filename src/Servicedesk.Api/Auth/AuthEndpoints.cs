@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth;
@@ -223,7 +224,12 @@ public static class AuthEndpoints
         var twoFactorEnabled = await totp.IsEnabledAsync(user.Id, ct);
         await users.RecordSuccessfulLoginAsync(user.Id, ct);
 
-        var amr = twoFactorEnabled ? AmrPassword : AmrPassword;
+        // 2FA-enabled users get a PENDING session (password step done, TOTP
+        // still owed). It authenticates but the role policies reject it until
+        // /2fa/verify upgrades it to "pwd+mfa" — so the cookie alone is useless
+        // to a client that skips the challenge. Non-2FA users are fully
+        // authorized immediately ("pwd").
+        var amr = twoFactorEnabled ? SessionAuthenticationHandler.AmrPending : AmrPassword;
         await EstablishSessionAsync(httpContext, user, amr, sessions, settings, ct);
 
         await audit.LogAsync(new AuditEvent(
@@ -246,6 +252,7 @@ public static class AuthEndpoints
         ITotpService totp,
         ISessionService sessions,
         ISettingsService settings,
+        IMemoryCache cache,
         IAuditLogger audit,
         CancellationToken ct)
     {
@@ -270,6 +277,11 @@ public static class AuthEndpoints
         }
 
         await sessions.UpgradeAmrAsync(sessionId, AmrPasswordPlusMfa, ct);
+        // Evict the handler's cached (pre-upgrade) session so the new
+        // "pwd+mfa" amr takes effect on the very next request instead of after
+        // the 5-minute cache window — otherwise the user stays blocked right
+        // after a successful challenge.
+        cache.Remove(SessionAuthenticationHandler.CacheKey(sessionId));
 
         await audit.LogAsync(new AuditEvent(
             EventType: AuthEventTypes.TwoFactorChallengeSuccess,
@@ -495,6 +507,7 @@ public static class AuthEndpoints
         HttpContext httpContext,
         ITotpService totp,
         ISessionService sessions,
+        IMemoryCache cache,
         IAuditLogger audit,
         CancellationToken ct)
     {
@@ -510,6 +523,8 @@ public static class AuthEndpoints
         if (Guid.TryParse(sidClaim, out var sessionId))
         {
             await sessions.UpgradeAmrAsync(sessionId, AmrPasswordPlusMfa, ct);
+            // Refresh the cached session so /me reflects the new amr at once.
+            cache.Remove(SessionAuthenticationHandler.CacheKey(sessionId));
         }
 
         await audit.LogAsync(new AuditEvent(
