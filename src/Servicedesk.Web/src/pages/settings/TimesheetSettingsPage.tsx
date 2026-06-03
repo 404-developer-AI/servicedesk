@@ -6,6 +6,7 @@ import {
   ArchiveRestore,
   Bed,
   CalendarCheck,
+  ClipboardCheck,
   Clock,
   DatabaseBackup,
   Euro,
@@ -29,7 +30,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { settingsApi, timesheetImportAdminApi, type SettingEntry } from "@/lib/api";
+import {
+  settingsApi,
+  taxonomyApi,
+  timesheetImportAdminApi,
+  type SettingEntry,
+  type Status,
+} from "@/lib/api";
 import { ApiError } from "@/lib/ticket-api";
 import {
   autoFormatTimeInput,
@@ -51,6 +58,8 @@ const KEY_MAX_ABSENCE_DAY = "Timesheet.DefaultMaxAbsenceMinutesPerDay";
 const KEY_OFFICE_START = "Timesheet.DefaultOfficeStartMinutes";
 const KEY_OFFICE_END = "Timesheet.DefaultOfficeEndMinutes";
 const KEY_HOURLY_RATE = "Timesheet.HourlyRate";
+const KEY_RESOLVED_STATUSES = "Timesheet.ResolvedTabStatusIds";
+const KEY_CWI_STATUSES = "Timesheet.CwiTabStatusIds";
 const KEY_REPLY_HEADER = "Timesheet.ReplyHeaderHtml";
 const KEY_REPLY_ROW = "Timesheet.ReplyRowHtml";
 const KEY_REPLY_FOOTER = "Timesheet.ReplyFooterHtml";
@@ -83,6 +92,8 @@ export function TimesheetSettingsPage() {
   const officeEndEntry = findEntry(query.data, KEY_OFFICE_END);
   const workDaysEntry = findEntry(query.data, KEY_WORK_DAYS);
   const hourlyRateEntry = findEntry(query.data, KEY_HOURLY_RATE);
+  const resolvedStatusesEntry = findEntry(query.data, KEY_RESOLVED_STATUSES);
+  const cwiStatusesEntry = findEntry(query.data, KEY_CWI_STATUSES);
   const replyHeaderEntry = findEntry(query.data, KEY_REPLY_HEADER);
   const replyRowEntry = findEntry(query.data, KEY_REPLY_ROW);
   const replyFooterEntry = findEntry(query.data, KEY_REPLY_FOOTER);
@@ -211,6 +222,34 @@ export function TimesheetSettingsPage() {
             ) : (
               <MissingEntry keyName={KEY_HOURLY_RATE} />
             )}
+          </section>
+
+          <section className="glass-card p-6">
+            <SectionHeader
+              icon={<ClipboardCheck className="h-5 w-5" />}
+              title="Back-office tabs"
+              description="Which ticket statuses feed the back-office Resolved and CWI tabs on the Timesheet page. A ticket is listed in the month it entered one of the selected statuses. The Resolved tab additionally hides tickets that already have an Adsolut sales receipt."
+            />
+            <div className="space-y-1">
+              {resolvedStatusesEntry ? (
+                <StatusSetField
+                  entry={resolvedStatusesEntry}
+                  label="Resolved tab statuses"
+                  hint="Tickets in these statuses, without an Adsolut sales receipt, appear on the Resolved tab."
+                />
+              ) : (
+                <MissingEntry keyName={KEY_RESOLVED_STATUSES} />
+              )}
+              {cwiStatusesEntry ? (
+                <StatusSetField
+                  entry={cwiStatusesEntry}
+                  label="CWI tab statuses"
+                  hint="Tickets in these statuses appear on the CWI (Closed Without Invoice) tab."
+                />
+              ) : (
+                <MissingEntry keyName={KEY_CWI_STATUSES} />
+              )}
+            </div>
           </section>
 
           <TasksSection />
@@ -755,6 +794,146 @@ function HourlyRateField({ entry }: { entry: SettingEntry }) {
       </div>
     </FieldRow>
   );
+}
+
+// ---- Status multi-select for the back-office tabs ---------------------
+
+/// Stores a CSV of status ids. Statuses are toggled by name; the stored
+/// value is the id so a rename keeps the selection. Several statuses can
+/// share a state-category, so the picker lists every active status (the
+/// category is shown only as a muted hint).
+function StatusSetField({
+  entry,
+  label,
+  hint,
+}: {
+  entry: SettingEntry;
+  label: string;
+  hint: string;
+}) {
+  const qc = useQueryClient();
+  const statusesQuery = useQuery({
+    queryKey: ["taxonomy", "statuses"],
+    queryFn: () => taxonomyApi.statuses.list(),
+    staleTime: 60_000,
+  });
+  const statuses = (statusesQuery.data ?? []).filter((s) => s.isActive);
+
+  const [draft, setDraft] = React.useState<Set<string>>(() => parseIdCsv(entry.value));
+  React.useEffect(() => setDraft(parseIdCsv(entry.value)), [entry.value]);
+
+  const save = useMutation({
+    mutationFn: (val: string) => settingsApi.update(entry.key, val),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QUERY_KEY });
+      toast.success(`${label} updated`);
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to save"),
+  });
+
+  const dirty = idCsvFromSet(draft) !== normaliseIdCsv(entry.value);
+
+  const toggle = (id: string) => {
+    const next = new Set(draft);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setDraft(next);
+  };
+
+  return (
+    <FieldRow label={label} hint={hint}>
+      <div className="flex max-w-md flex-col items-end gap-2">
+        {statusesQuery.isLoading ? (
+          <Skeleton className="h-8 w-64" />
+        ) : statuses.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No statuses defined.</p>
+        ) : (
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {statuses.map((s) => (
+              <StatusChip key={s.id} status={s} on={draft.has(s.id)} onToggle={() => toggle(s.id)} disabled={save.isPending} />
+            ))}
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!dirty || save.isPending}
+            onClick={() => save.mutate(idCsvFromSet(draft))}
+            className="h-8 px-3"
+          >
+            Save
+          </Button>
+          {dirty && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={save.isPending}
+              onClick={() => setDraft(parseIdCsv(entry.value))}
+              className="h-8 px-2 text-xs text-muted-foreground"
+            >
+              Reset
+            </Button>
+          )}
+        </div>
+      </div>
+    </FieldRow>
+  );
+}
+
+function StatusChip({
+  status,
+  on,
+  onToggle,
+  disabled,
+}: {
+  status: Status;
+  on: boolean;
+  onToggle: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={disabled}
+      aria-pressed={on}
+      title={status.stateCategory}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+        "disabled:cursor-not-allowed disabled:opacity-50",
+        on
+          ? "border-violet-400/40 bg-violet-400/15 text-foreground"
+          : "border-glass bg-glass text-muted-foreground hover:bg-glass-hover",
+      )}
+    >
+      <span
+        className="h-2 w-2 shrink-0 rounded-full"
+        style={{ backgroundColor: status.color }}
+        aria-hidden
+      />
+      {status.name}
+      <span className="text-[9px] uppercase tracking-wider text-muted-foreground/50">
+        {status.stateCategory}
+      </span>
+    </button>
+  );
+}
+
+function parseIdCsv(csv: string): Set<string> {
+  const out = new Set<string>();
+  for (const part of csv.split(",").map((s) => s.trim())) {
+    if (part) out.add(part);
+  }
+  return out;
+}
+
+function idCsvFromSet(set: Set<string>): string {
+  return [...set].sort().join(",");
+}
+
+function normaliseIdCsv(csv: string): string {
+  return idCsvFromSet(parseIdCsv(csv));
 }
 
 // ---- Weekday-checkbox group for the work-days setting -----------------

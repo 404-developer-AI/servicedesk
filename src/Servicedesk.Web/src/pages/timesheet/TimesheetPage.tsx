@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { Clock, Users as UsersIcon, CalendarRange, Receipt } from "lucide-react";
+import {
+  Clock,
+  Users as UsersIcon,
+  CalendarRange,
+  Receipt,
+  ClipboardCheck,
+  FileX2,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/authStore";
@@ -8,8 +15,9 @@ import { TimesheetTab1 } from "@/pages/timesheet/TimesheetTab1";
 import { TimesheetTab2 } from "@/pages/timesheet/TimesheetTab2";
 import { TimesheetTab3 } from "@/pages/timesheet/TimesheetTab3";
 import { TimesheetTabAdsolut } from "@/pages/timesheet/TimesheetTabAdsolut";
+import { TimesheetTabBackoffice } from "@/pages/timesheet/TimesheetTabBackoffice";
 
-type Tab = "day" | "manager" | "month" | "adsolut";
+type Tab = "day" | "manager" | "month" | "adsolut" | "resolved" | "cwi";
 
 /// Top-level Timesheet page. Hosts up to four tabs:
 ///   1. **My day** (Tab 1) — the agent's own daily registration. Always
@@ -30,6 +38,9 @@ export function TimesheetPage() {
   // The Adsolut tab needs both the live integration connection and the
   // per-user opt-in flag; either one alone keeps it hidden.
   const showAdsolut = !!user?.adsolutConnected && !!user?.adsolutTimesheetEnabled;
+  // v0.0.56 — the two back-office tabs (Resolved / CWI) share one per-user
+  // opt-in flag, independent of the manager role.
+  const showBackoffice = !!user?.timesheetBackofficeEnabled;
   const [tab, setTab] = useState<Tab>("day");
 
   // v0.0.35 commit H — live-refresh Tab 2 / Tab 3 on any mutation from
@@ -81,12 +92,30 @@ export function TimesheetPage() {
             label="Adsolut"
           />
         )}
+        {showBackoffice && (
+          <>
+            <TabButton
+              active={tab === "resolved"}
+              onClick={() => setTab("resolved")}
+              icon={<ClipboardCheck className="h-3.5 w-3.5" />}
+              label="Resolved"
+            />
+            <TabButton
+              active={tab === "cwi"}
+              onClick={() => setTab("cwi")}
+              icon={<FileX2 className="h-3.5 w-3.5" />}
+              label="CWI"
+            />
+          </>
+        )}
       </div>
 
       {tab === "day" && <TimesheetTab1 />}
       {tab === "manager" && isManager && <TimesheetTab2 />}
       {tab === "month" && isManager && <TimesheetTab3 />}
       {tab === "adsolut" && showAdsolut && <TimesheetTabAdsolut />}
+      {tab === "resolved" && showBackoffice && <TimesheetTabBackoffice context="resolved" />}
+      {tab === "cwi" && showBackoffice && <TimesheetTabBackoffice context="cwi" />}
     </div>
   );
 }

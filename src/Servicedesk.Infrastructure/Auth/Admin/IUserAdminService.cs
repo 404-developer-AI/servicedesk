@@ -144,7 +144,8 @@ public sealed record UserAdminRow(
     bool SearchEnabled = true,
     bool ActivityFeedEnabled = false,
     bool AssetsEnabled = false,
-    bool AdsolutTimesheetEnabled = false)
+    bool AdsolutTimesheetEnabled = false,
+    bool TimesheetBackofficeEnabled = false)
 {
     /// Per-user Dashboard tile preferences sourced from
     /// `user_dashboard_tiles`. Empty list = no tiles enabled
@@ -249,7 +250,8 @@ public sealed record FeatureFlagsUpdate(
     bool? SearchEnabled,
     bool? ActivityFeedEnabled,
     bool? AssetsEnabled,
-    bool? AdsolutTimesheetEnabled = null);
+    bool? AdsolutTimesheetEnabled = null,
+    bool? TimesheetBackofficeEnabled = null);
 
 public abstract record UpdateFeatureFlagsResult
 {

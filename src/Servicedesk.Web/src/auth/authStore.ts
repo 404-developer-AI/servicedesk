@@ -34,6 +34,9 @@ export type AuthUser = {
   /// Timesheet tab, but only in combination with `adsolutConnected` —
   /// the flag on its own surfaces nothing.
   adsolutTimesheetEnabled: boolean;
+  /// v0.0.56 — per-user opt-in for the back-office Resolved + CWI
+  /// timesheet tabs. Gates the two tabs in the Timesheet page.
+  timesheetBackofficeEnabled: boolean;
   /// Whether the Adsolut integration is currently connected (server-
   /// resolved at /auth/me time). Tenant-global rather than per-user, but
   /// surfaced here so the Adsolut timesheet tab can gate without the

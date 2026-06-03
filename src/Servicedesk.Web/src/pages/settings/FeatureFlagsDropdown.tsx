@@ -39,6 +39,7 @@ const FLAG_GROUPS: Group[] = [
       { key: "timesheetEnabled", label: "Timesheet", icon: Clock },
       { key: "timesheetManager", label: "TS manager", icon: UsersIcon },
       { key: "adsolutTimesheetEnabled", label: "Adsolut Timesheet", icon: Receipt },
+      { key: "timesheetBackofficeEnabled", label: "Back office (Resolved/CWI)", icon: ClipboardCheck },
     ],
   },
   {

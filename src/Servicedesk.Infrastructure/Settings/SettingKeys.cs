@@ -689,6 +689,17 @@ public static class SettingKeys
         /// decimal string; read tolerantly (comma or dot). 0 / empty = the
         /// Bruto Price column stays blank.
         public const string HourlyRate = "Timesheet.HourlyRate";
+
+        /// v0.0.56 — comma-separated list of status ids whose tickets feed
+        /// the back-office "Resolved" tab. Selected by name in Settings →
+        /// Timesheet → Back-office tabs, stored as ids so a status rename
+        /// keeps the selection. Empty = the Resolved tab shows nothing.
+        public const string ResolvedTabStatusIds = "Timesheet.ResolvedTabStatusIds";
+
+        /// v0.0.56 — comma-separated list of status ids whose tickets feed
+        /// the back-office "CWI" (Closed Without Invoice) tab. Same storage
+        /// as ResolvedTabStatusIds. Empty = the CWI tab shows nothing.
+        public const string CwiTabStatusIds = "Timesheet.CwiTabStatusIds";
     }
 
     /// v0.0.42 — Agent activity feed. Append-only event stream that
@@ -1226,6 +1237,14 @@ public static class SettingDefaults
             "Master switch for the one-time migration import surface (Settings → Timesheet → Migration import). When off, the import endpoints return 404."),
         new SettingDefault(SettingKeys.Timesheet.HourlyRate, "0", "decimal", "Timesheet",
             "Gross hourly rate in EUR used to price registered hours. Drives the 'Bruto Price' column on the Timesheet → Adsolut tab (rate × registered hours, per receipt and broken down per task). Enter a number like 75 or 75.50 (comma also accepted). 0 leaves the Bruto Price column blank."),
+        // v0.0.56 — back-office Resolved / CWI tabs. Which statuses feed
+        // each tab is chosen by the admin (by name) under Settings →
+        // Timesheet → Back-office tabs. Stored as a CSV of status ids so a
+        // later rename keeps the selection; empty = that tab lists nothing.
+        new SettingDefault(SettingKeys.Timesheet.ResolvedTabStatusIds, "", "string", "Timesheet",
+            "Statuses whose tickets appear on the back-office 'Resolved' tab. A ticket is listed in the month it entered one of these statuses, and only when it has no Adsolut sales receipt yet. Pick one or more statuses by name on the Settings → Timesheet → Back-office tabs panel. Empty = the Resolved tab shows nothing."),
+        new SettingDefault(SettingKeys.Timesheet.CwiTabStatusIds, "", "string", "Timesheet",
+            "Statuses whose tickets appear on the back-office 'CWI' (Closed Without Invoice) tab. A ticket is listed in the month it entered one of these statuses. Pick one or more statuses by name on the Settings → Timesheet → Back-office tabs panel. Empty = the CWI tab shows nothing."),
 
         // Tactical RMM — v0.0.52. Master switch defaults off so a fresh
         // install is silent until the admin opts in. Sync cadence is

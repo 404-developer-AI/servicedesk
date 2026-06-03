@@ -3655,6 +3655,54 @@ public sealed class DatabaseBootstrapper : IHostedService
             ADD COLUMN IF NOT EXISTS adsolut_timesheet_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 
         -- ===================================================================
+        -- v0.0.56 Timesheet back-office — Resolved + CWI tabs.
+        --
+        -- Per-user opt-in flag for the two back-office timesheet tabs
+        -- (Resolved / CWI). Mirrors the other per-user feature flags
+        -- (kb_enabled, assets_enabled, adsolut_timesheet_enabled): default
+        -- FALSE, no backfill, strictly opt-in, Agent/Admin only (the
+        -- feature-flags update path rejects Customers). Independent of the
+        -- timesheet_manager flag — a back-office reviewer need not be a
+        -- timesheet manager.
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS timesheet_backoffice_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+        -- "Back Office checked" marker on the back-office tabs. Presence of a
+        -- row = checked; absence = unchecked. Scoped per tab via `context`:
+        --   'resolved' / 'cwi' → entity_id is a ticket id
+        --   'adsolut'          → entity_id is an Adsolut sales-receipt id
+        -- so the same entity can be checked independently on each tab. The
+        -- key is a bare UUID with no FK (the referenced table differs per
+        -- context); a deleted ticket/receipt simply leaves a harmless orphan
+        -- row that no query ever surfaces (the list joins filter it out).
+        -- checked_by / checked_utc record who ticked it and when (shown on
+        -- hover) and survive the checker being deleted (SET NULL). Unticking
+        -- deletes the row, so re-ticking later records the new checker.
+        CREATE TABLE IF NOT EXISTS timesheet_bo_checks (
+            entity_id   UUID        NOT NULL,
+            context     TEXT        NOT NULL,
+            checked_by  UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            checked_utc TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (entity_id, context)
+        );
+        -- Migrate the original ticket-only shape (first v0.0.56 dev build:
+        -- `ticket_id` column, FK to tickets, narrow context CHECK) to the
+        -- generic entity_id shape. Idempotent: each step is guarded / IF
+        -- EXISTS, and existing 'resolved'/'cwi' rows satisfy the new CHECK.
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name = 'timesheet_bo_checks' AND column_name = 'ticket_id') THEN
+                ALTER TABLE timesheet_bo_checks RENAME COLUMN ticket_id TO entity_id;
+            END IF;
+        END $$;
+        ALTER TABLE timesheet_bo_checks DROP CONSTRAINT IF EXISTS timesheet_bo_checks_ticket_id_fkey;
+        ALTER TABLE timesheet_bo_checks DROP CONSTRAINT IF EXISTS chk_timesheet_bo_checks_context;
+        ALTER TABLE timesheet_bo_checks ADD CONSTRAINT chk_timesheet_bo_checks_context
+            CHECK (context IN ('resolved','cwi','adsolut'));
+        CREATE INDEX IF NOT EXISTS ix_timesheet_bo_checks_context
+            ON timesheet_bo_checks (context, entity_id);
+
+        -- ===================================================================
         -- v0.0.52 — End-of-life data (endoflife.date mirror)
         --
         -- A background worker pulls the Microsoft Windows + Windows Server

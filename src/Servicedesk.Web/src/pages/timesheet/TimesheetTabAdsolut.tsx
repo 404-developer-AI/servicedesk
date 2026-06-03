@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   ArrowDown,
   ArrowUp,
+  CheckCheck,
   ChevronDown,
   ChevronRight,
   Columns3,
@@ -30,6 +31,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   ApiError,
   adsolutTimesheetApi,
+  backofficeTimesheetApi,
   preferencesApi,
   type AdsolutSalesReceiptDetail,
   type AdsolutSalesReceiptHeader,
@@ -38,6 +40,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 50;
@@ -47,6 +62,7 @@ const RECEIPTS_KEY = ["timesheet", "adsolut", "receipts"] as const;
 const COLUMNS_PREF_KEY = "workspace:adsolut-receipts-columns";
 
 type SortDir = "asc" | "desc";
+type BoFilter = "all" | "checked" | "unchecked";
 
 // ---- formatting helpers ----------------------------------------------
 
@@ -105,7 +121,8 @@ type ColId =
   | "total"
   | "hours"
   | "bruto"
-  | "difference";
+  | "difference"
+  | "bochecked";
 
 type ColDef = {
   id: ColId;
@@ -210,6 +227,13 @@ const ALL_COLUMNS: ColDef[] = [
     sortKey: "difference",
     render: (r) => <DifferenceCell receipt={r} />,
   },
+  {
+    id: "bochecked",
+    label: "BO checked",
+    align: "right",
+    interactive: true,
+    render: (r) => <BoCheckedCell receipt={r} />,
+  },
 ];
 
 const COL_LABELS: Record<ColId, string> = Object.fromEntries(
@@ -250,11 +274,14 @@ function mergeConfig(raw: string | undefined): ColConfig[] {
 /// columns, per-agent column visibility/order, server-side sorting, and a
 /// per-row resync.
 export function TimesheetTabAdsolut() {
+  const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState("date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [boFilter, setBoFilter] = useState<BoFilter>("all");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   // Per-agent column config — load once from the workspace prefs, then own it
   // locally and persist on every change.
@@ -287,13 +314,54 @@ export function TimesheetTabAdsolut() {
   );
 
   const list = useQuery({
-    queryKey: [...RECEIPTS_KEY, search, page, sortKey, sortDir],
-    queryFn: () => adsolutTimesheetApi.listReceipts(search, page, PAGE_SIZE, sortKey, sortDir),
+    queryKey: [...RECEIPTS_KEY, search, page, sortKey, sortDir, boFilter],
+    queryFn: () => adsolutTimesheetApi.listReceipts(search, page, PAGE_SIZE, sortKey, sortDir, boFilter),
   });
 
   const total = list.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const colCount = visibleColumns.length + 2; // chevron + columns + resync
+  const colCount = visibleColumns.length + 3; // select + chevron + columns + resync
+  const pageItems = list.data?.items ?? [];
+
+  // Clear the selection whenever the visible rows change (paging, search,
+  // sort or BO filter), so a hidden row never lingers in a bulk action.
+  useEffect(() => {
+    setSelected(new Set());
+  }, [page, search, sortKey, sortDir, boFilter]);
+
+  const setChecks = useMutation({
+    mutationFn: (vars: { ids: string[]; checked: boolean }) =>
+      backofficeTimesheetApi.setChecks("adsolut", vars.ids, vars.checked),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: RECEIPTS_KEY });
+      toast.success(
+        vars.checked ? `${vars.ids.length} marked BO checked` : `${vars.ids.length} unmarked`,
+      );
+    },
+    onError: () => toast.error("Could not update BO check"),
+  });
+
+  const toggleRow = (id: string) =>
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const allPageSelected = pageItems.length > 0 && pageItems.every((r) => selected.has(r.id));
+
+  const toggleAll = () =>
+    setSelected((cur) => {
+      if (pageItems.length > 0 && pageItems.every((r) => cur.has(r.id))) return new Set();
+      return new Set(pageItems.map((r) => r.id));
+    });
+
+  const bulkSet = (checked: boolean) => {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    setChecks.mutate({ ids, checked }, { onSuccess: () => setSelected(new Set()) });
+  };
 
   const onSort = (key: string) => {
     if (sortKey === key) {
@@ -306,6 +374,7 @@ export function TimesheetTabAdsolut() {
   };
 
   return (
+   <TooltipProvider delayDuration={150}>
     <div className="flex flex-1 flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -332,9 +401,51 @@ export function TimesheetTabAdsolut() {
               className="pl-9"
             />
           </div>
+          <BoFilterSelect
+            value={boFilter}
+            onChange={(v) => {
+              setBoFilter(v);
+              setPage(1);
+            }}
+          />
           <ColumnPicker config={effectiveConfig} onChange={persistConfig} />
         </div>
       </div>
+
+      {selected.size > 0 && (
+        <div className="glass-panel flex items-center justify-between gap-3 px-3 py-2">
+          <span className="text-xs text-muted-foreground">{selected.size} selected</span>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 gap-1.5"
+              disabled={setChecks.isPending}
+              onClick={() => bulkSet(true)}
+            >
+              <CheckCheck className="h-3.5 w-3.5" />
+              Mark BO checked
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 px-2 text-xs text-muted-foreground"
+              disabled={setChecks.isPending}
+              onClick={() => bulkSet(false)}
+            >
+              Unmark
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 px-2 text-xs text-muted-foreground"
+              onClick={() => setSelected(new Set())}
+            >
+              Clear
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="glass-panel flex-1 overflow-hidden">
         {list.isLoading ? (
@@ -361,6 +472,15 @@ export function TimesheetTabAdsolut() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-glass text-left text-[11px] uppercase tracking-wider text-muted-foreground/70">
+                  <th className="w-10 px-3 py-2.5">
+                    <input
+                      type="checkbox"
+                      checked={allPageSelected}
+                      onChange={toggleAll}
+                      aria-label="Select all on this page"
+                      className="h-3.5 w-3.5 rounded border border-glass-strong bg-glass accent-primary"
+                    />
+                  </th>
                   <th className="w-8 px-3 py-2.5" />
                   {visibleColumns.map((col) => {
                     const active = col.sortKey && sortKey === col.sortKey;
@@ -398,6 +518,8 @@ export function TimesheetTabAdsolut() {
                     colCount={colCount}
                     expanded={expandedId === r.id}
                     onToggle={() => setExpandedId((cur) => (cur === r.id ? null : r.id))}
+                    selected={selected.has(r.id)}
+                    onToggleSelect={() => toggleRow(r.id)}
                   />
                 ))}
               </tbody>
@@ -432,6 +554,7 @@ export function TimesheetTabAdsolut() {
         </div>
       )}
     </div>
+   </TooltipProvider>
   );
 }
 
@@ -443,12 +566,16 @@ function ReceiptRow({
   colCount,
   expanded,
   onToggle,
+  selected,
+  onToggleSelect,
 }: {
   receipt: AdsolutSalesReceiptHeader;
   columns: ColDef[];
   colCount: number;
   expanded: boolean;
   onToggle: () => void;
+  selected: boolean;
+  onToggleSelect: () => void;
 }) {
   const qc = useQueryClient();
   const detail = useQuery({
@@ -473,11 +600,20 @@ function ReceiptRow({
     <>
       <tr
         className={cn(
-          "cursor-pointer border-b border-glass/60 transition-colors hover:bg-glass-hover",
+          "cursor-pointer border-b border-glass transition-colors hover:bg-glass-hover",
           expanded && "bg-glass-hover",
         )}
         onClick={onToggle}
       >
+        <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelect}
+            aria-label={`Select receipt ${receipt.docNr ?? ""}`}
+            className="h-3.5 w-3.5 rounded border border-glass-strong bg-glass accent-primary"
+          />
+        </td>
         <td className="px-3 py-2.5 text-muted-foreground">
           {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </td>
@@ -508,7 +644,7 @@ function ReceiptRow({
       </tr>
 
       {expanded && (
-        <tr className="border-b border-glass/60 bg-black/20">
+        <tr className="border-b border-glass bg-glass">
           <td colSpan={colCount} className="px-6 py-4">
             {detail.isLoading ? (
               <Skeleton className="h-20 w-full" />
@@ -677,6 +813,69 @@ function BrutoPriceCell({ receipt }: { receipt: AdsolutSalesReceiptHeader }) {
   );
 }
 
+// ---- BO-checked cell --------------------------------------------------
+
+function BoCheckedCell({ receipt }: { receipt: AdsolutSalesReceiptHeader }) {
+  const qc = useQueryClient();
+  const setCheck = useMutation({
+    mutationFn: (checked: boolean) => backofficeTimesheetApi.setChecks("adsolut", [receipt.id], checked),
+    onSuccess: () => qc.invalidateQueries({ queryKey: RECEIPTS_KEY }),
+    onError: () => toast.error("Could not update BO check"),
+  });
+
+  const checkbox = (
+    <input
+      type="checkbox"
+      checked={receipt.boChecked}
+      disabled={setCheck.isPending}
+      onChange={(e) => setCheck.mutate(e.target.checked)}
+      aria-label={receipt.boChecked ? "Uncheck BO checked" : "Mark BO checked"}
+      className="h-4 w-4 rounded border border-glass-strong bg-glass accent-emerald-400 disabled:opacity-50"
+    />
+  );
+
+  if (!receipt.boChecked) return <div className="flex justify-end">{checkbox}</div>;
+
+  return (
+    <div className="flex justify-end">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex">{checkbox}</span>
+        </TooltipTrigger>
+        <TooltipContent>
+          <div className="text-left">
+            <div>Checked by {receipt.checkedByEmail ?? "unknown"}</div>
+            <div className="text-primary-foreground/70">{formatDateTime(receipt.checkedUtc)}</div>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  );
+}
+
+// ---- BO filter --------------------------------------------------------
+
+function BoFilterSelect({
+  value,
+  onChange,
+}: {
+  value: BoFilter;
+  onChange: (v: BoFilter) => void;
+}) {
+  return (
+    <Select value={value} onValueChange={(v) => onChange(v as BoFilter)}>
+      <SelectTrigger className="h-8 w-40 text-xs">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All</SelectItem>
+        <SelectItem value="checked">BO checked</SelectItem>
+        <SelectItem value="unchecked">Not checked</SelectItem>
+      </SelectContent>
+    </Select>
+  );
+}
+
 // ---- column picker (toggle + drag-reorder) ----------------------------
 
 function ColumnPicker({
@@ -818,7 +1017,7 @@ function ReceiptDetail({ data }: { data: AdsolutSalesReceiptDetail }) {
             </thead>
             <tbody>
               {lines.map((l) => (
-                <tr key={l.id} className="border-t border-glass/40">
+                <tr key={l.id} className="border-t border-glass">
                   <td className="py-1 pr-3 text-muted-foreground">{l.lineNr ?? "—"}</td>
                   <td className="py-1 pr-3 font-mono text-muted-foreground">{l.productCode ?? "—"}</td>
                   <td className="py-1 pr-3 text-foreground">{l.name ?? l.description ?? "—"}</td>
@@ -852,7 +1051,7 @@ function ReceiptDetail({ data }: { data: AdsolutSalesReceiptDetail }) {
             </thead>
             <tbody>
               {performances.map((p) => (
-                <tr key={p.id} className="border-t border-glass/40">
+                <tr key={p.id} className="border-t border-glass">
                   <td className="py-1 pr-3 font-mono text-muted-foreground">{p.employeeCode ?? "—"}</td>
                   <td className="whitespace-nowrap py-1 pr-3">{formatDate(p.performanceDate)}</td>
                   <td className="whitespace-nowrap py-1 pr-3 text-muted-foreground">
