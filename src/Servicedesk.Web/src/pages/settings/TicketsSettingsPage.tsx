@@ -42,7 +42,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-type TabKey = "queues" | "priorities" | "statuses" | "categories" | "types" | "iso27001" | "warnings";
+type TabKey = "queues" | "priorities" | "statuses" | "categories" | "types" | "iso27001" | "warnings" | "general";
 
 const TABS: { key: TabKey; label: string; description: string }[] = [
   {
@@ -86,6 +86,12 @@ const TABS: { key: TabKey; label: string; description: string }[] = [
     label: "Warnings",
     description:
       "Visual alerts that surface in the ticket side panel when something needs attention.",
+  },
+  {
+    key: "general",
+    label: "General",
+    description:
+      "Ticket-wide options: how a ticket reference reads when copied, shown in mail subjects, and pasted into search.",
   },
 ];
 
@@ -137,6 +143,7 @@ export function TicketsSettingsPage() {
         {tab === "types" && <TicketTypesTab />}
         {tab === "iso27001" && <Iso27001Tab />}
         {tab === "warnings" && <WarningsTab />}
+        {tab === "general" && <GeneralTab />}
       </div>
     </div>
   );
@@ -191,6 +198,147 @@ function WarningsTab() {
             }
           />
         </div>
+      </section>
+    </div>
+  );
+}
+
+function GeneralTab() {
+  const qc = useQueryClient();
+  const { data: entries, isLoading } = useQuery({
+    queryKey: ["settings", "tickets-general"],
+    queryFn: () => settingsApi.list("Tickets"),
+    staleTime: 60_000,
+  });
+
+  const savedPrefix = useMemo(
+    () => entries?.find((e) => e.key === "Tickets.ReferencePrefix")?.value ?? "Ticket#",
+    [entries],
+  );
+  const [prefix, setPrefix] = useState<string | null>(null);
+  // Null = not yet edited; fall back to the saved value for display.
+  const value = prefix ?? savedPrefix;
+  const dirty = prefix !== null && prefix !== savedPrefix;
+
+  const update = useMutation({
+    mutationFn: (next: string) => settingsApi.update("Tickets.ReferencePrefix", next),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "tickets-general"] });
+      // The copy button reads this via its own cached query — refresh it too.
+      qc.invalidateQueries({ queryKey: ["system", "ticket-reference-prefix"] });
+      setPrefix(null);
+      toast.success("Setting updated");
+    },
+    onError: () => toast.error("Could not update setting"),
+  });
+
+  // Maximum tickets loaded at once in the list + saved views (single-load
+  // model — no lazy loading). Existing installs keep their stored value across
+  // default changes, so this control is how an admin raises it.
+  const savedMaxRows = useMemo(
+    () => entries?.find((e) => e.key === "Tickets.ListPageSize")?.value ?? "1000",
+    [entries],
+  );
+  const [maxRows, setMaxRows] = useState<string | null>(null);
+  const maxRowsValue = maxRows ?? savedMaxRows;
+  const maxRowsNum = Number.parseInt(maxRowsValue, 10);
+  const maxRowsValid = Number.isFinite(maxRowsNum) && maxRowsNum >= 1 && maxRowsNum <= 5000;
+  const maxRowsDirty = maxRows !== null && maxRows !== savedMaxRows;
+
+  const updateMaxRows = useMutation({
+    mutationFn: (next: string) => settingsApi.update("Tickets.ListPageSize", next),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "tickets-general"] });
+      // The ticket list reads this server-side — refetch so the new cap applies.
+      qc.invalidateQueries({ queryKey: ["tickets"] });
+      setMaxRows(null);
+      toast.success("Setting updated");
+    },
+    onError: () => toast.error("Could not update setting"),
+  });
+
+  return (
+    <div className="space-y-6">
+      <section className="glass-card p-5">
+        <div className="space-y-1">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            Ticket reference
+          </h2>
+          <p className="text-xs text-muted-foreground/70">
+            Prefix shown in front of a ticket number wherever a human-readable
+            reference appears — the copy-to-clipboard button, outbound mail
+            subjects ([{value}1234]), survey invites, and the{" "}
+            <code className="rounded bg-glass px-1">#{"{ticket.reference}"}</code>{" "}
+            template variable. Pasting a reference in this form into global
+            search, the ticket picker, or a timesheet link resolves it straight
+            back to the ticket; a bare number or a leading “#” are always
+            accepted too.
+          </p>
+        </div>
+        <div className="mt-4 flex items-end gap-3">
+          <label className="min-w-0 flex-1 space-y-1.5">
+            <span className="text-sm font-medium text-foreground">Prefix</span>
+            <Input
+              value={value}
+              disabled={isLoading || update.isPending}
+              onChange={(e) => setPrefix(e.target.value)}
+              placeholder="Ticket#"
+              className="max-w-xs"
+            />
+          </label>
+          <Button
+            type="button"
+            disabled={!dirty || update.isPending}
+            onClick={() => update.mutate(value)}
+          >
+            Save
+          </Button>
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground/70">
+          Preview: <span className="font-mono text-foreground">{value}1234</span>
+        </p>
+      </section>
+
+      <section className="glass-card p-5">
+        <div className="space-y-1">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            List size
+          </h2>
+          <p className="text-xs text-muted-foreground/70">
+            Maximum tickets loaded at once in the ticket list and saved views.
+            The list loads in a single request (no lazy loading); a view with
+            more matches than this shows the first N with a “refine your
+            filters” note. Keep it high enough to cover your busiest view, but
+            mind the browser on very large result sets. Range 1–5000.
+          </p>
+        </div>
+        <div className="mt-4 flex items-end gap-3">
+          <label className="min-w-0 flex-1 space-y-1.5">
+            <span className="text-sm font-medium text-foreground">Maximum tickets</span>
+            <Input
+              type="number"
+              min={1}
+              max={5000}
+              value={maxRowsValue}
+              disabled={isLoading || updateMaxRows.isPending}
+              onChange={(e) => setMaxRows(e.target.value)}
+              placeholder="1000"
+              className="max-w-xs"
+            />
+          </label>
+          <Button
+            type="button"
+            disabled={!maxRowsDirty || !maxRowsValid || updateMaxRows.isPending}
+            onClick={() => updateMaxRows.mutate(String(maxRowsNum))}
+          >
+            Save
+          </Button>
+        </div>
+        {!maxRowsValid && (
+          <p className="mt-2 text-xs text-destructive">
+            Enter a whole number between 1 and 5000.
+          </p>
+        )}
       </section>
     </div>
   );

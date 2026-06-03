@@ -33,6 +33,7 @@ using Servicedesk.Api.Users;
 using Servicedesk.Api.Preferences;
 using Servicedesk.Api.Presence;
 using Servicedesk.Api.Notifications;
+using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure;
 using Servicedesk.Infrastructure.Settings;
 
@@ -552,6 +553,28 @@ app.MapGet("/api/system/default-theme", async (ISettingsService settings, Cancel
     return Results.Ok(new { theme });
 })
 .WithName("GetSystemDefaultTheme")
+.WithOpenApi();
+
+// Ticket reference prefix — public derived-settings endpoint (v0.0.57). The
+// app reads this once at bootstrap so the copy-to-clipboard button produces
+// the admin-configured "Ticket#1234" form. Anonymous + cheap (single cached
+// settings read); a store failure falls back to the factory default so the
+// copy button always has a sane prefix.
+app.MapGet("/api/system/ticket-reference-prefix", async (ISettingsService settings, CancellationToken ct) =>
+{
+    var prefix = TicketReference.DefaultPrefix;
+    try
+    {
+        var raw = await settings.GetAsync<string>(SettingKeys.Tickets.ReferencePrefix, ct);
+        if (!string.IsNullOrWhiteSpace(raw)) prefix = raw;
+    }
+    catch
+    {
+        // Settings store unreachable — fall through with the factory default.
+    }
+    return Results.Ok(new { prefix });
+})
+.WithName("GetTicketReferencePrefix")
 .WithOpenApi();
 
 app.MapCspReportEndpoint();

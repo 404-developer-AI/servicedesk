@@ -324,10 +324,14 @@ public sealed class MailIngestServiceTests
     {
         public List<NewTicket> Created { get; } = new();
         public Dictionary<long, Guid> NumberToId { get; } = new();
+        public Dictionary<string, Guid> ZammadNumberToId { get; } = new();
         public Dictionary<Guid, Guid> MergedInto { get; } = new();
 
         public Task<Guid?> GetIdByNumberAsync(long number, CancellationToken ct)
             => Task.FromResult(NumberToId.TryGetValue(number, out var g) ? (Guid?)g : null);
+
+        public Task<Guid?> GetIdByZammadNumberAsync(string zammadNumber, CancellationToken ct)
+            => Task.FromResult(ZammadNumberToId.TryGetValue(zammadNumber, out var g) ? (Guid?)g : null);
 
         public Task<Guid?> GetMergedIntoAsync(Guid ticketId, CancellationToken ct)
             => Task.FromResult(MergedInto.TryGetValue(ticketId, out var g) ? (Guid?)g : null);

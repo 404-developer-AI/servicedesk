@@ -59,6 +59,15 @@ public static class SettingKeys
         public const string DefaultColumnLayout = "Tickets.DefaultColumnLayout";
 
         public const string ShowContactNotLinkedWarning = "Tickets.ShowContactNotLinkedWarning";
+
+        /// v0.0.57 — admin-configurable human-facing ticket reference prefix
+        /// (e.g. "Ticket#"). Drives the copy-to-clipboard value, the outbound
+        /// mail subject tag, the <c>#{ticket.reference}</c> template variable,
+        /// and the survey-invite default text; the parser that resolves it back
+        /// to a ticket (global search, picker, inbound subject threading) reads
+        /// the same value. Bare numbers and a leading "#" are always accepted
+        /// too, so changing this never strands anyone mid-paste.
+        public const string ReferencePrefix = "Tickets.ReferencePrefix";
     }
 
     public static class Storage
@@ -799,8 +808,8 @@ public static class SettingDefaults
 
         new SettingDefault(SettingKeys.Tickets.DefaultPrioritySlug, "normal", "string", "Tickets",
             "Slug of the priority assigned to new tickets when none is specified."),
-        new SettingDefault(SettingKeys.Tickets.ListPageSize, "50", "int", "Tickets",
-            "Default number of rows returned per ticket list page (keyset paginated)."),
+        new SettingDefault(SettingKeys.Tickets.ListPageSize, "1000", "int", "Tickets",
+            "Maximum tickets loaded at once in the ticket list and saved views. The list loads in a single request (no lazy loading); a view with more matches than this shows the first N with a 'refine your filters' note. Clamped to a hard ceiling of 5000 to protect the browser and database."),
         new SettingDefault(SettingKeys.Tickets.NewUserCreatesNotificationTicket, "false", "bool", "Tickets",
             "When true, a system ticket is auto-created whenever a new user registers on the portal."),
         new SettingDefault(SettingKeys.Tickets.SystemTicketsQueueSlug, "", "string", "Tickets",
@@ -811,6 +820,8 @@ public static class SettingDefaults
             "Comma-separated column IDs shown by default in the ticket list for new users."),
         new SettingDefault(SettingKeys.Tickets.ShowContactNotLinkedWarning, "true", "bool", "Tickets",
             "Show a pulsing 'Contact not linked' warning in the ticket side panel when the requester has no current company links."),
+        new SettingDefault(SettingKeys.Tickets.ReferencePrefix, "Ticket#", "string", "Tickets",
+            "Human-facing prefix for a ticket reference (e.g. \"Ticket#\" produces \"Ticket#1234\"). Used by the copy-to-clipboard button, the outbound mail subject tag, the #{ticket.reference} template variable, and survey-invite default text. Pasting a reference in this form into global search, the ticket picker, or a timesheet link resolves it back to the ticket; a bare number or a leading \"#\" are always accepted as well."),
 
         // Storage — ADR-001 (v0.0.8). Keys only; runtime consumers land in later steps.
         new SettingDefault(SettingKeys.Storage.BlobRoot, "/var/lib/servicedesk/blobs", "string", "Storage",

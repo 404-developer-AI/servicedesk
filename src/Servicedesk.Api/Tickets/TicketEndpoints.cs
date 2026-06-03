@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Servicedesk.Api.Auth;
 using Servicedesk.Api.Presence;
+using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth;
@@ -19,6 +20,7 @@ using Servicedesk.Infrastructure.Persistence.Companies;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Realtime;
+using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Surveys;
 using Servicedesk.Infrastructure.Triggers;
@@ -49,7 +51,8 @@ public static class TicketEndpoints
             // separated Guids; invalid tokens are silently dropped so a
             // partially valid query still returns a sensible page.
             string? queueIds, string? statusIds, string? priorityIds,
-            HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess, CancellationToken ct) =>
+            HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess,
+            ISettingsService settings, CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
@@ -65,15 +68,26 @@ public static class TicketEndpoints
                     return Results.Ok(new { items = Array.Empty<object>(), nextCursor = (object?)null, nextOffset = (int?)null });
             }
 
+            var normalizedSearch = await NormalizeTicketSearchAsync(search, settings, ct);
+
+            // Single-load model (v0.0.57): the list + views load all matching
+            // rows in one request up to the admin-configurable cap. No client
+            // limit → fall back to the setting. The repo clamps to a hard
+            // ceiling regardless.
+            int maxRows;
+            try { maxRows = await settings.GetAsync<int>(SettingKeys.Tickets.ListPageSize, ct); }
+            catch { maxRows = 1000; }
+            if (maxRows < 1) maxRows = 1000;
+
             var q = new TicketQuery(
                 QueueId: queueId, StatusId: statusId, PriorityId: priorityId,
                 AssigneeUserId: assigneeUserId, RequesterContactId: requesterContactId,
                 RequesterCompanyId: companyId,
-                Search: search, OpenOnly: openOnly ?? false, OpenFirst: openFirst ?? false,
+                Search: normalizedSearch, OpenOnly: openOnly ?? false, OpenFirst: openFirst ?? false,
                 SortField: sortField, SortDirection: sortDirection,
                 PriorityFloat: priorityFloat ?? false, Offset: offset,
                 CursorUpdatedUtc: cursorUpdatedUtc, CursorId: cursorId,
-                Limit: limit ?? 50,
+                Limit: limit ?? maxRows,
                 AccessibleQueueIds: accessibleQueueIds,
                 QueueIds: ParseGuidList(queueIds),
                 StatusIds: ParseGuidList(statusIds),
@@ -1133,7 +1147,7 @@ public static class TicketEndpoints
         group.MapGet("/picker", async (
             string? q, Guid? excludeTicketId, int? limit,
             HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess,
-            CancellationToken ct) =>
+            ISettingsService settings, CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
@@ -1146,8 +1160,10 @@ public static class TicketEndpoints
                     return Results.Ok(new { items = Array.Empty<object>() });
             }
 
+            var normalizedQuery = await NormalizeTicketSearchAsync(q, settings, ct);
+
             var hits = await repo.SearchPickerAsync(
-                search: q,
+                search: normalizedQuery,
                 excludeTicketId: excludeTicketId ?? Guid.Empty,
                 accessibleQueueIds: accessibleQueueIds,
                 limit: limit ?? 20,
@@ -1658,6 +1674,28 @@ public static class TicketEndpoints
             if (Guid.TryParse(token, out var g)) result.Add(g);
         }
         return result.Count == 0 ? null : result;
+    }
+
+    /// v0.0.57 — normalize a user-typed ticket search so a pasted reference
+    /// ("Ticket#1234", "#1234", "[Ticket#1234]") resolves to the bare number
+    /// the list/picker SQL matches on. Free text and bare numbers pass through
+    /// unchanged. A settings-store hiccup falls back to the factory prefix so
+    /// search never 500s.
+    private static async Task<string?> NormalizeTicketSearchAsync(
+        string? search, ISettingsService settings, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(search)) return search;
+        string prefix;
+        try
+        {
+            var raw = await settings.GetAsync<string>(SettingKeys.Tickets.ReferencePrefix, ct);
+            prefix = string.IsNullOrWhiteSpace(raw) ? TicketReference.DefaultPrefix : raw;
+        }
+        catch
+        {
+            prefix = TicketReference.DefaultPrefix;
+        }
+        return TicketReference.NormalizeSearchTerm(search, prefix);
     }
 
     /// Checks that the agent supplied an acceptable value for every

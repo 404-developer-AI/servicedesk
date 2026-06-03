@@ -221,6 +221,11 @@ export const systemApi = {
   // page can paint with the right palette on first visit (no localStorage yet).
   defaultTheme: () =>
     request<{ theme: "light" | "dark" }>("GET", "/api/system/default-theme"),
+  // v0.0.57 — admin-configurable human-facing ticket reference prefix, e.g.
+  // "Ticket#". Drives the copy-to-clipboard value so a pasted reference
+  // resolves back to the ticket in search / pickers / timesheet links.
+  ticketReferencePrefix: () =>
+    request<{ prefix: string }>("GET", "/api/system/ticket-reference-prefix"),
 };
 
 export type IncidentSeverity = "Warning" | "Critical";

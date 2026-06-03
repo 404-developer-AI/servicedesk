@@ -63,23 +63,28 @@ public sealed record TicketPdfPin(
 public static partial class TicketPdfGenerator
 {
     // ── Palette ──────────────────────────────────────────────────────────────
-    private static readonly string PageBg        = "#0a0a0f";
-    private static readonly string CardBg         = "#141418";
-    private static readonly string CardBorder      = "#2a2a30";
-    private static readonly string TextPrimary     = "#fafafa";
-    private static readonly string TextSecondary   = "#9a9aaa";
-    private static readonly string TextTertiary    = "#6a6a7a";
-    private static readonly string AccentPurple    = "#b8a7e8";
-    private static readonly string AccentBlue      = "#5b9bf5";
-    private static readonly string HeaderBg        = "#1a1030";
-    private static readonly string ColorSuccess    = "#10b981";
-    private static readonly string ColorWarning    = "#f59e0b";
-    private static readonly string ColorError      = "#ef4444";
-    private static readonly string ColorInfo       = "#0ea5e9";
-    private static readonly string ColorAmber      = "#f59e0b";
-    private static readonly string ColorViolet     = "#8b5cf6";
-    private static readonly string ColorCyan       = "#06b6d4";
-    private static readonly string ColorLightViolet = "#a78bfa";
+    // Light, print-friendly palette (white page, dark text). Accent + status
+    // colours are darkened versions of the in-app tokens so they stay readable
+    // as text on white and carry enough contrast under white badge labels.
+    private static readonly string PageBg        = "#ffffff";
+    private static readonly string CardBg         = "#f7f8fc";
+    private static readonly string CardBorder      = "#e6e7ee";
+    private static readonly string BlockBg         = "#eef0f6";
+    private static readonly string ChipBg          = "#e9edfb";
+    private static readonly string TextPrimary     = "#1b1e27";
+    private static readonly string TextSecondary   = "#4b4f5a";
+    private static readonly string TextTertiary    = "#8b8e99";
+    private static readonly string AccentPurple    = "#6d4ad1";
+    private static readonly string AccentBlue      = "#2563eb";
+    private static readonly string HeaderBg        = "#efeafb";
+    private static readonly string ColorSuccess    = "#059669";
+    private static readonly string ColorWarning    = "#b45309";
+    private static readonly string ColorError      = "#dc2626";
+    private static readonly string ColorInfo       = "#0284c7";
+    private static readonly string ColorAmber      = "#b45309";
+    private static readonly string ColorViolet     = "#7c3aed";
+    private static readonly string ColorCyan       = "#0891b2";
+    private static readonly string ColorLightViolet = "#7c3aed";
 
     [GeneratedRegex("<[^>]+>")]
     private static partial Regex HtmlTagRegex();
@@ -507,7 +512,7 @@ public static partial class TicketPdfGenerator
                             if (evt.IsInternal)
                             {
                                 hrow.AutoItem().PaddingLeft(5)
-                                    .Background("#1e1e30")
+                                    .Background(ChipBg)
                                     .PaddingVertical(1).PaddingHorizontal(4)
                                     .Text("Internal")
                                     .FontSize(7).FontColor(AccentBlue);
@@ -537,7 +542,7 @@ public static partial class TicketPdfGenerator
                         if (!string.IsNullOrWhiteSpace(bodyText))
                         {
                             content.Item()
-                                .Background("#0f0f14")
+                                .Background(BlockBg)
                                 .Padding(8)
                                 .Text(bodyText.Trim())
                                 .FontSize(8.5f)
@@ -553,7 +558,7 @@ public static partial class TicketPdfGenerator
                                 try
                                 {
                                     content.Item()
-                                        .Background("#0f0f14")
+                                        .Background(BlockBg)
                                         .Padding(8)
                                         .Column(imgCol =>
                                         {
@@ -583,7 +588,7 @@ public static partial class TicketPdfGenerator
                         if (attachments.Count > 0)
                         {
                             content.Item()
-                                .Background("#0f0f14")
+                                .Background(BlockBg)
                                 .Padding(8)
                                 .Column(attCol =>
                                 {

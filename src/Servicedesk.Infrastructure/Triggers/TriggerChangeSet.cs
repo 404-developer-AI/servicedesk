@@ -12,13 +12,21 @@ public sealed record TriggerChangeSet(
     IReadOnlySet<string> ChangedFields,
     bool ArticleAdded)
 {
+    /// True when the article that was just added is the ticket-CREATING event
+    /// (e.g. the inbound customer mail that opened the ticket), as opposed to a
+    /// reply appended to an existing ticket. Drives the
+    /// <see cref="TriggerFieldKeys.TicketIsNew"/> condition so an auto-reply can
+    /// fire only on the first message. Defaults false — only the mail-ingest
+    /// creation path sets it.
+    public bool IsTicketCreation { get; init; }
+
     public static readonly TriggerChangeSet Empty = new(new HashSet<string>(), false);
 
     public static TriggerChangeSet AllFieldsNew()
         => new(AllTicketFieldKeys, ArticleAdded: true);
 
-    public static TriggerChangeSet ArticleOnly()
-        => new(new HashSet<string>(), ArticleAdded: true);
+    public static TriggerChangeSet ArticleOnly(bool isTicketCreation = false)
+        => new(new HashSet<string>(), ArticleAdded: true) { IsTicketCreation = isTicketCreation };
 
     /// Field-keys that map to ticket-level columns that change in
     /// <c>TicketEndpoints.update</c>. Kept in one place so call sites that
@@ -52,6 +60,8 @@ public static class TriggerFieldKeys
     public const string TicketCompanyId = "ticket.company.id";
     public const string TicketSubject = "ticket.subject";
     public const string TicketTags = "ticket.tags";
+
+    public const string TicketIsNew = "ticket.is_new";
 
     public const string ArticleSender = "article.sender";
     public const string ArticleType = "article.type";

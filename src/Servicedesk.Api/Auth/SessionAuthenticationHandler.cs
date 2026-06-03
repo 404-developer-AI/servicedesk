@@ -23,6 +23,20 @@ public sealed class SessionAuthenticationHandler : AuthenticationHandler<Authent
     public const string SchemeName = "Servicedesk.Session";
     public const string AmrClaimType = "amr";
 
+    /// AMR value for a session that passed the password step but still owes a
+    /// TOTP challenge (2FA-enabled user, pre-verify). Such a session is
+    /// authenticated but NOT authorized for app endpoints — the role policies
+    /// reject it (see <see cref="AuthorizationPolicies"/>). The /2fa/verify
+    /// step upgrades it to "pwd+mfa". Any other amr ("pwd", "pwd+mfa", "ext"
+    /// for M365) is a fully-authorized session.
+    public const string AmrPending = "mfa-pending";
+
+    /// Cache key for a validated session. Centralised so callers that mutate a
+    /// session's amr (e.g. the 2FA verify upgrade) can evict the same entry
+    /// this handler caches, otherwise the stale amr lingers for up to
+    /// <see cref="CacheDuration"/> and access stays blocked after verifying.
+    public static string CacheKey(Guid sessionId) => $"session:{sessionId}";
+
     /// How long a validated session is kept in the memory cache before
     /// we re-query the database.
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
@@ -58,7 +72,7 @@ public sealed class SessionAuthenticationHandler : AuthenticationHandler<Authent
             return AuthenticateResult.NoResult();
         }
 
-        var cacheKey = $"session:{sessionId}";
+        var cacheKey = CacheKey(sessionId);
 
         // Try the in-memory cache first to avoid a DB round-trip.
         if (!_cache.TryGetValue(cacheKey, out CachedSession? cached) || cached is null)

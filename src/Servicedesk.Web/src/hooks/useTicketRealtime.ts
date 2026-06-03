@@ -38,14 +38,25 @@ export function useTicketListRealtime() {
   React.useEffect(() => {
     const hub = getConnection();
 
+    // Coalesce bursts of list-change broadcasts into a single refetch. In a
+    // busy install every ticket create/update fires TicketListUpdated; the
+    // ticket list is now a single full-load query, so invalidating on every
+    // event would refetch the whole list repeatedly and make it flicker. A
+    // short trailing debounce keeps the list fresh without thrashing.
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const onListUpdated = () => {
-      queryClient.invalidateQueries({ queryKey: ["tickets"] });
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        queryClient.invalidateQueries({ queryKey: ["tickets"] });
+      }, 1500);
     };
 
     hub.on("TicketListUpdated", onListUpdated);
 
     return () => {
       hub.off("TicketListUpdated", onListUpdated);
+      if (timer) clearTimeout(timer);
     };
   }, [queryClient]);
 }

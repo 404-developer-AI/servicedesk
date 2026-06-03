@@ -99,8 +99,12 @@ public sealed class OutboundMailService : IOutboundMailService
 
         // Always ensure the ticket tag is in the subject so the customer sees
         // which ticket this is about — and so their client-side threading plus
-        // our subject-based fallback both have a reliable marker.
-        var subject = NormalizeSubject(request.Subject, detail.Ticket.Number);
+        // our subject-based fallback both have a reliable marker. The visible
+        // prefix is admin-configurable (Tickets.ReferencePrefix → "Ticket#"),
+        // so the tag reads "[Ticket#1234]".
+        var refPrefix = await _settings.GetAsync<string>(SettingKeys.Tickets.ReferencePrefix, ct);
+        if (string.IsNullOrWhiteSpace(refPrefix)) refPrefix = TicketReference.DefaultPrefix;
+        var subject = NormalizeSubject(request.Subject, detail.Ticket.Number, refPrefix);
 
         // Resolve attachments and prepare inline/cid-rewrite + Graph payload.
         // We accept any user-supplied id but only act on rows that *belong*
@@ -317,10 +321,10 @@ public sealed class OutboundMailService : IOutboundMailService
         return OutboundMailResult.Ok(evt, mentionedIds.Count);
     }
 
-    private static string NormalizeSubject(string subject, long ticketNumber)
+    private static string NormalizeSubject(string subject, long ticketNumber, string prefix)
     {
         var clean = (subject ?? string.Empty).Trim();
-        var tag = $"[#{ticketNumber}]";
+        var tag = $"[{TicketReference.Format(ticketNumber, prefix)}]";
         // Already contains the CURRENT ticket's tag — typically on replies
         // where the customer's client carried our tag back in the Re:
         // subject. Don't double-tag. A stray tag from an unrelated thread

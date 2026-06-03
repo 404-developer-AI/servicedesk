@@ -33,14 +33,19 @@ public sealed class TriggerSeeder : IHostedService
         "Sends a quick acknowledgement to the customer when a new ticket arrives by mail. " +
         "Off by default — review the body and toggle on once you're happy with the wording.";
 
-    // Conditions: article.sender = "Customer" — keeps the auto-reply
-    // from firing on agent comments or system notes. Admins typically
-    // tighten this further (e.g. status = New) once they've reviewed it.
+    // Conditions: fire ONLY on the first inbound customer mail (the one that
+    // opened the ticket), never on replies — otherwise every customer reply,
+    // including a reply to our own auto-reply, would trigger another one.
+    //   • article.sender = Customer  → not agent comments / system notes
+    //   • article.type   = MailReceived → inbound mail, not an outbound MailSent
+    //   • ticket.is_new  = true       → the ticket-creating message only
     private const string Conditions = """
         {
           "op": "AND",
           "items": [
-            { "field": "article.sender", "operator": "is", "value": "Customer" }
+            { "field": "article.sender", "operator": "is", "value": "Customer" },
+            { "field": "article.type", "operator": "is", "value": "MailReceived" },
+            { "field": "ticket.is_new", "operator": "is", "value": "true" }
           ]
         }
         """;
@@ -53,8 +58,8 @@ public sealed class TriggerSeeder : IHostedService
           {
             "kind": "send_mail",
             "to": "customer",
-            "subject": "Re: #{ticket.subject} [##{ticket.number}]",
-            "body_html": "<p>Hi #{ticket.customer.firstname},</p><p>Thanks for reaching out — we received your message and a colleague will follow up shortly.</p><p>Reference: <strong>##{ticket.number}</strong></p><p>Kind regards,<br/>The team</p>"
+            "subject": "Re: #{ticket.subject} [#{ticket.reference}]",
+            "body_html": "<p>Hi #{ticket.customer.firstname},</p><p>Thanks for reaching out — we received your message and a colleague will follow up shortly.</p><p>Reference: <strong>#{ticket.reference}</strong></p><p>Kind regards,<br/>The team</p>"
           }
         ]
         """;

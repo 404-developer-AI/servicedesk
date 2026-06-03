@@ -4,6 +4,8 @@ import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Check, Copy, Download, FileDown, GitBranch, PanelRightClose, PanelRightOpen, Pencil, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatTicketRef } from "@/lib/ticketRef";
+import { useTicketReferencePrefix } from "@/hooks/useTicketReferencePrefix";
 import { ticketApi, contactApi, type ContactCompanyRole, type GateConfirmation, type StatusGateMatch, type Ticket, type TicketFieldUpdate } from "@/lib/ticket-api";
 import { StatusGateDialog } from "@/components/StatusGateDialog";
 import { ContactCompanyGateDialog } from "@/components/ContactCompanyGateDialog";
@@ -63,12 +65,14 @@ function LoadingSkeleton() {
 
 function TicketNumber({ number }: { number: number }) {
   const [copied, setCopied] = React.useState(false);
+  const refPrefix = useTicketReferencePrefix();
 
   const handleCopy = async () => {
-    // Copy just the number — the visible "#" prefix is decoration; the
-    // global search and ticket-lookup endpoints match on the bare digits,
-    // so pasting with the prefix returns no hits.
-    await navigator.clipboard.writeText(String(number));
+    // Copy the full reference ("Ticket#1234"). The backend parsers for global
+    // search, the ticket picker, timesheet links and inbound mail all strip
+    // the prefix again, so pasting this form resolves straight back to the
+    // ticket without anyone having to delete "Ticket#" by hand.
+    await navigator.clipboard.writeText(formatTicketRef(number, refPrefix));
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };

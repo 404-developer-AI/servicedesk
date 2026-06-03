@@ -60,8 +60,9 @@ public sealed class TriggerRenderContextFactory : ITriggerRenderContextFactory
             ? _users.FindByIdAsync(ticket.AssigneeUserId.Value, ct)
             : Task.FromResult<ApplicationUser?>(null);
         var publicBaseUrlTask = _settings.GetAsync<string>(SettingKeys.App.PublicBaseUrl, ct);
+        var refPrefixTask = _settings.GetAsync<string>(SettingKeys.Tickets.ReferencePrefix, ct);
 
-        await Task.WhenAll(queueTask, priorityTask, statusTask, contactTask, companyTask, ownerTask, publicBaseUrlTask);
+        await Task.WhenAll(queueTask, priorityTask, statusTask, contactTask, companyTask, ownerTask, publicBaseUrlTask, refPrefixTask);
 
         var queue = await queueTask;
         var priority = await priorityTask;
@@ -70,12 +71,15 @@ public sealed class TriggerRenderContextFactory : ITriggerRenderContextFactory
         var company = await companyTask;
         var owner = await ownerTask;
         var publicBaseUrl = (await publicBaseUrlTask)?.TrimEnd('/') ?? string.Empty;
+        var refPrefix = await refPrefixTask;
+        if (string.IsNullOrWhiteSpace(refPrefix)) refPrefix = TicketReference.DefaultPrefix;
 
         var (articleFrom, articleSubject) = ParseArticleMetadata(ctx.TriggeringEvent);
 
         var s = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             ["ticket.number"] = ticket.Number.ToString(CultureInfo.InvariantCulture),
+            ["ticket.reference"] = TicketReference.Format(ticket.Number, refPrefix),
             ["ticket.subject"] = ticket.Subject,
             ["ticket.url"] = string.IsNullOrEmpty(publicBaseUrl)
                 ? $"/tickets/{ticket.Number}"

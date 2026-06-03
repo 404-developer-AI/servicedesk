@@ -114,7 +114,9 @@ internal sealed class SendMailHandler : ITriggerActionHandler
         if (string.IsNullOrWhiteSpace(plusToken)) plusToken = "TCK";
         var replyToAddress = BuildPlusAddress(fromMailbox!, plusToken!, ctx.Ticket.Number);
         var fromName = !string.IsNullOrWhiteSpace(queue?.Name) ? queue!.Name : fromMailbox!;
-        var subject = NormalizeSubject(rawSubject, ctx.Ticket.Number);
+        var refPrefix = await _settings.GetAsync<string>(SettingKeys.Tickets.ReferencePrefix, ct);
+        if (string.IsNullOrWhiteSpace(refPrefix)) refPrefix = TicketReference.DefaultPrefix;
+        var subject = NormalizeSubject(rawSubject, ctx.Ticket.Number, refPrefix);
         var anchor = await _mail.GetLatestThreadAnchorAsync(ctx.TicketId, ct);
 
         var graphMsg = new GraphOutboundMessage(
@@ -130,10 +132,14 @@ internal sealed class SendMailHandler : ITriggerActionHandler
             // x-, so we use X-Auto-Submitted; the GraphMailClient inbound
             // path treats X-Auto-Submitted and Auto-Submitted as
             // equivalent so a reply chain that echoes either header back
-            // is skipped on the next ingest cycle.
+            // is skipped on the next ingest cycle. X-Auto-Response-Suppress
+            // (Microsoft/Exchange-specific) additionally tells Outlook and
+            // Exchange to suppress OOF / auto-replies to this message, so a
+            // recipient's out-of-office never bounces back at us.
             InternetMessageHeaders: new[]
             {
                 new GraphOutboundHeader("X-Auto-Submitted", "auto-generated"),
+                new GraphOutboundHeader("X-Auto-Response-Suppress", "All"),
                 new GraphOutboundHeader("X-Servicedesk-Triggered-By", ctx.TriggerId.ToString()),
             });
 
@@ -277,10 +283,10 @@ internal sealed class SendMailHandler : ITriggerActionHandler
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
-    private static string NormalizeSubject(string subject, long ticketNumber)
+    private static string NormalizeSubject(string subject, long ticketNumber, string prefix)
     {
         var clean = (subject ?? string.Empty).Trim();
-        var tag = $"[#{ticketNumber}]";
+        var tag = $"[{TicketReference.Format(ticketNumber, prefix)}]";
         // Match the CURRENT ticket's tag only. A stray "[#1234]" from an
         // unrelated forwarded/quoted thread must not block us from
         // appending our own tag — otherwise the new outbound mail would
