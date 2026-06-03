@@ -86,9 +86,11 @@ public sealed class TicketPresenceHub : Hub
     /// <summary>
     /// Opt this connection into the agent-activity broadcast stream — the
     /// dashboard tile calls this on mount. Agents/Admins only (customers
-    /// never see the tile); a customer call is a silent no-op. On join we
-    /// push a fresh record for the caller so a just-mounted tile reflects
-    /// the caller's own state immediately, before any other change fires.
+    /// never see the tile); a customer call is a silent no-op. After joining
+    /// we push a fresh record for the caller so a just-mounted tile reflects
+    /// the caller's own online state immediately, even when the connect-time
+    /// broadcast fired before this join and the REST snapshot raced ahead of
+    /// OnConnectedAsync.
     /// </summary>
     public async Task JoinAgentActivity()
     {
@@ -99,6 +101,19 @@ public sealed class TicketPresenceHub : Hub
             return;
         }
         await Groups.AddToGroupAsync(Context.ConnectionId, AgentActivityBroadcastGroup);
+
+        // Push a fresh record for the caller now that they're in the group.
+        // The OnConnectedAsync broadcast fired before this join, so the
+        // caller missed their own online status; and the REST snapshot
+        // backing the tile can race ahead of OnConnectedAsync on a hard
+        // refresh, returning the caller as offline. Without this push the
+        // tile would show the caller offline until some *other* agent's
+        // presence changed. Broadcasting to the group (rather than just the
+        // caller) is harmless — peers already hold this agent's state.
+        if (Connections.TryGetValue(Context.ConnectionId, out var state))
+        {
+            await BroadcastAgentActivity(state.UserId);
+        }
     }
 
     /// <summary>

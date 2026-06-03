@@ -54,6 +54,12 @@ public sealed class AdsolutSalesReceiptRow
     /// live in the list query. Null when there is no Ticket# in the
     /// description, no matching ticket, or no registered hours.
     public int? TotalMinutes { get; set; }
+
+    /// "Back Office checked" marker for this receipt (context 'adsolut' in
+    /// timesheet_bo_checks). CheckedByEmail / CheckedUtc record who/when.
+    public bool BoChecked { get; set; }
+    public DateTime? CheckedUtc { get; set; }
+    public string? CheckedByEmail { get; set; }
 }
 
 /// One task's registered minutes for a receipt's matched ticket (hours pill
@@ -135,7 +141,8 @@ public interface IAdsolutSalesReceiptRepository
     /// bruto/difference sorts order on rate × registered hours. Empty values always
     /// sort last regardless of direction.
     Task<AdsolutSalesReceiptListResult> ListAsync(
-        string? search, int page, int pageSize, string? sort, string? dir, decimal hourlyRate, CancellationToken ct = default);
+        string? search, int page, int pageSize, string? sort, string? dir, decimal hourlyRate,
+        string? boFilter, CancellationToken ct = default);
 
     /// One receipt with its product + performance lines (for the expand view).
     Task<AdsolutSalesReceiptDetail?> GetDetailAsync(Guid id, CancellationToken ct = default);
@@ -424,7 +431,8 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
         """;
 
     public async Task<AdsolutSalesReceiptListResult> ListAsync(
-        string? search, int page, int pageSize, string? sort, string? dir, decimal hourlyRate, CancellationToken ct = default)
+        string? search, int page, int pageSize, string? sort, string? dir, decimal hourlyRate,
+        string? boFilter, CancellationToken ct = default)
     {
         var safePage = Math.Max(1, page);
         var safePageSize = Math.Clamp(pageSize, 1, 200);
@@ -433,6 +441,16 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
         var hasSearch = term.Length > 0;
         var like = "%" + term.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
         long? docProbe = long.TryParse(term, out var dn) ? dn : null;
+
+        // Whitelisted "BO checked" filter. The bo join is on receipt id with
+        // context 'adsolut'; both the count and the page query carry it so
+        // pagination stays consistent with the filter.
+        var boClause = (boFilter ?? "all").Trim().ToLowerInvariant() switch
+        {
+            "checked" => "AND bo.entity_id IS NOT NULL",
+            "unchecked" => "AND bo.entity_id IS NULL",
+            _ => string.Empty,
+        };
 
         // Whitelisted sort expression (no user string ever reaches the SQL).
         // bruto/difference order on rate × registered hours via the @Rate param.
@@ -451,12 +469,15 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var total = await conn.ExecuteScalarAsync<int>(new CommandDefinition(
-            """
-            SELECT COUNT(*)::int FROM adsolut_sales_receipts
+            $"""
+            SELECT COUNT(*)::int
+            FROM adsolut_sales_receipts r
+            LEFT JOIN timesheet_bo_checks bo ON bo.entity_id = r.id AND bo.context = 'adsolut'
             WHERE (@HasSearch = FALSE
-                   OR customer_name ILIKE @Like
-                   OR description ILIKE @Like
-                   OR (@DocProbe IS NOT NULL AND doc_nr = @DocProbe))
+                   OR r.customer_name ILIKE @Like
+                   OR r.description ILIKE @Like
+                   OR (@DocProbe IS NOT NULL AND r.doc_nr = @DocProbe))
+            {boClause}
             """,
             new { HasSearch = hasSearch, Like = like, DocProbe = docProbe },
             cancellationToken: ct));
@@ -487,7 +508,10 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
                 r.adsolut_last_modified AS AdsolutLastModified,
                 r.synced_utc            AS SyncedUtc,
                 r.ticket_number         AS TicketNumber,
-                te.total_minutes        AS TotalMinutes
+                te.total_minutes        AS TotalMinutes,
+                (bo.entity_id IS NOT NULL) AS BoChecked,
+                bo.checked_utc          AS CheckedUtc,
+                bu.email                AS CheckedByEmail
             FROM adsolut_sales_receipts r
             LEFT JOIN tickets tk ON tk.number = r.ticket_number
             LEFT JOIN (
@@ -495,10 +519,13 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
                 FROM timesheet_entries
                 GROUP BY ticket_id
             ) te ON te.ticket_id = tk.id
+            LEFT JOIN timesheet_bo_checks bo ON bo.entity_id = r.id AND bo.context = 'adsolut'
+            LEFT JOIN users bu ON bu.id = bo.checked_by
             WHERE (@HasSearch = FALSE
                    OR r.customer_name ILIKE @Like
                    OR r.description ILIKE @Like
                    OR (@DocProbe IS NOT NULL AND r.doc_nr = @DocProbe))
+            {boClause}
             ORDER BY {sortExpr} {dirSql} NULLS LAST, r.doc_nr DESC NULLS LAST
             LIMIT @Limit OFFSET @Offset
             """,

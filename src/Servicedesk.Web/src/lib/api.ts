@@ -806,6 +806,10 @@ export type AdsolutSalesReceiptHeader = {
   // Gross price = hourly rate × registered hours. null when no hours or no
   // rate configured (Settings → Timesheet → Hourly rate).
   brutoPrice: number | null;
+  // "Back Office checked" marker for this receipt (context 'adsolut').
+  boChecked: boolean;
+  checkedUtc: string | null;
+  checkedByEmail: string | null;
 };
 
 export type AdsolutReceiptHours = {
@@ -868,6 +872,7 @@ export const adsolutTimesheetApi = {
     pageSize = 50,
     sort = "date",
     dir: "asc" | "desc" = "desc",
+    boFilter: "all" | "checked" | "unchecked" = "all",
   ) => {
     const qs = new URLSearchParams({
       page: String(page),
@@ -876,6 +881,7 @@ export const adsolutTimesheetApi = {
       dir,
     });
     if (search.trim()) qs.set("search", search.trim());
+    if (boFilter !== "all") qs.set("boFilter", boFilter);
     return request<AdsolutSalesReceiptListResponse>(
       "GET",
       `/api/timesheet/adsolut/receipts?${qs.toString()}`,
@@ -889,6 +895,68 @@ export const adsolutTimesheetApi = {
     request<AdsolutSalesReceiptDetail>(
       "POST",
       `/api/timesheet/adsolut/receipts/${id}/resync`,
+    ),
+};
+
+// ---- Back-office Timesheet tabs (Resolved / CWI) — v0.0.56 -----------
+
+export type BackofficeContext = "resolved" | "cwi" | "adsolut";
+
+export type BackofficeTicket = {
+  ticketId: string;
+  ticketNumber: number;
+  subject: string;
+  companyName: string | null;
+  /// Total registered timesheet minutes on the ticket (all agents).
+  totalMinutes: number;
+  boChecked: boolean;
+  checkedUtc: string | null;
+  checkedByEmail: string | null;
+  /// When the ticket entered its current status (server-resolved).
+  enteredUtc: string;
+};
+
+export type BackofficeListResponse = {
+  year: number;
+  month: number;
+  /// False when no statuses are configured for this tab in Settings —
+  /// the tab then renders a "configure statuses" hint instead of an
+  /// empty list that looks like a bug.
+  statusesConfigured: boolean;
+  items: BackofficeTicket[];
+};
+
+export type BackofficeTicketHours = {
+  totalMinutes: number;
+  byTask: { taskName: string; isAbsence: boolean; minutes: number }[];
+};
+
+/// Agent-facing data for the back-office Resolved + CWI tabs. The two
+/// list calls take a calendar month (1-12); the server resolves the month
+/// boundaries in its own timezone.
+export const backofficeTimesheetApi = {
+  listResolved: (year: number, month: number) =>
+    request<BackofficeListResponse>(
+      "GET",
+      `/api/timesheet/backoffice/resolved?year=${year}&month=${month}`,
+    ),
+  listCwi: (year: number, month: number) =>
+    request<BackofficeListResponse>(
+      "GET",
+      `/api/timesheet/backoffice/cwi?year=${year}&month=${month}`,
+    ),
+  ticketHours: (ticketId: string) =>
+    request<BackofficeTicketHours>(
+      "GET",
+      `/api/timesheet/backoffice/tickets/${ticketId}/hours`,
+    ),
+  /// Tick/untick the BO marker for a set of entities on one tab. `ids` are
+  /// ticket ids for resolved/cwi and sales-receipt ids for adsolut.
+  setChecks: (context: BackofficeContext, ids: string[], checked: boolean) =>
+    request<{ ok: boolean; count: number; checked: boolean }>(
+      "POST",
+      "/api/timesheet/backoffice/checks",
+      { context, ids, checked },
     ),
 };
 

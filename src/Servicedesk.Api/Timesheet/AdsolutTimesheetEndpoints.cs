@@ -36,12 +36,13 @@ public static class AdsolutTimesheetEndpoints
         int? pageSize,
         string? sort,
         string? dir,
+        string? boFilter,
         IAdsolutSalesReceiptRepository repo,
         ISettingsService settings,
         CancellationToken ct)
     {
         var rate = await ReadHourlyRateAsync(settings, ct);
-        var result = await repo.ListAsync(search, page ?? 1, pageSize ?? 50, sort, dir, rate, ct);
+        var result = await repo.ListAsync(search, page ?? 1, pageSize ?? 50, sort, dir, rate, boFilter, ct);
         return Results.Ok(new
         {
             items = result.Items.Select(r => ToHeaderDto(r, ComputeBruto(rate, r.TotalMinutes))),
@@ -182,6 +183,9 @@ public static class AdsolutTimesheetEndpoints
         ticketNumber = r.TicketNumber,
         totalMinutes = r.TotalMinutes,
         brutoPrice,
+        boChecked = r.BoChecked,
+        checkedUtc = r.CheckedUtc,
+        checkedByEmail = r.CheckedByEmail,
     };
 
     private static object ToDetailDto(AdsolutSalesReceiptDetail d) => new

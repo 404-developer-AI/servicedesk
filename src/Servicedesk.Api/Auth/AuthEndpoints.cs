@@ -354,6 +354,11 @@ public static class AuthEndpoints
         // the live Adsolut connection state — the tab only renders when
         // both are true.
         var adsolutTimesheetEnabled = await users.GetAdsolutTimesheetEnabledAsync(userId, ct);
+        // v0.0.56 — per-user opt-in for the back-office Resolved + CWI
+        // timesheet tabs. Gates the two tabs in the SPA; the underlying
+        // /api/timesheet/backoffice endpoints carry RequireAgent so the
+        // gate is feature-visibility, not security authorization.
+        var timesheetBackofficeEnabled = await users.GetTimesheetBackofficeEnabledAsync(userId, ct);
         // Whether the Adsolut integration is connected (configured + valid
         // refresh token, no refresh error). Resolved here so a non-admin
         // agent can gate the Adsolut timesheet tab without the admin-only
@@ -396,6 +401,7 @@ public static class AuthEndpoints
                 activityFeedEnabled,
                 assetsEnabled,
                 adsolutTimesheetEnabled,
+                timesheetBackofficeEnabled,
                 adsolutConnected,
                 dashboardTiles = tiles.Select(t => new { tileId = t.TileId, size = t.Size }).ToList(),
                 effectiveTheme,
