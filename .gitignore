@@ -155,6 +155,7 @@ Adsolut.md
 Adsolut.openapi.json
 AdsolutErpApi.md
 KnowledgeBase.md
+EmailSignatures.md
 
 # Brand-asset source-staging (multi-resolution originals). The bundled
 # copies the app actually serves live under src/Servicedesk.Web/src/assets/.

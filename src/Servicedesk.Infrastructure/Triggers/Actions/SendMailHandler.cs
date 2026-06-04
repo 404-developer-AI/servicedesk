@@ -13,6 +13,7 @@ using Servicedesk.Infrastructure.Persistence.Companies;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Signatures;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Triggers.Templating;
 
@@ -41,6 +42,7 @@ internal sealed class SendMailHandler : ITriggerActionHandler
     private readonly ISlaEngine _sla;
     private readonly TriggerMailDedupTracker _dedup;
     private readonly ITriggerTemplateRenderer _renderer;
+    private readonly ISignatureComposer _signatures;
     private readonly ILogger<SendMailHandler> _logger;
 
     public SendMailHandler(
@@ -55,6 +57,7 @@ internal sealed class SendMailHandler : ITriggerActionHandler
         ISlaEngine sla,
         TriggerMailDedupTracker dedup,
         ITriggerTemplateRenderer renderer,
+        ISignatureComposer signatures,
         ILogger<SendMailHandler> logger)
     {
         _graph = graph;
@@ -68,6 +71,7 @@ internal sealed class SendMailHandler : ITriggerActionHandler
         _sla = sla;
         _dedup = dedup;
         _renderer = renderer;
+        _signatures = signatures;
         _logger = logger;
     }
 
@@ -119,15 +123,27 @@ internal sealed class SendMailHandler : ITriggerActionHandler
         var subject = NormalizeSubject(rawSubject, ctx.Ticket.Number, refPrefix);
         var anchor = await _mail.GetLatestThreadAnchorAsync(ctx.TicketId, ct);
 
+        // System signature (v0.0.58). Trigger mail has no human sender, so the
+        // configured system signature is used (person variables collapse to
+        // empty). Appended only to the wire body — the timeline event keeps the
+        // template body, because the signature's images are cid-only. A null
+        // result means the feature is off, replies are suppressed, or no system
+        // signature is configured.
+        var wireBody = bodyHtml;
+        var signature = await _signatures.ComposeSystemAsync(isReply: anchor is not null, ct);
+        var signatureAttachments = signature?.Attachments;
+        if (signature is not null)
+            wireBody = AppendSignature(bodyHtml, signature.Html);
+
         var graphMsg = new GraphOutboundMessage(
             FromMailbox: fromMailbox!,
             Subject: subject,
-            BodyHtml: bodyHtml,
+            BodyHtml: wireBody,
             To: recipients,
             Cc: Array.Empty<GraphRecipient>(),
             Bcc: Array.Empty<GraphRecipient>(),
             ReplyTo: new[] { new GraphRecipient(replyToAddress, fromName) },
-            Attachments: null,
+            Attachments: signatureAttachments is { Count: > 0 } ? signatureAttachments : null,
             // Microsoft Graph only persists custom headers prefixed with
             // x-, so we use X-Auto-Submitted; the GraphMailClient inbound
             // path treats X-Auto-Submitted and Auto-Submitted as
@@ -313,6 +329,9 @@ internal sealed class SendMailHandler : ITriggerActionHandler
 
     private static string? FirstNonEmpty(string? a, string? b)
         => !string.IsNullOrWhiteSpace(a) ? a : (!string.IsNullOrWhiteSpace(b) ? b : null);
+
+    private static string AppendSignature(string body, string signatureHtml)
+        => string.IsNullOrWhiteSpace(signatureHtml) ? body : $"{body}<br>{signatureHtml}";
 
     /// Anchors and images carry meaningful payload that disappears under
     /// a naive tag-strip. We surface the href and alt-text inline so the

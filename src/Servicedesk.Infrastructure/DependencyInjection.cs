@@ -37,6 +37,7 @@ using Servicedesk.Domain.Search;
 using Servicedesk.Infrastructure.Search;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Signatures;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Storage;
 using Servicedesk.Infrastructure.Surveys;
@@ -408,6 +409,19 @@ public static class DependencyInjection
         services.AddSingleton<IComposeTemplateRepository, ComposeTemplateRepository>();
         services.AddSingleton<IComposeTokenResolver, ComposeTokenResolver>();
 
+        // Email signatures (v0.0.58). Renderer + sanitizer are stateless;
+        // repositories follow the NpgsqlDataSource + Dapper pattern. The
+        // resolver caches resolved variables in IMemoryCache (invalidated on a
+        // profile edit) and lazily caches the Entra photo as a blob. The
+        // composer is the send-path entry point used by both OutboundMailService
+        // and the trigger SendMailHandler.
+        services.AddSingleton<ISignatureHtmlSanitizer, SignatureHtmlSanitizer>();
+        services.AddSingleton<ISignatureRenderer, SignatureRenderer>();
+        services.AddSingleton<ISignatureRepository, SignatureRepository>();
+        services.AddSingleton<IAgentProfileRepository, AgentProfileRepository>();
+        services.AddSingleton<ISignatureVariableResolver, SignatureVariableResolver>();
+        services.AddSingleton<ISignatureComposer, SignatureComposer>();
+
         // Intake Forms (v0.0.19)
         services.AddSingleton<IIntakeTemplateRepository, IntakeTemplateRepository>();
         services.AddSingleton<IIntakeFormRepository, IntakeFormRepository>();
@@ -448,6 +462,12 @@ public static class DependencyInjection
         // again by the ScopedSearchSource decorator.
         services.AddSingleton<TriggerSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<TriggerSearchSource>()));
+
+        // Email-signatures search-source (v0.0.58). Admin-only — agents and
+        // customers see zero hits, enforced inside the source and again by the
+        // ScopedSearchSource decorator.
+        services.AddSingleton<SignatureSearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<SignatureSearchSource>()));
 
         // Timesheet search-source (v0.0.35 commit H). Customer sees zero
         // hits; Agent/Admin see entries scoped by the timesheet_manager

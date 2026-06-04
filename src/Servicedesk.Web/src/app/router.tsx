@@ -62,6 +62,7 @@ import { KnowledgeBaseSettingsPage } from "@/pages/settings/KnowledgeBaseSetting
 import { TimesheetPage } from "@/pages/timesheet/TimesheetPage";
 import { TimesheetSettingsPage } from "@/pages/settings/TimesheetSettingsPage";
 import { ActivityFeedPage } from "@/pages/activity/ActivityFeedPage";
+import { SignaturesSettingsPage } from "@/pages/settings/SignaturesSettingsPage";
 
 // The router reads the "current role" outside of React here (for the
 // beforeLoad gate). The auth store is populated by bootstrapAuth() in
@@ -401,6 +402,12 @@ const settingsTemplatesRoute = createRoute({
   component: TemplatesSettingsPage,
 });
 
+const settingsSignaturesRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "signatures",
+  component: SignaturesSettingsPage,
+});
+
 // v0.0.38 — survey designer + results
 const settingsSurveysRoute = createRoute({
   getParentRoute: () => settingsRoute,
@@ -679,6 +686,7 @@ const routeTree = rootRoute.addChildren([
     settingsSlaRoute,
     settingsIntakeFormsRoute,
     settingsTemplatesRoute,
+    settingsSignaturesRoute,
     settingsSurveysRoute,
     settingsSurveyNewRoute,
     settingsSurveyEditorRoute,

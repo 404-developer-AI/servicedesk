@@ -26,6 +26,19 @@ public interface IGraphDirectoryClient
     /// query returns the top-N displayName-ordered list so the popover
     /// has something to show on first focus.
     Task<IReadOnlyList<GraphUserStatus>> SearchUsersAsync(string? query, int limit, CancellationToken ct = default);
+
+    /// Reads the signature-relevant profile fields (displayName, jobTitle,
+    /// mobilePhone, first businessPhone, mail) for the Azure AD user identified
+    /// by <paramref name="oid"/>. Returns <c>null</c> when the user no longer
+    /// exists. Requires <c>User.Read.All</c> (Application) consent — the caller
+    /// degrades to local profile fields if this throws.
+    Task<GraphUserProfile?> GetUserProfileAsync(string oid, CancellationToken ct = default);
+
+    /// Fetches the Azure AD profile photo for <paramref name="oid"/>. Returns
+    /// <c>null</c> when the user has no photo set (Graph 404). Bytes are
+    /// returned raw so the caller can cache them in the blob store and embed
+    /// them inline (cid) in a signature.
+    Task<GraphUserPhoto?> GetUserPhotoAsync(string oid, CancellationToken ct = default);
 }
 
 /// Minimal slice of a Graph <c>user</c> object — only what the login
@@ -37,3 +50,15 @@ public sealed record GraphUserStatus(
     string? UserPrincipalName,
     string? DisplayName,
     string? Mail);
+
+/// Signature-relevant slice of a Graph <c>user</c> object.
+public sealed record GraphUserProfile(
+    string Oid,
+    string? DisplayName,
+    string? JobTitle,
+    string? Mail,
+    string? MobilePhone,
+    string? BusinessPhone);
+
+/// Raw profile-photo bytes + their media content-type.
+public sealed record GraphUserPhoto(byte[] Bytes, string ContentType);

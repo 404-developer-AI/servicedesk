@@ -3726,6 +3726,75 @@ public sealed class DatabaseBootstrapper : IHostedService
 
         CREATE INDEX IF NOT EXISTS ix_eol_releases_eol
             ON eol_releases (eol_utc);
+
+        -- ===================================================================
+        -- v0.0.58 — Email signatures
+        --
+        -- Admin-managed, mailbox-scoped HTML signatures rendered from a
+        -- block-tree design (mail_signatures.design). Per-sender variables
+        -- (FullName/JobTitle/Phone/Mobile/Photo/…) are filled at send-time
+        -- from Microsoft Entra ID with a per-user local override carried on
+        -- the users table below. Image assets are stored content-addressed in
+        -- IBlobStore (signature_assets) and embedded inline as cid attachments
+        -- on each send so a recipient never sees a broken/blocked image. A
+        -- dedicated is_system signature covers trigger/automated mail (no
+        -- person variables). The whole feature is opt-in (Signatures.Enabled).
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS mail_signatures (
+            id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            name            TEXT        NOT NULL,
+            design          JSONB       NOT NULL DEFAULT '{}'::jsonb,
+            is_system       BOOLEAN     NOT NULL DEFAULT FALSE,
+            enabled         BOOLEAN     NOT NULL DEFAULT TRUE,
+            sort_order      INTEGER     NOT NULL DEFAULT 0,
+            created_by      UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            created_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc     TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        -- Which mailbox (queue) a signature is active on. queue_id is the PK
+        -- so a queue resolves to exactly one signature — the send-time lookup
+        -- is unambiguous. A signature can still be assigned to many queues.
+        CREATE TABLE IF NOT EXISTS mail_signature_mailboxes (
+            queue_id        UUID        PRIMARY KEY REFERENCES queues(id) ON DELETE CASCADE,
+            signature_id    UUID        NOT NULL REFERENCES mail_signatures(id) ON DELETE CASCADE,
+            created_utc     TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_mail_signature_mailboxes_signature
+            ON mail_signature_mailboxes (signature_id);
+
+        -- Image bytes live on disk via IBlobStore keyed by content_hash
+        -- (SHA-256 hex), same as attachments — but kept in a dedicated table
+        -- so the signature images never enter the attachment-jobs pipeline.
+        CREATE TABLE IF NOT EXISTS signature_assets (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            signature_id        UUID        NOT NULL REFERENCES mail_signatures(id) ON DELETE CASCADE,
+            content_hash        TEXT        NOT NULL,
+            mime_type           TEXT        NOT NULL DEFAULT 'image/png',
+            original_filename   TEXT        NOT NULL DEFAULT '',
+            size_bytes          BIGINT      NOT NULL DEFAULT 0,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_signature_assets_signature
+            ON signature_assets (signature_id);
+        CREATE INDEX IF NOT EXISTS ix_signature_assets_hash
+            ON signature_assets (content_hash);
+
+        -- Agent profile fields for signature variables. Each column is a local
+        -- override: NULL means "fall back to the Entra ID value at render time"
+        -- (or collapse the token if Entra has nothing either). entra_synced_utc
+        -- stamps the last successful Graph pull; photo bytes are content-
+        -- addressed in IBlobStore via photo_blob_hash.
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS display_name     TEXT        NULL,
+            ADD COLUMN IF NOT EXISTS job_title        TEXT        NULL,
+            ADD COLUMN IF NOT EXISTS work_phone       TEXT        NULL,
+            ADD COLUMN IF NOT EXISTS mobile_phone     TEXT        NULL,
+            ADD COLUMN IF NOT EXISTS photo_blob_hash  TEXT        NULL,
+            ADD COLUMN IF NOT EXISTS photo_mime       TEXT        NULL,
+            ADD COLUMN IF NOT EXISTS entra_synced_utc TIMESTAMPTZ NULL;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

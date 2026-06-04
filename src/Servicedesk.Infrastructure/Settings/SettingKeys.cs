@@ -738,6 +738,41 @@ public static class SettingKeys
         public const string SecurityActivityThresholdRateLimited = "Health.SecurityActivity.Threshold.RateLimited";
         public const string SecurityActivityThresholdMicrosoftLoginRejected = "Health.SecurityActivity.Threshold.MicrosoftLoginRejected";
     }
+
+    /// v0.0.58 — Email signatures. Admin-managed, mailbox-scoped HTML
+    /// signatures with per-sender variables filled from Microsoft Entra ID
+    /// (with a per-user local override). The whole feature is opt-in: with
+    /// <see cref="Enabled"/> off, no signature is ever appended on either the
+    /// agent send path or the trigger send path.
+    public static class Signatures
+    {
+        /// Master switch. Off by default so a fresh install never silently
+        /// appends a signature until an admin has built one and opted in.
+        public const string Enabled = "Signatures.Enabled";
+
+        /// When true, the resolved signature is appended on replies too (above
+        /// the quoted history). When false, signatures are only added to the
+        /// first/new outbound mail of a thread.
+        public const string AppendOnReplies = "Signatures.AppendOnReplies";
+
+        /// Signature id (Guid string) used for trigger/automated mail, where
+        /// there is no human sender to pull Entra variables from. Empty = no
+        /// signature on system mail.
+        public const string DefaultSystemSignatureId = "Signatures.DefaultSystemSignatureId";
+
+        /// When true, the signature variable resolver pulls jobTitle /
+        /// mobilePhone / businessPhones from Microsoft Entra ID for the sending
+        /// agent. Requires the Graph app-registration to have User.Read.All
+        /// (Application) consented. Off → only the per-user local profile
+        /// fields are used. Degrades gracefully: a Graph failure falls back to
+        /// the local fields rather than blocking the send.
+        public const string EntraSyncEnabled = "Signatures.EntraSyncEnabled";
+
+        /// When true (and EntraSyncEnabled is on), the resolver also fetches the
+        /// agent's Entra profile photo for the {{Photo}} token. Separate toggle
+        /// because the photo endpoint is a distinct, heavier Graph call.
+        public const string EntraSyncPhotos = "Signatures.EntraSyncPhotos";
+    }
 }
 
 public sealed record SettingDefault(
@@ -1283,5 +1318,18 @@ public static class SettingDefaults
             "How many days before the EOL date an agent gets the amber 'soon' tint. Default 180 (6 months). Anything past EOL is always red regardless of this value. Clamped to [1, 3650]."),
         new SettingDefault(SettingKeys.Eol.BaseUrl, "https://endoflife.date", "string", "Tactical RMM",
             "Base URL of the endoflife.date API. Change this only for an air-gapped install that mirrors the registry internally. Trailing slashes are normalised."),
+
+        // Email signatures — v0.0.58. Opt-in; with Enabled off nothing is ever
+        // appended. Variables fill from Entra ID with a per-user local override.
+        new SettingDefault(SettingKeys.Signatures.Enabled, "false", "bool", "Signatures",
+            "Master switch for email signatures. When off, no signature is appended on either the agent reply path or the trigger/automated send path. Turn on once you have built and assigned a signature."),
+        new SettingDefault(SettingKeys.Signatures.AppendOnReplies, "true", "bool", "Signatures",
+            "When on, the resolved signature is also appended on replies (above the quoted history). When off, signatures are only added to the first/new outbound mail of a thread."),
+        new SettingDefault(SettingKeys.Signatures.DefaultSystemSignatureId, "", "string", "Signatures",
+            "Signature used for trigger/automated mail, where there is no human sender to pull Entra variables from. Pick a signature flagged 'system'. Empty = no signature on automated mail."),
+        new SettingDefault(SettingKeys.Signatures.EntraSyncEnabled, "false", "bool", "Signatures",
+            "When on, signature variables (job title, mobile, phone) are pulled from Microsoft Entra ID for the sending agent. Requires the Graph app-registration to have User.Read.All (Application) consented. Off = only the per-user local profile fields are used. A Graph failure falls back to the local fields rather than blocking the send."),
+        new SettingDefault(SettingKeys.Signatures.EntraSyncPhotos, "false", "bool", "Signatures",
+            "When on (and Entra sync is enabled), the {{Photo}} token is filled from the agent's Microsoft Entra ID profile photo. Separate toggle because the photo endpoint is a distinct, heavier Graph call."),
     };
 }

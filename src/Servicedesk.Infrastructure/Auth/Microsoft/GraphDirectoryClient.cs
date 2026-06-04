@@ -113,6 +113,67 @@ public sealed class GraphDirectoryClient : IGraphDirectoryClient
         return results;
     }
 
+    public async Task<GraphUserProfile?> GetUserProfileAsync(string oid, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(oid)) return null;
+
+        var graph = await BuildClientAsync(ct);
+        try
+        {
+            var user = await graph.Users[oid].GetAsync(config =>
+            {
+                config.QueryParameters.Select = new[]
+                {
+                    "id", "displayName", "jobTitle", "mail", "mobilePhone", "businessPhones"
+                };
+            }, cancellationToken: ct);
+
+            if (user is null || string.IsNullOrWhiteSpace(user.Id)) return null;
+
+            var businessPhone = user.BusinessPhones?.FirstOrDefault(p => !string.IsNullOrWhiteSpace(p));
+            return new GraphUserProfile(
+                Oid: user.Id,
+                DisplayName: user.DisplayName,
+                JobTitle: user.JobTitle,
+                Mail: user.Mail,
+                MobilePhone: user.MobilePhone,
+                BusinessPhone: businessPhone);
+        }
+        catch (global::Microsoft.Graph.Models.ODataErrors.ODataError err)
+            when (err.ResponseStatusCode == 404)
+        {
+            return null;
+        }
+    }
+
+    public async Task<GraphUserPhoto?> GetUserPhotoAsync(string oid, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(oid)) return null;
+
+        var graph = await BuildClientAsync(ct);
+        try
+        {
+            var stream = await graph.Users[oid].Photo.Content.GetAsync(cancellationToken: ct);
+            if (stream is null) return null;
+
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms, ct);
+            var bytes = ms.ToArray();
+            if (bytes.Length == 0) return null;
+
+            // Graph serves the largest available photo as JPEG. The metadata
+            // endpoint can report a different type, but JPEG is correct for the
+            // /photo/$value default and avoids a second round-trip.
+            return new GraphUserPhoto(bytes, "image/jpeg");
+        }
+        catch (global::Microsoft.Graph.Models.ODataErrors.ODataError err)
+            when (err.ResponseStatusCode == 404)
+        {
+            // User has no profile photo set.
+            return null;
+        }
+    }
+
     private async Task<GraphServiceClient> BuildClientAsync(CancellationToken ct)
     {
         var tenantId = await _settings.GetAsync<string>(SettingKeys.Graph.TenantId, ct);
