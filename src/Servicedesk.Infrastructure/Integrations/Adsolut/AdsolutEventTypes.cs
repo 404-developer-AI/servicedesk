@@ -240,4 +240,25 @@ public static class AdsolutEventTypes
     /// One SalesReceipts sync-worker tick summary (seen / upserted / skipped
     /// + duration + outcome).
     public const string ErpSalesReceiptsSyncTick = "erp.sales_receipts.sync_tick";
+
+    // ---- v0.0.59 ERP Orders (bestellingen) ----------------------------
+
+    /// GET /erp/v1/adm/{adm}/OrderInfos — one page of the cursor-paged orders
+    /// list during an Orders sync tick. Each page is one audit row. The list
+    /// item already carries the full order incl. lines, so there is no
+    /// per-order by-id fetch during a normal sync.
+    public const string ErpOrdersList = "erp.orders.list";
+
+    /// GET /erp/v1/adm/{adm}/OrderInfos/{id} — full by-id fetch used only for
+    /// a manual per-row resync and the ::-link single fetch.
+    public const string ErpOrdersGet = "erp.orders.get";
+
+    /// One Orders sync-worker tick summary (seen / upserted + duration +
+    /// outcome).
+    public const string ErpOrdersSyncTick = "erp.orders.sync_tick";
+
+    /// GET /erp/v1/adm/{adm}/SupplierOrderInfos — one page of the cursor-paged
+    /// supplier-orders (bestellingen / Doc "BL") list during the Orders sync
+    /// tick's second pass. Carries the real per-line procurement status.
+    public const string ErpSupplierOrdersList = "erp.supplier_orders.list";
 }

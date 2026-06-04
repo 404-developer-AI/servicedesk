@@ -102,6 +102,11 @@ public interface IUserService
     /// renders when both are true. Returns false on missing rows.
     Task<bool> GetAdsolutTimesheetEnabledAsync(Guid userId, CancellationToken ct = default);
 
+    /// v0.0.59 — per-user opt-in for the Adsolut Orders feature (navbar
+    /// overview under Assets, order detail, the ticket "Sync orders" button
+    /// and "::" order linking). Returns false on missing rows.
+    Task<bool> GetAdsolutOrdersEnabledAsync(Guid userId, CancellationToken ct = default);
+
     /// v0.0.56 — per-user opt-in for the back-office Resolved + CWI
     /// timesheet tabs. Drives their visibility in the SPA. Returns false on
     /// missing rows.
@@ -454,6 +459,15 @@ public sealed class UserService : IUserService
     public async Task<bool> GetAdsolutTimesheetEnabledAsync(Guid userId, CancellationToken ct = default)
     {
         const string sql = "SELECT adsolut_timesheet_enabled FROM users WHERE id = @id";
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var value = await connection.QuerySingleOrDefaultAsync<bool?>(
+            new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
+        return value ?? false;
+    }
+
+    public async Task<bool> GetAdsolutOrdersEnabledAsync(Guid userId, CancellationToken ct = default)
+    {
+        const string sql = "SELECT adsolut_orders_enabled FROM users WHERE id = @id";
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         var value = await connection.QuerySingleOrDefaultAsync<bool?>(
             new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));

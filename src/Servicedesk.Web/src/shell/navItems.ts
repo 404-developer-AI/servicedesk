@@ -7,6 +7,7 @@ import {
   Timer,
   Activity,
   Server,
+  ShoppingCart,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "@/lib/roles";
@@ -96,6 +97,20 @@ export const NAV_ITEMS: readonly NavItem[] = [
     roles: ["Agent", "Admin"],
     comingIn: "",
     description: "Servers and workstations mirrored from Tactical RMM, with filters for Windows build and online state.",
+    section: "main",
+  },
+  // v0.0.59 — Orders (bestellingen). Mirrored from the Adsolut ERP
+  // OrderInfos endpoint. Role gate is Agent+Admin; the per-user
+  // `adsolut_orders_enabled` flag is checked in Sidebar.tsx, and the backend
+  // /api/orders endpoints carry the matching RequireAgent policy. Sits
+  // directly under Assets in the nav.
+  {
+    label: "Orders",
+    to: "/orders",
+    icon: ShoppingCart,
+    roles: ["Agent", "Admin"],
+    comingIn: "",
+    description: "Adsolut orders (bestellingen) mirrored from the ERP — overview with per-order detail lines.",
     section: "main",
   },
   // Profile is reachable from the header avatar dropdown (top-right) and via

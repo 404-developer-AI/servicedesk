@@ -11,6 +11,7 @@ import { SwitchRequesterDialog } from "@/components/SwitchRequesterDialog";
 import { MergeTicketDialog } from "@/components/MergeTicketDialog";
 import { LinkParentDialog } from "@/components/LinkParentDialog";
 import { LinkedTicketTypeDialog } from "@/components/LinkedTicketTypeDialog";
+import { SyncOrdersButton } from "@/pages/orders/SyncOrdersButton";
 import { NewTicketDrawer } from "@/shell/NewTicketDrawer";
 import { ticketApi as ticketApiClient, type LinkedTicketPrefill } from "@/lib/ticket-api";
 import { AddCompanyContactDialog } from "@/components/AddCompanyContactDialog";
@@ -322,6 +323,9 @@ function StatusTab({
   childTickets: { id: string; number: string }[];
   onUnlinkParent?: () => Promise<void> | void;
 }) {
+  // v0.0.59 — "Sync orders" button is shown only to users with the Orders
+  // feature flag.
+  const { user } = useAuth();
   // Pulsing "Contact not linked" warning. Only renders when (a) the admin
   // has the toggle on and (b) the requester has zero current company links.
   const { data: warningSetting } = useQuery({
@@ -407,6 +411,7 @@ function StatusTab({
 
   return (
     <>
+      {user?.adsolutOrdersEnabled && <SyncOrdersButton />}
       {showContactNotLinked && (
         <div
           className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-200 animate-pulse"

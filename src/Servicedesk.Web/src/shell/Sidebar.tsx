@@ -105,6 +105,12 @@ export function Sidebar() {
     if (item.to === "/assets" && !user?.assetsEnabled) {
       return false;
     }
+    // v0.0.59 — Orders is per-user opt-in (Adsolut ERP mirror). Same
+    // rationale as Assets: role gates Agent+Admin, the `adsolut_orders_enabled`
+    // flag adds the visibility filter; backend /api/orders carries RequireAgent.
+    if (item.to === "/orders" && !user?.adsolutOrdersEnabled) {
+      return false;
+    }
     return true;
   });
 

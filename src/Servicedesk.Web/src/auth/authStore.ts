@@ -37,6 +37,11 @@ export type AuthUser = {
   /// v0.0.56 — per-user opt-in for the back-office Resolved + CWI
   /// timesheet tabs. Gates the two tabs in the Timesheet page.
   timesheetBackofficeEnabled: boolean;
+  /// v0.0.59 — per-user opt-in for the Adsolut Orders feature (navbar
+  /// overview under Assets, order detail, the ticket "Sync orders" button
+  /// and "::" order linking). Surfaces nothing on its own without the
+  /// Adsolut integration being connected.
+  adsolutOrdersEnabled: boolean;
   /// Whether the Adsolut integration is currently connected (server-
   /// resolved at /auth/me time). Tenant-global rather than per-user, but
   /// surfaced here so the Adsolut timesheet tab can gate without the

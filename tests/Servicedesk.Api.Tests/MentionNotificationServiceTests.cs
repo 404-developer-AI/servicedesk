@@ -238,6 +238,7 @@ public sealed class MentionNotificationServiceTests
         public Task<bool> GetActivityFeedEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetAssetsEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetAdsolutTimesheetEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
+        public Task<bool> GetAdsolutOrdersEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetTimesheetBackofficeEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
     }
 

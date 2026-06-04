@@ -12,6 +12,7 @@ import {
   Activity,
   Server,
   Receipt,
+  ShoppingCart,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -60,6 +61,10 @@ const FLAG_GROUPS: Group[] = [
   {
     title: "Assets",
     flags: [{ key: "assetsEnabled", label: "Assets", icon: Server }],
+  },
+  {
+    title: "Orders",
+    flags: [{ key: "adsolutOrdersEnabled", label: "Orders (Adsolut)", icon: ShoppingCart }],
   },
 ];
 

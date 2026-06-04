@@ -1026,6 +1026,8 @@ export type UserAdminRow = {
   adsolutTimesheetEnabled: boolean;
   // v0.0.56 — per-user opt-in for the back-office Resolved + CWI tabs.
   timesheetBackofficeEnabled: boolean;
+  // v0.0.59 — per-user opt-in for the Adsolut Orders feature.
+  adsolutOrdersEnabled: boolean;
   // Per-user Dashboard tile preferences. Empty array on insert
   // (admins opt the user in to specific tiles).
   dashboardTiles: string[];
@@ -1042,6 +1044,7 @@ export type FeatureFlagsUpdate = Partial<{
   assetsEnabled: boolean;
   adsolutTimesheetEnabled: boolean;
   timesheetBackofficeEnabled: boolean;
+  adsolutOrdersEnabled: boolean;
 }>;
 
 export type M365PickerUser = {
