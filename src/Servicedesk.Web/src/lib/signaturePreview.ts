@@ -92,9 +92,33 @@ function renderBlock(
       return renderSpacer(block);
     case "social":
       return renderSocial(block, assetUrlById);
+    case "contactline":
+      return renderContactLine(block, assetUrlById, vars);
     default:
       return "";
   }
+}
+
+function renderContactLine(
+  block: SignatureBlock,
+  assetUrlById: (assetId: string) => string | null,
+  vars: PreviewVariables,
+): string {
+  if (!block.html || !block.html.trim()) return "";
+  const substituted = substituteAndCollapse(block.html, vars);
+  if (isVisuallyEmpty(substituted)) return "";
+
+  const url = block.assetId ? assetUrlById(block.assetId) : null;
+  const iconW = block.widthPx && block.widthPx > 0 ? block.widthPx : 16;
+  const iconCell = url
+    ? `<td valign="top" style="padding:2px 8px 0 0;vertical-align:top;"><img src="${escapeAttr(url)}" width="${iconW}" height="${iconW}" alt="" style="display:block;border:0;" /></td>`
+    : "";
+  return (
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin:3px 0;"><tr>` +
+    iconCell +
+    `<td valign="top" style="vertical-align:top;font-size:13px;line-height:1.4;color:#222222;">${substituted}</td>` +
+    `</tr></table>`
+  );
 }
 
 function renderText(html: string | null | undefined, vars: PreviewVariables, disclaimer: boolean): string {

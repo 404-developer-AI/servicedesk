@@ -19,4 +19,21 @@ public interface IAgentProfileRepository
 
     /// Stamps the last successful Entra pull.
     Task StampEntraSyncedAsync(Guid userId, CancellationToken ct);
+
+    /// All agent/admin accounts with their signature profile fields — drives
+    /// the admin "team profiles" management UI. Customers are excluded
+    /// (signatures never apply to them).
+    Task<IReadOnlyList<AgentProfileListItem>> ListAllAsync(CancellationToken ct);
 }
+
+/// One row of the admin team-profiles list.
+public sealed record AgentProfileListItem(
+    Guid UserId,
+    string Email,
+    string RoleName,
+    string? DisplayName,
+    string? JobTitle,
+    string? WorkPhone,
+    string? MobilePhone,
+    bool HasPhoto,
+    DateTime? EntraSyncedUtc);

@@ -11,7 +11,8 @@ export type SignatureBlockType =
   | "divider"
   | "spacer"
   | "social"
-  | "disclaimer";
+  | "disclaimer"
+  | "contactline";
 
 export interface SignatureSocialItem {
   network: string;
@@ -233,4 +234,46 @@ export const signatureProfileApi = {
     upload<{ photoUrl: string; mimeType: string }>("/api/me/signature-photo", file),
   deletePhoto: () => request<void>("DELETE", "/api/me/signature-photo"),
   variables: () => request<MySignatureVariables>("GET", "/api/me/signature-variables"),
+};
+
+/** Admin-managed profile row — one per agent/admin user. */
+export interface TeamProfile {
+  userId: string;
+  email: string;
+  role: string;
+  displayName: string | null;
+  jobTitle: string | null;
+  workPhone: string | null;
+  mobilePhone: string | null;
+  hasPhoto: boolean;
+  photoUrl: string | null;
+  entraSyncedUtc: string | null;
+}
+
+export interface TeamProfileUpdate {
+  displayName: string | null;
+  jobTitle: string | null;
+  workPhone: string | null;
+  mobilePhone: string | null;
+}
+
+export const teamProfilesApi = {
+  list: () => request<TeamProfile[]>("GET", "/api/admin/signature-profiles"),
+  update: (userId: string, body: TeamProfileUpdate) =>
+    request<void>("PUT", `/api/admin/signature-profiles/${userId}`, body),
+  uploadPhoto: (userId: string, file: File) =>
+    upload<{ photoUrl: string; mimeType: string }>(
+      `/api/admin/signature-profiles/${userId}/photo`,
+      file,
+    ),
+  deletePhoto: (userId: string) =>
+    request<void>("DELETE", `/api/admin/signature-profiles/${userId}/photo`),
+};
+
+export const FRAME_URL = "/api/admin/signature-profiles/frame";
+
+export const photoFrameApi = {
+  upload: (file: File) =>
+    upload<{ frameUrl: string; mimeType: string }>(FRAME_URL, file),
+  remove: () => request<void>("DELETE", FRAME_URL),
 };

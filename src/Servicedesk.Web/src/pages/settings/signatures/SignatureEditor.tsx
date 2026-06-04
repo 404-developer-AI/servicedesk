@@ -73,6 +73,8 @@ function makeBlock(type: SignatureBlockType): SignatureBlock {
       return { type, heightPx: 16 };
     case "social":
       return { type, social: [] };
+    case "contactline":
+      return { type, html: "", widthPx: 16 };
   }
 }
 
@@ -181,6 +183,61 @@ function TextBlockEditor({
           "placeholder:text-muted-foreground/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         )}
       />
+    </div>
+  );
+}
+
+function ContactLineBlockEditor({
+  block,
+  signatureId,
+  tokens,
+  onChange,
+}: {
+  block: SignatureBlock;
+  signatureId: string;
+  tokens: { token: string; label: string }[];
+  onChange: (b: SignatureBlock) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  const handleUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      const asset = await signaturesApi.uploadAsset(signatureId, file);
+      onChange({ ...block, assetId: asset.id });
+    } catch {
+      toast.error("Icon upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] uppercase tracking-wider text-muted-foreground/60">Icon</span>
+        <Button size="sm" variant="secondary" disabled={uploading} onClick={() => fileRef.current?.click()}>
+          {uploading ? "Uploading…" : block.assetId ? "Replace icon" : "Upload icon"}
+        </Button>
+        {block.assetId && (
+          <Button size="sm" variant="ghost" onClick={() => onChange({ ...block, assetId: null })}>
+            Remove
+          </Button>
+        )}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void handleUpload(f);
+            e.currentTarget.value = "";
+          }}
+        />
+      </div>
+      <TextBlockEditor block={block} tokens={tokens} onChange={onChange} />
     </div>
   );
 }
@@ -536,6 +593,7 @@ function BlockEditor({
     divider: "Divider",
     spacer: "Spacer",
     social: "Social links",
+    contactline: "Contact line",
   };
 
   return (
@@ -572,13 +630,16 @@ function BlockEditor({
       {block.type === "social" && (
         <SocialBlockEditor block={block} signatureId={signatureId} onChange={onChange} />
       )}
+      {block.type === "contactline" && (
+        <ContactLineBlockEditor block={block} signatureId={signatureId} tokens={tokens} onChange={onChange} />
+      )}
     </div>
   );
 }
 
 // ---- column editor ----
 
-const BLOCK_TYPES: SignatureBlockType[] = ["text", "disclaimer", "image", "divider", "spacer", "social"];
+const BLOCK_TYPES: SignatureBlockType[] = ["text", "disclaimer", "image", "divider", "spacer", "social", "contactline"];
 
 function ColumnEditor({
   column,
@@ -902,15 +963,27 @@ export function SignatureEditor({
     };
   }, [initialId, creatingDraft, onDone]);
 
-  // Populate form from loaded detail
+  // Seed the editable state ONCE per loaded signature. Re-seeding on every
+  // detailQ refetch (focus, invalidation, …) would clobber unsaved edits — the
+  // bug where a just-picked column valign snapped straight back to its saved
+  // value.
+  const seededRef = useRef<string | null>(null);
   useEffect(() => {
     const d = detailQ.data;
-    if (!d) return;
+    if (!d || seededRef.current === d.id) return;
+    seededRef.current = d.id;
     setName(d.name);
     setEnabled(d.enabled);
     setIsSystem(d.isSystem);
     setQueueIds(d.queueIds);
     setDesign(cloneDesign(d.design));
+  }, [detailQ.data]);
+
+  // Keep the asset-id → URL map in sync with the loaded detail. This never
+  // clobbers design edits; it only feeds the live preview's images.
+  useEffect(() => {
+    const d = detailQ.data;
+    if (!d) return;
     const map = new Map<string, string>();
     for (const a of d.assets) map.set(a.id, a.url);
     setAssetMap(map);

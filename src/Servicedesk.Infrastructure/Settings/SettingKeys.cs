@@ -772,6 +772,14 @@ public static class SettingKeys
         /// agent's Entra profile photo for the {{Photo}} token. Separate toggle
         /// because the photo endpoint is a distinct, heavier Graph call.
         public const string EntraSyncPhotos = "Signatures.EntraSyncPhotos";
+
+        /// Optional, admin-uploaded background/frame image for the profile-photo
+        /// compositor (e.g. a brand "cloud" shape). Generic by design: uploaded
+        /// per install, never shipped in code. Compositing happens client-side
+        /// on a canvas; the flattened result is stored as each user's profile
+        /// photo so the frame renders in every mail client. Empty = no frame.
+        public const string PhotoFrameBlobHash = "Signatures.PhotoFrameBlobHash";
+        public const string PhotoFrameMime = "Signatures.PhotoFrameMime";
     }
 }
 
@@ -1331,5 +1339,9 @@ public static class SettingDefaults
             "When on, signature variables (job title, mobile, phone) are pulled from Microsoft Entra ID for the sending agent. Requires the Graph app-registration to have User.Read.All (Application) consented. Off = only the per-user local profile fields are used. A Graph failure falls back to the local fields rather than blocking the send."),
         new SettingDefault(SettingKeys.Signatures.EntraSyncPhotos, "false", "bool", "Signatures",
             "When on (and Entra sync is enabled), the {{Photo}} token is filled from the agent's Microsoft Entra ID profile photo. Separate toggle because the photo endpoint is a distinct, heavier Graph call."),
+        new SettingDefault(SettingKeys.Signatures.PhotoFrameBlobHash, "", "string", "Signatures",
+            "Internal pointer to the admin-uploaded profile-photo frame image (blob hash). Set via the Team profiles photo editor, not by hand. Empty = no frame."),
+        new SettingDefault(SettingKeys.Signatures.PhotoFrameMime, "", "string", "Signatures",
+            "MIME type of the uploaded profile-photo frame image. Set automatically alongside the frame upload."),
     };
 }

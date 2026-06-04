@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { type ChangeEvent, useState } from "react";
 import {
   ArrowLeft,
   Camera,
   Check,
+  ImageIcon,
   Pencil,
   PenLine,
   Plus,
@@ -37,16 +38,23 @@ import { SettingField } from "@/components/settings/SettingField";
 import {
   signaturesApi,
   signatureProfileApi,
+  teamProfilesApi,
+  photoFrameApi,
+  FRAME_URL,
   type SignatureSummary,
   type MySignatureProfileUpdate,
+  type TeamProfile,
+  type TeamProfileUpdate,
 } from "@/lib/signatures-api";
 import { SignatureEditor } from "./signatures/SignatureEditor";
+import { PhotoCompositor } from "./signatures/PhotoCompositor";
 
 // ---- query keys ----
 
 const SIGS_LIST_KEY = ["signatures", "list"] as const;
 const SIGS_SETTINGS_KEY = ["settings", "list", "Signatures"] as const;
 const PROFILE_KEY = ["me", "signature-profile"] as const;
+const TEAM_PROFILES_KEY = ["signatures", "team-profiles"] as const;
 
 // ---- setting keys ----
 
@@ -201,6 +209,9 @@ function ListPanel({
 
       {/* My profile */}
       <MyProfileCard />
+
+      {/* Team profiles */}
+      <TeamProfilesCard />
 
       {/* Signatures list */}
       <section className="rounded-lg border border-glass-strong bg-glass p-5">
@@ -588,6 +599,415 @@ function SignatureRow({
           Delete
         </Button>
       </div>
+    </li>
+  );
+}
+
+// ---- team profiles card ----
+
+function TeamProfilesCard() {
+  const qc = useQueryClient();
+  const [frameVersion, setFrameVersion] = useState(0);
+  const [hasFrame, setHasFrame] = useState(true);
+  const [frameUploading, setFrameUploading] = useState(false);
+
+  const teamQ = useQuery({
+    queryKey: TEAM_PROFILES_KEY,
+    queryFn: () => teamProfilesApi.list(),
+  });
+
+  const removeFrameMut = useMutation({
+    mutationFn: () => photoFrameApi.remove(),
+    onSuccess: () => {
+      toast.success("Photo frame removed.");
+      setHasFrame(false);
+      setFrameVersion((v) => v + 1);
+    },
+    onError: () => toast.error("Could not remove frame."),
+  });
+
+  const handleFrameUpload = async (file: File) => {
+    setFrameUploading(true);
+    try {
+      await photoFrameApi.upload(file);
+      toast.success("Photo frame updated.");
+      setHasFrame(true);
+      setFrameVersion((v) => v + 1);
+    } catch {
+      toast.error("Frame upload failed.");
+    } finally {
+      setFrameUploading(false);
+    }
+  };
+
+  return (
+    <section className="rounded-lg border border-glass-strong bg-glass p-5">
+      <header className="mb-4 space-y-1">
+        <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
+          Team profiles
+        </h2>
+        <p className="text-xs text-muted-foreground">
+          Set each agent&apos;s signature name, function, phone and photo. These fill the{" "}
+          <code className="rounded bg-glass-strong px-1 py-0.5 font-mono text-[0.8em]">
+            {"{{agent.*}}"}
+          </code>{" "}
+          variables for everyone — and override Entra ID.
+        </p>
+      </header>
+
+      {/* Profile photo frame sub-section */}
+      <div className="mb-5 rounded-lg border border-glass bg-glass-strong p-4">
+        <div className="mb-2 space-y-0.5">
+          <p className="text-xs font-medium text-foreground">Profile photo frame</p>
+          <p className="text-[11px] text-muted-foreground">
+            Optional background composited with each agent photo (e.g. a brand shape or cloud).
+            Generic — upload your own. When set, each user&apos;s &quot;Edit photo&quot; button
+            opens the canvas compositor.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {hasFrame ? (
+            <img
+              src={`${FRAME_URL}?v=${frameVersion}`}
+              alt="Photo frame"
+              className="h-14 w-14 rounded border border-glass-strong object-contain"
+              onError={() => setHasFrame(false)}
+            />
+          ) : (
+            <div className="flex h-14 w-14 items-center justify-center rounded border border-glass-strong bg-glass text-muted-foreground/40">
+              <ImageIcon className="h-5 w-5" />
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <label
+              className={cn(
+                "inline-flex cursor-pointer items-center gap-1.5 rounded border px-3 py-1.5 text-xs transition-colors",
+                "border-glass-strong bg-glass text-muted-foreground hover:bg-glass-hover",
+                frameUploading && "pointer-events-none opacity-50",
+              )}
+            >
+              <Upload className="h-3.5 w-3.5" />
+              {frameUploading ? "Uploading…" : hasFrame ? "Replace frame" : "Upload frame"}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFrameUpload(file);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            {hasFrame && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={removeFrameMut.isPending}
+                onClick={() => removeFrameMut.mutate()}
+                type="button"
+              >
+                <X className="h-3.5 w-3.5" />
+                Remove
+              </Button>
+            )}
+          </div>
+        </div>
+        {!hasFrame && (
+          <p className="mt-2 text-[11px] text-muted-foreground/60">No frame set.</p>
+        )}
+      </div>
+
+      {teamQ.isLoading && <Skeleton className="h-32 w-full" />}
+      {teamQ.isError && (
+        <p className="text-sm text-red-300">Could not load team profiles.</p>
+      )}
+
+      {!teamQ.isLoading && teamQ.data?.length === 0 && (
+        <p className="text-sm text-muted-foreground">No agent or admin users found.</p>
+      )}
+
+      <ul className="flex flex-col gap-3">
+        {(teamQ.data ?? []).map((profile) => (
+          <TeamProfileUserRow
+            key={profile.userId}
+            profile={profile}
+            frameVersion={frameVersion}
+            hasFrame={hasFrame}
+            onMutated={() => qc.invalidateQueries({ queryKey: TEAM_PROFILES_KEY })}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+// ---- team profile user row ----
+
+function TeamProfileUserRow({
+  profile,
+  frameVersion,
+  hasFrame,
+  onMutated,
+}: {
+  profile: TeamProfile;
+  frameVersion: number;
+  hasFrame: boolean;
+  onMutated: () => void;
+}) {
+  const [displayName, setDisplayName] = useState(profile.displayName ?? "");
+  const [jobTitle, setJobTitle] = useState(profile.jobTitle ?? "");
+  const [workPhone, setWorkPhone] = useState(profile.workPhone ?? "");
+  const [mobilePhone, setMobilePhone] = useState(profile.mobilePhone ?? "");
+  const [dirty, setDirty] = useState(false);
+  const [photoVersion, setPhotoVersion] = useState(0);
+  const [photoDialogOpen, setPhotoDialogOpen] = useState(false);
+  const [plainUploading, setPlainUploading] = useState(false);
+
+  const saveMut = useMutation({
+    mutationFn: () => {
+      const body: TeamProfileUpdate = {
+        displayName: displayName.trim() || null,
+        jobTitle: jobTitle.trim() || null,
+        workPhone: workPhone.trim() || null,
+        mobilePhone: mobilePhone.trim() || null,
+      };
+      return teamProfilesApi.update(profile.userId, body);
+    },
+    onSuccess: () => {
+      toast.success(`Profile saved for ${profile.email}.`);
+      onMutated();
+      setDirty(false);
+    },
+    onError: () => toast.error("Could not save profile."),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: () => teamProfilesApi.deletePhoto(profile.userId),
+    onSuccess: () => {
+      toast.success("Photo removed.");
+      setPhotoVersion((v) => v + 1);
+      onMutated();
+    },
+    onError: () => toast.error("Could not remove photo."),
+  });
+
+  const handlePlainUpload = async (file: File) => {
+    setPlainUploading(true);
+    try {
+      await teamProfilesApi.uploadPhoto(profile.userId, file);
+      toast.success("Photo updated.");
+      setPhotoVersion((v) => v + 1);
+      onMutated();
+    } catch {
+      toast.error("Photo upload failed.");
+    } finally {
+      setPlainUploading(false);
+    }
+  };
+
+  const handleChange =
+    (setter: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
+      setter(e.target.value);
+      setDirty(true);
+    };
+
+  const photoSrc = profile.photoUrl
+    ? `${profile.photoUrl}?v=${photoVersion}`
+    : null;
+
+  const hasPhoto = profile.hasPhoto || photoVersion > 0;
+
+  const handleCompositorSaved = () => {
+    setPhotoDialogOpen(false);
+    setPhotoVersion((v) => v + 1);
+    onMutated();
+  };
+
+  return (
+    <li className="rounded-lg border border-glass bg-glass p-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-5">
+        {/* Photo column */}
+        <div className="flex shrink-0 flex-col items-center gap-2">
+          <div className="relative h-14 w-14">
+            {photoSrc ? (
+              <img
+                src={photoSrc}
+                alt={`${profile.email} profile`}
+                className="h-14 w-14 rounded-full object-cover ring-2 ring-glass-strong"
+              />
+            ) : (
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-glass-strong text-muted-foreground/40">
+                <Camera className="h-5 w-5" />
+              </div>
+            )}
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            type="button"
+            className="h-auto gap-1 px-2 py-1 text-[11px]"
+            onClick={() => setPhotoDialogOpen(true)}
+          >
+            <Pencil className="h-3 w-3" />
+            Edit photo
+          </Button>
+          {hasPhoto && (
+            <button
+              type="button"
+              disabled={deleteMut.isPending}
+              onClick={() => deleteMut.mutate()}
+              className={cn(
+                "inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:text-red-300",
+                deleteMut.isPending && "pointer-events-none opacity-50",
+              )}
+            >
+              <X className="h-3 w-3" />
+              Remove
+            </button>
+          )}
+        </div>
+
+        {/* Fields column */}
+        <div className="min-w-0 flex-1 space-y-3">
+          {/* Identity row */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-foreground">{profile.email}</span>
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider",
+                profile.role === "Admin"
+                  ? "border border-violet-400/30 bg-violet-400/10 text-violet-200"
+                  : "border border-sky-400/30 bg-sky-400/10 text-sky-200",
+              )}
+            >
+              {profile.role}
+            </span>
+            {profile.entraSyncedUtc && (
+              <span className="text-[10px] text-muted-foreground/50">
+                Entra synced {new Date(profile.entraSyncedUtc).toLocaleDateString()}
+              </span>
+            )}
+          </div>
+
+          {/* Editable fields */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-muted-foreground">
+                Display name
+              </label>
+              <Input
+                value={displayName}
+                onChange={handleChange(setDisplayName)}
+                placeholder="Full name"
+                className="h-8 bg-glass text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-muted-foreground">
+                Job title
+              </label>
+              <Input
+                value={jobTitle}
+                onChange={handleChange(setJobTitle)}
+                placeholder="e.g. Support Engineer"
+                className="h-8 bg-glass text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-muted-foreground">
+                Work phone
+              </label>
+              <Input
+                value={workPhone}
+                onChange={handleChange(setWorkPhone)}
+                placeholder="+32 …"
+                className="h-8 bg-glass text-sm"
+                type="tel"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-muted-foreground">
+                Mobile phone
+              </label>
+              <Input
+                value={mobilePhone}
+                onChange={handleChange(setMobilePhone)}
+                placeholder="+32 …"
+                className="h-8 bg-glass text-sm"
+                type="tel"
+              />
+            </div>
+          </div>
+
+          {dirty && (
+            <div className="flex justify-end">
+              <Button size="sm" disabled={saveMut.isPending} onClick={() => saveMut.mutate()}>
+                <Save className="h-3.5 w-3.5" />
+                {saveMut.isPending ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Edit photo dialog */}
+      <Dialog open={photoDialogOpen} onOpenChange={setPhotoDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit photo — {profile.email}</DialogTitle>
+            <DialogDescription>
+              {hasFrame
+                ? "Drag the headshot to position it on the frame, adjust the scale, then save."
+                : "Upload a photo for this user."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {hasFrame ? (
+            <PhotoCompositor
+              userId={profile.userId}
+              frameVersion={frameVersion}
+              onSaved={handleCompositorSaved}
+            />
+          ) : (
+            <div className="flex flex-col gap-4 py-2">
+              <label
+                className={cn(
+                  "inline-flex cursor-pointer items-center gap-1.5 self-start rounded border px-3 py-1.5 text-xs transition-colors",
+                  "border-glass-strong bg-glass text-muted-foreground hover:bg-glass-hover",
+                  plainUploading && "pointer-events-none opacity-50",
+                )}
+              >
+                <Upload className="h-3.5 w-3.5" />
+                {plainUploading ? "Uploading…" : hasPhoto ? "Replace photo" : "Upload photo"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      handlePlainUpload(file).then(() => setPhotoDialogOpen(false));
+                    }
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              <p className="text-[11px] text-muted-foreground/60">
+                No photo frame is configured. Upload a frame above to enable the canvas compositor.
+              </p>
+            </div>
+          )}
+
+          {!hasFrame && (
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setPhotoDialogOpen(false)} type="button">
+                Cancel
+              </Button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
     </li>
   );
 }
