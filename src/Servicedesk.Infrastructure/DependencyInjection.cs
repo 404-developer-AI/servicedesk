@@ -162,6 +162,16 @@ public static class DependencyInjection
         services.AddSingleton<IAdsolutSalesReceiptsSyncSignal, AdsolutSalesReceiptsSyncSignal>();
         services.AddHostedService<AdsolutSalesReceiptsSyncWorker>();
 
+        // ERP Orders (bestellingen) mirror → Orders overview (navbar → Assets).
+        // Opt-in via Adsolut.Erp.Orders.Enabled; reuses the shared
+        // AdsolutHttpInvoker. The OrderInfos list returns full orders incl.
+        // lines, so the sync upserts straight from the list (no by-id N+1).
+        services.AddSingleton<IAdsolutOrdersClient, AdsolutOrdersClient>();
+        services.AddSingleton<IAdsolutSupplierOrdersClient, AdsolutSupplierOrdersClient>();
+        services.AddSingleton<IAdsolutOrderRepository, AdsolutOrderRepository>();
+        services.AddSingleton<IAdsolutOrdersSyncSignal, AdsolutOrdersSyncSignal>();
+        services.AddHostedService<AdsolutOrdersSyncWorker>();
+
         // Telavox call-popup integration (v0.0.34). PAPI partner-token is
         // shared install-wide; CAPI tokens are auto-provisioned per linked
         // agent via /api/admin/integrations/telavox/agents/{userId}/provision
@@ -480,6 +490,12 @@ public static class DependencyInjection
         // adsolut_timesheet_enabled flag is set (read per-query).
         services.AddSingleton<Servicedesk.Infrastructure.Search.AdsolutSalesReceiptSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<Servicedesk.Infrastructure.Search.AdsolutSalesReceiptSearchSource>()));
+
+        // Adsolut orders (bestellingen) search-source. Customer sees zero hits;
+        // Agent/Admin see hits only when their own adsolut_orders_enabled flag
+        // is set (read per-query). Honors the admin's display status filter.
+        services.AddSingleton<Servicedesk.Infrastructure.Search.AdsolutOrderSearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<Servicedesk.Infrastructure.Search.AdsolutOrderSearchSource>()));
 
         services.AddHostedService<DatabaseBootstrapper>();
         services.AddHostedService<SettingsSeeder>();

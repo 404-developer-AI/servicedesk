@@ -366,6 +366,11 @@ public static class AuthEndpoints
         // the live Adsolut connection state — the tab only renders when
         // both are true.
         var adsolutTimesheetEnabled = await users.GetAdsolutTimesheetEnabledAsync(userId, ct);
+        // v0.0.59 — per-user opt-in for the Adsolut Orders feature (navbar
+        // overview under Assets, ticket "Sync orders" button, "::" order
+        // linking). Paired below with the live Adsolut connection state — the
+        // overview only renders when both are true.
+        var adsolutOrdersEnabled = await users.GetAdsolutOrdersEnabledAsync(userId, ct);
         // v0.0.56 — per-user opt-in for the back-office Resolved + CWI
         // timesheet tabs. Gates the two tabs in the SPA; the underlying
         // /api/timesheet/backoffice endpoints carry RequireAgent so the
@@ -414,6 +419,7 @@ public static class AuthEndpoints
                 assetsEnabled,
                 adsolutTimesheetEnabled,
                 timesheetBackofficeEnabled,
+                adsolutOrdersEnabled,
                 adsolutConnected,
                 dashboardTiles = tiles.Select(t => new { tileId = t.TileId, size = t.Size }).ToList(),
                 effectiveTheme,

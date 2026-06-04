@@ -240,6 +240,32 @@ public static class SettingKeys
         /// has no per-status query parameter, so filtering happens on our side
         /// during the sync (receipts whose state is not selected are skipped).
         public const string ErpSalesReceiptsStatusFilter = "Adsolut.Erp.SalesReceipts.StatusFilter";
+
+        // ERP Orders (bestellingen) pull (v0.0.59). Same opt-in ERP slice as
+        // SalesReceipts (WK.BE.ERP.Read scope). Default OFF.
+        /// Master toggle for mirroring Adsolut ERP orders into the Orders
+        /// overview (navbar → Assets → Orders). Off by default; flipping it on
+        /// starts the Orders sync worker ticking (provided the integration is
+        /// connected, a dossier is active, and the ERP scope is granted).
+        public const string ErpOrdersEnabled = "Adsolut.Erp.Orders.Enabled";
+
+        /// How often (minutes) the Orders sync worker ticks. Floor 5.
+        public const string ErpOrdersSyncIntervalMinutes = "Adsolut.Erp.Orders.SyncIntervalMinutes";
+
+        /// Comma-separated list of Adsolut order state codes (e.g. "OPEN") the
+        /// overview + global search show. EMPTY = show all statuses. The admin
+        /// ticks the statuses on the integration page; the list is populated
+        /// dynamically from the state codes actually seen in the mirror. This
+        /// filter is DISPLAY-ONLY — the mirror always holds every status; the
+        /// selection only narrows what the overview and search surface.
+        public const string ErpOrdersStatusFilter = "Adsolut.Erp.Orders.StatusFilter";
+
+        /// JSON map of supplier-order ("bestelling") status code → hex colour,
+        /// e.g. {"ONTV":"#22c55e","OPEN":"#f59e0b","NO_STATUS":"#9ca3af"}. Drives
+        /// the coloured status chips in the order-detail "Bestellingen" block.
+        /// The special key NO_STATUS colours order lines/orders with no linked
+        /// supplier order. Edited on the integration page; empty = neutral.
+        public const string ErpOrdersSupplierStatusColors = "Adsolut.Erp.Orders.SupplierStatusColors";
     }
 
     /// Telavox call-popup integration (v0.0.34). Single-install model: one
@@ -992,6 +1018,15 @@ public static class SettingDefaults
             "How often (minutes) the Adsolut SalesReceipts sync worker ticks. Floor 5 — set lower and the worker silently clamps. Independent from the Companies sync interval. Each tick is a delta-sync keyed on the receipt's lastModified (?ModifiedSince=lastSuccessfulSync)."),
         new SettingDefault(SettingKeys.Adsolut.ErpSalesReceiptsStatusFilter, "", "string", "Adsolut",
             "Comma-separated Adsolut state codes (e.g. 'GEFAKT,AFG') the SalesReceipts mirror keeps. Empty = keep all statuses. Ticked by the admin on the integration page; the available statuses are discovered dynamically from the receipts seen during sync. The Adsolut ERP API has no per-status query parameter, so receipts whose state is not selected are skipped on our side during the sync."),
+
+        new SettingDefault(SettingKeys.Adsolut.ErpOrdersEnabled, "false", "bool", "Adsolut",
+            "When true, the Orders sync worker mirrors Adsolut ERP orders (bestellingen) into the Orders overview (navbar → Assets → Orders). Requires the WK.BE.ERP.Read scope on the active connection (tick it in the scopes picker + reconnect) and an active dossier. Off by default — Accounting-only installs stay silent. Unlike SalesReceipts the OrderInfos list returns the full order incl. its detail lines inline, so each tick upserts straight from the list (no per-order by-id fetch). Header totals (excl/incl VAT) are stored verbatim."),
+        new SettingDefault(SettingKeys.Adsolut.ErpOrdersSyncIntervalMinutes, "60", "int", "Adsolut",
+            "How often (minutes) the Adsolut Orders sync worker ticks. Floor 5 — set lower and the worker silently clamps. Independent from the Companies + SalesReceipts sync intervals. Each tick is a delta-sync keyed on the order's lastModified (?ModifiedSince=lastSuccessfulSync)."),
+        new SettingDefault(SettingKeys.Adsolut.ErpOrdersStatusFilter, "", "string", "Adsolut",
+            "Comma-separated Adsolut order state codes (e.g. 'OPEN') the Orders overview + global search show. Empty = show all statuses. Ticked by the admin on the integration page; the available statuses are discovered dynamically from the orders seen in the mirror. DISPLAY-ONLY: the mirror always holds every status; this selection only narrows what the overview and global search surface — deselecting a status hides it (it is never purged) and re-ticking it shows it again with no re-sync."),
+        new SettingDefault(SettingKeys.Adsolut.ErpOrdersSupplierStatusColors, "", "string", "Adsolut",
+            "JSON map of Adsolut supplier-order ('bestelling') status code to hex colour, e.g. {\"ONTV\":\"#22c55e\",\"OPEN\":\"#f59e0b\",\"NO_STATUS\":\"#9ca3af\"}. Drives the coloured status chips in the order-detail Bestellingen block. The special key NO_STATUS colours lines/orders without a linked supplier order. Edited on the integration page; empty = neutral grey."),
 
         // Telavox — v0.0.34 call-popup integration. Sync-gating discipline:
         // Enabled defaults OFF so a fresh install is silent until an admin

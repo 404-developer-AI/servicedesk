@@ -297,6 +297,62 @@ export function RichTextEditor({
     });
 
     extensions.push(IntakeMention);
+
+    // v0.0.59 — order pills. A second Mention-derived inline atom keyed off
+    // `data-order-id`. It has NO own suggestion — orders surface through the
+    // same `::` picker (their items carry kind: "order") and the shared
+    // command inserts this node. Registered so saved pills re-parse when a
+    // note is re-opened for editing, and so renderHTML emits the clickable
+    // `<span data-order-id="…">` that OrderPillHost listens for.
+    const OrderMention = Mention.extend({
+      name: "orderMention",
+      addAttributes() {
+        return {
+          id: {
+            default: null,
+            parseHTML: (el: HTMLElement) => el.getAttribute("data-order-id"),
+            renderHTML: (attrs: Record<string, unknown>) => ({
+              "data-order-id": (attrs.id as string) ?? "",
+            }),
+          },
+          label: {
+            default: null,
+            parseHTML: (el: HTMLElement) => el.getAttribute("data-label"),
+            renderHTML: (attrs: Record<string, unknown>) => ({
+              "data-label": (attrs.label as string) ?? "",
+            }),
+          },
+        };
+      },
+      renderHTML({ node, HTMLAttributes }) {
+        const label = (node.attrs.label as string) ?? "";
+        return [
+          "span",
+          mergeAttributes(
+            { "data-type": "orderMention" },
+            this.options.HTMLAttributes,
+            HTMLAttributes,
+          ),
+          label,
+        ];
+      },
+      renderText({ node }) {
+        return `[${node.attrs.label ?? "Order"}]`;
+      },
+      // Insert-only node — orders surface through the existing `::` picker, so
+      // OrderMention must NOT register its own suggestion plugin (the inherited
+      // Mention default keys off `@` and would collide with the @@-mention).
+      addProseMirrorPlugins() {
+        return [];
+      },
+    }).configure({
+      HTMLAttributes: {
+        class: "sd-order-mention",
+        "data-order-mention": "true",
+      },
+    });
+
+    extensions.push(OrderMention);
   }
 
   const editor = useEditor({
@@ -318,6 +374,17 @@ export function RichTextEditor({
         // onIntakeChipClick so the parent opens the prefill drawer.
         const target = event.target as HTMLElement | null;
         if (!target) return false;
+        // v0.0.59 — order pill: ProseMirror swallows the native click, so we
+        // re-dispatch a window event that OrderPillHost listens for and opens
+        // the order-detail dialog.
+        const orderPill = target.closest("[data-order-id]") as HTMLElement | null;
+        if (orderPill) {
+          const orderId = orderPill.getAttribute("data-order-id");
+          if (orderId) {
+            window.dispatchEvent(new CustomEvent("sd:open-order", { detail: orderId }));
+            return true;
+          }
+        }
         const chip = target.closest(
           "[data-intake-form]",
         ) as HTMLElement | null;
@@ -775,7 +842,7 @@ export function extractMentionIds(doc: unknown): string[] {
 /// MentionNodeAttrs widened locally because we pass kind/bodyHtml through
 /// the command props — Tiptap's own type only knows id/label.
 type ComposeMentionProps = MentionNodeAttrs & {
-  kind?: "intake" | "template";
+  kind?: "intake" | "template" | "order";
   bodyHtml?: string;
 };
 
@@ -824,6 +891,21 @@ function buildIntakeSuggestion(
           .chain()
           .focus()
           .insertContentAt(range, rendered)
+          .run();
+        return;
+      }
+
+      if (kind === "order") {
+        // v0.0.59 — insert a clickable order pill (an orderMention node). The
+        // pill carries data-order-id; clicking it (here, or in the rendered
+        // note) opens the shared order-detail dialog via OrderPillHost.
+        editor
+          .chain()
+          .focus()
+          .insertContentAt(range, [
+            { type: "orderMention", attrs: { id, label } },
+            { type: "text", text: " " },
+          ])
           .run();
         return;
       }

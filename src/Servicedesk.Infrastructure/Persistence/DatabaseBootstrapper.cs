@@ -3795,6 +3795,181 @@ public sealed class DatabaseBootstrapper : IHostedService
             ADD COLUMN IF NOT EXISTS photo_blob_hash  TEXT        NULL,
             ADD COLUMN IF NOT EXISTS photo_mime       TEXT        NULL,
             ADD COLUMN IF NOT EXISTS entra_synced_utc TIMESTAMPTZ NULL;
+
+        -- ===================================================================
+        -- v0.0.59 Adsolut ERP Orders (bestellingen) mirror.
+        --
+        -- Read-only mirror of the Adsolut ERP OrderInfos endpoint
+        -- (GET /erp/v1/adm/{adm}/OrderInfos). Unlike SalesReceipts, the Orders
+        -- list view returns the FULL order including its detail lines inline,
+        -- so the sync upserts straight from the list page (no per-order by-id
+        -- fetch); by-id is used only for a manual per-row resync and the
+        -- ::-link single fetch. The API DOES expose header totals
+        -- (totalPriceExclVat / totalPriceInclVat), so they are stored verbatim
+        -- (no compute). ON DELETE CASCADE keeps the line rows in lockstep.
+        --
+        -- Status filter is DISPLAY-ONLY: the mirror always pulls every status;
+        -- the admin's status selection only narrows the overview + global
+        -- search. So there is no status-skip during sync and no purge here.
+        CREATE TABLE IF NOT EXISTS adsolut_orders (
+            id                       UUID          PRIMARY KEY,
+            doc_nr                   INTEGER       NULL,
+            book_code                TEXT          NULL,
+            kluwer_ref               TEXT          NULL,
+            customer_adsolut_id      UUID          NULL,
+            customer_code            TEXT          NULL,
+            customer_name            TEXT          NULL,
+            state_id                 UUID          NULL,
+            state_code               TEXT          NULL,
+            state_description        TEXT          NULL,
+            order_date               TIMESTAMPTZ   NULL,
+            requested_delivery_date  TIMESTAMPTZ   NULL,
+            confirmed_delivery_date  TIMESTAMPTZ   NULL,
+            remark                   TEXT          NULL,
+            internal_memo            TEXT          NULL,
+            representative_code      TEXT          NULL,
+            representative_name      TEXT          NULL,
+            currency_iso             TEXT          NULL,
+            total_excl_vat           NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_incl_vat           NUMERIC(18,2) NOT NULL DEFAULT 0,
+            ticket_number            BIGINT        NULL,
+            adsolut_created_utc      TIMESTAMPTZ   NULL,
+            adsolut_last_modified    TIMESTAMPTZ   NULL,
+            synced_utc               TIMESTAMPTZ   NOT NULL DEFAULT now()
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_adsolut_orders_state
+            ON adsolut_orders (state_code);
+        CREATE INDEX IF NOT EXISTS ix_adsolut_orders_date
+            ON adsolut_orders (order_date DESC);
+        CREATE INDEX IF NOT EXISTS ix_adsolut_orders_customer
+            ON adsolut_orders (customer_adsolut_id);
+        CREATE INDEX IF NOT EXISTS ix_adsolut_orders_ticket_number
+            ON adsolut_orders (ticket_number) WHERE ticket_number IS NOT NULL;
+
+        CREATE TABLE IF NOT EXISTS adsolut_order_lines (
+            id                       UUID          PRIMARY KEY,
+            order_id                 UUID          NOT NULL
+                REFERENCES adsolut_orders (id) ON DELETE CASCADE,
+            line_nr                  INTEGER       NULL,
+            product_id               UUID          NULL,
+            product_code             TEXT          NULL,
+            description              TEXT          NULL,
+            quantity                 NUMERIC(18,4) NULL,
+            unit_code                TEXT          NULL,
+            unit_description         TEXT          NULL,
+            delivered                NUMERIC(18,4) NULL,
+            gross_unit_price         NUMERIC(18,4) NULL,
+            unit_price               NUMERIC(18,4) NULL,
+            discount1                NUMERIC(18,4) NULL,
+            discount2                NUMERIC(18,4) NULL,
+            price_excl_vat           NUMERIC(18,2) NULL,
+            price_incl_vat           NUMERIC(18,2) NULL,
+            vat_code                 TEXT          NULL,
+            vat_description          TEXT          NULL,
+            state_code               TEXT          NULL,
+            state_description        TEXT          NULL,
+            requested_delivery_date  TIMESTAMPTZ   NULL,
+            confirmed_delivery_date  TIMESTAMPTZ   NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_adsolut_order_lines_order
+            ON adsolut_order_lines (order_id);
+
+        -- Singleton sync-state for the Orders mirror. Separate cursor from
+        -- Companies + SalesReceipts so enabling/pausing one never disturbs
+        -- the others.
+        CREATE TABLE IF NOT EXISTS adsolut_order_sync_state (
+            id                  INTEGER     PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+            last_full_sync_utc  TIMESTAMPTZ NULL,
+            last_delta_sync_utc TIMESTAMPTZ NULL,
+            last_error          TEXT        NULL,
+            last_error_utc      TIMESTAMPTZ NULL,
+            orders_seen         INTEGER     NOT NULL DEFAULT 0,
+            orders_upserted     INTEGER     NOT NULL DEFAULT 0,
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        -- Ticket ↔ Adsolut order links created via the ticket editor's "::"
+        -- picker. FK to adsolut_orders ON DELETE CASCADE so a purged/removed
+        -- order takes its links with it; FK to tickets ON DELETE CASCADE so a
+        -- deleted ticket cleans up too. linked_by/linked_utc record who linked
+        -- it and when (linker deletion SET NULL leaves the link intact).
+        CREATE TABLE IF NOT EXISTS ticket_order_links (
+            ticket_id   UUID        NOT NULL REFERENCES tickets (id) ON DELETE CASCADE,
+            order_id    UUID        NOT NULL REFERENCES adsolut_orders (id) ON DELETE CASCADE,
+            linked_by   UUID        NULL REFERENCES users (id) ON DELETE SET NULL,
+            linked_utc  TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (ticket_id, order_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_ticket_order_links_order
+            ON ticket_order_links (order_id);
+
+        -- Per-user opt-in flag for the Adsolut Orders feature (navbar overview
+        -- under Assets, order detail, the ticket "Sync orders" button and the
+        -- "::" order linking). Mirrors the other per-user feature flags
+        -- (kb_enabled, assets_enabled, adsolut_timesheet_enabled): default
+        -- FALSE, no backfill, strictly opt-in, Agent/Admin only (the
+        -- feature-flags update path rejects Customers). The flag alone surfaces
+        -- nothing without the Adsolut integration being connected.
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS adsolut_orders_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+        -- v0.0.59 (orders fix) — Adsolut supplier orders ("bestellingen", Doc
+        -- "BL"). Read-mirror of the ERP SupplierOrderInfos endpoint, which
+        -- carries the REAL per-article procurement status (ONTV/Ontvangen,
+        -- OPEN), supplier (leverancier), order date and delivered qty — none of
+        -- which exist on OrderInfos. Each supplier-order line nests an
+        -- orderInfoDetail.orderInfoId that links back to the sales order HEADER
+        -- (there is no order-LINE id on the BL line + the product id is shared
+        -- across duplicate article lines, so the link is header-level only).
+        -- The order-detail "Bestellingen" block lists these lines by
+        -- linked_order_id. Denormalised into one table (supplier + date copied
+        -- onto each line) so the detail query needs no join; lines are replaced
+        -- wholesale per supplier order (grouped by supplier_order_id).
+        CREATE TABLE IF NOT EXISTS adsolut_supplier_order_lines (
+            id                     UUID          PRIMARY KEY,
+            supplier_order_id      UUID          NOT NULL,
+            bl_doc_nr              INTEGER       NULL,
+            bl_book_code           TEXT          NULL,
+            supplier_name          TEXT          NULL,
+            supplier_code          TEXT          NULL,
+            supplier_order_date    TIMESTAMPTZ   NULL,
+            header_state_code      TEXT          NULL,
+            line_nr                INTEGER       NULL,
+            product_id             UUID          NULL,
+            product_code           TEXT          NULL,
+            name                   TEXT          NULL,
+            description            TEXT          NULL,
+            quantity               NUMERIC(18,4) NULL,
+            delivered              NUMERIC(18,4) NULL,
+            unit_code              TEXT          NULL,
+            gross_unit_price       NUMERIC(18,4) NULL,
+            unit_price             NUMERIC(18,4) NULL,
+            discount1              NUMERIC(18,4) NULL,
+            status_code            TEXT          NULL,
+            linked_order_id        UUID          NULL,
+            linked_order_doc_nr    INTEGER       NULL,
+            adsolut_last_modified  TIMESTAMPTZ   NULL,
+            synced_utc             TIMESTAMPTZ   NOT NULL DEFAULT now()
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_adsolut_supplier_order_lines_linked_order
+            ON adsolut_supplier_order_lines (linked_order_id);
+        CREATE INDEX IF NOT EXISTS ix_adsolut_supplier_order_lines_supplier_order
+            ON adsolut_supplier_order_lines (supplier_order_id);
+        CREATE INDEX IF NOT EXISTS ix_adsolut_supplier_order_lines_status
+            ON adsolut_supplier_order_lines (status_code);
+
+        -- Supplier-orders delta cursor lives alongside the orders cursor in the
+        -- singleton sync-state (same worker tick + same Adsolut.Erp.Orders
+        -- toggle, independent ModifiedSince so pausing one never disturbs the
+        -- other).
+        ALTER TABLE adsolut_order_sync_state
+            ADD COLUMN IF NOT EXISTS supplier_last_delta_sync_utc TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS supplier_orders_seen         INTEGER NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS supplier_orders_upserted     INTEGER NOT NULL DEFAULT 0;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

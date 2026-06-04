@@ -16,6 +16,8 @@ import { useAttachmentUploads } from "../hooks/useAttachmentUploads";
 import { intakeFormsApi } from "@/lib/intakeForms-api";
 import { composeTemplatesApi } from "@/lib/composeTemplates-api";
 import { IntakePrefillDrawer } from "@/components/intake/IntakePrefillDrawer";
+import { useAuth } from "@/auth/authStore";
+import { orderMentionItems } from "@/pages/orders/orderMention";
 
 export type MailRecipient = { address: string; name: string };
 
@@ -138,6 +140,7 @@ function buildReplyQuote(source: {
 }
 
 export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent, onCancel }: Props) {
+  const { user } = useAuth();
   const [kind, setKind] = React.useState<OutboundMailKind>(
     initialIntent?.kind ?? (context.latestInbound ? "Reply" : "New"),
   );
@@ -509,7 +512,9 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
                 }))
             : [];
 
-          return [...templateItems, ...intakeItems].slice(0, 16);
+          // v0.0.59 — also offer Adsolut orders for users with the Orders flag.
+          const orderItems = user?.adsolutOrdersEnabled ? await orderMentionItems(q) : [];
+          return [...templateItems, ...intakeItems, ...orderItems].slice(0, 16);
         }}
         onIntakeInsert={async (templateId) => {
           try {

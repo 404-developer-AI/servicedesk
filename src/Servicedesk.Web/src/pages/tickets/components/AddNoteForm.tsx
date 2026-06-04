@@ -4,6 +4,8 @@ import { toast } from "sonner";
 import { MessageCircle, ExternalLink, Clock } from "lucide-react";
 import { ticketApi, userApi } from "@/lib/ticket-api";
 import { preferencesApi } from "@/lib/api";
+import { useAuth } from "@/auth/authStore";
+import { orderMentionItems } from "@/pages/orders/orderMention";
 import { timesheetTicketApi } from "@/lib/timesheet-api";
 import { composeTemplatesApi } from "@/lib/composeTemplates-api";
 import { RichTextEditor } from "@/components/RichTextEditor";
@@ -36,6 +38,7 @@ type AddNoteFormProps = {
 type TabType = "reply" | "note" | "mail";
 
 export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailContext, isPopup = false }: AddNoteFormProps) {
+  const { user } = useAuth();
   const savedDraft = useWorkspaceStore.getState().getDraft(ticketId);
   // Popup always starts expanded — no collapsed-button state in that flow.
   const [expanded, setExpanded] = React.useState(isPopup || !!savedDraft);
@@ -383,13 +386,17 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
                   (t.description ?? "").toLowerCase().includes(needle),
               )
             : list;
-          return filtered.slice(0, 12).map((t) => ({
+          const templates = filtered.slice(0, 12).map((t) => ({
             id: t.id,
             name: t.name,
             description: t.description,
             kind: "template" as const,
             bodyHtml: t.bodyHtml,
           }));
+          // v0.0.59 — also offer Adsolut orders in the `::` picker for users
+          // with the Orders feature flag. Picking one inserts a clickable pill.
+          const orders = user?.adsolutOrdersEnabled ? await orderMentionItems(q) : [];
+          return [...templates, ...orders];
         }}
         onEditorReady={(editor) => {
           editorRef.current = editor as typeof editorRef.current;

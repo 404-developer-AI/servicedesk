@@ -21,6 +21,7 @@ import { TelavoxIntegrationPage } from "@/pages/settings/TelavoxIntegrationPage"
 import { ZammadIntegrationPage } from "@/pages/settings/ZammadIntegrationPage";
 import { TrmmIntegrationPage } from "@/pages/settings/TrmmIntegrationPage";
 import { AssetsPage } from "@/pages/assets/AssetsPage";
+import { OrdersPage } from "@/pages/orders/OrdersPage";
 import { ZammadImportRunsListPage } from "@/pages/settings/zammad/ZammadImportRunsListPage";
 import { ZammadImportRunDetailPage } from "@/pages/settings/zammad/ZammadImportRunDetailPage";
 import { MailSettingsPage } from "@/pages/settings/MailSettingsPage";
@@ -337,6 +338,17 @@ const assetsRoute = createRoute({
   path: "/assets",
   beforeLoad: authGate(["Agent", "Admin"]),
   component: AssetsPage,
+});
+
+// v0.0.59 — Orders overview (Adsolut ERP mirror). Same gate pattern as
+// Assets: Agent + Admin role gate at the route, per-user
+// `adsolut_orders_enabled` flag enforced server-side (RequireAgent on
+// /api/orders + the per-user flag on /auth/me) and via the sidebar hide.
+const ordersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/orders",
+  beforeLoad: authGate(["Agent", "Admin"]),
+  component: OrdersPage,
 });
 
 // v0.0.12 stap 4 — history of @@-mentions received by the caller.
@@ -679,6 +691,7 @@ const routeTree = rootRoute.addChildren([
   profileMentionsRoute,
   activityFeedRoute,
   assetsRoute,
+  ordersRoute,
   settingsRoute.addChildren([
     settingsIndexRoute,
     settingsGeneralRoute,

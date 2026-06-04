@@ -12,6 +12,8 @@ import { useIntegrationsSignalR } from "@/hooks/useIntegrationsSignalR";
 import { useTelavoxCallStream } from "@/hooks/useTelavoxCallStream";
 import { useWorkspaceAutoSave } from "@/hooks/useWorkspaceAutoSave";
 import { settingsApi } from "@/lib/api";
+import { useAuth } from "@/auth/authStore";
+import { OrderPillHost } from "@/pages/orders/OrderPillHost";
 
 export function AppShell() {
   usePresenceConnection();
@@ -39,6 +41,7 @@ export function AppShell() {
   useNotificationSignalR(popupDurationMs);
 
   const secondarySidebar = useSecondarySidebarStore((s) => s.content);
+  const { user } = useAuth();
 
   return (
     <div className="app-background relative flex h-screen overflow-hidden" data-testid="app-shell">
@@ -53,6 +56,7 @@ export function AppShell() {
       </div>
       <Toaster theme="dark" position="bottom-right" />
       <IncomingCallPopup />
+      {user?.adsolutOrdersEnabled && <OrderPillHost />}
     </div>
   );
 }

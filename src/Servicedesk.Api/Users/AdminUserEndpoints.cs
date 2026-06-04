@@ -393,7 +393,8 @@ public static class AdminUserEndpoints
         bool? ActivityFeedEnabled,
         bool? AssetsEnabled,
         bool? AdsolutTimesheetEnabled,
-        bool? TimesheetBackofficeEnabled);
+        bool? TimesheetBackofficeEnabled,
+        bool? AdsolutOrdersEnabled);
 
     private static async Task<IResult> UpdateFeatureFlags(
         Guid id,
@@ -416,7 +417,8 @@ public static class AdminUserEndpoints
             request.ActivityFeedEnabled,
             request.AssetsEnabled,
             request.AdsolutTimesheetEnabled,
-            request.TimesheetBackofficeEnabled);
+            request.TimesheetBackofficeEnabled,
+            request.AdsolutOrdersEnabled);
 
         var result = await admin.UpdateFeatureFlagsAsync(id, update, adminId.Value, ct);
         return result switch
@@ -438,6 +440,7 @@ public static class AdminUserEndpoints
                         assets_enabled = updated.Row.AssetsEnabled,
                         adsolut_timesheet_enabled = updated.Row.AdsolutTimesheetEnabled,
                         timesheet_backoffice_enabled = updated.Row.TimesheetBackofficeEnabled,
+                        adsolut_orders_enabled = updated.Row.AdsolutOrdersEnabled,
                     },
                     body: updated.Row,
                     statusCode: StatusCodes.Status200OK,

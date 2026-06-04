@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ClipboardList, FileText } from "lucide-react";
+import { ClipboardList, FileText, ShoppingCart } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /// Items shown in the `::` typeahead. The picker now mixes intake-form
@@ -14,7 +14,7 @@ export type IntakeMentionItem = {
   id: string;
   name: string;
   description?: string | null;
-  kind: "intake" | "template";
+  kind: "intake" | "template" | "order";
   /// Only set for kind = "template". The picker hands it through to the
   /// suggestion command so the editor can insertContent at the trigger range.
   bodyHtml?: string;
@@ -91,8 +91,10 @@ export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, Intak
         ) : (
           items.map((item, i) => {
             const isSelected = i === selectedIndex;
-            const Icon = item.kind === "template" ? FileText : ClipboardList;
-            const kindLabel = item.kind === "template" ? "Template" : "Intake";
+            const Icon =
+              item.kind === "template" ? FileText : item.kind === "order" ? ShoppingCart : ClipboardList;
+            const kindLabel =
+              item.kind === "template" ? "Template" : item.kind === "order" ? "Order" : "Intake";
             return (
               <button
                 key={`${item.kind}:${item.id}`}

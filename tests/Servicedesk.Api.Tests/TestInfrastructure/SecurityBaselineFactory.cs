@@ -364,6 +364,9 @@ public sealed class FakeUserService : IUserService
     public Task<bool> GetAdsolutTimesheetEnabledAsync(Guid userId, CancellationToken ct = default) =>
         Task.FromResult(false);
 
+    public Task<bool> GetAdsolutOrdersEnabledAsync(Guid userId, CancellationToken ct = default) =>
+        Task.FromResult(false);
+
     public Task<bool> GetTimesheetBackofficeEnabledAsync(Guid userId, CancellationToken ct = default) =>
         Task.FromResult(false);
 }

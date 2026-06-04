@@ -71,6 +71,7 @@ export type AuthUserPayload = {
   activityFeedEnabled: boolean;
   assetsEnabled: boolean;
   adsolutTimesheetEnabled: boolean;
+  adsolutOrdersEnabled: boolean;
   adsolutConnected: boolean;
   dashboardTiles: string[];
   // v0.0.44 — server-resolved theme (user pref → admin default → 'light').
@@ -785,6 +786,30 @@ export type AdsolutErpSalesReceiptsState = {
   statusOptions: AdsolutErpSalesReceiptStatusOption[];
 };
 
+/// ERP Orders (bestellingen) mirror state — integration-page panel (v0.0.59).
+/// The status filter here is DISPLAY-ONLY (mirror always holds every status).
+export type AdsolutErpOrdersState = {
+  enabled: boolean;
+  intervalMinutes: number;
+  statusFilter: string[];
+  totalMirrored: number;
+  lastFullSyncUtc: string | null;
+  lastDeltaSyncUtc: string | null;
+  lastError: string | null;
+  lastErrorUtc: string | null;
+  ordersSeen: number;
+  ordersUpserted: number;
+  supplierOrdersSeen: number;
+  supplierOrdersUpserted: number;
+  updatedUtc: string | null;
+  nextSyncUtc: string | null;
+  statusOptions: AdsolutErpSalesReceiptStatusOption[];
+  // Supplier-order ("bestelling") statuses discovered in the mirror + the
+  // saved status→hex colour map (incl. the special NO_STATUS key).
+  supplierStatusOptions: AdsolutErpSalesReceiptStatusOption[];
+  statusColors: Record<string, string>;
+};
+
 export type AdsolutSalesReceiptHeader = {
   id: string;
   docNr: number | null;
@@ -901,6 +926,130 @@ export const adsolutTimesheetApi = {
       "POST",
       `/api/timesheet/adsolut/receipts/${id}/resync`,
     ),
+};
+
+// ---- Adsolut Orders (bestellingen) — v0.0.59 ------------------------
+
+export type AdsolutOrderHeader = {
+  id: string;
+  docNr: number | null;
+  bookCode: string | null;
+  kluwerRef: string | null;
+  customerAdsolutId: string | null;
+  customerName: string | null;
+  customerCode: string | null;
+  stateCode: string | null;
+  stateDescription: string | null;
+  orderDate: string | null;
+  requestedDeliveryDate: string | null;
+  confirmedDeliveryDate: string | null;
+  remark: string | null;
+  internalMemo: string | null;
+  representativeName: string | null;
+  totalExclVat: number;
+  totalInclVat: number;
+  currencyIso: string | null;
+  ticketNumber: number | null;
+  adsolutCreatedUtc: string | null;
+  adsolutLastModified: string | null;
+  syncedUtc: string;
+};
+
+export type AdsolutOrderLine = {
+  id: string;
+  lineNr: number | null;
+  productCode: string | null;
+  description: string | null;
+  quantity: number | null;
+  unitCode: string | null;
+  unitDescription: string | null;
+  delivered: number | null;
+  grossUnitPrice: number | null;
+  unitPrice: number | null;
+  discount1: number | null;
+  discount2: number | null;
+  priceExclVat: number | null;
+  priceInclVat: number | null;
+  vatCode: string | null;
+  vatDescription: string | null;
+};
+
+/// A supplier-order ("bestelling") line linked to this order — carries the REAL
+/// procurement status (statusCode), supplier (leverancier), date and delivered.
+export type AdsolutSupplierOrderLine = {
+  id: string;
+  blDocNr: number | null;
+  blBookCode: string | null;
+  supplierName: string | null;
+  supplierCode: string | null;
+  supplierOrderDate: string | null;
+  lineNr: number | null;
+  productCode: string | null;
+  name: string | null;
+  description: string | null;
+  quantity: number | null;
+  delivered: number | null;
+  unitCode: string | null;
+  grossUnitPrice: number | null;
+  unitPrice: number | null;
+  discount1: number | null;
+  statusCode: string | null;
+};
+
+export type AdsolutOrderListResponse = {
+  items: AdsolutOrderHeader[];
+  total: number;
+  page: number;
+  pageSize: number;
+  statusFilter: string[];
+};
+
+export type AdsolutOrderDetail = {
+  header: AdsolutOrderHeader;
+  lines: AdsolutOrderLine[];
+  // Linked supplier orders (bestellingen) + the status→hex colour map.
+  supplierLines: AdsolutSupplierOrderLine[];
+  statusColors: Record<string, string>;
+};
+
+/// Agent-facing Adsolut Orders data (overview + detail + picker + ticket links).
+export const ordersApi = {
+  list: (
+    search: string,
+    page: number,
+    pageSize = 50,
+    sort = "date",
+    dir: "asc" | "desc" = "desc",
+  ) => {
+    const qs = new URLSearchParams({
+      page: String(page),
+      pageSize: String(pageSize),
+      sort,
+      dir,
+    });
+    if (search.trim()) qs.set("search", search.trim());
+    return request<AdsolutOrderListResponse>("GET", `/api/orders?${qs.toString()}`);
+  },
+  detail: (id: string) => request<AdsolutOrderDetail>("GET", `/api/orders/${id}`),
+  resync: (id: string) => request<AdsolutOrderDetail>("POST", `/api/orders/${id}/resync`),
+  sync: () => request<void>("POST", "/api/orders/sync"),
+  /// "::" picker in the ticket editor — lightweight order rows honoring the
+  /// admin display status filter.
+  pick: (q: string, limit = 10) => {
+    const qs = new URLSearchParams({ limit: String(limit) });
+    if (q.trim()) qs.set("q", q.trim());
+    return request<{ items: AdsolutOrderHeader[] }>("GET", `/api/orders/picker?${qs.toString()}`);
+  },
+  // ticket ↔ order links
+  listForTicket: (ticketId: string) =>
+    request<{ items: AdsolutOrderHeader[] }>("GET", `/api/tickets/${ticketId}/orders`),
+  linkToTicket: (ticketId: string, orderId: string) =>
+    request<{ ok: boolean; created: boolean; order?: AdsolutOrderHeader }>(
+      "POST",
+      `/api/tickets/${ticketId}/orders/${orderId}`,
+    ),
+  unlinkFromTicket: (ticketId: string, orderId: string) =>
+    request<{ ok: boolean }>("DELETE", `/api/tickets/${ticketId}/orders/${orderId}`),
 };
 
 // ---- Back-office Timesheet tabs (Resolved / CWI) — v0.0.56 -----------
@@ -1067,6 +1216,26 @@ export const adsolutApi = {
       "PUT",
       "/api/admin/integrations/adsolut/erp/sales-receipts/status-filter",
       { codes },
+    ),
+  /// ERP Orders (bestellingen) mirror — integration-page controls (v0.0.59).
+  erpOrdersState: () =>
+    request<AdsolutErpOrdersState>(
+      "GET",
+      "/api/admin/integrations/adsolut/erp/orders/state",
+    ),
+  triggerErpOrdersSync: () =>
+    request<void>("POST", "/api/admin/integrations/adsolut/erp/orders/sync"),
+  setErpOrdersStatusFilter: (codes: string[]) =>
+    request<{ statusFilter: string[] }>(
+      "PUT",
+      "/api/admin/integrations/adsolut/erp/orders/status-filter",
+      { codes },
+    ),
+  setErpOrdersSupplierStatusColors: (colors: Record<string, string>) =>
+    request<{ statusColors: Record<string, string> }>(
+      "PUT",
+      "/api/admin/integrations/adsolut/erp/orders/supplier-status-colors",
+      { colors },
     ),
   debugPutPreview: (customerId: string) => {
     const qs = new URLSearchParams({ customerId });
