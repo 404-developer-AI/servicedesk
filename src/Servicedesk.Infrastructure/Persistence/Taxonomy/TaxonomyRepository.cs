@@ -38,7 +38,8 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
         inbound_folder_id AS InboundFolderId,
         inbound_folder_name AS InboundFolderName,
         allowed_status_ids AS AllowedStatusIds,
-        default_status_id AS DefaultStatusId
+        default_status_id AS DefaultStatusId,
+        inbound_polling_enabled AS InboundPollingEnabled
         """;
 
     private static Queue MapQueueRow(QueueRow r) => new(
@@ -47,7 +48,8 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
         r.InboundMailboxAddress, r.OutboundMailboxAddress,
         r.InboundFolderId, r.InboundFolderName,
         r.AllowedStatusIds ?? Array.Empty<Guid>(),
-        r.DefaultStatusId);
+        r.DefaultStatusId,
+        r.InboundPollingEnabled);
 
     private sealed class QueueRow
     {
@@ -68,6 +70,7 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
         public string? InboundFolderName { get; set; }
         public Guid[]? AllowedStatusIds { get; set; }
         public Guid? DefaultStatusId { get; set; }
+        public bool InboundPollingEnabled { get; set; } = true;
     }
 
     public async Task<IReadOnlyList<Queue>> ListQueuesAsync(CancellationToken ct)
@@ -136,6 +139,16 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
                   allowedStatusIds = allowedStatusIds.ToArray(),
                   defaultStatusId }, cancellationToken: ct));
         return row is null ? null : MapQueueRow(row);
+    }
+
+    public async Task<bool> SetQueueInboundPollingAsync(Guid id, bool enabled, CancellationToken ct)
+    {
+        // Targeted single-column update — does NOT touch updated_utc on purpose,
+        // since pausing/resuming polling isn't a content edit of the queue.
+        const string sql = "UPDATE queues SET inbound_polling_enabled = @enabled WHERE id = @id";
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.ExecuteAsync(new CommandDefinition(sql, new { id, enabled }, cancellationToken: ct));
+        return rows > 0;
     }
 
     public async Task<DeleteResult> DeleteQueueAsync(Guid id, CancellationToken ct)

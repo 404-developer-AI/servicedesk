@@ -4,11 +4,11 @@ import { toast } from "sonner";
 import { Reply, ReplyAll, Forward as ForwardIcon, Mail } from "lucide-react";
 import {
   ticketApi,
-  userApi,
+  mentionApi,
   type MailRecipientInput,
   type OutboundMailKind,
 } from "@/lib/ticket-api";
-import { RichTextEditor } from "@/components/RichTextEditor";
+import { RichTextEditor, splitMentionIds } from "@/components/RichTextEditor";
 import { cn } from "@/lib/utils";
 import type { PendingMailAction } from "@/stores/useWorkspaceStore";
 import { AttachmentTray } from "./AttachmentTray";
@@ -280,8 +280,9 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
   }, [initialIntent?.id]);
 
   const mutation = useMutation({
-    mutationFn: () =>
-      ticketApi.sendMail(ticketId, {
+    mutationFn: () => {
+      const { userIds, mailboxIds } = splitMentionIds(mentionedUserIds);
+      return ticketApi.sendMail(ticketId, {
         kind,
         to: parseAddresses(to),
         cc: parseAddresses(cc),
@@ -289,9 +290,11 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
         subject: subject.trim(),
         bodyHtml,
         attachmentIds: attachments.readyAttachmentIds,
-        mentionedUserIds: mentionedUserIds.length > 0 ? mentionedUserIds : undefined,
+        mentionedUserIds: userIds.length > 0 ? userIds : undefined,
+        mentionedMailboxIds: mailboxIds.length > 0 ? mailboxIds : undefined,
         linkedFormIds: linkedFormIds.length > 0 ? linkedFormIds : undefined,
-      }),
+      });
+    },
     onSuccess: () => {
       toast.success("Mail sent");
       setBodyHtml("");
@@ -469,7 +472,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
         placeholder="Write your message. Type @@ to tag an agent, :: to insert a template or intake form..."
         minHeight="140px"
         onUploadFile={attachments.upload}
-        onMentionQuery={(q) => userApi.searchAgents(q)}
+        onMentionQuery={(q) => mentionApi.search(q)}
         onMentionsChange={setMentionedUserIds}
         composeTokens={composeTokens}
         onIntakeQuery={async (q) => {

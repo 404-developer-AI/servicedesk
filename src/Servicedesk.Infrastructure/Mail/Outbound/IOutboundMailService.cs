@@ -43,7 +43,10 @@ public sealed record OutboundMailRequest(
     /// service mints a token, embeds the link in the body, and atomically
     /// flips the instance to Sent + writes an IntakeFormSent ticket event
     /// once Graph accepts the message.
-    IReadOnlyList<Guid>? LinkedFormIds = null);
+    IReadOnlyList<Guid>? LinkedFormIds = null,
+    /// v0.0.60 — tagging-only mailbox ids tagged via @@-mention. Filtered to
+    /// active rows; each receives a notification mail (no in-app entry).
+    IReadOnlyList<Guid>? MentionedMailboxIds = null);
 
 public enum OutboundMailStatus
 {

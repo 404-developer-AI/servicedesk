@@ -23,6 +23,7 @@ using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Surveys;
+using Servicedesk.Infrastructure.TaggingMailboxes;
 using Servicedesk.Infrastructure.Triggers;
 using Servicedesk.Infrastructure.Triggers.StatusGate;
 
@@ -776,6 +777,7 @@ public static class TicketEndpoints
             Guid id, [FromBody] AddEventRequest req, HttpContext http,
             ITicketRepository tickets, IQueueAccessService queueAccess,
             IAttachmentRepository attachmentsRepo, IUserService users,
+            ITaggingMailboxRepository taggingMailboxes,
             IMentionNotificationService mentionService,
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla,
             ITriggerService triggerService,
@@ -805,8 +807,16 @@ public static class TicketEndpoints
             {
                 mentionedIds = await users.FilterAgentIdsAsync(incomingMentions, ct);
             }
-            var metadataJson = mentionedIds.Count > 0
-                ? JsonSerializer.Serialize(new { mentionedUserIds = mentionedIds })
+            // Tagging-only mailboxes are a parallel mention target: filtered to
+            // active rows the same soft-drop way agent ids are.
+            IReadOnlyList<Guid> mentionedMailboxIds = Array.Empty<Guid>();
+            if (req.MentionedMailboxIds is { Count: > 0 } incomingMailboxes)
+            {
+                var resolved = await taggingMailboxes.ResolveActiveByIdsAsync(incomingMailboxes, ct);
+                mentionedMailboxIds = resolved.Select(m => m.Id).ToList();
+            }
+            var metadataJson = mentionedIds.Count > 0 || mentionedMailboxIds.Count > 0
+                ? JsonSerializer.Serialize(new { mentionedUserIds = mentionedIds, mentionedMailboxIds })
                 : null;
 
             // The agent UI only sends bodyHtml (the rich-text composer's
@@ -863,6 +873,7 @@ public static class TicketEndpoints
                     evt.IsInternal,
                     attachmentCount = req.AttachmentIds?.Count ?? 0,
                     mentionedUserCount = mentionedIds.Count,
+                    mentionedMailboxCount = mentionedMailboxIds.Count,
                 }));
 
             // Notify viewers of this ticket + the ticket list
@@ -885,7 +896,7 @@ public static class TicketEndpoints
             // @@-mention notification raamwerk (v0.0.12 stap 4). Fire-and-forget
             // semantics: the service logs + swallows everything. The request
             // result is already decided, so an errant notifier can't 500 us.
-            if (mentionedIds.Count > 0)
+            if (mentionedIds.Count > 0 || mentionedMailboxIds.Count > 0)
             {
                 var sourceEmail = http.User.FindFirst(ClaimTypes.Email)?.Value ?? string.Empty;
                 await mentionService.PublishAsync(new MentionNotificationSource(
@@ -899,7 +910,8 @@ public static class TicketEndpoints
                     SourceUserEmail: sourceEmail,
                     MentionedUserIds: mentionedIds,
                     BodyHtml: evt.BodyHtml ?? string.Empty,
-                    BodyText: evt.BodyText ?? string.Empty), ct);
+                    BodyText: evt.BodyText ?? string.Empty,
+                    MentionedMailboxIds: mentionedMailboxIds), ct);
             }
 
             // v0.0.38 — compose-template-linked surveys. Fires AFTER the
@@ -942,7 +954,8 @@ public static class TicketEndpoints
                 BodyHtml: req.BodyHtml ?? string.Empty,
                 AttachmentIds: req.AttachmentIds,
                 MentionedUserIds: req.MentionedUserIds,
-                LinkedFormIds: req.LinkedFormIds);
+                LinkedFormIds: req.LinkedFormIds,
+                MentionedMailboxIds: req.MentionedMailboxIds);
 
             var result = await outbound.SendAsync(request, ct);
             switch (result.Status)
@@ -1896,7 +1909,10 @@ public static class TicketEndpoints
         // with a non-null linked_survey_id triggers a SurveyDispatchService
         // call after the event lands. Idempotent: dispatch skips when an
         // active invitation already exists for (survey, ticket).
-        IReadOnlyList<Guid>? ComposeTemplateIds = null);
+        IReadOnlyList<Guid>? ComposeTemplateIds = null,
+        // v0.0.60 — tagging-only mailbox ids tagged via @@-mention. Filtered
+        // to active rows server-side; each gets a notification mail.
+        IReadOnlyList<Guid>? MentionedMailboxIds = null);
 
     public sealed record UpdateEventRequest(
         string? BodyText,
@@ -1915,7 +1931,9 @@ public static class TicketEndpoints
         IReadOnlyList<Guid>? LinkedFormIds = null,
         // v0.0.38 — compose templates used to build this mail; any with a
         // linked survey dispatch after a successful send.
-        IReadOnlyList<Guid>? ComposeTemplateIds = null);
+        IReadOnlyList<Guid>? ComposeTemplateIds = null,
+        // v0.0.60 — tagging-only mailbox ids tagged via @@-mention.
+        IReadOnlyList<Guid>? MentionedMailboxIds = null);
 
     public sealed record MailRecipientInput(string Address, string? Name);
 

@@ -31,4 +31,9 @@ public sealed record Queue(
     // "no matching constructor" — IReadOnlyList<Guid> is the shape
     // it knows how to hydrate.
     IReadOnlyList<Guid>? AllowedStatusIds = null,
-    Guid? DefaultStatusId = null);
+    Guid? DefaultStatusId = null,
+    // v0.0.60 — per-mailbox inbound polling switch. When false the
+    // MailPollingService skips this queue's mailbox entirely while keeping its
+    // delta-state, so re-enabling resumes from where it left off instead of
+    // re-reading the whole inbox. Defaults true so existing queues keep polling.
+    bool InboundPollingEnabled = true);

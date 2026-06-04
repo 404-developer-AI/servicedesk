@@ -535,6 +535,9 @@ export type NewTicketEvent = {
   /// server-side against the Agent+Admin set; unknown / customer / deleted
   /// ids are silently dropped before the event metadata is written.
   mentionedUserIds?: string[];
+  /// Tagging-only mailbox ids tagged via @@-mention. Filtered to active rows
+  /// server-side; each receives a notification mail (no in-app entry).
+  mentionedMailboxIds?: string[];
 };
 
 export type TicketAttachmentMeta = {
@@ -567,6 +570,8 @@ export type SendOutboundMailRequest = {
   attachmentIds?: string[];
   /// Agent user-ids tagged via @@-mention. See NewTicketEvent for semantics.
   mentionedUserIds?: string[];
+  /// Tagging-only mailbox ids tagged via @@-mention. See NewTicketEvent.
+  mentionedMailboxIds?: string[];
   /// Intake-form instance ids embedded via `::`-mention (v0.0.19). Each id
   /// must be a Draft instance owned by this ticket; the server mints a
   /// token, embeds the public link in the body and atomically flips the
@@ -611,6 +616,45 @@ export type AgentUser = {
   id: string;
   email: string;
   roleName: string;
+};
+
+// ---- Tagging-only mailboxes (v0.0.60) ----
+
+/// A login-less @@-mention target. Mentioning it mails a notification to its
+/// address; it has no user row, role or tickets. Managed under Settings → Users.
+export type TaggingMailbox = {
+  id: string;
+  name: string;
+  email: string;
+  isActive: boolean;
+  createdUtc: string;
+  updatedUtc: string;
+};
+
+export type TaggingMailboxInput = {
+  name: string;
+  email: string;
+  isActive: boolean;
+};
+
+/// Slim row returned by the @@-picker search endpoint.
+export type TaggingMailboxSearchItem = {
+  id: string;
+  name: string;
+  email: string;
+};
+
+/// Unified item the @@-mention popover renders. Agents and tagging mailboxes
+/// are merged into one list; `kind` drives the badge + how the node id is
+/// serialised (mailbox ids are prefixed `mbox:` so the submit-time split can
+/// route them to mentionedMailboxIds without a node-schema change).
+export type MentionPickerItem = {
+  id: string;
+  email: string;
+  roleName: string;
+  kind: "agent" | "mailbox";
+  /// Display label; mailboxes use their friendly name, agents the email local-part.
+  label?: string;
 };
 
 // ---- Contacts ----
@@ -986,6 +1030,81 @@ export const userApi = {
     if (q) params.set("q", q);
     params.set("limit", String(limit));
     return request<AgentUser[]>("GET", `/api/users/agents/search?${params.toString()}`);
+  },
+};
+
+// ---- Tagging-only mailboxes (v0.0.60) -------------------------------
+
+export const taggingMailboxApi = {
+  // Admin-only CRUD, surfaced as the first card on Settings → Users.
+  list: () => request<TaggingMailbox[]>("GET", "/api/settings/tagging-mailboxes"),
+  create: (input: TaggingMailboxInput) =>
+    request<TaggingMailbox>("POST", "/api/settings/tagging-mailboxes", input),
+  update: (id: string, input: TaggingMailboxInput) =>
+    request<TaggingMailbox>("PUT", `/api/settings/tagging-mailboxes/${id}`, input),
+  remove: (id: string) =>
+    request<void>("DELETE", `/api/settings/tagging-mailboxes/${id}`),
+  /// Active-only typeahead for the @@-picker (agent-accessible).
+  searchForMention: (q: string, limit = 20) => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    params.set("limit", String(limit));
+    return request<TaggingMailboxSearchItem[]>(
+      "GET",
+      `/api/tagging-mailboxes/search?${params.toString()}`,
+    );
+  },
+};
+
+// ---- Inbound mailbox polling (v0.0.60) ------------------------------
+
+/// One row per queue that has an inbound mailbox configured. The toggle pauses
+/// or resumes Graph polling for that mailbox; delta-state is kept on pause.
+export type InboundMailbox = {
+  queueId: string;
+  queueName: string;
+  mailbox: string;
+  folderName: string | null;
+  folderConfigured: boolean;
+  isActive: boolean;
+  inboundPollingEnabled: boolean;
+  lastPolledUtc: string | null;
+  lastError: string | null;
+  consecutiveFailures: number;
+};
+
+export const mailMailboxApi = {
+  list: () => request<InboundMailbox[]>("GET", "/api/admin/mail/mailboxes"),
+  setPolling: (queueId: string, enabled: boolean) =>
+    request<{ queueId: string; inboundPollingEnabled: boolean }>(
+      "PUT",
+      `/api/admin/mail/mailboxes/${queueId}/polling`,
+      { enabled },
+    ),
+};
+
+/// Merged @@-mention typeahead: agents first, then tagging mailboxes. Mailbox
+/// ids are prefixed `mbox:` so the submit-time split routes them correctly.
+export const mentionApi = {
+  search: async (q: string): Promise<MentionPickerItem[]> => {
+    const [agents, mailboxes] = await Promise.all([
+      userApi.searchAgents(q),
+      taggingMailboxApi.searchForMention(q),
+    ]);
+    const agentItems: MentionPickerItem[] = agents.map((a) => ({
+      id: a.id,
+      email: a.email,
+      roleName: a.roleName,
+      kind: "agent",
+    }));
+    const mailboxItems: MentionPickerItem[] = mailboxes.map((m) => ({
+      id: `mbox:${m.id}`,
+      email: m.email,
+      roleName: "Mailbox",
+      kind: "mailbox",
+      label: m.name,
+    }));
+    return [...agentItems, ...mailboxItems];
   },
 };
 

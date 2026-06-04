@@ -21,4 +21,7 @@ public sealed record MentionNotificationSource(
     string SourceUserEmail,
     IReadOnlyList<Guid> MentionedUserIds,
     string BodyHtml,
-    string BodyText);
+    string BodyText,
+    /// Tagging-only mailbox ids (already filtered to active rows). Each gets a
+    /// notification mail but no DB row / SignalR push — they aren't users.
+    IReadOnlyList<Guid> MentionedMailboxIds);
