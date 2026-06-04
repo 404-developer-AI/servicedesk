@@ -12,6 +12,7 @@ using Servicedesk.Infrastructure.Notifications;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Signatures;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Storage;
 using Servicedesk.Infrastructure.Triggers;
@@ -36,6 +37,7 @@ public sealed class OutboundMailService : IOutboundMailService
     private readonly IIntakeFormRepository _intakeForms;
     private readonly IIntakeFormTokenService _intakeTokens;
     private readonly ITriggerService _triggers;
+    private readonly ISignatureComposer _signatures;
     private readonly ILogger<OutboundMailService> _logger;
 
     public OutboundMailService(
@@ -52,6 +54,7 @@ public sealed class OutboundMailService : IOutboundMailService
         IIntakeFormRepository intakeForms,
         IIntakeFormTokenService intakeTokens,
         ITriggerService triggers,
+        ISignatureComposer signatures,
         ILogger<OutboundMailService> logger)
     {
         _graph = graph;
@@ -67,6 +70,7 @@ public sealed class OutboundMailService : IOutboundMailService
         _intakeForms = intakeForms;
         _intakeTokens = intakeTokens;
         _triggers = triggers;
+        _signatures = signatures;
         _logger = logger;
     }
 
@@ -186,6 +190,19 @@ public sealed class OutboundMailService : IOutboundMailService
         // Sent instance whose link never reached the customer.
         var intakePrep = await PrepareIntakeFormsAsync(request, preparedBody, ct);
         preparedBody = intakePrep.BodyHtml;
+
+        // Email signature (v0.0.58). Appended only to the wire body, not to the
+        // timeline event body (the signature images are cid-only, so they would
+        // render broken in the in-app timeline). A reply is anything sent into
+        // an existing thread (anchor present); whether replies get a signature
+        // is admin-configurable. A null result means "no signature applies".
+        var signature = await _signatures.ComposeForQueueAsync(
+            detail.Ticket.QueueId, request.AuthorUserId, isReply: anchor is not null, ct);
+        if (signature is not null)
+        {
+            preparedBody = AppendSignature(preparedBody, signature.Html);
+            graphAttachments.AddRange(signature.Attachments);
+        }
 
         var sendResult = await _graph.SendMailAsync(new GraphOutboundMessage(
             FromMailbox: fromMailbox,
@@ -352,6 +369,14 @@ public sealed class OutboundMailService : IOutboundMailService
 
     private static string? FirstNonEmpty(string? a, string? b)
         => !string.IsNullOrWhiteSpace(a) ? a : (!string.IsNullOrWhiteSpace(b) ? b : null);
+
+    private static string AppendSignature(string body, string signatureHtml)
+    {
+        if (string.IsNullOrWhiteSpace(signatureHtml)) return body;
+        // A little vertical breathing room between the agent's text and the
+        // signature block; the signature carries its own table layout.
+        return $"{body}<br>{signatureHtml}";
+    }
 
     private static string HtmlToText(string html)
     {

@@ -9,6 +9,7 @@ import {
   FileText,
   Mail,
   Paperclip,
+  PenLine,
   Plug,
   ScrollText,
   Shield,
@@ -125,6 +126,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       "Pre-canned HTML snippets agents drop into a note, reply, or outgoing mail via the :: picker. Scope each template to one or more queues. Each template can optionally link a survey that fires on send.",
     icon: FileText,
+  },
+  {
+    slug: "signatures",
+    label: "Signatures",
+    description:
+      "Admin-managed email signatures built from a reusable block tree. Assign per mailbox, inject agent profile variables, and sync profile photos from Entra ID.",
+    icon: PenLine,
   },
   {
     slug: "surveys",

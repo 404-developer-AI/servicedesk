@@ -236,7 +236,8 @@ public sealed class OutboundMailServiceTests
         var intakeForms = new StubIntakeForms();
         var intakeTokens = new StubIntakeTokens();
         var svc = new OutboundMailService(graph, taxonomy, tickets, mail, atts, blobs, settings, sla, users, mentions,
-            intakeForms, intakeTokens, new NoopTriggerService(), NullLogger<OutboundMailService>.Instance);
+            intakeForms, intakeTokens, new NoopTriggerService(), new NoopSignatureComposer(),
+            NullLogger<OutboundMailService>.Instance);
         return (svc, graph, mail, atts, tickets);
     }
 
@@ -523,5 +524,18 @@ public sealed class OutboundMailServiceTests
         public Task<TriggerDryRunResult?> DryRunAsync(
             Guid triggerId, Guid ticketId, CancellationToken ct)
             => Task.FromResult<TriggerDryRunResult?>(null);
+    }
+
+    // No signature is ever appended in these tests, so both compose paths
+    // return null — the outbound body assertions stay exactly as before.
+    private sealed class NoopSignatureComposer : Servicedesk.Infrastructure.Signatures.ISignatureComposer
+    {
+        public Task<Servicedesk.Infrastructure.Signatures.ComposedSignature?> ComposeForQueueAsync(
+            Guid queueId, Guid senderUserId, bool isReply, CancellationToken ct)
+            => Task.FromResult<Servicedesk.Infrastructure.Signatures.ComposedSignature?>(null);
+
+        public Task<Servicedesk.Infrastructure.Signatures.ComposedSignature?> ComposeSystemAsync(
+            bool isReply, CancellationToken ct)
+            => Task.FromResult<Servicedesk.Infrastructure.Signatures.ComposedSignature?>(null);
     }
 }
