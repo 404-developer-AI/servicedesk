@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SettingField } from "@/components/settings/SettingField";
 import { GraphSection } from "./GraphSection";
+import { InboundMailboxesSection } from "./InboundMailboxesSection";
 
 const MAIL_QUERY_KEY = ["settings", "list", "Mail"] as const;
 const STORAGE_QUERY_KEY = ["settings", "list", "Storage"] as const;
@@ -132,6 +133,7 @@ export function MailSettingsPage() {
       ) : (
         <>
         <GraphSection />
+        <InboundMailboxesSection />
         {SECTIONS.map((section) => (
           <section
             key={section.title}

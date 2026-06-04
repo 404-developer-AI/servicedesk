@@ -980,6 +980,12 @@ public sealed class DatabaseBootstrapper : IHostedService
             ADD COLUMN IF NOT EXISTS inbound_folder_id   TEXT NULL,
             ADD COLUMN IF NOT EXISTS inbound_folder_name TEXT NULL;
 
+        -- v0.0.60 — per-mailbox inbound polling switch. Defaults TRUE so
+        -- existing queues keep polling; toggling it off makes MailPollingService
+        -- skip the queue while leaving its delta-state intact.
+        ALTER TABLE queues
+            ADD COLUMN IF NOT EXISTS inbound_polling_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+
         -- ===================================================================
         -- v0.0.9 Companies: customer identification (code/short name/VAT),
         -- alert/note that can pop up on ticket create and/or ticket open,
@@ -2539,6 +2545,25 @@ public sealed class DatabaseBootstrapper : IHostedService
 
         CREATE INDEX IF NOT EXISTS ix_compose_templates_queue_ids
             ON compose_templates USING GIN (queue_ids);
+
+        -- ===================================================================
+        -- Tagging-only mailboxes — login-less @@-mention targets. Mentioning
+        -- one in a note / reply / outbound mail sends a notification e-mail to
+        -- its address; it has no user row, no role, no tickets and never signs
+        -- in. Managed admin-only as the first card on Settings → Users. Email
+        -- is stored lower-cased so the unique index is case-insensitive.
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS tagging_mailboxes (
+            id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            name        TEXT        NOT NULL,
+            email       TEXT        NOT NULL,
+            is_active   BOOLEAN     NOT NULL DEFAULT TRUE,
+            created_utc TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_tagging_mailboxes_email
+            ON tagging_mailboxes (lower(email));
 
         -- ===================================================================
         -- v0.0.38 customer satisfaction surveys (CSAT). See ARCHITECTURE.md →

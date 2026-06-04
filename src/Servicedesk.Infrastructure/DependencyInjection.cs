@@ -419,6 +419,10 @@ public static class DependencyInjection
         services.AddSingleton<IComposeTemplateRepository, ComposeTemplateRepository>();
         services.AddSingleton<IComposeTokenResolver, ComposeTokenResolver>();
 
+        // Tagging-only mailboxes — login-less @@-mention targets that receive
+        // a notification mail when tagged. Managed admin-only under Users.
+        services.AddSingleton<TaggingMailboxes.ITaggingMailboxRepository, TaggingMailboxes.TaggingMailboxRepository>();
+
         // Email signatures (v0.0.58). Renderer + sanitizer are stateless;
         // repositories follow the NpgsqlDataSource + Dapper pattern. The
         // resolver caches resolved variables in IMemoryCache (invalidated on a

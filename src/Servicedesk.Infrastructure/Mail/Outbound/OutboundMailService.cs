@@ -15,6 +15,7 @@ using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Signatures;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Storage;
+using Servicedesk.Infrastructure.TaggingMailboxes;
 using Servicedesk.Infrastructure.Triggers;
 
 namespace Servicedesk.Infrastructure.Mail.Outbound;
@@ -34,6 +35,7 @@ public sealed class OutboundMailService : IOutboundMailService
     private readonly ISlaEngine _sla;
     private readonly IUserService _users;
     private readonly IMentionNotificationService _mentions;
+    private readonly ITaggingMailboxRepository _taggingMailboxes;
     private readonly IIntakeFormRepository _intakeForms;
     private readonly IIntakeFormTokenService _intakeTokens;
     private readonly ITriggerService _triggers;
@@ -51,6 +53,7 @@ public sealed class OutboundMailService : IOutboundMailService
         ISlaEngine sla,
         IUserService users,
         IMentionNotificationService mentions,
+        ITaggingMailboxRepository taggingMailboxes,
         IIntakeFormRepository intakeForms,
         IIntakeFormTokenService intakeTokens,
         ITriggerService triggers,
@@ -67,6 +70,7 @@ public sealed class OutboundMailService : IOutboundMailService
         _sla = sla;
         _users = users;
         _mentions = mentions;
+        _taggingMailboxes = taggingMailboxes;
         _intakeForms = intakeForms;
         _intakeTokens = intakeTokens;
         _triggers = triggers;
@@ -221,6 +225,12 @@ public sealed class OutboundMailService : IOutboundMailService
         {
             mentionedIds = await _users.FilterAgentIdsAsync(incomingMentions, ct);
         }
+        IReadOnlyList<Guid> mentionedMailboxIds = Array.Empty<Guid>();
+        if (request.MentionedMailboxIds is { Count: > 0 } incomingMailboxes)
+        {
+            var resolvedMailboxes = await _taggingMailboxes.ResolveActiveByIdsAsync(incomingMailboxes, ct);
+            mentionedMailboxIds = resolvedMailboxes.Select(m => m.Id).ToList();
+        }
 
         var bodyText = HtmlToText(request.BodyHtml);
         var metadata = JsonSerializer.Serialize(new
@@ -236,6 +246,7 @@ public sealed class OutboundMailService : IOutboundMailService
             internet_message_id = sendResult.InternetMessageId,
             in_reply_to = anchor?.MessageId,
             mentionedUserIds = mentionedIds,
+            mentionedMailboxIds = mentionedMailboxIds,
         });
 
         // Persist the user-readable body (with /api/.../attachments/{id} URLs,
@@ -318,7 +329,7 @@ public sealed class OutboundMailService : IOutboundMailService
         // @@-mention notification raamwerk (v0.0.12 stap 4). Mirrors the
         // event-endpoint hook; fire-and-forget so a notification-channel
         // failure never undoes the mail we already put on the wire.
-        if (mentionedIds.Count > 0)
+        if (mentionedIds.Count > 0 || mentionedMailboxIds.Count > 0)
         {
             var sourceUser = await _users.FindByIdAsync(request.AuthorUserId, ct);
             await _mentions.PublishAsync(new MentionNotificationSource(
@@ -332,7 +343,8 @@ public sealed class OutboundMailService : IOutboundMailService
                 SourceUserEmail: sourceUser?.Email ?? string.Empty,
                 MentionedUserIds: mentionedIds,
                 BodyHtml: request.BodyHtml,
-                BodyText: bodyText), ct);
+                BodyText: bodyText,
+                MentionedMailboxIds: mentionedMailboxIds), ct);
         }
 
         return OutboundMailResult.Ok(evt, mentionedIds.Count);

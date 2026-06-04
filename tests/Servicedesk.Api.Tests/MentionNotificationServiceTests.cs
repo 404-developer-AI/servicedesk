@@ -6,6 +6,8 @@ using Servicedesk.Infrastructure.Notifications;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Domain.TaggingMailboxes;
+using Servicedesk.Infrastructure.TaggingMailboxes;
 using Xunit;
 
 namespace Servicedesk.Api.Tests;
@@ -117,9 +119,62 @@ public sealed class MentionNotificationServiceTests
         Assert.Empty(graph.Sent);
     }
 
+    [Fact]
+    public async Task Tagging_mailbox_mention_sends_mail_without_db_row_or_push()
+    {
+        var repo = new StubRepo();
+        var notifier = new StubNotifier();
+        var users = new StubUsers("bob@example.com");
+        var taxonomy = new StubTaxonomy("support@desk.test");
+        var graph = new StubGraph();
+        var settings = new StubSettings();
+        var tagging = new StubTaggingMailboxes();
+        var mailboxId = Guid.Parse("55555555-5555-5555-5555-555555555555");
+        tagging.Active.Add(new TaggingMailbox(
+            mailboxId, "Accounting", "accounting@desk.test", true, DateTime.UtcNow, DateTime.UtcNow));
+        var svc = new MentionNotificationService(repo, notifier, users, taxonomy, graph, settings,
+            tagging, NullLogger<MentionNotificationService>.Instance);
+
+        await svc.PublishAsync(MakeSource(Array.Empty<Guid>(), new[] { mailboxId }), default);
+
+        // Mailboxes are not users: no in-app row, no SignalR push, no per-row stamp.
+        Assert.Empty(repo.Rows);
+        Assert.Empty(notifier.Pushed);
+        Assert.Empty(repo.EmailStamps);
+
+        // But a notification mail went out to the mailbox address.
+        var sent = Assert.Single(graph.Sent);
+        Assert.Equal("support@desk.test", sent.FromMailbox);
+        Assert.Equal("accounting@desk.test", Assert.Single(sent.To).Address);
+        Assert.StartsWith("Tagged: ", sent.Subject);
+    }
+
+    [Fact]
+    public async Task Inactive_tagging_mailbox_is_dropped_no_mail()
+    {
+        var repo = new StubRepo();
+        var notifier = new StubNotifier();
+        var users = new StubUsers("bob@example.com");
+        var taxonomy = new StubTaxonomy("support@desk.test");
+        var graph = new StubGraph();
+        var settings = new StubSettings();
+        var tagging = new StubTaggingMailboxes();
+        var mailboxId = Guid.Parse("66666666-6666-6666-6666-666666666666");
+        // Present but inactive — ResolveActiveByIds filters it out, so no mail.
+        tagging.Active.Add(new TaggingMailbox(
+            mailboxId, "Old Box", "old@desk.test", false, DateTime.UtcNow, DateTime.UtcNow));
+        var svc = new MentionNotificationService(repo, notifier, users, taxonomy, graph, settings,
+            tagging, NullLogger<MentionNotificationService>.Instance);
+
+        await svc.PublishAsync(MakeSource(Array.Empty<Guid>(), new[] { mailboxId }), default);
+
+        Assert.Empty(graph.Sent);
+    }
+
     // ---- helpers ----
 
-    private static MentionNotificationSource MakeSource(IReadOnlyList<Guid> mentioned) =>
+    private static MentionNotificationSource MakeSource(
+        IReadOnlyList<Guid> mentioned, IReadOnlyList<Guid>? mailboxes = null) =>
         new(
             TicketId: TicketId,
             TicketNumber: 42,
@@ -131,7 +186,8 @@ public sealed class MentionNotificationServiceTests
             SourceUserEmail: "alice@desk.test",
             MentionedUserIds: mentioned,
             BodyHtml: "<p>Please take a look @@bob</p>",
-            BodyText: "Please take a look @bob");
+            BodyText: "Please take a look @bob",
+            MentionedMailboxIds: mailboxes ?? Array.Empty<Guid>());
 
     private static (
         MentionNotificationService svc,
@@ -146,8 +202,9 @@ public sealed class MentionNotificationServiceTests
         var taxonomy = new StubTaxonomy(mailbox);
         var graph = new StubGraph();
         var settings = new StubSettings();
+        var taggingMailboxes = new StubTaggingMailboxes();
         var svc = new MentionNotificationService(repo, notifier, users, taxonomy, graph, settings,
-            NullLogger<MentionNotificationService>.Instance);
+            taggingMailboxes, NullLogger<MentionNotificationService>.Instance);
         return (svc, repo, notifier, graph, settings);
     }
 
@@ -258,6 +315,7 @@ public sealed class MentionNotificationServiceTests
         public Task<Queue> CreateQueueAsync(Queue q, CancellationToken ct) => throw new NotImplementedException();
         public Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, string? inbound, string? outbound, string? inboundFolderId, string? inboundFolderName, IReadOnlyList<Guid> allowedStatusIds, Guid? defaultStatusId, CancellationToken ct) => throw new NotImplementedException();
         public Task<DeleteResult> DeleteQueueAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> SetQueueInboundPollingAsync(Guid id, bool enabled, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<TicketType>> ListTicketTypesAsync(CancellationToken ct) => throw new NotImplementedException();
         public Task<TicketType?> GetTicketTypeAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
         public Task<TicketType?> GetTicketTypeByCodeAsync(string code, CancellationToken ct) => throw new NotImplementedException();
@@ -336,5 +394,31 @@ public sealed class MentionNotificationServiceTests
 
         public Task<IReadOnlyList<SettingEntry>> ListAsync(string? category = null, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<SettingEntry>>(Array.Empty<SettingEntry>());
+    }
+
+    private sealed class StubTaggingMailboxes : ITaggingMailboxRepository
+    {
+        public List<TaggingMailbox> Active { get; } = new();
+
+        public Task<IReadOnlyList<TaggingMailbox>> ListAsync(CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<TaggingMailbox>>(Active);
+
+        public Task<TaggingMailbox?> GetAsync(Guid id, CancellationToken ct) =>
+            Task.FromResult(Active.FirstOrDefault(m => m.Id == id));
+
+        public Task<IReadOnlyList<TaggingMailbox>> SearchActiveAsync(string? search, int limit, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<TaggingMailbox>>(Active.Where(m => m.IsActive).ToList());
+
+        // Mirrors the real repo: active rows only.
+        public Task<IReadOnlyList<TaggingMailbox>> ResolveActiveByIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<TaggingMailbox>>(Active.Where(m => m.IsActive && ids.Contains(m.Id)).ToList());
+
+        public Task<Guid> CreateAsync(string name, string email, bool isActive, CancellationToken ct) =>
+            Task.FromResult(Guid.NewGuid());
+
+        public Task<bool> UpdateAsync(Guid id, string name, string email, bool isActive, CancellationToken ct) =>
+            Task.FromResult(true);
+
+        public Task<bool> DeleteAsync(Guid id, CancellationToken ct) => Task.FromResult(true);
     }
 }

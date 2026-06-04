@@ -5,18 +5,21 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
+  LayoutGrid,
   LogOut,
+  Pin,
+  PinOff,
   Plus,
   Settings as SettingsIcon,
   UserCircle2,
 } from "lucide-react";
 import ticksyMark from "@/assets/brand/ticksy.svg";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useCurrentRole } from "@/hooks/useCurrentRole";
 import { useSidebarStore } from "@/stores/useSidebarStore";
-import { visibleNavItems } from "@/shell/navItems";
+import { visibleNavItems, type NavItem } from "@/shell/navItems";
 import { NewTicketDrawer } from "@/shell/NewTicketDrawer";
 import { useSystemVersion } from "@/hooks/useSystemVersion";
 import {
@@ -25,7 +28,7 @@ import {
   formatServerLocalDate,
 } from "@/hooks/useServerTime";
 import { viewApi } from "@/lib/ticket-api";
-import { settingsApi } from "@/lib/api";
+import { settingsApi, preferencesApi } from "@/lib/api";
 import { RecentTickets } from "@/shell/RecentTickets";
 import { NotificationsWidget } from "@/shell/NotificationsWidget";
 import { GlobalSearchBar } from "@/components/search/GlobalSearchBar";
@@ -39,6 +42,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 // Timezone is intentionally not displayed — on Windows dev boxes
 // `TimeZoneInfo.Local.Id` returns "Romance Standard Time" etc., which is ugly
@@ -65,6 +73,32 @@ export function Sidebar() {
     queryFn: settingsApi.navigation,
     staleTime: 60000,
     enabled: role === "Agent" || role === "Admin",
+  });
+  // v0.0.60 — feature pages the user pinned out of the "Features" flyout.
+  // Persisted per-user server-side, so the choice survives logout/login.
+  const qc = useQueryClient();
+  const { data: pinnedData } = useQuery({
+    queryKey: ["preferences", "pinned-features"],
+    queryFn: preferencesApi.getPinnedFeatures,
+    staleTime: 60000,
+    enabled: role === "Agent" || role === "Admin",
+  });
+  const pinnedPaths = React.useMemo(() => pinnedData?.paths ?? [], [pinnedData]);
+
+  const pinMutation = useMutation({
+    mutationFn: (paths: string[]) => preferencesApi.setPinnedFeatures(paths),
+    // Optimistic so the row moves the instant the user clicks the pin.
+    onMutate: async (paths) => {
+      await qc.cancelQueries({ queryKey: ["preferences", "pinned-features"] });
+      const prev = qc.getQueryData<{ paths: string[] }>(["preferences", "pinned-features"]);
+      qc.setQueryData(["preferences", "pinned-features"], { paths });
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(["preferences", "pinned-features"], ctx.prev);
+      toast.error("Could not save your pinned features");
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["preferences", "pinned-features"] }),
   });
 
   const activeViewId = React.useMemo(() => {
@@ -113,6 +147,29 @@ export function Sidebar() {
     }
     return true;
   });
+
+  // v0.0.60 — keep the primary nav short. Dashboard + Open Tickets stay pinned
+  // inline; the remaining feature pages (SLA log, KB, Timesheet, Activity,
+  // Assets, Orders) collapse into a single "Features" flyout-to-the-right once
+  // more than two of them are active, so the rail never grows unwieldy.
+  const PINNED_PATHS = new Set(["/", "/tickets"]);
+  const corePinnedItems = items.filter((i) => PINNED_PATHS.has(i.to));
+  const featureItems = items.filter((i) => !PINNED_PATHS.has(i.to));
+  const collapseFeatures = featureItems.length > 2;
+
+  // When collapsed, the user's pinned features stay inline; the rest move into
+  // the flyout. Intersect against the live feature set so a pin for a feature
+  // that's since been disabled is simply ignored (and never re-saved).
+  const pinnedFeatureItems = featureItems.filter((i) => pinnedPaths.includes(i.to));
+  const flyoutFeatureItems = featureItems.filter((i) => !pinnedPaths.includes(i.to));
+
+  const pinFeature = (path: string) => {
+    if (pinnedPaths.includes(path)) return;
+    pinMutation.mutate([...pinnedPaths, path]);
+  };
+  const unpinFeature = (path: string) => {
+    pinMutation.mutate(pinnedPaths.filter((p) => p !== path));
+  };
 
   // Strip any MinVer pre-release suffix (e.g. "0.0.4-alpha.0.5" → "0.0.4") so
   // the UI shows a clean `vX.X.X`. Once a v0.0.4 tag is pushed there is no
@@ -188,26 +245,34 @@ export function Sidebar() {
       )}
 
       <nav className="flex min-h-0 flex-1 flex-col space-y-1 px-3">
-        {items.map((item) => {
-          const active = pathname === item.to;
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.to}
-              to={item.to}
-              className={cn(
-                "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all",
-                active
-                  ? "bg-glass-strong text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
-                  : "text-muted-foreground hover:bg-glass-hover hover:text-foreground",
-                collapsed && "justify-center px-2"
-              )}
-            >
-              <Icon className={cn("h-4 w-4 shrink-0", active && "text-primary")} />
-              {!collapsed && <span className="truncate">{item.label}</span>}
-            </Link>
-          );
-        })}
+        {corePinnedItems.map((item) => (
+          <NavRow key={item.to} item={item} active={pathname === item.to} collapsed={collapsed} />
+        ))}
+        {collapseFeatures ? (
+          <>
+            {pinnedFeatureItems.map((item) => (
+              <NavRow
+                key={item.to}
+                item={item}
+                active={pathname === item.to}
+                collapsed={collapsed}
+                onUnpin={() => unpinFeature(item.to)}
+              />
+            ))}
+            {flyoutFeatureItems.length > 0 && (
+              <FeaturesFlyout
+                items={flyoutFeatureItems}
+                collapsed={collapsed}
+                pathname={pathname}
+                onPin={pinFeature}
+              />
+            )}
+          </>
+        ) : (
+          featureItems.map((item) => (
+            <NavRow key={item.to} item={item} active={pathname === item.to} collapsed={collapsed} />
+          ))
+        )}
         {!collapsed && views && views.length > 0 && (
           <div className="mt-2 border-t border-glass pt-2">
             <div className="px-3 pb-1 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">
@@ -434,5 +499,144 @@ export function Sidebar() {
         )}
       </div>
     </motion.aside>
+  );
+}
+
+/// A single primary-nav row. Extracted so the pinned items and the inline
+/// (non-collapsed) feature items render identically. When `onUnpin` is given
+/// (a user-pinned feature, expanded rail), a pin-off button appears on hover.
+function NavRow({
+  item,
+  active,
+  collapsed,
+  onUnpin,
+}: {
+  item: NavItem;
+  active: boolean;
+  collapsed: boolean;
+  onUnpin?: () => void;
+}) {
+  const Icon = item.icon;
+  const link = (
+    <Link
+      to={item.to}
+      className={cn(
+        "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all",
+        active
+          ? "bg-glass-strong text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+          : "text-muted-foreground hover:bg-glass-hover hover:text-foreground",
+        collapsed && "justify-center px-2",
+        onUnpin && !collapsed && "pr-9",
+      )}
+    >
+      <Icon className={cn("h-4 w-4 shrink-0", active && "text-primary")} />
+      {!collapsed && <span className="truncate">{item.label}</span>}
+    </Link>
+  );
+
+  if (!onUnpin || collapsed) return link;
+
+  return (
+    <div className="group/navrow relative">
+      {link}
+      <button
+        type="button"
+        title={`Unpin ${item.label}`}
+        aria-label={`Unpin ${item.label}`}
+        onClick={() => onUnpin()}
+        className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground/70 opacity-0 transition-all hover:bg-glass-strong hover:text-foreground focus-visible:opacity-100 group-hover/navrow:opacity-100"
+      >
+        <PinOff className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+/// v0.0.60 — single "Features" entry that opens a flyout to the right listing
+/// every un-pinned feature page. Keeps the rail short when many features are
+/// enabled. Each row navigates; the trailing pin button pins it inline under
+/// Dashboard (persisted per-user). The trigger reads as active whenever the
+/// current route is one of the contained features.
+function FeaturesFlyout({
+  items,
+  collapsed,
+  pathname,
+  onPin,
+}: {
+  items: readonly NavItem[];
+  collapsed: boolean;
+  pathname: string;
+  onPin: (path: string) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const isFeatureActive = (to: string) =>
+    pathname === to || pathname.startsWith(`${to}/`);
+  const anyActive = items.some((i) => isFeatureActive(i.to));
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          title="Features"
+          className={cn(
+            "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all",
+            anyActive
+              ? "bg-glass-strong text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+              : "text-muted-foreground hover:bg-glass-hover hover:text-foreground",
+            collapsed && "justify-center px-2",
+          )}
+        >
+          <LayoutGrid className={cn("h-4 w-4 shrink-0", anyActive && "text-primary")} />
+          {!collapsed && (
+            <>
+              <span className="truncate">Features</span>
+              <ChevronRight className="ml-auto h-3.5 w-3.5 opacity-60 transition-transform group-hover:translate-x-0.5" />
+            </>
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="right" align="start" sideOffset={12} className="w-60 p-1.5">
+        <div className="flex items-center justify-between px-2 pb-1 pt-0.5">
+          <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">
+            Features
+          </span>
+          <span className="text-[10px] text-muted-foreground/50">Pin to sidebar</span>
+        </div>
+        <div className="space-y-0.5">
+          {items.map((item) => {
+            const Icon = item.icon;
+            const active = isFeatureActive(item.to);
+            return (
+              <div
+                key={item.to}
+                className="group/feat flex items-center gap-1 rounded-md hover:bg-glass-hover"
+              >
+                <Link
+                  to={item.to}
+                  onClick={() => setOpen(false)}
+                  className={cn(
+                    "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
+                    active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <Icon className={cn("h-4 w-4 shrink-0", active && "text-primary")} />
+                  <span className="truncate">{item.label}</span>
+                </Link>
+                <button
+                  type="button"
+                  title={`Pin ${item.label} to sidebar`}
+                  aria-label={`Pin ${item.label} to sidebar`}
+                  onClick={() => onPin(item.to)}
+                  className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 opacity-0 transition-all hover:bg-glass-strong hover:text-foreground focus-visible:opacity-100 group-hover/feat:opacity-100"
+                >
+                  <Pin className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

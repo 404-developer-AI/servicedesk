@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { substituteComposeTokens } from "@/lib/composeTokens";
-import type { TicketAttachmentMeta, AgentUser } from "@/lib/ticket-api";
+import type { TicketAttachmentMeta, MentionPickerItem } from "@/lib/ticket-api";
 import { MentionList, type MentionListHandle } from "./MentionList";
 import {
   IntakeMentionList,
@@ -52,7 +52,7 @@ type RichTextEditorProps = {
   /// Selecting a row inserts a Mention node whose `id` is the agent's user-id.
   /// Called alongside onChange on every update with the current set of
   /// mentioned user-ids (deduplicated, source order).
-  onMentionQuery?: (query: string) => Promise<AgentUser[]>;
+  onMentionQuery?: (query: string) => Promise<MentionPickerItem[]>;
   onMentionsChange?: (ids: string[]) => void;
   /// v0.0.19 — parallel to onMentionQuery but for the `::` intake-form
   /// trigger. Returns the admin-managed template catalogue. Mounting the
@@ -828,6 +828,23 @@ export function extractMentionIds(doc: unknown): string[] {
   return out;
 }
 
+/// Split the flat mention-id list emitted by `onMentionsChange` into the two
+/// server-side buckets. Tagging-mailbox ids are carried in the document with a
+/// `mbox:` prefix (so the mention node needs no schema change); we strip it
+/// here and route them to `mailboxIds`. Everything else is an agent user-id.
+export function splitMentionIds(ids: string[]): {
+  userIds: string[];
+  mailboxIds: string[];
+} {
+  const userIds: string[] = [];
+  const mailboxIds: string[] = [];
+  for (const id of ids) {
+    if (id.startsWith("mbox:")) mailboxIds.push(id.slice(5));
+    else userIds.push(id);
+  }
+  return { userIds, mailboxIds };
+}
+
 /// Suggestion-plugin wiring for the `::` mention. The picker mixes two
 /// kinds of items:
 ///   - "intake"   → insert an intake-form chip + async draft-instance create
@@ -1082,9 +1099,9 @@ function removeChipByTemplateId(
 /// query can update without recreating the editor.
 function buildMentionSuggestion(
   queryRef: React.MutableRefObject<
-    ((query: string) => Promise<AgentUser[]>) | undefined
+    ((query: string) => Promise<MentionPickerItem[]>) | undefined
   >,
-): Omit<SuggestionOptions<AgentUser, MentionNodeAttrs>, "editor"> {
+): Omit<SuggestionOptions<MentionPickerItem, MentionNodeAttrs>, "editor"> {
   return {
     char: "@@",
     async items({ query }: { query: string }) {
@@ -1105,11 +1122,11 @@ function buildMentionSuggestion(
       // hands over concrete string values, so an identity-forwarder with
       // the looser signature satisfies both sides.
       const adapt = (
-        command: SuggestionProps<AgentUser, MentionNodeAttrs>["command"],
+        command: SuggestionProps<MentionPickerItem, MentionNodeAttrs>["command"],
       ) => (attrs: { id: string; label: string }) => command(attrs);
 
       return {
-        onStart: (props: SuggestionProps<AgentUser, MentionNodeAttrs>) => {
+        onStart: (props: SuggestionProps<MentionPickerItem, MentionNodeAttrs>) => {
           component = new ReactRenderer(MentionList, {
             props: {
               items: props.items,
@@ -1132,7 +1149,7 @@ function buildMentionSuggestion(
             theme: "sd-mention",
           });
         },
-        onUpdate(props: SuggestionProps<AgentUser, MentionNodeAttrs>) {
+        onUpdate(props: SuggestionProps<MentionPickerItem, MentionNodeAttrs>) {
           component?.updateProps({
             items: props.items,
             loading: false,

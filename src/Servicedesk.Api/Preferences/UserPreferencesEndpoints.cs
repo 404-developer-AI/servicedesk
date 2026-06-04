@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Dapper;
 using Npgsql;
@@ -228,7 +229,84 @@ public static class UserPreferencesEndpoints
             return Results.NoContent();
         }).WithName("ResetUiThemePreference").WithOpenApi();
 
+        // ── Pinned nav features (v0.0.60) ──
+        //
+        // Per-user list of feature-page paths the agent pinned out of the
+        // sidebar "Features" flyout so they render inline under Dashboard.
+        // Stored as a JSON array under the 'nav:pinned-features' key; survives
+        // logout/login because it lives in user_preferences. Bounded + format-
+        // validated on write; the SPA intersects against the live nav set so a
+        // stale path simply has no effect.
+
+        group.MapGet("/pinned-features", async (
+            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            await using var conn = await dataSource.OpenConnectionAsync(ct);
+            var raw = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
+                "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'nav:pinned-features'",
+                new { userId }, cancellationToken: ct));
+            return Results.Ok(new PinnedFeaturesPreference(ParsePinnedPaths(raw)));
+        }).WithName("GetPinnedFeatures").WithOpenApi();
+
+        group.MapPut("/pinned-features", async (
+            [FromBody] UpdatePinnedFeaturesRequest req,
+            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+        {
+            var clean = NormalizePinnedPaths(req.Paths);
+            if (clean is null)
+                return Results.BadRequest(new { error = "Invalid pinned-features payload." });
+
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var value = JsonSerializer.Serialize(clean);
+            await using var conn = await dataSource.OpenConnectionAsync(ct);
+            await conn.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO user_preferences (user_id, pref_key, pref_value)
+                VALUES (@userId, 'nav:pinned-features', @value)
+                ON CONFLICT (user_id, pref_key) DO UPDATE
+                    SET pref_value = @value, updated_utc = now()
+                """,
+                new { userId, value }, cancellationToken: ct));
+
+            return Results.Ok(new PinnedFeaturesPreference(clean));
+        }).WithName("UpdatePinnedFeatures").WithOpenApi();
+
         return app;
+    }
+
+    /// Reads the stored JSON array, coercing any malformed row to an empty
+    /// list rather than throwing — a hand-edited DB value must not 500 the nav.
+    private static string[] ParsePinnedPaths(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return Array.Empty<string>();
+        try
+        {
+            var arr = JsonSerializer.Deserialize<string[]>(raw);
+            return NormalizePinnedPaths(arr) ?? Array.Empty<string>();
+        }
+        catch (JsonException)
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    /// Bounds + format guard. Returns null when the payload is structurally
+    /// invalid (too many entries, an over-long value, or a non-path entry) so
+    /// the write is rejected; otherwise the trimmed, de-duplicated set.
+    private static string[]? NormalizePinnedPaths(IReadOnlyList<string>? paths)
+    {
+        if (paths is null) return Array.Empty<string>();
+        if (paths.Count > 20) return null;
+        var clean = new List<string>(paths.Count);
+        foreach (var p in paths)
+        {
+            if (string.IsNullOrWhiteSpace(p)) continue;
+            var t = p.Trim();
+            if (t.Length > 64 || t[0] != '/') return null;
+            if (!clean.Contains(t)) clean.Add(t);
+        }
+        return clean.ToArray();
     }
 
     /// Returns the trimmed lowercase form when input is 'light' or 'dark',
@@ -247,4 +325,6 @@ public static class UserPreferencesEndpoints
     public sealed record SaveWorkspaceRequest(WorkspaceEntry[] Entries);
     public sealed record ThemePreference(string Theme, string Source);
     public sealed record UpdateUiThemeRequest(string Theme);
+    public sealed record PinnedFeaturesPreference(string[] Paths);
+    public sealed record UpdatePinnedFeaturesRequest(string[] Paths);
 }

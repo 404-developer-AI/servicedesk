@@ -6,6 +6,7 @@ using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.TaggingMailboxes;
 
 namespace Servicedesk.Infrastructure.Notifications;
 
@@ -26,6 +27,7 @@ public sealed class MentionNotificationService : IMentionNotificationService
     private readonly ITaxonomyRepository _taxonomy;
     private readonly IGraphMailClient _graph;
     private readonly ISettingsService _settings;
+    private readonly ITaggingMailboxRepository _taggingMailboxes;
     private readonly ILogger<MentionNotificationService> _logger;
 
     public MentionNotificationService(
@@ -35,6 +37,7 @@ public sealed class MentionNotificationService : IMentionNotificationService
         ITaxonomyRepository taxonomy,
         IGraphMailClient graph,
         ISettingsService settings,
+        ITaggingMailboxRepository taggingMailboxes,
         ILogger<MentionNotificationService> logger)
     {
         _repo = repo;
@@ -43,12 +46,13 @@ public sealed class MentionNotificationService : IMentionNotificationService
         _taxonomy = taxonomy;
         _graph = graph;
         _settings = settings;
+        _taggingMailboxes = taggingMailboxes;
         _logger = logger;
     }
 
     public async Task PublishAsync(MentionNotificationSource source, CancellationToken ct)
     {
-        if (source.MentionedUserIds.Count == 0) return;
+        if (source.MentionedUserIds.Count == 0 && source.MentionedMailboxIds.Count == 0) return;
 
         // Fall back to a stripped HTML body when BodyText is empty. The
         // events-endpoint (Note / Comment) sends only BodyHtml; OutboundMail
@@ -59,72 +63,75 @@ public sealed class MentionNotificationService : IMentionNotificationService
             ? source.BodyText
             : HtmlToText(source.BodyHtml);
 
-        var distinctIds = source.MentionedUserIds.Distinct().ToList();
-        var previewText = BuildPreview(effectiveBodyText);
-        var rows = distinctIds
-            .Select(uid => new NewUserNotification(
-                UserId: uid,
-                SourceUserId: source.SourceUserId,
-                NotificationType: "mention",
-                TicketId: source.TicketId,
-                TicketNumber: source.TicketNumber,
-                TicketSubject: source.TicketSubject,
-                EventId: source.EventId,
-                EventType: source.EventType,
-                PreviewText: previewText))
-            .ToList();
+        // --- In-app + SignalR for mentioned USERS (mailboxes get neither) ---
+        IReadOnlyList<UserNotificationRow> inserted = Array.Empty<UserNotificationRow>();
+        if (source.MentionedUserIds.Count > 0)
+        {
+            var distinctIds = source.MentionedUserIds.Distinct().ToList();
+            var previewText = BuildPreview(effectiveBodyText);
+            var rows = distinctIds
+                .Select(uid => new NewUserNotification(
+                    UserId: uid,
+                    SourceUserId: source.SourceUserId,
+                    NotificationType: "mention",
+                    TicketId: source.TicketId,
+                    TicketNumber: source.TicketNumber,
+                    TicketSubject: source.TicketSubject,
+                    EventId: source.EventId,
+                    EventType: source.EventType,
+                    PreviewText: previewText))
+                .ToList();
 
-        IReadOnlyList<UserNotificationRow> inserted;
-        try
-        {
-            inserted = await _repo.CreateManyAsync(rows, ct);
-        }
-        catch (Exception ex)
-        {
-            // Hard fail at the DB level — we log and return without throwing
-            // so the originating ticket-event / outbound-mail is not rolled
-            // back. Losing a notification row is strictly better than losing
-            // the post itself.
-            _logger.LogError(ex,
-                "Failed to persist mention-notifications for ticket {TicketId} event {EventId}.",
-                source.TicketId, source.EventId);
-            return;
-        }
-
-        // Real-time push — one fan-out per inserted row. Failures are per-row
-        // and swallowed; a disconnected agent simply doesn't get the live
-        // toast but will see the navbar entry on their next page load.
-        foreach (var row in inserted)
-        {
-            var payload = new UserNotificationPush(
-                Id: row.Id,
-                TicketId: row.TicketId,
-                TicketNumber: row.TicketNumber,
-                TicketSubject: row.TicketSubject,
-                SourceUserEmail: row.SourceUserEmail,
-                EventId: row.EventId,
-                EventType: row.EventType,
-                PreviewText: row.PreviewText,
-                CreatedUtc: row.CreatedUtc);
             try
             {
-                await _notifier.NotifyMentionAsync(row.UserId, payload, ct);
+                inserted = await _repo.CreateManyAsync(rows, ct);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex,
-                    "SignalR push failed for notification {NotificationId} (user {UserId}).",
-                    row.Id, row.UserId);
+                // Hard fail at the DB level — log and carry on (mailbox mails
+                // below still go out) so the originating ticket-event /
+                // outbound-mail is not rolled back. Losing a notification row
+                // is strictly better than losing the post itself.
+                _logger.LogError(ex,
+                    "Failed to persist mention-notifications for ticket {TicketId} event {EventId}.",
+                    source.TicketId, source.EventId);
+            }
+
+            // Real-time push — one fan-out per inserted row. Failures are per-row
+            // and swallowed; a disconnected agent simply doesn't get the live
+            // toast but will see the navbar entry on their next page load.
+            foreach (var row in inserted)
+            {
+                var payload = new UserNotificationPush(
+                    Id: row.Id,
+                    TicketId: row.TicketId,
+                    TicketNumber: row.TicketNumber,
+                    TicketSubject: row.TicketSubject,
+                    SourceUserEmail: row.SourceUserEmail,
+                    EventId: row.EventId,
+                    EventType: row.EventType,
+                    PreviewText: row.PreviewText,
+                    CreatedUtc: row.CreatedUtc);
+                try
+                {
+                    await _notifier.NotifyMentionAsync(row.UserId, payload, ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "SignalR push failed for notification {NotificationId} (user {UserId}).",
+                        row.Id, row.UserId);
+                }
             }
         }
 
-        // Mail — kill-switch + per-row best-effort. One mail per recipient.
+        // --- Mail: shared kill-switch + queue mailbox for users AND mailboxes ---
         var mailEnabled = await _settings.GetAsync<bool>(SettingKeys.Notifications.MentionEmailEnabled, ct);
         if (!mailEnabled)
         {
             _logger.LogInformation(
-                "Mention-notification email is globally disabled (Notifications.MentionEmailEnabled=false); skipped {Count} sends.",
-                inserted.Count);
+                "Mention-notification email is globally disabled (Notifications.MentionEmailEnabled=false); skipped {UserCount} user + {MailboxCount} mailbox sends.",
+                inserted.Count, source.MentionedMailboxIds.Count);
             return;
         }
 
@@ -132,8 +139,9 @@ public sealed class MentionNotificationService : IMentionNotificationService
         var fromMailbox = FirstNonEmpty(queue?.OutboundMailboxAddress, queue?.InboundMailboxAddress);
         if (string.IsNullOrWhiteSpace(fromMailbox))
         {
-            // No mailbox configured on the queue — stamp each row so the
-            // history page can show a "no mailbox" badge, and return.
+            // No mailbox configured on the queue — stamp each user row so the
+            // history page can show a "no mailbox" badge, and return. Tagging
+            // mailboxes have no row to stamp, so they're only logged.
             _logger.LogWarning(
                 "Queue {QueueId} has no outbound/inbound mailbox; skipping notification emails for ticket {TicketId}.",
                 source.QueueId, source.TicketId);
@@ -144,7 +152,6 @@ public sealed class MentionNotificationService : IMentionNotificationService
             return;
         }
 
-        var fromName = !string.IsNullOrWhiteSpace(queue?.Name) ? queue!.Name : fromMailbox;
         var publicBaseUrl = await _settings.GetAsync<string>(SettingKeys.App.PublicBaseUrl, ct) ?? string.Empty;
         if (string.IsNullOrWhiteSpace(publicBaseUrl))
         {
@@ -152,6 +159,7 @@ public sealed class MentionNotificationService : IMentionNotificationService
                 "App.PublicBaseUrl is empty; notification-mail CTA will be a relative path. Set this setting so the link survives outside the browser session.");
         }
 
+        // One mail per mentioned user.
         foreach (var row in inserted)
         {
             // Resolve the recipient email via the shared user-service. If the
@@ -165,24 +173,10 @@ public sealed class MentionNotificationService : IMentionNotificationService
                 continue;
             }
 
-            var subject = $"Tagged: {source.TicketSubject} [#{source.TicketNumber}]";
-            var bodyHtml = BuildMailBodyHtml(source, effectiveBodyText, row, recipient.Email, publicBaseUrl);
-
-            var message = new GraphOutboundMessage(
-                FromMailbox: fromMailbox,
-                Subject: subject,
-                BodyHtml: bodyHtml,
-                To: new[] { new GraphRecipient(recipient.Email, recipient.Email) },
-                Cc: Array.Empty<GraphRecipient>(),
-                Bcc: Array.Empty<GraphRecipient>(),
-                // Deliberately no Reply-To plus-address: replies to a
-                // notification mail should not land as ticket-mail.
-                ReplyTo: Array.Empty<GraphRecipient>(),
-                Attachments: null);
-
+            var bodyHtml = BuildMailBodyHtml(source, effectiveBodyText, recipient.Email, publicBaseUrl);
             try
             {
-                var result = await _graph.SendMailAsync(message, ct);
+                var result = await _graph.SendMailAsync(BuildMessage(fromMailbox, source, bodyHtml, recipient.Email), ct);
                 await _repo.MarkEmailSentAsync(row.Id, result.SentUtc.UtcDateTime, null, ct);
             }
             catch (Exception ex)
@@ -193,7 +187,42 @@ public sealed class MentionNotificationService : IMentionNotificationService
                 await _repo.MarkEmailSentAsync(row.Id, null, Truncate(ex.Message, 400), ct);
             }
         }
+
+        // One mail per tagging-only mailbox. No DB row / SignalR — these are
+        // not users; the mention is purely "send a copy to this address".
+        if (source.MentionedMailboxIds.Count > 0)
+        {
+            var mailboxes = await _taggingMailboxes.ResolveActiveByIdsAsync(source.MentionedMailboxIds, ct);
+            foreach (var mbx in mailboxes)
+            {
+                var bodyHtml = BuildMailBodyHtml(source, effectiveBodyText, mbx.Email, publicBaseUrl);
+                try
+                {
+                    await _graph.SendMailAsync(BuildMessage(fromMailbox, source, bodyHtml, mbx.Email), ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Failed to send mention-notification mail to tagging mailbox {MailboxId} ({Email}) for ticket {TicketId}.",
+                        mbx.Id, mbx.Email, source.TicketId);
+                }
+            }
+        }
     }
+
+    /// Builds the notification message. No Reply-To plus-address on purpose —
+    /// a reply to a tag notification must not land back as ticket-mail.
+    private static GraphOutboundMessage BuildMessage(
+        string fromMailbox, MentionNotificationSource source, string bodyHtml, string recipientEmail)
+        => new(
+            FromMailbox: fromMailbox,
+            Subject: $"Tagged: {source.TicketSubject} [#{source.TicketNumber}]",
+            BodyHtml: bodyHtml,
+            To: new[] { new GraphRecipient(recipientEmail, recipientEmail) },
+            Cc: Array.Empty<GraphRecipient>(),
+            Bcc: Array.Empty<GraphRecipient>(),
+            ReplyTo: Array.Empty<GraphRecipient>(),
+            Attachments: null);
 
     private static string BuildPreview(string bodyText)
     {
@@ -204,7 +233,6 @@ public sealed class MentionNotificationService : IMentionNotificationService
     private static string BuildMailBodyHtml(
         MentionNotificationSource source,
         string bodyText,
-        UserNotificationRow row,
         string recipientEmail,
         string publicBaseUrl)
     {

@@ -2,13 +2,13 @@ import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { MessageCircle, ExternalLink, Clock } from "lucide-react";
-import { ticketApi, userApi } from "@/lib/ticket-api";
+import { ticketApi, mentionApi } from "@/lib/ticket-api";
 import { preferencesApi } from "@/lib/api";
 import { useAuth } from "@/auth/authStore";
 import { orderMentionItems } from "@/pages/orders/orderMention";
 import { timesheetTicketApi } from "@/lib/timesheet-api";
 import { composeTemplatesApi } from "@/lib/composeTemplates-api";
-import { RichTextEditor } from "@/components/RichTextEditor";
+import { RichTextEditor, splitMentionIds } from "@/components/RichTextEditor";
 import { substituteComposeTokens } from "@/lib/composeTokens";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
@@ -206,14 +206,17 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
   }, [ticketId]);
 
   const mutation = useMutation({
-    mutationFn: () =>
-      ticketApi.addEvent(ticketId, {
+    mutationFn: () => {
+      const { userIds, mailboxIds } = splitMentionIds(mentionedUserIds);
+      return ticketApi.addEvent(ticketId, {
         eventType: isInternal ? "Note" : "Comment",
         bodyHtml: bodyHtml || undefined,
         isInternal,
         attachmentIds: attachments.readyAttachmentIds,
-        mentionedUserIds: mentionedUserIds.length > 0 ? mentionedUserIds : undefined,
-      }),
+        mentionedUserIds: userIds.length > 0 ? userIds : undefined,
+        mentionedMailboxIds: mailboxIds.length > 0 ? mailboxIds : undefined,
+      });
+    },
     onSuccess: () => {
       toast.success(isInternal ? "Note added" : "Reply sent");
       clearDraft();
@@ -367,7 +370,7 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
         }
         minHeight="120px"
         onUploadFile={attachments.upload}
-        onMentionQuery={(q) => userApi.searchAgents(q)}
+        onMentionQuery={(q) => mentionApi.search(q)}
         onMentionsChange={setMentionedUserIds}
         composeTokens={composeTokens}
         onIntakeQuery={async (q) => {

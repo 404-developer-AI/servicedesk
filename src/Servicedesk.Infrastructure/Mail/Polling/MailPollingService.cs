@@ -73,6 +73,10 @@ public sealed class MailPollingService : BackgroundService
         {
             if (ct.IsCancellationRequested) break;
             if (!q.IsActive) continue;
+            // v0.0.60 — per-mailbox pause switch. Delta-state is left intact so
+            // re-enabling resumes from the last delta link instead of re-reading
+            // the whole inbox.
+            if (!q.InboundPollingEnabled) continue;
             if (string.IsNullOrWhiteSpace(q.InboundMailboxAddress)) continue;
             if (string.IsNullOrWhiteSpace(q.InboundFolderId)) continue;
 

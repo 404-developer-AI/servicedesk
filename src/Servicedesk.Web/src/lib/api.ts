@@ -2478,7 +2478,15 @@ export const preferencesApi = {
   setUiTheme: (theme: "light" | "dark") =>
     request<void>("PUT", "/api/preferences/ui-theme", { theme }),
   resetUiTheme: () => request<void>("DELETE", "/api/preferences/ui-theme"),
+  // v0.0.60 — feature pages the user pinned out of the sidebar "Features"
+  // flyout so they render inline. Persisted per-user (survives logout/login).
+  getPinnedFeatures: () =>
+    request<PinnedFeaturesPreference>("GET", "/api/preferences/pinned-features"),
+  setPinnedFeatures: (paths: string[]) =>
+    request<PinnedFeaturesPreference>("PUT", "/api/preferences/pinned-features", { paths }),
 };
+
+export type PinnedFeaturesPreference = { paths: string[] };
 
 // ---- SLA ----
 

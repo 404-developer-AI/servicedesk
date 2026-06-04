@@ -23,6 +23,7 @@ import {
 import { adminUserApi, type UserAdminRow, type M365PickerUser } from "@/lib/ticket-api";
 import { TimesheetOverridesDialog } from "@/pages/settings/TimesheetOverridesDialog";
 import { FeatureFlagsDropdown } from "@/pages/settings/FeatureFlagsDropdown";
+import { TaggingMailboxesCard } from "@/pages/settings/TaggingMailboxesCard";
 import { authApi } from "@/lib/api";
 import { useAuth } from "@/auth/authStore";
 import { Badge } from "@/components/ui/badge";
@@ -95,6 +96,8 @@ export function UsersSettingsPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <TaggingMailboxesCard />
+
       <header className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/20 border border-primary/30">

@@ -15,7 +15,9 @@ using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Storage;
+using Servicedesk.Infrastructure.TaggingMailboxes;
 using Servicedesk.Infrastructure.Triggers;
+using Servicedesk.Domain.TaggingMailboxes;
 using Xunit;
 
 namespace Servicedesk.Api.Tests;
@@ -233,10 +235,11 @@ public sealed class OutboundMailServiceTests
         var sla = new StubSla();
         var users = new StubUsers(knownAgents);
         var mentions = new StubMentions();
+        var taggingMailboxes = new StubTaggingMailboxes();
         var intakeForms = new StubIntakeForms();
         var intakeTokens = new StubIntakeTokens();
         var svc = new OutboundMailService(graph, taxonomy, tickets, mail, atts, blobs, settings, sla, users, mentions,
-            intakeForms, intakeTokens, new NoopTriggerService(), new NoopSignatureComposer(),
+            taggingMailboxes, intakeForms, intakeTokens, new NoopTriggerService(), new NoopSignatureComposer(),
             NullLogger<OutboundMailService>.Instance);
         return (svc, graph, mail, atts, tickets);
     }
@@ -271,6 +274,7 @@ public sealed class OutboundMailServiceTests
         public Task<Queue> CreateQueueAsync(Queue q, CancellationToken ct) => throw new NotImplementedException();
         public Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, string? inbound, string? outbound, string? inboundFolderId, string? inboundFolderName, IReadOnlyList<Guid> allowedStatusIds, Guid? defaultStatusId, CancellationToken ct) => throw new NotImplementedException();
         public Task<DeleteResult> DeleteQueueAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> SetQueueInboundPollingAsync(Guid id, bool enabled, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<TicketType>> ListTicketTypesAsync(CancellationToken ct) => throw new NotImplementedException();
         public Task<TicketType?> GetTicketTypeAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
         public Task<TicketType?> GetTicketTypeByCodeAsync(string code, CancellationToken ct) => throw new NotImplementedException();
@@ -453,6 +457,23 @@ public sealed class OutboundMailServiceTests
             Published.Add(source);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class StubTaggingMailboxes : ITaggingMailboxRepository
+    {
+        public Task<IReadOnlyList<TaggingMailbox>> ListAsync(CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<TaggingMailbox>>(Array.Empty<TaggingMailbox>());
+        public Task<TaggingMailbox?> GetAsync(Guid id, CancellationToken ct) =>
+            Task.FromResult<TaggingMailbox?>(null);
+        public Task<IReadOnlyList<TaggingMailbox>> SearchActiveAsync(string? search, int limit, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<TaggingMailbox>>(Array.Empty<TaggingMailbox>());
+        public Task<IReadOnlyList<TaggingMailbox>> ResolveActiveByIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<TaggingMailbox>>(Array.Empty<TaggingMailbox>());
+        public Task<Guid> CreateAsync(string name, string email, bool isActive, CancellationToken ct) =>
+            Task.FromResult(Guid.NewGuid());
+        public Task<bool> UpdateAsync(Guid id, string name, string email, bool isActive, CancellationToken ct) =>
+            Task.FromResult(true);
+        public Task<bool> DeleteAsync(Guid id, CancellationToken ct) => Task.FromResult(true);
     }
 
     private sealed class StubUsers : IUserService

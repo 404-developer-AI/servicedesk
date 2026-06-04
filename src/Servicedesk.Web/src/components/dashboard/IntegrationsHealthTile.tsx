@@ -2,7 +2,15 @@ import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { ArrowRight, CheckCircle2, AlertTriangle, Plug, RefreshCw } from "lucide-react";
+import {
+  ArrowRight,
+  CheckCircle2,
+  AlertTriangle,
+  Plug,
+  RefreshCw,
+  Receipt,
+  Package,
+} from "lucide-react";
 import {
   ApiError,
   adsolutApi,
@@ -12,6 +20,8 @@ import {
   type HealthStatus,
   type IntegrationHealth,
   type SubsystemHealth,
+  type AdsolutErpSalesReceiptsState,
+  type AdsolutErpOrdersState,
 } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -116,6 +126,12 @@ export function IntegrationsHealthTile() {
         {integrations.map((i) => (
           <IntegrationCard key={i.key} integration={i} />
         ))}
+        {/* v0.0.60 — the two opt-in Adsolut ERP read-mirrors get their own
+            cards next to the main companies/contacts integration. Each renders
+            nothing until its mirror is enabled, so a plain Adsolut install only
+            ever shows the one card. */}
+        <AdsolutErpSyncCard />
+        <AdsolutOrdersSyncCard />
       </div>
     </section>
   );
@@ -455,5 +471,210 @@ function ActionButton({
     <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={onClick} disabled={mut.isPending}>
       {mut.isPending ? "…" : action.label}
     </Button>
+  );
+}
+
+// ---- Adsolut ERP read-mirror cards (v0.0.60) ------------------------
+
+/// Returns the most recent successful-sync ISO timestamp (delta or full), and
+/// whether the last recorded error is still "current" — i.e. no successful
+/// sync has run since it. Drives the card's status badge so a transient error
+/// that a later tick recovered from doesn't keep the card amber forever.
+function deriveMirrorState(s: {
+  lastDeltaSyncUtc: string | null;
+  lastFullSyncUtc: string | null;
+  lastError: string | null;
+  lastErrorUtc: string | null;
+}): { lastSyncUtc: string | null; errorIsCurrent: boolean } {
+  const times = [s.lastDeltaSyncUtc, s.lastFullSyncUtc]
+    .filter((t): t is string => !!t)
+    .map((t) => new Date(t).getTime())
+    .filter((n) => !Number.isNaN(n));
+  const lastSuccess = times.length ? Math.max(...times) : null;
+  const lastSyncUtc =
+    lastSuccess === null ? null : new Date(lastSuccess).toISOString();
+
+  const errAt = s.lastErrorUtc ? new Date(s.lastErrorUtc).getTime() : NaN;
+  const errorIsCurrent =
+    !!s.lastError &&
+    !Number.isNaN(errAt) &&
+    (lastSuccess === null || errAt > lastSuccess);
+
+  return { lastSyncUtc, errorIsCurrent };
+}
+
+/// Presentational card for an Adsolut ERP mirror — mirrors IntegrationCard's
+/// shell so the three Adsolut cards (companies/contacts, ERP, Orders) read as
+/// one family. Shows last-sync + next-sync, a counters strip, the current
+/// sync error (if any), and a "Sync now" button.
+function MirrorCard({
+  title,
+  subtitle,
+  icon,
+  lastSyncUtc,
+  nextSyncUtc,
+  error,
+  errorIsCurrent,
+  counters,
+  onSync,
+  syncing,
+}: {
+  title: string;
+  subtitle: string;
+  icon: React.ReactNode;
+  lastSyncUtc: string | null;
+  nextSyncUtc: string | null;
+  error: string | null;
+  errorIsCurrent: boolean;
+  counters: { label: string; value: number }[];
+  onSync: () => void;
+  syncing: boolean;
+}) {
+  const status: HealthStatus = errorIsCurrent ? "Warning" : "Ok";
+  const style = STATUS_STYLES[status];
+
+  return (
+    <article className="group flex flex-col rounded-lg border border-glass-strong bg-glass p-4">
+      <header className="mb-3 flex items-center justify-between gap-3">
+        <Link
+          to="/settings/integrations/adsolut"
+          className="-m-1 flex items-center gap-2.5 rounded-md p-1 text-left transition-colors hover:bg-glass-hover"
+        >
+          <div className="flex h-8 w-8 items-center justify-center rounded-sm border border-glass bg-glass text-primary">
+            {icon}
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-foreground">{title}</div>
+            <div className="text-[11px] text-muted-foreground/70">{subtitle}</div>
+          </div>
+        </Link>
+        <Badge className={`border text-[11px] font-normal ${style.badge}`}>
+          <span className="mr-1">{style.icon}</span>
+          {style.label}
+        </Badge>
+      </header>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between gap-2 text-xs">
+          <span className="text-muted-foreground">Last sync</span>
+          <span
+            className="font-medium text-foreground"
+            title={lastSyncUtc ? new Date(lastSyncUtc).toLocaleString() : undefined}
+          >
+            {lastSyncUtc ? formatRelative(new Date(lastSyncUtc).getTime() - Date.now()) : "never"}
+          </span>
+        </div>
+        {nextSyncUtc ? <NextSyncHint iso={nextSyncUtc} /> : null}
+
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 pt-0.5 text-[11px] text-muted-foreground">
+          {counters.map((c) => (
+            <span key={c.label}>
+              <span className="tabular-nums font-medium text-foreground">{c.value}</span> {c.label}
+            </span>
+          ))}
+        </div>
+
+        {error && errorIsCurrent ? (
+          <div className="mt-1 inline-flex items-start gap-1 text-[11px] text-rose-500 dark:text-rose-300">
+            <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+            <span className="line-clamp-2">{error}</span>
+          </div>
+        ) : null}
+      </div>
+
+      <footer className="mt-auto flex justify-end pt-3">
+        <Button size="sm" className="h-8 gap-1.5" onClick={onSync} disabled={syncing}>
+          <RefreshCw className={cn("h-3.5 w-3.5", syncing && "animate-spin")} />
+          {syncing ? "Queueing…" : "Sync now"}
+        </Button>
+      </footer>
+    </article>
+  );
+}
+
+function AdsolutErpSyncCard() {
+  const qc = useQueryClient();
+  const key = ["admin", "adsolut", "erp-sales-receipts", "state"] as const;
+  const query = useQuery({
+    queryKey: key,
+    queryFn: () => adsolutApi.erpSalesReceiptsState(),
+    refetchInterval: 30_000,
+  });
+
+  const sync = useMutation({
+    mutationFn: () => adsolutApi.triggerErpSalesReceiptsSync(),
+    onSuccess: () => {
+      toast.success("ERP sync queued");
+      qc.invalidateQueries({ queryKey: key });
+    },
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? `ERP sync failed (${err.status})` : "ERP sync failed"),
+  });
+
+  const s: AdsolutErpSalesReceiptsState | undefined = query.data;
+  if (!s || !s.enabled) return null;
+
+  const { lastSyncUtc, errorIsCurrent } = deriveMirrorState(s);
+
+  return (
+    <MirrorCard
+      title="Adsolut · ERP"
+      subtitle="Sales receipts"
+      icon={<Receipt className="h-4 w-4" />}
+      lastSyncUtc={lastSyncUtc}
+      nextSyncUtc={s.nextSyncUtc}
+      error={s.lastError}
+      errorIsCurrent={errorIsCurrent}
+      counters={[
+        { label: "mirrored", value: s.totalMirrored },
+        { label: "last tick", value: s.receiptsUpserted },
+      ]}
+      onSync={() => sync.mutate()}
+      syncing={sync.isPending}
+    />
+  );
+}
+
+function AdsolutOrdersSyncCard() {
+  const qc = useQueryClient();
+  const key = ["admin", "adsolut", "erp-orders", "state"] as const;
+  const query = useQuery({
+    queryKey: key,
+    queryFn: () => adsolutApi.erpOrdersState(),
+    refetchInterval: 30_000,
+  });
+
+  const sync = useMutation({
+    mutationFn: () => adsolutApi.triggerErpOrdersSync(),
+    onSuccess: () => {
+      toast.success("Order sync queued");
+      qc.invalidateQueries({ queryKey: key });
+    },
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? `Order sync failed (${err.status})` : "Order sync failed"),
+  });
+
+  const s: AdsolutErpOrdersState | undefined = query.data;
+  if (!s || !s.enabled) return null;
+
+  const { lastSyncUtc, errorIsCurrent } = deriveMirrorState(s);
+
+  return (
+    <MirrorCard
+      title="Adsolut · Orders"
+      subtitle="Orders + supplier orders"
+      icon={<Package className="h-4 w-4" />}
+      lastSyncUtc={lastSyncUtc}
+      nextSyncUtc={s.nextSyncUtc}
+      error={s.lastError}
+      errorIsCurrent={errorIsCurrent}
+      counters={[
+        { label: "mirrored", value: s.totalMirrored },
+        { label: "orders", value: s.ordersUpserted },
+        { label: "supplier", value: s.supplierOrdersUpserted },
+      ]}
+      onSync={() => sync.mutate()}
+      syncing={sync.isPending}
+    />
   );
 }
