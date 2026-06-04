@@ -105,9 +105,41 @@ public sealed class SignatureRenderer : ISignatureRenderer
                 return RenderSpacer(block);
             case "social":
                 return RenderSocial(block, ctx);
+            case "contactline":
+                return RenderContactLine(block, ctx);
             default:
                 return string.Empty; // unknown block kind → render nothing
         }
+    }
+
+    /// One contact line: a small icon (cid) on the left and text on the right,
+    /// vertically centred — the "📞 +32 …" look the block model can't express
+    /// inside a plain column. Icon source is a static asset; the text may carry
+    /// {{agent.*}} tokens and is sanitized + collapsed like any text block.
+    private string RenderContactLine(SignatureBlock block, RenderContext ctx)
+    {
+        if (string.IsNullOrWhiteSpace(block.Html)) return string.Empty;
+        var clean = _sanitizer.Sanitize(block.Html);
+        var substituted = SubstituteAndCollapse(clean, ctx.Vars);
+        if (IsVisuallyEmpty(substituted)) return string.Empty;
+
+        string? cid = null;
+        if (!string.IsNullOrWhiteSpace(block.AssetId)
+            && Guid.TryParse(block.AssetId, out var assetId)
+            && ctx.Assets.TryGetValue(assetId, out var asset))
+        {
+            cid = ctx.AllocCid(asset.ContentHash, asset.MimeType, asset.OriginalFilename);
+        }
+
+        var iconW = block.WidthPx is > 0 ? block.WidthPx!.Value : 16;
+        var iconCell = cid is null
+            ? string.Empty
+            : $"<td valign=\"top\" style=\"padding:2px 8px 0 0;vertical-align:top;\"><img src=\"cid:{cid}\" width=\"{iconW}\" height=\"{iconW}\" alt=\"\" style=\"display:block;border:0;\" /></td>";
+
+        return "<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"border-collapse:collapse;margin:3px 0;\"><tr>"
+             + iconCell
+             + $"<td valign=\"top\" style=\"vertical-align:top;font-size:13px;line-height:1.4;color:#222222;\">{substituted}</td>"
+             + "</tr></table>";
     }
 
     private string RenderText(string? html, RenderContext ctx, bool disclaimer)

@@ -6,16 +6,19 @@ namespace Servicedesk.Infrastructure.Signatures;
 
 public sealed class SignatureRepository : ISignatureRepository
 {
+    // Columns are qualified with the `s` alias so the set is reusable in the
+    // ResolveForQueueAsync JOIN, where an unqualified created_utc would be
+    // ambiguous (mail_signature_mailboxes also has a created_utc).
     private const string SelectColumns = """
-        id              AS Id,
-        name            AS Name,
-        design::text    AS DesignJson,
-        is_system       AS IsSystem,
-        enabled         AS Enabled,
-        sort_order      AS SortOrder,
-        created_utc     AS CreatedUtc,
-        updated_utc     AS UpdatedUtc,
-        created_by      AS CreatedBy
+        s.id            AS Id,
+        s.name          AS Name,
+        s.design::text  AS DesignJson,
+        s.is_system     AS IsSystem,
+        s.enabled       AS Enabled,
+        s.sort_order    AS SortOrder,
+        s.created_utc   AS CreatedUtc,
+        s.updated_utc   AS UpdatedUtc,
+        s.created_by    AS CreatedBy
         """;
 
     private readonly NpgsqlDataSource _dataSource;
@@ -27,7 +30,7 @@ public sealed class SignatureRepository : ISignatureRepository
 
     public async Task<IReadOnlyList<Signature>> ListAsync(CancellationToken ct)
     {
-        var sql = $"SELECT {SelectColumns} FROM mail_signatures ORDER BY is_system DESC, sort_order, lower(name)";
+        var sql = $"SELECT {SelectColumns} FROM mail_signatures s ORDER BY s.is_system DESC, s.sort_order, lower(s.name)";
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var rows = await conn.QueryAsync<Row>(new CommandDefinition(sql, cancellationToken: ct));
         return rows.Select(MapToDomain).ToList();
@@ -35,7 +38,7 @@ public sealed class SignatureRepository : ISignatureRepository
 
     public async Task<Signature?> GetAsync(Guid id, CancellationToken ct)
     {
-        var sql = $"SELECT {SelectColumns} FROM mail_signatures WHERE id = @id";
+        var sql = $"SELECT {SelectColumns} FROM mail_signatures s WHERE s.id = @id";
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var row = await conn.QueryFirstOrDefaultAsync<Row>(new CommandDefinition(sql, new { id }, cancellationToken: ct));
         return row is null ? null : MapToDomain(row);

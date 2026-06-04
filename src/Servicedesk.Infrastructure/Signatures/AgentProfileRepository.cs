@@ -64,4 +64,26 @@ public sealed class AgentProfileRepository : IAgentProfileRepository
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition(sql, new { userId }, cancellationToken: ct));
     }
+
+    public async Task<IReadOnlyList<AgentProfileListItem>> ListAllAsync(CancellationToken ct)
+    {
+        const string sql = """
+            SELECT
+                id                              AS UserId,
+                email                           AS Email,
+                role_name                       AS RoleName,
+                display_name                    AS DisplayName,
+                job_title                       AS JobTitle,
+                work_phone                      AS WorkPhone,
+                mobile_phone                    AS MobilePhone,
+                (photo_blob_hash IS NOT NULL)   AS HasPhoto,
+                entra_synced_utc                AS EntraSyncedUtc
+            FROM users
+            WHERE role_name IN ('Agent', 'Admin') AND is_active = TRUE
+            ORDER BY lower(coalesce(display_name, email))
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<AgentProfileListItem>(new CommandDefinition(sql, cancellationToken: ct));
+        return rows.ToList();
+    }
 }
