@@ -2487,9 +2487,16 @@ export const preferencesApi = {
     request<PinnedFeaturesPreference>("GET", "/api/preferences/pinned-features"),
   setPinnedFeatures: (paths: string[]) =>
     request<PinnedFeaturesPreference>("PUT", "/api/preferences/pinned-features", { paths }),
+  // v0.0.65 — saved views the user pinned out of the sidebar "Views" flyout so
+  // they render inline. Persisted per-user (survives logout/login).
+  getPinnedViews: () =>
+    request<PinnedViewsPreference>("GET", "/api/preferences/pinned-views"),
+  setPinnedViews: (ids: string[]) =>
+    request<PinnedViewsPreference>("PUT", "/api/preferences/pinned-views", { ids }),
 };
 
 export type PinnedFeaturesPreference = { paths: string[] };
+export type PinnedViewsPreference = { ids: string[] };
 
 // ---- SLA ----
 
