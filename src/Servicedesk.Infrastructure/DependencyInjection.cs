@@ -271,7 +271,7 @@ public static class DependencyInjection
         services.AddHostedService<IncidentLogDrainService>();
 
         services.AddSingleton<IProtectedSecretStore, ProtectedSecretStore>();
-        services.AddSingleton<IMailPollStateRepository, MailPollStateRepository>();
+        services.AddSingleton<IQueueInboundMailboxRepository, QueueInboundMailboxRepository>();
         services.AddSingleton<IGraphMailClient, GraphMailClient>();
         services.AddSingleton<ITlsCertReader, FileTlsCertReader>();
         services.AddSingleton<ICertRenewalTrigger, FileSignalCertRenewalTrigger>();

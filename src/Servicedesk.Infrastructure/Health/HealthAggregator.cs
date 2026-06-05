@@ -29,7 +29,7 @@ public sealed class HealthAggregator : IHealthAggregator
     // intervening success flips to Critical.
     private const int BlobStoreCriticalThreshold = 3;
 
-    private readonly IMailPollStateRepository _pollState;
+    private readonly IQueueInboundMailboxRepository _sources;
     private readonly ITaxonomyRepository _taxonomy;
     private readonly IProtectedSecretStore _secrets;
     private readonly IAttachmentJobRepository _attachmentJobs;
@@ -41,7 +41,7 @@ public sealed class HealthAggregator : IHealthAggregator
     private readonly ISecurityActivitySnapshot _securityActivity;
 
     public HealthAggregator(
-        IMailPollStateRepository pollState,
+        IQueueInboundMailboxRepository sources,
         ITaxonomyRepository taxonomy,
         IProtectedSecretStore secrets,
         IAttachmentJobRepository attachmentJobs,
@@ -52,7 +52,7 @@ public sealed class HealthAggregator : IHealthAggregator
         IOptions<TlsCertHealthOptions> tlsOptions,
         ISecurityActivitySnapshot securityActivity)
     {
-        _pollState = pollState;
+        _sources = sources;
         _taxonomy = taxonomy;
         _secrets = secrets;
         _attachmentJobs = attachmentJobs;
@@ -109,9 +109,11 @@ public sealed class HealthAggregator : IHealthAggregator
 
     private async Task<SubsystemHealth> BuildMailPollingAsync(CancellationToken ct)
     {
-        var queues = await _taxonomy.ListQueuesAsync(ct);
-        var configured = queues
-            .Where(q => q.IsActive && !string.IsNullOrWhiteSpace(q.InboundMailboxAddress))
+        var queues = (await _taxonomy.ListQueuesAsync(ct)).ToDictionary(q => q.Id);
+        var sources = await _sources.ListAllAsync(ct);
+        // Only sources whose queue exists and is active are eligible to poll.
+        var configured = sources
+            .Where(s => queues.TryGetValue(s.QueueId, out var q) && q.IsActive)
             .ToList();
 
         if (configured.Count == 0)
@@ -125,58 +127,58 @@ public sealed class HealthAggregator : IHealthAggregator
                 Actions: Array.Empty<HealthAction>());
         }
 
-        var states = await _pollState.ListAllAsync(ct);
-        var stateByQueue = states.ToDictionary(s => s.QueueId);
-
         var status = HealthStatus.Ok;
         var details = new List<HealthDetail>();
         var actions = new List<HealthAction>();
         var summaryParts = new List<string>();
 
-        foreach (var queue in configured)
+        foreach (var src in configured)
         {
-            stateByQueue.TryGetValue(queue.Id, out var state);
-            var label = $"{queue.Name} ({queue.InboundMailboxAddress})";
+            var queueName = queues.TryGetValue(src.QueueId, out var q) ? q.Name : src.QueueId.ToString();
+            var folderSuffix = string.IsNullOrWhiteSpace(src.FolderName) ? "" : $" / {src.FolderName}";
+            var label = $"{queueName} ({src.MailboxAddress}{folderSuffix})";
 
-            if (state is null)
+            if (string.IsNullOrWhiteSpace(src.FolderId))
             {
-                details.Add(new HealthDetail(label, "Waiting for first poll cycle…"));
-                continue;
+                details.Add(new HealthDetail(label, "No inbound folder selected yet — not polling."));
             }
-
-            if (state.ConsecutiveFailures >= MailPollingCriticalThreshold)
+            else if (src.ConsecutiveFailures >= MailPollingCriticalThreshold)
             {
                 status = HealthStatus.Critical;
-                summaryParts.Add($"{queue.Name}: paused after {state.ConsecutiveFailures} failures");
+                summaryParts.Add($"{queueName}: paused after {src.ConsecutiveFailures} failures");
                 details.Add(new HealthDetail(label,
-                    $"PAUSED — {state.ConsecutiveFailures} consecutive failures. Last error: {state.LastError ?? "(none)"}"));
+                    $"PAUSED — {src.ConsecutiveFailures} consecutive failures. Last error: {src.LastError ?? "(none)"}"));
                 actions.Add(new HealthAction(
-                    Key: $"reset-{queue.Id}",
-                    Label: $"Reset {queue.Name} failures",
-                    Endpoint: $"/api/admin/health/mail-polling/queues/{queue.Id}/reset",
-                    ConfirmMessage: $"Clear the failure counter for {queue.Name}? The next polling cycle will retry the mailbox."));
+                    Key: $"reset-{src.Id}",
+                    Label: $"Reset {queueName} failures",
+                    Endpoint: $"/api/admin/health/mail-polling/sources/{src.Id}/reset",
+                    ConfirmMessage: $"Clear the failure counter for {queueName} ({src.MailboxAddress})? The next polling cycle will retry the mailbox."));
             }
-            else if (state.ConsecutiveFailures > 0)
+            else if (src.ConsecutiveFailures > 0)
             {
                 if (status < HealthStatus.Warning) status = HealthStatus.Warning;
-                summaryParts.Add($"{queue.Name}: {state.ConsecutiveFailures} recent failure(s)");
+                summaryParts.Add($"{queueName}: {src.ConsecutiveFailures} recent failure(s)");
                 details.Add(new HealthDetail(label,
-                    $"{state.ConsecutiveFailures} recent failure(s). Last error: {state.LastError ?? "(none)"}"));
+                    $"{src.ConsecutiveFailures} recent failure(s). Last error: {src.LastError ?? "(none)"}"));
             }
-            else if (!string.IsNullOrWhiteSpace(state.LastMailboxActionError))
+            else if (!string.IsNullOrWhiteSpace(src.LastMailboxActionError))
             {
                 if (status < HealthStatus.Warning) status = HealthStatus.Warning;
-                summaryParts.Add($"{queue.Name}: mailbox action failing");
-                var when = state.LastMailboxActionErrorUtc is { } ts
+                summaryParts.Add($"{queueName}: mailbox action failing");
+                var when = src.LastMailboxActionErrorUtc is { } ts
                     ? ts.ToString("u")
                     : "(unknown time)";
                 details.Add(new HealthDetail(label,
-                    $"Delta polling OK, but a post-ingest mailbox action failed at {when}: {state.LastMailboxActionError}. " +
+                    $"Delta polling OK, but a post-ingest mailbox action failed at {when}: {src.LastMailboxActionError}. " +
                     "Check that the Graph app has Mail.ReadWrite (application) permission with admin consent."));
+            }
+            else if (!src.PollingEnabled)
+            {
+                details.Add(new HealthDetail(label, "Polling paused by an admin."));
             }
             else
             {
-                var last = state.LastPolledUtc is { } ts
+                var last = src.LastPolledUtc is { } ts
                     ? $"last polled {ts:u}"
                     : "not yet polled";
                 details.Add(new HealthDetail(label, $"OK — {last}"));

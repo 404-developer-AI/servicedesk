@@ -30,7 +30,7 @@ public interface IMailFinalizer
 public sealed class MailFinalizer : IMailFinalizer
 {
     // Resolving the processed folder-id is a Graph round-trip per mailbox;
-    // cache across calls so a sweep touching many mails for the same queue
+    // cache across calls so a sweep touching many mails for the same mailbox
     // doesn't re-ask. MailPollingService has its own identical cache — the
     // two don't share so we pay the lookup once per process per mailbox.
     private static readonly ConcurrentDictionary<string, string> FolderIdCache =
@@ -38,7 +38,7 @@ public sealed class MailFinalizer : IMailFinalizer
 
     private readonly IMailMessageRepository _mail;
     private readonly IGraphMailClient _graph;
-    private readonly IMailPollStateRepository _pollState;
+    private readonly IQueueInboundMailboxRepository _sources;
     private readonly ITaxonomyRepository _taxonomy;
     private readonly ISettingsService _settings;
     private readonly ILogger<MailFinalizer> _logger;
@@ -46,14 +46,14 @@ public sealed class MailFinalizer : IMailFinalizer
     public MailFinalizer(
         IMailMessageRepository mail,
         IGraphMailClient graph,
-        IMailPollStateRepository pollState,
+        IQueueInboundMailboxRepository sources,
         ITaxonomyRepository taxonomy,
         ISettingsService settings,
         ILogger<MailFinalizer> logger)
     {
         _mail = mail;
         _graph = graph;
-        _pollState = pollState;
+        _sources = sources;
         _taxonomy = taxonomy;
         _settings = settings;
         _logger = logger;
@@ -92,41 +92,45 @@ public sealed class MailFinalizer : IMailFinalizer
 
     private async Task FinalizeOneAsync(FinalizeCandidate c, string folderName, CancellationToken ct)
     {
-        // Map mailbox → queueId so we can reuse mail_poll_state.processed_folder_id
-        // caching. Multiple queues can't share an inbound mailbox (taxonomy
-        // constraint), so the first match is correct.
-        var queues = await _taxonomy.ListQueuesAsync(ct);
-        var queue = queues.FirstOrDefault(q =>
-            string.Equals(q.InboundMailboxAddress, c.MailboxAddress, StringComparison.OrdinalIgnoreCase));
-        if (queue is null)
+        // Map mailbox → inbound source so we can attach the processed-folder id
+        // and any move error to a real row. The processed folder is per-mailbox,
+        // so the first source matching the mailbox is a valid anchor even when a
+        // mailbox feeds the queue under several folders.
+        var sources = await _sources.ListAllAsync(ct);
+        var source = sources.FirstOrDefault(s =>
+            string.Equals(s.MailboxAddress, c.MailboxAddress, StringComparison.OrdinalIgnoreCase));
+        if (source is null)
         {
             _logger.LogWarning(
-                "[MailFinalizer] mailId={MailId} mailbox={Mailbox}: no queue matches, marking moved to stop retries.",
+                "[MailFinalizer] mailId={MailId} mailbox={Mailbox}: no inbound source matches, marking moved to stop retries.",
                 c.MailId, c.MailboxAddress);
             await _mail.MarkMailboxMovedAsync(c.MailId, DateTime.UtcNow, ct);
             return;
         }
 
+        var queues = await _taxonomy.ListQueuesAsync(ct);
+        var queueSlug = queues.FirstOrDefault(q => q.Id == source.QueueId)?.Slug ?? source.QueueId.ToString();
+
         try
         {
-            var folderId = await ResolveFolderIdAsync(c.MailboxAddress, folderName, queue.Id, ct);
+            var folderId = await ResolveFolderIdAsync(c.MailboxAddress, folderName, source.Id, ct);
             var moved = await TryMoveWithFolderRefreshAsync(
-                c, folderName, queue.Id, queue.Slug, folderId, ct);
+                c, folderName, source.Id, queueSlug, folderId, ct);
             await _mail.MarkMailboxMovedAsync(c.MailId, DateTime.UtcNow, ct);
-            await _pollState.ClearMailboxActionErrorAsync(queue.Id, ct);
+            await _sources.ClearMailboxActionErrorAsync(source.Id, ct);
             _logger.LogInformation(
                 moved
                     ? "[MailFinalizer] mailId={MailId} moved to processed folder (queue={QueueSlug})"
                     : "[MailFinalizer] mailId={MailId} already absent in inbox (Graph 404, folder valid) — marked moved (queue={QueueSlug})",
-                c.MailId, queue.Slug);
+                c.MailId, queueSlug);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex,
                 "[MailFinalizer] mailId={MailId} mailbox={Mailbox} move failed — will retry on next sweep.",
                 c.MailId, c.MailboxAddress);
-            await _pollState.SaveMailboxActionErrorAsync(
-                queue.Id,
+            await _sources.SaveMailboxActionErrorAsync(
+                source.Id,
                 $"finalize-move: {ex.GetType().Name}: {ex.Message}",
                 DateTime.UtcNow, ct);
         }
@@ -135,14 +139,14 @@ public sealed class MailFinalizer : IMailFinalizer
     /// Moves the message, self-healing a stale cached processed-folder id. A 404
     /// from Graph's Move is ambiguous — it can mean the message is gone OR that
     /// the cached destination folder no longer exists (deleted/renamed
-    /// externally, or the queue's inbound mailbox changed). Treating every 404 as
+    /// externally, or the source's mailbox changed). Treating every 404 as
     /// "message gone" would silently mark mails moved while they still sit in the
     /// inbox. So on a 404 we drop the cached folder id, re-ensure the folder
     /// (find-or-create), and retry once. Returns <c>true</c> when the message was
     /// actually moved, <c>false</c> when it was genuinely gone (404 persisted
     /// against a freshly-ensured, valid folder).
     private async Task<bool> TryMoveWithFolderRefreshAsync(
-        FinalizeCandidate c, string folderName, Guid queueId, string queueSlug,
+        FinalizeCandidate c, string folderName, Guid sourceId, string queueSlug,
         string folderId, CancellationToken ct)
     {
         try
@@ -152,7 +156,7 @@ public sealed class MailFinalizer : IMailFinalizer
         }
         catch (Microsoft.Graph.Models.ODataErrors.ODataError ex) when (IsNotFound(ex))
         {
-            var fresh = await ForceResolveFolderIdAsync(c.MailboxAddress, folderName, queueId, ct);
+            var fresh = await ForceResolveFolderIdAsync(c.MailboxAddress, folderName, sourceId, ct);
             // Folder id unchanged -> the destination was valid all along, so the
             // 404 really is the message itself. Caller marks it moved.
             if (string.Equals(fresh, folderId, StringComparison.Ordinal))
@@ -175,22 +179,22 @@ public sealed class MailFinalizer : IMailFinalizer
     /// it again from Graph, recreating the folder if it no longer exists. Used to
     /// recover from a stale id without waiting for a process restart.
     private async Task<string> ForceResolveFolderIdAsync(
-        string mailbox, string folderName, Guid queueId, CancellationToken ct)
+        string mailbox, string folderName, Guid sourceId, CancellationToken ct)
     {
         FolderIdCache.TryRemove($"{mailbox}|{folderName}", out _);
         var folderId = await _graph.EnsureFolderAsync(mailbox, folderName, ct);
-        await _pollState.SaveProcessedFolderIdAsync(queueId, folderId, ct);
+        await _sources.SaveProcessedFolderIdAsync(sourceId, folderId, ct);
         FolderIdCache[$"{mailbox}|{folderName}"] = folderId;
         return folderId;
     }
 
     private async Task<string> ResolveFolderIdAsync(
-        string mailbox, string folderName, Guid queueId, CancellationToken ct)
+        string mailbox, string folderName, Guid sourceId, CancellationToken ct)
     {
         var cacheKey = $"{mailbox}|{folderName}";
         if (FolderIdCache.TryGetValue(cacheKey, out var cached)) return cached;
 
-        var state = await _pollState.GetAsync(queueId, ct);
+        var state = await _sources.GetAsync(sourceId, ct);
         if (!string.IsNullOrWhiteSpace(state?.ProcessedFolderId))
         {
             FolderIdCache[cacheKey] = state.ProcessedFolderId!;
@@ -198,7 +202,7 @@ public sealed class MailFinalizer : IMailFinalizer
         }
 
         var folderId = await _graph.EnsureFolderAsync(mailbox, folderName, ct);
-        await _pollState.SaveProcessedFolderIdAsync(queueId, folderId, ct);
+        await _sources.SaveProcessedFolderIdAsync(sourceId, folderId, ct);
         FolderIdCache[cacheKey] = folderId;
         return folderId;
     }

@@ -23,7 +23,7 @@ public class MailFinalizerTests
             Ready = new[] { new FinalizeCandidate(mailId, "graph-msg-1", Mailbox) },
         };
         var graph = new FakeGraph();
-        var finalizer = new MailFinalizer(mail, graph, new FakePollState(),
+        var finalizer = new MailFinalizer(mail, graph, new FakeInboundRepo(Mailbox),
             new FakeTaxonomy(Mailbox), new FakeSettings(doMove: true),
             NullLogger<MailFinalizer>.Instance);
 
@@ -42,7 +42,7 @@ public class MailFinalizerTests
             Ready = new[] { new FinalizeCandidate(Guid.NewGuid(), "g", Mailbox) },
         };
         var graph = new FakeGraph();
-        var finalizer = new MailFinalizer(mail, graph, new FakePollState(),
+        var finalizer = new MailFinalizer(mail, graph, new FakeInboundRepo(Mailbox),
             new FakeTaxonomy(Mailbox), new FakeSettings(doMove: false),
             NullLogger<MailFinalizer>.Instance);
 
@@ -57,7 +57,7 @@ public class MailFinalizerTests
     {
         var mail = new FakeMailRepo(); // empty Ready → Get returns null
         var graph = new FakeGraph();
-        var finalizer = new MailFinalizer(mail, graph, new FakePollState(),
+        var finalizer = new MailFinalizer(mail, graph, new FakeInboundRepo(Mailbox),
             new FakeTaxonomy(Mailbox), new FakeSettings(doMove: true),
             NullLogger<MailFinalizer>.Instance);
 
@@ -76,7 +76,7 @@ public class MailFinalizerTests
             Ready = new[] { new FinalizeCandidate(mailId, "gone", Mailbox) },
         };
         var graph = new FakeGraph { ThrowNotFound = true };
-        var finalizer = new MailFinalizer(mail, graph, new FakePollState(),
+        var finalizer = new MailFinalizer(mail, graph, new FakeInboundRepo(Mailbox),
             new FakeTaxonomy(Mailbox), new FakeSettings(doMove: true),
             NullLogger<MailFinalizer>.Instance);
 
@@ -100,9 +100,9 @@ public class MailFinalizerTests
         // ensured one — exactly the production failure that silently marked
         // mails moved without moving them.
         var graph = new FakeGraph { StaleFolderId = "stale-folder-id" };
-        var pollState = new FakePollState();
-        pollState.FolderIds[QueueId] = "stale-folder-id";
-        var finalizer = new MailFinalizer(mail, graph, pollState,
+        var repo = new FakeInboundRepo(staleMailbox);
+        repo.SeedProcessedFolder(staleMailbox, "stale-folder-id");
+        var finalizer = new MailFinalizer(mail, graph, repo,
             new FakeTaxonomy(staleMailbox), new FakeSettings(doMove: true),
             NullLogger<MailFinalizer>.Instance);
 
@@ -112,7 +112,7 @@ public class MailFinalizerTests
         // and the stale cursor is replaced with the valid id.
         Assert.Contains(("graph-msg-stale", "folder-Processed"), graph.Moves);
         Assert.Contains(mailId, mail.Moved);
-        Assert.Equal("folder-Processed", pollState.FolderIds[QueueId]);
+        Assert.Equal("folder-Processed", repo.ProcessedFolderFor(staleMailbox));
     }
 
     [Fact]
@@ -124,7 +124,7 @@ public class MailFinalizerTests
             Ready = new[] { new FinalizeCandidate(mailId, "g", "unknown@example.com") },
         };
         var graph = new FakeGraph();
-        var finalizer = new MailFinalizer(mail, graph, new FakePollState(),
+        var finalizer = new MailFinalizer(mail, graph, new FakeInboundRepo(Mailbox),
             new FakeTaxonomy(Mailbox), new FakeSettings(doMove: true),
             NullLogger<MailFinalizer>.Instance);
 
@@ -198,21 +198,55 @@ public class MailFinalizerTests
         public Task<GraphSentMailResult> SendMailAsync(GraphOutboundMessage m, CancellationToken ct) => throw new NotImplementedException();
     }
 
-    private sealed class FakePollState : IMailPollStateRepository
+    private sealed class FakeInboundRepo : IQueueInboundMailboxRepository
     {
-        public Dictionary<Guid, string> FolderIds { get; } = new();
-        public Task<MailPollState?> GetAsync(Guid queueId, CancellationToken ct)
-            => Task.FromResult<MailPollState?>(FolderIds.TryGetValue(queueId, out var f)
-                ? new MailPollState(queueId, null, null, null, 0, DateTime.UtcNow, ProcessedFolderId: f)
-                : null);
-        public Task<IReadOnlyList<MailPollState>> ListAllAsync(CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<MailPollState>>(Array.Empty<MailPollState>());
-        public Task SaveSuccessAsync(Guid q, string? d, DateTime t, CancellationToken ct) => Task.CompletedTask;
-        public Task SaveFailureAsync(Guid q, string e, DateTime t, CancellationToken ct) => Task.CompletedTask;
-        public Task ResetFailuresAsync(Guid q, CancellationToken ct) => Task.CompletedTask;
-        public Task SaveProcessedFolderIdAsync(Guid q, string f, CancellationToken ct) { FolderIds[q] = f; return Task.CompletedTask; }
-        public Task SaveMailboxActionErrorAsync(Guid q, string e, DateTime t, CancellationToken ct) => Task.CompletedTask;
-        public Task ClearMailboxActionErrorAsync(Guid q, CancellationToken ct) => Task.CompletedTask;
+        private readonly List<QueueInboundMailbox> _sources = new();
+
+        public FakeInboundRepo(params string[] mailboxes)
+        {
+            foreach (var mb in mailboxes)
+                _sources.Add(new QueueInboundMailbox(
+                    Guid.NewGuid(), QueueId, mb, "inbox", "Inbox", true,
+                    null, null, null, 0, null, null, null, DateTime.UtcNow, DateTime.UtcNow));
+        }
+
+        public void SeedProcessedFolder(string mailbox, string folderId)
+        {
+            var i = _sources.FindIndex(s => s.MailboxAddress == mailbox);
+            if (i >= 0) _sources[i] = _sources[i] with { ProcessedFolderId = folderId };
+        }
+
+        public string? ProcessedFolderFor(string mailbox)
+            => _sources.FirstOrDefault(s => s.MailboxAddress == mailbox)?.ProcessedFolderId;
+
+        public Task<QueueInboundMailbox?> GetAsync(Guid id, CancellationToken ct)
+            => Task.FromResult<QueueInboundMailbox?>(_sources.FirstOrDefault(s => s.Id == id));
+        public Task<IReadOnlyList<QueueInboundMailbox>> ListAllAsync(CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<QueueInboundMailbox>>(_sources.ToList());
+        public Task<IReadOnlyList<QueueInboundMailbox>> ListByQueueAsync(Guid queueId, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<QueueInboundMailbox>>(_sources.Where(s => s.QueueId == queueId).ToList());
+        public Task<IReadOnlyList<string>> ListAllMailboxAddressesAsync(CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<string>>(_sources.Select(s => s.MailboxAddress).Distinct().ToList());
+        public Task<Guid?> FindConflictingQueueAsync(string mailbox, string? folderId, Guid? excludeSourceId, CancellationToken ct)
+            => Task.FromResult<Guid?>(null);
+        public Task<QueueInboundMailbox> AddAsync(Guid queueId, string mailbox, string? folderId, string? folderName, bool pollingEnabled, CancellationToken ct)
+            => throw new NotImplementedException();
+        public Task<bool> UpdateConfigAsync(Guid id, string mailbox, string? folderId, string? folderName, bool pollingEnabled, CancellationToken ct)
+            => throw new NotImplementedException();
+        public Task<bool> DeleteAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> SetPollingAsync(Guid id, bool enabled, CancellationToken ct) => throw new NotImplementedException();
+        public Task RefreshMirrorAsync(Guid queueId, CancellationToken ct) => Task.CompletedTask;
+        public Task SaveSuccessAsync(Guid id, string? d, DateTime t, CancellationToken ct) => Task.CompletedTask;
+        public Task SaveFailureAsync(Guid id, string e, DateTime t, CancellationToken ct) => Task.CompletedTask;
+        public Task ResetFailuresAsync(Guid id, CancellationToken ct) => Task.CompletedTask;
+        public Task SaveProcessedFolderIdAsync(Guid id, string folderId, CancellationToken ct)
+        {
+            var i = _sources.FindIndex(s => s.Id == id);
+            if (i >= 0) _sources[i] = _sources[i] with { ProcessedFolderId = folderId };
+            return Task.CompletedTask;
+        }
+        public Task SaveMailboxActionErrorAsync(Guid id, string e, DateTime t, CancellationToken ct) => Task.CompletedTask;
+        public Task ClearMailboxActionErrorAsync(Guid id, CancellationToken ct) => Task.CompletedTask;
     }
 
     private sealed class FakeTaxonomy : ITaxonomyRepository

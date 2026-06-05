@@ -17,7 +17,7 @@ public sealed class HealthAggregatorTests
     [Fact]
     public async Task No_queues_with_mailbox_reports_ok_with_idle_summary()
     {
-        var agg = Build(queues: new List<Queue>(), states: new List<MailPollState>(), hasSecret: false);
+        var agg = Build(queues: new List<Queue>(), sources: new List<QueueInboundMailbox>(), hasSecret: false);
 
         var report = await agg.CollectAsync(CancellationToken.None);
 
@@ -30,9 +30,10 @@ public sealed class HealthAggregatorTests
     public async Task Five_consecutive_failures_reports_critical_and_surfaces_reset_action()
     {
         var queueId = Guid.NewGuid();
+        var sourceId = Guid.NewGuid();
         var agg = Build(
             queues: new[] { MakeQueue(queueId, "servicedesk", "inbox@test") },
-            states: new[] { MakeState(queueId, failures: 5, error: "token expired") },
+            sources: new[] { MakeSource(sourceId, queueId, "inbox@test", failures: 5, error: "token expired") },
             hasSecret: true);
 
         var report = await agg.CollectAsync(CancellationToken.None);
@@ -41,7 +42,7 @@ public sealed class HealthAggregatorTests
         var mail = report.Subsystems.Single(s => s.Key == "mail-polling");
         Assert.Equal(HealthStatus.Critical, mail.Status);
         var action = Assert.Single(mail.Actions);
-        Assert.Contains(queueId.ToString(), action.Endpoint);
+        Assert.Contains(sourceId.ToString(), action.Endpoint);
         Assert.Contains("servicedesk", action.Label);
     }
 
@@ -51,7 +52,7 @@ public sealed class HealthAggregatorTests
         var queueId = Guid.NewGuid();
         var agg = Build(
             queues: new[] { MakeQueue(queueId, "ops", "ops@test") },
-            states: new[] { MakeState(queueId, failures: 2, error: "timeout") },
+            sources: new[] { MakeSource(Guid.NewGuid(), queueId, "ops@test", failures: 2, error: "timeout") },
             hasSecret: true);
 
         var report = await agg.CollectAsync(CancellationToken.None);
@@ -64,15 +65,17 @@ public sealed class HealthAggregatorTests
     public async Task Mailbox_action_error_reports_warning_without_pausing()
     {
         var queueId = Guid.NewGuid();
-        var state = new MailPollState(
-            queueId, DeltaLink: "x", LastPolledUtc: DateTime.UtcNow,
-            LastError: null, ConsecutiveFailures: 0, UpdatedUtc: DateTime.UtcNow,
+        var source = new QueueInboundMailbox(
+            Guid.NewGuid(), queueId, "inbox@test", "inbox", "Inbox", true,
+            DeltaLink: "x", LastPolledUtc: DateTime.UtcNow,
+            LastError: null, ConsecutiveFailures: 0,
             ProcessedFolderId: null,
             LastMailboxActionError: "mark-as-read: Access is denied",
-            LastMailboxActionErrorUtc: DateTime.UtcNow);
+            LastMailboxActionErrorUtc: DateTime.UtcNow,
+            CreatedUtc: DateTime.UtcNow, UpdatedUtc: DateTime.UtcNow);
         var agg = Build(
             queues: new[] { MakeQueue(queueId, "desk", "inbox@test") },
-            states: new[] { state },
+            sources: new[] { source },
             hasSecret: true);
 
         var report = await agg.CollectAsync(CancellationToken.None);
@@ -87,7 +90,7 @@ public sealed class HealthAggregatorTests
     [Fact]
     public async Task Attachment_backlog_reports_warning_without_action()
     {
-        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+        var agg = Build(new List<Queue>(), new List<QueueInboundMailbox>(), hasSecret: true,
             backlog: 4, deadLetters: 0);
 
         var report = await agg.CollectAsync(CancellationToken.None);
@@ -101,7 +104,7 @@ public sealed class HealthAggregatorTests
     [Fact]
     public async Task Attachment_dead_letters_report_critical_with_requeue_action()
     {
-        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+        var agg = Build(new List<Queue>(), new List<QueueInboundMailbox>(), hasSecret: true,
             backlog: 0, deadLetters: 2);
 
         var report = await agg.CollectAsync(CancellationToken.None);
@@ -119,7 +122,7 @@ public sealed class HealthAggregatorTests
     {
         var blob = new BlobStoreHealth();
         blob.RecordFailure("write", new IOException("path syntax"));
-        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true, blobHealth: blob);
+        var agg = Build(new List<Queue>(), new List<QueueInboundMailbox>(), hasSecret: true, blobHealth: blob);
 
         var report = await agg.CollectAsync(CancellationToken.None);
 
@@ -136,7 +139,7 @@ public sealed class HealthAggregatorTests
         blob.RecordFailure("write", new IOException("disk full"));
         blob.RecordFailure("write", new IOException("disk full"));
         blob.RecordFailure("write", new IOException("disk full"));
-        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true, blobHealth: blob);
+        var agg = Build(new List<Queue>(), new List<QueueInboundMailbox>(), hasSecret: true, blobHealth: blob);
 
         var report = await agg.CollectAsync(CancellationToken.None);
 
@@ -151,7 +154,7 @@ public sealed class HealthAggregatorTests
         var blob = new BlobStoreHealth();
         blob.RecordFailure("write", new IOException("x"));
         blob.RecordSuccess();
-        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true, blobHealth: blob);
+        var agg = Build(new List<Queue>(), new List<QueueInboundMailbox>(), hasSecret: true, blobHealth: blob);
 
         var report = await agg.CollectAsync(CancellationToken.None);
 
@@ -163,7 +166,7 @@ public sealed class HealthAggregatorTests
     [Fact]
     public async Task Open_incident_warning_bumps_subsystem_to_warning()
     {
-        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+        var agg = Build(new List<Queue>(), new List<QueueInboundMailbox>(), hasSecret: true,
             openIncidents: new Dictionary<string, IncidentSeverity> { ["mail-polling"] = IncidentSeverity.Warning });
 
         var report = await agg.CollectAsync(CancellationToken.None);
@@ -176,7 +179,7 @@ public sealed class HealthAggregatorTests
     [Fact]
     public async Task Open_incident_critical_bumps_subsystem_to_critical()
     {
-        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+        var agg = Build(new List<Queue>(), new List<QueueInboundMailbox>(), hasSecret: true,
             openIncidents: new Dictionary<string, IncidentSeverity> { ["attachment-jobs"] = IncidentSeverity.Critical });
 
         var report = await agg.CollectAsync(CancellationToken.None);
@@ -189,7 +192,7 @@ public sealed class HealthAggregatorTests
     [Fact]
     public async Task TlsCert_no_domain_configured_reports_ok_with_disabled_summary()
     {
-        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+        var agg = Build(new List<Queue>(), new List<QueueInboundMailbox>(), hasSecret: true,
             tlsOptions: new TlsCertHealthOptions { Domain = null });
 
         var report = await agg.CollectAsync(CancellationToken.None);
@@ -203,7 +206,7 @@ public sealed class HealthAggregatorTests
     [Fact]
     public async Task TlsCert_domain_set_but_no_cert_file_reports_warning_with_renew_action()
     {
-        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+        var agg = Build(new List<Queue>(), new List<QueueInboundMailbox>(), hasSecret: true,
             tlsOptions: new TlsCertHealthOptions { Domain = "sd.example.com" },
             tlsCert: new StubTlsCertReader(null));
 
@@ -221,7 +224,7 @@ public sealed class HealthAggregatorTests
         // Bias past the 14-day Warning threshold with margin — exact "30"
         // would race against wall-clock progression between now() in the
         // test and now() inside the aggregator.
-        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+        var agg = Build(new List<Queue>(), new List<QueueInboundMailbox>(), hasSecret: true,
             tlsOptions: new TlsCertHealthOptions { Domain = "sd.example.com" },
             tlsCert: new StubTlsCertReader(new TlsCertInfo("CN=sd.example.com", DateTime.UtcNow.AddDays(30))));
 
@@ -235,7 +238,7 @@ public sealed class HealthAggregatorTests
     [Fact]
     public async Task TlsCert_10_days_remaining_reports_warning()
     {
-        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+        var agg = Build(new List<Queue>(), new List<QueueInboundMailbox>(), hasSecret: true,
             tlsOptions: new TlsCertHealthOptions { Domain = "sd.example.com" },
             tlsCert: new StubTlsCertReader(new TlsCertInfo("CN=sd.example.com", DateTime.UtcNow.AddDays(10))));
 
@@ -249,7 +252,7 @@ public sealed class HealthAggregatorTests
     [Fact]
     public async Task TlsCert_5_days_remaining_reports_critical()
     {
-        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+        var agg = Build(new List<Queue>(), new List<QueueInboundMailbox>(), hasSecret: true,
             tlsOptions: new TlsCertHealthOptions { Domain = "sd.example.com" },
             tlsCert: new StubTlsCertReader(new TlsCertInfo("CN=sd.example.com", DateTime.UtcNow.AddDays(5))));
 
@@ -263,7 +266,7 @@ public sealed class HealthAggregatorTests
     [Fact]
     public async Task TlsCert_expired_reports_critical()
     {
-        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+        var agg = Build(new List<Queue>(), new List<QueueInboundMailbox>(), hasSecret: true,
             tlsOptions: new TlsCertHealthOptions { Domain = "sd.example.com" },
             tlsCert: new StubTlsCertReader(new TlsCertInfo("CN=sd.example.com", DateTime.UtcNow.AddDays(-2))));
 
@@ -277,7 +280,7 @@ public sealed class HealthAggregatorTests
     [Fact]
     public async Task TlsCert_last_renew_status_surfaces_as_detail()
     {
-        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true,
+        var agg = Build(new List<Queue>(), new List<QueueInboundMailbox>(), hasSecret: true,
             tlsOptions: new TlsCertHealthOptions { Domain = "sd.example.com" },
             tlsCert: new StubTlsCertReader(new TlsCertInfo("CN=sd.example.com", DateTime.UtcNow.AddDays(30))),
             certRenewal: new StubCertRenewalTrigger(
@@ -294,7 +297,7 @@ public sealed class HealthAggregatorTests
     [Fact]
     public async Task SecurityActivity_no_snapshot_reports_ok_with_waiting_summary()
     {
-        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true);
+        var agg = Build(new List<Queue>(), new List<QueueInboundMailbox>(), hasSecret: true);
 
         var report = await agg.CollectAsync(CancellationToken.None);
 
@@ -319,7 +322,7 @@ public sealed class HealthAggregatorTests
             },
             MonitorEnabled: true));
 
-        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true, securityActivity: snap);
+        var agg = Build(new List<Queue>(), new List<QueueInboundMailbox>(), hasSecret: true, securityActivity: snap);
 
         var report = await agg.CollectAsync(CancellationToken.None);
 
@@ -345,7 +348,7 @@ public sealed class HealthAggregatorTests
             MonitorEnabled: true,
             AcknowledgedFromUtc: ackAt));
 
-        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true, securityActivity: snap);
+        var agg = Build(new List<Queue>(), new List<QueueInboundMailbox>(), hasSecret: true, securityActivity: snap);
 
         var report = await agg.CollectAsync(CancellationToken.None);
 
@@ -365,7 +368,7 @@ public sealed class HealthAggregatorTests
             Categories: Array.Empty<SecurityActivityCategoryResult>(),
             MonitorEnabled: false));
 
-        var agg = Build(new List<Queue>(), new List<MailPollState>(), hasSecret: true, securityActivity: snap);
+        var agg = Build(new List<Queue>(), new List<QueueInboundMailbox>(), hasSecret: true, securityActivity: snap);
 
         var report = await agg.CollectAsync(CancellationToken.None);
 
@@ -377,7 +380,7 @@ public sealed class HealthAggregatorTests
     [Fact]
     public async Task Missing_graph_secret_reports_warning()
     {
-        var agg = Build(queues: new List<Queue>(), states: new List<MailPollState>(), hasSecret: false);
+        var agg = Build(queues: new List<Queue>(), sources: new List<QueueInboundMailbox>(), hasSecret: false);
 
         var report = await agg.CollectAsync(CancellationToken.None);
 
@@ -387,7 +390,7 @@ public sealed class HealthAggregatorTests
 
     private static HealthAggregator Build(
         IReadOnlyList<Queue> queues,
-        IReadOnlyList<MailPollState> states,
+        IReadOnlyList<QueueInboundMailbox> sources,
         bool hasSecret,
         int backlog = 0,
         int deadLetters = 0,
@@ -398,7 +401,7 @@ public sealed class HealthAggregatorTests
         TlsCertHealthOptions? tlsOptions = null,
         ISecurityActivitySnapshot? securityActivity = null)
         => new(
-            new StubPollStateRepo(states),
+            new StubInboundRepo(sources),
             new StubTaxonomyRepo(queues),
             new StubSecretStore(hasSecret),
             new StubAttachmentJobsRepo(backlog, deadLetters),
@@ -428,23 +431,36 @@ public sealed class HealthAggregatorTests
         CreatedUtc: DateTime.UtcNow, UpdatedUtc: DateTime.UtcNow,
         InboundMailboxAddress: mailbox, OutboundMailboxAddress: null);
 
-    private static MailPollState MakeState(Guid queueId, int failures, string? error) => new(
-        queueId, DeltaLink: null, LastPolledUtc: DateTime.UtcNow,
-        LastError: error, ConsecutiveFailures: failures, UpdatedUtc: DateTime.UtcNow);
+    private static QueueInboundMailbox MakeSource(Guid sourceId, Guid queueId, string mailbox, int failures, string? error) => new(
+        sourceId, queueId, mailbox, "inbox", "Inbox", true,
+        DeltaLink: null, LastPolledUtc: DateTime.UtcNow,
+        LastError: error, ConsecutiveFailures: failures,
+        ProcessedFolderId: null, LastMailboxActionError: null, LastMailboxActionErrorUtc: null,
+        CreatedUtc: DateTime.UtcNow, UpdatedUtc: DateTime.UtcNow);
 
-    private sealed class StubPollStateRepo : IMailPollStateRepository
+    private sealed class StubInboundRepo : IQueueInboundMailboxRepository
     {
-        private readonly IReadOnlyList<MailPollState> _states;
-        public StubPollStateRepo(IReadOnlyList<MailPollState> states) => _states = states;
-        public Task<IReadOnlyList<MailPollState>> ListAllAsync(CancellationToken ct) => Task.FromResult(_states);
-        public Task<MailPollState?> GetAsync(Guid queueId, CancellationToken ct)
-            => Task.FromResult(_states.FirstOrDefault(s => s.QueueId == queueId));
-        public Task SaveSuccessAsync(Guid queueId, string? deltaLink, DateTime polledUtc, CancellationToken ct) => Task.CompletedTask;
-        public Task SaveFailureAsync(Guid queueId, string error, DateTime polledUtc, CancellationToken ct) => Task.CompletedTask;
-        public Task ResetFailuresAsync(Guid queueId, CancellationToken ct) => Task.CompletedTask;
-        public Task SaveProcessedFolderIdAsync(Guid queueId, string folderId, CancellationToken ct) => Task.CompletedTask;
-        public Task SaveMailboxActionErrorAsync(Guid queueId, string error, DateTime occurredUtc, CancellationToken ct) => Task.CompletedTask;
-        public Task ClearMailboxActionErrorAsync(Guid queueId, CancellationToken ct) => Task.CompletedTask;
+        private readonly IReadOnlyList<QueueInboundMailbox> _sources;
+        public StubInboundRepo(IReadOnlyList<QueueInboundMailbox> sources) => _sources = sources;
+        public Task<IReadOnlyList<QueueInboundMailbox>> ListAllAsync(CancellationToken ct) => Task.FromResult(_sources);
+        public Task<IReadOnlyList<QueueInboundMailbox>> ListByQueueAsync(Guid queueId, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<QueueInboundMailbox>>(_sources.Where(s => s.QueueId == queueId).ToList());
+        public Task<QueueInboundMailbox?> GetAsync(Guid id, CancellationToken ct)
+            => Task.FromResult(_sources.FirstOrDefault(s => s.Id == id));
+        public Task<IReadOnlyList<string>> ListAllMailboxAddressesAsync(CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<string>>(_sources.Select(s => s.MailboxAddress).Distinct().ToList());
+        public Task<Guid?> FindConflictingQueueAsync(string mailbox, string? folderId, Guid? excludeSourceId, CancellationToken ct) => Task.FromResult<Guid?>(null);
+        public Task<QueueInboundMailbox> AddAsync(Guid queueId, string mailbox, string? folderId, string? folderName, bool pollingEnabled, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> UpdateConfigAsync(Guid id, string mailbox, string? folderId, string? folderName, bool pollingEnabled, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> DeleteAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> SetPollingAsync(Guid id, bool enabled, CancellationToken ct) => throw new NotImplementedException();
+        public Task RefreshMirrorAsync(Guid queueId, CancellationToken ct) => Task.CompletedTask;
+        public Task SaveSuccessAsync(Guid id, string? deltaLink, DateTime polledUtc, CancellationToken ct) => Task.CompletedTask;
+        public Task SaveFailureAsync(Guid id, string error, DateTime polledUtc, CancellationToken ct) => Task.CompletedTask;
+        public Task ResetFailuresAsync(Guid id, CancellationToken ct) => Task.CompletedTask;
+        public Task SaveProcessedFolderIdAsync(Guid id, string folderId, CancellationToken ct) => Task.CompletedTask;
+        public Task SaveMailboxActionErrorAsync(Guid id, string error, DateTime occurredUtc, CancellationToken ct) => Task.CompletedTask;
+        public Task ClearMailboxActionErrorAsync(Guid id, CancellationToken ct) => Task.CompletedTask;
     }
 
     private sealed class StubAttachmentJobsRepo : IAttachmentJobRepository

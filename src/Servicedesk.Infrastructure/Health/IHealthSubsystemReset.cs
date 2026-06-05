@@ -16,19 +16,16 @@ public interface IHealthSubsystemReset
 
 public sealed class HealthSubsystemReset : IHealthSubsystemReset
 {
-    private readonly IMailPollStateRepository _pollState;
-    private readonly ITaxonomyRepository _taxonomy;
+    private readonly IQueueInboundMailboxRepository _sources;
     private readonly IBlobStoreHealth _blobHealth;
     private readonly ISecurityActivitySnapshot _securityActivity;
 
     public HealthSubsystemReset(
-        IMailPollStateRepository pollState,
-        ITaxonomyRepository taxonomy,
+        IQueueInboundMailboxRepository sources,
         IBlobStoreHealth blobHealth,
         ISecurityActivitySnapshot securityActivity)
     {
-        _pollState = pollState;
-        _taxonomy = taxonomy;
+        _sources = sources;
         _blobHealth = blobHealth;
         _securityActivity = securityActivity;
     }
@@ -39,12 +36,12 @@ public sealed class HealthSubsystemReset : IHealthSubsystemReset
         {
             case "mail-polling":
             {
-                var queues = await _taxonomy.ListQueuesAsync(ct);
-                foreach (var q in queues)
+                var sources = await _sources.ListAllAsync(ct);
+                foreach (var s in sources)
                 {
-                    await _pollState.ResetFailuresAsync(q.Id, ct);
+                    await _sources.ResetFailuresAsync(s.Id, ct);
                 }
-                return new[] { "mail_poll_state.consecutive_failures", "mail_poll_state.last_error", "mail_poll_state.last_mailbox_action_error" };
+                return new[] { "queue_inbound_mailboxes.consecutive_failures", "queue_inbound_mailboxes.last_error", "queue_inbound_mailboxes.last_mailbox_action_error" };
             }
             case "blob-store":
                 _blobHealth.Clear();

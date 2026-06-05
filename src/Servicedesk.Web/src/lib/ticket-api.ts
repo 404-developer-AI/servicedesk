@@ -1069,18 +1069,20 @@ export const taggingMailboxApi = {
   },
 };
 
-// ---- Inbound mailbox polling (v0.0.60) ------------------------------
+// ---- Inbound mailbox polling (v0.0.60, per-source since v0.0.66) -----
 
-/// One row per queue that has an inbound mailbox configured. The toggle pauses
-/// or resumes Graph polling for that mailbox; delta-state is kept on pause.
+/// One row per inbound-mailbox source (a queue can have several). The toggle
+/// pauses or resumes Graph polling for that source; delta-state is kept on
+/// pause so resuming continues from where it left off.
 export type InboundMailbox = {
+  sourceId: string;
   queueId: string;
   queueName: string;
   mailbox: string;
   folderName: string | null;
   folderConfigured: boolean;
   isActive: boolean;
-  inboundPollingEnabled: boolean;
+  pollingEnabled: boolean;
   lastPolledUtc: string | null;
   lastError: string | null;
   consecutiveFailures: number;
@@ -1088,10 +1090,10 @@ export type InboundMailbox = {
 
 export const mailMailboxApi = {
   list: () => request<InboundMailbox[]>("GET", "/api/admin/mail/mailboxes"),
-  setPolling: (queueId: string, enabled: boolean) =>
-    request<{ queueId: string; inboundPollingEnabled: boolean }>(
+  setPolling: (sourceId: string, enabled: boolean) =>
+    request<{ sourceId: string; pollingEnabled: boolean }>(
       "PUT",
-      `/api/admin/mail/mailboxes/${queueId}/polling`,
+      `/api/admin/mail/mailboxes/${sourceId}/polling`,
       { enabled },
     ),
 };

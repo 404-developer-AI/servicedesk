@@ -20,6 +20,7 @@ import {
   type TicketType,
   type TicketTypeInput,
 } from "@/lib/api";
+import { Plus, Trash2, Mail } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -525,6 +526,18 @@ function QueuesTab() {
   );
 }
 
+/// One editable inbound-mailbox source in the queue dialog. `key` is a stable
+/// client-side id so per-row folder lists / loading state survive re-renders;
+/// `id` is the server source id (absent for newly-added rows).
+type InboundRow = {
+  key: string;
+  id?: string;
+  mailbox: string;
+  folderId: string;
+  folderName: string;
+  pollingEnabled: boolean;
+};
+
 function QueueDialog({
   queue,
   onClose,
@@ -541,13 +554,24 @@ function QueueDialog({
     icon: queue?.icon ?? "inbox",
     sortOrder: queue?.sortOrder ?? 0,
     isActive: queue?.isActive ?? true,
-    inboundMailboxAddress: queue?.inboundMailboxAddress ?? "",
     outboundMailboxAddress: queue?.outboundMailboxAddress ?? "",
-    inboundFolderId: queue?.inboundFolderId ?? "",
-    inboundFolderName: queue?.inboundFolderName ?? "",
     allowedStatusIds: queue?.allowedStatusIds ?? [],
     defaultStatusId: queue?.defaultStatusId ?? null,
   }));
+
+  // v0.0.66 — a queue can have many inbound mailbox sources. Each editable row
+  // carries a stable client-side `key` so its folder list / loading state is
+  // tracked independently of server ids (new rows have no id yet).
+  const [rows, setRows] = useState<InboundRow[]>(() =>
+    (queue?.inboundMailboxes ?? []).map((m) => ({
+      key: crypto.randomUUID(),
+      id: m.id,
+      mailbox: m.mailbox ?? "",
+      folderId: m.folderId ?? "",
+      folderName: m.folderName ?? "",
+      pollingEnabled: m.pollingEnabled,
+    })),
+  );
 
   // v0.0.40 polish — load every status so the "Status scope" block
   // can offer the multi-select. Cached + reused with the existing key.
@@ -557,40 +581,61 @@ function QueueDialog({
     staleTime: 60_000,
   });
 
-  const [folders, setFolders] = useState<GraphMailFolder[]>([]);
-  const [foldersLoading, setFoldersLoading] = useState(false);
-  const [foldersError, setFoldersError] = useState<string | null>(null);
+  const [folders, setFolders] = useState<Record<string, GraphMailFolder[]>>({});
+  const [foldersLoading, setFoldersLoading] = useState<Record<string, boolean>>({});
+  const [foldersError, setFoldersError] = useState<Record<string, string | null>>({});
 
-  const loadFolders = async () => {
-    const mailbox = form.inboundMailboxAddress?.trim();
+  const updateRow = (key: string, patch: Partial<InboundRow>) =>
+    setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+
+  const addRow = () =>
+    setRows((rs) => [
+      ...rs,
+      { key: crypto.randomUUID(), mailbox: "", folderId: "", folderName: "", pollingEnabled: true },
+    ]);
+
+  const removeRow = (key: string) => setRows((rs) => rs.filter((r) => r.key !== key));
+
+  const loadFolders = async (row: InboundRow) => {
+    const mailbox = row.mailbox.trim();
     if (!mailbox) return;
-    setFoldersLoading(true);
-    setFoldersError(null);
+    setFoldersLoading((s) => ({ ...s, [row.key]: true }));
+    setFoldersError((s) => ({ ...s, [row.key]: null }));
     try {
       const result = await graphAdminApi.listFolders(mailbox);
       if (Array.isArray(result)) {
-        setFolders(result);
+        setFolders((s) => ({ ...s, [row.key]: result }));
       } else {
-        setFoldersError((result as { error?: string }).error ?? "Unknown error");
+        setFoldersError((s) => ({
+          ...s,
+          [row.key]: (result as { error?: string }).error ?? "Unknown error",
+        }));
       }
     } catch (err) {
-      setFoldersError(err instanceof ApiError ? `Failed (${err.status})` : "Failed to load folders");
+      setFoldersError((s) => ({
+        ...s,
+        [row.key]: err instanceof ApiError ? `Failed (${err.status})` : "Failed to load folders",
+      }));
     } finally {
-      setFoldersLoading(false);
+      setFoldersLoading((s) => ({ ...s, [row.key]: false }));
     }
   };
 
-  const hasMailbox = !!form.inboundMailboxAddress?.trim();
-  const hasFolder = !!form.inboundFolderId?.trim();
+  // Every row must have both a mailbox and a selected folder before saving.
+  const rowsComplete = rows.every((r) => r.mailbox.trim() && r.folderId.trim());
 
   const save = useMutation({
     mutationFn: async () => {
       const payload: QueueInput = {
         ...form,
-        inboundMailboxAddress: form.inboundMailboxAddress?.trim() || null,
         outboundMailboxAddress: form.outboundMailboxAddress?.trim() || null,
-        inboundFolderId: form.inboundFolderId?.trim() || null,
-        inboundFolderName: form.inboundFolderName?.trim() || null,
+        inboundMailboxes: rows.map((r) => ({
+          id: r.id ?? null,
+          mailbox: r.mailbox.trim(),
+          folderId: r.folderId.trim() || null,
+          folderName: r.folderName.trim() || null,
+          pollingEnabled: r.pollingEnabled,
+        })),
         allowedStatusIds: form.allowedStatusIds ?? [],
         defaultStatusId: form.defaultStatusId ?? null,
       };
@@ -604,7 +649,13 @@ function QueueDialog({
       onSaved();
     },
     onError: (err) => {
-      toast.error(err instanceof ApiError ? `Save failed (${err.status})` : "Save failed");
+      toast.error(
+        err instanceof ApiError
+          ? err.status === 409
+            ? "A mailbox/folder is already assigned to another queue"
+            : `Save failed (${err.status})`
+          : "Save failed",
+      );
     },
   });
 
@@ -617,7 +668,7 @@ function QueueDialog({
             Queues are the inboxes tickets land in. Name it after a team or workstream.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3 text-sm">
+        <div className="max-h-[70vh] space-y-3 overflow-y-auto pr-1 text-sm">
           <Field label="Name">
             <Input
               value={form.name}
@@ -744,20 +795,133 @@ function QueueDialog({
           </div>
 
           <div className="mt-2 space-y-3 rounded-md border border-glass-strong bg-glass p-3">
-            <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
-              Microsoft Graph mailbox
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+                Microsoft Graph mailboxes
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 shrink-0 gap-1 border-glass bg-glass px-2 text-xs hover:bg-glass-hover"
+                onClick={addRow}
+              >
+                <Plus className="h-3.5 w-3.5" /> Add mailbox
+              </Button>
             </div>
-            <Field label="Inbound mailbox address">
-              <Input
-                type="email"
-                placeholder="support@company.com"
-                value={form.inboundMailboxAddress ?? ""}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, inboundMailboxAddress: e.target.value }))
-                }
-              />
-            </Field>
-            <Field label="Outbound mailbox address (not used yet)">
+
+            {rows.length === 0 && (
+              <div className="rounded-md border border-dashed border-glass-strong bg-glass px-4 py-5 text-center text-xs text-muted-foreground">
+                No inbound mailboxes. Add one to poll mail into this queue.
+              </div>
+            )}
+
+            {rows.map((row) => {
+              const rowFolders = folders[row.key] ?? [];
+              const rowLoading = !!foldersLoading[row.key];
+              const rowError = foldersError[row.key];
+              const hasMailbox = !!row.mailbox.trim();
+              const hasFolder = !!row.folderId.trim();
+              return (
+                <div
+                  key={row.key}
+                  className="space-y-3 rounded-md border border-glass bg-glass-hover/30 p-3"
+                >
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <Input
+                      type="email"
+                      placeholder="support@company.com"
+                      value={row.mailbox}
+                      onChange={(e) =>
+                        updateRow(row.key, { mailbox: e.target.value })
+                      }
+                      className="flex-1"
+                    />
+                    <label className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <Switch
+                        checked={row.pollingEnabled}
+                        onCheckedChange={(checked) =>
+                          updateRow(row.key, { pollingEnabled: checked })
+                        }
+                        aria-label="Toggle polling for this mailbox"
+                      />
+                      Polling
+                    </label>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => removeRow(row.key)}
+                      aria-label="Remove mailbox"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={row.folderId || undefined}
+                      disabled={!hasMailbox}
+                      onValueChange={(v) => {
+                        const selected = rowFolders.find((f) => f.id === v);
+                        updateRow(row.key, {
+                          folderId: v,
+                          folderName: selected?.displayName ?? row.folderName,
+                        });
+                      }}
+                    >
+                      <SelectTrigger className="h-9 flex-1 border-glass bg-glass transition-colors focus:border-glass-strong focus:bg-glass-strong">
+                        <SelectValue placeholder="Select a folder…">
+                          {row.folderName || row.folderId || "Select a folder…"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="border-glass bg-popover/80 backdrop-blur-xl">
+                        {rowFolders.map((f) => (
+                          <SelectItem key={f.id} value={f.id}>
+                            <span className="flex items-center gap-2">
+                              {f.displayName}
+                              <span className="text-xs text-muted-foreground">
+                                ({f.totalItemCount})
+                              </span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                        {rowFolders.length === 0 && row.folderId && (
+                          <SelectItem value={row.folderId}>
+                            {row.folderName || row.folderId}
+                          </SelectItem>
+                        )}
+                        {rowFolders.length === 0 && !row.folderId && (
+                          <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                            Click "Load folders" to fetch available folders.
+                          </div>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0 border-glass bg-glass hover:bg-glass-hover"
+                      disabled={!hasMailbox || rowLoading}
+                      onClick={() => loadFolders(row)}
+                    >
+                      {rowLoading ? "Loading…" : "Load folders"}
+                    </Button>
+                  </div>
+                  {rowError && <p className="text-xs text-red-400">{rowError}</p>}
+                  {hasMailbox && !hasFolder && (
+                    <p className="text-xs text-amber-400">
+                      Select a folder for this mailbox.
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+
+            <Field label="Outbound mailbox address (send-as for replies)">
               <Input
                 type="email"
                 placeholder="support@company.com"
@@ -768,74 +932,10 @@ function QueueDialog({
               />
             </Field>
 
-            <Field label="Inbound folder">
-              <div className="flex items-center gap-2">
-                <Select
-                  value={form.inboundFolderId || undefined}
-                  disabled={!hasMailbox}
-                  onValueChange={(v) => {
-                    const selected = folders.find((f) => f.id === v);
-                    setForm((f) => ({
-                      ...f,
-                      inboundFolderId: v,
-                      inboundFolderName: selected?.displayName ?? "",
-                    }));
-                  }}
-                >
-                  <SelectTrigger className="h-9 flex-1 border-glass bg-glass focus:border-glass-strong focus:bg-glass-strong transition-colors">
-                    <SelectValue
-                      placeholder="Select a folder…"
-                    >
-                      {form.inboundFolderName || form.inboundFolderId || "Select a folder…"}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent className="border-glass bg-popover/80 backdrop-blur-xl">
-                    {folders.map((f) => (
-                      <SelectItem key={f.id} value={f.id}>
-                        <span className="flex items-center gap-2">
-                          {f.displayName}
-                          <span className="text-xs text-muted-foreground">
-                            ({f.totalItemCount})
-                          </span>
-                        </span>
-                      </SelectItem>
-                    ))}
-                    {folders.length === 0 && form.inboundFolderId && (
-                      <SelectItem value={form.inboundFolderId}>
-                        {form.inboundFolderName || form.inboundFolderId}
-                      </SelectItem>
-                    )}
-                    {folders.length === 0 && !form.inboundFolderId && (
-                      <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                        Click "Load folders" to fetch available folders.
-                      </div>
-                    )}
-                  </SelectContent>
-                </Select>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="shrink-0 border-glass bg-glass hover:bg-glass-hover"
-                  disabled={!hasMailbox || foldersLoading}
-                  onClick={loadFolders}
-                >
-                  {foldersLoading ? "Loading…" : "Load folders"}
-                </Button>
-              </div>
-              {foldersError && (
-                <p className="mt-1 text-xs text-red-400">{foldersError}</p>
-              )}
-              {hasMailbox && !hasFolder && (
-                <p className="mt-1 text-xs text-amber-400">
-                  A folder must be selected when an inbound mailbox is configured.
-                </p>
-              )}
-            </Field>
-
             <p className="text-xs text-muted-foreground">
-              Mail sent to the inbound address is polled from the selected folder by Microsoft Graph and routed to this queue.
-              Outbound is reserved for per-queue send-as replies in a later release.
+              Each inbound mailbox is polled from its selected folder by Microsoft
+              Graph and routed to this queue. A mailbox/folder can only feed one
+              queue. Replies are always sent from the outbound address above.
             </p>
           </div>
         </div>
@@ -845,7 +945,7 @@ function QueueDialog({
           </Button>
           <Button
             onClick={() => save.mutate()}
-            disabled={save.isPending || !form.name || (hasMailbox && !hasFolder)}
+            disabled={save.isPending || !form.name || !rowsComplete}
           >
             {save.isPending ? "Saving..." : "Save"}
           </Button>

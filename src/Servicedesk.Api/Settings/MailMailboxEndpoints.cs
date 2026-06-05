@@ -5,11 +5,11 @@ using Servicedesk.Infrastructure.Persistence.Taxonomy;
 
 namespace Servicedesk.Api.Settings;
 
-/// Admin view + control of inbound mail polling, one row per queue that has an
-/// inbound mailbox configured. The toggle flips `inbound_polling_enabled` on
-/// the queue; the MailPollingService skips paused mailboxes on its next cycle
-/// while leaving their delta-state intact, so resuming picks up where it left
-/// off. Surfaced under Settings → Mail.
+/// Admin view + control of inbound mail polling, one row per inbound-mailbox
+/// source (v0.0.66 — a queue can have several). The toggle flips
+/// `polling_enabled` on the source; the MailPollingService skips paused sources
+/// on its next cycle while leaving their delta-state intact, so resuming picks
+/// up where it left off. Surfaced under Settings → Mail.
 public static class MailMailboxEndpoints
 {
     public static IEndpointRouteBuilder MapMailMailboxEndpoints(this IEndpointRouteBuilder app)
@@ -19,41 +19,42 @@ public static class MailMailboxEndpoints
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapGet("/", async (
-            ITaxonomyRepository taxonomy, IMailPollStateRepository stateRepo,
+            ITaxonomyRepository taxonomy, IQueueInboundMailboxRepository sources,
             CancellationToken ct) =>
         {
-            var queues = await taxonomy.ListQueuesAsync(ct);
-            var states = (await stateRepo.ListAllAsync(ct)).ToDictionary(s => s.QueueId);
+            var queues = (await taxonomy.ListQueuesAsync(ct)).ToDictionary(q => q.Id);
 
-            var mailboxes = queues
-                .Where(q => !string.IsNullOrWhiteSpace(q.InboundMailboxAddress))
-                .OrderBy(q => q.SortOrder).ThenBy(q => q.Name)
-                .Select(q =>
+            var mailboxes = (await sources.ListAllAsync(ct))
+                .Select(s =>
                 {
-                    states.TryGetValue(q.Id, out var st);
+                    queues.TryGetValue(s.QueueId, out var q);
                     return new
                     {
-                        queueId = q.Id,
-                        queueName = q.Name,
-                        mailbox = q.InboundMailboxAddress,
-                        folderName = q.InboundFolderName,
-                        folderConfigured = !string.IsNullOrWhiteSpace(q.InboundFolderId),
-                        isActive = q.IsActive,
-                        inboundPollingEnabled = q.InboundPollingEnabled,
-                        lastPolledUtc = st?.LastPolledUtc,
-                        lastError = st?.LastError,
-                        consecutiveFailures = st?.ConsecutiveFailures ?? 0,
+                        sourceId = s.Id,
+                        queueId = s.QueueId,
+                        queueName = q?.Name ?? s.QueueId.ToString(),
+                        mailbox = s.MailboxAddress,
+                        folderName = s.FolderName,
+                        folderConfigured = !string.IsNullOrWhiteSpace(s.FolderId),
+                        isActive = q?.IsActive ?? false,
+                        pollingEnabled = s.PollingEnabled,
+                        lastPolledUtc = s.LastPolledUtc,
+                        lastError = s.LastError,
+                        consecutiveFailures = s.ConsecutiveFailures,
+                        sortOrder = q?.SortOrder ?? 0,
                     };
-                });
+                })
+                .OrderBy(x => x.sortOrder).ThenBy(x => x.queueName).ThenBy(x => x.mailbox)
+                .ToList();
 
             return Results.Ok(mailboxes);
         }).WithName("ListInboundMailboxes").WithOpenApi();
 
-        group.MapPut("/{queueId:guid}/polling", async (
-            Guid queueId, PollingToggleRequest req, HttpContext http,
-            ITaxonomyRepository taxonomy, IAuditLogger audit, CancellationToken ct) =>
+        group.MapPut("/{sourceId:guid}/polling", async (
+            Guid sourceId, PollingToggleRequest req, HttpContext http,
+            IQueueInboundMailboxRepository sources, IAuditLogger audit, CancellationToken ct) =>
         {
-            var updated = await taxonomy.SetQueueInboundPollingAsync(queueId, req.Enabled, ct);
+            var updated = await sources.SetPollingAsync(sourceId, req.Enabled, ct);
             if (!updated) return Results.NotFound();
 
             var (actor, role) = ActorContext.Resolve(http);
@@ -61,12 +62,12 @@ public static class MailMailboxEndpoints
                 EventType: req.Enabled ? "mail.polling.enable" : "mail.polling.disable",
                 Actor: actor,
                 ActorRole: role,
-                Target: queueId.ToString(),
+                Target: sourceId.ToString(),
                 ClientIp: http.Connection.RemoteIpAddress?.ToString(),
                 UserAgent: http.Request.Headers.UserAgent.ToString(),
                 Payload: new { enabled = req.Enabled }));
 
-            return Results.Ok(new { queueId, inboundPollingEnabled = req.Enabled });
+            return Results.Ok(new { sourceId, pollingEnabled = req.Enabled });
         }).WithName("SetInboundMailboxPolling").WithOpenApi();
 
         return app;

@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure.Mail.Graph;
+using Servicedesk.Infrastructure.Mail.Polling;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
@@ -25,6 +26,7 @@ public sealed class MailIngestService : IMailIngestService
     private readonly IMailMessageRepository _mail;
     private readonly ITicketRepository _tickets;
     private readonly ITaxonomyRepository _taxonomy;
+    private readonly IQueueInboundMailboxRepository _inboundMailboxes;
     private readonly IContactLookupService _contacts;
     private readonly IBlobStore _blobs;
     private readonly ISettingsService _settings;
@@ -37,6 +39,7 @@ public sealed class MailIngestService : IMailIngestService
         IMailMessageRepository mail,
         ITicketRepository tickets,
         ITaxonomyRepository taxonomy,
+        IQueueInboundMailboxRepository inboundMailboxes,
         IContactLookupService contacts,
         IBlobStore blobs,
         ISettingsService settings,
@@ -48,6 +51,7 @@ public sealed class MailIngestService : IMailIngestService
         _mail = mail;
         _tickets = tickets;
         _taxonomy = taxonomy;
+        _inboundMailboxes = inboundMailboxes;
         _contacts = contacts;
         _blobs = blobs;
         _settings = settings;
@@ -84,10 +88,14 @@ public sealed class MailIngestService : IMailIngestService
                 $"Auto-Submitted: {msg.AutoSubmitted}");
         }
 
-        // Loop prevention: ignore mail claiming to come from any of our own mailboxes.
+        // Loop prevention: ignore mail claiming to come from any of our own
+        // mailboxes — every inbound source (across all queues) plus each queue's
+        // outbound address.
         var queues = await _taxonomy.ListQueuesAsync(ct);
+        var sourceAddresses = await _inboundMailboxes.ListAllMailboxAddressesAsync(ct);
         var ownMailboxes = queues
-            .SelectMany(q => new[] { q.InboundMailboxAddress, q.OutboundMailboxAddress })
+            .Select(q => q.OutboundMailboxAddress)
+            .Concat(sourceAddresses)
             .Where(a => !string.IsNullOrWhiteSpace(a))
             .Select(a => a!.Trim().ToLowerInvariant())
             .ToHashSet();

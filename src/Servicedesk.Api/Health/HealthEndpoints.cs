@@ -14,7 +14,7 @@ namespace Servicedesk.Api.Health;
 /// Three endpoints implement the three-layer health flow:
 ///   • GET  /api/system/health            — public status-only rollup (dashboard pill)
 ///   • GET  /api/admin/health             — full per-subsystem detail (admin page)
-///   • POST /api/admin/health/mail-polling/queues/{id}/reset — retry action
+///   • POST /api/admin/health/mail-polling/sources/{id}/reset — retry action
 /// Non-admins never see error messages — only the rollup colour.
 public static class HealthEndpoints
 {
@@ -138,23 +138,23 @@ public static class HealthEndpoints
         })
         .WithName("AcknowledgeAdsolutSync").WithOpenApi();
 
-        admin.MapPost("/mail-polling/queues/{queueId:guid}/reset", async (
-            Guid queueId,
+        admin.MapPost("/mail-polling/sources/{sourceId:guid}/reset", async (
+            Guid sourceId,
             HttpContext http,
-            IMailPollStateRepository pollState,
+            IQueueInboundMailboxRepository sources,
             IAuditLogger audit,
             CancellationToken ct) =>
         {
-            await pollState.ResetFailuresAsync(queueId, ct);
+            await sources.ResetFailuresAsync(sourceId, ct);
             var (actor, role) = ActorContext.Resolve(http);
             await audit.LogAsync(new AuditEvent(
                 EventType: "health.mail-polling.reset",
                 Actor: actor,
                 ActorRole: role,
-                Target: queueId.ToString(),
+                Target: sourceId.ToString(),
                 ClientIp: http.Connection.RemoteIpAddress?.ToString(),
                 UserAgent: http.Request.Headers.UserAgent.ToString(),
-                Payload: new { queueId }));
+                Payload: new { sourceId }));
             return Results.NoContent();
         })
         .WithName("ResetMailPollingFailures").WithOpenApi();
