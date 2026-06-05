@@ -119,7 +119,7 @@ public static class TicketEndpoints
                 return Results.NotFound(); // 404 to prevent existence leaking
 
             detail = await mailEnricher.EnrichAsync(detail, ct);
-            var companyAlert = await BuildCompanyAlertAsync(companies, detail.Ticket.RequesterContactId, ct);
+            var companyAlert = await BuildCompanyAlertAsync(companies, detail.Ticket.CompanyId, detail.Ticket.RequesterContactId, ct);
 
             // v0.0.23: surface merge metadata so the UI can render the banners
             // ("Merged into #X" on the source, "Merged from #A, #B" on the
@@ -331,7 +331,7 @@ public static class TicketEndpoints
                 changeSet: TriggerChangeSet.AllFieldsNew(),
                 ct: ct);
 
-            var companyAlert = await BuildCompanyAlertAsync(companies, created.RequesterContactId, ct);
+            var companyAlert = await BuildCompanyAlertAsync(companies, created.CompanyId, created.RequesterContactId, ct);
             var showAlertOnCreate = companyAlert is not null && companyAlert.AlertOnCreate
                 && !string.IsNullOrWhiteSpace(companyAlert.AlertText);
             return Results.Created($"/api/tickets/{created.Id}", new
@@ -600,7 +600,7 @@ public static class TicketEndpoints
                 changeSet: new TriggerChangeSet(changedFields, ArticleAdded: false),
                 ct: ct);
 
-            var companyAlert = await BuildCompanyAlertAsync(companies, detail.Ticket.RequesterContactId, ct);
+            var companyAlert = await BuildCompanyAlertAsync(companies, detail.Ticket.CompanyId, detail.Ticket.RequesterContactId, ct);
             return Results.Ok(new
             {
                 ticket = detail.Ticket,
@@ -688,7 +688,7 @@ public static class TicketEndpoints
             await hub.Clients.Group($"ticket:{ticketIdStr}").SendAsync("TicketUpdated", ticketIdStr, ct);
             await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", ticketIdStr, ct);
 
-            var companyAlert = await BuildCompanyAlertAsync(companies, detail.Ticket.RequesterContactId, ct);
+            var companyAlert = await BuildCompanyAlertAsync(companies, detail.Ticket.CompanyId, detail.Ticket.RequesterContactId, ct);
             return Results.Ok(new
             {
                 ticket = detail.Ticket,
@@ -763,7 +763,7 @@ public static class TicketEndpoints
 
             await sla.OnTicketFieldsChangedAsync(id, ct);
 
-            var companyAlert = await BuildCompanyAlertAsync(companies, detail.Ticket.RequesterContactId, ct);
+            var companyAlert = await BuildCompanyAlertAsync(companies, detail.Ticket.CompanyId, detail.Ticket.RequesterContactId, ct);
             return Results.Ok(new
             {
                 ticket = detail.Ticket,
@@ -2143,9 +2143,19 @@ public static class TicketEndpoints
     }
 
     private static async Task<TicketCompanyAlert?> BuildCompanyAlertAsync(
-        ICompanyRepository companies, Guid requesterContactId, CancellationToken ct)
+        ICompanyRepository companies, Guid? ticketCompanyId, Guid requesterContactId, CancellationToken ct)
     {
-        var company = await companies.GetPrimaryCompanyForContactAsync(requesterContactId, ct);
+        // Resolve the alert from the ticket's OWN frozen company first — that is
+        // the company this ticket belongs to, set at intake (t.company_id). The
+        // requester's *current* primary-company link is only a fallback for
+        // tickets that never got a company assigned. Resolving via the requester
+        // link alone meant older tickets — whose requester contact has no primary
+        // contact_companies row even though the ticket has a company — never
+        // surfaced the on-open pop-up. (v0.0.66 fix)
+        var company = ticketCompanyId is { } cid
+            ? await companies.GetCompanyAsync(cid, ct)
+            : null;
+        company ??= await companies.GetPrimaryCompanyForContactAsync(requesterContactId, ct);
         if (company is null) return null;
         return new TicketCompanyAlert(
             CompanyId: company.Id,
