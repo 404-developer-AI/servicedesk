@@ -117,19 +117,45 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
 
     public async Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, string? inboundMailboxAddress, string? outboundMailboxAddress, string? inboundFolderId, string? inboundFolderName, IReadOnlyList<Guid> allowedStatusIds, Guid? defaultStatusId, CancellationToken ct)
     {
+        // A Microsoft Graph delta token is bound to the folder it was issued
+        // for. When the admin re-points a queue at a different inbound mailbox
+        // or folder, the stale delta_link in mail_poll_state would otherwise be
+        // re-used against the new folder — Graph then reports "no changes" and
+        // the poller silently returns 0 forever. So we wipe the cursor (and the
+        // failure backoff) in the same statement whenever mailbox/folder
+        // actually changes, forcing the next poll to do a full re-read. `prev`
+        // reads the pre-update values from the same snapshot; the data-modifying
+        // `reset` CTE always executes even though the final SELECT ignores it.
         var sql = $$"""
-            UPDATE queues SET name = @name, slug = @slug, description = @description,
-                              color = @color, icon = @icon, sort_order = @sortOrder,
-                              is_active = @isActive,
-                              inbound_mailbox_address = @inboundMailboxAddress,
-                              outbound_mailbox_address = @outboundMailboxAddress,
-                              inbound_folder_id = @inboundFolderId,
-                              inbound_folder_name = @inboundFolderName,
-                              allowed_status_ids = COALESCE(@allowedStatusIds, '{}'::uuid[]),
-                              default_status_id = @defaultStatusId,
-                              updated_utc = now()
-            WHERE id = @id
-            RETURNING {{QueueSelectColumns}}
+            WITH prev AS (
+                SELECT inbound_mailbox_address AS old_mailbox,
+                       inbound_folder_id       AS old_folder
+                FROM queues WHERE id = @id
+            ),
+            upd AS (
+                UPDATE queues SET name = @name, slug = @slug, description = @description,
+                                  color = @color, icon = @icon, sort_order = @sortOrder,
+                                  is_active = @isActive,
+                                  inbound_mailbox_address = @inboundMailboxAddress,
+                                  outbound_mailbox_address = @outboundMailboxAddress,
+                                  inbound_folder_id = @inboundFolderId,
+                                  inbound_folder_name = @inboundFolderName,
+                                  allowed_status_ids = COALESCE(@allowedStatusIds, '{}'::uuid[]),
+                                  default_status_id = @defaultStatusId,
+                                  updated_utc = now()
+                WHERE id = @id
+                RETURNING {{QueueSelectColumns}}
+            ),
+            reset AS (
+                UPDATE mail_poll_state s
+                SET delta_link = NULL, consecutive_failures = 0,
+                    last_error = NULL, updated_utc = now()
+                FROM prev
+                WHERE s.queue_id = @id
+                  AND (prev.old_folder  IS DISTINCT FROM @inboundFolderId
+                    OR prev.old_mailbox IS DISTINCT FROM @inboundMailboxAddress)
+            )
+            SELECT * FROM upd
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var row = await conn.QueryFirstOrDefaultAsync<QueueRow>(new CommandDefinition(sql,
