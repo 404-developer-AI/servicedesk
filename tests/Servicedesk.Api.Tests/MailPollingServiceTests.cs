@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Servicedesk.Domain.Taxonomy;
 using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Mail.Polling;
 using Xunit;
@@ -10,8 +11,8 @@ public sealed class MailPollingServiceTests
     [Fact]
     public async Task Success_path_persists_delta_link_and_clears_failures()
     {
-        var queueId = Guid.NewGuid();
-        var repo = new InMemoryPollStateRepo();
+        var sourceId = Guid.NewGuid();
+        var repo = new InMemoryInboundRepo();
         var graph = new StubGraphClient
         {
             Response = new GraphDeltaPage(
@@ -22,11 +23,11 @@ public sealed class MailPollingServiceTests
                 DeltaLink: "https://graph/delta?next=xyz"),
         };
 
-        await MailPollingService.PollQueueCoreAsync(
-            queueId, "servicedesk", "mailbox@test", "inbox", 50, repo, graph,
+        await MailPollingService.PollSourceCoreAsync(
+            sourceId, Guid.NewGuid(), "servicedesk", "mailbox@test", "inbox", 50, repo, graph,
             NullLogger.Instance, CancellationToken.None);
 
-        var state = await repo.GetAsync(queueId, CancellationToken.None);
+        var state = await repo.GetAsync(sourceId, CancellationToken.None);
         Assert.NotNull(state);
         Assert.Equal("https://graph/delta?next=xyz", state!.DeltaLink);
         Assert.Null(state.LastError);
@@ -36,15 +37,15 @@ public sealed class MailPollingServiceTests
     [Fact]
     public async Task Failure_path_records_error_and_bumps_consecutive_failures()
     {
-        var queueId = Guid.NewGuid();
-        var repo = new InMemoryPollStateRepo();
+        var sourceId = Guid.NewGuid();
+        var repo = new InMemoryInboundRepo();
         var graph = new StubGraphClient { Throw = new InvalidOperationException("no tenant") };
 
-        await MailPollingService.PollQueueCoreAsync(
-            queueId, "servicedesk", "mailbox@test", "inbox", 50, repo, graph,
+        await MailPollingService.PollSourceCoreAsync(
+            sourceId, Guid.NewGuid(), "servicedesk", "mailbox@test", "inbox", 50, repo, graph,
             NullLogger.Instance, CancellationToken.None);
 
-        var state = await repo.GetAsync(queueId, CancellationToken.None);
+        var state = await repo.GetAsync(sourceId, CancellationToken.None);
         Assert.NotNull(state);
         Assert.Equal(1, state!.ConsecutiveFailures);
         Assert.Contains("no tenant", state.LastError);
@@ -53,16 +54,16 @@ public sealed class MailPollingServiceTests
     [Fact]
     public async Task Passes_previous_delta_link_back_to_graph_client()
     {
-        var queueId = Guid.NewGuid();
-        var repo = new InMemoryPollStateRepo();
-        await repo.SaveSuccessAsync(queueId, "https://graph/delta?seed=1", DateTime.UtcNow, default);
+        var sourceId = Guid.NewGuid();
+        var repo = new InMemoryInboundRepo();
+        await repo.SaveSuccessAsync(sourceId, "https://graph/delta?seed=1", DateTime.UtcNow, default);
         var graph = new StubGraphClient
         {
             Response = new GraphDeltaPage(Array.Empty<GraphMailSummary>(), "https://graph/delta?seed=2"),
         };
 
-        await MailPollingService.PollQueueCoreAsync(
-            queueId, "servicedesk", "mailbox@test", "inbox", 25, repo, graph,
+        await MailPollingService.PollSourceCoreAsync(
+            sourceId, Guid.NewGuid(), "servicedesk", "mailbox@test", "inbox", 25, repo, graph,
             NullLogger.Instance, CancellationToken.None);
 
         Assert.Equal("https://graph/delta?seed=1", graph.LastDeltaLink);
@@ -70,16 +71,16 @@ public sealed class MailPollingServiceTests
     }
 
     [Fact]
-    public async Task Skips_queue_once_consecutive_failures_exceed_threshold()
+    public async Task Skips_source_once_consecutive_failures_exceed_threshold()
     {
-        var queueId = Guid.NewGuid();
-        var repo = new InMemoryPollStateRepo();
+        var sourceId = Guid.NewGuid();
+        var repo = new InMemoryInboundRepo();
         for (var i = 0; i < 5; i++)
-            await repo.SaveFailureAsync(queueId, "boom", DateTime.UtcNow, default);
+            await repo.SaveFailureAsync(sourceId, "boom", DateTime.UtcNow, default);
 
         var graph = new StubGraphClient();
-        await MailPollingService.PollQueueCoreAsync(
-            queueId, "servicedesk", "mailbox@test", "inbox", 25, repo, graph,
+        await MailPollingService.PollSourceCoreAsync(
+            sourceId, Guid.NewGuid(), "servicedesk", "mailbox@test", "inbox", 25, repo, graph,
             NullLogger.Instance, CancellationToken.None);
 
         // Graph was never called because the service skipped.
@@ -125,66 +126,97 @@ public sealed class MailPollingServiceTests
             => throw new NotImplementedException();
     }
 
-    private sealed class InMemoryPollStateRepo : IMailPollStateRepository
+    // In-memory IQueueInboundMailboxRepository keyed by source id. State writes
+    // create-on-write so tests don't need to pre-seed a config row.
+    private sealed class InMemoryInboundRepo : IQueueInboundMailboxRepository
     {
-        private readonly Dictionary<Guid, MailPollState> _map = new();
+        private readonly Dictionary<Guid, QueueInboundMailbox> _map = new();
 
-        public Task<MailPollState?> GetAsync(Guid queueId, CancellationToken ct)
-            => Task.FromResult(_map.TryGetValue(queueId, out var s) ? s : null);
+        private static QueueInboundMailbox Blank(Guid id) => new(
+            id, Guid.NewGuid(), "mailbox@test", "inbox", "Inbox", true,
+            null, null, null, 0, null, null, null, DateTime.UtcNow, DateTime.UtcNow);
 
-        public Task SaveSuccessAsync(Guid queueId, string? deltaLink, DateTime polledUtc, CancellationToken ct)
+        public Task<QueueInboundMailbox?> GetAsync(Guid id, CancellationToken ct)
+            => Task.FromResult(_map.TryGetValue(id, out var s) ? s : null);
+
+        public Task<IReadOnlyList<QueueInboundMailbox>> ListAllAsync(CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<QueueInboundMailbox>>(_map.Values.ToList());
+
+        public Task<IReadOnlyList<QueueInboundMailbox>> ListByQueueAsync(Guid queueId, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<QueueInboundMailbox>>(
+                _map.Values.Where(s => s.QueueId == queueId).ToList());
+
+        public Task<IReadOnlyList<string>> ListAllMailboxAddressesAsync(CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<string>>(_map.Values.Select(s => s.MailboxAddress).Distinct().ToList());
+
+        public Task<Guid?> FindConflictingQueueAsync(string mailbox, string? folderId, Guid? excludeSourceId, CancellationToken ct)
+            => Task.FromResult<Guid?>(null);
+
+        public Task<QueueInboundMailbox> AddAsync(Guid queueId, string mailbox, string? folderId, string? folderName, bool pollingEnabled, CancellationToken ct)
         {
-            _map[queueId] = new MailPollState(queueId, deltaLink, polledUtc, null, 0, DateTime.UtcNow);
+            var row = new QueueInboundMailbox(Guid.NewGuid(), queueId, mailbox, folderId, folderName, pollingEnabled,
+                null, null, null, 0, null, null, null, DateTime.UtcNow, DateTime.UtcNow);
+            _map[row.Id] = row;
+            return Task.FromResult(row);
+        }
+
+        public Task<bool> UpdateConfigAsync(Guid id, string mailbox, string? folderId, string? folderName, bool pollingEnabled, CancellationToken ct)
+        {
+            if (!_map.TryGetValue(id, out var prev)) return Task.FromResult(false);
+            _map[id] = prev with { MailboxAddress = mailbox, FolderId = folderId, FolderName = folderName, PollingEnabled = pollingEnabled };
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> DeleteAsync(Guid id, CancellationToken ct) => Task.FromResult(_map.Remove(id));
+
+        public Task<bool> SetPollingAsync(Guid id, bool enabled, CancellationToken ct)
+        {
+            if (!_map.TryGetValue(id, out var prev)) return Task.FromResult(false);
+            _map[id] = prev with { PollingEnabled = enabled };
+            return Task.FromResult(true);
+        }
+
+        public Task RefreshMirrorAsync(Guid queueId, CancellationToken ct) => Task.CompletedTask;
+
+        public Task SaveSuccessAsync(Guid id, string? deltaLink, DateTime polledUtc, CancellationToken ct)
+        {
+            var prev = _map.TryGetValue(id, out var p) ? p : Blank(id);
+            _map[id] = prev with { DeltaLink = deltaLink, LastPolledUtc = polledUtc, LastError = null, ConsecutiveFailures = 0, UpdatedUtc = DateTime.UtcNow };
             return Task.CompletedTask;
         }
 
-        public Task SaveFailureAsync(Guid queueId, string error, DateTime polledUtc, CancellationToken ct)
+        public Task SaveFailureAsync(Guid id, string error, DateTime polledUtc, CancellationToken ct)
         {
-            _map.TryGetValue(queueId, out var prev);
-            _map[queueId] = new MailPollState(
-                queueId, prev?.DeltaLink, polledUtc, error,
-                (prev?.ConsecutiveFailures ?? 0) + 1, DateTime.UtcNow);
+            var prev = _map.TryGetValue(id, out var p) ? p : Blank(id);
+            _map[id] = prev with { LastPolledUtc = polledUtc, LastError = error, ConsecutiveFailures = prev.ConsecutiveFailures + 1, UpdatedUtc = DateTime.UtcNow };
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<MailPollState>> ListAllAsync(CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<MailPollState>>(_map.Values.ToList());
-
-        public Task ResetFailuresAsync(Guid queueId, CancellationToken ct)
+        public Task ResetFailuresAsync(Guid id, CancellationToken ct)
         {
-            if (_map.TryGetValue(queueId, out var prev))
-            {
-                _map[queueId] = prev with { LastError = null, ConsecutiveFailures = 0, UpdatedUtc = DateTime.UtcNow };
-            }
+            if (_map.TryGetValue(id, out var prev))
+                _map[id] = prev with { LastError = null, ConsecutiveFailures = 0, LastMailboxActionError = null, LastMailboxActionErrorUtc = null, UpdatedUtc = DateTime.UtcNow };
             return Task.CompletedTask;
         }
 
-        public Task SaveMailboxActionErrorAsync(Guid queueId, string error, DateTime occurredUtc, CancellationToken ct)
+        public Task SaveProcessedFolderIdAsync(Guid id, string folderId, CancellationToken ct)
         {
-            if (_map.TryGetValue(queueId, out var prev))
-                _map[queueId] = prev with { LastMailboxActionError = error, LastMailboxActionErrorUtc = occurredUtc, UpdatedUtc = DateTime.UtcNow };
-            else
-                _map[queueId] = new MailPollState(queueId, null, null, null, 0, DateTime.UtcNow, null, error, occurredUtc);
+            var prev = _map.TryGetValue(id, out var p) ? p : Blank(id);
+            _map[id] = prev with { ProcessedFolderId = folderId, UpdatedUtc = DateTime.UtcNow };
             return Task.CompletedTask;
         }
 
-        public Task ClearMailboxActionErrorAsync(Guid queueId, CancellationToken ct)
+        public Task SaveMailboxActionErrorAsync(Guid id, string error, DateTime occurredUtc, CancellationToken ct)
         {
-            if (_map.TryGetValue(queueId, out var prev))
-                _map[queueId] = prev with { LastMailboxActionError = null, LastMailboxActionErrorUtc = null, UpdatedUtc = DateTime.UtcNow };
+            var prev = _map.TryGetValue(id, out var p) ? p : Blank(id);
+            _map[id] = prev with { LastMailboxActionError = error, LastMailboxActionErrorUtc = occurredUtc, UpdatedUtc = DateTime.UtcNow };
             return Task.CompletedTask;
         }
 
-        public Task SaveProcessedFolderIdAsync(Guid queueId, string folderId, CancellationToken ct)
+        public Task ClearMailboxActionErrorAsync(Guid id, CancellationToken ct)
         {
-            if (_map.TryGetValue(queueId, out var prev))
-            {
-                _map[queueId] = prev with { ProcessedFolderId = folderId, UpdatedUtc = DateTime.UtcNow };
-            }
-            else
-            {
-                _map[queueId] = new MailPollState(queueId, null, null, null, 0, DateTime.UtcNow, folderId);
-            }
+            if (_map.TryGetValue(id, out var prev))
+                _map[id] = prev with { LastMailboxActionError = null, LastMailboxActionErrorUtc = null, UpdatedUtc = DateTime.UtcNow };
             return Task.CompletedTask;
         }
     }

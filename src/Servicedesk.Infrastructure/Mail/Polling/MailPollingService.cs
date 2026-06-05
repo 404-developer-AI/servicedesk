@@ -9,11 +9,12 @@ using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Mail.Polling;
 
-/// Pulls new messages from Microsoft Graph per queue with a configured
-/// inbound mailbox. Step 6 wires the delta feed into MailIngestService so
-/// each summary becomes a real ticket (or appends to an existing thread).
-/// After a successful ingest commit we mark-read and move the message into
-/// the processed folder so the inbox stays clean.
+/// Pulls new messages from Microsoft Graph for every inbound-mailbox source
+/// (v0.0.66 — a queue can have many). Each source carries its own delta cursor
+/// and health state in queue_inbound_mailboxes, so mailboxes advance and fail
+/// independently. After a successful ingest commit we mark-read and (later, via
+/// MailFinalizer) move the message into the processed folder so the inbox stays
+/// clean.
 public sealed class MailPollingService : BackgroundService
 {
     private const int MaxConsecutiveFailuresBeforeSkip = 5;
@@ -57,7 +58,7 @@ public sealed class MailPollingService : BackgroundService
         using var scope = _services.CreateScope();
         var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
         var taxonomy = scope.ServiceProvider.GetRequiredService<ITaxonomyRepository>();
-        var stateRepo = scope.ServiceProvider.GetRequiredService<IMailPollStateRepository>();
+        var repo = scope.ServiceProvider.GetRequiredService<IQueueInboundMailboxRepository>();
         var graph = scope.ServiceProvider.GetRequiredService<IGraphMailClient>();
         var ingest = scope.ServiceProvider.GetRequiredService<IMailIngestService>();
         var notifier = scope.ServiceProvider.GetRequiredService<ITicketListNotifier>();
@@ -68,48 +69,51 @@ public sealed class MailPollingService : BackgroundService
         if (intervalSeconds < 10) intervalSeconds = 10;
         if (batchSize < 1) batchSize = 50;
 
-        var queues = await taxonomy.ListQueuesAsync(ct);
-        foreach (var q in queues)
+        var queues = (await taxonomy.ListQueuesAsync(ct)).ToDictionary(q => q.Id);
+        var sources = await repo.ListAllAsync(ct);
+        foreach (var src in sources)
         {
             if (ct.IsCancellationRequested) break;
-            if (!q.IsActive) continue;
-            // v0.0.60 — per-mailbox pause switch. Delta-state is left intact so
-            // re-enabling resumes from the last delta link instead of re-reading
-            // the whole inbox.
-            if (!q.InboundPollingEnabled) continue;
-            if (string.IsNullOrWhiteSpace(q.InboundMailboxAddress)) continue;
-            if (string.IsNullOrWhiteSpace(q.InboundFolderId)) continue;
+            // Queue must exist and be active.
+            if (!queues.TryGetValue(src.QueueId, out var q) || !q.IsActive) continue;
+            // Per-source pause switch. Delta-state is left intact so re-enabling
+            // resumes from the last delta link instead of re-reading the inbox.
+            if (!src.PollingEnabled) continue;
+            if (string.IsNullOrWhiteSpace(src.MailboxAddress)) continue;
+            if (string.IsNullOrWhiteSpace(src.FolderId)) continue;
 
-            await PollQueueCoreAsync(
-                q.Id, q.Slug, q.InboundMailboxAddress!, q.InboundFolderId!, batchSize,
-                stateRepo, graph, _logger, ct,
+            await PollSourceCoreAsync(
+                src.Id, src.QueueId, q.Slug, src.MailboxAddress, src.FolderId!, batchSize,
+                repo, graph, _logger, ct,
                 ingest, markRead, notifier);
         }
 
         return TimeSpan.FromSeconds(intervalSeconds);
     }
 
-    // Back-compat overload used by the stap-4 unit tests (no ingest/mailbox-action wiring).
-    internal static Task PollQueueCoreAsync(
+    // Back-compat overload used by the unit tests (no ingest/mailbox-action wiring).
+    internal static Task PollSourceCoreAsync(
+        Guid sourceId,
         Guid queueId,
         string queueSlug,
         string mailbox,
         string folderId,
         int batchSize,
-        IMailPollStateRepository stateRepo,
+        IQueueInboundMailboxRepository repo,
         IGraphMailClient graph,
         ILogger logger,
         CancellationToken ct)
-        => PollQueueCoreAsync(queueId, queueSlug, mailbox, folderId, batchSize, stateRepo, graph, logger, ct,
+        => PollSourceCoreAsync(sourceId, queueId, queueSlug, mailbox, folderId, batchSize, repo, graph, logger, ct,
             ingest: null, markRead: false, notifier: null);
 
-    internal static async Task PollQueueCoreAsync(
+    internal static async Task PollSourceCoreAsync(
+        Guid sourceId,
         Guid queueId,
         string queueSlug,
         string mailbox,
         string folderId,
         int batchSize,
-        IMailPollStateRepository stateRepo,
+        IQueueInboundMailboxRepository repo,
         IGraphMailClient graph,
         ILogger logger,
         CancellationToken ct,
@@ -117,7 +121,7 @@ public sealed class MailPollingService : BackgroundService
         bool markRead,
         ITicketListNotifier? notifier)
     {
-        var state = await stateRepo.GetAsync(queueId, ct);
+        var state = await repo.GetAsync(sourceId, ct);
         if (state?.ConsecutiveFailures >= MaxConsecutiveFailuresBeforeSkip)
         {
             logger.LogWarning(
@@ -153,7 +157,7 @@ public sealed class MailPollingService : BackgroundService
                     if (result.Outcome is MailIngestOutcome.Created or MailIngestOutcome.Appended)
                     {
                         await HandleMailboxActionsAsync(
-                            mailbox, m.Id, queueId, graph, stateRepo,
+                            mailbox, m.Id, sourceId, graph, repo,
                             markRead, logger, ct);
 
                         // Push to any connected clients so the list refreshes
@@ -180,7 +184,7 @@ public sealed class MailPollingService : BackgroundService
                 }
             }
 
-            await stateRepo.SaveSuccessAsync(queueId, page.DeltaLink ?? state?.DeltaLink, now, ct);
+            await repo.SaveSuccessAsync(sourceId, page.DeltaLink ?? state?.DeltaLink, now, ct);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
@@ -189,7 +193,7 @@ public sealed class MailPollingService : BackgroundService
             logger.LogWarning(ex,
                 "[MailPolling] queue={Queue} mailbox={Mailbox} failed: {Error}",
                 queueSlug, mailbox, msg);
-            await stateRepo.SaveFailureAsync(queueId, msg, now, ct);
+            await repo.SaveFailureAsync(sourceId, msg, now, ct);
         }
     }
 
@@ -198,26 +202,26 @@ public sealed class MailPollingService : BackgroundService
     // runs only after every attachment on the mail has reached Ready — see
     // the plan-file for the race-condition that drove this split.
     private static async Task HandleMailboxActionsAsync(
-        string mailbox, string graphMessageId, Guid queueId,
-        IGraphMailClient graph, IMailPollStateRepository stateRepo,
+        string mailbox, string graphMessageId, Guid sourceId,
+        IGraphMailClient graph, IQueueInboundMailboxRepository repo,
         bool markRead, ILogger logger, CancellationToken ct)
     {
         if (!markRead)
         {
-            await stateRepo.ClearMailboxActionErrorAsync(queueId, ct);
+            await repo.ClearMailboxActionErrorAsync(sourceId, ct);
             return;
         }
 
         try
         {
             await graph.MarkAsReadAsync(mailbox, graphMessageId, ct);
-            await stateRepo.ClearMailboxActionErrorAsync(queueId, ct);
+            await repo.ClearMailboxActionErrorAsync(sourceId, ct);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Mark-as-read failed for {Id}", graphMessageId);
-            await stateRepo.SaveMailboxActionErrorAsync(
-                queueId,
+            await repo.SaveMailboxActionErrorAsync(
+                sourceId,
                 $"mark-as-read: {ex.GetType().Name}: {ex.Message}",
                 DateTime.UtcNow, ct);
         }

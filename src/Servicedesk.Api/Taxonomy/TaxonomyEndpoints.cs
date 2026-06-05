@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
 using Servicedesk.Domain.Taxonomy;
 using Servicedesk.Infrastructure.Audit;
+using Servicedesk.Infrastructure.Mail.Polling;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 
 namespace Servicedesk.Api.Taxonomy;
@@ -139,10 +140,13 @@ public static class TaxonomyEndpoints
         string? Icon,
         int SortOrder,
         bool IsActive,
-        string? InboundMailboxAddress,
         string? OutboundMailboxAddress,
-        string? InboundFolderId,
-        string? InboundFolderName,
+        // v0.0.66 — a queue can have many inbound mailbox sources, each its own
+        // (mailbox, folder) feeding into this queue. Null/empty = no inbound
+        // mail. Each entry with an Id matches an existing source (update);
+        // without an Id it's added; existing sources missing from the list are
+        // removed.
+        InboundMailboxInput[]? InboundMailboxes = null,
         // v0.0.40 polish — per-queue status scope. Null/empty = current
         // behaviour (all statuses available). Non-empty = dropdowns and
         // write-paths only accept these status ids for tickets in this
@@ -151,61 +155,166 @@ public static class TaxonomyEndpoints
         Guid[]? AllowedStatusIds = null,
         Guid? DefaultStatusId = null);
 
+    public sealed record InboundMailboxInput(
+        Guid? Id,
+        string? Mailbox,
+        string? FolderId,
+        string? FolderName,
+        bool PollingEnabled = true);
+
+    public sealed record QueueInboundMailboxResponse(
+        Guid Id,
+        string Mailbox,
+        string? FolderId,
+        string? FolderName,
+        bool PollingEnabled,
+        DateTime? LastPolledUtc,
+        string? LastError,
+        int ConsecutiveFailures);
+
+    private static object ToQueueResponse(Queue q, IReadOnlyList<QueueInboundMailbox> sources) => new
+    {
+        q.Id,
+        q.Name,
+        q.Slug,
+        q.Description,
+        q.Color,
+        q.Icon,
+        q.SortOrder,
+        q.IsActive,
+        q.IsSystem,
+        q.CreatedUtc,
+        q.UpdatedUtc,
+        // Singular mirror fields are kept for legacy readers + the outbound
+        // from-address fallback; the editor uses InboundMailboxes.
+        q.InboundMailboxAddress,
+        q.OutboundMailboxAddress,
+        q.InboundFolderId,
+        q.InboundFolderName,
+        q.InboundPollingEnabled,
+        AllowedStatusIds = q.AllowedStatusIds ?? Array.Empty<Guid>(),
+        q.DefaultStatusId,
+        InboundMailboxes = sources.Select(s => new QueueInboundMailboxResponse(
+            s.Id, s.MailboxAddress, s.FolderId, s.FolderName, s.PollingEnabled,
+            s.LastPolledUtc, s.LastError, s.ConsecutiveFailures)).ToList(),
+    };
+
     private static void MapQueues(RouteGroupBuilder group)
     {
-        group.MapGet("/queues", async (ITaxonomyRepository repo, CancellationToken ct) =>
-            Results.Ok(await repo.ListQueuesAsync(ct)))
-            .WithName("ListQueues").WithOpenApi();
+        group.MapGet("/queues", async (
+            ITaxonomyRepository repo, IQueueInboundMailboxRepository sources, CancellationToken ct) =>
+        {
+            var queues = await repo.ListQueuesAsync(ct);
+            var byQueue = (await sources.ListAllAsync(ct))
+                .GroupBy(s => s.QueueId)
+                .ToDictionary(g => g.Key, g => (IReadOnlyList<QueueInboundMailbox>)g.ToList());
+            var result = queues
+                .Select(q => ToQueueResponse(q,
+                    byQueue.TryGetValue(q.Id, out var s) ? s : Array.Empty<QueueInboundMailbox>()))
+                .ToList();
+            return Results.Ok(result);
+        }).WithName("ListQueues").WithOpenApi();
 
-        group.MapGet("/queues/{id:guid}", async (Guid id, ITaxonomyRepository repo, CancellationToken ct) =>
+        group.MapGet("/queues/{id:guid}", async (
+            Guid id, ITaxonomyRepository repo, IQueueInboundMailboxRepository sources, CancellationToken ct) =>
         {
             var q = await repo.GetQueueAsync(id, ct);
-            return q is null ? Results.NotFound() : Results.Ok(q);
+            if (q is null) return Results.NotFound();
+            var srcs = await sources.ListByQueueAsync(id, ct);
+            return Results.Ok(ToQueueResponse(q, srcs));
         }).WithName("GetQueue").WithOpenApi();
 
         group.MapPost("/queues", async (
-            [FromBody] QueueRequest req, HttpContext http, ITaxonomyRepository repo, IAuditLogger audit, CancellationToken ct) =>
+            [FromBody] QueueRequest req, HttpContext http,
+            ITaxonomyRepository repo, IQueueInboundMailboxRepository sources,
+            IAuditLogger audit, CancellationToken ct) =>
         {
             if (ValidateTaxonomyName(req.Name) is { } err) return err;
-            if (ValidateMailbox(req.InboundMailboxAddress, "inboundMailboxAddress") is { } mErr1) return mErr1;
-            if (ValidateMailbox(req.OutboundMailboxAddress, "outboundMailboxAddress") is { } mErr2) return mErr2;
-            if (ValidateInboundFolder(req) is { } fErr) return fErr;
+            if (ValidateMailbox(req.OutboundMailboxAddress, "outboundMailboxAddress") is { } mErr) return mErr;
+            var normalized = NormalizeInboundMailboxes(req.InboundMailboxes, out var inErr);
+            if (inErr is not null) return inErr;
+            // Exclusivity: no other queue may already own any of these sources.
+            foreach (var s in normalized)
+            {
+                var owner = await sources.FindConflictingQueueAsync(s.Mailbox, s.FolderId, null, ct);
+                if (owner is not null)
+                    return Results.Conflict(new { error = $"The mailbox {s.Mailbox} / {s.FolderName} is already assigned to another queue." });
+            }
+
             var now = DateTime.UtcNow;
             var created = await repo.CreateQueueAsync(new Queue(
                 Guid.Empty, req.Name.Trim(), Slugify(req.Name), req.Description ?? "",
                 Normalize(req.Color, "#7c7cff"), Normalize(req.Icon, "inbox"),
                 req.SortOrder, req.IsActive, IsSystem: false, now, now,
-                NormalizeMailbox(req.InboundMailboxAddress),
+                InboundMailboxAddress: null,
                 NormalizeMailbox(req.OutboundMailboxAddress),
-                req.InboundFolderId?.Trim(),
-                req.InboundFolderName?.Trim(),
+                InboundFolderId: null,
+                InboundFolderName: null,
                 (IReadOnlyList<Guid>)(req.AllowedStatusIds ?? Array.Empty<Guid>()),
                 req.DefaultStatusId), ct);
-            await AuditWrite(audit, http, "taxonomy.queue.created", created.Id.ToString(), created);
-            return Results.Created($"/api/taxonomy/queues/{created.Id}", created);
+
+            foreach (var s in normalized)
+                await sources.AddAsync(created.Id, s.Mailbox, s.FolderId, s.FolderName, s.PollingEnabled, ct);
+            await sources.RefreshMirrorAsync(created.Id, ct);
+
+            var srcs = await sources.ListByQueueAsync(created.Id, ct);
+            var fresh = await repo.GetQueueAsync(created.Id, ct) ?? created;
+            var response = ToQueueResponse(fresh, srcs);
+            await AuditWrite(audit, http, "taxonomy.queue.created", created.Id.ToString(), response);
+            return Results.Created($"/api/taxonomy/queues/{created.Id}", response);
         }).WithName("CreateQueue").WithOpenApi()
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapPut("/queues/{id:guid}", async (
             Guid id, [FromBody] QueueRequest req, HttpContext http,
-            ITaxonomyRepository repo, IAuditLogger audit, CancellationToken ct) =>
+            ITaxonomyRepository repo, IQueueInboundMailboxRepository sources,
+            IAuditLogger audit, CancellationToken ct) =>
         {
             if (ValidateTaxonomyName(req.Name) is { } err) return err;
-            if (ValidateMailbox(req.InboundMailboxAddress, "inboundMailboxAddress") is { } mErr1) return mErr1;
-            if (ValidateMailbox(req.OutboundMailboxAddress, "outboundMailboxAddress") is { } mErr2) return mErr2;
-            if (ValidateInboundFolder(req) is { } fErr) return fErr;
+            if (ValidateMailbox(req.OutboundMailboxAddress, "outboundMailboxAddress") is { } mErr) return mErr;
+            var normalized = NormalizeInboundMailboxes(req.InboundMailboxes, out var inErr);
+            if (inErr is not null) return inErr;
+            // Exclusivity: a source may only conflict with one owned by a
+            // *different* queue (excluding its own row when updating in place).
+            foreach (var s in normalized)
+            {
+                var owner = await sources.FindConflictingQueueAsync(s.Mailbox, s.FolderId, s.Id, ct);
+                if (owner is not null && owner != id)
+                    return Results.Conflict(new { error = $"The mailbox {s.Mailbox} / {s.FolderName} is already assigned to another queue." });
+            }
+
             var updated = await repo.UpdateQueueAsync(id, req.Name.Trim(), Slugify(req.Name),
                 req.Description ?? "", Normalize(req.Color, "#7c7cff"), Normalize(req.Icon, "inbox"),
                 req.SortOrder, req.IsActive,
-                NormalizeMailbox(req.InboundMailboxAddress),
+                inboundMailboxAddress: null,
                 NormalizeMailbox(req.OutboundMailboxAddress),
-                req.InboundFolderId?.Trim(),
-                req.InboundFolderName?.Trim(),
+                inboundFolderId: null,
+                inboundFolderName: null,
                 (IReadOnlyList<Guid>)(req.AllowedStatusIds ?? Array.Empty<Guid>()),
                 req.DefaultStatusId, ct);
             if (updated is null) return Results.NotFound();
-            await AuditWrite(audit, http, "taxonomy.queue.updated", id.ToString(), updated);
-            return Results.Ok(updated);
+
+            // Reconcile the source list against what exists.
+            var existing = await sources.ListByQueueAsync(id, ct);
+            var keepIds = normalized.Where(s => s.Id is { }).Select(s => s.Id!.Value).ToHashSet();
+            foreach (var old in existing)
+                if (!keepIds.Contains(old.Id))
+                    await sources.DeleteAsync(old.Id, ct);
+            var existingIds = existing.Select(e => e.Id).ToHashSet();
+            foreach (var s in normalized)
+            {
+                if (s.Id is { } sid && existingIds.Contains(sid))
+                    await sources.UpdateConfigAsync(sid, s.Mailbox, s.FolderId, s.FolderName, s.PollingEnabled, ct);
+                else
+                    await sources.AddAsync(id, s.Mailbox, s.FolderId, s.FolderName, s.PollingEnabled, ct);
+            }
+            await sources.RefreshMirrorAsync(id, ct);
+
+            var srcs = await sources.ListByQueueAsync(id, ct);
+            var fresh = await repo.GetQueueAsync(id, ct) ?? updated;
+            var response = ToQueueResponse(fresh, srcs);
+            await AuditWrite(audit, http, "taxonomy.queue.updated", id.ToString(), response);
+            return Results.Ok(response);
         }).WithName("UpdateQueue").WithOpenApi()
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
@@ -217,6 +326,51 @@ public static class TaxonomyEndpoints
         }).WithName("DeleteQueue").WithOpenApi()
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
     }
+
+    /// Validates + normalizes the inbound-mailbox list: each entry needs a valid
+    /// mailbox and a selected folder (id + name); duplicates within the request
+    /// are rejected. Returns the cleaned entries, or sets <paramref name="error"/>
+    /// to a 400 result.
+    private static List<NormalizedInbound> NormalizeInboundMailboxes(
+        InboundMailboxInput[]? input, out IResult? error)
+    {
+        error = null;
+        var result = new List<NormalizedInbound>();
+        if (input is null || input.Length == 0) return result;
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in input)
+        {
+            var mailbox = NormalizeMailbox(item.Mailbox);
+            if (string.IsNullOrWhiteSpace(mailbox))
+            {
+                error = Results.BadRequest(new { error = "Each inbound mailbox needs an email address." });
+                return result;
+            }
+            if (ValidateMailbox(mailbox, "inboundMailboxAddress") is { } mErr)
+            {
+                error = mErr;
+                return result;
+            }
+            var folderId = item.FolderId?.Trim();
+            var folderName = item.FolderName?.Trim();
+            if (string.IsNullOrWhiteSpace(folderId) || string.IsNullOrWhiteSpace(folderName))
+            {
+                error = Results.BadRequest(new { error = $"Select an inbound folder for {mailbox}." });
+                return result;
+            }
+            if (!seen.Add($"{mailbox}|{folderId}"))
+            {
+                error = Results.BadRequest(new { error = $"The mailbox {mailbox} / {folderName} is listed twice." });
+                return result;
+            }
+            result.Add(new NormalizedInbound(item.Id, mailbox!, folderId!, folderName!, item.PollingEnabled));
+        }
+        return result;
+    }
+
+    private sealed record NormalizedInbound(
+        Guid? Id, string Mailbox, string FolderId, string FolderName, bool PollingEnabled);
 
     // ---------- Priorities ----------
 
@@ -436,19 +590,6 @@ public static class TaxonomyEndpoints
         var trimmed = value.Trim();
         if (trimmed.Length > 320 || !Regex.IsMatch(trimmed, @"^[^@\s]+@[^@\s]+\.[^@\s]+$"))
             return Results.BadRequest(new { error = $"{field} must be a valid email address." });
-        return null;
-    }
-
-    private static IResult? ValidateInboundFolder(QueueRequest req)
-    {
-        var hasMailbox = !string.IsNullOrWhiteSpace(req.InboundMailboxAddress);
-        var hasFolderId = !string.IsNullOrWhiteSpace(req.InboundFolderId);
-        var hasFolderName = !string.IsNullOrWhiteSpace(req.InboundFolderName);
-
-        if (hasMailbox && (!hasFolderId || !hasFolderName))
-            return Results.BadRequest(new { error = "An inbound folder must be selected when an inbound mailbox address is configured." });
-        if (!hasMailbox && (hasFolderId || hasFolderName))
-            return Results.BadRequest(new { error = "Inbound folder cannot be set without an inbound mailbox address." });
         return null;
     }
 

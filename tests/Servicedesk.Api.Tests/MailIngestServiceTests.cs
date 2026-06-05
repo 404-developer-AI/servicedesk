@@ -5,6 +5,7 @@ using Servicedesk.Domain.Taxonomy;
 using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Mail.Ingest;
+using Servicedesk.Infrastructure.Mail.Polling;
 using Servicedesk.Infrastructure.Persistence.Companies;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
@@ -252,10 +253,11 @@ public sealed class MailIngestServiceTests
         var mail = new StubMailRepo();
         var tickets = new StubTickets();
         var taxonomy = new StubTaxonomy();
+        var inbound = new StubInboundRepo();
         var contacts = new StubContacts();
         var blobs = new StubBlobs();
         var settings = new StubSettings();
-        var svc = new MailIngestService(graph, mail, tickets, taxonomy, contacts, blobs, settings,
+        var svc = new MailIngestService(graph, mail, tickets, taxonomy, inbound, contacts, blobs, settings,
             new NoopSlaEngine(), new NoopTriggerService(), NullLogger<MailIngestService>.Instance);
         return (svc, graph, mail, tickets, contacts);
     }
@@ -435,6 +437,31 @@ public sealed class MailIngestServiceTests
         public Task<Category> CreateCategoryAsync(Category c, CancellationToken ct) => throw new NotImplementedException();
         public Task<Category?> UpdateCategoryAsync(Guid id, Guid? parentId, string name, string slug, string description, int sortOrder, bool isActive, CancellationToken ct) => throw new NotImplementedException();
         public Task<DeleteResult> DeleteCategoryAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
+    }
+
+    private sealed class StubInboundRepo : IQueueInboundMailboxRepository
+    {
+        // The queue's inbound mailbox is now an inbound source — surface it so
+        // loop-prevention still recognises mail "from ourselves".
+        public Task<IReadOnlyList<string>> ListAllMailboxAddressesAsync(CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<string>>(new[] { QueueMailbox });
+        public Task<IReadOnlyList<QueueInboundMailbox>> ListAllAsync(CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<QueueInboundMailbox>>(Array.Empty<QueueInboundMailbox>());
+        public Task<IReadOnlyList<QueueInboundMailbox>> ListByQueueAsync(Guid queueId, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<QueueInboundMailbox>>(Array.Empty<QueueInboundMailbox>());
+        public Task<QueueInboundMailbox?> GetAsync(Guid id, CancellationToken ct) => Task.FromResult<QueueInboundMailbox?>(null);
+        public Task<Guid?> FindConflictingQueueAsync(string mailbox, string? folderId, Guid? excludeSourceId, CancellationToken ct) => Task.FromResult<Guid?>(null);
+        public Task<QueueInboundMailbox> AddAsync(Guid queueId, string mailbox, string? folderId, string? folderName, bool pollingEnabled, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> UpdateConfigAsync(Guid id, string mailbox, string? folderId, string? folderName, bool pollingEnabled, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> DeleteAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> SetPollingAsync(Guid id, bool enabled, CancellationToken ct) => throw new NotImplementedException();
+        public Task RefreshMirrorAsync(Guid queueId, CancellationToken ct) => Task.CompletedTask;
+        public Task SaveSuccessAsync(Guid id, string? deltaLink, DateTime polledUtc, CancellationToken ct) => Task.CompletedTask;
+        public Task SaveFailureAsync(Guid id, string error, DateTime polledUtc, CancellationToken ct) => Task.CompletedTask;
+        public Task ResetFailuresAsync(Guid id, CancellationToken ct) => Task.CompletedTask;
+        public Task SaveProcessedFolderIdAsync(Guid id, string folderId, CancellationToken ct) => Task.CompletedTask;
+        public Task SaveMailboxActionErrorAsync(Guid id, string error, DateTime occurredUtc, CancellationToken ct) => Task.CompletedTask;
+        public Task ClearMailboxActionErrorAsync(Guid id, CancellationToken ct) => Task.CompletedTask;
     }
 
     private sealed class StubContacts : IContactLookupService

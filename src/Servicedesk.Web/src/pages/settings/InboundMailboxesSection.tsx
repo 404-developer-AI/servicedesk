@@ -8,9 +8,10 @@ import { cn } from "@/lib/utils";
 
 const QUERY_KEY = ["admin", "mail", "mailboxes"] as const;
 
-/// Per-mailbox polling control. Lists every queue with an inbound mailbox and
-/// lets an admin pause/resume Graph polling for it. Pausing leaves the delta
-/// cursor untouched, so resuming continues from where it left off.
+/// Per-source polling control. Lists every inbound-mailbox source (a queue can
+/// have several) and lets an admin pause/resume Graph polling for each. Pausing
+/// leaves the delta cursor untouched, so resuming continues from where it left
+/// off.
 export function InboundMailboxesSection() {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
@@ -19,15 +20,15 @@ export function InboundMailboxesSection() {
   });
 
   const toggle = useMutation({
-    mutationFn: ({ queueId, enabled }: { queueId: string; enabled: boolean }) =>
-      mailMailboxApi.setPolling(queueId, enabled),
+    mutationFn: ({ sourceId, enabled }: { sourceId: string; enabled: boolean }) =>
+      mailMailboxApi.setPolling(sourceId, enabled),
     // Optimistic flip so the switch feels instant; rolled back on error.
-    onMutate: async ({ queueId, enabled }) => {
+    onMutate: async ({ sourceId, enabled }) => {
       await qc.cancelQueries({ queryKey: QUERY_KEY });
       const prev = qc.getQueryData<InboundMailbox[]>(QUERY_KEY);
       qc.setQueryData<InboundMailbox[]>(QUERY_KEY, (old) =>
         old?.map((m) =>
-          m.queueId === queueId ? { ...m, inboundPollingEnabled: enabled } : m,
+          m.sourceId === sourceId ? { ...m, pollingEnabled: enabled } : m,
         ),
       );
       return { prev };
@@ -50,7 +51,7 @@ export function InboundMailboxesSection() {
         <p className="text-xs text-muted-foreground">
           Pause or resume Graph polling per mailbox. Pausing keeps the delta
           cursor, so resuming picks up where it left off instead of re-reading
-          the whole inbox. Each mailbox is tied to a queue.
+          the whole inbox. A queue can have several inbound mailboxes.
         </p>
       </header>
 
@@ -68,10 +69,10 @@ export function InboundMailboxesSection() {
         <div className="space-y-2">
           {data.map((m) => (
             <MailboxRow
-              key={m.queueId}
+              key={m.sourceId}
               mbx={m}
               busy={toggle.isPending}
-              onToggle={(enabled) => toggle.mutate({ queueId: m.queueId, enabled })}
+              onToggle={(enabled) => toggle.mutate({ sourceId: m.sourceId, enabled })}
             />
           ))}
         </div>
@@ -89,7 +90,7 @@ function MailboxRow({
   busy: boolean;
   onToggle: (enabled: boolean) => void;
 }) {
-  const paused = !mbx.inboundPollingEnabled;
+  const paused = !mbx.pollingEnabled;
   const hasError = !!mbx.lastError && mbx.consecutiveFailures > 0;
 
   return (
@@ -144,7 +145,7 @@ function MailboxRow({
       </div>
 
       <Switch
-        checked={mbx.inboundPollingEnabled}
+        checked={mbx.pollingEnabled}
         disabled={busy}
         onCheckedChange={(checked) => onToggle(checked)}
         aria-label={`Toggle polling for ${mbx.mailbox}`}
