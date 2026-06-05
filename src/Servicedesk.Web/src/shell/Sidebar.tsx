@@ -27,7 +27,7 @@ import {
   formatServerLocalClock,
   formatServerLocalDate,
 } from "@/hooks/useServerTime";
-import { viewApi } from "@/lib/ticket-api";
+import { viewApi, type View } from "@/lib/ticket-api";
 import { settingsApi, preferencesApi } from "@/lib/api";
 import { RecentTickets } from "@/shell/RecentTickets";
 import { NotificationsWidget } from "@/shell/NotificationsWidget";
@@ -101,6 +101,31 @@ export function Sidebar() {
     onSettled: () => qc.invalidateQueries({ queryKey: ["preferences", "pinned-features"] }),
   });
 
+  // v0.0.65 — saved views the user pinned out of the "Views" flyout so they
+  // render inline. Same per-user persistence + optimistic pattern as features.
+  const { data: pinnedViewsData } = useQuery({
+    queryKey: ["preferences", "pinned-views"],
+    queryFn: preferencesApi.getPinnedViews,
+    staleTime: 60000,
+    enabled: role === "Agent" || role === "Admin",
+  });
+  const pinnedViewIds = React.useMemo(() => pinnedViewsData?.ids ?? [], [pinnedViewsData]);
+
+  const pinViewMutation = useMutation({
+    mutationFn: (ids: string[]) => preferencesApi.setPinnedViews(ids),
+    onMutate: async (ids) => {
+      await qc.cancelQueries({ queryKey: ["preferences", "pinned-views"] });
+      const prev = qc.getQueryData<{ ids: string[] }>(["preferences", "pinned-views"]);
+      qc.setQueryData(["preferences", "pinned-views"], { ids });
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(["preferences", "pinned-views"], ctx.prev);
+      toast.error("Could not save your pinned views");
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["preferences", "pinned-views"] }),
+  });
+
   const activeViewId = React.useMemo(() => {
     if (pathname !== "/tickets") return null;
     const params = new URLSearchParams(searchStr);
@@ -169,6 +194,30 @@ export function Sidebar() {
   };
   const unpinFeature = (path: string) => {
     pinMutation.mutate(pinnedPaths.filter((p) => p !== path));
+  };
+
+  // v0.0.65 — split the user's accessible views into the ones they pinned
+  // (rendered inline) and the rest (bundled in the "Views" flyout). Both lists
+  // preserve the server's sortOrder. Intersecting against the live `views` set
+  // means a pin for a since-deleted view is ignored and never re-saved; an id
+  // that is no longer pinned naturally falls back into the flyout. When every
+  // view is pinned the flyout list is empty and the trigger is not rendered.
+  const pinnedViewSet = React.useMemo(() => new Set(pinnedViewIds), [pinnedViewIds]);
+  const pinnedViews = React.useMemo(
+    () => (views ?? []).filter((v) => pinnedViewSet.has(v.id)),
+    [views, pinnedViewSet],
+  );
+  const flyoutViews = React.useMemo(
+    () => (views ?? []).filter((v) => !pinnedViewSet.has(v.id)),
+    [views, pinnedViewSet],
+  );
+
+  const pinView = (id: string) => {
+    if (pinnedViewIds.includes(id)) return;
+    pinViewMutation.mutate([...pinnedViewIds, id]);
+  };
+  const unpinView = (id: string) => {
+    pinViewMutation.mutate(pinnedViewIds.filter((v) => v !== id));
   };
 
   // Strip any MinVer pre-release suffix (e.g. "0.0.4-alpha.0.5" → "0.0.4") so
@@ -273,34 +322,30 @@ export function Sidebar() {
             <NavRow key={item.to} item={item} active={pathname === item.to} collapsed={collapsed} />
           ))
         )}
-        {!collapsed && views && views.length > 0 && (
-          <div className="mt-2 border-t border-glass pt-2">
-            <div className="px-3 pb-1 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">
-              Views
-            </div>
-            <div className="space-y-0.5">
-              {views.slice(0, 8).map((v) => {
-                const isActive = v.id === activeViewId;
-                return (
-                  <button
-                    key={v.id}
-                    type="button"
-                    onClick={() => {
-                      navigate({ to: "/tickets", search: { viewId: v.id } });
-                    }}
-                    className={cn(
-                      "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors",
-                      isActive
-                        ? "bg-glass-strong text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
-                        : "text-muted-foreground hover:bg-glass-hover hover:text-foreground",
-                    )}
-                  >
-                    <Eye className={cn("h-3.5 w-3.5 shrink-0", isActive && "text-primary")} />
-                    <span className="truncate">{v.name}</span>
-                  </button>
-                );
-              })}
-            </div>
+        {views && views.length > 0 && (
+          <div className="mt-2 space-y-0.5 border-t border-glass pt-2">
+            {/* Views the user pinned out of the flyout — rendered inline. */}
+            {pinnedViews.map((v) => (
+              <ViewRow
+                key={v.id}
+                view={v}
+                active={v.id === activeViewId}
+                collapsed={collapsed}
+                onSelect={() => navigate({ to: "/tickets", search: { viewId: v.id } })}
+                onUnpin={() => unpinView(v.id)}
+              />
+            ))}
+            {/* Everything not pinned is bundled here; the trigger disappears
+                once the user has pinned every view. */}
+            {flyoutViews.length > 0 && (
+              <ViewsFlyout
+                views={flyoutViews}
+                collapsed={collapsed}
+                activeViewId={activeViewId}
+                onSelect={(id) => navigate({ to: "/tickets", search: { viewId: id } })}
+                onPin={pinView}
+              />
+            )}
           </div>
         )}
 
@@ -629,6 +674,151 @@ function FeaturesFlyout({
                   aria-label={`Pin ${item.label} to sidebar`}
                   onClick={() => onPin(item.to)}
                   className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 opacity-0 transition-all hover:bg-glass-strong hover:text-foreground focus-visible:opacity-100 group-hover/feat:opacity-100"
+                >
+                  <Pin className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/// v0.0.65 — a single saved-view the user pinned inline. Mirrors NavRow: the
+/// row navigates to the view; when expanded a pin-off button appears on hover
+/// to return it to the flyout. All views share the Eye glyph, so when collapsed
+/// the row leans on its title tooltip to stay identifiable.
+function ViewRow({
+  view,
+  active,
+  collapsed,
+  onSelect,
+  onUnpin,
+}: {
+  view: View;
+  active: boolean;
+  collapsed: boolean;
+  onSelect: () => void;
+  onUnpin: () => void;
+}) {
+  const button = (
+    <button
+      type="button"
+      onClick={onSelect}
+      title={collapsed ? view.name : undefined}
+      className={cn(
+        "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors",
+        active
+          ? "bg-glass-strong text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+          : "text-muted-foreground hover:bg-glass-hover hover:text-foreground",
+        collapsed ? "justify-center px-2" : "pr-9",
+      )}
+    >
+      <Eye className={cn("h-3.5 w-3.5 shrink-0", active && "text-primary")} />
+      {!collapsed && <span className="truncate">{view.name}</span>}
+    </button>
+  );
+
+  if (collapsed) return button;
+
+  return (
+    <div className="group/viewrow relative">
+      {button}
+      <button
+        type="button"
+        title={`Unpin ${view.name}`}
+        aria-label={`Unpin ${view.name}`}
+        onClick={onUnpin}
+        className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground/70 opacity-0 transition-all hover:bg-glass-strong hover:text-foreground focus-visible:opacity-100 group-hover/viewrow:opacity-100"
+      >
+        <PinOff className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+/// v0.0.65 — single "Views" entry that opens a flyout to the right listing
+/// every saved view the user has not pinned inline. Mirrors FeaturesFlyout:
+/// each row navigates; the trailing pin button lifts the view out into the rail
+/// (persisted per-user). The list scrolls past ~6 entries so the flyout never
+/// grows unbounded. The trigger reads as active whenever a contained view is
+/// the one currently open.
+function ViewsFlyout({
+  views,
+  collapsed,
+  activeViewId,
+  onSelect,
+  onPin,
+}: {
+  views: readonly View[];
+  collapsed: boolean;
+  activeViewId: string | null;
+  onSelect: (id: string) => void;
+  onPin: (id: string) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const anyActive = views.some((v) => v.id === activeViewId);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          title="Views"
+          className={cn(
+            "group flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors",
+            anyActive
+              ? "bg-glass-strong text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+              : "text-muted-foreground hover:bg-glass-hover hover:text-foreground",
+            collapsed && "justify-center px-2",
+          )}
+        >
+          <Eye className={cn("h-3.5 w-3.5 shrink-0", anyActive && "text-primary")} />
+          {!collapsed && (
+            <>
+              <span className="truncate">Views</span>
+              <ChevronRight className="ml-auto h-3.5 w-3.5 opacity-60 transition-transform group-hover:translate-x-0.5" />
+            </>
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="right" align="start" sideOffset={12} className="w-60 p-1.5">
+        <div className="flex items-center justify-between px-2 pb-1 pt-0.5">
+          <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">
+            Views
+          </span>
+          <span className="text-[10px] text-muted-foreground/50">Pin to sidebar</span>
+        </div>
+        <div className="max-h-48 space-y-0.5 overflow-y-auto">
+          {views.map((view) => {
+            const active = view.id === activeViewId;
+            return (
+              <div
+                key={view.id}
+                className="group/view flex items-center gap-1 rounded-md hover:bg-glass-hover"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSelect(view.id);
+                    setOpen(false);
+                  }}
+                  className={cn(
+                    "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
+                    active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <Eye className={cn("h-4 w-4 shrink-0", active && "text-primary")} />
+                  <span className="truncate">{view.name}</span>
+                </button>
+                <button
+                  type="button"
+                  title={`Pin ${view.name} to sidebar`}
+                  aria-label={`Pin ${view.name} to sidebar`}
+                  onClick={() => onPin(view.id)}
+                  className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 opacity-0 transition-all hover:bg-glass-strong hover:text-foreground focus-visible:opacity-100 group-hover/view:opacity-100"
                 >
                   <Pin className="h-3.5 w-3.5" />
                 </button>

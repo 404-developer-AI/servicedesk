@@ -272,6 +272,49 @@ public static class UserPreferencesEndpoints
             return Results.Ok(new PinnedFeaturesPreference(clean));
         }).WithName("UpdatePinnedFeatures").WithOpenApi();
 
+        // ── Pinned views (v0.0.65) ──
+        //
+        // Per-user list of saved-view IDs the agent pinned out of the sidebar
+        // "Views" flyout so they render inline above the flyout. Stored as a
+        // JSON array of GUID strings under 'nav:pinned-views'; mirrors
+        // pinned-features. The SPA intersects against the live view set, so a
+        // pin for a since-deleted (or no-longer-accessible) view is ignored and
+        // never re-saved.
+
+        group.MapGet("/pinned-views", async (
+            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            await using var conn = await dataSource.OpenConnectionAsync(ct);
+            var raw = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
+                "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'nav:pinned-views'",
+                new { userId }, cancellationToken: ct));
+            return Results.Ok(new PinnedViewsPreference(ParsePinnedViewIds(raw)));
+        }).WithName("GetPinnedViews").WithOpenApi();
+
+        group.MapPut("/pinned-views", async (
+            [FromBody] UpdatePinnedViewsRequest req,
+            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+        {
+            var clean = NormalizePinnedViewIds(req.Ids);
+            if (clean is null)
+                return Results.BadRequest(new { error = "Invalid pinned-views payload." });
+
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var value = JsonSerializer.Serialize(clean);
+            await using var conn = await dataSource.OpenConnectionAsync(ct);
+            await conn.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO user_preferences (user_id, pref_key, pref_value)
+                VALUES (@userId, 'nav:pinned-views', @value)
+                ON CONFLICT (user_id, pref_key) DO UPDATE
+                    SET pref_value = @value, updated_utc = now()
+                """,
+                new { userId, value }, cancellationToken: ct));
+
+            return Results.Ok(new PinnedViewsPreference(clean));
+        }).WithName("UpdatePinnedViews").WithOpenApi();
+
         return app;
     }
 
@@ -309,6 +352,41 @@ public static class UserPreferencesEndpoints
         return clean.ToArray();
     }
 
+    /// Reads the stored JSON array of view-id strings, coercing any malformed
+    /// row to an empty list rather than throwing.
+    private static string[] ParsePinnedViewIds(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return Array.Empty<string>();
+        try
+        {
+            var arr = JsonSerializer.Deserialize<string[]>(raw);
+            return NormalizePinnedViewIds(arr) ?? Array.Empty<string>();
+        }
+        catch (JsonException)
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    /// Bounds + format guard for pinned view ids. Returns null when the payload
+    /// is structurally invalid (too many entries or a non-GUID entry) so the
+    /// write is rejected; otherwise the de-duplicated set of canonical GUID
+    /// strings.
+    private static string[]? NormalizePinnedViewIds(IReadOnlyList<string>? ids)
+    {
+        if (ids is null) return Array.Empty<string>();
+        if (ids.Count > 50) return null;
+        var clean = new List<string>(ids.Count);
+        foreach (var raw in ids)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) continue;
+            if (!Guid.TryParse(raw.Trim(), out var g)) return null;
+            var canonical = g.ToString();
+            if (!clean.Contains(canonical)) clean.Add(canonical);
+        }
+        return clean.ToArray();
+    }
+
     /// Returns the trimmed lowercase form when input is 'light' or 'dark',
     /// otherwise null. Used both at write time (reject bad input) and at
     /// read time (silently coerce a hand-edited DB row).
@@ -327,4 +405,6 @@ public static class UserPreferencesEndpoints
     public sealed record UpdateUiThemeRequest(string Theme);
     public sealed record PinnedFeaturesPreference(string[] Paths);
     public sealed record UpdatePinnedFeaturesRequest(string[] Paths);
+    public sealed record PinnedViewsPreference(string[] Ids);
+    public sealed record UpdatePinnedViewsRequest(string[] Ids);
 }
