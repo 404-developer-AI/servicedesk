@@ -297,7 +297,7 @@ public sealed class AdsolutOrdersSyncWorker : BackgroundService
     private readonly record struct SupplierPassResult(int Seen, int Upserted, DateTime? HighWater, string? Error);
 
     /// One supplier-orders (bestellingen) pass: cursor through SupplierOrderInfos
-    /// (always IncludeFinishedState=true, ModifiedSince delta), upsert each.
+    /// (always IncludeReceivedState=true, ModifiedSince delta), upsert each.
     /// Per-order try/catch + a clean 429 pause. Returns counters + a resumable
     /// high-water mark so the caller can persist the cursor.
     private async Task<SupplierPassResult> RunSupplierPassAsync(

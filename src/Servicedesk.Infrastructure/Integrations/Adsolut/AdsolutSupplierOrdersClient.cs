@@ -24,8 +24,15 @@ public sealed class AdsolutSupplierOrdersClient : IAdsolutSupplierOrdersClient
         var safePageSize = Math.Clamp(pageSize, 1, 1000);
 
         var query = new StringBuilder();
+        // SupplierOrderInfos has NO IncludeFinishedState param (that belongs to
+        // OrderInfos/SalesReceiptInfos). Its real status filter is
+        // IncludeReceivedState: absent/false returns ONLY not-received orders,
+        // silently dropping anything in state "ontv" (ontvangen). We mirror every
+        // status, so this MUST be true — otherwise a bestelling that gets received
+        // falls out of the delta and the mirror stays stuck on its last-seen
+        // status/delivered (e.g. OPEN / delivered 0 forever).
         query.Append("?PageSize=").Append(safePageSize)
-             .Append("&IncludeFinishedState=true");
+             .Append("&IncludeReceivedState=true");
         if (modifiedSince is { } since)
         {
             query.Append("&ModifiedSince=").Append(Uri.EscapeDataString(
