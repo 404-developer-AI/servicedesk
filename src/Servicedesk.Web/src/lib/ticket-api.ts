@@ -577,6 +577,11 @@ export type SendOutboundMailRequest = {
   /// token, embeds the public link in the body and atomically flips the
   /// instance to Sent + writes an IntakeFormSent ticket event.
   linkedFormIds?: string[];
+  /// v0.0.61 — true when the compose window pre-loaded the signature as a fixed
+  /// block, so the body carries a `data-sd-signature` marker the server swaps
+  /// for the real signature (above the quoted history). When false the server
+  /// keeps the legacy append-at-the-bottom behaviour.
+  signaturePreloaded?: boolean;
 };
 
 // ---- Views ----
@@ -910,6 +915,14 @@ export const ticketApi = {
     request<TicketEvent>("POST", `/api/tickets/${id}/events`, event),
   sendMail: (id: string, payload: SendOutboundMailRequest) =>
     request<TicketEvent>("POST", `/api/tickets/${id}/mail`, payload),
+  /// v0.0.61 — resolved signature preview (self-contained data-URI HTML) to
+  /// pre-load into the compose window, or { html: null } when nothing should
+  /// be pre-loaded. `reply` mirrors the send-time reply gating.
+  composeSignature: (id: string, reply: boolean) =>
+    request<{ html: string | null }>(
+      "GET",
+      `/api/tickets/${id}/compose-signature?reply=${reply ? "true" : "false"}`,
+    ),
   updateEvent: (id: string, eventId: number, body: UpdateTicketEventRequest) =>
     request<TicketEvent>("PUT", `/api/tickets/${id}/events/${eventId}`, body),
   getEventRevisions: (id: string, eventId: number) =>

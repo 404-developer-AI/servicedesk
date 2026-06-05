@@ -9,6 +9,10 @@ import {
   type OutboundMailKind,
 } from "@/lib/ticket-api";
 import { RichTextEditor, splitMentionIds } from "@/components/RichTextEditor";
+import {
+  signatureMarkerHtml,
+  signatureMarkerBare,
+} from "@/components/SignatureBlockNode";
 import { cn } from "@/lib/utils";
 import type { PendingMailAction } from "@/stores/useWorkspaceStore";
 import { AttachmentTray } from "./AttachmentTray";
@@ -112,7 +116,9 @@ function buildForwardQuote(source: {
     : "";
   const subjectLine = source.subject ?? "";
   const body = source.bodyHtml ?? "";
-  return `<p></p><p>---------- Forwarded message ----------</p>
+  // No leading typing paragraphs here — assembleContent() prepends the cursor
+  // line(s) (and, when enabled, the signature block) above this quote.
+  return `<p>---------- Forwarded message ----------</p>
 <p><strong>From:</strong> ${fromLine}<br>${dateLine ? `<strong>Date:</strong> ${dateLine}<br>` : ""}<strong>Subject:</strong> ${subjectLine}</p>
 <blockquote>${body}</blockquote>`;
 }
@@ -133,10 +139,36 @@ function buildReplyQuote(source: {
   const preamble = when
     ? `On ${when}, ${who} wrote:`
     : `${who} wrote:`;
-  // Two empty paragraphs so the cursor lands above the quote and the agent
-  // can start typing immediately without having to nudge the quote down.
-  return `<p></p><p></p><p>${preamble}</p>
+  // No leading typing paragraphs here — assembleContent() prepends the cursor
+  // line(s) (and, when enabled, the signature block) above this quote.
+  return `<p>${preamble}</p>
 <blockquote>${body}</blockquote>`;
+}
+
+/// Strip the (empty) signature marker so emptiness checks ignore a pre-loaded
+/// signature — an agent who only sees their signature still hasn't written a
+/// message.
+function stripSignatureMarker(html: string): string {
+  return html.replace(/<div[^>]*\bdata-sd-signature\b[^>]*>\s*<\/div>/gi, "");
+}
+
+/// Assemble the editor content from a quote (possibly empty) and the resolved
+/// signature preview. Returns two strings: `rich` carries the full data-URI
+/// preview inside the marker (what the editor renders) while `bare` carries the
+/// bare marker (what we send + validate against — the editor serialises the
+/// SignatureBlock to exactly this on send). Order is always
+/// [cursor line(s)] → [signature] → [quote].
+function assembleContent(
+  quote: string,
+  signatureHtml: string | null,
+): { rich: string; bare: string } {
+  const typing = quote ? "<p></p><p></p>" : "<p></p>";
+  const richMarker = signatureHtml ? signatureMarkerHtml(signatureHtml) : "";
+  const bareMarker = signatureHtml ? signatureMarkerBare() : "";
+  return {
+    rich: typing + richMarker + quote,
+    bare: typing + bareMarker + quote,
+  };
 }
 
 export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent, onCancel }: Props) {
@@ -172,12 +204,45 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
   const queryClient = useQueryClient();
   const attachments = useAttachmentUploads(ticketId);
 
+  // v0.0.61 — resolved signature preview to pre-load as a fixed block above the
+  // quote. Keyed by reply-ness so the server's reply gating (AppendOnReplies)
+  // is honoured; null when nothing should be pre-loaded.
+  const replyish = kind !== "New";
+  const signatureQ = useQuery({
+    queryKey: ["compose-signature", ticketId, replyish],
+    queryFn: () => ticketApi.composeSignature(ticketId, replyish),
+    staleTime: 60_000,
+  });
+  const signatureHtml = signatureQ.data?.html ?? null;
+  // Refs let applyKind (memoised on [context]) read the freshest values without
+  // re-subscribing, and let the re-apply effect tell "agent hasn't typed yet".
+  const signatureHtmlRef = React.useRef<string | null>(signatureHtml);
+  const lastQuoteRef = React.useRef<string | null>(null);
+  const lastSigRef = React.useRef<string | null>(null);
+  const lastAppliedBareRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    signatureHtmlRef.current = signatureHtml;
+  }, [signatureHtml]);
+
   const applyKind = React.useCallback(
     (
       nextKind: OutboundMailKind,
       override?: PendingMailAction["source"] | null,
     ) => {
       setKind(nextKind);
+      // Assemble [cursor] → [signature block] → [quote] from the freshest
+      // resolved signature, and record what we applied so the re-apply effect
+      // can fold the signature in once it loads (while the agent is pristine).
+      const applyContent = (quote: string) => {
+        const sig = signatureHtmlRef.current;
+        const { rich, bare } = assembleContent(quote, sig);
+        setInitialEditorContent(rich || undefined);
+        setBodyHtml(bare);
+        lastQuoteRef.current = quote;
+        lastSigRef.current = sig;
+        lastAppliedBareRef.current = bare;
+        setEditorKey((k) => k + 1);
+      };
       // Override is the event the agent clicked Reply/Reply-all/Forward on;
       // if absent we fall back to the ticket's latest inbound.
       const source =
@@ -211,9 +276,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
         setCc("");
         setBcc("");
         setSubject(ensureTicketTag(context.ticketSubject, context.ticketNumber));
-        setInitialEditorContent(undefined);
-        setBodyHtml("");
-        setEditorKey((k) => k + 1);
+        applyContent("");
         return;
       }
 
@@ -223,10 +286,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
         setBcc("");
         const baseSubject = source?.subject ?? context.ticketSubject;
         setSubject(ensureTicketTag(ensureFwdPrefix(baseSubject), context.ticketNumber));
-        const quote = source ? buildForwardQuote(source) : "";
-        setInitialEditorContent(quote);
-        setBodyHtml(quote);
-        setEditorKey((k) => k + 1);
+        applyContent(source ? buildForwardQuote(source) : "");
         return;
       }
 
@@ -260,13 +320,26 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
           context.ticketNumber,
         ),
       );
-      const quote = buildReplyQuote(source);
-      setInitialEditorContent(quote || undefined);
-      setBodyHtml(quote);
-      setEditorKey((k) => k + 1);
+      applyContent(buildReplyQuote(source));
     },
     [context],
   );
+
+  // Fold the signature in (or out) once the preview resolves — but only while
+  // the agent hasn't touched the editor yet, so a late-arriving signature never
+  // clobbers a message in progress. Compares the live body to the exact string
+  // we last applied; any edit (or a different signature) breaks the match.
+  React.useEffect(() => {
+    if (lastQuoteRef.current === null) return; // nothing applied yet
+    if (signatureHtml === lastSigRef.current) return; // no change to fold
+    if (bodyHtml !== lastAppliedBareRef.current) return; // agent has edited
+    const { rich, bare } = assembleContent(lastQuoteRef.current, signatureHtml);
+    setInitialEditorContent(rich || undefined);
+    setBodyHtml(bare);
+    lastSigRef.current = signatureHtml;
+    lastAppliedBareRef.current = bare;
+    setEditorKey((k) => k + 1);
+  }, [signatureHtml, bodyHtml]);
 
   // Initial pre-fill on mount + whenever a new pending-intent arrives (the
   // `id` is monotonic so clicking the same event twice still re-applies).
@@ -293,10 +366,19 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
         mentionedUserIds: userIds.length > 0 ? userIds : undefined,
         mentionedMailboxIds: mailboxIds.length > 0 ? mailboxIds : undefined,
         linkedFormIds: linkedFormIds.length > 0 ? linkedFormIds : undefined,
+        // True when a signature was pre-loaded for this composition: the server
+        // then swaps the body's marker for the real signature (or, if the agent
+        // removed the block, adds nothing) instead of appending at the bottom.
+        signaturePreloaded: lastSigRef.current != null,
       });
     },
     onSuccess: () => {
       toast.success("Mail sent");
+      // Clear the applied-content markers so the re-apply effect doesn't
+      // re-inject a signature into the now-empty editor.
+      lastQuoteRef.current = null;
+      lastSigRef.current = null;
+      lastAppliedBareRef.current = null;
       setBodyHtml("");
       setMentionedUserIds([]);
       setLinkedFormIds([]);
@@ -323,7 +405,8 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
       toast.error("Subject is required");
       return;
     }
-    if (!bodyHtml.trim() || bodyHtml === "<p></p>") {
+    const bodyForCheck = stripSignatureMarker(bodyHtml).trim();
+    if (!bodyForCheck || bodyForCheck === "<p></p>") {
       toast.error("Please write a message before sending");
       return;
     }
@@ -467,6 +550,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
       <RichTextEditor
         key={editorKey}
         content={initialEditorContent}
+        enableSignatureBlock
         autoFocus={false}
         onChange={(html) => setBodyHtml(html)}
         placeholder="Write your message. Type @@ to tag an agent, :: to insert a template or intake form..."

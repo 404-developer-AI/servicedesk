@@ -224,7 +224,30 @@ export const signaturesApi = {
       "GET",
       "/api/settings/signatures/tokens",
     ),
+
+  // v0.0.61 — portable single-file bundle (design + static image assets as
+  // base64). Export downloads it; import re-creates the signature (and its
+  // images) on another install, disabled, ready to assign to a mailbox.
+  exportBundle: (id: string) =>
+    request<SignatureBundle>("GET", `/api/settings/signatures/${id}/export`),
+  importBundle: (bundle: SignatureBundle) =>
+    request<SignatureDetail>("POST", "/api/settings/signatures/import", bundle),
 };
+
+export interface SignatureBundleAsset {
+  id: string;
+  mimeType: string;
+  filename: string;
+  dataBase64: string;
+}
+
+export interface SignatureBundle {
+  kind: string;
+  version: number;
+  name: string;
+  design: SignatureDesign;
+  assets: SignatureBundleAsset[];
+}
 
 export const signatureProfileApi = {
   get: () => request<MySignatureProfile>("GET", "/api/me/signature-profile"),

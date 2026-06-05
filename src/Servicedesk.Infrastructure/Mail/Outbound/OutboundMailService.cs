@@ -195,17 +195,43 @@ public sealed class OutboundMailService : IOutboundMailService
         var intakePrep = await PrepareIntakeFormsAsync(request, preparedBody, ct);
         preparedBody = intakePrep.BodyHtml;
 
-        // Email signature (v0.0.58). Appended only to the wire body, not to the
-        // timeline event body (the signature images are cid-only, so they would
-        // render broken in the in-app timeline). A reply is anything sent into
-        // an existing thread (anchor present); whether replies get a signature
-        // is admin-configurable. A null result means "no signature applies".
+        // Email signature (v0.0.58; placement reworked v0.0.61). Applied only to
+        // the wire body, never to the timeline event body (the cid images would
+        // render broken in-app). A reply is anything sent into an existing
+        // thread (anchor present); whether replies get a signature is
+        // admin-configurable. A null result means "no signature applies".
+        //
+        // When the compose window pre-loaded the signature (SignaturePreloaded),
+        // the body carries a <div data-sd-signature> marker directly under the
+        // agent's message — above the quoted history. We swap that marker for
+        // the authoritative cid render so the position the agent saw is what
+        // goes out. If the agent removed the block, no marker remains and we add
+        // nothing. Legacy clients (no preload) keep the append-at-the-bottom
+        // behaviour.
         var signature = await _signatures.ComposeForQueueAsync(
             detail.Ticket.QueueId, request.AuthorUserId, isReply: anchor is not null, ct);
-        if (signature is not null)
+        if (request.SignaturePreloaded)
+        {
+            if (signature is not null && SignaturePlacement.HasMarker(preparedBody))
+            {
+                preparedBody = SignaturePlacement.ReplaceMarker(preparedBody, signature.Html);
+                graphAttachments.AddRange(signature.Attachments);
+            }
+            else
+            {
+                // Agent deleted the block, or the signature is gated off now —
+                // drop any stray marker so a bare <div> never goes on the wire.
+                preparedBody = SignaturePlacement.StripMarker(preparedBody);
+            }
+        }
+        else if (signature is not null)
         {
             preparedBody = AppendSignature(preparedBody, signature.Html);
             graphAttachments.AddRange(signature.Attachments);
+        }
+        else
+        {
+            preparedBody = SignaturePlacement.StripMarker(preparedBody);
         }
 
         var sendResult = await _graph.SendMailAsync(new GraphOutboundMessage(
@@ -232,7 +258,11 @@ public sealed class OutboundMailService : IOutboundMailService
             mentionedMailboxIds = resolvedMailboxes.Select(m => m.Id).ToList();
         }
 
-        var bodyText = HtmlToText(request.BodyHtml);
+        // The timeline event keeps the agent's message + quote but never the
+        // signature block: strip the marker so a bare <div data-sd-signature>
+        // never lingers in the persisted body (the signature is wire-only).
+        var persistedBodyHtml = SignaturePlacement.StripMarker(request.BodyHtml);
+        var bodyText = HtmlToText(persistedBodyHtml);
         var metadata = JsonSerializer.Serialize(new
         {
             kind = request.Kind.ToString(),
@@ -255,7 +285,7 @@ public sealed class OutboundMailService : IOutboundMailService
         var evt = await _tickets.AddEventAsync(request.TicketId, new NewTicketEvent(
             EventType: TicketEventType.MailSent.ToString(),
             BodyText: bodyText,
-            BodyHtml: request.BodyHtml,
+            BodyHtml: persistedBodyHtml,
             IsInternal: false,
             AuthorUserId: request.AuthorUserId,
             MetadataJson: metadata), ct);
@@ -342,7 +372,7 @@ public sealed class OutboundMailService : IOutboundMailService
                 SourceUserId: request.AuthorUserId,
                 SourceUserEmail: sourceUser?.Email ?? string.Empty,
                 MentionedUserIds: mentionedIds,
-                BodyHtml: request.BodyHtml,
+                BodyHtml: persistedBodyHtml,
                 BodyText: bodyText,
                 MentionedMailboxIds: mentionedMailboxIds), ct);
         }
