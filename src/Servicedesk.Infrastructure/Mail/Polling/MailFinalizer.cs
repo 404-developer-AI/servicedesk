@@ -110,24 +110,15 @@ public sealed class MailFinalizer : IMailFinalizer
         try
         {
             var folderId = await ResolveFolderIdAsync(c.MailboxAddress, folderName, queue.Id, ct);
-            await _graph.MoveAsync(c.MailboxAddress, c.GraphMessageId, folderId, ct);
+            var moved = await TryMoveWithFolderRefreshAsync(
+                c, folderName, queue.Id, queue.Slug, folderId, ct);
             await _mail.MarkMailboxMovedAsync(c.MailId, DateTime.UtcNow, ct);
             await _pollState.ClearMailboxActionErrorAsync(queue.Id, ct);
             _logger.LogInformation(
-                "[MailFinalizer] mailId={MailId} moved to processed folder (queue={QueueSlug})",
+                moved
+                    ? "[MailFinalizer] mailId={MailId} moved to processed folder (queue={QueueSlug})"
+                    : "[MailFinalizer] mailId={MailId} already absent in inbox (Graph 404, folder valid) — marked moved (queue={QueueSlug})",
                 c.MailId, queue.Slug);
-        }
-        catch (Microsoft.Graph.Models.ODataErrors.ODataError ex)
-            when (ex.ResponseStatusCode == 404
-                || string.Equals(ex.Error?.Code, "ErrorItemNotFound", StringComparison.OrdinalIgnoreCase))
-        {
-            // Message already gone (user moved it manually, or we already
-            // moved it on a previous attempt but didn't persist the flag
-            // before a crash). Treat as done.
-            await _mail.MarkMailboxMovedAsync(c.MailId, DateTime.UtcNow, ct);
-            _logger.LogInformation(
-                "[MailFinalizer] mailId={MailId} already absent in inbox (Graph 404) — marked moved.",
-                c.MailId);
         }
         catch (Exception ex)
         {
@@ -139,6 +130,58 @@ public sealed class MailFinalizer : IMailFinalizer
                 $"finalize-move: {ex.GetType().Name}: {ex.Message}",
                 DateTime.UtcNow, ct);
         }
+    }
+
+    /// Moves the message, self-healing a stale cached processed-folder id. A 404
+    /// from Graph's Move is ambiguous — it can mean the message is gone OR that
+    /// the cached destination folder no longer exists (deleted/renamed
+    /// externally, or the queue's inbound mailbox changed). Treating every 404 as
+    /// "message gone" would silently mark mails moved while they still sit in the
+    /// inbox. So on a 404 we drop the cached folder id, re-ensure the folder
+    /// (find-or-create), and retry once. Returns <c>true</c> when the message was
+    /// actually moved, <c>false</c> when it was genuinely gone (404 persisted
+    /// against a freshly-ensured, valid folder).
+    private async Task<bool> TryMoveWithFolderRefreshAsync(
+        FinalizeCandidate c, string folderName, Guid queueId, string queueSlug,
+        string folderId, CancellationToken ct)
+    {
+        try
+        {
+            await _graph.MoveAsync(c.MailboxAddress, c.GraphMessageId, folderId, ct);
+            return true;
+        }
+        catch (Microsoft.Graph.Models.ODataErrors.ODataError ex) when (IsNotFound(ex))
+        {
+            var fresh = await ForceResolveFolderIdAsync(c.MailboxAddress, folderName, queueId, ct);
+            // Folder id unchanged -> the destination was valid all along, so the
+            // 404 really is the message itself. Caller marks it moved.
+            if (string.Equals(fresh, folderId, StringComparison.Ordinal))
+                return false;
+
+            // The cached id was stale; the re-ensured folder is valid. Retry once.
+            await _graph.MoveAsync(c.MailboxAddress, c.GraphMessageId, fresh, ct);
+            _logger.LogInformation(
+                "[MailFinalizer] mailId={MailId} processed-folder id was stale; refreshed and moved (queue={QueueSlug})",
+                c.MailId, queueSlug);
+            return true;
+        }
+    }
+
+    private static bool IsNotFound(Microsoft.Graph.Models.ODataErrors.ODataError ex)
+        => ex.ResponseStatusCode == 404
+           || string.Equals(ex.Error?.Code, "ErrorItemNotFound", StringComparison.OrdinalIgnoreCase);
+
+    /// Drops the cached processed-folder id (in-memory + persisted) and resolves
+    /// it again from Graph, recreating the folder if it no longer exists. Used to
+    /// recover from a stale id without waiting for a process restart.
+    private async Task<string> ForceResolveFolderIdAsync(
+        string mailbox, string folderName, Guid queueId, CancellationToken ct)
+    {
+        FolderIdCache.TryRemove($"{mailbox}|{folderName}", out _);
+        var folderId = await _graph.EnsureFolderAsync(mailbox, folderName, ct);
+        await _pollState.SaveProcessedFolderIdAsync(queueId, folderId, ct);
+        FolderIdCache[$"{mailbox}|{folderName}"] = folderId;
+        return folderId;
     }
 
     private async Task<string> ResolveFolderIdAsync(
