@@ -86,6 +86,36 @@ public class MailFinalizerTests
     }
 
     [Fact]
+    public async Task Stale_processed_folder_id_is_refreshed_and_move_retried()
+    {
+        // Unique mailbox so the static folder-id cache can't collide with the
+        // other tests in this class.
+        const string staleMailbox = "stale@example.com";
+        var mailId = Guid.NewGuid();
+        var mail = new FakeMailRepo
+        {
+            Ready = new[] { new FinalizeCandidate(mailId, "graph-msg-stale", staleMailbox) },
+        };
+        // Graph 404s on the cached (stale) folder id but accepts the freshly
+        // ensured one — exactly the production failure that silently marked
+        // mails moved without moving them.
+        var graph = new FakeGraph { StaleFolderId = "stale-folder-id" };
+        var pollState = new FakePollState();
+        pollState.FolderIds[QueueId] = "stale-folder-id";
+        var finalizer = new MailFinalizer(mail, graph, pollState,
+            new FakeTaxonomy(staleMailbox), new FakeSettings(doMove: true),
+            NullLogger<MailFinalizer>.Instance);
+
+        await finalizer.SweepAsync(CancellationToken.None);
+
+        // The message ends up in the refreshed folder, the mail is marked moved,
+        // and the stale cursor is replaced with the valid id.
+        Assert.Contains(("graph-msg-stale", "folder-Processed"), graph.Moves);
+        Assert.Contains(mailId, mail.Moved);
+        Assert.Equal("folder-Processed", pollState.FolderIds[QueueId]);
+    }
+
+    [Fact]
     public async Task Unknown_mailbox_marks_moved_and_skips_graph()
     {
         var mailId = Guid.NewGuid();
@@ -136,10 +166,13 @@ public class MailFinalizerTests
     {
         public List<(string MessageId, string FolderId)> Moves { get; } = new();
         public bool ThrowNotFound { get; set; }
+        // When set, a Move targeting this (stale) folder id 404s; any other
+        // destination succeeds — models a cached folder id that no longer exists.
+        public string? StaleFolderId { get; set; }
 
         public Task MoveAsync(string mailbox, string id, string folderId, CancellationToken ct)
         {
-            if (ThrowNotFound)
+            if (ThrowNotFound || (StaleFolderId is not null && folderId == StaleFolderId))
             {
                 var err = new Microsoft.Graph.Models.ODataErrors.ODataError
                 {
