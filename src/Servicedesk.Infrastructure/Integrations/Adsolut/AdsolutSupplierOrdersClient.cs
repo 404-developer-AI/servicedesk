@@ -166,6 +166,25 @@ public sealed class AdsolutSupplierOrdersClient : IAdsolutSupplierOrdersClient
                 statusCode = TryGetString(ds, "code");
             }
 
+            // warehouse {id, code} = "Stock"; warehouseLocation {id, code} =
+            // "Location". The line only carries id + code — the display name is
+            // resolved at read time against the Warehouses mirror.
+            Guid? warehouseId = null;
+            string? warehouseCode = null;
+            if (el.TryGetProperty("warehouse", out var wh) && wh.ValueKind == JsonValueKind.Object)
+            {
+                warehouseId = TryGetGuid(wh, "id", out var whid) ? whid : (Guid?)null;
+                warehouseCode = TryGetString(wh, "code");
+            }
+
+            Guid? warehouseLocationId = null;
+            string? warehouseLocationCode = null;
+            if (el.TryGetProperty("warehouseLocation", out var wl) && wl.ValueKind == JsonValueKind.Object)
+            {
+                warehouseLocationId = TryGetGuid(wl, "id", out var wlid) ? wlid : (Guid?)null;
+                warehouseLocationCode = TryGetString(wl, "code");
+            }
+
             // Link back to the sales order (header). The nested object is named
             // orderInfoDetail but carries only orderInfoId (+ docNr) — no order
             // LINE id.
@@ -191,6 +210,10 @@ public sealed class AdsolutSupplierOrdersClient : IAdsolutSupplierOrdersClient
                 UnitPrice: TryGetDecimal(el, "unitPrice"),
                 Discount1: TryGetDecimal(el, "discount1"),
                 StatusCode: statusCode,
+                WarehouseId: warehouseId,
+                WarehouseCode: warehouseCode,
+                WarehouseLocationId: warehouseLocationId,
+                WarehouseLocationCode: warehouseLocationCode,
                 LinkedOrderId: linkedOrderId,
                 LinkedOrderDocNr: linkedOrderDocNr));
         }

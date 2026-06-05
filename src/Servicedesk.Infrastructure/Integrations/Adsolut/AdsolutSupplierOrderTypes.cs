@@ -40,6 +40,15 @@ public sealed record AdsolutSupplierOrderLine(
     /// ("ONTV" = Ontvangen, "OPEN", …). This is the value the order-detail
     /// "Bestelling status" shows.
     string? StatusCode,
+    /// warehouse {id, code} — the stock (magazijn) the line draws from. The
+    /// line carries only id + code (e.g. "CM"); the human-readable name is
+    /// resolved at read time against the Warehouses mirror. Shown as "Stock".
+    Guid? WarehouseId,
+    string? WarehouseCode,
+    /// warehouseLocation {id, code} — the bin/location within the warehouse
+    /// (e.g. "Default"). Name resolved at read time. Shown as "Location".
+    Guid? WarehouseLocationId,
+    string? WarehouseLocationCode,
     /// orderInfoDetail.orderInfoId — links back to the sales order HEADER
     /// (adsolut_orders.id). There is no order-LINE id on the supplier line.
     Guid? LinkedOrderId,

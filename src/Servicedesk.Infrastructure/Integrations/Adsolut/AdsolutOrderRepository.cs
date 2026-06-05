@@ -33,6 +33,10 @@ public sealed class AdsolutSupplierOrderLineRow
     public string? SupplierName { get; set; }
     public string? SupplierCode { get; set; }
     public DateTime? SupplierOrderDate { get; set; }
+    /// Resolved warehouse name (Stock) — COALESCE(mirror name, line code).
+    public string? WarehouseName { get; set; }
+    /// Resolved warehouse-location name (Location) — COALESCE(mirror name, line code).
+    public string? WarehouseLocationName { get; set; }
     public int? LineNr { get; set; }
     public string? ProductCode { get; set; }
     public string? Name { get; set; }
@@ -164,6 +168,13 @@ public interface IAdsolutOrderRepository
 
     /// Distinct supplier-order statuses seen in the mirror (for the colour UI).
     Task<IReadOnlyList<AdsolutOrderStatusOption>> GetSupplierStatusOptionsAsync(CancellationToken ct = default);
+
+    // ---- warehouses (Stock / Location name resolution) -----------------
+    /// Replace the Warehouses reference mirror (+ locations) wholesale from a
+    /// full Warehouses pull. Upserts every supplied row, then deletes mirror
+    /// rows whose id is no longer present (handles upstream removals). No-op on
+    /// an empty list to avoid wiping the mirror on a transient empty page.
+    Task UpsertWarehousesAsync(IReadOnlyList<AdsolutWarehouse> warehouses, CancellationToken ct = default);
 }
 
 public sealed class AdsolutOrderRepository : IAdsolutOrderRepository
@@ -583,12 +594,14 @@ public sealed class AdsolutOrderRepository : IAdsolutOrderRepository
                 INSERT INTO adsolut_supplier_order_lines (
                     id, supplier_order_id, bl_doc_nr, bl_book_code,
                     supplier_name, supplier_code, supplier_order_date, header_state_code,
+                    warehouse_id, warehouse_code, warehouse_location_id, warehouse_location_code,
                     line_nr, product_id, product_code, name, description,
                     quantity, delivered, unit_code, gross_unit_price, unit_price, discount1,
                     status_code, linked_order_id, linked_order_doc_nr, adsolut_last_modified, synced_utc
                 ) VALUES (
                     @Id, @SupplierOrderId, @BlDocNr, @BlBookCode,
                     @SupplierName, @SupplierCode, @SupplierOrderDate, @HeaderStateCode,
+                    @WarehouseId, @WarehouseCode, @WarehouseLocationId, @WarehouseLocationCode,
                     @LineNr, @ProductId, @ProductCode, @Name, @Description,
                     @Quantity, @Delivered, @UnitCode, @GrossUnitPrice, @UnitPrice, @Discount1,
                     @StatusCode, @LinkedOrderId, @LinkedOrderDocNr, @AdsolutLastModified, now()
@@ -604,6 +617,10 @@ public sealed class AdsolutOrderRepository : IAdsolutOrderRepository
                     SupplierCode = o.SupplierCode,
                     SupplierOrderDate = o.SupplierOrderDate?.UtcDateTime,
                     HeaderStateCode = o.StateCode,
+                    l.WarehouseId,
+                    l.WarehouseCode,
+                    l.WarehouseLocationId,
+                    l.WarehouseLocationCode,
                     l.LineNr,
                     l.ProductId,
                     l.ProductCode,
@@ -632,16 +649,23 @@ public sealed class AdsolutOrderRepository : IAdsolutOrderRepository
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var rows = await conn.QueryAsync<AdsolutSupplierOrderLineRow>(new CommandDefinition(
             """
-            SELECT id AS Id, bl_doc_nr AS BlDocNr, bl_book_code AS BlBookCode,
-                   supplier_name AS SupplierName, supplier_code AS SupplierCode,
-                   supplier_order_date AS SupplierOrderDate, line_nr AS LineNr,
-                   product_code AS ProductCode, name AS Name, description AS Description,
-                   quantity AS Quantity, delivered AS Delivered, unit_code AS UnitCode,
-                   gross_unit_price AS GrossUnitPrice, unit_price AS UnitPrice, discount1 AS Discount1,
-                   status_code AS StatusCode, linked_order_doc_nr AS LinkedOrderDocNr
-            FROM adsolut_supplier_order_lines
-            WHERE linked_order_id = @orderId
-            ORDER BY bl_doc_nr NULLS LAST, line_nr NULLS LAST
+            SELECT l.id AS Id, l.bl_doc_nr AS BlDocNr, l.bl_book_code AS BlBookCode,
+                   l.supplier_name AS SupplierName, l.supplier_code AS SupplierCode,
+                   l.supplier_order_date AS SupplierOrderDate,
+                   -- Resolve warehouse/location code+id to a readable name; fall
+                   -- back to the line's raw code when the mirror has no match yet.
+                   COALESCE(w.name, l.warehouse_code)           AS WarehouseName,
+                   COALESCE(wl.name, l.warehouse_location_code) AS WarehouseLocationName,
+                   l.line_nr AS LineNr,
+                   l.product_code AS ProductCode, l.name AS Name, l.description AS Description,
+                   l.quantity AS Quantity, l.delivered AS Delivered, l.unit_code AS UnitCode,
+                   l.gross_unit_price AS GrossUnitPrice, l.unit_price AS UnitPrice, l.discount1 AS Discount1,
+                   l.status_code AS StatusCode, l.linked_order_doc_nr AS LinkedOrderDocNr
+            FROM adsolut_supplier_order_lines l
+            LEFT JOIN adsolut_warehouses w ON w.id = l.warehouse_id
+            LEFT JOIN adsolut_warehouse_locations wl ON wl.id = l.warehouse_location_id
+            WHERE l.linked_order_id = @orderId
+            ORDER BY l.bl_doc_nr NULLS LAST, l.line_nr NULLS LAST
             """,
             new { orderId }, cancellationToken: ct));
         return rows.ToList();
@@ -663,6 +687,60 @@ public sealed class AdsolutOrderRepository : IAdsolutOrderRepository
             """,
             cancellationToken: ct));
         return rows.ToList();
+    }
+
+    public async Task UpsertWarehousesAsync(IReadOnlyList<AdsolutWarehouse> warehouses, CancellationToken ct = default)
+    {
+        // Never wipe the mirror on a transient empty pull — leave the last-good
+        // names in place so Stock/Location keep resolving.
+        if (warehouses.Count == 0) return;
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        await conn.ExecuteAsync(new CommandDefinition(
+            """
+            INSERT INTO adsolut_warehouses (id, code, name, active, standard, synced_utc)
+            VALUES (@Id, @Code, @Name, @Active, @Standard, now())
+            ON CONFLICT (id) DO UPDATE SET
+                code       = EXCLUDED.code,
+                name       = EXCLUDED.name,
+                active     = EXCLUDED.active,
+                standard   = EXCLUDED.standard,
+                synced_utc = now()
+            """,
+            warehouses.Select(w => new { w.Id, w.Code, w.Name, w.Active, w.Standard }),
+            transaction: tx, cancellationToken: ct));
+
+        var locations = warehouses
+            .SelectMany(w => w.Locations.Select(l => new { l.Id, WarehouseId = w.Id, l.Name, l.IsDefault }))
+            .ToList();
+        if (locations.Count > 0)
+        {
+            await conn.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO adsolut_warehouse_locations (id, warehouse_id, name, is_default, synced_utc)
+                VALUES (@Id, @WarehouseId, @Name, @IsDefault, now())
+                ON CONFLICT (id) DO UPDATE SET
+                    warehouse_id = EXCLUDED.warehouse_id,
+                    name         = EXCLUDED.name,
+                    is_default   = EXCLUDED.is_default,
+                    synced_utc   = now()
+                """,
+                locations, transaction: tx, cancellationToken: ct));
+        }
+
+        // Delete rows that vanished upstream (id not in the current full pull).
+        var warehouseIds = warehouses.Select(w => w.Id).ToArray();
+        var locationIds = locations.Select(l => l.Id).ToArray();
+        await conn.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM adsolut_warehouses WHERE id <> ALL(@warehouseIds)",
+            new { warehouseIds }, transaction: tx, cancellationToken: ct));
+        await conn.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM adsolut_warehouse_locations WHERE id <> ALL(@locationIds)",
+            new { locationIds }, transaction: tx, cancellationToken: ct));
+
+        await tx.CommitAsync(ct);
     }
 
     /// Parse the ticket number from an order remark. Adsolut remarks for

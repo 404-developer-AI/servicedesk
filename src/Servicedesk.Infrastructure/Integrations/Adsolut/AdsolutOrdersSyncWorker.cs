@@ -245,6 +245,12 @@ public sealed class AdsolutOrdersSyncWorker : BackgroundService
             errorMessage = "tick_exception";
             _logger.LogError(ex, "Adsolut Orders tick threw an unexpected exception.");
         }
+        // Warehouses reference pass: a small full-list pull that keeps the
+        // Stock/Location name mirror current. Runs every tick under the same
+        // toggle; its own error handling so a hiccup never fails the tick.
+        var warehousesClient = sp.GetRequiredService<IAdsolutWarehousesClient>();
+        var warehouses = await RunWarehousesPassAsync(warehousesClient, repo, administrationId, ct);
+
         // Second pass: supplier orders (bestellingen). Independent delta cursor;
         // its own error handling so an orders success isn't undone by a supplier
         // hiccup. Runs in the same tick under the same toggle.
@@ -287,6 +293,8 @@ public sealed class AdsolutOrdersSyncWorker : BackgroundService
                 supplierSeen = supplier.Seen,
                 supplierUpserted = supplier.Upserted,
                 supplierError = supplier.Error,
+                warehousesSeen = warehouses.Seen,
+                warehousesError = warehouses.Error,
                 durationMs = (int)stopwatch.ElapsedMilliseconds,
                 modifiedSince = modifiedSince?.UtcDateTime,
             }), ct);
@@ -295,6 +303,56 @@ public sealed class AdsolutOrdersSyncWorker : BackgroundService
     }
 
     private readonly record struct SupplierPassResult(int Seen, int Upserted, DateTime? HighWater, string? Error);
+    private readonly record struct WarehousesPassResult(int Seen, string? Error);
+
+    /// One Warehouses reference pass: cursor through the (small) Warehouses list
+    /// and replace the mirror wholesale. No delta cursor — the list is tiny and
+    /// the mirror only needs to be current, not incremental. Own try/catch so a
+    /// failure here never fails the orders/supplier passes.
+    private async Task<WarehousesPassResult> RunWarehousesPassAsync(
+        IAdsolutWarehousesClient client,
+        IAdsolutOrderRepository repo,
+        Guid administrationId,
+        CancellationToken ct)
+    {
+        try
+        {
+            const int PageSize = 200;
+            var all = new List<AdsolutWarehouse>();
+            string? cursor = null;
+            var pageGuard = 0;
+            do
+            {
+                var page = await client.ListPageAsync(administrationId, cursor, PageSize, ct);
+                all.AddRange(page.Items);
+                cursor = page.NextCursor;
+                if (!page.HasNext || string.IsNullOrEmpty(cursor)) break;
+            }
+            while (++pageGuard <= 1000);
+
+            await repo.UpsertWarehousesAsync(all, ct);
+            return new WarehousesPassResult(all.Count, null);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (AdsolutApiException ex) when (ex.HttpStatus == 429)
+        {
+            _logger.LogWarning(ex, "Adsolut Warehouses hit 429 — skipping warehouse refresh this tick.");
+            return new WarehousesPassResult(0, "rate_limited");
+        }
+        catch (AdsolutApiException ex)
+        {
+            _logger.LogWarning(ex, "Adsolut Warehouses pass failed.");
+            return new WarehousesPassResult(0, ex.UpstreamErrorCode ?? ex.HttpStatus?.ToString() ?? "api_error");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Adsolut Warehouses pass threw an unexpected exception.");
+            return new WarehousesPassResult(0, "warehouses_pass_exception");
+        }
+    }
 
     /// One supplier-orders (bestellingen) pass: cursor through SupplierOrderInfos
     /// (always IncludeReceivedState=true, ModifiedSince delta), upsert each.

@@ -344,6 +344,8 @@ public static class OrdersEndpoints
             unitPrice = s.UnitPrice,
             discount1 = s.Discount1,
             statusCode = s.StatusCode,
+            warehouseName = s.WarehouseName,
+            warehouseLocationName = s.WarehouseLocationName,
         }),
         statusColors,
     };

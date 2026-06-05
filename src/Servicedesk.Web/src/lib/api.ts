@@ -994,6 +994,9 @@ export type AdsolutSupplierOrderLine = {
   unitPrice: number | null;
   discount1: number | null;
   statusCode: string | null;
+  // Resolved warehouse (Stock) + location (Location) names for this line.
+  warehouseName: string | null;
+  warehouseLocationName: string | null;
 };
 
 export type AdsolutOrderListResponse = {

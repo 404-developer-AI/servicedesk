@@ -3962,6 +3962,10 @@ public sealed class DatabaseBootstrapper : IHostedService
             supplier_code          TEXT          NULL,
             supplier_order_date    TIMESTAMPTZ   NULL,
             header_state_code      TEXT          NULL,
+            warehouse_id           UUID          NULL,
+            warehouse_code         TEXT          NULL,
+            warehouse_location_id  UUID          NULL,
+            warehouse_location_code TEXT         NULL,
             line_nr                INTEGER       NULL,
             product_id             UUID          NULL,
             product_code           TEXT          NULL,
@@ -3995,6 +3999,39 @@ public sealed class DatabaseBootstrapper : IHostedService
             ADD COLUMN IF NOT EXISTS supplier_last_delta_sync_utc TIMESTAMPTZ NULL,
             ADD COLUMN IF NOT EXISTS supplier_orders_seen         INTEGER NOT NULL DEFAULT 0,
             ADD COLUMN IF NOT EXISTS supplier_orders_upserted     INTEGER NOT NULL DEFAULT 0;
+
+        -- Per-line warehouse (Stock) + warehouseLocation (Location) on each
+        -- supplier-order line: id + code stored, the display name resolved at
+        -- read time against the Warehouses mirror below.
+        ALTER TABLE adsolut_supplier_order_lines
+            ADD COLUMN IF NOT EXISTS warehouse_id            UUID NULL,
+            ADD COLUMN IF NOT EXISTS warehouse_code          TEXT NULL,
+            ADD COLUMN IF NOT EXISTS warehouse_location_id   UUID NULL,
+            ADD COLUMN IF NOT EXISTS warehouse_location_code TEXT NULL;
+
+        -- Warehouses ("magazijnen") reference mirror — small list pulled from
+        -- GET /erp/v1/adm/{adm}/Warehouses each Orders tick. Resolves the
+        -- supplier-order line's warehouse {id, code} → a readable name (Stock),
+        -- and its locations resolve warehouseLocation.id → name (Location).
+        CREATE TABLE IF NOT EXISTS adsolut_warehouses (
+            id          UUID        PRIMARY KEY,
+            code        TEXT        NULL,
+            name        TEXT        NULL,
+            active      BOOLEAN     NOT NULL DEFAULT TRUE,
+            standard    BOOLEAN     NOT NULL DEFAULT FALSE,
+            synced_utc  TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS adsolut_warehouse_locations (
+            id           UUID        PRIMARY KEY,
+            warehouse_id UUID        NULL,
+            name         TEXT        NULL,
+            is_default   BOOLEAN     NOT NULL DEFAULT FALSE,
+            synced_utc   TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_adsolut_warehouse_locations_warehouse
+            ON adsolut_warehouse_locations (warehouse_id);
         """;
 
     private readonly NpgsqlDataSource _dataSource;
