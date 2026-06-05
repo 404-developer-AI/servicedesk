@@ -696,66 +696,6 @@ public sealed class DatabaseBootstrapper : IHostedService
             ADD COLUMN IF NOT EXISTS last_mailbox_action_error TEXT NULL,
             ADD COLUMN IF NOT EXISTS last_mailbox_action_error_utc TIMESTAMPTZ NULL;
 
-        -- ===================================================================
-        -- v0.0.66 — multiple inbound mailboxes per queue
-        -- ===================================================================
-        -- Each row is one (mailbox, folder) source feeding a queue, with its
-        -- own Graph delta cursor + health state. Supersedes the singular
-        -- queues.inbound_* columns + the per-queue mail_poll_state table, both
-        -- of which are kept: queues.inbound_* now acts as a denormalized mirror
-        -- of the first source (so the outbound from-address fallback keeps
-        -- working), and mail_poll_state is read once below for the backfill then
-        -- left dormant.
-        CREATE TABLE IF NOT EXISTS queue_inbound_mailboxes (
-            id                            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-            queue_id                      UUID        NOT NULL REFERENCES queues(id) ON DELETE CASCADE,
-            mailbox_address               CITEXT      NOT NULL,
-            folder_id                     TEXT        NULL,
-            folder_name                   TEXT        NULL,
-            polling_enabled               BOOLEAN     NOT NULL DEFAULT TRUE,
-            delta_link                    TEXT        NULL,
-            last_polled_utc               TIMESTAMPTZ NULL,
-            last_error                    TEXT        NULL,
-            consecutive_failures          INTEGER     NOT NULL DEFAULT 0,
-            processed_folder_id           TEXT        NULL,
-            last_mailbox_action_error     TEXT        NULL,
-            last_mailbox_action_error_utc TIMESTAMPTZ NULL,
-            created_utc                   TIMESTAMPTZ NOT NULL DEFAULT now(),
-            updated_utc                   TIMESTAMPTZ NOT NULL DEFAULT now()
-        );
-
-        -- A given mailbox+folder feeds exactly one queue (exclusivity). Partial
-        -- so rows without a folder selected yet don't collide on NULL.
-        CREATE UNIQUE INDEX IF NOT EXISTS ix_queue_inbound_mailboxes_source
-            ON queue_inbound_mailboxes (mailbox_address, folder_id)
-            WHERE folder_id IS NOT NULL;
-
-        CREATE INDEX IF NOT EXISTS ix_queue_inbound_mailboxes_queue
-            ON queue_inbound_mailboxes (queue_id);
-
-        -- The old one-mailbox-per-queue unique index would now collide whenever
-        -- two queues mirror the same mailbox under different folders. Drop it;
-        -- exclusivity is enforced per-source above.
-        DROP INDEX IF EXISTS ix_queues_inbound_mailbox;
-
-        -- One-time backfill: turn each queue's singular inbound config (and its
-        -- per-queue mail_poll_state, if any) into a source row. Idempotent via
-        -- the NOT EXISTS guard so re-running bootstrap never duplicates.
-        INSERT INTO queue_inbound_mailboxes (
-            queue_id, mailbox_address, folder_id, folder_name, polling_enabled,
-            delta_link, last_polled_utc, last_error, consecutive_failures,
-            processed_folder_id, last_mailbox_action_error, last_mailbox_action_error_utc)
-        SELECT q.id, q.inbound_mailbox_address, q.inbound_folder_id, q.inbound_folder_name,
-               q.inbound_polling_enabled,
-               s.delta_link, s.last_polled_utc, s.last_error, COALESCE(s.consecutive_failures, 0),
-               s.processed_folder_id, s.last_mailbox_action_error, s.last_mailbox_action_error_utc
-        FROM queues q
-        LEFT JOIN mail_poll_state s ON s.queue_id = q.id
-        WHERE q.inbound_mailbox_address IS NOT NULL
-          AND NOT EXISTS (
-              SELECT 1 FROM queue_inbound_mailboxes m WHERE m.queue_id = q.id
-          );
-
         CREATE TABLE IF NOT EXISTS mail_recipients (
             id              BIGSERIAL   PRIMARY KEY,
             mail_id         UUID        NOT NULL REFERENCES mail_messages(id) ON DELETE CASCADE,
@@ -1045,6 +985,68 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- skip the queue while leaving its delta-state intact.
         ALTER TABLE queues
             ADD COLUMN IF NOT EXISTS inbound_polling_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+
+        -- ===================================================================
+        -- v0.0.66 — multiple inbound mailboxes per queue
+        -- ===================================================================
+        -- Each row is one (mailbox, folder) source feeding a queue, with its
+        -- own Graph delta cursor + health state. Supersedes the singular
+        -- queues.inbound_* columns + the per-queue mail_poll_state table, both
+        -- of which are kept: queues.inbound_* now acts as a denormalized mirror
+        -- of the first source (so the outbound from-address fallback keeps
+        -- working), and mail_poll_state is read once below for the backfill then
+        -- left dormant. Must run AFTER the queues.inbound_folder_id /
+        -- inbound_folder_name / inbound_polling_enabled columns above exist —
+        -- the backfill SELECT below reads them.
+        CREATE TABLE IF NOT EXISTS queue_inbound_mailboxes (
+            id                            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            queue_id                      UUID        NOT NULL REFERENCES queues(id) ON DELETE CASCADE,
+            mailbox_address               CITEXT      NOT NULL,
+            folder_id                     TEXT        NULL,
+            folder_name                   TEXT        NULL,
+            polling_enabled               BOOLEAN     NOT NULL DEFAULT TRUE,
+            delta_link                    TEXT        NULL,
+            last_polled_utc               TIMESTAMPTZ NULL,
+            last_error                    TEXT        NULL,
+            consecutive_failures          INTEGER     NOT NULL DEFAULT 0,
+            processed_folder_id           TEXT        NULL,
+            last_mailbox_action_error     TEXT        NULL,
+            last_mailbox_action_error_utc TIMESTAMPTZ NULL,
+            created_utc                   TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc                   TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        -- A given mailbox+folder feeds exactly one queue (exclusivity). Partial
+        -- so rows without a folder selected yet don't collide on NULL.
+        CREATE UNIQUE INDEX IF NOT EXISTS ix_queue_inbound_mailboxes_source
+            ON queue_inbound_mailboxes (mailbox_address, folder_id)
+            WHERE folder_id IS NOT NULL;
+
+        CREATE INDEX IF NOT EXISTS ix_queue_inbound_mailboxes_queue
+            ON queue_inbound_mailboxes (queue_id);
+
+        -- The old one-mailbox-per-queue unique index would now collide whenever
+        -- two queues mirror the same mailbox under different folders. Drop it;
+        -- exclusivity is enforced per-source above.
+        DROP INDEX IF EXISTS ix_queues_inbound_mailbox;
+
+        -- One-time backfill: turn each queue's singular inbound config (and its
+        -- per-queue mail_poll_state, if any) into a source row. Idempotent via
+        -- the NOT EXISTS guard so re-running bootstrap never duplicates.
+        INSERT INTO queue_inbound_mailboxes (
+            queue_id, mailbox_address, folder_id, folder_name, polling_enabled,
+            delta_link, last_polled_utc, last_error, consecutive_failures,
+            processed_folder_id, last_mailbox_action_error, last_mailbox_action_error_utc)
+        SELECT q.id, q.inbound_mailbox_address, q.inbound_folder_id, q.inbound_folder_name,
+               q.inbound_polling_enabled,
+               s.delta_link, s.last_polled_utc, s.last_error, COALESCE(s.consecutive_failures, 0),
+               s.processed_folder_id, s.last_mailbox_action_error, s.last_mailbox_action_error_utc
+        FROM queues q
+        LEFT JOIN mail_poll_state s ON s.queue_id = q.id
+        WHERE q.inbound_mailbox_address IS NOT NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM queue_inbound_mailboxes m WHERE m.queue_id = q.id
+          );
 
         -- ===================================================================
         -- v0.0.9 Companies: customer identification (code/short name/VAT),
