@@ -261,4 +261,10 @@ public static class AdsolutEventTypes
     /// supplier-orders (bestellingen / Doc "BL") list during the Orders sync
     /// tick's second pass. Carries the real per-line procurement status.
     public const string ErpSupplierOrdersList = "erp.supplier_orders.list";
+
+    /// GET /erp/v1/adm/{adm}/Warehouses — one page of the cursor-paged
+    /// warehouses ("magazijnen") reference list. Mirrored so supplier-order
+    /// lines resolve their warehouse/location code+id to a display name
+    /// (Stock / Location columns).
+    public const string ErpWarehousesList = "erp.warehouses.list";
 }

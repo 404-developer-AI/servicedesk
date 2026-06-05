@@ -168,6 +168,7 @@ public static class DependencyInjection
         // lines, so the sync upserts straight from the list (no by-id N+1).
         services.AddSingleton<IAdsolutOrdersClient, AdsolutOrdersClient>();
         services.AddSingleton<IAdsolutSupplierOrdersClient, AdsolutSupplierOrdersClient>();
+        services.AddSingleton<IAdsolutWarehousesClient, AdsolutWarehousesClient>();
         services.AddSingleton<IAdsolutOrderRepository, AdsolutOrderRepository>();
         services.AddSingleton<IAdsolutOrdersSyncSignal, AdsolutOrdersSyncSignal>();
         services.AddHostedService<AdsolutOrdersSyncWorker>();

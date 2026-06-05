@@ -164,6 +164,8 @@ function SupplierOrdersBlock({
                 <th className="py-1.5 pr-3 font-medium">Article</th>
                 <th className="py-1.5 pr-3 font-medium">Supplier</th>
                 <th className="py-1.5 pr-3 font-medium">Bestelling status</th>
+                <th className="py-1.5 pr-3 font-medium">Stock</th>
+                <th className="py-1.5 pr-3 font-medium">Location</th>
                 <th className="py-1.5 pr-3 font-medium">Date</th>
                 <th className="py-1.5 pr-3 text-right font-medium">Ordered</th>
                 <th className="py-1.5 text-right font-medium">Delivered</th>
@@ -188,6 +190,12 @@ function SupplierOrdersBlock({
                   </td>
                   <td className="py-1.5 pr-3">
                     <StatusChip code={s.statusCode} colors={colors} />
+                  </td>
+                  <td className="py-1.5 pr-3 text-foreground">
+                    {s.warehouseName?.trim() ? s.warehouseName : "—"}
+                  </td>
+                  <td className="py-1.5 pr-3 text-foreground">
+                    {s.warehouseLocationName?.trim() ? s.warehouseLocationName : "—"}
                   </td>
                   <td className="whitespace-nowrap py-1.5 pr-3">{formatDate(s.supplierOrderDate)}</td>
                   <td className="py-1.5 pr-3 text-right tabular-nums">{formatNumber(s.quantity)}</td>
