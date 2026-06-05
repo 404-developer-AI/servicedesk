@@ -46,7 +46,13 @@ public sealed record OutboundMailRequest(
     IReadOnlyList<Guid>? LinkedFormIds = null,
     /// v0.0.60 — tagging-only mailbox ids tagged via @@-mention. Filtered to
     /// active rows; each receives a notification mail (no in-app entry).
-    IReadOnlyList<Guid>? MentionedMailboxIds = null);
+    IReadOnlyList<Guid>? MentionedMailboxIds = null,
+    /// v0.0.61 — true when the compose window pre-loaded the signature as a
+    /// fixed block (so the body carries a <c>data-sd-signature</c> marker at the
+    /// agent's chosen spot). The send path then swaps that marker for the
+    /// authoritative signature, or — if the agent removed the block — adds
+    /// nothing. False keeps the legacy append-at-the-bottom behaviour.
+    bool SignaturePreloaded = false);
 
 public enum OutboundMailStatus
 {

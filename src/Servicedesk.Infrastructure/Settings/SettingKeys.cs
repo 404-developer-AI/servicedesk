@@ -776,10 +776,17 @@ public static class SettingKeys
         /// appends a signature until an admin has built one and opted in.
         public const string Enabled = "Signatures.Enabled";
 
-        /// When true, the resolved signature is appended on replies too (above
-        /// the quoted history). When false, signatures are only added to the
-        /// first/new outbound mail of a thread.
+        /// When true, the resolved signature is placed on replies too (directly
+        /// under the agent's message, above the quoted history). When false,
+        /// signatures are only added to the first/new outbound mail of a thread.
         public const string AppendOnReplies = "Signatures.AppendOnReplies";
+
+        /// When true, the signature is pre-loaded into the compose window as a
+        /// fixed, read-only block directly under the agent's message (above the
+        /// quoted history), and that position is honoured on send. When false,
+        /// the signature is appended at the very bottom of the mail at send time
+        /// (the legacy behaviour). On by default.
+        public const string ComposerPreload = "Signatures.ComposerPreload";
 
         /// Signature id (Guid string) used for trigger/automated mail, where
         /// there is no human sender to pull Entra variables from. Empty = no
@@ -1367,7 +1374,9 @@ public static class SettingDefaults
         new SettingDefault(SettingKeys.Signatures.Enabled, "false", "bool", "Signatures",
             "Master switch for email signatures. When off, no signature is appended on either the agent reply path or the trigger/automated send path. Turn on once you have built and assigned a signature."),
         new SettingDefault(SettingKeys.Signatures.AppendOnReplies, "true", "bool", "Signatures",
-            "When on, the resolved signature is also appended on replies (above the quoted history). When off, signatures are only added to the first/new outbound mail of a thread."),
+            "When on, the resolved signature is also placed on replies (directly under the agent's message, above the quoted history). When off, signatures are only added to the first/new outbound mail of a thread."),
+        new SettingDefault(SettingKeys.Signatures.ComposerPreload, "true", "bool", "Signatures",
+            "When on, the signature is pre-loaded into the compose window as a fixed, read-only block directly under your message (above the quoted history), and that position is honoured on send. When off, the signature is appended at the very bottom of the mail on send (legacy behaviour)."),
         new SettingDefault(SettingKeys.Signatures.DefaultSystemSignatureId, "", "string", "Signatures",
             "Signature used for trigger/automated mail, where there is no human sender to pull Entra variables from. Pick a signature flagged 'system'. Empty = no signature on automated mail."),
         new SettingDefault(SettingKeys.Signatures.EntraSyncEnabled, "false", "bool", "Signatures",

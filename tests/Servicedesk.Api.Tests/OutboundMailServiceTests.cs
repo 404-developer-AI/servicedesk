@@ -559,5 +559,9 @@ public sealed class OutboundMailServiceTests
         public Task<Servicedesk.Infrastructure.Signatures.ComposedSignature?> ComposeSystemAsync(
             bool isReply, CancellationToken ct)
             => Task.FromResult<Servicedesk.Infrastructure.Signatures.ComposedSignature?>(null);
+
+        public Task<string?> ComposePreviewForQueueAsync(
+            Guid queueId, Guid senderUserId, bool isReply, CancellationToken ct)
+            => Task.FromResult<string?>(null);
     }
 }

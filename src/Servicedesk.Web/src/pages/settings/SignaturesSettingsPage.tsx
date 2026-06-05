@@ -1,8 +1,9 @@
-import { type ChangeEvent, useState } from "react";
+import { type ChangeEvent, useRef, useState } from "react";
 import {
   ArrowLeft,
   Camera,
   Check,
+  Download,
   ImageIcon,
   Pencil,
   PenLine,
@@ -42,6 +43,7 @@ import {
   photoFrameApi,
   FRAME_URL,
   type SignatureSummary,
+  type SignatureBundle,
   type MySignatureProfileUpdate,
   type TeamProfile,
   type TeamProfileUpdate,
@@ -60,6 +62,7 @@ const TEAM_PROFILES_KEY = ["signatures", "team-profiles"] as const;
 
 const KEY_ENABLED = "Signatures.Enabled";
 const KEY_APPEND_REPLIES = "Signatures.AppendOnReplies";
+const KEY_COMPOSER_PRELOAD = "Signatures.ComposerPreload";
 const KEY_ENTRA_SYNC = "Signatures.EntraSyncEnabled";
 const KEY_ENTRA_PHOTOS = "Signatures.EntraSyncPhotos";
 const KEY_DEFAULT_SIG = "Signatures.DefaultSystemSignatureId";
@@ -116,6 +119,8 @@ function ListPanel({
 }) {
   const qc = useQueryClient();
   const [deleteTarget, setDeleteTarget] = useState<SignatureSummary | null>(null);
+  const [exportingId, setExportingId] = useState<string | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const listQ = useQuery({
     queryKey: SIGS_LIST_KEY,
@@ -139,6 +144,59 @@ function ListPanel({
     },
     onError: () => toast.error("Could not delete signature."),
   });
+
+  const importMut = useMutation({
+    mutationFn: (bundle: SignatureBundle) => signaturesApi.importBundle(bundle),
+    onSuccess: (created) => {
+      toast.success(`Imported "${created.name}". It's disabled — assign a mailbox and enable it.`);
+      qc.invalidateQueries({ queryKey: SIGS_LIST_KEY });
+    },
+    onError: (err: unknown) => {
+      const message =
+        err && typeof err === "object" && "payload" in err
+          ? ((err as { payload?: { error?: string } }).payload?.error ?? null)
+          : null;
+      toast.error(message ?? "Could not import this signature file.");
+    },
+  });
+
+  const handleExport = async (sig: SignatureSummary) => {
+    setExportingId(sig.id);
+    try {
+      const bundle = await signaturesApi.exportBundle(sig.id);
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const slug = sig.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "signature";
+      a.download = `${slug}.signature.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Could not export this signature.");
+    } finally {
+      setExportingId(null);
+    }
+  };
+
+  const handleImportFile = async (file: File) => {
+    let bundle: SignatureBundle;
+    try {
+      bundle = JSON.parse(await file.text()) as SignatureBundle;
+    } catch {
+      toast.error("That file isn't a valid signature bundle.");
+      return;
+    }
+    if (!bundle || bundle.kind !== "servicedesk.signature") {
+      toast.error("That file isn't a signature bundle.");
+      return;
+    }
+    importMut.mutate(bundle);
+  };
 
   const findSetting = (key: string): SettingEntry | undefined =>
     settingsQ.data?.find((e) => e.key === key);
@@ -173,7 +231,15 @@ function ListPanel({
                 entry={findSetting(KEY_APPEND_REPLIES)!}
                 queryKey={SIGS_SETTINGS_KEY}
                 label="Append on replies"
-                hint="Automatically append the agent's signature to reply mails."
+                hint="Place the agent's signature on reply mails too (directly under their message, above the quoted history)."
+              />
+            )}
+            {findSetting(KEY_COMPOSER_PRELOAD) && (
+              <SettingField
+                entry={findSetting(KEY_COMPOSER_PRELOAD)!}
+                queryKey={SIGS_SETTINGS_KEY}
+                label="Pre-load in compose window"
+                hint="Show the signature as a fixed, read-only block under your message while composing — directly above the quoted history — and send it from that position. When off, the signature is appended at the very bottom of the mail on send."
               />
             )}
             {findSetting(KEY_ENTRA_SYNC) && (
@@ -225,10 +291,32 @@ function ListPanel({
               used by trigger/automated mail.
             </p>
           </div>
-          <Button size="sm" onClick={onNew}>
-            <Plus className="h-4 w-4" />
-            New signature
-          </Button>
+          <div className="flex items-center gap-2">
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleImportFile(file);
+                e.target.value = ""; // allow re-importing the same file
+              }}
+            />
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => importInputRef.current?.click()}
+              disabled={importMut.isPending}
+            >
+              <Upload className="h-4 w-4" />
+              {importMut.isPending ? "Importing…" : "Import"}
+            </Button>
+            <Button size="sm" onClick={onNew}>
+              <Plus className="h-4 w-4" />
+              New signature
+            </Button>
+          </div>
         </header>
 
         {listQ.isLoading && <Skeleton className="h-16 w-full" />}
@@ -247,6 +335,8 @@ function ListPanel({
             <SignatureRow
               key={sig.id}
               sig={sig}
+              exporting={exportingId === sig.id}
+              onExport={() => handleExport(sig)}
               onEdit={() => onEdit(sig.id)}
               onDelete={() => setDeleteTarget(sig)}
             />
@@ -548,10 +638,14 @@ function MyProfileCard() {
 
 function SignatureRow({
   sig,
+  exporting,
+  onExport,
   onEdit,
   onDelete,
 }: {
   sig: SignatureSummary;
+  exporting: boolean;
+  onExport: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -590,6 +684,16 @@ function SignatureRow({
         )}
       </div>
       <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onExport}
+          disabled={exporting}
+          aria-label={`Export ${sig.name}`}
+        >
+          <Download className="h-4 w-4" />
+          {exporting ? "Exporting…" : "Export"}
+        </Button>
         <Button variant="ghost" size="sm" onClick={onEdit} aria-label={`Edit ${sig.name}`}>
           <Pencil className="h-4 w-4" />
           Edit

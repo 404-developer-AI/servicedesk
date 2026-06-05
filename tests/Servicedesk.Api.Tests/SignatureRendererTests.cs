@@ -85,4 +85,40 @@ public sealed class SignatureRendererTests
         Assert.DoesNotContain("<script>x</script>", rendered.Html);
         Assert.Contains("&lt;script&gt;", rendered.Html);
     }
+
+    // v0.0.61 — compose-preview render path: images inline as self-contained
+    // data: URIs (no cid parts) so the in-app preview needs no authenticated
+    // fetch. The send-time cid contract above is unchanged.
+    [Fact]
+    public void Image_asset_inlines_as_data_uri_in_preview_mode()
+    {
+        var assetId = Guid.NewGuid();
+        var asset = new SignatureAsset(assetId, Guid.NewGuid(), "deadbeefhash", "image/png", "logo.png", 3, DateTime.UtcNow);
+        var design = DesignWith(new SignatureBlock { Type = "image", AssetId = assetId.ToString(), WidthPx = 120 });
+        var bytes = new Dictionary<string, InlineImageBytes>(StringComparer.Ordinal)
+        {
+            ["deadbeefhash"] = new InlineImageBytes("image/png", new byte[] { 1, 2, 3 }),
+        };
+
+        var rendered = NewRenderer().Render(design, Vars(), new[] { asset }, bytes);
+
+        Assert.Empty(rendered.Assets); // no cid parts in preview mode
+        Assert.Contains("data:image/png;base64,AQID", rendered.Html);
+        Assert.DoesNotContain("cid:", rendered.Html);
+    }
+
+    [Fact]
+    public void Image_with_missing_bytes_collapses_in_preview_mode()
+    {
+        var assetId = Guid.NewGuid();
+        var asset = new SignatureAsset(assetId, Guid.NewGuid(), "missinghash", "image/png", "logo.png", 3, DateTime.UtcNow);
+        var design = DesignWith(new SignatureBlock { Type = "image", AssetId = assetId.ToString(), WidthPx = 120 });
+        // Empty byte map → the image has no resolvable source and must collapse
+        // rather than emit a broken <img>.
+        var bytes = new Dictionary<string, InlineImageBytes>(StringComparer.Ordinal);
+
+        var rendered = NewRenderer().Render(design, Vars(), new[] { asset }, bytes);
+
+        Assert.DoesNotContain("<img", rendered.Html);
+    }
 }

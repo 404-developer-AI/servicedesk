@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { substituteComposeTokens } from "@/lib/composeTokens";
 import type { TicketAttachmentMeta, MentionPickerItem } from "@/lib/ticket-api";
 import { MentionList, type MentionListHandle } from "./MentionList";
+import { SignatureBlock } from "./SignatureBlockNode";
 import {
   IntakeMentionList,
   type IntakeMentionListHandle,
@@ -82,6 +83,11 @@ type RichTextEditorProps = {
   /// block from a "Import registered time" button). Null is passed when
   /// the editor is being torn down on unmount.
   onEditorReady?: (editor: ReturnType<typeof useEditor> | null) => void;
+  /// v0.0.61 — mount the SignatureBlock atom so a `<div data-sd-signature>`
+  /// marker in the content renders as a fixed, read-only signature preview
+  /// (compose window only). Off everywhere else so notes/replies never parse
+  /// the marker.
+  enableSignatureBlock?: boolean;
 };
 
 type ToolbarButtonProps = {
@@ -134,6 +140,7 @@ export function RichTextEditor({
   onIntakeChipClick,
   composeTokens,
   onEditorReady,
+  enableSignatureBlock = false,
 }: RichTextEditorProps) {
   // Stash the latest upload callback in a ref so the editor extensions —
   // which see only the prop-snapshot at construction time — can still call
@@ -202,6 +209,13 @@ export function RichTextEditor({
       },
     }),
   ] as Array<ReturnType<typeof StarterKit.configure> | unknown>;
+
+  // v0.0.61 — compose-window signature block. A leaf atom that renders the
+  // pre-loaded signature preview (data-URI images) and serialises to a bare
+  // <div data-sd-signature> marker the send path swaps for the real signature.
+  if (enableSignatureBlock) {
+    extensions.push(SignatureBlock);
+  }
 
   // Only mount the Mention extension when the caller opted into it —
   // otherwise an editor that never sees agent-mentions pays nothing for
@@ -550,6 +564,34 @@ export function RichTextEditor({
           font-size: 1.25em;
           font-weight: 600;
           margin: 0.75em 0 0.25em;
+        }
+        /* v0.0.61 — fixed signature preview block. The signature HTML is built
+           for light mail clients (dark #222 text), so it sits on a white
+           "paper" surface inside a subtle glass frame, with a small caption. */
+        .rte-content .ProseMirror .sd-signature-block {
+          margin: 0.75em 0;
+          border: 1px solid rgba(255,255,255,0.12);
+          border-radius: 10px;
+          padding: 0.5em;
+          background: rgba(255,255,255,0.03);
+          user-select: none;
+        }
+        .rte-content .ProseMirror .sd-signature-block.ProseMirror-selectednode {
+          border-color: hsl(265 89% 70% / 0.5);
+          box-shadow: 0 0 0 1px hsl(265 89% 70% / 0.3);
+        }
+        .rte-content .ProseMirror .sd-signature-block__label {
+          font-size: 10px;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: hsl(240 5% 55%);
+          margin: 0 0 0.4em 0.15em;
+        }
+        .rte-content .ProseMirror .sd-signature-block__paper {
+          background: #ffffff;
+          border-radius: 6px;
+          padding: 12px 14px;
+          overflow-x: auto;
         }
         .rte-content .ProseMirror p.is-editor-empty:first-child::before {
           content: attr(data-placeholder);

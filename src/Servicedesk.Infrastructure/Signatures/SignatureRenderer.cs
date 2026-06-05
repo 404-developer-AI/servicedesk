@@ -28,9 +28,10 @@ public sealed class SignatureRenderer : ISignatureRenderer
     public RenderedSignature Render(
         SignatureDesign design,
         SignatureVariables vars,
-        IReadOnlyList<SignatureAsset> assets)
+        IReadOnlyList<SignatureAsset> assets,
+        IReadOnlyDictionary<string, InlineImageBytes>? inlineImageBytes = null)
     {
-        var ctx = new RenderContext(vars, assets.ToDictionary(a => a.Id));
+        var ctx = new RenderContext(vars, assets.ToDictionary(a => a.Id), inlineImageBytes);
         var sb = new StringBuilder();
 
         var fontFamily = string.IsNullOrWhiteSpace(design.FontFamily) ? DefaultFontFamily : design.FontFamily!;
@@ -123,18 +124,18 @@ public sealed class SignatureRenderer : ISignatureRenderer
         var substituted = SubstituteAndCollapse(clean, ctx.Vars);
         if (IsVisuallyEmpty(substituted)) return string.Empty;
 
-        string? cid = null;
+        string? src = null;
         if (!string.IsNullOrWhiteSpace(block.AssetId)
             && Guid.TryParse(block.AssetId, out var assetId)
             && ctx.Assets.TryGetValue(assetId, out var asset))
         {
-            cid = ctx.AllocCid(asset.ContentHash, asset.MimeType, asset.OriginalFilename);
+            src = ctx.ResolveImageSrc(asset.ContentHash, asset.MimeType, asset.OriginalFilename);
         }
 
         var iconW = block.WidthPx is > 0 ? block.WidthPx!.Value : 16;
-        var iconCell = cid is null
+        var iconCell = string.IsNullOrEmpty(src)
             ? string.Empty
-            : $"<td valign=\"top\" style=\"padding:2px 8px 0 0;vertical-align:top;\"><img src=\"cid:{cid}\" width=\"{iconW}\" height=\"{iconW}\" alt=\"\" style=\"display:block;border:0;\" /></td>";
+            : $"<td valign=\"top\" style=\"padding:2px 8px 0 0;vertical-align:top;\"><img src=\"{src}\" width=\"{iconW}\" height=\"{iconW}\" alt=\"\" style=\"display:block;border:0;\" /></td>";
 
         return "<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"border-collapse:collapse;margin:3px 0;\"><tr>"
              + iconCell
@@ -157,22 +158,22 @@ public sealed class SignatureRenderer : ISignatureRenderer
 
     private string RenderImage(SignatureBlock block, RenderContext ctx)
     {
-        string? cid = null;
+        string? src = null;
 
         // Dynamic source (sender photo) wins over a static asset.
         if (string.Equals(block.Variable, SignatureTokens.AgentPhoto, StringComparison.OrdinalIgnoreCase))
         {
             if (!string.IsNullOrWhiteSpace(ctx.Vars.PhotoBlobHash))
-                cid = ctx.AllocCid(ctx.Vars.PhotoBlobHash!, ctx.Vars.PhotoMime ?? "image/jpeg", "photo");
+                src = ctx.ResolveImageSrc(ctx.Vars.PhotoBlobHash!, ctx.Vars.PhotoMime ?? "image/jpeg", "photo");
         }
         else if (!string.IsNullOrWhiteSpace(block.AssetId)
                  && Guid.TryParse(block.AssetId, out var assetId)
                  && ctx.Assets.TryGetValue(assetId, out var asset))
         {
-            cid = ctx.AllocCid(asset.ContentHash, asset.MimeType, asset.OriginalFilename);
+            src = ctx.ResolveImageSrc(asset.ContentHash, asset.MimeType, asset.OriginalFilename);
         }
 
-        if (cid is null) return string.Empty; // no resolvable source → collapse
+        if (string.IsNullOrEmpty(src)) return string.Empty; // no resolvable source → collapse
 
         var attrs = new StringBuilder();
         if (block.WidthPx is > 0) attrs.Append($" width=\"{block.WidthPx}\"");
@@ -182,7 +183,7 @@ public sealed class SignatureRenderer : ISignatureRenderer
         if (block.RadiusPx is > 0) style.Append($"border-radius:{block.RadiusPx}px;");
 
         var alt = WebUtility.HtmlEncode(block.Alt ?? string.Empty);
-        var img = $"<img src=\"cid:{cid}\"{attrs} alt=\"{alt}\" style=\"{style}\" />";
+        var img = $"<img src=\"{src}\"{attrs} alt=\"{alt}\" style=\"{style}\" />";
 
         if (!string.IsNullOrWhiteSpace(block.Href) && IsSafeHref(block.Href!))
             return $"<a href=\"{WebUtility.HtmlEncode(block.Href)}\" style=\"text-decoration:none;\">{img}</a>";
@@ -216,12 +217,16 @@ public sealed class SignatureRenderer : ISignatureRenderer
             if (string.IsNullOrWhiteSpace(item.Url) || !IsSafeHref(item.Url)) continue;
 
             string inner;
+            string? iconSrc = null;
             if (!string.IsNullOrWhiteSpace(item.AssetId)
                 && Guid.TryParse(item.AssetId, out var assetId)
                 && ctx.Assets.TryGetValue(assetId, out var asset))
             {
-                var cid = ctx.AllocCid(asset.ContentHash, asset.MimeType, asset.OriginalFilename);
-                inner = $"<img src=\"cid:{cid}\" width=\"24\" height=\"24\" alt=\"{WebUtility.HtmlEncode(item.Network)}\" style=\"display:block;border:0;\" />";
+                iconSrc = ctx.ResolveImageSrc(asset.ContentHash, asset.MimeType, asset.OriginalFilename);
+            }
+            if (!string.IsNullOrEmpty(iconSrc))
+            {
+                inner = $"<img src=\"{iconSrc}\" width=\"24\" height=\"24\" alt=\"{WebUtility.HtmlEncode(item.Network)}\" style=\"display:block;border:0;\" />";
             }
             else
             {
@@ -324,17 +329,40 @@ public sealed class SignatureRenderer : ISignatureRenderer
     {
         private readonly Dictionary<string, string> _cidByHash = new(StringComparer.Ordinal);
         private readonly List<SignatureCidAsset> _assets = new();
+        private readonly IReadOnlyDictionary<string, InlineImageBytes>? _inlineBytes;
         private int _counter;
 
-        public RenderContext(SignatureVariables vars, Dictionary<Guid, SignatureAsset> assets)
+        public RenderContext(
+            SignatureVariables vars,
+            Dictionary<Guid, SignatureAsset> assets,
+            IReadOnlyDictionary<string, InlineImageBytes>? inlineBytes)
         {
             Vars = vars;
             Assets = assets;
+            _inlineBytes = inlineBytes;
         }
 
         public SignatureVariables Vars { get; }
         public Dictionary<Guid, SignatureAsset> Assets { get; }
         public IReadOnlyList<SignatureCidAsset> CidAssets => _assets;
+
+        /// Resolves the <c>src</c> attribute for an image. In the default (send)
+        /// mode this is a <c>cid:</c> reference and the asset is registered for
+        /// inline attachment. When the context was built with inline bytes
+        /// (the in-app compose preview), it is a self-contained <c>data:</c> URI
+        /// instead — no attachments, no authenticated fetch. Returns an empty
+        /// string when the bytes are unavailable so the caller collapses the
+        /// image rather than emitting a broken one.
+        public string ResolveImageSrc(string contentHash, string mimeType, string fileName)
+        {
+            if (_inlineBytes is not null)
+            {
+                return _inlineBytes.TryGetValue(contentHash, out var b)
+                    ? $"data:{b.MimeType};base64,{Convert.ToBase64String(b.Bytes)}"
+                    : string.Empty;
+            }
+            return $"cid:{AllocCid(contentHash, mimeType, fileName)}";
+        }
 
         /// Returns a stable cid for a content hash, registering the asset once
         /// so the same image reused across blocks attaches a single time.
@@ -357,10 +385,21 @@ public sealed record RenderedSignature(string Html, IReadOnlyList<SignatureCidAs
 
 public sealed record SignatureCidAsset(string Cid, string ContentHash, string MimeType, string FileName);
 
+/// Raw image bytes for the data-URI (compose preview) render path, keyed in the
+/// caller's dictionary by content hash.
+public sealed record InlineImageBytes(string MimeType, byte[] Bytes);
+
 public interface ISignatureRenderer
 {
+    /// <param name="inlineImageBytes">
+    /// When supplied, images render as self-contained <c>data:</c> URIs from
+    /// these bytes (keyed by content hash) instead of <c>cid:</c> parts — used
+    /// for the in-app compose preview. When null, the authoritative send-time
+    /// render with <c>cid:</c> inline parts is produced.
+    /// </param>
     RenderedSignature Render(
         SignatureDesign design,
         SignatureVariables vars,
-        IReadOnlyList<SignatureAsset> assets);
+        IReadOnlyList<SignatureAsset> assets,
+        IReadOnlyDictionary<string, InlineImageBytes>? inlineImageBytes = null);
 }

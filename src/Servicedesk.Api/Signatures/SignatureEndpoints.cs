@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
 using Servicedesk.Domain.Signatures;
@@ -136,9 +137,172 @@ public static class SignatureEndpoints
             return Results.NoContent();
         }).WithName("DeleteSignature").WithOpenApi();
 
+        MapPortabilityEndpoints(group);
         MapAssetEndpoints(group);
         return app;
     }
+
+    // ---- export / import (v0.0.61) ---------------------------------------
+    // A signature is portable as a single self-contained JSON bundle: the
+    // block-tree design plus its STATIC image assets (logo, social/contact
+    // icons) inlined as base64, so it can be re-created on a fresh install
+    // where those images don't exist yet. Per-sender variable images (the
+    // {{agent.photo}} block) are NOT assets, so they're never embedded — the
+    // imported signature keeps the photo placeholder, resolved per agent on the
+    // target install. Mailbox bindings and the system flag are install-specific
+    // and deliberately left out.
+    private static void MapPortabilityEndpoints(RouteGroupBuilder group)
+    {
+        group.MapGet("/{id:guid}/export", async (
+            Guid id, HttpContext http, ISignatureRepository repo, IBlobStore blobs,
+            IAuditLogger audit, CancellationToken ct) =>
+        {
+            var sig = await repo.GetAsync(id, ct);
+            if (sig is null) return Results.NotFound();
+
+            var assets = await repo.ListAssetsAsync(id, ct);
+            var bundleAssets = new List<SignatureBundleAsset>(assets.Count);
+            foreach (var a in assets)
+            {
+                await using var blob = await blobs.OpenReadAsync(a.ContentHash, ct);
+                if (blob is null) continue; // bytes gone — skip; design ref collapses on import
+                using var ms = new MemoryStream();
+                await blob.CopyToAsync(ms, ct);
+                bundleAssets.Add(new SignatureBundleAsset(
+                    a.Id.ToString(), a.MimeType, a.OriginalFilename, Convert.ToBase64String(ms.ToArray())));
+            }
+
+            await Audit(audit, http, "signature.export", id, new { assetCount = bundleAssets.Count });
+
+            var bundle = new SignatureBundle(
+                SignatureBundle.KindValue, SignatureBundle.CurrentVersion, sig.Name, sig.Design, bundleAssets);
+            return Results.Json(bundle);
+        }).WithName("ExportSignature").WithOpenApi();
+
+        group.MapPost("/import", async (
+            HttpContext http, ISignatureRepository repo, ISignatureHtmlSanitizer sanitizer,
+            IBlobStore blobs, ISettingsService settings, IAuditLogger audit, CancellationToken ct) =>
+        {
+            // We read the body manually so we can raise the request-size cap
+            // (base64 imagery is bulky) before binding — [FromBody] would bind
+            // under the default Kestrel limit first.
+            var sizeFeature = http.Features.Get<IHttpMaxRequestBodySizeFeature>();
+            if (sizeFeature is not null && !sizeFeature.IsReadOnly)
+                sizeFeature.MaxRequestBodySize = MaxImportBodyBytes;
+
+            SignatureBundle? bundle;
+            try
+            {
+                bundle = await http.Request.ReadFromJsonAsync<SignatureBundle>(ct);
+            }
+            catch
+            {
+                return Results.BadRequest(new { error = "Body is not a valid signature bundle." });
+            }
+
+            var err = ValidateBundle(bundle);
+            if (err is not null) return Results.BadRequest(new { error = err });
+            bundle = bundle!;
+
+            var maxBytes = await settings.GetAsync<long>(SettingKeys.Storage.InlineImageMaxBytes, ct);
+            if (maxBytes <= 0) maxBytes = 2_097_152;
+
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var name = bundle.Name!.Trim();
+
+            // Create the row first (disabled, non-system) so AddAssetAsync has a
+            // parent; then write each asset to learn its new id, remap the design
+            // references, sanitize, and store. Roll back the row on any failure.
+            var newId = await repo.CreateAsync(name, new SignatureDesign(), isSystem: false, enabled: false, 0, userId, ct);
+            try
+            {
+                var idMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var a in bundle.Assets)
+                {
+                    byte[] bytes;
+                    try { bytes = Convert.FromBase64String(a.DataBase64 ?? string.Empty); }
+                    catch { return await FailImport(repo, newId, ct, "An embedded image is not valid base64."); }
+
+                    if (bytes.Length == 0)
+                        return await FailImport(repo, newId, ct, "An embedded image is empty.");
+                    if (bytes.Length > maxBytes)
+                        return await FailImport(repo, newId, ct,
+                            $"An embedded image exceeds the {Math.Max(1, maxBytes / 1_048_576)} MB limit.");
+
+                    var sniffed = MimeSniffer.Sniff(
+                        bytes.AsSpan(0, Math.Min(bytes.Length, MimeSniffer.SniffWindowBytes)), a.MimeType, a.Filename);
+                    if (!sniffed.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                        return await FailImport(repo, newId, ct, "Only image assets are allowed in a signature bundle.");
+
+                    BlobWriteResult written;
+                    await using (var bs = new MemoryStream(bytes, writable: false))
+                    {
+                        written = await blobs.WriteAsync(bs, ct);
+                    }
+                    var filename = SanitizeFilename(a.Filename ?? "image");
+                    var newAssetId = await repo.AddAssetAsync(newId, written.ContentHash, sniffed, filename, written.SizeBytes, ct);
+                    if (!string.IsNullOrWhiteSpace(a.Id)) idMap[a.Id!] = newAssetId.ToString();
+                }
+
+                var remapped = SignatureAssetRemap.Remap(bundle.Design ?? new SignatureDesign(), idMap);
+                var design = SignatureDesignSanitizer.Sanitize(remapped, sanitizer);
+                if (SignatureJson.Serialize(design).Length > MaxDesignBytes)
+                    return await FailImport(repo, newId, ct, $"Imported design exceeds the {MaxDesignBytes / 1000} KB limit.");
+
+                await repo.UpdateAsync(newId, name, design, isSystem: false, enabled: false, 0, ct);
+            }
+            catch
+            {
+                await repo.DeleteAsync(newId, ct);
+                throw;
+            }
+
+            await Audit(audit, http, "signature.import", newId, new { assetCount = bundle.Assets.Count });
+
+            var created = await repo.GetAsync(newId, ct);
+            var createdAssets = await repo.ListAssetsAsync(newId, ct);
+            return Results.Created($"/api/settings/signatures/{newId}", MapDetail(created!, createdAssets, Array.Empty<Guid>()));
+        }).WithName("ImportSignature").WithOpenApi().DisableRequestTimeout();
+    }
+
+    private static async Task<IResult> FailImport(ISignatureRepository repo, Guid id, CancellationToken ct, string message)
+    {
+        await repo.DeleteAsync(id, ct);
+        return Results.BadRequest(new { error = message });
+    }
+
+    private static string? ValidateBundle(SignatureBundle? bundle)
+    {
+        if (bundle is null) return "Body is required.";
+        if (!string.Equals(bundle.Kind, SignatureBundle.KindValue, StringComparison.OrdinalIgnoreCase))
+            return "This file is not a signature bundle.";
+        if (bundle.Version > SignatureBundle.CurrentVersion)
+            return "This bundle was exported by a newer version and can't be imported here.";
+        if (string.IsNullOrWhiteSpace(bundle.Name) || bundle.Name.Trim().Length > MaxNameLength)
+            return $"Name is required and must be ≤{MaxNameLength} characters.";
+        if (bundle.Assets is null) return "Bundle assets are missing.";
+        if (bundle.Assets.Count > MaxAssetsPerSignature)
+            return $"A signature may hold at most {MaxAssetsPerSignature} images.";
+        return null;
+    }
+
+    private const int MaxImportBodyBytes = 64 * 1024 * 1024;
+
+    /// Portable signature bundle: design + STATIC image assets (base64). Shared
+    /// shape between export and import.
+    public sealed record SignatureBundle(
+        string Kind,
+        int Version,
+        string Name,
+        SignatureDesign Design,
+        IReadOnlyList<SignatureBundleAsset> Assets)
+    {
+        public const string KindValue = "servicedesk.signature";
+        public const int CurrentVersion = 1;
+    }
+
+    public sealed record SignatureBundleAsset(
+        string Id, string MimeType, string Filename, string DataBase64);
 
     private static void MapAssetEndpoints(RouteGroupBuilder group)
     {

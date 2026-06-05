@@ -21,6 +21,7 @@ using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Signatures;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Surveys;
 using Servicedesk.Infrastructure.TaggingMailboxes;
@@ -955,7 +956,8 @@ public static class TicketEndpoints
                 AttachmentIds: req.AttachmentIds,
                 MentionedUserIds: req.MentionedUserIds,
                 LinkedFormIds: req.LinkedFormIds,
-                MentionedMailboxIds: req.MentionedMailboxIds);
+                MentionedMailboxIds: req.MentionedMailboxIds,
+                SignaturePreloaded: req.SignaturePreloaded);
 
             var result = await outbound.SendAsync(request, ct);
             switch (result.Status)
@@ -1005,6 +1007,32 @@ public static class TicketEndpoints
 
             return Results.Created($"/api/tickets/{id}/events/{evt.Id}", evt);
         }).WithName("SendTicketMail").WithOpenApi();
+
+        // v0.0.61 — resolved signature preview for the compose window. Returns a
+        // self-contained (data-URI) HTML block to pre-load directly under the
+        // agent's message, or { html: null } when nothing should be pre-loaded
+        // (feature off, preload off, reply suppressed, or no signature bound to
+        // the queue). The send path renders the authoritative cid version.
+        group.MapGet("/{id:guid}/compose-signature", async (
+            Guid id, bool? reply, HttpContext http,
+            ITicketRepository tickets, IQueueAccessService queueAccess,
+            ISettingsService settings, ISignatureComposer signatures, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            var ticket = await tickets.GetByIdAsync(id, ct);
+            if (ticket is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.Ticket.QueueId, ct))
+                return Results.NotFound();
+
+            if (!await settings.GetAsync<bool>(SettingKeys.Signatures.ComposerPreload, ct))
+                return Results.Ok(new { html = (string?)null });
+
+            var html = await signatures.ComposePreviewForQueueAsync(
+                ticket.Ticket.QueueId, userId, isReply: reply ?? false, ct);
+            return Results.Ok(new { html });
+        }).WithName("GetComposeSignature").WithOpenApi();
 
         group.MapPut("/{id:guid}/events/{eventId:long}", async (
             Guid id, long eventId, [FromBody] UpdateEventRequest req, HttpContext http,
@@ -1933,7 +1961,11 @@ public static class TicketEndpoints
         // linked survey dispatch after a successful send.
         IReadOnlyList<Guid>? ComposeTemplateIds = null,
         // v0.0.60 — tagging-only mailbox ids tagged via @@-mention.
-        IReadOnlyList<Guid>? MentionedMailboxIds = null);
+        IReadOnlyList<Guid>? MentionedMailboxIds = null,
+        // v0.0.61 — the compose window pre-loaded the signature as a fixed
+        // block, so the body carries a data-sd-signature marker the send path
+        // swaps for the real signature (above the quoted history).
+        bool SignaturePreloaded = false);
 
     public sealed record MailRecipientInput(string Address, string? Name);
 
