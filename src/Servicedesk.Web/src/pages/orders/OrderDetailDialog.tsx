@@ -35,7 +35,10 @@ export function OrderDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl">
+      {/* Responsive: scale to the viewport (95vw) up to a comfortable cap, and
+          cap height at 90vh so the body scrolls inside instead of the dialog
+          overflowing the screen. */}
+      <DialogContent className="flex max-h-[90vh] w-[95vw] max-w-6xl flex-col">
         <DialogHeader>
           <DialogTitle className="truncate">{title}</DialogTitle>
           <DialogDescription>Adsolut order detail with its lines.</DialogDescription>
@@ -45,7 +48,7 @@ export function OrderDetailDialog({
         ) : detail.isError || !detail.data ? (
           <p className="py-6 text-sm text-rose-300">Could not load this order.</p>
         ) : (
-          <div className="max-h-[70vh] overflow-y-auto pr-1">
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
             <OrderDetail data={detail.data} dense />
           </div>
         )}
