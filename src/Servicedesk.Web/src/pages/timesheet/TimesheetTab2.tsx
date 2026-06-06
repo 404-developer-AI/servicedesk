@@ -1,6 +1,6 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   CalendarRange,
@@ -119,6 +119,11 @@ export function TimesheetTab2() {
   const entriesQuery = useQuery({
     queryKey: ["timesheet", "manager", "entries", filter, page, pageSize],
     queryFn: () => timesheetManagerApi.listEntries({ ...filter, page, pageSize }),
+    // Keep the previous page's data (and its `total`) visible while the next
+    // page loads. Without this, `data` is briefly undefined on every page
+    // change → `total` falls back to 0 → `totalPages` collapses to 1 → the
+    // clamp effect below snaps the page back to 1.
+    placeholderData: keepPreviousData,
   });
   const entries = entriesQuery.data?.items ?? [];
   const total = entriesQuery.data?.total ?? 0;
