@@ -2609,44 +2609,6 @@ public sealed class DatabaseBootstrapper : IHostedService
             ON compose_templates USING GIN (queue_ids);
 
         -- ===================================================================
-        -- Ticket templates — a pre-canned set of ticket field values an agent
-        -- picks while creating a ticket so subject / body / queue / priority /
-        -- type / category / status / assignee / initial-note are filled in one
-        -- click. Distinct from compose_templates (which only carry a reply
-        -- body for the :: picker). Every field is optional: a template that
-        -- only sets queue + priority leaves the rest untouched on apply.
-        -- subject / body_html / initial_note_html may contain {{tokens}} that
-        -- resolve against the chosen requester + company at apply time (same
-        -- ComposeTokens engine as compose_templates). All reference fields use
-        -- ON DELETE SET NULL so deleting a queue/priority/etc. just clears the
-        -- template's pre-fill rather than breaking the row. body_html and
-        -- initial_note_html are sanitised on write.
-        -- ===================================================================
-        CREATE TABLE IF NOT EXISTS ticket_templates (
-            id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-            name                  TEXT        NOT NULL,
-            description           TEXT        NULL,
-            is_active             BOOLEAN     NOT NULL DEFAULT TRUE,
-            subject               TEXT        NOT NULL DEFAULT '',
-            body_html             TEXT        NOT NULL DEFAULT '',
-            initial_note_html     TEXT        NOT NULL DEFAULT '',
-            initial_note_internal BOOLEAN     NOT NULL DEFAULT TRUE,
-            queue_id              UUID        NULL REFERENCES queues(id)       ON DELETE SET NULL,
-            priority_id           UUID        NULL REFERENCES priorities(id)   ON DELETE SET NULL,
-            status_id             UUID        NULL REFERENCES statuses(id)     ON DELETE SET NULL,
-            category_id           UUID        NULL REFERENCES categories(id)   ON DELETE SET NULL,
-            ticket_type_id        UUID        NULL REFERENCES ticket_types(id) ON DELETE SET NULL,
-            assignee_user_id      UUID        NULL REFERENCES users(id)        ON DELETE SET NULL,
-            created_utc           TIMESTAMPTZ NOT NULL DEFAULT now(),
-            updated_utc           TIMESTAMPTZ NOT NULL DEFAULT now(),
-            created_by            UUID        NULL REFERENCES users(id)        ON DELETE SET NULL
-        );
-
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_ticket_templates_active_name
-            ON ticket_templates (lower(name))
-            WHERE is_active;
-
-        -- ===================================================================
         -- Tagging-only mailboxes — login-less @@-mention targets. Mentioning
         -- one in a note / reply / outbound mail sends a notification e-mail to
         -- its address; it has no user row, no role, no tickets and never signs
@@ -2897,6 +2859,47 @@ public sealed class DatabaseBootstrapper : IHostedService
 
         CREATE INDEX IF NOT EXISTS ix_ticket_types_active_sort
             ON ticket_types (is_active, sort_order, lower(label));
+
+        -- ===================================================================
+        -- Ticket templates — a pre-canned set of ticket field values an agent
+        -- picks while creating a ticket so subject / body / queue / priority /
+        -- type / category / status / assignee / initial-note are filled in one
+        -- click. Distinct from compose_templates (which only carry a reply
+        -- body for the :: picker). Every field is optional: a template that
+        -- only sets queue + priority leaves the rest untouched on apply.
+        -- subject / body_html / initial_note_html may contain {{tokens}} that
+        -- resolve against the chosen requester + company at apply time (same
+        -- ComposeTokens engine as compose_templates). All reference fields use
+        -- ON DELETE SET NULL so deleting a queue/priority/etc. just clears the
+        -- template's pre-fill rather than breaking the row. body_html and
+        -- initial_note_html are sanitised on write. Defined here (not next to
+        -- compose_templates) because it FKs ticket_types, which is created in
+        -- this v0.0.39 block — a single bootstrap batch runs top-to-bottom, so
+        -- the referenced table must already exist.
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS ticket_templates (
+            id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            name                  TEXT        NOT NULL,
+            description           TEXT        NULL,
+            is_active             BOOLEAN     NOT NULL DEFAULT TRUE,
+            subject               TEXT        NOT NULL DEFAULT '',
+            body_html             TEXT        NOT NULL DEFAULT '',
+            initial_note_html     TEXT        NOT NULL DEFAULT '',
+            initial_note_internal BOOLEAN     NOT NULL DEFAULT TRUE,
+            queue_id              UUID        NULL REFERENCES queues(id)       ON DELETE SET NULL,
+            priority_id           UUID        NULL REFERENCES priorities(id)   ON DELETE SET NULL,
+            status_id             UUID        NULL REFERENCES statuses(id)     ON DELETE SET NULL,
+            category_id           UUID        NULL REFERENCES categories(id)   ON DELETE SET NULL,
+            ticket_type_id        UUID        NULL REFERENCES ticket_types(id) ON DELETE SET NULL,
+            assignee_user_id      UUID        NULL REFERENCES users(id)        ON DELETE SET NULL,
+            created_utc           TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc           TIMESTAMPTZ NOT NULL DEFAULT now(),
+            created_by            UUID        NULL REFERENCES users(id)        ON DELETE SET NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_ticket_templates_active_name
+            ON ticket_templates (lower(name))
+            WHERE is_active;
 
         -- Seed the three types referenced by the LinkedTicketTypeDialog.
         -- 'support' is is_system so it always resolves as the historical
