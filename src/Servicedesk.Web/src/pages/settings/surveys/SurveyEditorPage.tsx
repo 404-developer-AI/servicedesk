@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -6,14 +6,31 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  ChevronDown,
+  Link as LinkIcon,
   Loader2,
   Plus,
   Save,
+  Tag,
   Trash2,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { RichTextEditor } from "@/components/RichTextEditor";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  composeTemplatesApi,
+  type ComposeTokenInfo,
+} from "@/lib/composeTemplates-api";
 import {
   Select,
   SelectContent,
@@ -109,6 +126,78 @@ function toApiQuestion(
   };
 }
 
+// Survey-specific placeholders resolved at dispatch time on top of the
+// standard compose tokens. Mirrors SurveyTokens on the backend.
+const SURVEY_INVITE_TOKENS: ComposeTokenInfo[] = [
+  { token: "{{survey.link}}", label: "Survey · Link" },
+  { token: "{{ticket.agentNames}}", label: "Ticket · Agent names" },
+];
+
+// Minimal structural type for the Tiptap editor handle we need from
+// RichTextEditor — just enough to drop a placeholder / link at the caret.
+type EditorHandle = {
+  chain: () => {
+    focus: () => {
+      insertContent: (content: string) => { run: () => void };
+    };
+  };
+};
+
+/// Dropdown that lists the available `{{token}}` placeholders. Mirrors the
+/// compose-template editor's "Insert variable" picker so the two surfaces
+/// feel identical. `onPick` receives the literal token string.
+function VariableMenu({
+  tokens,
+  onPick,
+}: {
+  tokens: ComposeTokenInfo[];
+  onPick: (token: string) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+            "border-violet-400/30 bg-violet-400/10 text-violet-200 hover:bg-violet-400/15",
+          )}
+          title="Insert a placeholder that resolves to the recipient's ticket data at send time"
+        >
+          <Tag className="h-3.5 w-3.5" />
+          Insert variable
+          <ChevronDown className="h-3.5 w-3.5" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="max-h-80 w-72 overflow-auto">
+        <DropdownMenuLabel className="text-[11px] uppercase tracking-wider text-muted-foreground/70">
+          Available variables
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {tokens.length === 0 ? (
+          <div className="px-2 py-2 text-xs text-muted-foreground">Loading…</div>
+        ) : (
+          tokens.map((t) => (
+            <DropdownMenuItem
+              key={t.token}
+              onSelect={(e) => {
+                e.preventDefault();
+                onPick(t.token);
+              }}
+              className="flex items-center justify-between gap-3"
+            >
+              <span className="truncate text-sm">{t.label}</span>
+              <code className="shrink-0 rounded bg-glass-strong px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                {t.token}
+              </code>
+            </DropdownMenuItem>
+          ))
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -141,6 +230,26 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
   // (rendered once per attributed agent at submit time).
   const [surveyQuestions, setSurveyQuestions] = useState<DraftQuestion[]>([]);
   const [agentQuestions, setAgentQuestions] = useState<DraftQuestion[]>([]);
+
+  // Token picker metadata — the standard compose tokens plus the two
+  // survey-specific placeholders. Shared admin-only endpoint, cached hard.
+  const tokensQ = useQuery({
+    queryKey: ["compose-templates", "tokens"],
+    queryFn: () => composeTemplatesApi.listTokens(),
+    staleTime: Infinity,
+  });
+  const inviteTokens = useMemo(
+    () => [...(tokensQ.data?.tokens ?? []), ...SURVEY_INVITE_TOKENS],
+    [tokensQ.data],
+  );
+
+  // Live editor handle so the variable-picker can drop a placeholder (or a
+  // ready-made survey link) at the current caret position.
+  const bodyEditorRef = useRef<EditorHandle | null>(null);
+
+  const insertIntoBody = (content: string) => {
+    bodyEditorRef.current?.chain().focus().insertContent(content).run();
+  };
 
   useEffect(() => {
     if (!existingQ.data) return;
@@ -320,13 +429,25 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
             Invitation email
           </h2>
           <p className="text-xs text-muted-foreground">
-            Sent when the survey fires. Supports the standard compose tokens
-            plus <code>{"{{survey.link}}"}</code> and{" "}
-            <code>{"{{ticket.agentNames}}"}</code>.
+            Sent when the survey fires. Use{" "}
+            <span className="font-medium text-foreground/80">
+              Insert variable
+            </span>{" "}
+            to drop a placeholder like{" "}
+            <code className="font-mono">{"{{contact.firstName}}"}</code> — it is
+            filled in for each recipient at send time.
           </p>
         </header>
         <div>
-          <Label>Subject</Label>
+          <div className="flex items-center justify-between">
+            <Label>Subject</Label>
+            <VariableMenu
+              tokens={inviteTokens}
+              onPick={(token) =>
+                setInviteSubject((s) => (s ? `${s} ${token}` : token))
+              }
+            />
+          </div>
           <Input
             value={inviteSubject}
             onChange={(e) => setInviteSubject(e.target.value)}
@@ -335,16 +456,45 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
           />
         </div>
         <div>
-          <Label>Body (HTML)</Label>
-          <textarea
-            value={inviteBodyHtml}
-            onChange={(e) => setInviteBodyHtml(e.target.value)}
-            rows={6}
-            className="w-full resize-y rounded-md border border-glass-strong bg-glass px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40"
-            placeholder={
-              '<p>Hi {{contact.firstName}},</p><p>...</p><p><a href="{{survey.link}}">Open the survey</a></p>'
-            }
+          <div className="flex items-center justify-between">
+            <Label>Body</Label>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() =>
+                  insertIntoBody(
+                    '<a href="{{survey.link}}">Open the survey</a>',
+                  )
+                }
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                  "border-glass-strong bg-glass text-muted-foreground hover:bg-glass-hover hover:text-foreground",
+                )}
+                title="Insert a ready-made link to the survey at the cursor"
+              >
+                <LinkIcon className="h-3.5 w-3.5" />
+                Insert survey link
+              </button>
+              <VariableMenu
+                tokens={inviteTokens}
+                onPick={(token) => insertIntoBody(token)}
+              />
+            </div>
+          </div>
+          <RichTextEditor
+            content={inviteBodyHtml}
+            onChange={setInviteBodyHtml}
+            placeholder="Write the invitation. Use 'Insert survey link' to add the clickable link customers click to open the survey…"
+            minHeight="160px"
+            maxHeight="420px"
+            onEditorReady={(editor) => {
+              bodyEditorRef.current = editor as unknown as EditorHandle | null;
+            }}
           />
+          <p className="mt-1 text-[11px] text-muted-foreground/70">
+            Empty placeholders stay as the raw <code className="font-mono">{"{{...}}"}</code>{" "}
+            text, so double-check the recipient's data is filled in.
+          </p>
         </div>
         <div>
           <Label>Intro paragraph on the survey page (HTML)</Label>

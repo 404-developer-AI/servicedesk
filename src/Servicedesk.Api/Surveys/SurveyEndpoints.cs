@@ -77,14 +77,15 @@ public static class SurveyEndpoints
 
         group.MapPost("/", async (
             [FromBody] SurveyUpsertRequest req, HttpContext http,
-            ISurveyRepository repo, IKbHtmlSanitizer sanitizer, ISettingsService settings,
+            ISurveyRepository repo, IKbHtmlSanitizer sanitizer,
+            ISurveyInviteHtmlSanitizer inviteSanitizer, ISettingsService settings,
             IAuditLogger audit, CancellationToken ct) =>
         {
             var err = await ValidateAsync(req, settings, ct);
             if (err is not null) return Results.BadRequest(new { error = err });
 
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-            var metadata = BuildMetadataInput(req, sanitizer);
+            var metadata = BuildMetadataInput(req, sanitizer, inviteSanitizer);
 
             Guid id;
             try
@@ -118,7 +119,8 @@ public static class SurveyEndpoints
 
         group.MapPut("/{id:guid}", async (
             Guid id, [FromBody] SurveyUpsertRequest req, HttpContext http,
-            ISurveyRepository repo, IKbHtmlSanitizer sanitizer, ISettingsService settings,
+            ISurveyRepository repo, IKbHtmlSanitizer sanitizer,
+            ISurveyInviteHtmlSanitizer inviteSanitizer, ISettingsService settings,
             IAuditLogger audit, CancellationToken ct) =>
         {
             var err = await ValidateAsync(req, settings, ct);
@@ -127,7 +129,7 @@ public static class SurveyEndpoints
             var existing = await repo.GetAsync(id, ct);
             if (existing is null) return Results.NotFound();
 
-            var metadata = BuildMetadataInput(req, sanitizer);
+            var metadata = BuildMetadataInput(req, sanitizer, inviteSanitizer);
 
             try
             {
@@ -645,14 +647,17 @@ public static class SurveyEndpoints
     // ============================================================
     // Mapping helpers
     // ============================================================
-    private static SurveyMetadataInput BuildMetadataInput(SurveyUpsertRequest req, IKbHtmlSanitizer sanitizer)
+    private static SurveyMetadataInput BuildMetadataInput(
+        SurveyUpsertRequest req, IKbHtmlSanitizer sanitizer, ISurveyInviteHtmlSanitizer inviteSanitizer)
     {
         return new SurveyMetadataInput(
             Name: req.Name!.Trim(),
             Description: string.IsNullOrWhiteSpace(req.Description) ? null : req.Description.Trim(),
             IntroHtml: sanitizer.Sanitize(req.IntroHtml ?? string.Empty),
             InviteSubject: (req.InviteSubject ?? string.Empty).Trim(),
-            InviteBodyHtml: sanitizer.Sanitize(req.InviteBodyHtml ?? string.Empty),
+            // Invite body uses the token-aware sanitizer so `href="{{survey.link}}"`
+            // survives the save and is substituted at dispatch time.
+            InviteBodyHtml: inviteSanitizer.Sanitize(req.InviteBodyHtml ?? string.Empty),
             TtlDays: req.TtlDays,
             AgentBlockHeading: string.IsNullOrWhiteSpace(req.AgentBlockHeading) ? null : req.AgentBlockHeading.Trim(),
             SubmitButtonLabel: req.SubmitButtonLabel!.Trim(),
