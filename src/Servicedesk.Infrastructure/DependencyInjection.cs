@@ -420,6 +420,11 @@ public static class DependencyInjection
         services.AddSingleton<IComposeTemplateRepository, ComposeTemplateRepository>();
         services.AddSingleton<IComposeTokenResolver, ComposeTokenResolver>();
 
+        // Ticket templates — pre-canned ticket field sets the New-Ticket drawer
+        // applies in one click. Reuses the ComposeToken engine for {{tokens}}
+        // in subject/body/initial-note and KbHtmlSanitizer for body cleaning.
+        services.AddSingleton<TicketTemplates.ITicketTemplateRepository, TicketTemplates.TicketTemplateRepository>();
+
         // Tagging-only mailboxes — login-less @@-mention targets that receive
         // a notification mail when tagged. Managed admin-only under Users.
         services.AddSingleton<TaggingMailboxes.ITaggingMailboxRepository, TaggingMailboxes.TaggingMailboxRepository>();

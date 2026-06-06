@@ -40,6 +40,22 @@ export function substituteComposeTokens(
   return out;
 }
 
+/// Plain-text variant of {@link substituteComposeTokens} for fields that are
+/// NOT HTML — e.g. a ticket subject rendered into an `<input value>`. Values
+/// are inserted raw (no HTML-escaping) because the consumer renders them as
+/// text, not markup. Empty / missing values leave the raw `{{...}}` visible so
+/// the agent notices the gap, same as the HTML variant.
+export function substituteComposeTokensPlain(
+  text: string,
+  tokens: Record<string, string> | undefined,
+): string {
+  if (!text) return text;
+  return text.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (match, name: string) => {
+    const value = tokens?.[`{{${name}}}`];
+    return value ? value : match;
+  });
+}
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")

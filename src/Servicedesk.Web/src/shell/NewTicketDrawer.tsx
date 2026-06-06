@@ -17,9 +17,21 @@ import { CompanyAlertDialog } from "@/components/CompanyAlertDialog";
 import { TaxonomySelect } from "@/components/TaxonomySelect";
 import { PendingTillField } from "@/components/PendingTillField";
 import { TicketCompanyAssignmentDialog } from "@/components/TicketCompanyAssignmentDialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { agentQueueApi, taxonomyApi } from "@/lib/api";
 import { ticketApi, type CompanyAlert, type ContactCompanyRole } from "@/lib/ticket-api";
 import { composeTemplatesApi } from "@/lib/composeTemplates-api";
+import { ticketTemplatesApi, type TicketTemplate } from "@/lib/ticketTemplates-api";
+import {
+  substituteComposeTokens,
+  substituteComposeTokensPlain,
+} from "@/lib/composeTokens";
 import { cn } from "@/lib/utils";
 
 const createTicketSchema = z.object({
@@ -232,6 +244,21 @@ export function NewTicketDrawer({
   });
   const composeTokens = tokensQ.data?.tokens;
 
+  // Ticket templates the agent can apply to pre-fill this form. Fetched
+  // once the drawer is open; admin-managed, available to every agent.
+  const { data: ticketTemplates } = useQuery({
+    queryKey: ["ticket-templates", "usable"],
+    queryFn: ticketTemplatesApi.usable,
+    staleTime: 60_000,
+    enabled: open,
+  });
+
+  // Which template the agent applied (for the picker label) and the type it
+  // set. Type has no field in this form, so a template-supplied type rides
+  // in local state and falls back to the `ticketTypeId` prop when unset.
+  const [appliedTemplateId, setAppliedTemplateId] = useState<string>("");
+  const [templateTicketTypeId, setTemplateTicketTypeId] = useState<string | null>(null);
+
   // Track the previous `open` so we can do a single full-reset on the
   // false → true transition. setValue inside a useEffect was unreliable
   // here because Vaul's portal mounts the Controller after the effect
@@ -278,6 +305,9 @@ export function NewTicketDrawer({
         pendingTillUtc: null,
       });
       setNoteState(initialNote ?? null);
+      // Reset the template picker so a re-open starts unselected.
+      setAppliedTemplateId("");
+      setTemplateTicketTypeId(null);
     }
     if (!open && wasOpen) {
       // Drop the note on close so re-opening from a different preset
@@ -378,7 +408,9 @@ export function NewTicketDrawer({
       source: "Web",
       pendingTillUtc,
       parentTicketId,
-      ticketTypeId,
+      // A template-supplied type wins over the prop fallback; both null
+      // lets the backend default to 'support'.
+      ticketTypeId: templateTicketTypeId ?? ticketTypeId,
       // Only send the note when the agent has actually populated it.
       // An empty body or a body that's just an empty <p></p> rendered
       // by the rich-text editor is treated as "no note".
@@ -398,6 +430,35 @@ export function NewTicketDrawer({
   function handleClose() {
     setOpen(false);
     reset();
+  }
+
+  // Apply a ticket template's pre-fills onto the form. Only the fields the
+  // template actually sets are written; everything else keeps the agent's
+  // current choice. Tokens in subject/body/initial-note resolve against the
+  // currently-selected requester + company (empty when none picked yet, so
+  // the raw {{placeholder}} stays visible). Re-applying overwrites prior
+  // template pre-fills, which is the intent of an explicit pick.
+  function applyTemplate(template: TicketTemplate) {
+    setAppliedTemplateId(template.id);
+    if (template.subject) {
+      setValue("subject", substituteComposeTokensPlain(template.subject, composeTokens));
+    }
+    if (template.bodyHtml) {
+      setValue("bodyHtml", substituteComposeTokens(template.bodyHtml, composeTokens));
+    }
+    if (template.queueId) setValue("queueId", template.queueId);
+    if (template.statusId) setValue("statusId", template.statusId);
+    if (template.priorityId) setValue("priorityId", template.priorityId);
+    if (template.categoryId) setValue("categoryId", template.categoryId);
+    if (template.assigneeUserId) setValue("assigneeUserId", template.assigneeUserId);
+    // null clears a previously-applied type so the prop fallback returns.
+    setTemplateTicketTypeId(template.ticketTypeId ?? null);
+    if (stripEmptyHtml(template.initialNoteHtml).length > 0) {
+      setNoteState({
+        bodyHtml: substituteComposeTokens(template.initialNoteHtml, composeTokens),
+        isInternal: template.initialNoteInternal,
+      });
+    }
   }
 
   const activeQueues = (queues ?? []).filter((q) => q.isActive);
@@ -485,6 +546,34 @@ export function NewTicketDrawer({
               <div className="flex flex-1 flex-col gap-0 min-[560px]:flex-row">
                 {/* Left column — Subject + Body */}
                 <div className="flex flex-1 flex-col gap-4 p-6 min-[560px]:border-r min-[560px]:border-glass">
+                  {(ticketTemplates?.length ?? 0) > 0 && (
+                    <div>
+                      <FormLabel>Template</FormLabel>
+                      <Select
+                        value={appliedTemplateId || undefined}
+                        onValueChange={(id) => {
+                          const t = ticketTemplates?.find((x) => x.id === id);
+                          if (t) applyTemplate(t);
+                        }}
+                      >
+                        <SelectTrigger className="border-glass bg-glass focus:border-glass-strong focus:bg-glass-strong">
+                          <SelectValue placeholder="Apply a template…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(ticketTemplates ?? []).map((t) => (
+                            <SelectItem key={t.id} value={t.id}>
+                              {t.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="mt-1 text-[10px] text-muted-foreground/70">
+                        Pick a requester first so variables fill in. Applying a
+                        template overwrites the fields it sets.
+                      </p>
+                    </div>
+                  )}
+
                   <div>
                     <FormLabel>Subject *</FormLabel>
                     <Input
