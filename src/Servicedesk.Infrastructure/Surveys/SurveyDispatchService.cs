@@ -12,6 +12,7 @@ using Servicedesk.Infrastructure.Persistence.Companies;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Signatures;
 
 namespace Servicedesk.Infrastructure.Surveys;
 
@@ -79,6 +80,7 @@ public sealed class SurveyDispatchService : ISurveyDispatchService
     private readonly IComposeTokenResolver _composeTokens;
     private readonly ISettingsService _settings;
     private readonly IGraphMailClient _graph;
+    private readonly ISignatureComposer _signatures;
     private readonly ILogger<SurveyDispatchService> _logger;
 
     public SurveyDispatchService(
@@ -92,6 +94,7 @@ public sealed class SurveyDispatchService : ISurveyDispatchService
         IComposeTokenResolver composeTokens,
         ISettingsService settings,
         IGraphMailClient graph,
+        ISignatureComposer signatures,
         ILogger<SurveyDispatchService> logger)
     {
         _dataSource = dataSource;
@@ -104,6 +107,7 @@ public sealed class SurveyDispatchService : ISurveyDispatchService
         _composeTokens = composeTokens;
         _settings = settings;
         _graph = graph;
+        _signatures = signatures;
         _logger = logger;
     }
 
@@ -244,6 +248,17 @@ public sealed class SurveyDispatchService : ISurveyDispatchService
                 Reason: nameof(DispatchSkipReason.AlreadyActive));
         }
 
+        // System signature (v0.0.67). The survey invitation has no human
+        // sender, so the configured system signature is appended — same path
+        // the send_mail trigger action uses. isReply is always false: an
+        // invitation is a fresh mail, never a reply into an existing thread.
+        // A null result means the feature is off or no system signature is
+        // configured, in which case nothing is appended.
+        var wireBody = bodyHtml;
+        var signature = await _signatures.ComposeSystemAsync(isReply: false, ct);
+        if (signature is not null)
+            wireBody = AppendSignature(bodyHtml, signature.Html);
+
         // Ship the mail OUTSIDE the DB transaction so a Graph hiccup doesn't
         // roll back the invitation row (the link survives and the admin can
         // see + resend it from the agent-side timeline).
@@ -252,12 +267,14 @@ public sealed class SurveyDispatchService : ISurveyDispatchService
             var graphMsg = new GraphOutboundMessage(
                 FromMailbox: fromMailbox!,
                 Subject: subject,
-                BodyHtml: bodyHtml,
+                BodyHtml: wireBody,
                 To: new[] { new GraphRecipient(recipient!, recipient!) },
                 Cc: Array.Empty<GraphRecipient>(),
                 Bcc: Array.Empty<GraphRecipient>(),
                 ReplyTo: new[] { new GraphRecipient(fromMailbox!, fromName!) },
-                Attachments: null,
+                Attachments: signature?.Attachments is { Count: > 0 } sigAttachments
+                    ? sigAttachments
+                    : null,
                 InternetMessageHeaders: new[]
                 {
                     new GraphOutboundHeader("X-Auto-Submitted", "auto-generated"),
@@ -371,6 +388,9 @@ public sealed class SurveyDispatchService : ISurveyDispatchService
 
     private static string? FirstNonEmpty(string? a, string? b)
         => !string.IsNullOrWhiteSpace(a) ? a : (!string.IsNullOrWhiteSpace(b) ? b : null);
+
+    private static string AppendSignature(string body, string signatureHtml)
+        => string.IsNullOrWhiteSpace(signatureHtml) ? body : $"{body}<br>{signatureHtml}";
 
     private static bool IsValidEmail(string s)
     {
