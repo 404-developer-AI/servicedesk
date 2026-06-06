@@ -147,7 +147,8 @@ function mergeConfig(raw: string | undefined): ColConfig[] {
 /// month, with ticket number, title, customer, total registered hours (a
 /// clickable pill with a per-task breakdown) and a per-tab "BO checked"
 /// marker. Columns are per-user configurable (visibility + order); rows can
-/// be bulk-(un)checked.
+/// be bulk-(un)checked. Selection supports shift-click on the checkbox to
+/// pick a range (in the shown order), then Mark/Unmark from the bulk bar.
 export function TimesheetTabBackoffice({ context }: { context: BackofficeContext }) {
   const qc = useQueryClient();
   const prefKey = `workspace:backoffice-${context}-columns`;
@@ -158,6 +159,9 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
     return { year: d.getFullYear(), month: d.getMonth() + 1 };
   });
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Anchor row for shift-click range selection (ticket id of the last
+  // plain-clicked checkbox). Null until the first checkbox click.
+  const [anchorId, setAnchorId] = useState<string | null>(null);
   const [boFilter, setBoFilter] = useState<BoFilter>("all");
   // null = server order (entered status, newest first). Clicking a header
   // sorts the already-loaded month client-side; no extra round-trip.
@@ -200,9 +204,11 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
         : backofficeTimesheetApi.listCwi(year, month),
   });
 
-  // Reset the selection whenever the underlying set of rows changes.
+  // Reset the selection (and its anchor) whenever the underlying set of rows
+  // changes.
   useEffect(() => {
     setSelected(new Set());
+    setAnchorId(null);
   }, [year, month, context]);
 
   const setChecks = useMutation({
@@ -280,13 +286,33 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
     setYM({ year: y, month: m });
   };
 
-  const toggleRow = (id: string) => {
+  // Checkbox-driven selection. A plain click toggles the row and sets the
+  // anchor; a shift-click selects the whole range from the anchor to the
+  // clicked row (additive), following the currently-shown row order so it
+  // respects the active sort/filter. `index` is the row's position in
+  // `sortedItems`.
+  const selectRow = (index: number, shift: boolean) => {
+    const id = sortedItems[index]?.ticketId;
+    if (id === undefined) return;
+    if (shift && anchorId !== null) {
+      const anchorIdx = sortedItems.findIndex((r) => r.ticketId === anchorId);
+      if (anchorIdx >= 0) {
+        const [lo, hi] = anchorIdx < index ? [anchorIdx, index] : [index, anchorIdx];
+        setSelected((cur) => {
+          const next = new Set(cur);
+          for (let i = lo; i <= hi; i++) next.add(sortedItems[i].ticketId);
+          return next;
+        });
+        return;
+      }
+    }
     setSelected((cur) => {
       const next = new Set(cur);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+    setAnchorId(id);
   };
 
   const allVisibleSelected = items.length > 0 && items.every((r) => selected.has(r.ticketId));
@@ -477,13 +503,13 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedItems.map((r) => (
+                  {sortedItems.map((r, index) => (
                     <TicketRow
                       key={r.ticketId}
                       row={r}
                       columns={visibleColumns}
                       selected={selected.has(r.ticketId)}
-                      onToggleSelect={() => toggleRow(r.ticketId)}
+                      onSelect={(shift) => selectRow(index, shift)}
                       onSetCheck={(checked) =>
                         setChecks.mutate({ ids: [r.ticketId], checked })
                       }
@@ -513,14 +539,14 @@ function TicketRow({
   row,
   columns,
   selected,
-  onToggleSelect,
+  onSelect,
   onSetCheck,
   busy,
 }: {
   row: BackofficeTicket;
   columns: ColMeta[];
   selected: boolean;
-  onToggleSelect: () => void;
+  onSelect: (shift: boolean) => void;
   onSetCheck: (checked: boolean) => void;
   busy: boolean;
 }) {
@@ -535,7 +561,14 @@ function TicketRow({
         <input
           type="checkbox"
           checked={selected}
-          onChange={onToggleSelect}
+          // Selection logic lives in onClick so we can read shiftKey for range
+          // selection; onChange is a no-op to keep the input controlled.
+          onChange={() => {}}
+          onMouseDown={(e) => {
+            // Stop shift-click from extending a native text selection.
+            if (e.shiftKey) e.preventDefault();
+          }}
+          onClick={(e) => onSelect(e.shiftKey)}
           aria-label={`Select ticket ${row.ticketNumber}`}
           className="h-3.5 w-3.5 rounded border border-glass-strong bg-glass accent-primary"
         />
