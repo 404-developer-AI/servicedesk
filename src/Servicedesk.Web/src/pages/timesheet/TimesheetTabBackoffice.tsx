@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  ArrowDown,
+  ArrowUp,
   CheckCheck,
   ChevronLeft,
   ChevronRight,
@@ -50,6 +52,8 @@ import {
 import { cn } from "@/lib/utils";
 
 type BoFilter = "all" | "checked" | "unchecked";
+type SortDir = "asc" | "desc";
+type SortState = { key: ColId; dir: SortDir };
 
 // ---- formatting helpers ----------------------------------------------
 
@@ -89,14 +93,17 @@ type ColMeta = {
   /// Cell holds an interactive control (pill / checkbox) — clicks inside it
   /// must not bubble to row-level handlers.
   interactive?: boolean;
+  /// Default direction on the first click of this column's header. Numeric
+  /// columns start high→low (desc), text columns A→Z (asc).
+  defaultDir: SortDir;
 };
 
 const ALL_COLUMNS: ColMeta[] = [
-  { id: "number", label: "Ticket", align: "left" },
-  { id: "subject", label: "Title", align: "left" },
-  { id: "customer", label: "Customer", align: "left" },
-  { id: "hours", label: "Hours", align: "right", interactive: true },
-  { id: "bochecked", label: "BO checked", align: "right", interactive: true },
+  { id: "number", label: "Ticket", align: "left", defaultDir: "desc" },
+  { id: "subject", label: "Title", align: "left", defaultDir: "asc" },
+  { id: "customer", label: "Customer", align: "left", defaultDir: "asc" },
+  { id: "hours", label: "Hours", align: "right", interactive: true, defaultDir: "desc" },
+  { id: "bochecked", label: "BO checked", align: "right", interactive: true, defaultDir: "desc" },
 ];
 
 const COL_LABELS: Record<ColId, string> = Object.fromEntries(
@@ -152,6 +159,9 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
   });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [boFilter, setBoFilter] = useState<BoFilter>("all");
+  // null = server order (entered status, newest first). Clicking a header
+  // sorts the already-loaded month client-side; no extra round-trip.
+  const [sort, setSort] = useState<SortState | null>(null);
 
   // Per-agent column config — load once from workspace prefs, own locally.
   const wsQuery = useQuery({
@@ -217,6 +227,45 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
       ),
     [allItems, boFilter],
   );
+
+  const sortedItems = useMemo(() => {
+    if (!sort) return items;
+    const dir = sort.dir === "asc" ? 1 : -1;
+    const arr = [...items];
+    arr.sort((a, b) => {
+      let cmp = 0;
+      switch (sort.key) {
+        case "number":
+          cmp = a.ticketNumber - b.ticketNumber;
+          break;
+        case "subject":
+          cmp = a.subject.localeCompare(b.subject, undefined, { sensitivity: "base" });
+          break;
+        case "customer":
+          cmp = (a.companyName ?? "").localeCompare(b.companyName ?? "", undefined, {
+            sensitivity: "base",
+          });
+          break;
+        case "hours":
+          cmp = a.totalMinutes - b.totalMinutes;
+          break;
+        case "bochecked":
+          cmp = Number(a.boChecked) - Number(b.boChecked);
+          break;
+      }
+      // Stable, deterministic tiebreak: newest ticket number first.
+      return cmp !== 0 ? cmp * dir : b.ticketNumber - a.ticketNumber;
+    });
+    return arr;
+  }, [items, sort]);
+
+  const onSort = (col: ColMeta) => {
+    setSort((cur) =>
+      cur?.key === col.id
+        ? { key: col.id, dir: cur.dir === "asc" ? "desc" : "asc" }
+        : { key: col.id, dir: col.defaultDir },
+    );
+  };
 
   const goMonth = (delta: number) => {
     let y = year;
@@ -392,21 +441,43 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
                         className="h-3.5 w-3.5 rounded border border-glass-strong bg-glass accent-primary"
                       />
                     </th>
-                    {visibleColumns.map((col) => (
-                      <th
-                        key={col.id}
-                        className={cn(
-                          "px-3 py-2.5 font-medium",
-                          col.align === "right" && "text-right",
-                        )}
-                      >
-                        {col.label}
-                      </th>
-                    ))}
+                    {visibleColumns.map((col) => {
+                      const active = sort?.key === col.id;
+                      return (
+                        <th
+                          key={col.id}
+                          aria-sort={
+                            active ? (sort!.dir === "asc" ? "ascending" : "descending") : "none"
+                          }
+                          className={cn(
+                            "px-3 py-2.5 font-medium",
+                            col.align === "right" && "text-right",
+                          )}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => onSort(col)}
+                            className={cn(
+                              "inline-flex items-center gap-1 select-none uppercase tracking-wider transition-colors hover:text-foreground",
+                              col.align === "right" && "flex-row-reverse",
+                              active && "text-foreground",
+                            )}
+                          >
+                            {col.label}
+                            {active &&
+                              (sort!.dir === "asc" ? (
+                                <ArrowUp className="h-3 w-3" />
+                              ) : (
+                                <ArrowDown className="h-3 w-3" />
+                              ))}
+                          </button>
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((r) => (
+                  {sortedItems.map((r) => (
                     <TicketRow
                       key={r.ticketId}
                       row={r}
