@@ -711,7 +711,7 @@ function ManagerEditableRow({
         startMinutes: row.startMinutes!,
         endMinutes: row.endMinutes!,
         taskId: row.taskId,
-        ticketId: requiresTicket ? (row.ticket?.id ?? null) : null,
+        ticketId: row.ticket?.id ?? null,
         description: row.description.trim(),
       });
     },
@@ -801,25 +801,24 @@ function ManagerEditableRow({
       <td className="px-3 py-2 align-top">
         <TicketAutocomplete
           value={row.ticket}
-          disabled={!requiresTicket}
+          disabled={false}
           onChange={(t) => setRow({ ...row, ticket: t })}
           error={errors.ticketId}
         />
       </td>
       <td className="px-3 py-2 align-top text-xs text-muted-foreground">
-        {requiresTicket
-          ? (row.ticket?.companyName ?? "— (no company)")
-          : "— (no company)"}
+        {row.ticket?.companyName ?? "— (no company)"}
       </td>
       <td className="px-3 py-2 align-top">
         <Select
           value={row.taskId || undefined}
           onValueChange={(nextTaskId) => {
-            const nextTask = tasks.find((t) => t.id === nextTaskId);
             setRow({
               ...row,
               taskId: nextTaskId,
-              ticket: nextTask?.requiresTicket ? row.ticket : null,
+              // Keep any ticket the user already picked — it's optional for
+              // tasks that don't require one, not forbidden.
+              ticket: row.ticket,
             });
           }}
         >

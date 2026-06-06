@@ -632,7 +632,7 @@ function EditableRow({
         startMinutes: row.startMinutes!,
         endMinutes: row.endMinutes!,
         taskId: row.taskId,
-        ticketId: requiresTicket ? (row.ticket?.id ?? null) : null,
+        ticketId: row.ticket?.id ?? null,
         description: row.description.trim(),
       };
       if (row.mode === "new") {
@@ -715,7 +715,7 @@ function EditableRow({
       <td className="px-3 py-2 align-top">
         <TicketAutocomplete
           value={row.ticket}
-          disabled={!requiresTicket}
+          disabled={false}
           onChange={(t) => setRow({ ...row, ticket: t })}
           error={errors.ticketId}
         />
@@ -723,23 +723,21 @@ function EditableRow({
       <td className="px-3 py-2 align-top text-xs text-muted-foreground">
         <span
           className="block truncate"
-          title={requiresTicket ? (row.ticket?.companyName ?? "— (no company)") : "— (no company)"}
+          title={row.ticket?.companyName ?? "— (no company)"}
         >
-          {requiresTicket
-            ? (row.ticket?.companyName ?? "— (no company)")
-            : "— (no company)"}
+          {row.ticket?.companyName ?? "— (no company)"}
         </span>
       </td>
       <td className="px-3 py-2 align-top">
         <Select
           value={row.taskId || undefined}
           onValueChange={(nextTaskId) => {
-            const nextTask = tasks.find((t) => t.id === nextTaskId);
             setRow({
               ...row,
               taskId: nextTaskId,
-              // If the new task forbids tickets, drop any existing pick.
-              ticket: nextTask?.requiresTicket ? row.ticket : null,
+              // Keep any ticket the user already picked — it's optional for
+              // tasks that don't require one, not forbidden.
+              ticket: row.ticket,
             });
           }}
         >

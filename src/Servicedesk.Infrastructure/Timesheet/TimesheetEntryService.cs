@@ -183,38 +183,30 @@ public sealed class TimesheetEntryService : ITimesheetEntryService
             return errors;
         }
 
-        if (task.RequiresTicket)
+        // RequiresTicket only controls whether a ticket is *mandatory*.
+        // A ticket is always *allowed* — if the user picks one we validate
+        // it regardless of the flag, so optional links are still checked.
+        var hasTicket = input.TicketId is not null && input.TicketId != Guid.Empty;
+
+        if (task.RequiresTicket && !hasTicket)
         {
-            if (input.TicketId is null || input.TicketId == Guid.Empty)
-            {
-                errors.Add(new TimesheetFieldError("ticketId", $"Ticket is required for task '{task.Name}'."));
-            }
-            else
-            {
-                var check = await CheckTicketAsync(input.TicketId.Value, ct);
-                if (!check.Exists)
-                {
-                    errors.Add(new TimesheetFieldError("ticketId", "Selected ticket does not exist."));
-                }
-                else if (check.IsMerged)
-                {
-                    errors.Add(new TimesheetFieldError(
-                        "ticketId",
-                        check.MergedIntoNumber > 0
-                            ? $"Ticket has been merged into #{check.MergedIntoNumber}. Log time on the surviving ticket instead."
-                            : "Ticket has been merged. Log time on the surviving ticket instead."));
-                }
-            }
+            errors.Add(new TimesheetFieldError("ticketId", $"Ticket is required for task '{task.Name}'."));
         }
-        else if (input.TicketId is not null && input.TicketId != Guid.Empty)
+        else if (hasTicket)
         {
-            // Task doesn't allow tickets — silently clear instead of
-            // rejecting, since the user-facing UI already disables the
-            // ticket field. Belt-and-suspenders against a stale form.
-            // Implemented at the call sites in CreateAsync/UpdateAsync by
-            // passing input as-is; we surface a soft error here to be
-            // defensive.
-            errors.Add(new TimesheetFieldError("ticketId", $"Task '{task.Name}' cannot be linked to a ticket."));
+            var check = await CheckTicketAsync(input.TicketId!.Value, ct);
+            if (!check.Exists)
+            {
+                errors.Add(new TimesheetFieldError("ticketId", "Selected ticket does not exist."));
+            }
+            else if (check.IsMerged)
+            {
+                errors.Add(new TimesheetFieldError(
+                    "ticketId",
+                    check.MergedIntoNumber > 0
+                        ? $"Ticket has been merged into #{check.MergedIntoNumber}. Log time on the surviving ticket instead."
+                        : "Ticket has been merged. Log time on the surviving ticket instead."));
+            }
         }
 
         return errors;
