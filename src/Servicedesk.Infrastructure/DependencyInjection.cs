@@ -463,6 +463,7 @@ public static class DependencyInjection
         // the designer, results aggregation, dispatch service shared by the
         // send_survey trigger action and the compose-template linked-survey
         // hook. Hosted ExpiryWorker runs alongside the intake one.
+        services.AddSingleton<ISurveyInviteHtmlSanitizer, SurveyInviteHtmlSanitizer>();
         services.AddSingleton<ISurveyRepository, SurveyRepository>();
         services.AddSingleton<ISurveyInvitationRepository, SurveyInvitationRepository>();
         services.AddSingleton<ISurveyTokenService, SurveyTokenService>();
