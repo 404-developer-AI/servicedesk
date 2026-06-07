@@ -737,6 +737,16 @@ public static class SettingKeys
         public const string CwiTabStatusIds = "Timesheet.CwiTabStatusIds";
     }
 
+    /// v0.0.69 — Statistics feature. Status-group definitions used by the
+    /// "Hours by status group" metric. Resolved/CWI reuse the back-office
+    /// Timesheet sets above; QFI/WFQ are new, configured on the same
+    /// Settings → Timesheet panel. Stored as a CSV of status ids.
+    public static class Statistics
+    {
+        public const string QfiStatusIds = "Statistics.QfiStatusIds";
+        public const string WfqStatusIds = "Statistics.WfqStatusIds";
+    }
+
     /// v0.0.42 — Agent activity feed. Append-only event stream that
     /// captures every agent / admin action across the app. Visibility is
     /// per-user (users.activity_feed_enabled); retention is global and
@@ -1341,6 +1351,14 @@ public static class SettingDefaults
             "Statuses whose tickets appear on the back-office 'Resolved' tab. A ticket is listed in the month it entered one of these statuses, and only when it has no Adsolut sales receipt yet. Pick one or more statuses by name on the Settings → Timesheet → Back-office tabs panel. Empty = the Resolved tab shows nothing."),
         new SettingDefault(SettingKeys.Timesheet.CwiTabStatusIds, "", "string", "Timesheet",
             "Statuses whose tickets appear on the back-office 'CWI' (Closed Without Invoice) tab. A ticket is listed in the month it entered one of these statuses. Pick one or more statuses by name on the Settings → Timesheet → Back-office tabs panel. Empty = the CWI tab shows nothing."),
+
+        // Statistics — v0.0.69. Status-group definitions for the "Hours by
+        // status group" metric. Resolved/CWI reuse the back-office sets above;
+        // QFI/WFQ are new. CSV of status ids; empty = that group is omitted.
+        new SettingDefault(SettingKeys.Statistics.QfiStatusIds, "", "string", "Timesheet",
+            "Statuses that make up the 'QFI' group in the Statistics 'Hours by status group' metric. Pick statuses by name on the Settings → Timesheet → Statistics status groups panel. Empty = the QFI group is omitted from the chart."),
+        new SettingDefault(SettingKeys.Statistics.WfqStatusIds, "", "string", "Timesheet",
+            "Statuses that make up the 'WFQ' group in the Statistics 'Hours by status group' metric. Pick statuses by name on the Settings → Timesheet → Statistics status groups panel. Empty = the WFQ group is omitted from the chart."),
 
         // Tactical RMM — v0.0.52. Master switch defaults off so a fresh
         // install is silent until the admin opts in. Sync cadence is

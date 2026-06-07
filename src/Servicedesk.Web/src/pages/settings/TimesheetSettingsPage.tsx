@@ -60,6 +60,8 @@ const KEY_OFFICE_END = "Timesheet.DefaultOfficeEndMinutes";
 const KEY_HOURLY_RATE = "Timesheet.HourlyRate";
 const KEY_RESOLVED_STATUSES = "Timesheet.ResolvedTabStatusIds";
 const KEY_CWI_STATUSES = "Timesheet.CwiTabStatusIds";
+const KEY_QFI_STATUSES = "Statistics.QfiStatusIds";
+const KEY_WFQ_STATUSES = "Statistics.WfqStatusIds";
 const KEY_REPLY_HEADER = "Timesheet.ReplyHeaderHtml";
 const KEY_REPLY_ROW = "Timesheet.ReplyRowHtml";
 const KEY_REPLY_FOOTER = "Timesheet.ReplyFooterHtml";
@@ -94,6 +96,8 @@ export function TimesheetSettingsPage() {
   const hourlyRateEntry = findEntry(query.data, KEY_HOURLY_RATE);
   const resolvedStatusesEntry = findEntry(query.data, KEY_RESOLVED_STATUSES);
   const cwiStatusesEntry = findEntry(query.data, KEY_CWI_STATUSES);
+  const qfiStatusesEntry = findEntry(query.data, KEY_QFI_STATUSES);
+  const wfqStatusesEntry = findEntry(query.data, KEY_WFQ_STATUSES);
   const replyHeaderEntry = findEntry(query.data, KEY_REPLY_HEADER);
   const replyRowEntry = findEntry(query.data, KEY_REPLY_ROW);
   const replyFooterEntry = findEntry(query.data, KEY_REPLY_FOOTER);
@@ -248,6 +252,34 @@ export function TimesheetSettingsPage() {
                 />
               ) : (
                 <MissingEntry keyName={KEY_CWI_STATUSES} />
+              )}
+            </div>
+          </section>
+
+          <section className="glass-card p-6">
+            <SectionHeader
+              icon={<ClipboardCheck className="h-5 w-5" />}
+              title="Statistics status groups"
+              description="Extra status groups for the Statistics 'Hours by status group' metric. Resolved and CWI reuse the back-office sets above; QFI and WFQ are defined here. A group with no statuses is left out of the chart."
+            />
+            <div className="space-y-1">
+              {qfiStatusesEntry ? (
+                <StatusSetField
+                  entry={qfiStatusesEntry}
+                  label="QFI statuses"
+                  hint="Statuses that make up the QFI group in the Hours-by-status-group metric."
+                />
+              ) : (
+                <MissingEntry keyName={KEY_QFI_STATUSES} />
+              )}
+              {wfqStatusesEntry ? (
+                <StatusSetField
+                  entry={wfqStatusesEntry}
+                  label="WFQ statuses"
+                  hint="Statuses that make up the WFQ group in the Hours-by-status-group metric."
+                />
+              ) : (
+                <MissingEntry keyName={KEY_WFQ_STATUSES} />
               )}
             </div>
           </section>
