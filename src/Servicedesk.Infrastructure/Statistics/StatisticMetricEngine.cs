@@ -1,22 +1,30 @@
 using System.Globalization;
 using Dapper;
 using Npgsql;
+using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Statistics;
 
 public sealed class StatisticMetricEngine : IStatisticMetricEngine
 {
     private readonly NpgsqlDataSource _dataSource;
+    private readonly ISettingsService _settings;
 
-    public StatisticMetricEngine(NpgsqlDataSource dataSource)
+    public StatisticMetricEngine(NpgsqlDataSource dataSource, ISettingsService settings)
     {
         _dataSource = dataSource;
+        _settings = settings;
     }
 
     public async Task<StatisticTileData> ComputeAsync(
         StatisticTile tile, Guid viewerId, CancellationToken ct = default)
     {
-        var (from, to, periodLabel) = ResolvePeriod(tile.Period);
+        // Period boundaries are resolved in the configured application
+        // timezone (Settings → General → App.TimeZone) so "today" / "this
+        // week" line up with the local working day, not UTC.
+        var tzId = await _settings.GetAsync<string>(SettingKeys.App.TimeZone, ct);
+        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTime.UtcNow, ResolveTimeZone(tzId)));
+        var (from, to, periodLabel) = ResolvePeriod(tile.Period, today);
 
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         var targets = await ResolveTargetsAsync(connection, tile, viewerId, ct);
@@ -32,8 +40,133 @@ public sealed class StatisticMetricEngine : IStatisticMetricEngine
         {
             StatisticMetricKeys.WorkedHours =>
                 await ComputeWorkedHoursAsync(connection, tile, targets, from, to, periodLabel, ct),
+            StatisticMetricKeys.BillableHours =>
+                await ComputeBillableHoursAsync(connection, tile, targets, from, to, periodLabel,
+                    await _settings.GetAsync<decimal>(SettingKeys.Timesheet.HourlyRate, ct), ct),
             _ => Empty(tile, periodLabel),
         };
+    }
+
+    // ---- billable vs non-billable ----------------------------------------
+
+    private static async Task<StatisticTileData> ComputeBillableHoursAsync(
+        NpgsqlConnection connection,
+        StatisticTile tile,
+        Guid[] targets,
+        DateOnly from,
+        DateOnly to,
+        string periodLabel,
+        decimal hourlyRate,
+        CancellationToken ct)
+    {
+        var args = new
+        {
+            ids = targets,
+            from = from.ToDateTime(TimeOnly.MinValue),
+            to = to.ToDateTime(TimeOnly.MinValue),
+            // Adsolut sales receipts in this install carry the invoiced VALUE
+            // (total_excl_vat) but not per-performance invoiced minutes, so we
+            // express "billed" as value ÷ hourly rate — the same basis as the
+            // Adsolut timesheet tab. Rate <= 0 (unset) → nothing billable.
+            rate = hourlyRate > 0 ? (decimal?)hourlyRate : null,
+        };
+
+        // Worked minutes per target in the period.
+        var worked = (await connection.QueryAsync<(Guid UserId, long Minutes)>(new CommandDefinition(
+            """
+            SELECT e.user_id AS UserId, COALESCE(SUM(e.minutes), 0)::bigint AS Minutes
+            FROM timesheet_entries e
+            WHERE e.user_id = ANY(@ids) AND e.entry_date BETWEEN @from AND @to
+            GROUP BY e.user_id
+            """,
+            args, cancellationToken: ct))).ToDictionary(r => r.UserId, r => r.Minutes);
+
+        // Billable minutes per target: the invoiced value on each ticket
+        // (Σ total_excl_vat) converted to minutes via the hourly rate, then
+        // pro-rated by the target's share of the minutes logged on that ticket
+        // (within the period) and capped at what they worked. Worked side is
+        // bounded on entry_date, the invoiced side on sales_receipt_date.
+        var billable = (await connection.QueryAsync<(Guid UserId, double Minutes)>(new CommandDefinition(
+            """
+            WITH tpm AS (
+                SELECT e.ticket_id, e.user_id, SUM(e.minutes)::numeric AS m
+                FROM timesheet_entries e
+                WHERE e.ticket_id IS NOT NULL AND e.entry_date BETWEEN @from AND @to
+                GROUP BY e.ticket_id, e.user_id
+            ),
+            tt AS (
+                SELECT ticket_id, SUM(m) AS total_m FROM tpm GROUP BY ticket_id
+            ),
+            inv AS (
+                SELECT tk.id AS ticket_id,
+                       CASE WHEN @rate IS NOT NULL AND @rate > 0
+                            THEN COALESCE(SUM(r.total_excl_vat), 0) * 60.0 / @rate
+                            ELSE 0 END::numeric AS inv_m
+                FROM tickets tk
+                JOIN adsolut_sales_receipts r ON r.ticket_number = tk.number
+                WHERE r.sales_receipt_date::date BETWEEN @from::date AND @to::date
+                GROUP BY tk.id
+            )
+            SELECT tpm.user_id AS UserId,
+                   SUM(LEAST(
+                       tpm.m,
+                       CASE WHEN tt.total_m > 0
+                            THEN COALESCE(inv.inv_m, 0) * tpm.m / tt.total_m
+                            ELSE 0 END))::double precision AS Minutes
+            FROM tpm
+            JOIN tt ON tt.ticket_id = tpm.ticket_id
+            LEFT JOIN inv ON inv.ticket_id = tpm.ticket_id
+            WHERE tpm.user_id = ANY(@ids)
+            GROUP BY tpm.user_id
+            """,
+            args, cancellationToken: ct))).ToDictionary(r => r.UserId, r => r.Minutes);
+
+        var emails = await LoadEmailsAsync(connection, targets, ct);
+        var single = tile.Scope != StatisticScopes.Team;
+
+        var points = new List<StatisticDataPoint>();
+        double totalBillable = 0;
+        foreach (var uid in targets)
+        {
+            var workedMin = worked.TryGetValue(uid, out var w) ? w : 0;
+            if (workedMin <= 0) continue;
+            var billableMin = billable.TryGetValue(uid, out var b) ? b : 0;
+            if (billableMin < 0) billableMin = 0;
+            var nonBillableMin = Math.Max(workedMin - billableMin, 0);
+            totalBillable += billableMin;
+
+            var label = single
+                ? (tile.Scope == StatisticScopes.ViewerSelf ? "You" : emails.GetValueOrDefault(uid) ?? "Technician")
+                : emails.GetValueOrDefault(uid) ?? "Technician";
+            points.Add(new StatisticDataPoint(
+                label,
+                ToHours((long)Math.Round(billableMin)),
+                ToHours((long)Math.Round(nonBillableMin))));
+        }
+
+        // Team view sorts by billable desc for a leaderboard feel.
+        if (!single) points = points.OrderByDescending(p => p.Value).ToList();
+
+        return new StatisticTileData(
+            TileId: tile.Id,
+            MetricKey: tile.MetricKey,
+            ChartType: tile.ChartType,
+            Unit: "hours",
+            PeriodLabel: periodLabel,
+            Total: ToHours((long)Math.Round(totalBillable)),
+            Points: points,
+            GeneratedUtc: DateTime.UtcNow,
+            SeriesLabels: new[] { "Billable", "Non-billable" });
+    }
+
+    private static async Task<Dictionary<Guid, string>> LoadEmailsAsync(
+        NpgsqlConnection connection, Guid[] ids, CancellationToken ct)
+    {
+        if (ids.Length == 0) return new Dictionary<Guid, string>();
+        var rows = await connection.QueryAsync<(Guid Id, string Email)>(new CommandDefinition(
+            "SELECT id AS Id, email AS Email FROM users WHERE id = ANY(@ids)",
+            new { ids }, cancellationToken: ct));
+        return rows.ToDictionary(r => r.Id, r => r.Email);
     }
 
     // ---- worked hours -----------------------------------------------------
@@ -183,12 +316,10 @@ public sealed class StatisticMetricEngine : IStatisticMetricEngine
     }
 
     /// Resolves a period token into an inclusive [from, to] date range and a
-    /// human label. Uses the server's current UTC date as "today" — timezone
-    /// refinement is a later setting; for whole-period windows it is a wash
-    /// except within an hour of midnight.
-    private static (DateOnly From, DateOnly To, string Label) ResolvePeriod(string period)
+    /// human label, relative to <paramref name="today"/> (already converted to
+    /// the configured application timezone by the caller).
+    private static (DateOnly From, DateOnly To, string Label) ResolvePeriod(string period, DateOnly today)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
         switch (period)
         {
             case StatisticPeriods.Day:
@@ -210,6 +341,19 @@ public sealed class StatisticMetricEngine : IStatisticMetricEngine
                 var last = first.AddMonths(1).AddDays(-1);
                 return (first, last, $"This month — {first:MMM yyyy}");
         }
+    }
+
+    /// Resolves the configured IANA timezone id, falling back to the server's
+    /// local zone when unset/invalid (mirrors the helper used by the SLA +
+    /// integrations code so all surfaces agree on the local day).
+    private static TimeZoneInfo ResolveTimeZone(string id)
+    {
+        if (!string.IsNullOrWhiteSpace(id))
+        {
+            try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
+            catch { /* Invalid IANA id — fall through. */ }
+        }
+        return TimeZoneInfo.Local;
     }
 
     private static double ToHours(long minutes) => Math.Round(minutes / 60.0, 2);

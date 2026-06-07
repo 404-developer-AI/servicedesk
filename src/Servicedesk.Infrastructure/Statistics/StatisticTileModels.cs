@@ -49,10 +49,13 @@ public sealed record StatisticTileInput(
 public sealed record StatisticLayoutEntry(string TileId, string? Size, bool Hidden);
 
 /// A single labelled value in a computed tile (a bar, or a grouped row).
-public sealed record StatisticDataPoint(string Label, double Value);
+/// <paramref name="Value2"/> carries a second stacked series when the metric
+/// is a two-series comparison (e.g. billable vs non-billable); null otherwise.
+public sealed record StatisticDataPoint(string Label, double Value, double? Value2 = null);
 
-/// The computed result of a tile for one viewer. Covers both KPI (Total +
-/// single point) and bar (Points). Values are in the metric's unit (hours).
+/// The computed result of a tile for one viewer. Covers KPI (Total + single
+/// point), single-series bar (Points) and two-series stacked bar (Points with
+/// Value2 + SeriesLabels). Values are in the metric's unit (hours).
 public sealed record StatisticTileData(
     Guid TileId,
     string MetricKey,
@@ -61,7 +64,8 @@ public sealed record StatisticTileData(
     string PeriodLabel,
     double Total,
     IReadOnlyList<StatisticDataPoint> Points,
-    DateTime GeneratedUtc);
+    DateTime GeneratedUtc,
+    IReadOnlyList<string>? SeriesLabels = null);
 
 // ---- result types ------------------------------------------------------
 

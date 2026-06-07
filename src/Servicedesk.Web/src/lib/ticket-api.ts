@@ -1098,7 +1098,7 @@ export type StatisticBareTile = {
   scopeUserId: string | null;
 };
 
-export type StatisticDataPoint = { label: string; value: number };
+export type StatisticDataPoint = { label: string; value: number; value2?: number | null };
 
 export type StatisticTileData = {
   tileId: string;
@@ -1108,6 +1108,7 @@ export type StatisticTileData = {
   periodLabel: string;
   total: number;
   points: StatisticDataPoint[];
+  seriesLabels?: string[] | null;
   generatedUtc: string;
 };
 
