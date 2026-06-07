@@ -4211,6 +4211,41 @@ public sealed class DatabaseBootstrapper : IHostedService
             hidden   BOOLEAN NOT NULL DEFAULT FALSE,
             PRIMARY KEY (user_id, tile_id)
         );
+
+        -- ===================================================================
+        -- Title-review gate — interactive first-open gate.
+        --
+        -- Reuses the v0.0.42 gate machinery (activator_kind='gate') with a
+        -- new mode 'first_open': instead of gating a status change, it gates
+        -- the first time an agent opens a ticket. The agent reviews/edits the
+        -- subject in a blocking dialog before they can work the ticket. The
+        -- single gate action 'title_review' carries the dialog payload; any
+        -- regular actions on the same trigger (e.g. add_internal_note) run
+        -- after a successful confirmation, so the approval note is a normal
+        -- composable action rather than baked into the gate.
+        -- ===================================================================
+        ALTER TABLE triggers DROP CONSTRAINT IF EXISTS chk_trigger_activator;
+        ALTER TABLE triggers ADD CONSTRAINT chk_trigger_activator
+            CHECK (
+                (activator_kind = 'action' AND activator_mode IN ('selective','always'))
+                OR
+                (activator_kind = 'time'   AND activator_mode IN ('reminder','escalation','escalation_warning'))
+                OR
+                (activator_kind = 'manual' AND activator_mode IN ('linked_ticket_creator'))
+                OR
+                (activator_kind = 'gate'   AND activator_mode IN ('status_change','first_open'))
+            ) NOT VALID;
+
+        -- One-time marker that a ticket's title has been reviewed at first
+        -- open. Set atomically by the first agent who confirms the gate, so
+        -- the blocking dialog surfaces exactly once per ticket regardless of
+        -- how many agents open it. Imported / app-native tickets created
+        -- before the feature simply have NULL here and get the dialog on the
+        -- next open if a matching gate exists.
+        ALTER TABLE tickets
+            ADD COLUMN IF NOT EXISTS title_reviewed_utc          TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS title_reviewed_by_user_id   UUID        NULL
+                REFERENCES users(id) ON DELETE SET NULL;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

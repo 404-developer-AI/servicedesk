@@ -27,6 +27,7 @@ using Servicedesk.Infrastructure.Surveys;
 using Servicedesk.Infrastructure.TaggingMailboxes;
 using Servicedesk.Infrastructure.Triggers;
 using Servicedesk.Infrastructure.Triggers.StatusGate;
+using Servicedesk.Infrastructure.Triggers.FirstOpenGate;
 
 namespace Servicedesk.Api.Tickets;
 
@@ -369,6 +370,143 @@ public static class TicketEndpoints
                 items = matches.Select(g => ProjectGateForApi(g)),
             });
         }).WithName("ListStatusGates").WithOpenApi();
+
+        // First-open title-review gate probe. The ticket detail page calls
+        // this once on load; a non-null `gate` means the agent must review
+        // the title in a blocking dialog before working the ticket. Returns
+        // null when the ticket was already reviewed or no gate matches —
+        // either way the page proceeds normally. Queue-access gated like
+        // every other ticket sub-resource.
+        group.MapGet("/{id:guid}/open-gates", async (
+            Guid id, HttpContext http,
+            ITicketRepository tickets, IQueueAccessService queueAccess,
+            IFirstOpenGateService gates, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            var current = await tickets.GetByIdAsync(id, ct);
+            if (current is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, current.Ticket.QueueId, ct))
+                return Results.NotFound();
+
+            var gate = await gates.FindMatchingAsync(id, ct);
+            return Results.Ok(new { gate = gate is null ? null : ProjectFirstOpenGateForApi(gate) });
+        }).WithName("ListOpenGates").WithOpenApi();
+
+        // Confirm a first-open title-review gate. Applies the (possibly
+        // edited) subject, marks the ticket reviewed exactly once, and runs
+        // the trigger's remaining actions (e.g. the approval note) so they
+        // see the new subject + the confirming agent. Idempotent + race-
+        // safe: if another agent already confirmed, this returns the
+        // refreshed detail with reviewed=true and changes nothing.
+        group.MapPost("/{id:guid}/open-gates/confirm", async (
+            Guid id, [FromBody] ConfirmOpenGateRequest req, HttpContext http,
+            ITicketRepository tickets, ICompanyRepository companies, IQueueAccessService queueAccess,
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla,
+            IFirstOpenGateService gates, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            var current = await tickets.GetByIdAsync(id, ct);
+            if (current is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, current.Ticket.QueueId, ct))
+                return Results.NotFound();
+
+            var newSubject = req.Subject?.Trim();
+            if (string.IsNullOrWhiteSpace(newSubject))
+                return Results.BadRequest(new { error = "Subject is required.", code = "subject_required" });
+            if (newSubject.Length > 500)
+                return Results.BadRequest(new { error = "Subject must be 500 characters or fewer.", code = "subject_too_long" });
+
+            var (actor, role) = ActorContext.Resolve(http);
+
+            // Re-evaluate the gate server-side: this enforces that the
+            // ticket still matches, isn't already reviewed, and that the
+            // submitted trigger id is the one that matched (no client-
+            // supplied trigger smuggling).
+            var gate = await gates.FindMatchingAsync(id, ct);
+            if (gate is null)
+            {
+                // Already reviewed or no longer matching — idempotent close.
+                var done = await tickets.GetByIdAsync(id, ct) ?? current;
+                return Results.Ok(new
+                {
+                    reviewed = true,
+                    ticket = done.Ticket,
+                    body = done.Body,
+                    events = FilterTimelineEventsForRole(done.Events, role),
+                    pinnedEvents = done.PinnedEvents,
+                });
+            }
+            if (gate.TriggerId != req.TriggerId)
+            {
+                return Results.Conflict(new
+                {
+                    error = "The open-gate prompt changed; re-open the dialog.",
+                    code = "open_gate_mismatch",
+                    gate = ProjectFirstOpenGateForApi(gate),
+                });
+            }
+
+            var previousSubject = current.Ticket.Subject;
+
+            // Atomic one-time claim. The losing side of a concurrent
+            // confirmation gets reviewed=true without re-applying the
+            // subject or re-running the actions (no double note).
+            var claimed = await tickets.MarkTitleReviewedAsync(id, userId, ct);
+            if (!claimed)
+            {
+                var raced = await tickets.GetByIdAsync(id, ct) ?? current;
+                return Results.Ok(new
+                {
+                    reviewed = true,
+                    ticket = raced.Ticket,
+                    body = raced.Body,
+                    events = FilterTimelineEventsForRole(raced.Events, role),
+                    pinnedEvents = raced.PinnedEvents,
+                });
+            }
+
+            // Apply the (possibly edited) subject before running the
+            // actions so the note template's #{ticket.subject} resolves to
+            // the new value.
+            var detail = await tickets.UpdateFieldsAsync(id, new TicketFieldUpdate(Subject: newSubject), userId, ct);
+            if (detail is null) return Results.NotFound();
+
+            // Run the gate trigger's remaining actions (approval note, …).
+            // Best-effort inside the service — never throws.
+            await gates.RunConfirmActionsAsync(req.TriggerId, id, userId, previousSubject, ct);
+
+            // Refresh so the response carries any note the actions appended.
+            detail = await tickets.GetByIdAsync(id, ct) ?? detail;
+
+            await audit.LogAsync(new AuditEvent(
+                EventType: "ticket.title_reviewed",
+                Actor: actor,
+                ActorRole: role,
+                Target: id.ToString(),
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: new { triggerId = req.TriggerId, previousSubject, newSubject }));
+
+            var ticketIdStr = id.ToString();
+            await hub.Clients.Group($"ticket:{ticketIdStr}").SendAsync("TicketUpdated", ticketIdStr, ct);
+            await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", ticketIdStr, ct);
+            await sla.OnTicketFieldsChangedAsync(id, ct);
+
+            var companyAlert = await BuildCompanyAlertAsync(companies, detail.Ticket.CompanyId, detail.Ticket.RequesterContactId, ct);
+            return Results.Ok(new
+            {
+                reviewed = true,
+                ticket = detail.Ticket,
+                body = detail.Body,
+                events = FilterTimelineEventsForRole(detail.Events, role),
+                pinnedEvents = detail.PinnedEvents,
+                companyAlert,
+            });
+        }).WithName("ConfirmOpenGate").WithOpenApi();
 
         group.MapPatch("/{id:guid}", async (
             Guid id, [FromBody] UpdateTicketRequest req, HttpContext http,
@@ -1826,6 +1964,17 @@ public static class TicketEndpoints
         requesterDisplayName = g.RequesterDisplayName,
     };
 
+    private static object ProjectFirstOpenGateForApi(MatchedFirstOpenGate g) => new
+    {
+        triggerId = g.TriggerId,
+        name = g.Name,
+        title = g.Title,
+        message = g.Message,
+        fieldLabel = g.FieldLabel,
+        confirmLabel = g.ConfirmLabel,
+        currentSubject = g.CurrentSubject,
+    };
+
     /// Internal bookkeeping for one gate that passed its confirmation
     /// check. Exactly one of <see cref="Answers"/> / <see cref="Extras"/>
     /// is populated depending on the gate kind, plus <see cref="PendingLink"/>
@@ -1925,6 +2074,15 @@ public static class TicketEndpoints
         Dictionary<string, string>? Answers,
         Guid? CompanyId = null,
         string? Role = null);
+
+    /// Agent's confirmation of a first-open title-review gate. Carries the
+    /// matched gate's trigger id (echoed back for server-side re-validation)
+    /// and the reviewed subject — unchanged when the agent deemed the
+    /// original title fine, edited otherwise. The server trims + length-
+    /// caps it and re-evaluates the gate before applying.
+    public sealed record ConfirmOpenGateRequest(
+        Guid TriggerId,
+        string? Subject);
 
     public sealed record AddEventRequest(
         string? EventType,

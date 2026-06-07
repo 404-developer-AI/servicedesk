@@ -125,6 +125,24 @@ export type RequireContactCompanyAction = {
   note_template: string;
 };
 
+// Title-review — the first-open gate prompt. Single gate action on a
+// gate:first_open trigger; unlike the status-change gate actions it may be
+// combined with regular actions (e.g. add_internal_note) that run after the
+// agent confirms. No status pair or note template: the note is a separate
+// action so it stays composable.
+export type TitleReviewAction = {
+  kind: "title_review";
+  title: string;
+  /// When false the dialog skips the question line above the editable
+  /// field. `message` is kept so toggling back on restores it.
+  show_message: boolean;
+  message: string;
+  /// Label rendered above the editable subject field.
+  field_label: string;
+  /// The single approve button's label.
+  confirm_label: string;
+};
+
 export type TriggerAction =
   | { kind: "set_queue"; queue_id: string }
   | { kind: "set_priority"; priority_id: string }
@@ -149,6 +167,7 @@ export type TriggerAction =
   | CreateLinkedTicketAction
   | PromptConfirmAction
   | RequireContactCompanyAction
+  | TitleReviewAction
   // Sentinel for actions whose `kind` this editor build doesn't know
   // about (e.g. a future kind saved by a newer frontend or hand-
   // written JSON). Carries the original payload verbatim so the admin
@@ -171,6 +190,7 @@ export const KNOWN_ACTION_KINDS = [
   "create_linked_ticket",
   "prompt_confirm",
   "require_contact_company",
+  "title_review",
 ] as const;
 
 export type KnownActionKind = (typeof KNOWN_ACTION_KINDS)[number];
@@ -189,6 +209,7 @@ export const ACTION_KIND_LABELS: Record<KnownActionKind, string> = {
   create_linked_ticket: "Create linked ticket",
   prompt_confirm: "Confirmation dialog",
   require_contact_company: "Require contact company",
+  title_review: "Title review",
 };
 
 export function blankActionForKind(kind: KnownActionKind): TriggerAction {
@@ -253,6 +274,15 @@ export function blankActionForKind(kind: KnownActionKind): TriggerAction {
         note_visibility: "internal",
         note_template: "",
       };
+    case "title_review":
+      return {
+        kind,
+        title: "Review the ticket title",
+        show_message: true,
+        message: "Is this title suitable? Adjust it if needed.",
+        field_label: "Ticket title",
+        confirm_label: "This title is suitable",
+      };
   }
 }
 
@@ -300,6 +330,9 @@ export function actionFromBackend(raw: any): TriggerAction {
   }
   if (raw.kind === "prompt_confirm") {
     return normalizePromptConfirm(raw);
+  }
+  if (raw.kind === "title_review") {
+    return normalizeTitleReview(raw);
   }
   if (raw.kind !== "set_pending_till") return raw as TriggerAction;
   if (raw.clear === true) return { kind: "set_pending_till", mode: "clear" };
@@ -387,6 +420,27 @@ function normalizePromptConfirm(raw: any): PromptConfirmAction {
     cancel_label: typeof raw.cancel_label === "string" ? raw.cancel_label : "Cancel",
     note_visibility: raw.note_visibility === "public" ? "public" : "internal",
     note_template: typeof raw.note_template === "string" ? raw.note_template : "",
+  };
+}
+
+/// Round-trips a title_review action from the BE-stored shape to the
+/// editor shape, defaulting any missing field so a hand-written or older
+/// payload still renders.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeTitleReview(raw: any): TitleReviewAction {
+  const message = typeof raw.message === "string" ? raw.message : "";
+  const showMessage = typeof raw.show_message === "boolean"
+    ? raw.show_message
+    : message.trim().length > 0;
+  return {
+    kind: "title_review",
+    title: typeof raw.title === "string" ? raw.title : "",
+    show_message: showMessage,
+    message,
+    field_label: typeof raw.field_label === "string" && raw.field_label.length > 0
+      ? raw.field_label
+      : "Ticket title",
+    confirm_label: typeof raw.confirm_label === "string" ? raw.confirm_label : "This title is suitable",
   };
 }
 

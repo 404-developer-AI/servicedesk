@@ -38,6 +38,39 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             new CommandDefinition(sql, new { zammadNumber }, cancellationToken: ct));
     }
 
+    public async Task<bool> IsTitleReviewedAsync(Guid ticketId, CancellationToken ct)
+    {
+        // Treat a missing ticket as "reviewed" so a vanished ticket can
+        // never re-surface the first-open gate.
+        const string sql = """
+            SELECT NOT EXISTS (
+                SELECT 1 FROM tickets
+                WHERE id = @ticketId AND title_reviewed_utc IS NULL
+            )
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.ExecuteScalarAsync<bool>(
+            new CommandDefinition(sql, new { ticketId }, cancellationToken: ct));
+    }
+
+    public async Task<bool> MarkTitleReviewedAsync(Guid ticketId, Guid actorUserId, CancellationToken ct)
+    {
+        // Atomic claim: only the first concurrent confirmation flips the
+        // marker. RETURNING id is non-empty exactly for the winning caller;
+        // the WHERE ... IS NULL guard makes a second run a no-op.
+        const string sql = """
+            UPDATE tickets
+               SET title_reviewed_utc = now(),
+                   title_reviewed_by_user_id = @actorUserId
+             WHERE id = @ticketId AND title_reviewed_utc IS NULL
+            RETURNING id
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var claimed = await conn.ExecuteScalarAsync<Guid?>(
+            new CommandDefinition(sql, new { ticketId, actorUserId }, cancellationToken: ct));
+        return claimed.HasValue;
+    }
+
     /// Whitelist mapping frontend field names to SQL column expressions.
     /// Prevents SQL injection via dynamic ORDER BY.
     private static readonly Dictionary<string, string> SortFieldMap = new(StringComparer.OrdinalIgnoreCase)

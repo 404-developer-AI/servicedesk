@@ -375,6 +375,11 @@ public static class DependencyInjection
         // long-lived; no per-request state lives on the service.
         services.AddSingleton<Servicedesk.Infrastructure.Triggers.StatusGate.IStatusGateService,
                               Servicedesk.Infrastructure.Triggers.StatusGate.StatusGateService>();
+        // First-open title-review gate matcher + confirmation runner. Called
+        // by the ticket detail page's open-gate probe and the confirmation
+        // endpoint. Singleton for the same reason as the status-gate service.
+        services.AddSingleton<Servicedesk.Infrastructure.Triggers.FirstOpenGate.IFirstOpenGateService,
+                              Servicedesk.Infrastructure.Triggers.FirstOpenGate.FirstOpenGateService>();
 
         // Blok 3 action handlers. add_tags / remove_tags are intentionally
         // unregistered until the tags schema + UI land — the dispatcher
@@ -391,6 +396,10 @@ public static class DependencyInjection
         services.AddSingleton<ITriggerActionHandler, RepostAsPublicReplyHandler>();
         services.AddSingleton<ITriggerActionHandler, SendMailHandler>();
         services.AddSingleton<ITriggerActionHandler, SendSurveyHandler>();
+        // No-op handler so dispatching a first-open gate's full action list
+        // (and the dry-run previewer) doesn't report a NoHandler gap. The
+        // subject edit itself is applied by the open-gate confirm endpoint.
+        services.AddSingleton<ITriggerActionHandler, TitleReviewHandler>();
 
         // v0.0.39 — manual "Create linked X ticket" preset service. Lives
         // outside ITriggerActionHandler because manual triggers run
@@ -414,6 +423,7 @@ public static class DependencyInjection
         services.AddSingleton<ITriggerActionPreviewer, RepostAsPublicReplyPreviewer>();
         services.AddSingleton<ITriggerActionPreviewer, SendMailPreviewer>();
         services.AddSingleton<ITriggerActionPreviewer, SendSurveyPreviewer>();
+        services.AddSingleton<ITriggerActionPreviewer, TitleReviewPreviewer>();
 
         // Compose templates — pre-canned HTML snippets for note/reply/mail
         // composers. Reuses KbHtmlSanitizer for body sanitisation; the picker

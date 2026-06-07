@@ -28,6 +28,19 @@ public interface ITicketRepository
         Guid actorUserId,
         CancellationToken ct);
     Task<TicketEvent?> AddEventAsync(Guid ticketId, NewTicketEvent input, CancellationToken ct);
+    /// True when the ticket's title has already been reviewed at first open
+    /// (title_reviewed_utc is set). Used by the first-open gate probe to
+    /// suppress the dialog after the one-time review. Returns true for a
+    /// missing ticket so a vanished ticket never re-surfaces the gate.
+    Task<bool> IsTitleReviewedAsync(Guid ticketId, CancellationToken ct);
+    /// Atomically stamps title_reviewed_utc + title_reviewed_by_user_id,
+    /// but only when the ticket exists and has not been reviewed yet.
+    /// Returns true when this call performed the stamp (the caller "won"
+    /// the race and should run the gate's confirmation actions), false when
+    /// the ticket was already reviewed or doesn't exist. Race-safe: two
+    /// agents confirming the same first-open gate concurrently see exactly
+    /// one true.
+    Task<bool> MarkTitleReviewedAsync(Guid ticketId, Guid actorUserId, CancellationToken ct);
     Task<TicketEvent?> UpdateEventAsync(Guid ticketId, long eventId, UpdateTicketEvent input, CancellationToken ct);
     Task<IReadOnlyList<TicketEventRevision>> GetEventRevisionsAsync(Guid ticketId, long eventId, CancellationToken ct);
     Task<TicketEventPin?> PinEventAsync(Guid ticketId, long eventId, Guid userId, string remark, CancellationToken ct);

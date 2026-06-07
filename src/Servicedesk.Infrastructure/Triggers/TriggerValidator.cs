@@ -55,6 +55,12 @@ public static class TriggerValidator
         // on gate:status_change triggers — the activator-pair + gate-
         // action guard below reject every other combination.
         "require_contact_company",
+        // Title-review — the first-open gate prompt. Carries the dialog
+        // payload (title, message, editable-field label, confirm label).
+        // Only valid on gate:first_open triggers; unlike the status-change
+        // gate actions it may be combined with regular actions (e.g.
+        // add_internal_note) that run after a successful confirmation.
+        "title_review",
     };
 
     public static readonly IReadOnlySet<string> ActivatorPairs = new HashSet<string>(StringComparer.Ordinal)
@@ -70,6 +76,10 @@ public static class TriggerValidator
         // calls into a dedicated matcher before applying the mutation and
         // returns 409 if a gate matches without a confirmation payload.
         "gate:status_change",
+        // Interactive first-open gate — the title-review prompt. Surfaced
+        // by the ticket detail page's open-gate probe on first open and
+        // never by the event evaluator or scheduler.
+        "gate:first_open",
     };
 
     /// Pair the validator hands back when it has work for the caller to
@@ -105,21 +115,24 @@ public static class TriggerValidator
         // re-order without rewriting the row.
         if (activatorKind == "gate")
         {
-            var promptError = ValidateGateActions(actionsJson);
+            var promptError = ValidateGateActions(actionsJson, activatorMode);
             if (promptError is not null) return ValidationResult.Fail(promptError);
         }
         else
         {
-            // prompt_confirm and require_contact_company are gate-only.
-            // Reject either on any other activator so the editor cannot
-            // save a malformed combination (the action-kind whitelist
-            // itself accepts them).
+            // prompt_confirm, require_contact_company and title_review are
+            // gate-only. Reject any on a non-gate activator so the editor
+            // cannot save a malformed combination (the action-kind
+            // whitelist itself accepts them).
             if (ContainsActionKind(actionsJson, "prompt_confirm"))
                 return ValidationResult.Fail(
                     "prompt_confirm is only valid on gate:status_change triggers.");
             if (ContainsActionKind(actionsJson, "require_contact_company"))
                 return ValidationResult.Fail(
                     "require_contact_company is only valid on gate:status_change triggers.");
+            if (ContainsActionKind(actionsJson, "title_review"))
+                return ValidationResult.Fail(
+                    "title_review is only valid on gate:first_open triggers.");
         }
 
         // Time-activator triggers scan ALL tickets every tick — an empty
@@ -405,6 +418,8 @@ public static class TriggerValidator
                 return ValidatePromptConfirm(action);
             case "require_contact_company":
                 return ValidateRequireContactCompany(action);
+            case "title_review":
+                return ValidateTitleReview(action);
             case "send_survey":
                 // survey_id is the only required field; subject + body live
                 // on the survey row itself. TTL + recipient overrides are
@@ -445,14 +460,22 @@ public static class TriggerValidator
             "require_contact_company",
         };
 
-    /// Walks a gate trigger's actions JSON and ensures it has exactly one
-    /// gate-action entry (<c>prompt_confirm</c> or <c>require_contact_company</c>).
-    /// Returns null on success, an error string the admin endpoint surfaces
-    /// verbatim on failure. The per-action payload (titles, buttons, note
-    /// template) is type-checked by the regular ValidateActionPayload path;
-    /// this method only enforces the shape invariant the gate-matcher relies on.
-    private static string? ValidateGateActions(string actionsJson)
+    /// Walks a gate trigger's actions JSON and enforces the shape invariant
+    /// the gate-matcher relies on, branching on the gate mode:
+    ///   * status_change — exactly one status-change gate action
+    ///     (<c>prompt_confirm</c> or <c>require_contact_company</c>) and
+    ///     nothing else; the matcher projects a single gate per row.
+    ///   * first_open — exactly one <c>title_review</c> action, optionally
+    ///     followed by regular (non-gate) actions that run after a
+    ///     successful confirmation. status-change gate actions are rejected.
+    /// Returns null on success, else an error string the admin endpoint
+    /// surfaces verbatim. Per-action payloads are type-checked by the
+    /// regular ValidateActionPayload path.
+    private static string? ValidateGateActions(string actionsJson, string activatorMode)
     {
+        if (activatorMode == "first_open")
+            return ValidateFirstOpenGateActions(actionsJson);
+
         const string allowedList = "prompt_confirm or require_contact_company";
         if (string.IsNullOrWhiteSpace(actionsJson))
             return $"Gate triggers require exactly one gate action ({allowedList}).";
@@ -482,6 +505,42 @@ public static class TriggerValidator
                 return "Gate triggers cannot carry more than one gate action.";
             if (total != gateCount)
                 return $"Gate triggers can only carry gate actions ({allowedList}).";
+            return null;
+        }
+        finally { doc.Dispose(); }
+    }
+
+    /// first_open gates need exactly one <c>title_review</c> action and may
+    /// not carry the status-change gate actions. Any other action kind
+    /// (add_internal_note, set_owner, …) is allowed and runs after the
+    /// agent confirms — the per-kind payload is checked elsewhere.
+    private static string? ValidateFirstOpenGateActions(string actionsJson)
+    {
+        if (string.IsNullOrWhiteSpace(actionsJson))
+            return "First-open gates require exactly one title_review action.";
+        JsonDocument doc;
+        try { doc = JsonDocument.Parse(actionsJson); }
+        catch (JsonException) { return null; }
+        try
+        {
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                return "First-open gates require exactly one title_review action.";
+            int titleReviewCount = 0;
+            foreach (var action in doc.RootElement.EnumerateArray())
+            {
+                if (action.ValueKind != JsonValueKind.Object
+                    || !action.TryGetProperty("kind", out var kind)
+                    || kind.ValueKind != JsonValueKind.String)
+                    continue;
+                var kindStr = kind.GetString() ?? string.Empty;
+                if (kindStr == "title_review") titleReviewCount++;
+                else if (GateActionKinds.Contains(kindStr))
+                    return $"'{kindStr}' is only valid on gate:status_change triggers.";
+            }
+            if (titleReviewCount == 0)
+                return "First-open gates require exactly one title_review action.";
+            if (titleReviewCount > 1)
+                return "First-open gates cannot carry more than one title_review action.";
             return null;
         }
         finally { doc.Dispose(); }
@@ -672,6 +731,41 @@ public static class TriggerValidator
             && showEl.ValueKind != JsonValueKind.False)
         {
             return "'show_message' must be true or false when present.";
+        }
+        return null;
+    }
+
+    /// Validates the per-action payload for title_review. Required: title
+    /// (string — dialog heading), confirm_label (string — the approve
+    /// button). Optional: field_label (string — label above the editable
+    /// subject field), show_message (bool), message (string — the question
+    /// shown above the field, only rendered when show_message is true).
+    /// There is no status pair or note_template: the gate fires on open,
+    /// and the approval note (if any) is a separate add_internal_note
+    /// action on the same trigger.
+    private static string? ValidateTitleReview(JsonElement action)
+    {
+        if (!HasNonEmptyString(action, "title"))
+            return "requires non-empty 'title'.";
+        if (!HasNonEmptyString(action, "confirm_label"))
+            return "requires non-empty 'confirm_label'.";
+        if (action.TryGetProperty("field_label", out var fieldEl)
+            && fieldEl.ValueKind != JsonValueKind.String
+            && fieldEl.ValueKind != JsonValueKind.Null)
+        {
+            return "'field_label' must be a string or null.";
+        }
+        if (action.TryGetProperty("show_message", out var showEl)
+            && showEl.ValueKind != JsonValueKind.True
+            && showEl.ValueKind != JsonValueKind.False)
+        {
+            return "'show_message' must be true or false when present.";
+        }
+        if (action.TryGetProperty("message", out var msgEl)
+            && msgEl.ValueKind != JsonValueKind.String
+            && msgEl.ValueKind != JsonValueKind.Null)
+        {
+            return "'message' must be a string or null.";
         }
         return null;
     }
