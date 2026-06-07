@@ -146,7 +146,9 @@ public sealed record UserAdminRow(
     bool AssetsEnabled = false,
     bool AdsolutTimesheetEnabled = false,
     bool TimesheetBackofficeEnabled = false,
-    bool AdsolutOrdersEnabled = false)
+    bool AdsolutOrdersEnabled = false,
+    bool StatisticsRead = false,
+    bool StatisticsWrite = false)
 {
     /// Per-user Dashboard tile preferences sourced from
     /// `user_dashboard_tiles`. Empty list = no tiles enabled
@@ -253,7 +255,9 @@ public sealed record FeatureFlagsUpdate(
     bool? AssetsEnabled,
     bool? AdsolutTimesheetEnabled = null,
     bool? TimesheetBackofficeEnabled = null,
-    bool? AdsolutOrdersEnabled = null);
+    bool? AdsolutOrdersEnabled = null,
+    bool? StatisticsRead = null,
+    bool? StatisticsWrite = null);
 
 public abstract record UpdateFeatureFlagsResult
 {

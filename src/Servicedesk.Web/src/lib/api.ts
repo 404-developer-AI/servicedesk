@@ -72,6 +72,8 @@ export type AuthUserPayload = {
   assetsEnabled: boolean;
   adsolutTimesheetEnabled: boolean;
   adsolutOrdersEnabled: boolean;
+  statisticsRead: boolean;
+  statisticsWrite: boolean;
   adsolutConnected: boolean;
   dashboardTiles: string[];
   // v0.0.44 — server-resolved theme (user pref → admin default → 'light').

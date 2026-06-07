@@ -42,6 +42,11 @@ export type AuthUser = {
   /// and "::" order linking). Surfaces nothing on its own without the
   /// Adsolut integration being connected.
   adsolutOrdersEnabled: boolean;
+  /// v0.0.69 — per-user opt-in for the Statistics feature. `read` gates the
+  /// Statistics page + the tiles assigned to the user; `write` gates the
+  /// tile-builder (creating + assigning tiles). The two are independent.
+  statisticsRead: boolean;
+  statisticsWrite: boolean;
   /// Whether the Adsolut integration is currently connected (server-
   /// resolved at /auth/me time). Tenant-global rather than per-user, but
   /// surfaced here so the Adsolut timesheet tab can gate without the

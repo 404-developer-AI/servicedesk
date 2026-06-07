@@ -52,7 +52,9 @@ public sealed class UserAdminService : IUserAdminService
                     u.assets_enabled    AS AssetsEnabled,
                     u.adsolut_timesheet_enabled AS AdsolutTimesheetEnabled,
                     u.timesheet_backoffice_enabled AS TimesheetBackofficeEnabled,
-                    u.adsolut_orders_enabled AS AdsolutOrdersEnabled
+                    u.adsolut_orders_enabled AS AdsolutOrdersEnabled,
+                    u.statistics_read   AS StatisticsRead,
+                    u.statistics_write  AS StatisticsWrite
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             ORDER BY u.created_utc ASC
@@ -98,7 +100,9 @@ public sealed class UserAdminService : IUserAdminService
                     u.assets_enabled    AS AssetsEnabled,
                     u.adsolut_timesheet_enabled AS AdsolutTimesheetEnabled,
                     u.timesheet_backoffice_enabled AS TimesheetBackofficeEnabled,
-                    u.adsolut_orders_enabled AS AdsolutOrdersEnabled
+                    u.adsolut_orders_enabled AS AdsolutOrdersEnabled,
+                    u.statistics_read   AS StatisticsRead,
+                    u.statistics_write  AS StatisticsWrite
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             WHERE u.id = @id
@@ -754,7 +758,9 @@ public sealed class UserAdminService : IUserAdminService
             && update.AssetsEnabled is null
             && update.AdsolutTimesheetEnabled is null
             && update.TimesheetBackofficeEnabled is null
-            && update.AdsolutOrdersEnabled is null)
+            && update.AdsolutOrdersEnabled is null
+            && update.StatisticsRead is null
+            && update.StatisticsWrite is null)
         {
             return new UpdateFeatureFlagsResult.NoChange();
         }
@@ -797,7 +803,9 @@ public sealed class UserAdminService : IUserAdminService
                 assets_enabled        = COALESCE(@assetsEnabled,        assets_enabled),
                 adsolut_timesheet_enabled = COALESCE(@adsolutTimesheetEnabled, adsolut_timesheet_enabled),
                 timesheet_backoffice_enabled = COALESCE(@timesheetBackofficeEnabled, timesheet_backoffice_enabled),
-                adsolut_orders_enabled = COALESCE(@adsolutOrdersEnabled, adsolut_orders_enabled)
+                adsolut_orders_enabled = COALESCE(@adsolutOrdersEnabled, adsolut_orders_enabled),
+                statistics_read  = COALESCE(@statisticsRead,  statistics_read),
+                statistics_write = COALESCE(@statisticsWrite, statistics_write)
             WHERE id = @id
             """,
             new
@@ -814,6 +822,8 @@ public sealed class UserAdminService : IUserAdminService
                 adsolutTimesheetEnabled = update.AdsolutTimesheetEnabled,
                 timesheetBackofficeEnabled = update.TimesheetBackofficeEnabled,
                 adsolutOrdersEnabled = update.AdsolutOrdersEnabled,
+                statisticsRead = update.StatisticsRead,
+                statisticsWrite = update.StatisticsWrite,
             },
             tx,
             cancellationToken: ct));

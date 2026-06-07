@@ -4135,6 +4135,25 @@ public sealed class DatabaseBootstrapper : IHostedService
 
         CREATE INDEX IF NOT EXISTS ix_adsolut_warehouse_locations_warehouse
             ON adsolut_warehouse_locations (warehouse_id);
+
+        -- ===================================================================
+        -- v0.0.69 Statistics — per-user feature flags.
+        --
+        -- Two per-user opt-in flags for the Statistics feature (a light
+        -- Power BI-style tile builder). Mirrors the other per-user feature
+        -- flags (kb_enabled, assets_enabled, adsolut_*): default FALSE, no
+        -- backfill, strictly opt-in, Agent/Admin only (the feature-flags
+        -- update path rejects Customers).
+        --   statistics_read  → may view the Statistics page and the tiles
+        --                      assigned to them.
+        --   statistics_write → may build statistic tiles and assign them to
+        --                      read-enabled agents. Independent of read: a
+        --                      builder is normally also given read, but the
+        --                      flags are stored separately so the UI gates
+        --                      each capability on its own.
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS statistics_read  BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS statistics_write BOOLEAN NOT NULL DEFAULT FALSE;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

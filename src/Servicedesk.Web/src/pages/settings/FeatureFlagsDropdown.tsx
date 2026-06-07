@@ -13,6 +13,8 @@ import {
   Server,
   Receipt,
   ShoppingCart,
+  BarChart3,
+  PencilRuler,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -65,6 +67,13 @@ const FLAG_GROUPS: Group[] = [
   {
     title: "Orders",
     flags: [{ key: "adsolutOrdersEnabled", label: "Orders (Adsolut)", icon: ShoppingCart }],
+  },
+  {
+    title: "Statistics",
+    flags: [
+      { key: "statisticsRead", label: "Statistics (view)", icon: BarChart3 },
+      { key: "statisticsWrite", label: "Statistics builder", icon: PencilRuler },
+    ],
   },
 ];
 
