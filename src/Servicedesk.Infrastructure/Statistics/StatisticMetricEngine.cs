@@ -84,50 +84,105 @@ public sealed class StatisticMetricEngine : IStatisticMetricEngine
             ("WFQ",      ParseStatusGuids(await _settings.GetAsync<string>(SettingKeys.Statistics.WfqStatusIds, ct))),
         };
 
-        // One pass over the period's entries, bucketed by the ticket's CURRENT
-        // status into each group via FILTER. Hours logged on tickets whose
-        // status is in the group's set, summed across the target users.
-        var row = await connection.QueryFirstOrDefaultAsync<StatusGroupRow>(new CommandDefinition(
-            """
-            SELECT
-                COALESCE(SUM(e.minutes) FILTER (WHERE t.status_id = ANY(@resolved)), 0)::bigint AS ResolvedM,
-                COALESCE(SUM(e.minutes) FILTER (WHERE t.status_id = ANY(@cwi)),      0)::bigint AS CwiM,
-                COALESCE(SUM(e.minutes) FILTER (WHERE t.status_id = ANY(@qfi)),      0)::bigint AS QfiM,
-                COALESCE(SUM(e.minutes) FILTER (WHERE t.status_id = ANY(@wfq)),      0)::bigint AS WfqM
+        var configured = groups.Where(g => g.Ids.Length > 0).ToList();
+        if (configured.Count == 0) return Empty(tile, periodLabel);
+
+        var args = new
+        {
+            ids = targets,
+            from = from.ToDateTime(TimeOnly.MinValue),
+            to = to.ToDateTime(TimeOnly.MinValue),
+            resolved = groups[0].Ids,
+            cwi = groups[1].Ids,
+            qfi = groups[2].Ids,
+            wfq = groups[3].Ids,
+        };
+
+        const string filterCols = """
+            COALESCE(SUM(e.minutes) FILTER (WHERE t.status_id = ANY(@resolved)), 0)::bigint AS ResolvedM,
+            COALESCE(SUM(e.minutes) FILTER (WHERE t.status_id = ANY(@cwi)),      0)::bigint AS CwiM,
+            COALESCE(SUM(e.minutes) FILTER (WHERE t.status_id = ANY(@qfi)),      0)::bigint AS QfiM,
+            COALESCE(SUM(e.minutes) FILTER (WHERE t.status_id = ANY(@wfq)),      0)::bigint AS WfqM
+            """;
+
+        var points = new List<StatisticDataPoint>();
+        long totalMin = 0;
+
+        if (IsSingleScope(tile.Scope))
+        {
+            // Single scope → one bar per configured status group.
+            var row = await connection.QueryFirstOrDefaultAsync<StatusGroupRow>(new CommandDefinition(
+                $"""
+                SELECT {filterCols}
+                FROM timesheet_entries e
+                JOIN tickets t ON t.id = e.ticket_id
+                WHERE e.user_id = ANY(@ids) AND e.entry_date BETWEEN @from AND @to
+                """,
+                args, cancellationToken: ct)) ?? new StatusGroupRow();
+
+            var byGroup = new[] { row.ResolvedM, row.CwiM, row.QfiM, row.WfqM };
+            for (var i = 0; i < groups.Length; i++)
+            {
+                if (groups[i].Ids.Length == 0) continue;
+                totalMin += byGroup[i];
+                points.Add(new StatisticDataPoint(groups[i].Label, ToHours(byGroup[i])));
+            }
+
+            return new StatisticTileData(
+                TileId: tile.Id, MetricKey: tile.MetricKey, ChartType: tile.ChartType,
+                Unit: "hours", PeriodLabel: periodLabel, Total: ToHours(totalMin),
+                Points: points, GeneratedUtc: DateTime.UtcNow);
+        }
+
+        // Multi scope (team / compare) → one stacked bar per technician, split
+        // across the configured status groups.
+        var rows = await connection.QueryAsync<StatusGroupUserRow>(new CommandDefinition(
+            $"""
+            SELECT e.user_id AS UserId, {filterCols}
             FROM timesheet_entries e
             JOIN tickets t ON t.id = e.ticket_id
             WHERE e.user_id = ANY(@ids) AND e.entry_date BETWEEN @from AND @to
+            GROUP BY e.user_id
             """,
-            new
-            {
-                ids = targets,
-                from = from.ToDateTime(TimeOnly.MinValue),
-                to = to.ToDateTime(TimeOnly.MinValue),
-                resolved = groups[0].Ids,
-                cwi = groups[1].Ids,
-                qfi = groups[2].Ids,
-                wfq = groups[3].Ids,
-            }, cancellationToken: ct)) ?? new StatusGroupRow();
+            args, cancellationToken: ct));
+        var emails = await LoadEmailsAsync(connection, targets, ct);
 
-        var minutesByGroup = new[] { row.ResolvedM, row.CwiM, row.QfiM, row.WfqM };
-        var points = new List<StatisticDataPoint>();
-        long totalMin = 0;
-        for (var i = 0; i < groups.Length; i++)
+        foreach (var r in rows)
         {
-            if (groups[i].Ids.Length == 0) continue; // group not configured → omit
-            totalMin += minutesByGroup[i];
-            points.Add(new StatisticDataPoint(groups[i].Label, ToHours(minutesByGroup[i])));
+            var all = new[] { r.ResolvedM, r.CwiM, r.QfiM, r.WfqM };
+            // Keep only the configured groups, in catalogue order, aligned to
+            // the SeriesLabels below.
+            var segments = new List<double>();
+            long userTotal = 0;
+            for (var i = 0; i < groups.Length; i++)
+            {
+                if (groups[i].Ids.Length == 0) continue;
+                userTotal += all[i];
+                segments.Add(ToHours(all[i]));
+            }
+            if (userTotal <= 0) continue;
+            totalMin += userTotal;
+            points.Add(new StatisticDataPoint(
+                emails.GetValueOrDefault(r.UserId) ?? "Technician",
+                ToHours(userTotal),
+                Segments: segments));
         }
+        points = points.OrderByDescending(p => p.Value).ToList();
 
         return new StatisticTileData(
-            TileId: tile.Id,
-            MetricKey: tile.MetricKey,
-            ChartType: tile.ChartType,
-            Unit: "hours",
-            PeriodLabel: periodLabel,
-            Total: ToHours(totalMin),
-            Points: points,
-            GeneratedUtc: DateTime.UtcNow);
+            TileId: tile.Id, MetricKey: tile.MetricKey, ChartType: tile.ChartType,
+            Unit: "hours", PeriodLabel: periodLabel, Total: ToHours(totalMin),
+            Points: points, GeneratedUtc: DateTime.UtcNow,
+            SeriesLabels: configured.Select(g => g.Label).ToList());
+    }
+
+    private sealed class StatusGroupUserRow
+    {
+        public Guid UserId { get; set; }
+        public long ResolvedM { get; set; }
+        public long CwiM { get; set; }
+        public long QfiM { get; set; }
+        public long WfqM { get; set; }
     }
 
     private sealed class StatusGroupRow

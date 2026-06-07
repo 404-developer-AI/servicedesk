@@ -135,7 +135,7 @@ function BarBody({
   seriesLabels,
   unit,
 }: {
-  points: { label: string; value: number; value2?: number | null }[];
+  points: { label: string; value: number; value2?: number | null; segments?: number[] | null }[];
   seriesLabels?: string[] | null;
   unit: string;
 }) {
@@ -146,58 +146,99 @@ function BarBody({
       </div>
     );
   }
-  const stacked = !!seriesLabels && seriesLabels.length === 2;
-  // Scale to the largest total bar so stacked + single bars are comparable.
-  const max = Math.max(...points.map((p) => p.value + (stacked ? (p.value2 ?? 0) : 0)), 0.0001);
+
+  // Three render modes:
+  //  - segments: N-series stacked (e.g. hours per status group, per technician)
+  //  - twoSeries: billable vs non-billable (value + value2)
+  //  - single: a plain bar
+  const segmentMode = points.some((p) => p.segments && p.segments.length > 0);
+  const twoSeries = !segmentMode && !!seriesLabels && seriesLabels.length === 2;
+
+  const rowTotal = (p: { value: number; value2?: number | null; segments?: number[] | null }) =>
+    segmentMode
+      ? (p.segments ?? []).reduce((a, b) => a + b, 0)
+      : twoSeries
+        ? p.value + (p.value2 ?? 0)
+        : p.value;
+  const max = Math.max(...points.map(rowTotal), 0.0001);
 
   return (
     <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto pr-1">
-      {stacked && (
-        <div className="mb-0.5 flex items-center gap-3 text-[10px] text-muted-foreground">
-          <span className="inline-flex items-center gap-1">
-            <span className="h-2 w-2 rounded-sm bg-primary" /> {seriesLabels![0]}
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="h-2 w-2 rounded-sm bg-muted-foreground/40" /> {seriesLabels![1]}
-          </span>
+      {(segmentMode || twoSeries) && seriesLabels && (
+        <div className="mb-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+          {seriesLabels.map((label, si) => (
+            <span key={label} className="inline-flex items-center gap-1">
+              <span className={cn("h-2 w-2 rounded-sm", seriesColor(si, twoSeries))} /> {label}
+            </span>
+          ))}
         </div>
       )}
       {points.map((p, i) => {
-        const v2 = stacked ? (p.value2 ?? 0) : 0;
+        const total = rowTotal(p);
         return (
           <div key={`${p.label}-${i}`} className="flex items-center gap-2 text-xs">
             <span className="w-16 shrink-0 truncate text-muted-foreground" title={p.label}>
               {p.label}
             </span>
+            {/* Exact proportional widths (no percentage floor, which would make
+                small values collapse to the same minimum and look equal). A 2px
+                floor only keeps a non-zero value from disappearing entirely. */}
             <div className="relative flex h-4 flex-1 overflow-hidden rounded bg-glass">
-              {/* Exact proportional widths (no percentage floor, which would
-                  make small values all collapse to the same minimum and look
-                  equal). A 2px floor only keeps a non-zero value from
-                  disappearing entirely. */}
-              <div
-                className="h-full shrink-0 bg-gradient-to-r from-primary/70 to-primary"
-                style={{ width: `${(p.value / max) * 100}%`, minWidth: p.value > 0 ? 2 : 0 }}
-              />
-              {stacked && (
-                <div
-                  className="h-full shrink-0 bg-muted-foreground/30"
-                  style={{ width: `${(v2 / max) * 100}%`, minWidth: v2 > 0 ? 2 : 0 }}
-                />
+              {segmentMode ? (
+                (p.segments ?? []).map((seg, si) => (
+                  <div
+                    key={si}
+                    className={cn("h-full shrink-0", seriesColor(si, false))}
+                    style={{ width: `${(seg / max) * 100}%`, minWidth: seg > 0 ? 2 : 0 }}
+                  />
+                ))
+              ) : (
+                <>
+                  <div
+                    className="h-full shrink-0 bg-gradient-to-r from-primary/70 to-primary"
+                    style={{ width: `${(p.value / max) * 100}%`, minWidth: p.value > 0 ? 2 : 0 }}
+                  />
+                  {twoSeries && (
+                    <div
+                      className="h-full shrink-0 bg-muted-foreground/30"
+                      style={{
+                        width: `${((p.value2 ?? 0) / max) * 100}%`,
+                        minWidth: (p.value2 ?? 0) > 0 ? 2 : 0,
+                      }}
+                    />
+                  )}
+                </>
               )}
             </div>
             <span
               className={cn(
                 "shrink-0 text-right font-mono tabular-nums text-foreground",
-                stacked ? "w-[4.5rem]" : "w-12",
+                segmentMode || twoSeries ? "w-[4.5rem]" : "w-12",
               )}
             >
-              {stacked
-                ? `${formatHours(p.value)}/${formatHours(p.value + v2)}`
-                : formatValue(p.value, unit)}
+              {segmentMode
+                ? formatHours(total)
+                : twoSeries
+                  ? `${formatHours(p.value)}/${formatHours(total)}`
+                  : formatValue(p.value, unit)}
             </span>
           </div>
         );
       })}
     </div>
   );
+}
+
+// Colour per stacked series. The billable two-series keeps its semantic
+// primary/grey; the N-series stacked uses a small glass-friendly palette.
+const SERIES_PALETTE = [
+  "bg-primary",
+  "bg-sky-400/70",
+  "bg-amber-400/70",
+  "bg-emerald-400/70",
+  "bg-rose-400/70",
+];
+function seriesColor(index: number, twoSeries: boolean): string {
+  if (twoSeries) return index === 0 ? "bg-primary" : "bg-muted-foreground/40";
+  return SERIES_PALETTE[index % SERIES_PALETTE.length];
 }
