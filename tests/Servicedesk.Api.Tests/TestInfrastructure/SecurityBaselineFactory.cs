@@ -369,6 +369,12 @@ public sealed class FakeUserService : IUserService
 
     public Task<bool> GetTimesheetBackofficeEnabledAsync(Guid userId, CancellationToken ct = default) =>
         Task.FromResult(false);
+
+    public Task<bool> GetStatisticsReadEnabledAsync(Guid userId, CancellationToken ct = default) =>
+        Task.FromResult(false);
+
+    public Task<bool> GetStatisticsWriteEnabledAsync(Guid userId, CancellationToken ct = default) =>
+        Task.FromResult(false);
 }
 
 public sealed class FakeSessionService : ISessionService

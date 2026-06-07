@@ -1162,6 +1162,10 @@ export type UserAdminRow = {
   timesheetBackofficeEnabled: boolean;
   // v0.0.59 — per-user opt-in for the Adsolut Orders feature.
   adsolutOrdersEnabled: boolean;
+  // v0.0.69 — per-user opt-in for the Statistics feature. read = view
+  // assigned tiles; write = build + assign tiles. Independent flags.
+  statisticsRead: boolean;
+  statisticsWrite: boolean;
   // Per-user Dashboard tile preferences. Empty array on insert
   // (admins opt the user in to specific tiles).
   dashboardTiles: string[];
@@ -1179,6 +1183,8 @@ export type FeatureFlagsUpdate = Partial<{
   adsolutTimesheetEnabled: boolean;
   timesheetBackofficeEnabled: boolean;
   adsolutOrdersEnabled: boolean;
+  statisticsRead: boolean;
+  statisticsWrite: boolean;
 }>;
 
 export type M365PickerUser = {

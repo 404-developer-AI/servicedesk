@@ -376,6 +376,12 @@ public static class AuthEndpoints
         // /api/timesheet/backoffice endpoints carry RequireAgent so the
         // gate is feature-visibility, not security authorization.
         var timesheetBackofficeEnabled = await users.GetTimesheetBackofficeEnabledAsync(userId, ct);
+        // v0.0.69 — per-user opt-in for the Statistics feature. Read gates the
+        // page + its assigned tiles; write gates the tile-builder. The
+        // underlying /api/statistics endpoints enforce the same flags so this
+        // is feature-visibility, not the security boundary.
+        var statisticsRead = await users.GetStatisticsReadEnabledAsync(userId, ct);
+        var statisticsWrite = await users.GetStatisticsWriteEnabledAsync(userId, ct);
         // Whether the Adsolut integration is connected (configured + valid
         // refresh token, no refresh error). Resolved here so a non-admin
         // agent can gate the Adsolut timesheet tab without the admin-only
@@ -420,6 +426,8 @@ public static class AuthEndpoints
                 adsolutTimesheetEnabled,
                 timesheetBackofficeEnabled,
                 adsolutOrdersEnabled,
+                statisticsRead,
+                statisticsWrite,
                 adsolutConnected,
                 dashboardTiles = tiles.Select(t => new { tileId = t.TileId, size = t.Size }).ToList(),
                 effectiveTheme,
