@@ -9,6 +9,11 @@ function formatHours(value: number): string {
   return Number.isInteger(value) ? `${value}h` : `${value.toFixed(1)}h`;
 }
 
+// Unit-aware value formatter: hours render as "Xh", counts as plain integers.
+function formatValue(value: number, unit: string): string {
+  return unit === "hours" ? formatHours(value) : `${Math.round(value)}`;
+}
+
 function ScopeBadge({ tile }: { tile: StatisticTileDto }) {
   if (tile.scope === "team") {
     return (
@@ -63,22 +68,26 @@ export function StatisticTileCard({ tile }: { tile: StatisticTileDto }) {
           Could not load this tile.
         </div>
       ) : tile.chartType === "kpi" ? (
-        <KpiBody total={q.data?.total ?? 0} />
+        <KpiBody total={q.data?.total ?? 0} unit={q.data?.unit ?? "hours"} />
       ) : (
-        <BarBody points={q.data?.points ?? []} seriesLabels={q.data?.seriesLabels ?? null} />
+        <BarBody
+          points={q.data?.points ?? []}
+          seriesLabels={q.data?.seriesLabels ?? null}
+          unit={q.data?.unit ?? "hours"}
+        />
       )}
     </section>
   );
 }
 
-function KpiBody({ total }: { total: number }) {
+function KpiBody({ total, unit }: { total: number; unit: string }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center py-4">
       <div className="text-display-md font-semibold tabular-nums text-foreground">
-        {formatHours(total)}
+        {formatValue(total, unit)}
       </div>
       <div className="mt-1 text-xs uppercase tracking-wider text-muted-foreground/70">
-        worked
+        {unit === "hours" ? "worked" : unit}
       </div>
     </div>
   );
@@ -87,9 +96,11 @@ function KpiBody({ total }: { total: number }) {
 function BarBody({
   points,
   seriesLabels,
+  unit,
 }: {
   points: { label: string; value: number; value2?: number | null }[];
   seriesLabels?: string[] | null;
+  unit: string;
 }) {
   if (points.length === 0) {
     return (
@@ -139,7 +150,9 @@ function BarBody({
                 stacked ? "w-[4.5rem]" : "w-12",
               )}
             >
-              {stacked ? `${formatHours(p.value)}/${formatHours(p.value + v2)}` : formatHours(p.value)}
+              {stacked
+                ? `${formatHours(p.value)}/${formatHours(p.value + v2)}`
+                : formatValue(p.value, unit)}
             </span>
           </div>
         );

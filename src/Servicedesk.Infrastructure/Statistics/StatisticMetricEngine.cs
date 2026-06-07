@@ -23,8 +23,14 @@ public sealed class StatisticMetricEngine : IStatisticMetricEngine
         // timezone (Settings → General → App.TimeZone) so "today" / "this
         // week" line up with the local working day, not UTC.
         var tzId = await _settings.GetAsync<string>(SettingKeys.App.TimeZone, ct);
-        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTime.UtcNow, ResolveTimeZone(tzId)));
+        var tz = ResolveTimeZone(tzId);
+        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTime.UtcNow, tz));
         var (from, to, periodLabel) = ResolvePeriod(tile.Period, today);
+        // UTC instants for the same window — used by metrics that filter on a
+        // timestamptz column (ticket_events.created_utc), unlike the DATE-typed
+        // timesheet columns which compare on the local date directly.
+        var fromUtc = TimeZoneInfo.ConvertTimeToUtc(from.ToDateTime(TimeOnly.MinValue), tz);
+        var toUtc = TimeZoneInfo.ConvertTimeToUtc(to.AddDays(1).ToDateTime(TimeOnly.MinValue), tz);
 
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         var targets = await ResolveTargetsAsync(connection, tile, viewerId, ct);
@@ -43,8 +49,99 @@ public sealed class StatisticMetricEngine : IStatisticMetricEngine
             StatisticMetricKeys.BillableHours =>
                 await ComputeBillableHoursAsync(connection, tile, targets, from, to, periodLabel,
                     await _settings.GetAsync<decimal>(SettingKeys.Timesheet.HourlyRate, ct), ct),
+            StatisticMetricKeys.TicketsResolved =>
+                await ComputeTicketCountAsync(connection, tile, targets, fromUtc, toUtc, periodLabel,
+                    SettingKeys.Timesheet.ResolvedTabStatusIds, ct),
+            StatisticMetricKeys.TicketsCwi =>
+                await ComputeTicketCountAsync(connection, tile, targets, fromUtc, toUtc, periodLabel,
+                    SettingKeys.Timesheet.CwiTabStatusIds, ct),
             _ => Empty(tile, periodLabel),
         };
+    }
+
+    // ---- ticket counts (resolved / CWI) ----------------------------------
+
+    private async Task<StatisticTileData> ComputeTicketCountAsync(
+        NpgsqlConnection connection,
+        StatisticTile tile,
+        Guid[] targets,
+        DateTime fromUtc,
+        DateTime toUtc,
+        string periodLabel,
+        string statusCsvSettingKey,
+        CancellationToken ct)
+    {
+        var statusIds = ParseStatusIds(await _settings.GetAsync<string>(statusCsvSettingKey, ct));
+        if (statusIds.Length == 0)
+        {
+            return Empty(tile, periodLabel, "tickets");
+        }
+
+        // Credit = the author of the StatusChange that moved the ticket INTO a
+        // status in the configured set, counted in the period it happened.
+        // metadata->>'to' holds the destination status id as text (same form
+        // as status_id::text used by the back-office tabs). Distinct tickets
+        // per author so a reopen+re-resolve in the period counts once.
+        var counts = (await connection.QueryAsync<(Guid UserId, long Cnt)>(new CommandDefinition(
+            """
+            SELECT ev.author_user_id AS UserId, COUNT(DISTINCT ev.ticket_id)::bigint AS Cnt
+            FROM ticket_events ev
+            WHERE ev.event_type = 'StatusChange'
+              AND ev.author_user_id = ANY(@ids)
+              AND ev.metadata->>'to' = ANY(@statusIds)
+              AND ev.created_utc >= @fromUtc AND ev.created_utc < @toUtc
+            GROUP BY ev.author_user_id
+            """,
+            new { ids = targets, statusIds, fromUtc, toUtc }, cancellationToken: ct)))
+            .ToDictionary(r => r.UserId, r => r.Cnt);
+
+        var single = tile.Scope != StatisticScopes.Team;
+        var points = new List<StatisticDataPoint>();
+        long total = 0;
+
+        if (single)
+        {
+            var uid = targets[0];
+            var cnt = counts.TryGetValue(uid, out var c) ? c : 0;
+            total = cnt;
+            points.Add(new StatisticDataPoint(periodLabel, cnt));
+        }
+        else
+        {
+            var emails = await LoadEmailsAsync(connection, targets, ct);
+            foreach (var uid in targets)
+            {
+                var cnt = counts.TryGetValue(uid, out var c) ? c : 0;
+                if (cnt == 0) continue;
+                total += cnt;
+                points.Add(new StatisticDataPoint(emails.GetValueOrDefault(uid) ?? "Technician", cnt));
+            }
+            points = points.OrderByDescending(p => p.Value).ToList();
+        }
+
+        return new StatisticTileData(
+            TileId: tile.Id,
+            MetricKey: tile.MetricKey,
+            ChartType: tile.ChartType,
+            Unit: "tickets",
+            PeriodLabel: periodLabel,
+            Total: total,
+            Points: points,
+            GeneratedUtc: DateTime.UtcNow);
+    }
+
+    /// Canonical lowercase uuid strings from a comma-separated status-id list
+    /// (the Resolved/CWI tab settings), matching the form stored in
+    /// ticket_events.metadata->>'to'.
+    private static string[] ParseStatusIds(string? csv)
+    {
+        if (string.IsNullOrWhiteSpace(csv)) return Array.Empty<string>();
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var part in csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (Guid.TryParse(part, out var g)) set.Add(g.ToString());
+        }
+        return set.ToArray();
     }
 
     // ---- billable vs non-billable ----------------------------------------
@@ -358,7 +455,7 @@ public sealed class StatisticMetricEngine : IStatisticMetricEngine
 
     private static double ToHours(long minutes) => Math.Round(minutes / 60.0, 2);
 
-    private static StatisticTileData Empty(StatisticTile tile, string periodLabel) =>
-        new(tile.Id, tile.MetricKey, tile.ChartType, "hours", periodLabel, 0,
+    private static StatisticTileData Empty(StatisticTile tile, string periodLabel, string unit = "hours") =>
+        new(tile.Id, tile.MetricKey, tile.ChartType, unit, periodLabel, 0,
             Array.Empty<StatisticDataPoint>(), DateTime.UtcNow);
 }
