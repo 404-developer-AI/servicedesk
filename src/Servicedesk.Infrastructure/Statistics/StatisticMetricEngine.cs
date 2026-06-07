@@ -55,8 +55,97 @@ public sealed class StatisticMetricEngine : IStatisticMetricEngine
             StatisticMetricKeys.TicketsCwi =>
                 await ComputeTicketCountAsync(connection, tile, targets, fromUtc, toUtc, periodLabel,
                     SettingKeys.Timesheet.CwiTabStatusIds, ct),
+            StatisticMetricKeys.HoursByStatusGroup =>
+                await ComputeHoursByStatusGroupAsync(connection, tile, targets, from, to, periodLabel, ct),
             _ => Empty(tile, periodLabel),
         };
+    }
+
+    // ---- hours by status group (Resolved / CWI / QFI / WFQ) --------------
+
+    private async Task<StatisticTileData> ComputeHoursByStatusGroupAsync(
+        NpgsqlConnection connection,
+        StatisticTile tile,
+        Guid[] targets,
+        DateOnly from,
+        DateOnly to,
+        string periodLabel,
+        CancellationToken ct)
+    {
+        // Each group is a configurable status-id set. Resolved/CWI reuse the
+        // back-office sets; QFI/WFQ are statistics-only. A group with no
+        // configured statuses is omitted from the chart entirely.
+        var groups = new (string Label, Guid[] Ids)[]
+        {
+            ("Resolved", ParseStatusGuids(await _settings.GetAsync<string>(SettingKeys.Timesheet.ResolvedTabStatusIds, ct))),
+            ("CWI",      ParseStatusGuids(await _settings.GetAsync<string>(SettingKeys.Timesheet.CwiTabStatusIds, ct))),
+            ("QFI",      ParseStatusGuids(await _settings.GetAsync<string>(SettingKeys.Statistics.QfiStatusIds, ct))),
+            ("WFQ",      ParseStatusGuids(await _settings.GetAsync<string>(SettingKeys.Statistics.WfqStatusIds, ct))),
+        };
+
+        // One pass over the period's entries, bucketed by the ticket's CURRENT
+        // status into each group via FILTER. Hours logged on tickets whose
+        // status is in the group's set, summed across the target users.
+        var row = await connection.QueryFirstOrDefaultAsync<StatusGroupRow>(new CommandDefinition(
+            """
+            SELECT
+                COALESCE(SUM(e.minutes) FILTER (WHERE t.status_id = ANY(@resolved)), 0)::bigint AS ResolvedM,
+                COALESCE(SUM(e.minutes) FILTER (WHERE t.status_id = ANY(@cwi)),      0)::bigint AS CwiM,
+                COALESCE(SUM(e.minutes) FILTER (WHERE t.status_id = ANY(@qfi)),      0)::bigint AS QfiM,
+                COALESCE(SUM(e.minutes) FILTER (WHERE t.status_id = ANY(@wfq)),      0)::bigint AS WfqM
+            FROM timesheet_entries e
+            JOIN tickets t ON t.id = e.ticket_id
+            WHERE e.user_id = ANY(@ids) AND e.entry_date BETWEEN @from AND @to
+            """,
+            new
+            {
+                ids = targets,
+                from = from.ToDateTime(TimeOnly.MinValue),
+                to = to.ToDateTime(TimeOnly.MinValue),
+                resolved = groups[0].Ids,
+                cwi = groups[1].Ids,
+                qfi = groups[2].Ids,
+                wfq = groups[3].Ids,
+            }, cancellationToken: ct)) ?? new StatusGroupRow();
+
+        var minutesByGroup = new[] { row.ResolvedM, row.CwiM, row.QfiM, row.WfqM };
+        var points = new List<StatisticDataPoint>();
+        long totalMin = 0;
+        for (var i = 0; i < groups.Length; i++)
+        {
+            if (groups[i].Ids.Length == 0) continue; // group not configured → omit
+            totalMin += minutesByGroup[i];
+            points.Add(new StatisticDataPoint(groups[i].Label, ToHours(minutesByGroup[i])));
+        }
+
+        return new StatisticTileData(
+            TileId: tile.Id,
+            MetricKey: tile.MetricKey,
+            ChartType: tile.ChartType,
+            Unit: "hours",
+            PeriodLabel: periodLabel,
+            Total: ToHours(totalMin),
+            Points: points,
+            GeneratedUtc: DateTime.UtcNow);
+    }
+
+    private sealed class StatusGroupRow
+    {
+        public long ResolvedM { get; set; }
+        public long CwiM { get; set; }
+        public long QfiM { get; set; }
+        public long WfqM { get; set; }
+    }
+
+    private static Guid[] ParseStatusGuids(string? csv)
+    {
+        if (string.IsNullOrWhiteSpace(csv)) return Array.Empty<Guid>();
+        var set = new HashSet<Guid>();
+        foreach (var part in csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (Guid.TryParse(part, out var g)) set.Add(g);
+        }
+        return set.ToArray();
     }
 
     // ---- ticket counts (resolved / CWI) ----------------------------------

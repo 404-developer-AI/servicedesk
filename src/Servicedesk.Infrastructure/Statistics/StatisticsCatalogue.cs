@@ -23,9 +23,14 @@ public static class StatisticMetricKeys
     /// (Timesheet.CwiTabStatusIds).
     public const string TicketsCwi = "tickets_cwi";
 
+    /// Worked hours split across the configurable status groups Resolved / CWI
+    /// / QFI / WFQ — hours logged on tickets whose current status is in each
+    /// group.
+    public const string HoursByStatusGroup = "hours_by_status_group";
+
     public static readonly IReadOnlySet<string> All =
         new HashSet<string>(StringComparer.Ordinal)
-        { WorkedHours, BillableHours, TicketsResolved, TicketsCwi };
+        { WorkedHours, BillableHours, TicketsResolved, TicketsCwi, HoursByStatusGroup };
 
     public static bool IsKnown(string? key) => key is not null && All.Contains(key);
 }
@@ -146,6 +151,13 @@ public static class StatisticsCatalogue
             Label: "Tickets CWI (count)",
             Unit: "tickets",
             ChartTypes: new[] { StatisticChartTypes.Kpi, StatisticChartTypes.Bar },
+            Groupings: new[] { StatisticGroupings.None },
+            SupportsScope: true),
+        new StatisticMetricDescriptor(
+            Key: StatisticMetricKeys.HoursByStatusGroup,
+            Label: "Hours by status group (Resolved/CWI/QFI/WFQ)",
+            Unit: "hours",
+            ChartTypes: new[] { StatisticChartTypes.Bar },
             Groupings: new[] { StatisticGroupings.None },
             SupportsScope: true),
     };
