@@ -14,8 +14,18 @@ public static class StatisticMetricKeys
     /// remainder of their worked hours.
     public const string BillableHours = "billable_hours";
 
+    /// Count of tickets a technician moved into a "Resolved"-set status in the
+    /// period (credit = who set the status). Status set is configurable
+    /// (Timesheet.ResolvedTabStatusIds).
+    public const string TicketsResolved = "tickets_resolved";
+
+    /// Same as TicketsResolved but for the configurable "CWI" status set
+    /// (Timesheet.CwiTabStatusIds).
+    public const string TicketsCwi = "tickets_cwi";
+
     public static readonly IReadOnlySet<string> All =
-        new HashSet<string>(StringComparer.Ordinal) { WorkedHours, BillableHours };
+        new HashSet<string>(StringComparer.Ordinal)
+        { WorkedHours, BillableHours, TicketsResolved, TicketsCwi };
 
     public static bool IsKnown(string? key) => key is not null && All.Contains(key);
 }
@@ -122,6 +132,20 @@ public static class StatisticsCatalogue
             Unit: "hours",
             // Always a stacked comparison — chart type / grouping are fixed.
             ChartTypes: new[] { StatisticChartTypes.Bar },
+            Groupings: new[] { StatisticGroupings.None },
+            SupportsScope: true),
+        new StatisticMetricDescriptor(
+            Key: StatisticMetricKeys.TicketsResolved,
+            Label: "Tickets resolved (count)",
+            Unit: "tickets",
+            ChartTypes: new[] { StatisticChartTypes.Kpi, StatisticChartTypes.Bar },
+            Groupings: new[] { StatisticGroupings.None },
+            SupportsScope: true),
+        new StatisticMetricDescriptor(
+            Key: StatisticMetricKeys.TicketsCwi,
+            Label: "Tickets CWI (count)",
+            Unit: "tickets",
+            ChartTypes: new[] { StatisticChartTypes.Kpi, StatisticChartTypes.Bar },
             Groupings: new[] { StatisticGroupings.None },
             SupportsScope: true),
     };
