@@ -407,9 +407,28 @@ public sealed class StatisticMetricEngine : IStatisticMetricEngine
         {
             points.AddRange(await ComputeTimeBucketsAsync(connection, tile.Period, args, ct));
         }
+        else if (!IsSingleScope(tile.Scope))
+        {
+            // grouping = none + multi-technician scope (team / compare) → one
+            // bar per technician so they can be compared, rather than a single
+            // combined total.
+            var perUser = (await connection.QueryAsync<(Guid UserId, long Minutes)>(new CommandDefinition(
+                """
+                SELECT e.user_id AS UserId, COALESCE(SUM(e.minutes), 0)::bigint AS Minutes
+                FROM timesheet_entries e
+                WHERE e.user_id = ANY(@ids) AND e.entry_date BETWEEN @from AND @to
+                GROUP BY e.user_id
+                """,
+                args, cancellationToken: ct))).ToList();
+            var emails = await LoadEmailsAsync(connection, targets, ct);
+            points.AddRange(perUser
+                .Where(r => r.Minutes > 0)
+                .OrderByDescending(r => r.Minutes)
+                .Select(r => new StatisticDataPoint(emails.GetValueOrDefault(r.UserId) ?? "Technician", ToHours(r.Minutes))));
+        }
         else
         {
-            // grouping = none → a single bucket carrying the period total.
+            // grouping = none, single scope → a single bucket carrying the period total.
             points.Add(new StatisticDataPoint(periodLabel, ToHours(totalMinutes)));
         }
 
