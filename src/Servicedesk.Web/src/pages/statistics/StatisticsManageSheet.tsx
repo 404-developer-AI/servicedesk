@@ -42,6 +42,7 @@ const GROUPING_LABELS: Record<string, string> = {
 const SCOPES = [
   { value: "viewer_self", label: "Each viewer's own figures" },
   { value: "user", label: "A specific technician" },
+  { value: "users", label: "Specific technicians (compare)" },
   { value: "team", label: "Whole team" },
 ];
 
@@ -53,6 +54,7 @@ type FormState = {
   grouping: string;
   scope: string;
   scopeUserId: string | null;
+  scopeUserIds: string[];
   assignedUserIds: string[];
 };
 
@@ -66,6 +68,7 @@ function blankForm(metrics: StatisticMetricDescriptor[]): FormState {
     grouping: m?.groupings[0] ?? "none",
     scope: "viewer_self",
     scopeUserId: null,
+    scopeUserIds: [],
     assignedUserIds: [],
   };
 }
@@ -138,6 +141,7 @@ export function StatisticsManageSheet({
         grouping: detail.tile.grouping,
         scope: detail.tile.scope,
         scopeUserId: detail.tile.scopeUserId,
+        scopeUserIds: detail.tile.scopeUserIds ?? [],
         assignedUserIds: detail.assignedUserIds,
       });
       setEditingId(id);
@@ -157,6 +161,7 @@ export function StatisticsManageSheet({
         grouping: form.grouping,
         scope: form.scope,
         scopeUserId: form.scope === "user" ? form.scopeUserId : null,
+        scopeUserIds: form.scope === "users" ? form.scopeUserIds : [],
       };
       const tile = editingId
         ? await statisticsApi.update(editingId, input)
@@ -192,7 +197,9 @@ export function StatisticsManageSheet({
 
   const activeMetric = metrics.find((m) => m.key === form.metricKey);
   const titleValid = form.title.trim().length > 0;
-  const scopeUserValid = form.scope !== "user" || !!form.scopeUserId;
+  const scopeUserValid =
+    (form.scope !== "user" || !!form.scopeUserId) &&
+    (form.scope !== "users" || form.scopeUserIds.length > 0);
   const canSave = titleValid && !!form.metricKey && scopeUserValid && !saveMutation.isPending;
 
   return (
@@ -362,6 +369,14 @@ function TileForm({
     });
   }
 
+  function toggleScopeUser(id: string) {
+    patch({
+      scopeUserIds: form.scopeUserIds.includes(id)
+        ? form.scopeUserIds.filter((x) => x !== id)
+        : [...form.scopeUserIds, id],
+    });
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <Field label="Title">
@@ -468,6 +483,40 @@ function TileForm({
             </SelectContent>
           </Select>
         </Field>
+      )}
+
+      {form.scope === "users" && (
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-medium text-muted-foreground">
+            Technicians to compare ({form.scopeUserIds.length})
+          </span>
+          <div className="max-h-40 overflow-y-auto rounded-lg border border-glass">
+            {agents.length === 0 ? (
+              <div className="py-4 text-center text-xs text-muted-foreground">No agents found.</div>
+            ) : (
+              agents.map((a) => {
+                const checked = form.scopeUserIds.includes(a.id);
+                return (
+                  <label
+                    key={a.id}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-2.5 px-3 py-1.5 text-sm transition-colors hover:bg-glass-hover",
+                      checked ? "text-foreground" : "text-muted-foreground",
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleScopeUser(a.id)}
+                      className="rounded border-glass-strong bg-glass accent-primary"
+                    />
+                    <span className="truncate">{a.email}</span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+        </div>
       )}
 
       <div className="flex flex-col gap-2">

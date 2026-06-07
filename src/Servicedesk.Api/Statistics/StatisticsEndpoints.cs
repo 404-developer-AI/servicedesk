@@ -42,7 +42,7 @@ public static class StatisticsEndpoints
         }).WithName("StatisticsListAssigned").WithOpenApi();
 
         group.MapGet("/tiles/{id:guid}/data", async (
-            Guid id, HttpContext http, IUserService users,
+            Guid id, int? offset, HttpContext http, IUserService users,
             IStatisticTileService tiles, IStatisticMetricEngine engine, CancellationToken ct) =>
         {
             var userId = ResolveUserId(http);
@@ -62,7 +62,10 @@ public static class StatisticsEndpoints
                 return Results.Forbid();
             }
 
-            var data = await engine.ComputeAsync(tile, userId.Value, ct);
+            // Clamp the offset so a hostile/odd client can't ask for an
+            // absurd window; ±120 units covers a decade of months.
+            var clamped = Math.Clamp(offset ?? 0, -120, 0);
+            var data = await engine.ComputeAsync(tile, userId.Value, clamped, ct);
             return Results.Ok(ToDataDto(data));
         }).WithName("StatisticsTileData").WithOpenApi();
 
@@ -226,7 +229,13 @@ public static class StatisticsEndpoints
         grouping = t.Grouping,
         scope = t.Scope,
         scopeUserId = t.ScopeUserId,
+        scopeUserIds = SplitCsv(t.ScopeUserIds),
     };
+
+    private static string[] SplitCsv(string? csv) =>
+        string.IsNullOrWhiteSpace(csv)
+            ? Array.Empty<string>()
+            : csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     private static object ToTileDto(StatisticTileWithLayout r) => new
     {
@@ -295,7 +304,8 @@ public static class StatisticsEndpoints
 
     public sealed record TileInputRequest(
         string? Title, string? MetricKey, string? ChartType,
-        string? Period, string? Grouping, string? Scope, Guid? ScopeUserId)
+        string? Period, string? Grouping, string? Scope, Guid? ScopeUserId,
+        IReadOnlyList<Guid>? ScopeUserIds)
     {
         public StatisticTileInput ToInput() => new(
             (Title ?? "").Trim(),
@@ -304,7 +314,8 @@ public static class StatisticsEndpoints
             Period ?? "",
             Grouping ?? StatisticGroupings.None,
             Scope ?? "",
-            ScopeUserId);
+            ScopeUserId,
+            ScopeUserIds);
     }
 
     public sealed record AssignmentsRequest(IReadOnlyList<Guid>? UserIds);

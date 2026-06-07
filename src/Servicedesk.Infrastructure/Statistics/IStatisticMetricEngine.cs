@@ -11,5 +11,8 @@ namespace Servicedesk.Infrastructure.Statistics;
 /// before the engine is called.
 public interface IStatisticMetricEngine
 {
-    Task<StatisticTileData> ComputeAsync(StatisticTile tile, Guid viewerId, CancellationToken ct = default);
+    /// <paramref name="periodOffset"/> shifts the window by whole period units
+    /// (e.g. -1 = previous month for a month tile); 0 = the current period.
+    Task<StatisticTileData> ComputeAsync(
+        StatisticTile tile, Guid viewerId, int periodOffset = 0, CancellationToken ct = default);
 }

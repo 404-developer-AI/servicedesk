@@ -4175,11 +4175,17 @@ public sealed class DatabaseBootstrapper : IHostedService
             grouping      TEXT        NOT NULL DEFAULT 'none',
             scope         TEXT        NOT NULL,
             scope_user_id UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            scope_user_ids TEXT       NULL,
             filters_json  JSONB       NOT NULL DEFAULT '{}'::jsonb,
             created_by    UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
             created_utc   TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_utc   TIMESTAMPTZ NOT NULL DEFAULT now()
         );
+        -- v0.0.69 (compare scope) — CSV of technician ids for scope='users'
+        -- (multi-technician comparison in one tile). Added here for installs
+        -- created before the column existed.
+        ALTER TABLE statistic_tiles
+            ADD COLUMN IF NOT EXISTS scope_user_ids TEXT NULL;
 
         -- Which read-agents a tile is assigned to. Deleting the tile or the
         -- user cascades the assignment away.

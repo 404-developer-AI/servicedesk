@@ -17,15 +17,16 @@ public sealed class StatisticMetricEngine : IStatisticMetricEngine
     }
 
     public async Task<StatisticTileData> ComputeAsync(
-        StatisticTile tile, Guid viewerId, CancellationToken ct = default)
+        StatisticTile tile, Guid viewerId, int periodOffset = 0, CancellationToken ct = default)
     {
         // Period boundaries are resolved in the configured application
         // timezone (Settings → General → App.TimeZone) so "today" / "this
-        // week" line up with the local working day, not UTC.
+        // week" line up with the local working day, not UTC. periodOffset
+        // shifts the window by whole units for prev/next navigation.
         var tzId = await _settings.GetAsync<string>(SettingKeys.App.TimeZone, ct);
         var tz = ResolveTimeZone(tzId);
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTime.UtcNow, tz));
-        var (from, to, periodLabel) = ResolvePeriod(tile.Period, today);
+        var (from, to, periodLabel) = ResolvePeriod(tile.Period, today, periodOffset);
         // UTC instants for the same window — used by metrics that filter on a
         // timestamptz column (ticket_events.created_utc), unlike the DATE-typed
         // timesheet columns which compare on the local date directly.
@@ -184,7 +185,7 @@ public sealed class StatisticMetricEngine : IStatisticMetricEngine
             new { ids = targets, statusIds, fromUtc, toUtc }, cancellationToken: ct)))
             .ToDictionary(r => r.UserId, r => r.Cnt);
 
-        var single = tile.Scope != StatisticScopes.Team;
+        var single = IsSingleScope(tile.Scope);
         var points = new List<StatisticDataPoint>();
         long total = 0;
 
@@ -308,7 +309,7 @@ public sealed class StatisticMetricEngine : IStatisticMetricEngine
             args, cancellationToken: ct))).ToDictionary(r => r.UserId, r => r.Minutes);
 
         var emails = await LoadEmailsAsync(connection, targets, ct);
-        var single = tile.Scope != StatisticScopes.Team;
+        var single = IsSingleScope(tile.Scope);
 
         var points = new List<StatisticDataPoint>();
         double totalBillable = 0;
@@ -490,6 +491,9 @@ public sealed class StatisticMetricEngine : IStatisticMetricEngine
             case StatisticScopes.User:
                 return tile.ScopeUserId is { } id ? new[] { id } : Array.Empty<Guid>();
 
+            case StatisticScopes.Users:
+                return ParseStatusGuids(tile.ScopeUserIds);
+
             case StatisticScopes.Team:
                 var rows = await connection.QueryAsync<Guid>(new CommandDefinition(
                     "SELECT id FROM users WHERE role_name IN ('Agent','Admin') AND is_active = TRUE",
@@ -503,31 +507,50 @@ public sealed class StatisticMetricEngine : IStatisticMetricEngine
 
     /// Resolves a period token into an inclusive [from, to] date range and a
     /// human label, relative to <paramref name="today"/> (already converted to
-    /// the configured application timezone by the caller).
-    private static (DateOnly From, DateOnly To, string Label) ResolvePeriod(string period, DateOnly today)
+    /// the configured application timezone by the caller) and shifted by
+    /// <paramref name="offset"/> whole period units (prev/next navigation).
+    /// The label is the concrete period; offset 0 also carries a "this …" hint.
+    private static (DateOnly From, DateOnly To, string Label) ResolvePeriod(string period, DateOnly today, int offset)
     {
         switch (period)
         {
             case StatisticPeriods.Day:
-                return (today, today, $"Today — {today:dd MMM yyyy}");
+            {
+                var d = today.AddDays(offset);
+                var hint = offset == 0 ? "Today · " : offset == -1 ? "Yesterday · " : "";
+                return (d, d, $"{hint}{d:ddd dd MMM yyyy}");
+            }
 
             case StatisticPeriods.Week:
-                var monday = today.AddDays(-(((int)today.DayOfWeek + 6) % 7));
+            {
+                var refDay = today.AddDays(offset * 7);
+                var monday = refDay.AddDays(-(((int)refDay.DayOfWeek + 6) % 7));
                 var sunday = monday.AddDays(6);
-                return (monday, sunday, $"This week — {monday:dd MMM}–{sunday:dd MMM}");
+                var hint = offset == 0 ? "This week · " : offset == -1 ? "Last week · " : "";
+                return (monday, sunday, $"{hint}{monday:dd MMM}–{sunday:dd MMM yyyy}");
+            }
 
             case StatisticPeriods.Year:
-                var jan1 = new DateOnly(today.Year, 1, 1);
-                var dec31 = new DateOnly(today.Year, 12, 31);
-                return (jan1, dec31, $"This year — {today.Year}");
+            {
+                var year = today.Year + offset;
+                var hint = offset == 0 ? "This year · " : "";
+                return (new DateOnly(year, 1, 1), new DateOnly(year, 12, 31), $"{hint}{year}");
+            }
 
             case StatisticPeriods.Month:
             default:
-                var first = new DateOnly(today.Year, today.Month, 1);
+            {
+                var first = new DateOnly(today.Year, today.Month, 1).AddMonths(offset);
                 var last = first.AddMonths(1).AddDays(-1);
-                return (first, last, $"This month — {first:MMM yyyy}");
+                var hint = offset == 0 ? "This month · " : offset == -1 ? "Last month · " : "";
+                return (first, last, $"{hint}{first:MMM yyyy}");
+            }
         }
     }
+
+    private static bool IsSingleScope(string scope) =>
+        string.Equals(scope, StatisticScopes.ViewerSelf, StringComparison.Ordinal) ||
+        string.Equals(scope, StatisticScopes.User, StringComparison.Ordinal);
 
     /// Resolves the configured IANA timezone id, falling back to the server's
     /// local zone when unset/invalid (mirrors the helper used by the SLA +

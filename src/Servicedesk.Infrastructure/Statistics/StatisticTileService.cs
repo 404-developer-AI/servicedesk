@@ -21,6 +21,7 @@ public sealed class StatisticTileService : IStatisticTileService
         grouping    AS Grouping,
         scope       AS Scope,
         scope_user_id AS ScopeUserId,
+        scope_user_ids AS ScopeUserIds,
         created_by  AS CreatedBy,
         created_utc AS CreatedUtc,
         updated_utc AS UpdatedUtc
@@ -39,6 +40,7 @@ public sealed class StatisticTileService : IStatisticTileService
                     t.grouping    AS Grouping,
                     t.scope       AS Scope,
                     t.scope_user_id AS ScopeUserId,
+                    t.scope_user_ids AS ScopeUserIds,
                     t.created_by  AS CreatedBy,
                     t.created_utc AS CreatedUtc,
                     t.updated_utc AS UpdatedUtc,
@@ -64,6 +66,7 @@ public sealed class StatisticTileService : IStatisticTileService
         public string Grouping { get; set; } = "";
         public string Scope { get; set; } = "";
         public Guid? ScopeUserId { get; set; }
+        public string? ScopeUserIds { get; set; }
         public Guid? CreatedBy { get; set; }
         public DateTime CreatedUtc { get; set; }
         public DateTime UpdatedUtc { get; set; }
@@ -74,7 +77,7 @@ public sealed class StatisticTileService : IStatisticTileService
         {
             Id = Id, Title = Title, MetricKey = MetricKey, ChartType = ChartType,
             Period = Period, Grouping = Grouping, Scope = Scope, ScopeUserId = ScopeUserId,
-            CreatedBy = CreatedBy, CreatedUtc = CreatedUtc, UpdatedUtc = UpdatedUtc,
+            ScopeUserIds = ScopeUserIds, CreatedBy = CreatedBy, CreatedUtc = CreatedUtc, UpdatedUtc = UpdatedUtc,
         };
     }
 
@@ -96,9 +99,9 @@ public sealed class StatisticTileService : IStatisticTileService
 
         var sql = $"""
             INSERT INTO statistic_tiles
-                (title, metric_key, chart_type, period, grouping, scope, scope_user_id, created_by)
+                (title, metric_key, chart_type, period, grouping, scope, scope_user_id, scope_user_ids, created_by)
             VALUES
-                (@Title, @MetricKey, @ChartType, @Period, @Grouping, @Scope, @ScopeUserId, @CreatedBy)
+                (@Title, @MetricKey, @ChartType, @Period, @Grouping, @Scope, @ScopeUserId, @ScopeUserIds, @CreatedBy)
             RETURNING {TileColumns}
             """;
         var tile = await connection.QuerySingleAsync<StatisticTile>(new CommandDefinition(sql, new
@@ -110,6 +113,7 @@ public sealed class StatisticTileService : IStatisticTileService
             input.Grouping,
             input.Scope,
             ScopeUserId = NormalizeScopeUser(input),
+            ScopeUserIds = NormalizeScopeUsers(input),
             CreatedBy = actingUserId,
         }, cancellationToken: ct));
         return new SaveStatisticTileResult.Created(tile);
@@ -136,6 +140,7 @@ public sealed class StatisticTileService : IStatisticTileService
                 grouping = @Grouping,
                 scope = @Scope,
                 scope_user_id = @ScopeUserId,
+                scope_user_ids = @ScopeUserIds,
                 updated_utc = now()
             WHERE id = @id
             RETURNING {TileColumns}
@@ -150,6 +155,7 @@ public sealed class StatisticTileService : IStatisticTileService
             input.Grouping,
             input.Scope,
             ScopeUserId = NormalizeScopeUser(input),
+            ScopeUserIds = NormalizeScopeUsers(input),
         }, cancellationToken: ct));
         _ = actingUserId;
         return new SaveStatisticTileResult.Updated(tile);
@@ -231,6 +237,7 @@ public sealed class StatisticTileService : IStatisticTileService
                     t.grouping    AS Grouping,
                     t.scope       AS Scope,
                     t.scope_user_id AS ScopeUserId,
+                    t.scope_user_ids AS ScopeUserIds,
                     t.created_by  AS CreatedBy,
                     t.created_utc AS CreatedUtc,
                     t.updated_utc AS UpdatedUtc,
@@ -267,6 +274,7 @@ public sealed class StatisticTileService : IStatisticTileService
         public string Grouping { get; set; } = "";
         public string Scope { get; set; } = "";
         public Guid? ScopeUserId { get; set; }
+        public string? ScopeUserIds { get; set; }
         public Guid? CreatedBy { get; set; }
         public DateTime CreatedUtc { get; set; }
         public DateTime UpdatedUtc { get; set; }
@@ -279,7 +287,7 @@ public sealed class StatisticTileService : IStatisticTileService
         {
             Id = Id, Title = Title, MetricKey = MetricKey, ChartType = ChartType,
             Period = Period, Grouping = Grouping, Scope = Scope, ScopeUserId = ScopeUserId,
-            CreatedBy = CreatedBy, CreatedUtc = CreatedUtc, UpdatedUtc = UpdatedUtc,
+            ScopeUserIds = ScopeUserIds, CreatedBy = CreatedBy, CreatedUtc = CreatedUtc, UpdatedUtc = UpdatedUtc,
         };
     }
 
@@ -342,6 +350,13 @@ public sealed class StatisticTileService : IStatisticTileService
     private static Guid? NormalizeScopeUser(StatisticTileInput input) =>
         string.Equals(input.Scope, StatisticScopes.User, StringComparison.Ordinal) ? input.ScopeUserId : null;
 
+    private static string? NormalizeScopeUsers(StatisticTileInput input)
+    {
+        if (!string.Equals(input.Scope, StatisticScopes.Users, StringComparison.Ordinal)) return null;
+        var ids = (input.ScopeUserIds ?? Array.Empty<Guid>()).Distinct().ToList();
+        return ids.Count == 0 ? null : string.Join(",", ids);
+    }
+
     /// Validates a tile definition against the catalogue. Returns the list of
     /// human-readable errors (empty = valid).
     private static async Task<IReadOnlyList<string>> ValidateAsync(
@@ -384,6 +399,21 @@ public sealed class StatisticTileService : IStatisticTileService
                     "SELECT EXISTS(SELECT 1 FROM users WHERE id = @id AND role_name IN ('Agent','Admin'))",
                     new { id = input.ScopeUserId }, cancellationToken: ct));
                 if (!ok) errors.Add("The selected technician does not exist.");
+            }
+        }
+        else if (string.Equals(input.Scope, StatisticScopes.Users, StringComparison.Ordinal))
+        {
+            var ids = (input.ScopeUserIds ?? Array.Empty<Guid>()).Distinct().ToArray();
+            if (ids.Length == 0)
+            {
+                errors.Add("Select at least one technician to compare.");
+            }
+            else
+            {
+                var validCount = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+                    "SELECT COUNT(*) FROM users WHERE id = ANY(@ids) AND role_name IN ('Agent','Admin')",
+                    new { ids }, cancellationToken: ct));
+                if (validCount != ids.Length) errors.Add("One or more selected technicians do not exist.");
             }
         }
 

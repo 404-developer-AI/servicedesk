@@ -1096,6 +1096,7 @@ export type StatisticBareTile = {
   grouping: string;
   scope: string;
   scopeUserId: string | null;
+  scopeUserIds: string[];
 };
 
 export type StatisticDataPoint = { label: string; value: number; value2?: number | null };
@@ -1120,6 +1121,7 @@ export type StatisticTileInput = {
   grouping: string;
   scope: string;
   scopeUserId: string | null;
+  scopeUserIds?: string[];
 };
 
 export type StatisticLayoutEntry = { tileId: string; size: string; hidden: boolean };
@@ -1127,8 +1129,8 @@ export type StatisticLayoutEntry = { tileId: string; size: string; hidden: boole
 export const statisticsApi = {
   // read surface
   listAssigned: () => request<StatisticTileDto[]>("GET", "/api/statistics/tiles"),
-  tileData: (id: string) =>
-    request<StatisticTileData>("GET", `/api/statistics/tiles/${id}/data`),
+  tileData: (id: string, offset = 0) =>
+    request<StatisticTileData>("GET", `/api/statistics/tiles/${id}/data?offset=${offset}`),
   saveLayout: (tiles: StatisticLayoutEntry[]) =>
     request<void>("PUT", "/api/statistics/layout", { tiles }),
   // write surface (builder)
