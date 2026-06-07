@@ -22,6 +22,7 @@ import { ZammadIntegrationPage } from "@/pages/settings/ZammadIntegrationPage";
 import { TrmmIntegrationPage } from "@/pages/settings/TrmmIntegrationPage";
 import { AssetsPage } from "@/pages/assets/AssetsPage";
 import { OrdersPage } from "@/pages/orders/OrdersPage";
+import { StatisticsPage } from "@/pages/statistics/StatisticsPage";
 import { ZammadImportRunsListPage } from "@/pages/settings/zammad/ZammadImportRunsListPage";
 import { ZammadImportRunDetailPage } from "@/pages/settings/zammad/ZammadImportRunDetailPage";
 import { MailSettingsPage } from "@/pages/settings/MailSettingsPage";
@@ -353,6 +354,18 @@ const ordersRoute = createRoute({
 
 // v0.0.12 stap 4 — history of @@-mentions received by the caller.
 // Agent+Admin only; customers never receive mentions in this release.
+// v0.0.69 — Statistics page (light tile builder). Same gate pattern as
+// Assets/Orders: Agent + Admin role gate at the route, per-user
+// `statistics_read` flag enforced server-side (RequireAgent + flag check on
+// /api/statistics) and via the sidebar hide so a flag-off user never sees a
+// dead link.
+const statisticsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/statistics",
+  beforeLoad: authGate(["Agent", "Admin"]),
+  component: StatisticsPage,
+});
+
 const profileMentionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/profile/mentions",
@@ -692,6 +705,7 @@ const routeTree = rootRoute.addChildren([
   activityFeedRoute,
   assetsRoute,
   ordersRoute,
+  statisticsRoute,
   settingsRoute.addChildren([
     settingsIndexRoute,
     settingsGeneralRoute,

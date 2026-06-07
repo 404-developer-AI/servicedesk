@@ -8,6 +8,7 @@ import {
   Activity,
   Server,
   ShoppingCart,
+  BarChart3,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "@/lib/roles";
@@ -111,6 +112,18 @@ export const NAV_ITEMS: readonly NavItem[] = [
     roles: ["Agent", "Admin"],
     comingIn: "",
     description: "Adsolut orders (bestellingen) mirrored from the ERP — overview with per-order detail lines.",
+    section: "main",
+  },
+  // v0.0.69 — Statistics (light tile builder). Role gate is Agent+Admin; the
+  // per-user `statistics_read` flag is checked in Sidebar.tsx, and the backend
+  // /api/statistics endpoints carry RequireAgent + the matching flag check.
+  {
+    label: "Statistics",
+    to: "/statistics",
+    icon: BarChart3,
+    roles: ["Agent", "Admin"],
+    comingIn: "",
+    description: "Per-technician statistics tiles — worked hours and more, built and assigned by statistics builders.",
     section: "main",
   },
   // Profile is reachable from the header avatar dropdown (top-right) and via
