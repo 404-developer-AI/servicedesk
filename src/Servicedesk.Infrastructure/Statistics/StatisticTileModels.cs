@@ -52,9 +52,12 @@ public sealed record StatisticTileInput(
 public sealed record StatisticLayoutEntry(string TileId, string? Size, bool Hidden);
 
 /// A single labelled value in a computed tile (a bar, or a grouped row).
-/// <paramref name="Value2"/> carries a second stacked series when the metric
-/// is a two-series comparison (e.g. billable vs non-billable); null otherwise.
-public sealed record StatisticDataPoint(string Label, double Value, double? Value2 = null);
+/// <paramref name="Value2"/> carries a second stacked series for a two-series
+/// comparison (billable vs non-billable). <paramref name="Segments"/> carries
+/// an N-series stacked breakdown aligned to the tile's SeriesLabels (e.g. one
+/// bar per technician split across status groups). Both null = a plain bar.
+public sealed record StatisticDataPoint(
+    string Label, double Value, double? Value2 = null, IReadOnlyList<double>? Segments = null);
 
 /// The computed result of a tile for one viewer. Covers KPI (Total + single
 /// point), single-series bar (Points) and two-series stacked bar (Points with

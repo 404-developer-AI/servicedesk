@@ -1099,7 +1099,12 @@ export type StatisticBareTile = {
   scopeUserIds: string[];
 };
 
-export type StatisticDataPoint = { label: string; value: number; value2?: number | null };
+export type StatisticDataPoint = {
+  label: string;
+  value: number;
+  value2?: number | null;
+  segments?: number[] | null;
+};
 
 export type StatisticTileData = {
   tileId: string;
