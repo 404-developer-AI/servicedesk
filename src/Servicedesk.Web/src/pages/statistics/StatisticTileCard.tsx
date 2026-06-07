@@ -1,5 +1,13 @@
+import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, Users, User as UserIcon, UserCircle2 } from "lucide-react";
+import {
+  BarChart3,
+  Users,
+  User as UserIcon,
+  UserCircle2,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { statisticsApi, type StatisticTileDto } from "@/lib/ticket-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -22,6 +30,13 @@ function ScopeBadge({ tile }: { tile: StatisticTileDto }) {
       </span>
     );
   }
+  if (tile.scope === "users") {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+        <Users className="h-3 w-3" /> Compare
+      </span>
+    );
+  }
   if (tile.scope === "user") {
     return (
       <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
@@ -40,9 +55,12 @@ function ScopeBadge({ tile }: { tile: StatisticTileDto }) {
 /// drives the body: 'kpi' = a big number, 'bar' = custom glass horizontal
 /// bars (richer chart types arrive with recharts in a later increment).
 export function StatisticTileCard({ tile }: { tile: StatisticTileDto }) {
+  // Per-tile period navigation. 0 = current period; negative = earlier.
+  // Ephemeral (not persisted) — resets when the tile remounts.
+  const [offset, setOffset] = React.useState(0);
   const q = useQuery({
-    queryKey: ["statistics", "tile-data", tile.id],
-    queryFn: () => statisticsApi.tileData(tile.id),
+    queryKey: ["statistics", "tile-data", tile.id, offset],
+    queryFn: () => statisticsApi.tileData(tile.id, offset),
     staleTime: 60_000,
   });
 
@@ -54,8 +72,27 @@ export function StatisticTileCard({ tile }: { tile: StatisticTileDto }) {
             <BarChart3 className="h-4 w-4 shrink-0 text-primary" />
             <span className="truncate">{tile.title}</span>
           </div>
-          <div className="mt-0.5 truncate text-xs text-muted-foreground">
-            {q.data?.periodLabel ?? " "}
+          <div className="mt-0.5 flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setOffset((o) => o - 1)}
+              title="Previous period"
+              className="rounded p-0.5 text-muted-foreground hover:bg-glass-hover hover:text-foreground"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+            <span className="min-w-0 flex-1 truncate text-center text-xs text-muted-foreground">
+              {q.data?.periodLabel ?? " "}
+            </span>
+            <button
+              type="button"
+              onClick={() => setOffset((o) => Math.min(o + 1, 0))}
+              disabled={offset >= 0}
+              title="Next period"
+              className="rounded p-0.5 text-muted-foreground hover:bg-glass-hover hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
         <ScopeBadge tile={tile} />
@@ -133,14 +170,18 @@ function BarBody({
               {p.label}
             </span>
             <div className="relative flex h-4 flex-1 overflow-hidden rounded bg-glass">
+              {/* Exact proportional widths (no percentage floor, which would
+                  make small values all collapse to the same minimum and look
+                  equal). A 2px floor only keeps a non-zero value from
+                  disappearing entirely. */}
               <div
-                className="h-full bg-gradient-to-r from-primary/70 to-primary"
-                style={{ width: `${Math.max((p.value / max) * 100, p.value > 0 ? 3 : 0)}%` }}
+                className="h-full shrink-0 bg-gradient-to-r from-primary/70 to-primary"
+                style={{ width: `${(p.value / max) * 100}%`, minWidth: p.value > 0 ? 2 : 0 }}
               />
               {stacked && (
                 <div
-                  className="h-full bg-muted-foreground/30"
-                  style={{ width: `${Math.max((v2 / max) * 100, v2 > 0 ? 3 : 0)}%` }}
+                  className="h-full shrink-0 bg-muted-foreground/30"
+                  style={{ width: `${(v2 / max) * 100}%`, minWidth: v2 > 0 ? 2 : 0 }}
                 />
               )}
             </div>

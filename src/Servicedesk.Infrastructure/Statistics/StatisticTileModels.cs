@@ -14,6 +14,8 @@ public sealed class StatisticTile
     public string Grouping { get; set; } = "";
     public string Scope { get; set; } = "";
     public Guid? ScopeUserId { get; set; }
+    /// CSV of technician ids for scope='users' (multi-technician compare).
+    public string? ScopeUserIds { get; set; }
     public Guid? CreatedBy { get; set; }
     public DateTime CreatedUtc { get; set; }
     public DateTime UpdatedUtc { get; set; }
@@ -43,7 +45,8 @@ public sealed record StatisticTileInput(
     string Period,
     string Grouping,
     string Scope,
-    Guid? ScopeUserId);
+    Guid? ScopeUserId,
+    IReadOnlyList<Guid>? ScopeUserIds = null);
 
 /// One layout entry posted by the read-agent's edit mode.
 public sealed record StatisticLayoutEntry(string TileId, string? Size, bool Hidden);

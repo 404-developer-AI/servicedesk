@@ -86,11 +86,14 @@ public static class StatisticScopes
     /// A single fixed technician (scope_user_id on the tile).
     public const string User = "user";
 
+    /// A fixed set of technicians to compare side by side (scope_user_ids).
+    public const string Users = "users";
+
     /// All Agent + Admin users together.
     public const string Team = "team";
 
     public static readonly IReadOnlySet<string> All =
-        new HashSet<string>(StringComparer.Ordinal) { ViewerSelf, User, Team };
+        new HashSet<string>(StringComparer.Ordinal) { ViewerSelf, User, Users, Team };
 
     public static bool IsKnown(string? value) => value is not null && All.Contains(value);
 }
