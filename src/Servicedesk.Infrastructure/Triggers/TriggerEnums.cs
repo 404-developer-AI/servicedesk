@@ -27,6 +27,12 @@ public enum TriggerActivatorMode
     /// single mode for now; future gate modes (e.g. priority-change,
     /// queue-change) can be added in the same slot.
     StatusChange,
+    /// Interactive gate that fires the first time an agent opens a ticket
+    /// (once per ticket). Paired with <see cref="TriggerActivatorKind.Gate"/>
+    /// and the <c>title_review</c> action. Evaluated by the ticket
+    /// detail page's open-gate probe, never by the event evaluator or the
+    /// time scheduler.
+    FirstOpen,
 }
 
 public enum TriggerRunOutcome

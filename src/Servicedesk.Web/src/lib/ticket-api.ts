@@ -521,6 +521,24 @@ export type GateConfirmation = {
   role?: ContactCompanyRole;
 };
 
+/// First-open title-review gate. Surfaced by the open-gate probe when an
+/// agent opens a ticket whose title hasn't been reviewed yet. Drives a
+/// blocking dialog: the agent reviews/edits `currentSubject` and confirms.
+export type OpenGateMatch = {
+  triggerId: string;
+  name: string;
+  /// Dialog heading.
+  title: string;
+  /// Optional question shown above the editable field; null when disabled.
+  message: string | null;
+  /// Label above the editable subject field.
+  fieldLabel: string;
+  /// The single approve button's label.
+  confirmLabel: string;
+  /// The ticket's current subject, pre-filled into the editable field.
+  currentSubject: string;
+};
+
 export type NewTicketEvent = {
   eventType: "Comment" | "Note";
   bodyText?: string;
@@ -910,6 +928,22 @@ export const ticketApi = {
     request<{ items: StatusGateMatch[] }>(
       "GET",
       `/api/tickets/${id}/status-gates?toStatusId=${encodeURIComponent(toStatusId)}`,
+    ),
+  /// First-open title-review gate probe. Returns { gate: null } when the
+  /// ticket was already reviewed or no gate matches.
+  listOpenGates: (id: string) =>
+    request<{ gate: OpenGateMatch | null }>(
+      "GET",
+      `/api/tickets/${id}/open-gates`,
+    ),
+  /// Confirm a first-open title-review gate: applies the (possibly edited)
+  /// subject, marks the ticket reviewed, runs the trigger's actions, and
+  /// returns the refreshed detail.
+  confirmOpenGate: (id: string, triggerId: string, subject: string) =>
+    request<TicketDetail & { reviewed: boolean }>(
+      "POST",
+      `/api/tickets/${id}/open-gates/confirm`,
+      { triggerId, subject },
     ),
   addEvent: (id: string, event: NewTicketEvent) =>
     request<TicketEvent>("POST", `/api/tickets/${id}/events`, event),

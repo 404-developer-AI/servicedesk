@@ -46,22 +46,32 @@ type Props = {
   /// it. Omitted = all kinds (legacy default for callers that haven't
   /// been threaded through yet).
   activatorKind?: string;
+  /// The gate mode ("status_change" | "first_open") when activatorKind is
+  /// "gate". Splits gate behaviour: status_change carries exactly one
+  /// gate action and nothing else; first_open carries one (seeded)
+  /// title_review plus any regular actions that run after confirmation.
+  activatorMode?: string;
 };
 
 const ACTION_KINDS: KnownActionKind[] = [...KNOWN_ACTION_KINDS];
 
-/// Filter the action picker by activator kind. Gates may only carry
-/// one of the two gate-actions (prompt_confirm or require_contact_company);
-/// every other activator hides them so the admin cannot save a payload
-/// the BE validator will reject.
+/// Status-change gates may only carry one of the two status-gate actions.
 const GATE_ACTION_KINDS: KnownActionKind[] = ["prompt_confirm", "require_contact_company"];
 
-function isGateAction(kind: string): kind is "prompt_confirm" | "require_contact_company" {
-  return kind === "prompt_confirm" || kind === "require_contact_company";
+/// Every gate-only action kind — hidden from non-gate activators so the
+/// admin cannot save a payload the BE validator will reject.
+function isGateAction(kind: string): boolean {
+  return kind === "prompt_confirm" || kind === "require_contact_company" || kind === "title_review";
 }
 
-function allowedKindsFor(activatorKind?: string): KnownActionKind[] {
-  if (activatorKind === "gate") return GATE_ACTION_KINDS;
+function allowedKindsFor(activatorKind?: string, activatorMode?: string): KnownActionKind[] {
+  if (activatorKind === "gate") {
+    // First-open gates allow regular actions alongside the seeded
+    // title_review (which isn't re-addable); status-change gates offer
+    // only the two status-gate actions.
+    if (activatorMode === "first_open") return ACTION_KINDS.filter((k) => !isGateAction(k));
+    return GATE_ACTION_KINDS;
+  }
   return ACTION_KINDS.filter((k) => !isGateAction(k));
 }
 
@@ -71,9 +81,13 @@ function allowedKindsFor(activatorKind?: string): KnownActionKind[] {
 /// HTML body fields with the variable picker in scope. Order matters: the
 /// dispatcher applies actions top-to-bottom so admins can chain "set
 /// priority then add a note explaining why".
-export function ActionsEditor({ value, onChange, taxonomies, variables, activatorKind }: Props) {
-  const addableKinds = allowedKindsFor(activatorKind);
+export function ActionsEditor({ value, onChange, taxonomies, variables, activatorKind, activatorMode }: Props) {
+  const addableKinds = allowedKindsFor(activatorKind, activatorMode);
+  // Status-change gates hide the add menu once their single gate action is
+  // present; first-open gates keep it open so the admin can add follow-up
+  // actions (e.g. the approval note) after the seeded title_review.
   const hideAdd = activatorKind === "gate"
+    && activatorMode !== "first_open"
     && value.some((a) => isGateAction(a.kind));
   function update(idx: number, action: TriggerAction) {
     const next = value.slice();
@@ -541,7 +555,82 @@ function ActionForm({
           variables={variables}
         />
       );
+    case "title_review":
+      return <TitleReviewFields action={action} onChange={onChange} />;
   }
+}
+
+/// Form fragment for the title_review action — the single gate action on a
+/// gate:first_open trigger. Configures the blocking dialog the agent sees
+/// on first open: heading, an optional question line, the label above the
+/// editable subject field, and the approve button. The approval note is a
+/// separate add_internal_note action, so there's no note template here.
+function TitleReviewFields({
+  action,
+  onChange,
+}: {
+  action: Extract<TriggerAction, { kind: "title_review" }>;
+  onChange: (next: TriggerAction) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <FieldRow label="Dialog title">
+        <input
+          type="text"
+          value={action.title}
+          onChange={(e) => onChange({ ...action, title: e.target.value })}
+          placeholder="Review the ticket title"
+          className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+        />
+      </FieldRow>
+
+      <FieldRow label="Message">
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={action.show_message}
+            onChange={(e) => onChange({ ...action, show_message: e.target.checked })}
+            className="h-4 w-4 rounded border-glass-strong bg-glass"
+          />
+          Show a question above the editable title field
+        </label>
+        {action.show_message && (
+          <textarea
+            value={action.message}
+            onChange={(e) => onChange({ ...action, message: e.target.value })}
+            rows={2}
+            placeholder="Is this title suitable? Adjust it if needed."
+            className="mt-2 w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        )}
+      </FieldRow>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <FieldRow label="Title field label">
+          <input
+            type="text"
+            value={action.field_label}
+            onChange={(e) => onChange({ ...action, field_label: e.target.value })}
+            placeholder="Ticket title"
+            className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </FieldRow>
+        <FieldRow label="Approve button label">
+          <input
+            type="text"
+            value={action.confirm_label}
+            onChange={(e) => onChange({ ...action, confirm_label: e.target.value })}
+            placeholder="This title is suitable"
+            className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </FieldRow>
+      </div>
+
+      <p className="rounded-md border border-glass-strong bg-glass px-3 py-2 text-[11px] text-muted-foreground/80">
+        Shown the first time an agent opens a matching ticket (once per ticket). The agent reviews or edits the title and clicks the approve button before they can work the ticket. Add an <span className="text-foreground/80">internal note</span> action below to record the approval — it can use <code className="font-mono">#{"{agent.name}"}</code> and <code className="font-mono">#{"{ticket.subject}"}</code>.
+      </p>
+    </div>
+  );
 }
 
 function SendSurveyFields({

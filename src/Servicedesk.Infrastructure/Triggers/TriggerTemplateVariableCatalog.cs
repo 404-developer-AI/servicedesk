@@ -12,6 +12,10 @@ public static class TriggerTemplateVariableCatalog
         new("ticket.number",            "Ticket number",      "string", "12345"),
         new("ticket.reference",         "Ticket reference",   "string", "Ticket#12345"),
         new("ticket.subject",           "Ticket subject",     "string", "Printer not working"),
+        // Gate-only: the title as it stood before a first-open title-review
+        // (empty outside that gate). #{ticket.subject} already holds the
+        // new value by the time the gate's actions run.
+        new("ticket.subject_previous",  "Ticket subject (before review)", "string", "pritner broke"),
         new("ticket.url",               "Ticket deep-link",   "string", "https://servicedesk.example/tickets/12345"),
         new("ticket.queue.name",        "Queue name",         "string", "Support"),
         new("ticket.priority.name",     "Priority name",      "string", "High"),
@@ -24,6 +28,11 @@ public static class TriggerTemplateVariableCatalog
         new("article.body_text",        "Article body (text)","string", ""),
         new("article.from_email",       "Article from",       "string", "alex@example.com"),
         new("article.subject",          "Article subject",    "string", ""),
+        // Gate-only: the agent who confirmed the gate (empty outside a
+        // gate's confirmation actions). Both currently resolve to the
+        // agent's email.
+        new("agent.name",               "Confirming agent",   "string", "agent@example.com"),
+        new("agent.email",              "Confirming agent email", "string", "agent@example.com"),
         new("config.app.name",          "App name",           "string", "Servicedesk"),
         new("config.app.public_base_url","Public base URL",   "string", "https://servicedesk.example"),
 

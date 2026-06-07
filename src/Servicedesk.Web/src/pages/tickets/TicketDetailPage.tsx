@@ -8,6 +8,7 @@ import { formatTicketRef } from "@/lib/ticketRef";
 import { useTicketReferencePrefix } from "@/hooks/useTicketReferencePrefix";
 import { ticketApi, contactApi, type ContactCompanyRole, type GateConfirmation, type StatusGateMatch, type Ticket, type TicketFieldUpdate } from "@/lib/ticket-api";
 import { StatusGateDialog } from "@/components/StatusGateDialog";
+import { TitleReviewGateDialog } from "@/components/TitleReviewGateDialog";
 import { ContactCompanyGateDialog } from "@/components/ContactCompanyGateDialog";
 import { agentQueueApi, taxonomyApi } from "@/lib/api";
 import {
@@ -450,6 +451,28 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
     onError: () => toast.error("Failed to update ticket"),
   });
 
+  // First-open title-review gate. Probed once the ticket has loaded; a
+  // non-null gate blocks the page with a title-review dialog until the
+  // agent confirms. One-time per ticket — the server returns { gate: null }
+  // afterwards, so this query refetch hides the dialog on its own.
+  const openGatesQ = useQuery({
+    queryKey: ["ticket-open-gates", ticketId],
+    queryFn: () => ticketApi.listOpenGates(ticketId),
+    enabled: !!data?.ticket,
+    staleTime: 0,
+  });
+  const openGate = openGatesQ.data?.gate ?? null;
+  const confirmOpenGateMutation = useMutation({
+    mutationFn: (vars: { triggerId: string; subject: string }) =>
+      ticketApi.confirmOpenGate(ticketId, vars.triggerId, vars.subject),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["ticket", ticketId], updated);
+      queryClient.setQueryData(["ticket-open-gates", ticketId], { gate: null });
+      queryClient.invalidateQueries({ queryKey: ["tickets"] });
+    },
+    onError: () => toast.error("Failed to save the title review"),
+  });
+
   // v0.0.42 — status-change gate orchestration. The dialog walks through
   // matching gates one-by-one; only after every gate has been confirmed
   // does the actual PATCH fire with the collected answers. Cancelling any
@@ -690,6 +713,13 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         gate={gateQueue[0]?.kind === "contact_company_link" ? gateQueue[0] : null}
         onConfirm={onContactCompanyGateConfirm}
         onCancel={onGateCancel}
+      />
+      <TitleReviewGateDialog
+        gate={openGate}
+        submitting={confirmOpenGateMutation.isPending}
+        onConfirm={(subject) =>
+          confirmOpenGateMutation.mutate({ triggerId: openGate!.triggerId, subject })
+        }
       />
     </>
   );

@@ -107,27 +107,50 @@ function EditorBody({
   const isManual = activatorPair.startsWith("manual:");
   const isGate = activatorPair.startsWith("gate:");
 
-  // v0.0.42 — keep the actions list in sync with the activator kind.
-  // Switching INTO gate seeds a single prompt_confirm (the validator
-  // rejects gates with zero or more than one), switching OUT drops any
-  // orphan prompt_confirm so the save doesn't break on the BE "gate
-  // only" pairing rule. Both branches are no-ops when the list already
-  // matches the target shape.
+  // Keep the actions list in sync with the activator kind/mode.
+  //  * gate:status_change — exactly one prompt_confirm, nothing else
+  //    (v0.0.42; the validator rejects zero or >1 gate actions).
+  //  * gate:first_open — one title_review gate action plus any regular
+  //    actions (e.g. add_internal_note) that run after confirmation.
+  //  * anything else — drop orphan gate actions so the save doesn't break
+  //    on the BE "gate-only" pairing rule.
+  // Keyed on activatorPair so switching BETWEEN gate modes re-seeds. The
+  // load effect runs after this one and overwrites with the saved actions
+  // when editing an existing trigger, so this only shapes user-driven
+  // dropdown changes.
   React.useEffect(() => {
-    if (isGate) {
+    if (activatorPair === "gate:first_open") {
+      setActions((prev) => {
+        const cleaned = prev.filter(
+          (a) => a.kind !== "prompt_confirm" && a.kind !== "require_contact_company",
+        );
+        if (cleaned.some((a) => a.kind === "title_review")) {
+          return cleaned.length === prev.length ? prev : cleaned;
+        }
+        return [blankActionForKind("title_review"), ...cleaned];
+      });
+    } else if (isGate) {
       setActions((prev) => {
         const prompt = prev.find((a) => a.kind === "prompt_confirm");
         if (prompt) return prev.length === 1 ? prev : [prompt];
+        const rcc = prev.find((a) => a.kind === "require_contact_company");
+        if (rcc) return prev.length === 1 ? prev : [rcc];
         return [blankActionForKind("prompt_confirm")];
       });
     } else {
       setActions((prev) =>
-        prev.some((a) => a.kind === "prompt_confirm")
-          ? prev.filter((a) => a.kind !== "prompt_confirm")
+        prev.some((a) =>
+          a.kind === "prompt_confirm"
+          || a.kind === "require_contact_company"
+          || a.kind === "title_review")
+          ? prev.filter((a) =>
+              a.kind !== "prompt_confirm"
+              && a.kind !== "require_contact_company"
+              && a.kind !== "title_review")
           : prev,
       );
     }
-  }, [isGate]);
+  }, [activatorPair, isGate]);
 
   React.useEffect(() => {
     if (isNew) {
@@ -326,10 +349,20 @@ function EditorBody({
 
       {/* Actions */}
       <Section
-        title={isGate ? "Confirmation prompt" : "Actions"}
-        hint={isGate
-          ? "The dialog the agent sees before the status change applies. One prompt per gate; the status only changes when the agent clicks confirm."
-          : "What the trigger does — applied in order, top to bottom."}
+        title={
+          activatorPair === "gate:first_open"
+            ? "Title-review prompt + actions"
+            : isGate
+              ? "Confirmation prompt"
+              : "Actions"
+        }
+        hint={
+          activatorPair === "gate:first_open"
+            ? "The blocking dialog shown the first time an agent opens a matching ticket. Add a title-review prompt, plus any actions (e.g. an internal note) that run after the agent confirms."
+            : isGate
+              ? "The dialog the agent sees before the status change applies. One prompt per gate; the status only changes when the agent clicks confirm."
+              : "What the trigger does — applied in order, top to bottom."
+        }
       >
         <ActionsEditor
           value={actions}
@@ -337,6 +370,7 @@ function EditorBody({
           taxonomies={taxonomies}
           variables={metadata.templateVariables}
           activatorKind={activatorPair.split(":")[0]}
+          activatorMode={activatorPair.split(":")[1]}
         />
       </Section>
 
@@ -457,6 +491,7 @@ function prettifyActivator(pair: string): string {
     escalation_warning: "When SLA warning threshold elapses",
     linked_ticket_creator: "Manual — invoked from \"Create linked X ticket\" picker",
     status_change: "Gate — intercepts a status change in the agent UI",
+    first_open: "Gate — title review the first time an agent opens the ticket",
   };
   return modeLabels[mode] ?? `${kind}:${mode}`;
 }
