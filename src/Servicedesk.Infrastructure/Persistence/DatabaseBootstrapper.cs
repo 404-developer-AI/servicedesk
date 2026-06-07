@@ -4154,6 +4154,57 @@ public sealed class DatabaseBootstrapper : IHostedService
         ALTER TABLE users
             ADD COLUMN IF NOT EXISTS statistics_read  BOOLEAN NOT NULL DEFAULT FALSE,
             ADD COLUMN IF NOT EXISTS statistics_write BOOLEAN NOT NULL DEFAULT FALSE;
+
+        -- Author-defined statistic tiles. A statistics_write user composes a
+        -- tile (metric + period + grouping + chart type + scope) and assigns
+        -- it to statistics_read agents. metric_key / chart_type / period /
+        -- grouping / scope are validated in code against the catalogue, not by
+        -- a DB CHECK, so adding catalogue entries never needs a migration.
+        --   scope          'viewer_self' → rebinds to whoever views the tile
+        --                  'user'        → scope_user_id (a single technician)
+        --                  'team'        → all Agent/Admin users
+        --   scope_user_id  the target technician for scope='user' (SET NULL on
+        --                  user delete → the engine then yields an empty tile)
+        --   filters_json   reserved for the later generic builder; '{}' for now
+        CREATE TABLE IF NOT EXISTS statistic_tiles (
+            id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            title         TEXT        NOT NULL,
+            metric_key    TEXT        NOT NULL,
+            chart_type    TEXT        NOT NULL,
+            period        TEXT        NOT NULL,
+            grouping      TEXT        NOT NULL DEFAULT 'none',
+            scope         TEXT        NOT NULL,
+            scope_user_id UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            filters_json  JSONB       NOT NULL DEFAULT '{}'::jsonb,
+            created_by    UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            created_utc   TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc   TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        -- Which read-agents a tile is assigned to. Deleting the tile or the
+        -- user cascades the assignment away.
+        CREATE TABLE IF NOT EXISTS statistic_tile_assignments (
+            tile_id          UUID        NOT NULL REFERENCES statistic_tiles(id) ON DELETE CASCADE,
+            assigned_user_id UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            assigned_by      UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            assigned_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (tile_id, assigned_user_id)
+        );
+        CREATE INDEX IF NOT EXISTS ix_statistic_tile_assignments_user
+            ON statistic_tile_assignments (assigned_user_id);
+
+        -- Per-viewer layout of their assigned tiles (position / size / hidden).
+        -- Mirrors user_dashboard_tiles but adds `hidden` so a read-agent can
+        -- hide an assigned tile without it being un-assigned. A missing row
+        -- means "use defaults" (appended at the end, medium, visible).
+        CREATE TABLE IF NOT EXISTS statistic_tile_layout (
+            user_id  UUID    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            tile_id  UUID    NOT NULL REFERENCES statistic_tiles(id) ON DELETE CASCADE,
+            position INT     NOT NULL,
+            size     TEXT    NOT NULL DEFAULT 'medium',
+            hidden   BOOLEAN NOT NULL DEFAULT FALSE,
+            PRIMARY KEY (user_id, tile_id)
+        );
         """;
 
     private readonly NpgsqlDataSource _dataSource;

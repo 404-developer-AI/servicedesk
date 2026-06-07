@@ -107,6 +107,8 @@ public static class DependencyInjection
         services.AddSingleton<IMicrosoftAuthService, MicrosoftAuthService>();
         services.AddSingleton<IUserAdminService, UserAdminService>();
         services.AddSingleton<IDashboardTilesService, DashboardTilesService>();
+        services.AddSingleton<Statistics.IStatisticTileService, Statistics.StatisticTileService>();
+        services.AddSingleton<Statistics.IStatisticMetricEngine, Statistics.StatisticMetricEngine>();
         services.AddSingleton<IAgentActivityService, AgentActivityService>();
 
         // v0.0.42 — Agent activity feed (append-only audit trail across

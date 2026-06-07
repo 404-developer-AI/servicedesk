@@ -170,6 +170,11 @@ export function Sidebar() {
     if (item.to === "/orders" && !user?.adsolutOrdersEnabled) {
       return false;
     }
+    // v0.0.69 — Statistics is per-user opt-in (statistics_read). Role gates
+    // Agent+Admin; the backend /api/statistics endpoints enforce the same flag.
+    if (item.to === "/statistics" && !user?.statisticsRead) {
+      return false;
+    }
     return true;
   });
 
