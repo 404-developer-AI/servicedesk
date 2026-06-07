@@ -65,7 +65,7 @@ export function StatisticTileCard({ tile }: { tile: StatisticTileDto }) {
       ) : tile.chartType === "kpi" ? (
         <KpiBody total={q.data?.total ?? 0} />
       ) : (
-        <BarBody points={q.data?.points ?? []} />
+        <BarBody points={q.data?.points ?? []} seriesLabels={q.data?.seriesLabels ?? null} />
       )}
     </section>
   );
@@ -84,7 +84,13 @@ function KpiBody({ total }: { total: number }) {
   );
 }
 
-function BarBody({ points }: { points: { label: string; value: number }[] }) {
+function BarBody({
+  points,
+  seriesLabels,
+}: {
+  points: { label: string; value: number; value2?: number | null }[];
+  seriesLabels?: string[] | null;
+}) {
   if (points.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground">
@@ -92,27 +98,52 @@ function BarBody({ points }: { points: { label: string; value: number }[] }) {
       </div>
     );
   }
-  const max = Math.max(...points.map((p) => p.value), 0.0001);
+  const stacked = !!seriesLabels && seriesLabels.length === 2;
+  // Scale to the largest total bar so stacked + single bars are comparable.
+  const max = Math.max(...points.map((p) => p.value + (stacked ? (p.value2 ?? 0) : 0)), 0.0001);
+
   return (
     <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto pr-1">
-      {points.map((p, i) => (
-        <div key={`${p.label}-${i}`} className="flex items-center gap-2 text-xs">
-          <span className="w-16 shrink-0 truncate text-muted-foreground" title={p.label}>
-            {p.label}
+      {stacked && (
+        <div className="mb-0.5 flex items-center gap-3 text-[10px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1">
+            <span className="h-2 w-2 rounded-sm bg-primary" /> {seriesLabels![0]}
           </span>
-          <div className="relative h-4 flex-1 overflow-hidden rounded bg-glass">
-            <div
-              className={cn(
-                "absolute inset-y-0 left-0 rounded bg-gradient-to-r from-primary/70 to-primary",
-              )}
-              style={{ width: `${Math.max((p.value / max) * 100, p.value > 0 ? 4 : 0)}%` }}
-            />
-          </div>
-          <span className="w-12 shrink-0 text-right font-mono tabular-nums text-foreground">
-            {formatHours(p.value)}
+          <span className="inline-flex items-center gap-1">
+            <span className="h-2 w-2 rounded-sm bg-muted-foreground/40" /> {seriesLabels![1]}
           </span>
         </div>
-      ))}
+      )}
+      {points.map((p, i) => {
+        const v2 = stacked ? (p.value2 ?? 0) : 0;
+        return (
+          <div key={`${p.label}-${i}`} className="flex items-center gap-2 text-xs">
+            <span className="w-16 shrink-0 truncate text-muted-foreground" title={p.label}>
+              {p.label}
+            </span>
+            <div className="relative flex h-4 flex-1 overflow-hidden rounded bg-glass">
+              <div
+                className="h-full bg-gradient-to-r from-primary/70 to-primary"
+                style={{ width: `${Math.max((p.value / max) * 100, p.value > 0 ? 3 : 0)}%` }}
+              />
+              {stacked && (
+                <div
+                  className="h-full bg-muted-foreground/30"
+                  style={{ width: `${Math.max((v2 / max) * 100, v2 > 0 ? 3 : 0)}%` }}
+                />
+              )}
+            </div>
+            <span
+              className={cn(
+                "shrink-0 text-right font-mono tabular-nums text-foreground",
+                stacked ? "w-[4.5rem]" : "w-12",
+              )}
+            >
+              {stacked ? `${formatHours(p.value)}/${formatHours(p.value + v2)}` : formatHours(p.value)}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

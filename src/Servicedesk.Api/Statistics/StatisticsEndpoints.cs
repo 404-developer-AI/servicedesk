@@ -266,7 +266,8 @@ public static class StatisticsEndpoints
         unit = d.Unit,
         periodLabel = d.PeriodLabel,
         total = d.Total,
-        points = d.Points.Select(p => new { label = p.Label, value = p.Value }).ToList(),
+        points = d.Points.Select(p => new { label = p.Label, value = p.Value, value2 = p.Value2 }).ToList(),
+        seriesLabels = d.SeriesLabels,
         generatedUtc = d.GeneratedUtc,
     };
 

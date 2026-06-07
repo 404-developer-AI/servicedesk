@@ -8,8 +8,14 @@ public static class StatisticMetricKeys
     /// Sum of timesheet minutes over the period, optionally grouped.
     public const string WorkedHours = "worked_hours";
 
+    /// Billable vs non-billable worked hours. Billable = the Adsolut invoiced
+    /// duration on a ticket, pro-rated across the technicians by their share of
+    /// the logged minutes (capped at what they worked); non-billable = the
+    /// remainder of their worked hours.
+    public const string BillableHours = "billable_hours";
+
     public static readonly IReadOnlySet<string> All =
-        new HashSet<string>(StringComparer.Ordinal) { WorkedHours };
+        new HashSet<string>(StringComparer.Ordinal) { WorkedHours, BillableHours };
 
     public static bool IsKnown(string? key) => key is not null && All.Contains(key);
 }
@@ -109,6 +115,14 @@ public static class StatisticsCatalogue
             Unit: "hours",
             ChartTypes: new[] { StatisticChartTypes.Kpi, StatisticChartTypes.Bar },
             Groupings: new[] { StatisticGroupings.None, StatisticGroupings.Task, StatisticGroupings.Time },
+            SupportsScope: true),
+        new StatisticMetricDescriptor(
+            Key: StatisticMetricKeys.BillableHours,
+            Label: "Billable vs non-billable hours",
+            Unit: "hours",
+            // Always a stacked comparison — chart type / grouping are fixed.
+            ChartTypes: new[] { StatisticChartTypes.Bar },
+            Groupings: new[] { StatisticGroupings.None },
             SupportsScope: true),
     };
 
