@@ -605,6 +605,18 @@ function TitleReviewFields({
         )}
       </FieldRow>
 
+      <FieldRow label="Original request">
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={action.show_request}
+            onChange={(e) => onChange({ ...action, show_request: e.target.checked })}
+            className="h-4 w-4 rounded border-glass-strong bg-glass"
+          />
+          Show the ticket's original request above the title field
+        </label>
+      </FieldRow>
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <FieldRow label="Title field label">
           <input

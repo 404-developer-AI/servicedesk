@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Triggers.Templating;
@@ -73,7 +74,7 @@ public sealed class FirstOpenGateService : IFirstOpenGateService
                 continue;
 
             MatchedFirstOpenGate? gate;
-            try { gate = ProjectGate(row, detail.Ticket.Subject); }
+            try { gate = ProjectGate(row, detail.Ticket.Subject, detail.Body); }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "First-open gate {TriggerId} has a malformed title_review payload; skipping.", row.Id);
@@ -207,7 +208,7 @@ public sealed class FirstOpenGateService : IFirstOpenGateService
     /// Projects the single title_review action of a gate trigger into the
     /// dialog payload. Returns null when the row carries no title_review
     /// action (the validator prevents this, but defend in depth).
-    private static MatchedFirstOpenGate? ProjectGate(TriggerRow row, string currentSubject)
+    private static MatchedFirstOpenGate? ProjectGate(TriggerRow row, string currentSubject, TicketBody body)
     {
         if (string.IsNullOrWhiteSpace(row.ActionsJson)) return null;
         using var doc = JsonDocument.Parse(row.ActionsJson);
@@ -232,6 +233,21 @@ public sealed class FirstOpenGateService : IFirstOpenGateService
 
             var confirmLabel = TryStr(action, "confirm_label") ?? "This title is suitable";
 
+            // Default on when the property is absent so a pre-v0.0.73 payload
+            // still shows the original-request panel.
+            bool showRequest = !action.TryGetProperty("show_request", out var srEl)
+                || srEl.ValueKind != JsonValueKind.False;
+
+            string? requestHtml = null;
+            string? requestText = null;
+            if (showRequest)
+            {
+                if (!string.IsNullOrWhiteSpace(body.BodyHtml))
+                    requestHtml = body.BodyHtml;
+                else if (!string.IsNullOrWhiteSpace(body.BodyText))
+                    requestText = body.BodyText;
+            }
+
             return new MatchedFirstOpenGate(
                 TriggerId: row.Id,
                 Name: row.Name,
@@ -239,7 +255,10 @@ public sealed class FirstOpenGateService : IFirstOpenGateService
                 Message: message,
                 FieldLabel: fieldLabel!,
                 ConfirmLabel: confirmLabel,
-                CurrentSubject: currentSubject);
+                CurrentSubject: currentSubject,
+                ShowRequest: showRequest,
+                RequestBodyHtml: requestHtml,
+                RequestBodyText: requestText);
         }
         return null;
     }

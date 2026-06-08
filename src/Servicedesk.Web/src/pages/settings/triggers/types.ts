@@ -137,6 +137,10 @@ export type TitleReviewAction = {
   /// field. `message` is kept so toggling back on restores it.
   show_message: boolean;
   message: string;
+  /// When true the dialog shows a read-only panel with the ticket's
+  /// original request above the title field, so the agent can see what
+  /// the ticket is about before judging the title.
+  show_request: boolean;
   /// Label rendered above the editable subject field.
   field_label: string;
   /// The single approve button's label.
@@ -280,6 +284,7 @@ export function blankActionForKind(kind: KnownActionKind): TriggerAction {
         title: "Review the ticket title",
         show_message: true,
         message: "Is this title suitable? Adjust it if needed.",
+        show_request: true,
         field_label: "Ticket title",
         confirm_label: "This title is suitable",
       };
@@ -437,6 +442,9 @@ function normalizeTitleReview(raw: any): TitleReviewAction {
     title: typeof raw.title === "string" ? raw.title : "",
     show_message: showMessage,
     message,
+    // Default on when absent so an older payload (pre-v0.0.73) still shows
+    // the original-request panel rather than silently hiding it.
+    show_request: typeof raw.show_request === "boolean" ? raw.show_request : true,
     field_label: typeof raw.field_label === "string" && raw.field_label.length > 0
       ? raw.field_label
       : "Ticket title",

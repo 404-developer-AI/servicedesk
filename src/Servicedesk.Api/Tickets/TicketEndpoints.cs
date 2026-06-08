@@ -1973,6 +1973,9 @@ public static class TicketEndpoints
         fieldLabel = g.FieldLabel,
         confirmLabel = g.ConfirmLabel,
         currentSubject = g.CurrentSubject,
+        showRequest = g.ShowRequest,
+        requestBodyHtml = g.RequestBodyHtml,
+        requestBodyText = g.RequestBodyText,
     };
 
     /// Internal bookkeeping for one gate that passed its confirmation
