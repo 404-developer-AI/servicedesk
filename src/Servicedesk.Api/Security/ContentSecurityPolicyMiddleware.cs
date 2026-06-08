@@ -48,12 +48,19 @@ public sealed class ContentSecurityPolicyMiddleware
         return _next(context);
     }
 
+    // Matches every ticket attachment download — both inbound-mail attachments
+    // (/api/tickets/{id}/mail/{mailId}/attachments/{id}) and user-uploaded
+    // note/reply attachments (/api/tickets/{id}/attachments/{id}). Both are
+    // framed by our own origin in the PDF preview lightbox, so both need
+    // frame-ancestors 'self'. Kept in lock-step with the identical check in
+    // SecurityHeadersMiddleware (which sets X-Frame-Options: SAMEORIGIN);
+    // before, this required '/mail/' too, so uploaded PDFs were refused
+    // ("frame-ancestors 'none'") while images (rendered via <img>) worked.
     private static bool IsAttachmentDownload(PathString path)
     {
         if (!path.HasValue) return false;
         var v = path.Value!;
         return v.StartsWith("/api/tickets/", StringComparison.OrdinalIgnoreCase)
-            && v.Contains("/mail/", StringComparison.OrdinalIgnoreCase)
             && v.Contains("/attachments/", StringComparison.OrdinalIgnoreCase);
     }
 
