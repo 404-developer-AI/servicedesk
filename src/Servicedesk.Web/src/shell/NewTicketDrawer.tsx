@@ -25,7 +25,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { agentQueueApi, taxonomyApi } from "@/lib/api";
-import { ticketApi, type CompanyAlert, type ContactCompanyRole } from "@/lib/ticket-api";
+import {
+  ticketApi,
+  type CompanyAlert,
+  type ContactCompanyRole,
+  type TicketAttachmentMeta,
+} from "@/lib/ticket-api";
 import { composeTemplatesApi } from "@/lib/composeTemplates-api";
 import { ticketTemplatesApi, type TicketTemplate } from "@/lib/ticketTemplates-api";
 import {
@@ -273,6 +278,76 @@ export function NewTicketDrawer({
   // open transition alongside the form reset and cleared on close.
   const [noteState, setNoteState] = useState<{ bodyHtml: string; isInternal: boolean } | null>(null);
 
+  // v0.0.73 — inline images in the opening note. No ticket id exists while
+  // the drawer is open, and the attachment upload endpoint is ticket-scoped,
+  // so a pasted/dropped image can't be uploaded yet. Instead we keep the
+  // File and show a local blob: preview; on submit the images are uploaded
+  // against the freshly-created ticket and their blob: srcs swapped for the
+  // real attachment URLs. Keyed by the object URL embedded in the note HTML.
+  const noteImageFilesRef = useRef<Map<string, File>>(new Map());
+
+  // Revoke every outstanding blob: preview and forget the Files. Called on
+  // close and after a successful submit so previews don't leak across opens.
+  function revokeNoteImages() {
+    for (const url of noteImageFilesRef.current.keys()) URL.revokeObjectURL(url);
+    noteImageFilesRef.current.clear();
+  }
+
+  // Upload handler wired into the note editor. Only images embed inline;
+  // other files would need an attachment tray the create form doesn't have,
+  // so they're refused with a hint to attach them once the ticket exists.
+  async function handleNoteImageUpload(file: File): Promise<TicketAttachmentMeta | null> {
+    if (!file.type.startsWith("image/")) {
+      toast.warning(
+        "Only images can be embedded here. Attach other files once the ticket is created.",
+      );
+      return null;
+    }
+    const objectUrl = URL.createObjectURL(file);
+    noteImageFilesRef.current.set(objectUrl, file);
+    return {
+      id: `pending:${objectUrl}`,
+      url: objectUrl,
+      mimeType: file.type,
+      size: file.size,
+      filename: file.name,
+    };
+  }
+
+  // Pending images whose blob: URL still appears in the note HTML (an image
+  // pasted and then deleted is skipped). Returned in no particular order.
+  function collectPendingNoteImages(html: string): { objectUrl: string; file: File }[] {
+    const out: { objectUrl: string; file: File }[] = [];
+    for (const [objectUrl, file] of noteImageFilesRef.current) {
+      if (html.includes(objectUrl)) out.push({ objectUrl, file });
+    }
+    return out;
+  }
+
+  // Second-step opening note: upload each embedded image against the new
+  // ticket, swap its blob: src for the returned (session-authenticated)
+  // attachment URL, then post the note. The uploaded ids ride along in
+  // attachmentIds so the server links them onto the event.
+  async function uploadNoteImagesAndPost(
+    ticketId: string,
+    note: { bodyHtml: string; isInternal: boolean },
+    images: { objectUrl: string; file: File }[],
+  ): Promise<void> {
+    let html = note.bodyHtml;
+    const attachmentIds: string[] = [];
+    for (const { objectUrl, file } of images) {
+      const meta = await ticketApi.uploadAttachment(ticketId, file);
+      html = html.split(objectUrl).join(meta.url);
+      attachmentIds.push(meta.id);
+    }
+    await ticketApi.addEvent(ticketId, {
+      eventType: note.isInternal ? "Note" : "Comment",
+      bodyHtml: html,
+      isInternal: note.isInternal,
+      attachmentIds,
+    });
+  }
+
   // v0.0.51 — agent-supplied company linked to the new ticket. The
   // picker auto-opens whenever the requester changes (including the
   // initial open if a contact was pre-filled). Empty selection ↔ no
@@ -304,7 +379,11 @@ export function NewTicketDrawer({
         assigneeUserId: initialAssigneeUserId ?? null,
         pendingTillUtc: null,
       });
-      setNoteState(initialNote ?? null);
+      // The opening-note block is always present now (v0.0.73). A manual
+      // trigger / template can seed it; otherwise it starts empty and
+      // internal. An empty note is stripped before submit, so a blank
+      // block costs nothing.
+      setNoteState(initialNote ?? { bodyHtml: "", isInternal: true });
       // Reset the template picker so a re-open starts unselected.
       setAppliedTemplateId("");
       setTemplateTicketTypeId(null);
@@ -314,6 +393,9 @@ export function NewTicketDrawer({
       // doesn't inherit a stale body. The form's reset() is handled
       // by handleClose / the mutation onSuccess.
       setNoteState(null);
+      // Release any local image previews still held for a note that was
+      // never submitted, so the blob: URLs don't leak across opens.
+      revokeNoteImages();
       // v0.0.51 — close the company picker and drop any agent-picked
       // company so re-opening for a different requester starts clean.
       setCompanyDialogOpen(false);
@@ -370,11 +452,74 @@ export function NewTicketDrawer({
 
   const [postCreateAlert, setPostCreateAlert] = useState<CompanyAlert | null>(null);
 
-  const { mutate: createTicket, isPending } = useMutation({
-    mutationFn: ticketApi.create,
+  const { mutate: submitTicket, isPending } = useMutation({
+    mutationFn: async (data: CreateTicketForm) => {
+      // Only send pendingTillUtc when the chosen status is Pending; the
+      // backend ignores it for other statuses but sending it would still
+      // leak through the audit payload and create noise.
+      const status = statuses?.find((s) => s.id === data.statusId);
+      const pendingTillUtc =
+        status?.stateCategory === "Pending" && data.pendingTillUtc
+          ? data.pendingTillUtc
+          : undefined;
+
+      // Only treat the note as real when the agent populated it. An empty
+      // body or a bare empty <p></p> from the editor counts as "no note".
+      const noteHasContent =
+        noteState !== null && stripEmptyHtml(noteState.bodyHtml).length > 0;
+      // Images embedded in the note still point at local blob: previews —
+      // they can only be uploaded once the ticket id exists. A note with
+      // such images is therefore posted as a second step after creation;
+      // a note without them rides along inline in the create call as before.
+      const pendingImages =
+        noteHasContent && noteState ? collectPendingNoteImages(noteState.bodyHtml) : [];
+      const inlineNote =
+        noteHasContent && noteState && pendingImages.length === 0
+          ? { bodyHtml: noteState.bodyHtml, isInternal: noteState.isInternal }
+          : undefined;
+
+      const response = await ticketApi.create({
+        subject: data.subject,
+        bodyHtml: data.bodyHtml || undefined,
+        requesterContactId: data.requesterContactId,
+        queueId: data.queueId,
+        statusId: data.statusId,
+        priorityId: data.priorityId,
+        categoryId: data.categoryId || undefined,
+        assigneeUserId: data.assigneeUserId || undefined,
+        source: "Web",
+        pendingTillUtc,
+        parentTicketId,
+        // A template-supplied type wins over the prop fallback; both null
+        // lets the backend default to 'support'.
+        ticketTypeId: templateTicketTypeId ?? ticketTypeId,
+        initialNote: inlineNote,
+        // v0.0.51 — agent's explicit company pick from the create-time
+        // popup. Omitted when the agent cancelled the popup; the backend
+        // then runs its cascade (same as mail-intake). newLinkRole rides
+        // along when the picked company wasn't yet on the contact's
+        // link list, so the backend can upsert the row in the same call.
+        companyId: selectedCompanyId ?? undefined,
+        newLinkRole: selectedCompanyId && selectedNewLinkRole ? selectedNewLinkRole : undefined,
+      });
+
+      // Two-step note for the image case. A failure here must not lose the
+      // already-created ticket: warn and resolve so we still navigate to it.
+      if (noteHasContent && noteState && pendingImages.length > 0) {
+        try {
+          await uploadNoteImagesAndPost(response.ticket.id, noteState, pendingImages);
+        } catch {
+          toast.warning(
+            "Ticket created, but the opening note couldn't be saved. Add it from the ticket.",
+          );
+        }
+      }
+      return response;
+    },
     onSuccess: (response) => {
       toast.success("Ticket created");
       queryClient.invalidateQueries({ queryKey: ["tickets"] });
+      revokeNoteImages();
       setOpen(false);
       reset();
       if (response.showAlertOnCreate && response.companyAlert) {
@@ -388,43 +533,7 @@ export function NewTicketDrawer({
   });
 
   function onSubmit(data: CreateTicketForm) {
-    // Only send pendingTillUtc when the chosen status is Pending; the
-    // backend ignores it for other statuses but sending it would still
-    // leak through the audit payload and create noise.
-    const status = statuses?.find((s) => s.id === data.statusId);
-    const pendingTillUtc =
-      status?.stateCategory === "Pending" && data.pendingTillUtc
-        ? data.pendingTillUtc
-        : undefined;
-    createTicket({
-      subject: data.subject,
-      bodyHtml: data.bodyHtml || undefined,
-      requesterContactId: data.requesterContactId,
-      queueId: data.queueId,
-      statusId: data.statusId,
-      priorityId: data.priorityId,
-      categoryId: data.categoryId || undefined,
-      assigneeUserId: data.assigneeUserId || undefined,
-      source: "Web",
-      pendingTillUtc,
-      parentTicketId,
-      // A template-supplied type wins over the prop fallback; both null
-      // lets the backend default to 'support'.
-      ticketTypeId: templateTicketTypeId ?? ticketTypeId,
-      // Only send the note when the agent has actually populated it.
-      // An empty body or a body that's just an empty <p></p> rendered
-      // by the rich-text editor is treated as "no note".
-      initialNote: noteState && stripEmptyHtml(noteState.bodyHtml).length > 0
-        ? { bodyHtml: noteState.bodyHtml, isInternal: noteState.isInternal }
-        : undefined,
-      // v0.0.51 — agent's explicit company pick from the create-time
-      // popup. Omitted when the agent cancelled the popup; the backend
-      // then runs its cascade (same as mail-intake). newLinkRole rides
-      // along when the picked company wasn't yet on the contact's
-      // link list, so the backend can upsert the row in the same call.
-      companyId: selectedCompanyId ?? undefined,
-      newLinkRole: selectedCompanyId && selectedNewLinkRole ? selectedNewLinkRole : undefined,
-    });
+    submitTicket(data);
   }
 
   function handleClose() {
@@ -520,7 +629,7 @@ export function NewTicketDrawer({
       {children && <Drawer.Trigger asChild>{children}</Drawer.Trigger>}
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
-        <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[90vh] max-w-2xl flex-col rounded-t-[var(--radius)] border border-glass bg-background/90 backdrop-blur-xl">
+        <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[90vh] max-w-5xl flex-col rounded-t-[var(--radius)] border border-glass bg-background/90 backdrop-blur-xl">
           <Drawer.Title className="sr-only">New ticket</Drawer.Title>
           <Drawer.Description className="sr-only">
             Create a new support ticket.
@@ -627,10 +736,11 @@ export function NewTicketDrawer({
                     />
                   </div>
 
-                  {/* v0.0.39 — initial-note block. Only visible when a
-                      manual trigger supplied one. Agent can edit body
-                      or flip internal/public; clearing removes the note
-                      from the create payload entirely. */}
+                  {/* v0.0.73 — opening-note block, always shown. Agent can
+                      edit the body, flip internal/public, and paste / drag /
+                      attach images that embed inline. A manual trigger or
+                      template can pre-fill it. An empty note is dropped on
+                      submit, so leaving it blank is fine. */}
                   {noteState !== null && (
                     <div className="rounded-lg border border-glass-strong bg-glass p-4">
                       <div className="mb-2 flex items-center justify-between">
@@ -665,17 +775,11 @@ export function NewTicketDrawer({
                       <RichTextEditor
                         content={noteState.bodyHtml}
                         onChange={(html) => setNoteState((s) => s ? { ...s, bodyHtml: html } : s)}
-                        placeholder="Initial note body (rendered from the trigger template)…"
+                        placeholder="Add an opening note. Paste or drag images to embed them inline…"
                         minHeight="120px"
                         composeTokens={composeTokens}
+                        onUploadFile={handleNoteImageUpload}
                       />
-                      <button
-                        type="button"
-                        onClick={() => setNoteState(null)}
-                        className="mt-2 text-[11px] text-muted-foreground hover:text-destructive"
-                      >
-                        Remove this note
-                      </button>
                     </div>
                   )}
                 </div>
