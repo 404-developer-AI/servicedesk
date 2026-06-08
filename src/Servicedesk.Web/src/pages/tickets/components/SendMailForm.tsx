@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { PendingMailAction } from "@/stores/useWorkspaceStore";
 import { AttachmentTray } from "./AttachmentTray";
+import { RecipientInput } from "./RecipientInput";
 import { useAttachmentUploads } from "../hooks/useAttachmentUploads";
 import { intakeFormsApi } from "@/lib/intakeForms-api";
 import { composeTemplatesApi } from "@/lib/composeTemplates-api";
@@ -67,23 +68,6 @@ function normalizeAddress(addr: string): string {
   const plus = local.indexOf("+");
   const baseLocal = plus >= 0 ? local.slice(0, plus) : local;
   return `${baseLocal}@${domain}`;
-}
-
-function parseAddresses(raw: string): MailRecipientInput[] {
-  if (!raw.trim()) return [];
-  return raw
-    .split(/[,;\n]+/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) => {
-      const match = s.match(/^"?([^"<]+?)"?\s*<([^>]+)>$/);
-      if (match) return { address: match[2].trim(), name: match[1].trim() };
-      return { address: s };
-    });
-}
-
-function formatAddresses(list: MailRecipient[]): string {
-  return list.map((r) => (r.name && r.name !== r.address ? `${r.name} <${r.address}>` : r.address)).join(", ");
 }
 
 function ensureRePrefix(subject: string): string {
@@ -176,9 +160,9 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
   const [kind, setKind] = React.useState<OutboundMailKind>(
     initialIntent?.kind ?? (context.latestInbound ? "Reply" : "New"),
   );
-  const [to, setTo] = React.useState("");
-  const [cc, setCc] = React.useState("");
-  const [bcc, setBcc] = React.useState("");
+  const [to, setTo] = React.useState<MailRecipientInput[]>([]);
+  const [cc, setCc] = React.useState<MailRecipientInput[]>([]);
+  const [bcc, setBcc] = React.useState<MailRecipientInput[]>([]);
   const [subject, setSubject] = React.useState("");
   const [bodyHtml, setBodyHtml] = React.useState("");
   const [initialEditorContent, setInitialEditorContent] = React.useState<
@@ -272,18 +256,18 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
       };
 
       if (nextKind === "New") {
-        setTo(context.requesterEmail ? context.requesterEmail : "");
-        setCc("");
-        setBcc("");
+        setTo(context.requesterEmail ? [{ address: context.requesterEmail }] : []);
+        setCc([]);
+        setBcc([]);
         setSubject(ensureTicketTag(context.ticketSubject, context.ticketNumber));
         applyContent("");
         return;
       }
 
       if (nextKind === "Forward") {
-        setTo("");
-        setCc("");
-        setBcc("");
+        setTo([]);
+        setCc([]);
+        setBcc([]);
         const baseSubject = source?.subject ?? context.ticketSubject;
         setSubject(ensureTicketTag(ensureFwdPrefix(baseSubject), context.ticketNumber));
         applyContent(source ? buildForwardQuote(source) : "");
@@ -305,15 +289,15 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
         ? source.cc
         : [...source.to, ...source.cc];
 
-      setTo(formatAddresses(dedupe(replyTargets)));
+      setTo(dedupe(replyTargets));
       if (nextKind === "ReplyAll") {
         const ccList = dedupe(replyAllCc);
-        setCc(formatAddresses(ccList));
+        setCc(ccList);
         if (ccList.length > 0) setShowCc(true);
       } else {
-        setCc("");
+        setCc([]);
       }
-      setBcc("");
+      setBcc([]);
       setSubject(
         ensureTicketTag(
           ensureRePrefix(source.subject ?? context.ticketSubject),
@@ -357,9 +341,9 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
       const { userIds, mailboxIds } = splitMentionIds(mentionedUserIds);
       return ticketApi.sendMail(ticketId, {
         kind,
-        to: parseAddresses(to),
-        cc: parseAddresses(cc),
-        bcc: parseAddresses(bcc),
+        to,
+        cc,
+        bcc,
         subject: subject.trim(),
         bodyHtml,
         attachmentIds: attachments.readyAttachmentIds,
@@ -397,7 +381,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (parseAddresses(to).length === 0 && parseAddresses(cc).length === 0 && parseAddresses(bcc).length === 0) {
+    if (to.length === 0 && cc.length === 0 && bcc.length === 0) {
       toast.error("At least one recipient is required");
       return;
     }
@@ -483,12 +467,11 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
       <div className="space-y-1.5 text-sm">
         <div className="flex items-center gap-2">
           <label className="w-10 shrink-0 text-xs text-muted-foreground">To</label>
-          <input
-            type="text"
+          <RecipientInput
             value={to}
-            onChange={(e) => setTo(e.target.value)}
+            onChange={setTo}
+            ariaLabel="To recipients"
             placeholder="name@example.com, …"
-            className="flex-1 bg-glass border border-glass rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-glass-strong"
           />
           {!showCc ? (
             <button
@@ -512,24 +495,22 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
         {showCc ? (
           <div className="flex items-center gap-2">
             <label className="w-10 shrink-0 text-xs text-muted-foreground">Cc</label>
-            <input
-              type="text"
+            <RecipientInput
               value={cc}
-              onChange={(e) => setCc(e.target.value)}
+              onChange={setCc}
+              ariaLabel="Cc recipients"
               placeholder="cc@example.com, …"
-              className="flex-1 bg-glass border border-glass rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-glass-strong"
             />
           </div>
         ) : null}
         {showBcc ? (
           <div className="flex items-center gap-2">
             <label className="w-10 shrink-0 text-xs text-muted-foreground">Bcc</label>
-            <input
-              type="text"
+            <RecipientInput
               value={bcc}
-              onChange={(e) => setBcc(e.target.value)}
+              onChange={setBcc}
+              ariaLabel="Bcc recipients"
               placeholder="bcc@example.com, …"
-              className="flex-1 bg-glass border border-glass rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-glass-strong"
             />
           </div>
         ) : null}
