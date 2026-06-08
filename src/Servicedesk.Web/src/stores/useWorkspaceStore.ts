@@ -1,12 +1,35 @@
 import { create } from "zustand";
 import { preferencesApi } from "@/lib/api";
-import type { OutboundMailKind } from "@/lib/ticket-api";
+import type { MailRecipientInput, OutboundMailKind } from "@/lib/ticket-api";
 
 export type Draft = {
   ticketId: string;
   bodyHtml: string;
   isInternal: boolean;
   tab: "note" | "reply";
+  updatedUtc: string;
+};
+
+// In-progress outbound mail on the ticket's "Send mail" tab. Kept in a slot
+// separate from the note/reply `Draft` so the two never overwrite each other —
+// an agent can have both a half-written note and a half-written mail on the
+// same ticket. The `bodyHtml` already carries the folded-in signature marker +
+// quote exactly as the editor serialises them, so it is restored verbatim and
+// the signature re-injection is suppressed for a restored draft.
+export type MailDraft = {
+  ticketId: string;
+  kind: OutboundMailKind;
+  to: MailRecipientInput[];
+  cc: MailRecipientInput[];
+  bcc: MailRecipientInput[];
+  showCc: boolean;
+  showBcc: boolean;
+  subject: string;
+  bodyHtml: string;
+  // True when a signature preview was folded into bodyHtml at compose time, so
+  // the send call still asks the server to swap the marker for the real
+  // signature rather than appending at the bottom.
+  signaturePreloaded: boolean;
   updatedUtc: string;
 };
 
@@ -40,6 +63,7 @@ type WorkspaceState = {
   sidebarCollapsed: boolean;
   ticketSidePanelPinned: boolean;
   drafts: Record<string, Draft>;
+  mailDrafts: Record<string, MailDraft>;
   loaded: boolean;
   pendingMailAction: PendingMailAction | null;
 
@@ -52,6 +76,12 @@ type WorkspaceState = {
   ) => void;
   removeDraft: (ticketId: string) => void;
   getDraft: (ticketId: string) => Draft | undefined;
+  setMailDraft: (
+    ticketId: string,
+    draft: Omit<MailDraft, "ticketId" | "updatedUtc">,
+  ) => void;
+  removeMailDraft: (ticketId: string) => void;
+  getMailDraft: (ticketId: string) => MailDraft | undefined;
   requestMailAction: (
     intent: Omit<PendingMailAction, "id">,
   ) => void;
@@ -80,6 +110,12 @@ function toEntries(state: WorkspaceState) {
       value: JSON.stringify(draft),
     });
   }
+  for (const mailDraft of Object.values(state.mailDrafts)) {
+    entries.push({
+      key: `workspace:maildraft:${mailDraft.ticketId}`,
+      value: JSON.stringify(mailDraft),
+    });
+  }
   return entries;
 }
 
@@ -89,11 +125,13 @@ function fromEntries(entries: Record<string, string>) {
     sidebarCollapsed: boolean;
     ticketSidePanelPinned: boolean;
     drafts: Record<string, Draft>;
+    mailDrafts: Record<string, MailDraft>;
   } = {
     lastTicketId: null,
     sidebarCollapsed: false,
     ticketSidePanelPinned: false,
     drafts: {},
+    mailDrafts: {},
   };
 
   for (const [key, value] of Object.entries(entries)) {
@@ -103,6 +141,13 @@ function fromEntries(entries: Record<string, string>) {
       result.sidebarCollapsed = value === "true";
     } else if (key === "workspace:ticketSidePanelPinned") {
       result.ticketSidePanelPinned = value === "true";
+    } else if (key.startsWith("workspace:maildraft:")) {
+      try {
+        const mailDraft = JSON.parse(value) as MailDraft;
+        result.mailDrafts[mailDraft.ticketId] = mailDraft;
+      } catch {
+        // ignore corrupt mail-draft entries
+      }
     } else if (key.startsWith("workspace:draft:")) {
       try {
         const draft = JSON.parse(value) as Draft;
@@ -122,6 +167,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   sidebarCollapsed: false,
   ticketSidePanelPinned: false,
   drafts: {},
+  mailDrafts: {},
   loaded: false,
   pendingMailAction: null,
 
@@ -161,6 +207,27 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }),
 
   getDraft: (ticketId) => get().drafts[ticketId],
+
+  setMailDraft: (ticketId, draft) =>
+    set((s) => ({
+      mailDrafts: {
+        ...s.mailDrafts,
+        [ticketId]: {
+          ticketId,
+          ...draft,
+          updatedUtc: new Date().toISOString(),
+        },
+      },
+    })),
+
+  removeMailDraft: (ticketId) =>
+    set((s) => {
+      if (!s.mailDrafts[ticketId]) return s; // nothing to remove — no churn
+      const { [ticketId]: _, ...rest } = s.mailDrafts;
+      return { mailDrafts: rest };
+    }),
+
+  getMailDraft: (ticketId) => get().mailDrafts[ticketId],
 
   requestMailAction: (intent) =>
     set({

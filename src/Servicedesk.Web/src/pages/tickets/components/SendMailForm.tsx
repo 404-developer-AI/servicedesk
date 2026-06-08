@@ -14,7 +14,8 @@ import {
   signatureMarkerBare,
 } from "@/components/SignatureBlockNode";
 import { cn } from "@/lib/utils";
-import type { PendingMailAction } from "@/stores/useWorkspaceStore";
+import { useWorkspaceStore, type PendingMailAction } from "@/stores/useWorkspaceStore";
+import { preferencesApi } from "@/lib/api";
 import { AttachmentTray } from "./AttachmentTray";
 import { RecipientInput } from "./RecipientInput";
 import { useAttachmentUploads } from "../hooks/useAttachmentUploads";
@@ -136,6 +137,23 @@ function stripSignatureMarker(html: string): string {
   return html.replace(/<div[^>]*\bdata-sd-signature\b[^>]*>\s*<\/div>/gi, "");
 }
 
+/// Re-inflate a bare signature marker — what `getHTML()` serialises, and so
+/// what a saved draft carries — back into the rich preview the editor renders.
+/// Display-only: the body we send keeps the bare marker for the server to swap.
+/// A replacer function (not a string) is used so any `$` in the signature HTML
+/// is not interpreted as a replace-pattern token. No-op without a resolved
+/// signature or a marker to inflate.
+function inflateSignatureMarker(
+  html: string,
+  signatureHtml: string | null,
+): string {
+  if (!signatureHtml) return html;
+  return html.replace(
+    /<div[^>]*\bdata-sd-signature\b[^>]*>\s*<\/div>/i,
+    () => signatureMarkerHtml(signatureHtml),
+  );
+}
+
 /// Assemble the editor content from a quote (possibly empty) and the resolved
 /// signature preview. Returns two strings: `rich` carries the full data-URI
 /// preview inside the marker (what the editor renders) while `bare` carries the
@@ -208,6 +226,29 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
     signatureHtmlRef.current = signatureHtml;
   }, [signatureHtml]);
 
+  // Draft persistence (v0.0.62). The mail compose is saved to the workspace
+  // store as soon as the agent edits the body, so it survives tab switches,
+  // navigating away, and reloads — then restored on mount. `agentEditedRef`
+  // gates saving so an untouched, auto-filled composition is never persisted;
+  // `restoredDraftRef` tells the signature re-fold effect to leave a restored
+  // body alone (its signature is already baked in); `signaturePreloadedRef`
+  // carries the send-time flag independent of the live signature query.
+  const savedMailDraftRef = React.useRef(
+    useWorkspaceStore.getState().getMailDraft(ticketId),
+  );
+  const agentEditedRef = React.useRef(false);
+  const restoredDraftRef = React.useRef(false);
+  const signaturePreloadedRef = React.useRef(false);
+
+  const clearMailDraft = React.useCallback(() => {
+    agentEditedRef.current = false;
+    restoredDraftRef.current = false;
+    useWorkspaceStore.getState().removeMailDraft(ticketId);
+    preferencesApi
+      .deleteWorkspaceKey(`workspace:maildraft:${ticketId}`)
+      .catch(() => {});
+  }, [ticketId]);
+
   const applyKind = React.useCallback(
     (
       nextKind: OutboundMailKind,
@@ -225,6 +266,12 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
         lastQuoteRef.current = quote;
         lastSigRef.current = sig;
         lastAppliedBareRef.current = bare;
+        signaturePreloadedRef.current = sig != null;
+        // A fresh composition replaces the visible body, so any earlier draft is
+        // stale — drop it and reset the dirty/restore flags.
+        agentEditedRef.current = false;
+        restoredDraftRef.current = false;
+        useWorkspaceStore.getState().removeMailDraft(ticketId);
         setEditorKey((k) => k + 1);
       };
       // Override is the event the agent clicked Reply/Reply-all/Forward on;
@@ -306,7 +353,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
       );
       applyContent(buildReplyQuote(source));
     },
-    [context],
+    [context, ticketId],
   );
 
   // Fold the signature in (or out) once the preview resolves — but only while
@@ -314,6 +361,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
   // clobbers a message in progress. Compares the live body to the exact string
   // we last applied; any edit (or a different signature) breaks the match.
   React.useEffect(() => {
+    if (restoredDraftRef.current) return; // restored draft already has its signature
     if (lastQuoteRef.current === null) return; // nothing applied yet
     if (signatureHtml === lastSigRef.current) return; // no change to fold
     if (bodyHtml !== lastAppliedBareRef.current) return; // agent has edited
@@ -322,19 +370,96 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
     setBodyHtml(bare);
     lastSigRef.current = signatureHtml;
     lastAppliedBareRef.current = bare;
+    signaturePreloadedRef.current = signatureHtml != null;
+    setEditorKey((k) => k + 1);
+  }, [signatureHtml, bodyHtml]);
+
+  // Restored draft: its saved body only has the bare signature marker, so the
+  // editor shows an empty block until the signature preview resolves. Inflate
+  // it for display once the query lands — only while the agent is still pristine
+  // (remounting the editor would discard edits). The sent `bodyHtml` is never
+  // touched; the server still swaps the bare marker for the real signature.
+  React.useEffect(() => {
+    if (!restoredDraftRef.current) return;
+    if (agentEditedRef.current) return;
+    if (!signaturePreloadedRef.current) return; // draft carried no signature
+    if (!signatureHtml) return; // nothing to inflate yet
+    if (signatureHtml === lastSigRef.current) return; // already inflated
+    setInitialEditorContent(inflateSignatureMarker(bodyHtml, signatureHtml));
+    lastSigRef.current = signatureHtml;
     setEditorKey((k) => k + 1);
   }, [signatureHtml, bodyHtml]);
 
   // Initial pre-fill on mount + whenever a new pending-intent arrives (the
   // `id` is monotonic so clicking the same event twice still re-applies).
   React.useEffect(() => {
+    // A deliberate Reply / Reply-all / Forward click starts a fresh
+    // composition from that event and overrides any saved draft.
     if (initialIntent) {
       applyKind(initialIntent.kind, initialIntent.source);
-    } else {
-      applyKind(context.latestInbound ? "Reply" : "New");
+      return;
     }
+    // Restore an in-progress mail draft (body, recipients, subject, kind) so
+    // navigating away, switching tabs or reloading keeps what the agent typed.
+    // The saved body already carries the folded-in signature marker + quote, so
+    // it is set verbatim and the signature re-fold is suppressed for this
+    // session via `restoredDraftRef`.
+    const draft = savedMailDraftRef.current;
+    if (draft) {
+      restoredDraftRef.current = true;
+      // Leave `agentEditedRef` false: the draft already lives in the store, so
+      // it is re-persisted by the auto-save flush as-is. The first real edit
+      // (onChange ≠ baseline) flips the flag and resumes saving. Flipping it
+      // here would let the persist effect fire once with stale-empty state on
+      // mount and clobber the saved draft before the restore re-render lands.
+      signaturePreloadedRef.current = draft.signaturePreloaded;
+      setKind(draft.kind);
+      setTo(draft.to);
+      setCc(draft.cc);
+      setBcc(draft.bcc);
+      setShowCc(draft.showCc || draft.cc.length > 0);
+      setShowBcc(draft.showBcc || draft.bcc.length > 0);
+      setSubject(draft.subject);
+      // The saved body carries only the BARE signature marker, so inflate it
+      // with the resolved preview for DISPLAY; `bodyHtml` stays bare for send.
+      // If the signature query hasn't resolved yet, the re-inflate effect below
+      // folds it in once it loads (while the agent is still pristine).
+      const sig = draft.signaturePreloaded ? signatureHtmlRef.current : null;
+      setInitialEditorContent(inflateSignatureMarker(draft.bodyHtml, sig) || undefined);
+      setBodyHtml(draft.bodyHtml);
+      lastQuoteRef.current = ""; // non-null so guards downstream behave
+      lastSigRef.current = sig; // tracks the signature already inflated for display
+      lastAppliedBareRef.current = null; // no pristine baseline to revert to
+      setEditorKey((k) => k + 1);
+      return;
+    }
+    applyKind(context.latestInbound ? "Reply" : "New");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialIntent?.id]);
+
+  // Persist the in-progress mail so it survives tab switches, navigation and
+  // reloads. Only once the agent has actually edited the body — a pristine,
+  // auto-filled composition is never saved. Reverting a fresh composition back
+  // to its exact baseline drops the draft again.
+  React.useEffect(() => {
+    if (!agentEditedRef.current) return;
+    const store = useWorkspaceStore.getState();
+    if (bodyHtml === lastAppliedBareRef.current) {
+      store.removeMailDraft(ticketId);
+      return;
+    }
+    store.setMailDraft(ticketId, {
+      kind,
+      to,
+      cc,
+      bcc,
+      showCc,
+      showBcc,
+      subject,
+      bodyHtml,
+      signaturePreloaded: signaturePreloadedRef.current,
+    });
+  }, [ticketId, kind, to, cc, bcc, showCc, showBcc, subject, bodyHtml]);
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -353,7 +478,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
         // True when a signature was pre-loaded for this composition: the server
         // then swaps the body's marker for the real signature (or, if the agent
         // removed the block, adds nothing) instead of appending at the bottom.
-        signaturePreloaded: lastSigRef.current != null,
+        signaturePreloaded: signaturePreloadedRef.current,
       });
     },
     onSuccess: () => {
@@ -363,6 +488,8 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
       lastQuoteRef.current = null;
       lastSigRef.current = null;
       lastAppliedBareRef.current = null;
+      // The composition is gone — discard its saved draft.
+      clearMailDraft();
       setBodyHtml("");
       setMentionedUserIds([]);
       setLinkedFormIds([]);
@@ -533,7 +660,12 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
         content={initialEditorContent}
         enableSignatureBlock
         autoFocus={false}
-        onChange={(html) => setBodyHtml(html)}
+        onChange={(html) => {
+          // Any deviation from the last auto-applied baseline means the agent
+          // typed — flip the dirty flag so the draft starts persisting.
+          if (html !== lastAppliedBareRef.current) agentEditedRef.current = true;
+          setBodyHtml(html);
+        }}
         placeholder="Write your message. Type @@ to tag an agent, :: to insert a template or intake form..."
         minHeight="140px"
         onUploadFile={attachments.upload}
@@ -613,7 +745,12 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
       <div className="flex items-center justify-between">
         <button
           type="button"
-          onClick={onCancel}
+          onClick={() => {
+            // Cancel is a deliberate discard — drop the saved draft so it does
+            // not reappear on the next open.
+            clearMailDraft();
+            onCancel();
+          }}
           className="px-3 py-1.5 text-xs rounded-md text-muted-foreground hover:bg-glass-hover transition-colors"
         >
           Cancel

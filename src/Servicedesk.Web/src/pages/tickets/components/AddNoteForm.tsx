@@ -40,9 +40,23 @@ type TabType = "reply" | "note" | "mail";
 export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailContext, isPopup = false }: AddNoteFormProps) {
   const { user } = useAuth();
   const savedDraft = useWorkspaceStore.getState().getDraft(ticketId);
+  // Mail drafts live in a separate slot (see SendMailForm) so a note and a mail
+  // can both be in progress on the same ticket. Either one auto-expands the
+  // composer on open; when both exist, the more recently edited picks the tab.
+  const savedMailDraft = useWorkspaceStore.getState().getMailDraft(ticketId);
   // Popup always starts expanded — no collapsed-button state in that flow.
-  const [expanded, setExpanded] = React.useState(isPopup || !!savedDraft);
-  const [tab, setTab] = React.useState<TabType>(savedDraft?.tab ?? "note");
+  const [expanded, setExpanded] = React.useState(
+    isPopup || !!savedDraft || !!savedMailDraft,
+  );
+  const [tab, setTab] = React.useState<TabType>(() => {
+    if (savedDraft && savedMailDraft) {
+      return savedMailDraft.updatedUtc > savedDraft.updatedUtc
+        ? "mail"
+        : savedDraft.tab;
+    }
+    if (savedMailDraft) return "mail";
+    return savedDraft?.tab ?? "note";
+  });
   const [bodyHtml, setBodyHtml] = React.useState(savedDraft?.bodyHtml ?? "");
   const [initialContent] = React.useState(savedDraft?.bodyHtml ?? "");
   const [editorKey, setEditorKey] = React.useState(0);
