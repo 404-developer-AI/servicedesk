@@ -537,6 +537,15 @@ export type OpenGateMatch = {
   confirmLabel: string;
   /// The ticket's current subject, pre-filled into the editable field.
   currentSubject: string;
+  /// When true the dialog renders the original-request panel above the
+  /// title field so the agent can read what the ticket is about first.
+  showRequest: boolean;
+  /// The ticket's original request body (HTML, sanitised on render);
+  /// null when the panel is disabled or there is no HTML body.
+  requestBodyHtml: string | null;
+  /// Plain-text fallback for the original request; null when HTML is
+  /// present or the panel is disabled.
+  requestBodyText: string | null;
 };
 
 export type NewTicketEvent = {

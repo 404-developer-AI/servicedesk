@@ -1,4 +1,5 @@
 import * as React from "react";
+import DOMPurify from "dompurify";
 import {
   Dialog,
   DialogContent,
@@ -38,7 +39,19 @@ export function TitleReviewGateDialog({ gate, onConfirm, submitting }: Props) {
     if (gate) setSubject(gate.currentSubject);
   }, [gate?.triggerId, gate?.currentSubject]);
 
+  // Sanitised original-request preview. Memoised on the raw HTML so
+  // DOMPurify doesn't re-run (and React doesn't reassign innerHTML) on
+  // every render — same reasoning as the timeline's SafeHtml wrapper.
+  const requestHtml = gate?.requestBodyHtml ?? null;
+  const requestDanger = React.useMemo(
+    () => (requestHtml ? { __html: DOMPurify.sanitize(requestHtml) } : null),
+    [requestHtml],
+  );
+
   if (!gate) return null;
+
+  const showRequestPanel =
+    gate.showRequest && (!!requestDanger || !!gate.requestBodyText);
 
   const trimmed = subject.trim();
   const canConfirm = trimmed.length > 0 && !submitting;
@@ -64,6 +77,26 @@ export function TitleReviewGateDialog({ gate, onConfirm, submitting }: Props) {
             </DialogDescription>
           ) : null}
         </DialogHeader>
+
+        {showRequestPanel && (
+          <div className="space-y-1.5">
+            <span className="text-xs font-medium text-muted-foreground">
+              Original request
+            </span>
+            <div className="relative max-h-48 overflow-y-auto rounded-md border border-glass bg-glass px-3 py-2">
+              {requestDanger ? (
+                <div
+                  className="prose-sm text-sm text-foreground/90 [&_a]:text-primary [&_a]:underline [&_p]:my-1 [&_ul]:list-disc [&_ul]:list-outside [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:list-outside [&_ol]:pl-6 [&_img]:max-w-full"
+                  dangerouslySetInnerHTML={requestDanger}
+                />
+              ) : (
+                <p className="whitespace-pre-wrap text-sm text-foreground/90">
+                  {gate.requestBodyText}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-muted-foreground">

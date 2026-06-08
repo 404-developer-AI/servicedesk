@@ -18,4 +18,14 @@ public sealed record MatchedFirstOpenGate(
     /// The single approve button's label.
     string ConfirmLabel,
     /// The ticket's current subject, pre-filled into the editable field.
-    string CurrentSubject);
+    string CurrentSubject,
+    /// When true the dialog renders the original-request panel so the
+    /// agent can read what the ticket is about before judging the title.
+    bool ShowRequest,
+    /// The ticket's original request body (the first message), HTML
+    /// preferred, shown read-only above the title field. Null when the
+    /// admin disabled the panel or the ticket has no body.
+    string? RequestBodyHtml,
+    /// Plain-text fallback for the original request when no HTML body
+    /// exists. Null when HTML is present or the panel is disabled.
+    string? RequestBodyText);
