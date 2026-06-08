@@ -59,6 +59,27 @@ public sealed class SecurityHeadersTests : IClassFixture<SecurityBaselineFactory
         Assert.Contains("https://fonts.gstatic.com", ExtractDirective(csp, "font-src"));
     }
 
+    [Theory]
+    // Inbound-mail attachment path (has the /mail/ segment) …
+    [InlineData("/api/tickets/00000000-0000-0000-0000-000000000000/mail/00000000-0000-0000-0000-000000000000/attachments/00000000-0000-0000-0000-000000000000")]
+    // … and a user-uploaded note/reply attachment path (no /mail/ segment).
+    // Both must relax frame-ancestors to 'self' so the PDF preview lightbox
+    // can iframe them. Regression: the uploaded path previously got 'none'
+    // and PDFs were refused ("refused to connect") while images still worked.
+    [InlineData("/api/tickets/00000000-0000-0000-0000-000000000000/attachments/00000000-0000-0000-0000-000000000000")]
+    public async Task ContentSecurityPolicy_AttachmentDownloads_AllowSameOriginFraming(string path)
+    {
+        var client = _factory.CreateClient();
+        // The CSP middleware sits before authentication in the pipeline and
+        // sets the header from the request path, so the auth/404 outcome of
+        // this placeholder id is irrelevant — only the policy matters.
+        var response = await client.GetAsync(path);
+
+        var csp = Single(response, "Content-Security-Policy");
+        Assert.Contains("frame-ancestors 'self'", csp);
+        Assert.DoesNotContain("frame-ancestors 'none'", csp);
+    }
+
     [Fact]
     public async Task ContentSecurityPolicy_NoncesDifferPerRequest()
     {
