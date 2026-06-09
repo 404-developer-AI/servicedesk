@@ -168,7 +168,10 @@ public sealed class UserAdminService : IUserAdminService
 
         var collision = await connection.ExecuteScalarAsync<Guid?>(
             new CommandDefinition(
-                "SELECT id FROM users WHERE email = @email",
+                // Cast to citext: the duplicate-check must fold case in step with
+                // the UNIQUE(email) constraint, else a casing-only collision slips
+                // past here and the INSERT below trips 23505.
+                "SELECT id FROM users WHERE email = @email::citext",
                 new { email = trimmedEmail },
                 tx,
                 cancellationToken: ct));
@@ -264,7 +267,9 @@ public sealed class UserAdminService : IUserAdminService
 
         var existingByEmail = await connection.ExecuteScalarAsync<Guid?>(
             new CommandDefinition(
-                "SELECT id FROM users WHERE email = @email",
+                // Cast to citext so a casing-only collision is caught here rather
+                // than surfacing as a 23505 on the INSERT.
+                "SELECT id FROM users WHERE email = @email::citext",
                 new { email },
                 tx,
                 cancellationToken: ct));

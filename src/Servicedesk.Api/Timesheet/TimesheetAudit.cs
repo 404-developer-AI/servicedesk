@@ -14,6 +14,9 @@ internal static class TimesheetAudit
     public const string EntryUpdated = "timesheet.entry.updated";
     public const string EntryDeleted = "timesheet.entry.deleted";
 
+    // v0.0.74 — an agent set/cleared their own default Tab-1 task.
+    public const string SelfDefaultTaskChanged = "timesheet.preferences.default_task_changed";
+
     // v0.0.35-C — manager edits to another user's row carry their own
     // event types so the audit-log surface can highlight "edited by
     // manager" vs "edited by owner" without re-deriving from the actor

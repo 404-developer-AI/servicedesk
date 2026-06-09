@@ -526,4 +526,7 @@ const FALLBACK_PREFS: TimesheetPreferences = {
   maxAbsenceMinutesPerDay: 30,
   officeStartMinutes: 8 * 60 + 30,
   officeEndMinutes: 17 * 60,
+  // v0.0.74 — Tab 3 (manager grid) doesn't use the default-task preference;
+  // it's only meaningful for the owner's own Tab 1 row-seeding.
+  defaultTaskId: null,
 };

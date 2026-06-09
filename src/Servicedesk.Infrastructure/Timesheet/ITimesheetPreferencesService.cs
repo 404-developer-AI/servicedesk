@@ -31,6 +31,14 @@ public interface ITimesheetPreferencesService
     /// reflects what was actually persisted.
     Task<UpdateOverrideResult> UpdateOverrideAsync(
         Guid userId, TimesheetOverrideInput input, CancellationToken ct = default);
+
+    /// Self-service write of the caller's own default Tab-1 task. A non-null
+    /// <paramref name="taskId"/> must reference an existing, non-archived task;
+    /// <c>null</c> clears the preference (UI falls back to the first active
+    /// task). Unlike <see cref="UpdateOverrideAsync"/> this is agent-reachable
+    /// for their own row, not an admin-only override.
+    Task<UpdateDefaultTaskResult> UpdateDefaultTaskAsync(
+        Guid userId, Guid? taskId, CancellationToken ct = default);
 }
 
 /// The full effective preference bundle. All fields are non-nullable —
@@ -49,7 +57,12 @@ public sealed record TimesheetPreferences(
     /// check. A mismatch only flags red when its zone intersects this
     /// window. Both are minutes-since-midnight (0..1440).
     int OfficeStartMinutes,
-    int OfficeEndMinutes);
+    int OfficeEndMinutes,
+    /// v0.0.74 — the user's personal default task for new Tab-1 rows.
+    /// `null` means "no preference"; the client then seeds a new row with
+    /// the first active task (sort order). Purely per-user; there is no
+    /// global default-task setting — the implicit global is "first active".
+    Guid? DefaultTaskId);
 
 /// What the user has actually overridden. Each field is independently
 /// nullable so an admin can override only the day-start and let the
@@ -82,4 +95,13 @@ public abstract record UpdateOverrideResult
     public sealed record Updated(TimesheetOverride Override) : UpdateOverrideResult;
     public sealed record UserNotFound : UpdateOverrideResult;
     public sealed record ValidationFailed(IReadOnlyList<TimesheetFieldError> Errors) : UpdateOverrideResult;
+}
+
+public abstract record UpdateDefaultTaskResult
+{
+    /// <paramref name="TaskId"/> echoes what was persisted (null = cleared).
+    public sealed record Updated(Guid? TaskId) : UpdateDefaultTaskResult;
+    public sealed record UserNotFound : UpdateDefaultTaskResult;
+    /// The requested task does not exist or is archived.
+    public sealed record TaskNotFound : UpdateDefaultTaskResult;
 }

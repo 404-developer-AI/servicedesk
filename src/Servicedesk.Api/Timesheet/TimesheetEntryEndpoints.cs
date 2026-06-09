@@ -131,6 +131,38 @@ public static class TimesheetEntryEndpoints
         .WithName("GetTimesheetSelfPreferences")
         .WithOpenApi();
 
+        // v0.0.74 — self-service write of the caller's own default Tab-1 task.
+        // Scoped to the caller's own row (userId from the session, never the
+        // body), so this is safe for any agent. `taskId: null` clears it.
+        app.MapPut("/api/timesheet/me/preferences/default-task", async (
+            [FromBody] DefaultTaskRequest req,
+            HttpContext http,
+            ITimesheetPreferencesService prefs,
+            IAuditLogger audit,
+            CancellationToken ct) =>
+        {
+            var userId = ActorContext.GetUserId(http);
+            var result = await prefs.UpdateDefaultTaskAsync(userId, req.TaskId, ct);
+            switch (result)
+            {
+                case UpdateDefaultTaskResult.Updated u:
+                    await TimesheetAudit.WriteAsync(audit, http, TimesheetAudit.SelfDefaultTaskChanged,
+                        userId.ToString(), new { default_task_id = u.TaskId });
+                    return Results.Ok(new { defaultTaskId = u.TaskId });
+                case UpdateDefaultTaskResult.TaskNotFound:
+                    return Results.UnprocessableEntity(
+                        new { error = "That task does not exist or is archived." });
+                case UpdateDefaultTaskResult.UserNotFound:
+                    return Results.NotFound();
+                default:
+                    return Results.Problem("Unhandled set-default-task result.");
+            }
+        })
+        .WithTags("Timesheet")
+        .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+        .WithName("SetTimesheetSelfDefaultTask")
+        .WithOpenApi();
+
         return app;
     }
 
@@ -210,4 +242,8 @@ public static class TimesheetEntryEndpoints
         Guid? TaskId,
         Guid? TicketId,
         string? Description);
+
+    /// Body for the self-service default-task write. `null` clears the
+    /// preference (UI falls back to the first active task).
+    public sealed record DefaultTaskRequest(Guid? TaskId);
 }

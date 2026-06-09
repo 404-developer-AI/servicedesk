@@ -2518,6 +2518,26 @@ public sealed class DatabaseBootstrapper : IHostedService
             WHERE lower(t.name) = lower(v.name)
         );
 
+        -- Per-user default task for Tab-1 new rows. Lives on the user row
+        -- (like the other timesheet_* preference columns) but is added here,
+        -- after timesheet_tasks exists, so the FK can be declared. NULL = no
+        -- preference, the UI then falls back to the first active task by
+        -- sort order. ON DELETE SET NULL: archiving is the normal path, but a
+        -- hard delete of a task just clears the preference rather than blocking.
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS timesheet_default_task_id UUID NULL;
+        DO $ts_user_default_task_fk$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'fk_users_ts_default_task'
+            ) THEN
+                ALTER TABLE users
+                    ADD CONSTRAINT fk_users_ts_default_task
+                    FOREIGN KEY (timesheet_default_task_id)
+                    REFERENCES timesheet_tasks(id) ON DELETE SET NULL;
+            END IF;
+        END $ts_user_default_task_fk$;
+
         CREATE TABLE IF NOT EXISTS timesheet_entries (
             id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id         UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,

@@ -205,7 +205,7 @@ public sealed class CompanyRepository : ICompanyRepository
                    c.adsolut_id AS AdsolutId, c.adsolut_last_modified AS AdsolutLastModified
             FROM companies c
             JOIN company_domains d ON d.company_id = c.id
-            WHERE d.domain = @domain AND c.is_active = TRUE
+            WHERE d.domain = @domain::citext AND c.is_active = TRUE
             LIMIT 1
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -430,7 +430,13 @@ public sealed class CompanyRepository : ICompanyRepository
 
     public async Task<Contact?> GetContactByEmailAsync(string email, CancellationToken ct)
     {
-        var sql = $"SELECT {ContactCols} FROM contacts WHERE email = @email";
+        // email is CITEXT, but Npgsql sends the string parameter as `text`, so
+        // `email = @email` resolves to the case-SENSITIVE text operator and
+        // misses a row stored in different casing — while the UNIQUE(email)
+        // constraint still folds case, so a follow-up INSERT then trips 23505.
+        // Cast the parameter to citext so the match is case-insensitive, in
+        // lock-step with the constraint.
+        var sql = $"SELECT {ContactCols} FROM contacts WHERE email = @email::citext";
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.QueryFirstOrDefaultAsync<Contact>(new CommandDefinition(sql, new { email }, cancellationToken: ct));
     }
