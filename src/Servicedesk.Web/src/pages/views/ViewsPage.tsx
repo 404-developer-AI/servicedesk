@@ -34,6 +34,7 @@ const ALL_COLUMNS: { id: string; label: string }[] = [
   { id: "createdUtc", label: "Created" },
   { id: "updatedUtc", label: "Updated" },
   { id: "dueUtc", label: "Due" },
+  { id: "pendingTillUtc", label: "Pending till" },
 ];
 
 // ---- Sort field options ----
@@ -42,6 +43,7 @@ const SORT_FIELDS: { value: string; label: string }[] = [
   { value: "updatedUtc", label: "Updated" },
   { value: "createdUtc", label: "Created" },
   { value: "dueUtc", label: "Due date" },
+  { value: "pendingTillUtc", label: "Pending till" },
   { value: "priorityLevel", label: "Priority" },
   { value: "number", label: "Ticket #" },
   { value: "subject", label: "Subject" },

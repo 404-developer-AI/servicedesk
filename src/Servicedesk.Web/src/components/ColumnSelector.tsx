@@ -17,6 +17,7 @@ const ALL_COLUMNS: { id: string; label: string }[] = [
   { id: "createdUtc", label: "Created" },
   { id: "updatedUtc", label: "Updated" },
   { id: "dueUtc", label: "Due" },
+  { id: "pendingTillUtc", label: "Pending till" },
 ];
 
 export function ColumnSelector() {
