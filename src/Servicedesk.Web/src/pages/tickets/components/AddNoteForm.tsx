@@ -355,6 +355,12 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
           initialIntent={pendingAction}
           onSent={() => {
             useWorkspaceStore.getState().clearMailAction();
+            // Reset the composer back to the internal-note tab after a mail
+            // is sent. The component stays mounted across collapse/expand, so
+            // without this the next click on the collapsed "Write an internal
+            // note" button would re-open on the mail tab — risking an
+            // accidental outbound mail when the agent meant to add a note.
+            setTab("note");
             setExpanded(false);
             onSubmitted();
           }}
