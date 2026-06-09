@@ -31,7 +31,8 @@ public sealed class TimesheetPreferencesService : ITimesheetPreferencesService
         var officeEnd = row?.OfficeEndMinutes ?? globals.OfficeEndMinutes;
 
         return new TimesheetPreferences(
-            dayStart, dayTarget, weekTarget, workDays, maxAbsence, officeStart, officeEnd);
+            dayStart, dayTarget, weekTarget, workDays, maxAbsence, officeStart, officeEnd,
+            row?.DefaultTaskId);
     }
 
     public async Task<TimesheetOverride?> GetOverrideAsync(Guid userId, CancellationToken ct = default)
@@ -117,6 +118,30 @@ public sealed class TimesheetPreferencesService : ITimesheetPreferencesService
             stored ?? new TimesheetOverride(null, null, null, null, null, null, null));
     }
 
+    public async Task<UpdateDefaultTaskResult> UpdateDefaultTaskAsync(
+        Guid userId, Guid? taskId, CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+
+        // Validate up-front so a bad task id is a clean 404, not a 23503 from
+        // the FK. Archived tasks are rejected too — the picker only offers
+        // active ones, so a request for an archived id is a stale client.
+        if (taskId is { } tid)
+        {
+            var ok = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
+                "SELECT EXISTS (SELECT 1 FROM timesheet_tasks WHERE id = @tid AND archived = FALSE)",
+                new { tid }, cancellationToken: ct));
+            if (!ok) return new UpdateDefaultTaskResult.TaskNotFound();
+        }
+
+        var rows = await conn.ExecuteAsync(new CommandDefinition(
+            "UPDATE users SET timesheet_default_task_id = @taskId WHERE id = @userId",
+            new { userId, taskId }, cancellationToken: ct));
+        if (rows == 0) return new UpdateDefaultTaskResult.UserNotFound();
+
+        return new UpdateDefaultTaskResult.Updated(taskId);
+    }
+
     private async Task<TimesheetPreferences> ReadGlobalsAsync(CancellationToken ct)
     {
         var dayStart = await _settings.GetAsync<int>(SettingKeys.Timesheet.DefaultDayStartMinutes, ct);
@@ -133,7 +158,11 @@ public sealed class TimesheetPreferencesService : ITimesheetPreferencesService
             ParseWorkDays(workDaysCsv),
             ClampMinute(maxAbsence, 30),
             ClampMinute(officeStart, 510),
-            ClampMinute(officeEnd, 1020));
+            ClampMinute(officeEnd, 1020),
+            // No global default task — "first active" is the implicit fallback,
+            // resolved client-side. This globals-only bundle is only used when
+            // the user row is missing entirely.
+            null);
     }
 
     private async Task<OverrideRow?> ReadOverrideRowAsync(Guid userId, CancellationToken ct)
@@ -145,7 +174,8 @@ public sealed class TimesheetPreferencesService : ITimesheetPreferencesService
                    timesheet_work_days                  AS WorkDays,
                    timesheet_max_absence_day_minutes    AS MaxAbsenceDayMinutes,
                    timesheet_office_start_minutes       AS OfficeStartMinutes,
-                   timesheet_office_end_minutes         AS OfficeEndMinutes
+                   timesheet_office_end_minutes         AS OfficeEndMinutes,
+                   timesheet_default_task_id            AS DefaultTaskId
             FROM users WHERE id = @userId
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -183,5 +213,6 @@ public sealed class TimesheetPreferencesService : ITimesheetPreferencesService
         public int? MaxAbsenceDayMinutes { get; set; }
         public int? OfficeStartMinutes { get; set; }
         public int? OfficeEndMinutes { get; set; }
+        public Guid? DefaultTaskId { get; set; }
     }
 }

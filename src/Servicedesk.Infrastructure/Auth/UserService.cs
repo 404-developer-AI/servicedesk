@@ -197,13 +197,16 @@ public sealed class UserService : IUserService
 
     public async Task<ApplicationUser?> FindByEmailAsync(string email, CancellationToken ct = default)
     {
+        // @email is cast to citext so login/OIDC lookup matches regardless of
+        // casing — email is a CITEXT column, but a bare `text` parameter would
+        // otherwise resolve to a case-sensitive comparison and miss the user.
         const string sql = """
             SELECT id AS Id, email AS Email, password_hash AS PasswordHash, role_name AS RoleName,
                    created_utc AS CreatedUtc, last_login_utc AS LastLoginUtc,
                    failed_attempts AS FailedAttempts, lockout_until_utc AS LockoutUntilUtc,
                    auth_mode AS AuthMode, external_provider AS ExternalProvider,
                    external_subject AS ExternalSubject, is_active AS IsActive
-            FROM users WHERE email = @email
+            FROM users WHERE email = @email::citext
             """;
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         return await connection.QueryFirstOrDefaultAsync<ApplicationUser>(

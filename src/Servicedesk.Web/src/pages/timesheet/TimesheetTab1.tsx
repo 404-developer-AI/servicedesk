@@ -109,6 +109,21 @@ export function TimesheetTab1() {
     qc.invalidateQueries({ queryKey: ["timesheet", "entries", date] });
   };
 
+  // v0.0.74 — persist the agent's personal default task. On success we
+  // refresh the prefs query so the next auto-spawned draft picks up the
+  // new default; the already-open draft (if untouched) is left as-is.
+  const defaultTaskId = prefsQuery.data?.defaultTaskId ?? null;
+  const setDefaultTaskMutation = useMutation({
+    mutationFn: (taskId: string | null) =>
+      timesheetPreferencesApi.setDefaultTask(taskId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["timesheet", "me", "preferences"] });
+      toast.success("Default task updated.");
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiError ? e.message : "Could not update the default task."),
+  });
+
   const goRelative = (days: number) => {
     const d = new Date(date + "T00:00:00");
     d.setDate(d.getDate() + days);
@@ -136,14 +151,14 @@ export function TimesheetTab1() {
     // Start to the day-start fallback even when the loaded rows have a
     // later last-end. Same trap on date-switch when the queryKey changes.
     if (entriesQuery.isLoading || prefsQuery.isLoading) return;
-    const firstActiveTask = tasks.find((t) => !t.archived);
-    if (!firstActiveTask) return;
+    const taskId = seedTaskId(tasks, prefsQuery.data?.defaultTaskId);
+    if (!taskId) return;
     setDraftRow({
       mode: "new",
       entryDate: date,
       startMinutes: lastEnd ?? dayStartMinutes,
       endMinutes: currentLocalMinutes(),
-      taskId: firstActiveTask.id,
+      taskId,
       ticket: null,
       description: "",
     });
@@ -156,6 +171,7 @@ export function TimesheetTab1() {
     dayStartMinutes,
     entriesQuery.isLoading,
     prefsQuery.isLoading,
+    prefsQuery.data?.defaultTaskId,
   ]);
 
   return (
@@ -206,7 +222,34 @@ export function TimesheetTab1() {
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Default task</span>
+            <Select
+              value={defaultTaskId ?? DEFAULT_TASK_NONE}
+              onValueChange={(v) =>
+                setDefaultTaskMutation.mutate(v === DEFAULT_TASK_NONE ? null : v)
+              }
+              disabled={tasks.length === 0 || setDefaultTaskMutation.isPending}
+            >
+              <SelectTrigger
+                aria-label="Personal default task for new rows"
+                className="h-8 w-40 bg-glass text-xs"
+              >
+                <SelectValue placeholder="First active" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={DEFAULT_TASK_NONE}>First active task</SelectItem>
+                {tasks
+                  .filter((t) => !t.archived)
+                  .map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
           <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
             {entries.length} {entries.length === 1 ? "entry" : "entries"}
           </Badge>
@@ -293,8 +336,8 @@ export function TimesheetTab1() {
                   // `lastEnd` race that would otherwise pre-fill the
                   // new row's start with the value from before this
                   // save landed.
-                  const firstActiveTask = tasks.find((t) => !t.archived);
-                  if (!firstActiveTask) {
+                  const nextTaskId = seedTaskId(tasks, prefsQuery.data?.defaultTaskId);
+                  if (!nextTaskId) {
                     setDraftRow(null);
                     return;
                   }
@@ -303,7 +346,7 @@ export function TimesheetTab1() {
                     entryDate: date,
                     startMinutes: saved.endMinutes,
                     endMinutes: currentLocalMinutes(),
-                    taskId: firstActiveTask.id,
+                    taskId: nextTaskId,
                     ticket: null,
                     description: "",
                   });
@@ -330,6 +373,21 @@ export function TimesheetTab1() {
 /// the previously-typed values around).
 function draftKey(draft: DraftRow): string {
   return `draft:${draft.entryDate}:${draft.startMinutes ?? "x"}:${draft.taskId}`;
+}
+
+/// Pick the task a fresh Tab-1 row should start on: the agent's personal
+/// default when it's set and still active, otherwise the first active task
+/// (sort order). Returns null only when there is no active task at all.
+function seedTaskId(
+  tasks: TimesheetTask[],
+  defaultTaskId: string | null | undefined,
+): string | null {
+  if (defaultTaskId) {
+    const preferred = tasks.find((t) => t.id === defaultTaskId && !t.archived);
+    if (preferred) return preferred.id;
+  }
+  const firstActive = tasks.find((t) => !t.archived);
+  return firstActive ? firstActive.id : null;
 }
 
 // ---- Row rendering ----------------------------------------------------
@@ -468,6 +526,11 @@ type DraftRow = {
 /// value (global default + per-user override) comes from the server in
 /// v0.0.35-E.
 const DEFAULT_DAY_START_FALLBACK = 8 * 60 + 30; // 08:30
+
+/// Sentinel for the "no preference" option in the default-task picker.
+/// Radix Select forbids an empty-string item value, so we map this to a
+/// real `null` on the wire (clears the stored preference).
+const DEFAULT_TASK_NONE = "__none__";
 
 function toDraft(entry: TimesheetEntry): DraftRow {
   return {

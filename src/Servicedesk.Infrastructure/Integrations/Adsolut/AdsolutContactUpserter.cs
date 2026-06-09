@@ -97,14 +97,15 @@ public sealed class AdsolutContactUpserter : IAdsolutContactUpserter
 
         if (contactId is null)
         {
-            // No UUID match — try to find the person by email (CITEXT, so
-            // case-insensitive at the DB level).
+            // No UUID match — try to find the person by email. email is CITEXT,
+            // but the bare `text` parameter would resolve to a case-sensitive
+            // comparison; cast to citext so the match folds case at the DB level.
             var byEmail = await conn.QueryFirstOrDefaultAsync<AdsolutContactByEmailRow>(new CommandDefinition(
                 """
                 SELECT id           AS Id,
                        updated_utc  AS UpdatedUtc
                 FROM contacts
-                WHERE email = @Email
+                WHERE email = @Email::citext
                 LIMIT 1
                 """,
                 new { Email = contact.Email },

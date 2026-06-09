@@ -76,7 +76,7 @@ public sealed class QueueInboundMailboxRepository : IQueueInboundMailboxReposito
         const string sql = """
             SELECT queue_id
             FROM queue_inbound_mailboxes
-            WHERE mailbox_address = @mailbox
+            WHERE mailbox_address = @mailbox::citext
               AND folder_id = @folderId
               AND (@excludeSourceId::uuid IS NULL OR id <> @excludeSourceId)
             LIMIT 1

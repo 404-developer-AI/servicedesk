@@ -281,6 +281,10 @@ export type TimesheetPreferences = {
   /// overlap when the mismatch zone falls inside [start, end].
   officeStartMinutes: number;
   officeEndMinutes: number;
+  /// v0.0.74 — the agent's personal default task for new Tab-1 rows.
+  /// `null` = no preference; Tab 1 then seeds new rows with the first
+  /// active task (sort order).
+  defaultTaskId: string | null;
 };
 
 export const timesheetPreferencesApi = {
@@ -294,6 +298,15 @@ export const timesheetPreferencesApi = {
     request<TimesheetPreferences>(
       "GET",
       `/api/timesheet/manager/preferences/${userId}`,
+    ),
+
+  /// v0.0.74 — self-service: set (or clear with `null`) the caller's own
+  /// default Tab-1 task. Returns the persisted value.
+  setDefaultTask: (taskId: string | null) =>
+    request<{ defaultTaskId: string | null }>(
+      "PUT",
+      "/api/timesheet/me/preferences/default-task",
+      { taskId },
     ),
 };
 
