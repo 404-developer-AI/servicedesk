@@ -80,6 +80,10 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         ["dueUtc"]         = "COALESCE(t.due_utc, '9999-12-31'::timestamptz)",
         ["priorityLevel"]  = "p.level",
         ["number"]         = "t.number",
+        // Tickets without a pending-till sort last on ASC (and first on DESC),
+        // same NULL-handling as dueUtc above. In normal operation a non-null
+        // value is always in the future — the scheduler clears it on elapse.
+        ["pendingTillUtc"] = "COALESCE(t.pending_till_utc, '9999-12-31'::timestamptz)",
         ["subject"]        = "t.subject",
         ["statusName"]     = "s.name",
         ["queueName"]      = "q.name",
@@ -121,6 +125,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             t.created_utc                   AS CreatedUtc,
             t.updated_utc                   AS UpdatedUtc,
             t.due_utc                       AS DueUtc,
+            t.pending_till_utc              AS PendingTillUtc,
             t.awaiting_company_assignment   AS AwaitingCompanyAssignment,
             t.company_resolved_via          AS CompanyResolvedVia,
             t.ticket_type_id                AS TicketTypeId

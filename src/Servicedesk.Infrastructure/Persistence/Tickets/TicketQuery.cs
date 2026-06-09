@@ -70,6 +70,12 @@ public sealed record TicketListItem(
     DateTime CreatedUtc,
     DateTime UpdatedUtc,
     DateTime? DueUtc,
+    // v0.0.74 — snooze/pending-till timestamp. Non-null = currently pending
+    // until this moment; the scheduler clears it on elapse, so in practice a
+    // value here is always in the future. Surfaced as an opt-in list column +
+    // sort field. Column order matches the ListSelect projection (Dapper
+    // positional-record rule).
+    DateTime? PendingTillUtc,
     bool AwaitingCompanyAssignment = false,
     string? CompanyResolvedVia = null,
     // v0.0.39 — surfaced so the list row can render the type-badge

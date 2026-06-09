@@ -90,6 +90,9 @@ export type TicketListItem = {
   createdUtc: string;
   updatedUtc: string;
   dueUtc: string | null;
+  // v0.0.74 — snooze/pending-till. Non-null = currently pending until this
+  // moment (always future in practice; cleared on elapse). Opt-in column.
+  pendingTillUtc: string | null;
   awaitingCompanyAssignment: boolean;
   companyResolvedVia: CompanyResolvedVia | null;
   // v0.0.39 — first-class ticket type. Always set after the migration

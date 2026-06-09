@@ -190,6 +190,18 @@ export const ALL_COLUMNS = [
       );
     },
   }),
+  // v0.0.74 — pending-till (snooze). Rendered as a plain future date; an
+  // elapsed value is cleared by the scheduler, so no overdue/red treatment
+  // (unlike Due). Empty = "—".
+  columnHelper.accessor("pendingTillUtc", {
+    id: "pendingTillUtc",
+    header: "Pending till",
+    cell: (info) => {
+      const val = info.getValue();
+      if (!val) return <span className="text-muted-foreground/60">—</span>;
+      return <ServerDate iso={val} className="text-muted-foreground text-xs" />;
+    },
+  }),
 ];
 
 type TicketTableProps = {
