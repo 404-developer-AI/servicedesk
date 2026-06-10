@@ -23,6 +23,7 @@ import { TrmmIntegrationPage } from "@/pages/settings/TrmmIntegrationPage";
 import { AssetsPage } from "@/pages/assets/AssetsPage";
 import { OrdersPage } from "@/pages/orders/OrdersPage";
 import { StatisticsPage } from "@/pages/statistics/StatisticsPage";
+import { ContractsPage } from "@/pages/contracts/ContractsPage";
 import { ZammadImportRunsListPage } from "@/pages/settings/zammad/ZammadImportRunsListPage";
 import { ZammadImportRunDetailPage } from "@/pages/settings/zammad/ZammadImportRunDetailPage";
 import { MailSettingsPage } from "@/pages/settings/MailSettingsPage";
@@ -367,6 +368,23 @@ const statisticsRoute = createRoute({
   path: "/statistics",
   beforeLoad: authGate(["Agent", "Admin"]),
   component: StatisticsPage,
+});
+
+// v0.0.76 — Contracts hub (tile launcher; modules land later). Agent + Admin
+// role gate plus the per-user `contracts_enabled` flag, checked here as well
+// as in the sidebar hide: the page has no backend surface yet, so the route
+// gate is what keeps a flag-off user from deep-linking to it. The flag is
+// server-sourced via /auth/me.
+const contractsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/contracts",
+  beforeLoad: (args) => {
+    authGate(["Agent", "Admin"])(args);
+    if (!authedUser()?.contractsEnabled) {
+      throw redirect({ to: "/" });
+    }
+  },
+  component: ContractsPage,
 });
 
 const profileMentionsRoute = createRoute({
@@ -721,6 +739,7 @@ const routeTree = rootRoute.addChildren([
   assetsRoute,
   ordersRoute,
   statisticsRoute,
+  contractsRoute,
   settingsRoute.addChildren([
     settingsIndexRoute,
     settingsGeneralRoute,

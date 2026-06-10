@@ -175,6 +175,11 @@ export function Sidebar() {
     if (item.to === "/statistics" && !user?.statisticsRead) {
       return false;
     }
+    // v0.0.76 — Contracts is per-user opt-in (contracts_enabled). Role gates
+    // Agent+Admin; the /contracts route gate enforces the same flag.
+    if (item.to === "/contracts" && !user?.contractsEnabled) {
+      return false;
+    }
     return true;
   });
 

@@ -148,7 +148,8 @@ public sealed record UserAdminRow(
     bool TimesheetBackofficeEnabled = false,
     bool AdsolutOrdersEnabled = false,
     bool StatisticsRead = false,
-    bool StatisticsWrite = false)
+    bool StatisticsWrite = false,
+    bool ContractsEnabled = false)
 {
     /// Per-user Dashboard tile preferences sourced from
     /// `user_dashboard_tiles`. Empty list = no tiles enabled
@@ -257,7 +258,8 @@ public sealed record FeatureFlagsUpdate(
     bool? TimesheetBackofficeEnabled = null,
     bool? AdsolutOrdersEnabled = null,
     bool? StatisticsRead = null,
-    bool? StatisticsWrite = null);
+    bool? StatisticsWrite = null,
+    bool? ContractsEnabled = null);
 
 public abstract record UpdateFeatureFlagsResult
 {

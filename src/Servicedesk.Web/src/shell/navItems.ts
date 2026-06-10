@@ -9,6 +9,7 @@ import {
   Server,
   ShoppingCart,
   BarChart3,
+  FileSignature,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "@/lib/roles";
@@ -124,6 +125,19 @@ export const NAV_ITEMS: readonly NavItem[] = [
     roles: ["Agent", "Admin"],
     comingIn: "",
     description: "Per-technician statistics tiles — worked hours and more, built and assigned by statistics builders.",
+    section: "main",
+  },
+  // v0.0.76 — Contracts. Tile hub for the upcoming contract modules
+  // (contracts overview, Microsoft 365 matching, …). Role gate is
+  // Agent+Admin; the per-user `contracts_enabled` flag is checked in
+  // Sidebar.tsx and the /contracts route gate.
+  {
+    label: "Contracts",
+    to: "/contracts",
+    icon: FileSignature,
+    roles: ["Agent", "Admin"],
+    comingIn: "",
+    description: "Contract management hub — contracts overview and Microsoft 365 matching modules.",
     section: "main",
   },
   // Profile is reachable from the header avatar dropdown (top-right) and via

@@ -47,6 +47,10 @@ export type AuthUser = {
   /// tile-builder (creating + assigning tiles). The two are independent.
   statisticsRead: boolean;
   statisticsWrite: boolean;
+  /// v0.0.76 — per-user opt-in for the Contracts page (tile hub; the
+  /// contract data model lands later). Gates the sidebar nav entry and
+  /// the /contracts route.
+  contractsEnabled: boolean;
   /// Whether the Adsolut integration is currently connected (server-
   /// resolved at /auth/me time). Tenant-global rather than per-user, but
   /// surfaced here so the Adsolut timesheet tab can gate without the

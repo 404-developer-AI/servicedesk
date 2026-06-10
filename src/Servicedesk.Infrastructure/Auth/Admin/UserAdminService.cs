@@ -54,7 +54,8 @@ public sealed class UserAdminService : IUserAdminService
                     u.timesheet_backoffice_enabled AS TimesheetBackofficeEnabled,
                     u.adsolut_orders_enabled AS AdsolutOrdersEnabled,
                     u.statistics_read   AS StatisticsRead,
-                    u.statistics_write  AS StatisticsWrite
+                    u.statistics_write  AS StatisticsWrite,
+                    u.contracts_enabled AS ContractsEnabled
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             ORDER BY u.created_utc ASC
@@ -102,7 +103,8 @@ public sealed class UserAdminService : IUserAdminService
                     u.timesheet_backoffice_enabled AS TimesheetBackofficeEnabled,
                     u.adsolut_orders_enabled AS AdsolutOrdersEnabled,
                     u.statistics_read   AS StatisticsRead,
-                    u.statistics_write  AS StatisticsWrite
+                    u.statistics_write  AS StatisticsWrite,
+                    u.contracts_enabled AS ContractsEnabled
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             WHERE u.id = @id
@@ -765,7 +767,8 @@ public sealed class UserAdminService : IUserAdminService
             && update.TimesheetBackofficeEnabled is null
             && update.AdsolutOrdersEnabled is null
             && update.StatisticsRead is null
-            && update.StatisticsWrite is null)
+            && update.StatisticsWrite is null
+            && update.ContractsEnabled is null)
         {
             return new UpdateFeatureFlagsResult.NoChange();
         }
@@ -810,7 +813,8 @@ public sealed class UserAdminService : IUserAdminService
                 timesheet_backoffice_enabled = COALESCE(@timesheetBackofficeEnabled, timesheet_backoffice_enabled),
                 adsolut_orders_enabled = COALESCE(@adsolutOrdersEnabled, adsolut_orders_enabled),
                 statistics_read  = COALESCE(@statisticsRead,  statistics_read),
-                statistics_write = COALESCE(@statisticsWrite, statistics_write)
+                statistics_write = COALESCE(@statisticsWrite, statistics_write),
+                contracts_enabled = COALESCE(@contractsEnabled, contracts_enabled)
             WHERE id = @id
             """,
             new
@@ -829,6 +833,7 @@ public sealed class UserAdminService : IUserAdminService
                 adsolutOrdersEnabled = update.AdsolutOrdersEnabled,
                 statisticsRead = update.StatisticsRead,
                 statisticsWrite = update.StatisticsWrite,
+                contractsEnabled = update.ContractsEnabled,
             },
             tx,
             cancellationToken: ct));

@@ -1326,6 +1326,8 @@ export type UserAdminRow = {
   // assigned tiles; write = build + assign tiles. Independent flags.
   statisticsRead: boolean;
   statisticsWrite: boolean;
+  // v0.0.76 — per-user opt-in for the Contracts page (tile hub).
+  contractsEnabled: boolean;
   // Per-user Dashboard tile preferences. Empty array on insert
   // (admins opt the user in to specific tiles).
   dashboardTiles: string[];
@@ -1345,6 +1347,7 @@ export type FeatureFlagsUpdate = Partial<{
   adsolutOrdersEnabled: boolean;
   statisticsRead: boolean;
   statisticsWrite: boolean;
+  contractsEnabled: boolean;
 }>;
 
 export type M365PickerUser = {

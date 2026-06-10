@@ -121,6 +121,11 @@ public interface IUserService
     /// Gates the builder UI and the tile-management endpoints. Returns false
     /// on missing rows.
     Task<bool> GetStatisticsWriteEnabledAsync(Guid userId, CancellationToken ct = default);
+
+    /// v0.0.76 — per-user opt-in for the Contracts page (tile hub; the
+    /// contract data model lands later). Drives the sidebar nav entry.
+    /// Returns false on missing rows.
+    Task<bool> GetContractsEnabledAsync(Guid userId, CancellationToken ct = default);
 }
 
 /// Per-user Timesheet feature flags. Empty struct-y record so the call
@@ -508,6 +513,15 @@ public sealed class UserService : IUserService
     public async Task<bool> GetStatisticsWriteEnabledAsync(Guid userId, CancellationToken ct = default)
     {
         const string sql = "SELECT statistics_write FROM users WHERE id = @id";
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var value = await connection.QuerySingleOrDefaultAsync<bool?>(
+            new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
+        return value ?? false;
+    }
+
+    public async Task<bool> GetContractsEnabledAsync(Guid userId, CancellationToken ct = default)
+    {
+        const string sql = "SELECT contracts_enabled FROM users WHERE id = @id";
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         var value = await connection.QuerySingleOrDefaultAsync<bool?>(
             new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));

@@ -15,6 +15,7 @@ import {
   ShoppingCart,
   BarChart3,
   PencilRuler,
+  FileSignature,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -74,6 +75,10 @@ const FLAG_GROUPS: Group[] = [
       { key: "statisticsRead", label: "Statistics (view)", icon: BarChart3 },
       { key: "statisticsWrite", label: "Statistics builder", icon: PencilRuler },
     ],
+  },
+  {
+    title: "Contracts",
+    flags: [{ key: "contractsEnabled", label: "Contracts", icon: FileSignature }],
   },
 ];
 
