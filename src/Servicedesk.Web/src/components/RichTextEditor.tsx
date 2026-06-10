@@ -901,8 +901,9 @@ export function splitMentionIds(ids: string[]): {
 /// MentionNodeAttrs widened locally because we pass kind/bodyHtml through
 /// the command props — Tiptap's own type only knows id/label.
 type ComposeMentionProps = MentionNodeAttrs & {
-  kind?: "intake" | "template" | "order";
+  kind?: "intake" | "template" | "order" | "kb";
   bodyHtml?: string;
+  href?: string;
 };
 
 function buildIntakeSuggestion(
@@ -950,6 +951,27 @@ function buildIntakeSuggestion(
           .chain()
           .focus()
           .insertContentAt(range, rendered)
+          .run();
+        return;
+      }
+
+      if (kind === "kb") {
+        // v0.0.75 — insert a plain hyperlink to the article's public reader
+        // page. A real <a> (not a pill) because this lands in outbound mail:
+        // the customer's mail client must render it as a clickable link.
+        const href = props.href ?? "";
+        if (!href) return;
+        editor
+          .chain()
+          .focus()
+          .insertContentAt(range, [
+            {
+              type: "text",
+              text: label || href,
+              marks: [{ type: "link", attrs: { href } }],
+            },
+            { type: "text", text: " " },
+          ])
           .run();
         return;
       }
@@ -1015,6 +1037,7 @@ function buildIntakeSuggestion(
                   label: item.name,
                   kind: item.kind,
                   bodyHtml: item.bodyHtml,
+                  href: item.href,
                 } as ComposeMentionProps),
             },
             editor: props.editor,
@@ -1043,6 +1066,7 @@ function buildIntakeSuggestion(
                 label: item.name,
                 kind: item.kind,
                 bodyHtml: item.bodyHtml,
+                href: item.href,
               } as ComposeMentionProps),
           });
           if (!props.clientRect) return;

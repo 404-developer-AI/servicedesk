@@ -5,6 +5,7 @@ using Servicedesk.Domain.KnowledgeBase;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.KnowledgeBase;
 using Servicedesk.Infrastructure.Persistence.KnowledgeBase;
+using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Api.KnowledgeBase;
 
@@ -63,6 +64,18 @@ public static class KbArticleEndpoints
             int? limit, IKbArticleRepository repo, CancellationToken ct) =>
             Results.Ok(await repo.ListFeaturedAsync(limit ?? 6, ct)))
             .WithName("ListKbFeatured").WithOpenApi();
+
+        // v0.0.75 — tells the `::` picker whether public article links are
+        // switched on and which base URL to build them with. Agent-side
+        // only; when disabled the picker hides the KB source entirely so
+        // nobody inserts a link that would 404 for the customer.
+        agentGroup.MapGet("/public-link-config", async (
+            ISettingsService settings, CancellationToken ct) =>
+        {
+            var enabled = await settings.GetAsync<bool>(SettingKeys.KnowledgeBase.PublicLinksEnabled, ct);
+            var baseUrl = (await settings.GetAsync<string>(SettingKeys.App.PublicBaseUrl, ct))?.TrimEnd('/') ?? string.Empty;
+            return Results.Ok(new { enabled, publicBaseUrl = baseUrl });
+        }).WithName("GetKbPublicLinkConfig").WithOpenApi();
 
         // ---- Writes (Agent+Admin per status-rules below) ----
 

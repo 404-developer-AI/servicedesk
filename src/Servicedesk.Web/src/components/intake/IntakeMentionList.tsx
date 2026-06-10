@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ClipboardList, FileText, ShoppingCart } from "lucide-react";
+import { BookOpen, ClipboardList, FileText, ShoppingCart } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /// Items shown in the `::` typeahead. The picker now mixes intake-form
@@ -10,14 +10,19 @@ import { cn } from "@/lib/utils";
 /// suggestion plugin in <RichTextEditor>):
 ///   - "intake"   → insert an intake-form chip + async draft-instance create
 ///   - "template" → insert the template's HTML body inline (no chip)
+///   - "order"    → insert a clickable order pill
+///   - "kb"       → insert a hyperlink to the article's public reader page
 export type IntakeMentionItem = {
   id: string;
   name: string;
   description?: string | null;
-  kind: "intake" | "template" | "order";
+  kind: "intake" | "template" | "order" | "kb";
   /// Only set for kind = "template". The picker hands it through to the
   /// suggestion command so the editor can insertContent at the trigger range.
   bodyHtml?: string;
+  /// Only set for kind = "kb": the absolute public URL the inserted link
+  /// points at (built from the install's public base URL).
+  href?: string;
 };
 
 export type IntakeMentionListHandle = {
@@ -92,9 +97,15 @@ export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, Intak
           items.map((item, i) => {
             const isSelected = i === selectedIndex;
             const Icon =
-              item.kind === "template" ? FileText : item.kind === "order" ? ShoppingCart : ClipboardList;
+              item.kind === "template" ? FileText
+                : item.kind === "order" ? ShoppingCart
+                : item.kind === "kb" ? BookOpen
+                : ClipboardList;
             const kindLabel =
-              item.kind === "template" ? "Template" : item.kind === "order" ? "Order" : "Intake";
+              item.kind === "template" ? "Template"
+                : item.kind === "order" ? "Order"
+                : item.kind === "kb" ? "KB article"
+                : "Intake";
             return (
               <button
                 key={`${item.kind}:${item.id}`}
@@ -118,7 +129,9 @@ export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, Intak
                     "mt-0.5 h-4 w-4 shrink-0",
                     item.kind === "template"
                       ? "text-violet-700 dark:text-violet-300"
-                      : "text-cyan-700 dark:text-cyan-300",
+                      : item.kind === "kb"
+                        ? "text-emerald-700 dark:text-emerald-300"
+                        : "text-cyan-700 dark:text-cyan-300",
                   )}
                 />
                 <div className="min-w-0 flex-1">
@@ -129,7 +142,9 @@ export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, Intak
                         "shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider",
                         item.kind === "template"
                           ? "border-violet-400/60 bg-violet-100 text-violet-800 dark:border-violet-400/30 dark:bg-violet-400/10 dark:text-violet-200"
-                          : "border-cyan-400/60 bg-cyan-100 text-cyan-800 dark:border-cyan-400/30 dark:bg-cyan-400/10 dark:text-cyan-200",
+                          : item.kind === "kb"
+                            ? "border-emerald-400/60 bg-emerald-100 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-200"
+                            : "border-cyan-400/60 bg-cyan-100 text-cyan-800 dark:border-cyan-400/30 dark:bg-cyan-400/10 dark:text-cyan-200",
                       )}
                     >
                       {kindLabel}

@@ -24,6 +24,7 @@ import { composeTemplatesApi } from "@/lib/composeTemplates-api";
 import { IntakePrefillDrawer } from "@/components/intake/IntakePrefillDrawer";
 import { useAuth } from "@/auth/authStore";
 import { orderMentionItems } from "@/pages/orders/orderMention";
+import { kbLinkMentionItems } from "@/pages/kb/kbLinkMention";
 
 export type MailRecipient = { address: string; name: string };
 
@@ -713,8 +714,14 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
             : [];
 
           // v0.0.59 — also offer Adsolut orders for users with the Orders flag.
-          const orderItems = user?.adsolutOrdersEnabled ? await orderMentionItems(q) : [];
-          return [...templateItems, ...intakeItems, ...orderItems].slice(0, 16);
+          // v0.0.75 — and Published KB articles as public links (only when
+          // the admin enabled public article links; the helper hides the
+          // source entirely otherwise).
+          const [orderItems, kbItems] = await Promise.all([
+            user?.adsolutOrdersEnabled ? orderMentionItems(q) : Promise.resolve([]),
+            kbLinkMentionItems(q),
+          ]);
+          return [...templateItems, ...intakeItems, ...orderItems, ...kbItems].slice(0, 16);
         }}
         onIntakeInsert={async (templateId) => {
           try {

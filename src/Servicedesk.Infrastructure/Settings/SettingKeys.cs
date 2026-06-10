@@ -618,6 +618,16 @@ public static class SettingKeys
         public const string QueueId = "Iso27001.QueueId";
     }
 
+    // v0.0.75 — public (no-login) Knowledge Base article links. Off by
+    // default: every install that wants customer-reachable KB links flips
+    // the switch deliberately. Only Published articles are ever served.
+    public static class KnowledgeBase
+    {
+        public const string PublicLinksEnabled = "KnowledgeBase.PublicLinks.Enabled";
+        public const string PublicRateLimitPermits = "KnowledgeBase.PublicRateLimit.PermitPerWindow";
+        public const string PublicRateLimitWindowSeconds = "KnowledgeBase.PublicRateLimit.WindowSeconds";
+    }
+
     public static class Surveys
     {
         public const string DefaultTtlDays = "Surveys.DefaultTtlDays";
@@ -1278,6 +1288,16 @@ public static class SettingDefaults
             "Maximum number of questions allowed per survey. Enforced server-side on save; bigger surveys mean fewer completed responses."),
         new SettingDefault(SettingKeys.Surveys.MaxCommentLength, "4000", "int", "Surveys",
             "Hard cap (characters) on the optional free-text comment field a customer can submit alongside the structured answers."),
+
+        // Knowledge Base public links — v0.0.75. Disabled by default;
+        // the anonymous reader endpoints return 404 for everything until
+        // an admin flips the switch (Settings → Knowledge Base).
+        new SettingDefault(SettingKeys.KnowledgeBase.PublicLinksEnabled, "false", "bool", "KnowledgeBase",
+            "When true, Published Knowledge Base articles are readable without login via /kb/public/{id} links (e.g. pasted into outbound mail). Draft/Internal/Archived articles are never served publicly. When false, the public endpoints return 404 for everything."),
+        new SettingDefault(SettingKeys.KnowledgeBase.PublicRateLimitPermits, "60", "int", "KnowledgeBase",
+            "Requests permitted per rate-limit window against the public /api/public/kb endpoints, partitioned by {ip,article}. Higher than the survey limit because an article page also fetches its inline images."),
+        new SettingDefault(SettingKeys.KnowledgeBase.PublicRateLimitWindowSeconds, "60", "int", "KnowledgeBase",
+            "Rate-limit window length (seconds) for the public Knowledge Base endpoints."),
 
         // ISO 27001 workflow — v0.0.40. Single queue-binding setting; when
         // empty the classification buttons never appear and the feature is
