@@ -4266,6 +4266,17 @@ public sealed class DatabaseBootstrapper : IHostedService
             ADD COLUMN IF NOT EXISTS title_reviewed_utc          TIMESTAMPTZ NULL,
             ADD COLUMN IF NOT EXISTS title_reviewed_by_user_id   UUID        NULL
                 REFERENCES users(id) ON DELETE SET NULL;
+
+        -- ===================================================================
+        -- v0.0.76 Contracts — per-user feature flag.
+        --
+        -- Opt-in flag for the Contracts page (tile hub; the contract data
+        -- model lands in a later release). Mirrors the other per-user
+        -- feature flags (kb_enabled, assets_enabled, statistics_*): default
+        -- FALSE, no backfill, strictly opt-in, Agent/Admin only (the
+        -- feature-flags update path rejects Customers).
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS contracts_enabled BOOLEAN NOT NULL DEFAULT FALSE;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

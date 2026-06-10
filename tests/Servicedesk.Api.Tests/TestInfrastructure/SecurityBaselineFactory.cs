@@ -375,6 +375,9 @@ public sealed class FakeUserService : IUserService
 
     public Task<bool> GetStatisticsWriteEnabledAsync(Guid userId, CancellationToken ct = default) =>
         Task.FromResult(false);
+
+    public Task<bool> GetContractsEnabledAsync(Guid userId, CancellationToken ct = default) =>
+        Task.FromResult(false);
 }
 
 public sealed class FakeSessionService : ISessionService

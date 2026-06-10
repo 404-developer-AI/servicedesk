@@ -382,6 +382,9 @@ public static class AuthEndpoints
         // is feature-visibility, not the security boundary.
         var statisticsRead = await users.GetStatisticsReadEnabledAsync(userId, ct);
         var statisticsWrite = await users.GetStatisticsWriteEnabledAsync(userId, ct);
+        // v0.0.76 — per-user opt-in for the Contracts page (tile hub; the
+        // contract data model lands later). Drives the sidebar nav entry.
+        var contractsEnabled = await users.GetContractsEnabledAsync(userId, ct);
         // Whether the Adsolut integration is connected (configured + valid
         // refresh token, no refresh error). Resolved here so a non-admin
         // agent can gate the Adsolut timesheet tab without the admin-only
@@ -428,6 +431,7 @@ public static class AuthEndpoints
                 adsolutOrdersEnabled,
                 statisticsRead,
                 statisticsWrite,
+                contractsEnabled,
                 adsolutConnected,
                 dashboardTiles = tiles.Select(t => new { tileId = t.TileId, size = t.Size }).ToList(),
                 effectiveTheme,

@@ -396,7 +396,8 @@ public static class AdminUserEndpoints
         bool? TimesheetBackofficeEnabled,
         bool? AdsolutOrdersEnabled,
         bool? StatisticsRead,
-        bool? StatisticsWrite);
+        bool? StatisticsWrite,
+        bool? ContractsEnabled);
 
     private static async Task<IResult> UpdateFeatureFlags(
         Guid id,
@@ -422,7 +423,8 @@ public static class AdminUserEndpoints
             request.TimesheetBackofficeEnabled,
             request.AdsolutOrdersEnabled,
             request.StatisticsRead,
-            request.StatisticsWrite);
+            request.StatisticsWrite,
+            request.ContractsEnabled);
 
         var result = await admin.UpdateFeatureFlagsAsync(id, update, adminId.Value, ct);
         return result switch
@@ -447,6 +449,7 @@ public static class AdminUserEndpoints
                         adsolut_orders_enabled = updated.Row.AdsolutOrdersEnabled,
                         statistics_read = updated.Row.StatisticsRead,
                         statistics_write = updated.Row.StatisticsWrite,
+                        contracts_enabled = updated.Row.ContractsEnabled,
                     },
                     body: updated.Row,
                     statusCode: StatusCodes.Status200OK,
