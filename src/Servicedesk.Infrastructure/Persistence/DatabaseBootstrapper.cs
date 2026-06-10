@@ -4318,6 +4318,98 @@ public sealed class DatabaseBootstrapper : IHostedService
             articles_upserted   INTEGER     NOT NULL DEFAULT 0,
             updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now()
         );
+
+        -- ERP Contracts (contracten) mirror → Contracts overview (Contracts hub
+        -- → Contracts overview tile). v0.0.76. Same ERP machinery as Orders:
+        -- the Contracts list view returns the full contract incl. its article
+        -- lines inline, so the sync upserts straight from the list page (no
+        -- per-contract by-id N+1); by-id exists only for a manual resync.
+        --
+        -- Unlike verkoopbonnen/orders, a contract carries NO Ticket# ref — it
+        -- keys off the customer. customer_adsolut_id = the Adsolut customerId
+        -- (UUID), which maps 1:1 to companies.adsolut_id; the overview LEFT
+        -- JOINs companies on that id to surface the linked relation (clickable)
+        -- + its relation code (companies.adsolut_number). customer_name is the
+        -- company name copied onto the contract, shown as the fallback when no
+        -- local company matches. contractState is inline (code + per-language
+        -- label), so the dynamic status filter is derived from the distinct
+        -- state codes mirrored here — no separate ContractStates reference table.
+        --
+        -- Status filter is DISPLAY-ONLY: the mirror always pulls every status;
+        -- the admin's selection only narrows the overview + global search. So
+        -- there is no status-skip during sync and no purge here.
+        CREATE TABLE IF NOT EXISTS adsolut_contracts (
+            id                          UUID          PRIMARY KEY,
+            doc_nr                      INTEGER       NULL,
+            customer_adsolut_id         UUID          NULL,
+            invoice_customer_adsolut_id UUID          NULL,
+            customer_name               TEXT          NULL,
+            state_code                  TEXT          NULL,
+            state_description           TEXT          NULL,
+            doc_date                    TIMESTAMPTZ   NULL,
+            start_date                  TIMESTAMPTZ   NULL,
+            stop_date                   TIMESTAMPTZ   NULL,
+            end_date                    TIMESTAMPTZ   NULL,
+            description                 TEXT          NULL,
+            memo                        TEXT          NULL,
+            periodicity_code            TEXT          NULL,
+            periodicity_label           TEXT          NULL,
+            invoicing_periodicity_code  TEXT          NULL,
+            invoicing_periodicity_label TEXT          NULL,
+            number_of_terms             INTEGER       NULL,
+            total_excl_vat              NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_vat                   NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_incl_vat              NUMERIC(18,2) NOT NULL DEFAULT 0,
+            adsolut_created_utc         TIMESTAMPTZ   NULL,
+            adsolut_last_modified       TIMESTAMPTZ   NULL,
+            synced_utc                  TIMESTAMPTZ   NOT NULL DEFAULT now()
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_adsolut_contracts_state
+            ON adsolut_contracts (state_code);
+        CREATE INDEX IF NOT EXISTS ix_adsolut_contracts_customer
+            ON adsolut_contracts (customer_adsolut_id);
+        CREATE INDEX IF NOT EXISTS ix_adsolut_contracts_end_date
+            ON adsolut_contracts (end_date DESC);
+
+        -- Contract article lines (contractDetailArticles). The contract payload
+        -- has no line number, so line_nr is the array ordinal assigned at parse
+        -- time for a stable display order. ON DELETE CASCADE keeps lines in
+        -- lockstep with the header (lines are replaced wholesale per upsert).
+        CREATE TABLE IF NOT EXISTS adsolut_contract_lines (
+            id                  UUID          PRIMARY KEY,
+            contract_id         UUID          NOT NULL
+                REFERENCES adsolut_contracts (id) ON DELETE CASCADE,
+            line_nr             INTEGER       NULL,
+            article_id          UUID          NULL,
+            name                TEXT          NULL,
+            description         TEXT          NULL,
+            quantity            NUMERIC(18,4) NULL,
+            gross_unit_price    NUMERIC(18,4) NULL,
+            discount1           NUMERIC(18,4) NULL,
+            discount2           NUMERIC(18,4) NULL,
+            unit_price          NUMERIC(18,4) NULL,
+            unit_price_incl     NUMERIC(18,4) NULL,
+            start_date          TIMESTAMPTZ   NULL,
+            end_date            TIMESTAMPTZ   NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_adsolut_contract_lines_contract
+            ON adsolut_contract_lines (contract_id);
+
+        -- Singleton sync-state for the Contracts mirror. Own cursor, separate
+        -- from Orders/SalesReceipts/Articles/Companies so enabling/pausing one
+        -- never disturbs the others.
+        CREATE TABLE IF NOT EXISTS adsolut_contract_sync_state (
+            id                  INTEGER     PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+            last_full_sync_utc  TIMESTAMPTZ NULL,
+            last_delta_sync_utc TIMESTAMPTZ NULL,
+            last_error          TEXT        NULL,
+            last_error_utc      TIMESTAMPTZ NULL,
+            contracts_seen      INTEGER     NOT NULL DEFAULT 0,
+            contracts_upserted  INTEGER     NOT NULL DEFAULT 0,
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
         """;
 
     private readonly NpgsqlDataSource _dataSource;

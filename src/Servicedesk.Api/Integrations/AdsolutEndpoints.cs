@@ -100,6 +100,13 @@ public static class AdsolutEndpoints
         // (Contracts → Contract Articles). State surface + "sync now".
         admin.MapGet("/erp/articles/state", GetErpArticlesState).WithName("GetAdsolutErpArticlesState").WithOpenApi();
         admin.MapPost("/erp/articles/sync", TriggerErpArticlesSync).WithName("TriggerAdsolutErpArticlesSync").WithOpenApi();
+        // ERP contracts (contracten) mirror — feeds the Contracts overview
+        // (Contracts → Contracts overview). State surface + "sync now" + the
+        // DISPLAY-ONLY status filter (mirror always holds every status).
+        admin.MapGet("/erp/contracts/state", GetErpContractsState).WithName("GetAdsolutErpContractsState").WithOpenApi();
+        admin.MapPost("/erp/contracts/sync", TriggerErpContractsSync).WithName("TriggerAdsolutErpContractsSync").WithOpenApi();
+        admin.MapPut("/erp/contracts/status-filter", SetErpContractsStatusFilter).WithName("SetAdsolutErpContractsStatusFilter").WithOpenApi();
+        admin.MapPut("/erp/contracts/status-colors", SetErpContractsStatusColors).WithName("SetAdsolutErpContractsStatusColors").WithOpenApi();
         admin.MapGet("/debug/put-preview", DebugPutPreview).WithName("AdsolutDebugPutPreview").WithOpenApi();
         admin.MapPost("/debug/put", DebugPutCustomer).WithName("AdsolutDebugPutCustomer").WithOpenApi();
         admin.MapGet("/debug/access-token", DebugAccessToken).WithName("AdsolutDebugAccessToken").WithOpenApi()
@@ -1121,6 +1128,119 @@ public static class AdsolutEndpoints
             ClientIp: http.Connection.RemoteIpAddress?.ToString(),
             UserAgent: http.Request.Headers.UserAgent.ToString()), ct);
         return Results.Accepted();
+    }
+
+    // ---- /erp/contracts (contracten) mirror controls -------------------
+
+    private static async Task<IResult> GetErpContractsState(
+        IAdsolutContractRepository repo,
+        ISettingsService settings,
+        CancellationToken ct)
+    {
+        var enabled = await settings.GetAsync<bool>(SettingKeys.Adsolut.ErpContractsEnabled, ct);
+        var intervalMinutes = await settings.GetAsync<int>(SettingKeys.Adsolut.ErpContractsSyncIntervalMinutes, ct);
+        if (intervalMinutes <= 0) intervalMinutes = 60;
+        var filterRaw = await settings.GetAsync<string>(SettingKeys.Adsolut.ErpContractsStatusFilter, ct) ?? string.Empty;
+        var selected = filterRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        var state = await repo.GetSyncStateAsync(ct);
+        var options = await repo.GetStatusOptionsAsync(ct);
+        var total = await repo.GetCountAsync(ct);
+        var statusColors = await Servicedesk.Api.Contracts.ContractsOverviewEndpoints.ResolveStatusColorsAsync(settings, ct);
+        var nextSyncUtc = Servicedesk.Infrastructure.Health.IntegrationsHealthAggregator
+            .ComputeNextSyncUtc(state?.LastDeltaSyncUtc, Math.Max(5, intervalMinutes));
+
+        return Results.Ok(new
+        {
+            enabled,
+            intervalMinutes,
+            statusFilter = selected,
+            totalMirrored = total,
+            lastFullSyncUtc = state?.LastFullSyncUtc,
+            lastDeltaSyncUtc = state?.LastDeltaSyncUtc,
+            lastError = state?.LastError,
+            lastErrorUtc = state?.LastErrorUtc,
+            contractsSeen = state?.ContractsSeen ?? 0,
+            contractsUpserted = state?.ContractsUpserted ?? 0,
+            updatedUtc = state?.UpdatedUtc,
+            nextSyncUtc,
+            statusOptions = options.Select(o => new { code = o.Code, description = o.Description, count = o.Count }),
+            statusColors,
+        });
+    }
+
+    private static async Task<IResult> TriggerErpContractsSync(
+        HttpContext http,
+        IAdsolutContractsSyncSignal signal,
+        ISettingsService settings,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        var enabled = await settings.GetAsync<bool>(SettingKeys.Adsolut.ErpContractsEnabled, ct);
+        if (!enabled)
+        {
+            return Results.BadRequest(new { error = "disabled", message = "Enable 'Pull contracts' first." });
+        }
+        signal.RequestImmediateRun();
+        var (actor, role) = ActorContext.Resolve(http);
+        await audit.LogAsync(new AuditEvent(
+            EventType: "integration.adsolut.erp_contracts.sync_requested",
+            Actor: actor,
+            ActorRole: role,
+            ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString()), ct);
+        return Results.Accepted();
+    }
+
+    private static async Task<IResult> SetErpContractsStatusFilter(
+        [FromBody] SetErpStatusFilterRequest req,
+        HttpContext http,
+        ISettingsService settings,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        var codes = (req?.Codes ?? Array.Empty<string>())
+            .Select(c => (c ?? string.Empty).Trim())
+            .Where(c => c.Length is > 0 and <= 32)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var csv = string.Join(",", codes);
+        var (actor, role) = ActorContext.Resolve(http);
+        await settings.SetAsync(SettingKeys.Adsolut.ErpContractsStatusFilter, csv, actor, role, ct);
+        await audit.LogAsync(new AuditEvent(
+            EventType: "integration.adsolut.erp_contracts.status_filter_updated",
+            Actor: actor,
+            ActorRole: role,
+            ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString(),
+            Payload: new { codes }), ct);
+        return Results.Ok(new { statusFilter = codes });
+    }
+
+    private static async Task<IResult> SetErpContractsStatusColors(
+        [FromBody] SetSupplierStatusColorsRequest req,
+        HttpContext http,
+        ISettingsService settings,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        // Whitelist: status code ≤32 chars, value a valid hex colour. Anything
+        // else is dropped so the stored JSON only ever carries safe values.
+        var clean = (req?.Colors ?? new Dictionary<string, string>())
+            .Where(kv => !string.IsNullOrWhiteSpace(kv.Key) && kv.Key.Trim().Length <= 32
+                         && kv.Value is not null && HexColorRegex.IsMatch(kv.Value.Trim()))
+            .ToDictionary(kv => kv.Key.Trim(), kv => kv.Value.Trim(), StringComparer.OrdinalIgnoreCase);
+        var json = JsonSerializer.Serialize(clean);
+        var (actor, role) = ActorContext.Resolve(http);
+        await settings.SetAsync(SettingKeys.Adsolut.ErpContractsStatusColors, json, actor, role, ct);
+        await audit.LogAsync(new AuditEvent(
+            EventType: "integration.adsolut.erp_contracts.status_colors_updated",
+            Actor: actor,
+            ActorRole: role,
+            ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString(),
+            Payload: new { count = clean.Count }), ct);
+        return Results.Ok(new { statusColors = clean });
     }
 
     private static async Task<IResult> SetErpOrdersStatusFilter(
