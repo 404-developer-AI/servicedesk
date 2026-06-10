@@ -52,8 +52,22 @@ public sealed class AdsolutSalesReceiptRow
 
     /// Total registered timesheet minutes on the matched ticket — computed
     /// live in the list query. Null when there is no Ticket# in the
-    /// description, no matching ticket, or no registered hours.
+    /// description, no matching ticket, or no registered hours. Surfaced only
+    /// on the *primary* receipt of a ticket (see IsPrimary) so a ticket billed
+    /// across several verkoopbonnen never double-counts its hours.
     public int? TotalMinutes { get; set; }
+
+    /// Receipt grouping for tickets billed across multiple verkoopbonnen.
+    /// Computed over the whole mirror (independent of search/paging): a
+    /// ticket's registered hours live once on the *primary* receipt (the
+    /// lowest doc-nr), and the comparison runs against CombinedTotalExclVat —
+    /// the summed excl-VAT total of every receipt on that ticket. A solo
+    /// receipt (or one with no Ticket# ref) is its own group: Count/Ordinal = 1,
+    /// IsPrimary = true, CombinedTotalExclVat = its own total.
+    public bool IsPrimary { get; set; }
+    public int TicketReceiptCount { get; set; }
+    public int TicketReceiptOrdinal { get; set; }
+    public decimal CombinedTotalExclVat { get; set; }
 
     /// "Back Office checked" marker for this receipt (context 'adsolut' in
     /// timesheet_bo_checks). CheckedByEmail / CheckedUtc record who/when.
@@ -454,15 +468,20 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
 
         // Whitelisted sort expression (no user string ever reaches the SQL).
         // bruto/difference order on rate × registered hours via the @Rate param.
+        // Hours live only on the primary receipt of a ticket (g.ord = 1), so the
+        // hours/bruto/difference sorts use the primary-gated minutes — siblings
+        // sort as empty (NULLS LAST). The difference sort compares against the
+        // combined excl-VAT total of all receipts on the ticket (g.combined_total).
+        const string primaryMinutes = "(CASE WHEN g.ord = 1 THEN te.total_minutes END)";
         var sortExpr = (sort ?? "date").Trim().ToLowerInvariant() switch
         {
             "doc" => "r.doc_nr",
             "customer" => "r.customer_name",
             "status" => "r.state_code",
             "total" => "r.total_excl_vat",
-            "hours" => "te.total_minutes",
-            "bruto" => "(@Rate * te.total_minutes / 60.0)",
-            "difference" => "(r.total_excl_vat - @Rate * te.total_minutes / 60.0)",
+            "hours" => primaryMinutes,
+            "bruto" => $"(@Rate * {primaryMinutes} / 60.0)",
+            "difference" => $"(g.combined_total - @Rate * {primaryMinutes} / 60.0)",
             _ => "r.sales_receipt_date",
         };
         var dirSql = string.Equals(dir, "asc", StringComparison.OrdinalIgnoreCase) ? "ASC" : "DESC";
@@ -508,7 +527,11 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
                 r.adsolut_last_modified AS AdsolutLastModified,
                 r.synced_utc            AS SyncedUtc,
                 r.ticket_number         AS TicketNumber,
-                te.total_minutes        AS TotalMinutes,
+                (CASE WHEN g.ord = 1 THEN te.total_minutes END) AS TotalMinutes,
+                (g.ord = 1)             AS IsPrimary,
+                g.cnt                   AS TicketReceiptCount,
+                g.ord                   AS TicketReceiptOrdinal,
+                g.combined_total        AS CombinedTotalExclVat,
                 (bo.entity_id IS NOT NULL) AS BoChecked,
                 bo.checked_utc          AS CheckedUtc,
                 bu.email                AS CheckedByEmail
@@ -519,6 +542,20 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
                 FROM timesheet_entries
                 GROUP BY ticket_id
             ) te ON te.ticket_id = tk.id
+            -- Per-ticket grouping over the WHOLE mirror (not the filtered/paged
+            -- set), so count, ordinal and combined total are always the true
+            -- ticket-wide values. Receipts with no Ticket# ref get a unique
+            -- 'solo:<id>' partition key so they never group together.
+            LEFT JOIN (
+                SELECT
+                    id,
+                    COUNT(*)            OVER w AS cnt,
+                    ROW_NUMBER()        OVER (PARTITION BY COALESCE(ticket_number::text, 'solo:' || id::text)
+                                              ORDER BY doc_nr ASC NULLS LAST, id) AS ord,
+                    SUM(total_excl_vat) OVER w AS combined_total
+                FROM adsolut_sales_receipts
+                WINDOW w AS (PARTITION BY COALESCE(ticket_number::text, 'solo:' || id::text))
+            ) g ON g.id = r.id
             LEFT JOIN timesheet_bo_checks bo ON bo.entity_id = r.id AND bo.context = 'adsolut'
             LEFT JOIN users bu ON bu.id = bo.checked_by
             WHERE (@HasSearch = FALSE

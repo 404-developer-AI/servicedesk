@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronRight,
   Columns3,
+  CornerDownRight,
   GripVertical,
   Receipt,
   RefreshCw,
@@ -678,15 +679,56 @@ function ReceiptRow({
   );
 }
 
+// ---- multi-receipt grouping -------------------------------------------
+
+/// True when this receipt is a *sibling* — a non-primary receipt of a ticket
+/// that is billed across several verkoopbonnen. Its registered hours (and the
+/// bruto / difference derived from them) live once on the primary receipt, so
+/// the hours/bruto/difference cells here show a pointer instead of a figure.
+function isSibling(receipt: AdsolutSalesReceiptHeader): boolean {
+  return receipt.ticketReceiptCount > 1 && !receipt.isPrimary;
+}
+
+/// Muted pointer rendered in the hours/bruto/difference cells of a sibling
+/// receipt. The numbers live on the ticket's primary receipt; here we only
+/// point back to the ticket (ordinal/count) so nothing is double-counted.
+function SiblingMarker({ receipt }: { receipt: AdsolutSalesReceiptHeader }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/50">
+          <CornerDownRight className="h-3 w-3 shrink-0" />
+          <span className="whitespace-nowrap">
+            {receipt.ticketNumber ? `#${receipt.ticketNumber}` : "ticket"}{" "}
+            <span className="tabular-nums">
+              ({receipt.ticketReceiptOrdinal}/{receipt.ticketReceiptCount})
+            </span>
+          </span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>
+        Part of ticket #{receipt.ticketNumber} — the hours are shown once on the first receipt of
+        this ticket, compared against the combined total of all {receipt.ticketReceiptCount}{" "}
+        receipts.
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 // ---- difference cell --------------------------------------------------
 
-/// Total (excl. VAT) − Bruto Price. Green when positive (margin), red when
-/// negative. Empty when there's no bruto price (no rate / no hours).
+/// Combined receipt total (excl. VAT) − Bruto Price. Green when positive
+/// (margin), red when negative. Empty when there's no bruto price (no rate /
+/// no hours). For a ticket billed across several verkoopbonnen the comparison
+/// runs once, on the primary receipt, against the COMBINED total of every
+/// receipt on that ticket — siblings show a pointer (SiblingMarker) instead.
 function DifferenceCell({ receipt }: { receipt: AdsolutSalesReceiptHeader }) {
-  if (receipt.brutoPrice === null || receipt.totalExclVat === null || receipt.totalExclVat === undefined) {
+  if (isSibling(receipt)) return <SiblingMarker receipt={receipt} />;
+  const billed = receipt.combinedTotalExclVat;
+  if (receipt.brutoPrice === null || billed === null || billed === undefined) {
     return <span className="text-muted-foreground/40">—</span>;
   }
-  const diff = receipt.totalExclVat - receipt.brutoPrice;
+  const diff = billed - receipt.brutoPrice;
   const sign = diff > 0 ? "+ " : diff < 0 ? "− " : "";
   const tone = diff > 0 ? "text-emerald-300" : diff < 0 ? "text-rose-300" : "text-muted-foreground";
   return (
@@ -709,9 +751,14 @@ function HoursCell({ receipt }: { receipt: AdsolutSalesReceiptHeader }) {
     enabled: open && hasHours,
   });
 
+  if (isSibling(receipt)) return <SiblingMarker receipt={receipt} />;
   if (!hasHours) return <span className="text-muted-foreground/40">—</span>;
 
+  // At this point a multi-receipt ticket means we're on its primary receipt:
+  // the hours cover the whole ticket, so flag how many receipts they span.
+  const grouped = receipt.ticketReceiptCount > 1;
   return (
+    <div className="inline-flex items-center gap-1.5">
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
@@ -759,6 +806,23 @@ function HoursCell({ receipt }: { receipt: AdsolutSalesReceiptHeader }) {
         </div>
       </PopoverContent>
     </Popover>
+    {grouped && (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center gap-0.5 rounded-full border border-amber-400/30 bg-amber-500/[0.12] px-1.5 py-0.5 text-[10px] tabular-nums text-amber-200">
+            <Receipt className="h-2.5 w-2.5" />
+            {receipt.ticketReceiptCount}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>
+          These hours cover all {receipt.ticketReceiptCount} receipts of ticket #
+          {receipt.ticketNumber} — the Difference compares them against the combined total of all
+          {" "}
+          {receipt.ticketReceiptCount} receipts.
+        </TooltipContent>
+      </Tooltip>
+    )}
+    </div>
   );
 }
 
@@ -774,6 +838,7 @@ function BrutoPriceCell({ receipt }: { receipt: AdsolutSalesReceiptHeader }) {
     enabled: open && hasPrice,
   });
 
+  if (isSibling(receipt)) return <SiblingMarker receipt={receipt} />;
   if (!hasPrice) return <span className="text-muted-foreground/40">—</span>;
 
   return (

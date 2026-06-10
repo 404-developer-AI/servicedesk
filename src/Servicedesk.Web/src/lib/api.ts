@@ -859,11 +859,22 @@ export type AdsolutSalesReceiptHeader = {
   // Ticket number parsed from the description ("Ticket#<n>"), or null.
   ticketNumber: number | null;
   // Total registered timesheet minutes on the matched ticket, computed live.
-  // null = no Ticket# ref, no matching ticket, or no registered hours.
+  // null = no Ticket# ref, no matching ticket, no registered hours, or this is
+  // a non-primary receipt of a ticket billed across multiple verkoopbonnen
+  // (its hours live on the primary receipt to avoid double-counting).
   totalMinutes: number | null;
   // Gross price = hourly rate × registered hours. null when no hours or no
   // rate configured (Settings → Timesheet → Hourly rate).
   brutoPrice: number | null;
+  // Receipt grouping for tickets billed across multiple verkoopbonnen. The
+  // registered hours live once on the primary receipt (lowest doc-nr); siblings
+  // carry no hours and point back to the primary. count/ordinal are 1 for a
+  // solo receipt. combinedTotalExclVat sums the excl-VAT total of every receipt
+  // on the same ticket — what the registered hours are compared against.
+  isPrimary: boolean;
+  ticketReceiptCount: number;
+  ticketReceiptOrdinal: number;
+  combinedTotalExclVat: number;
   // "Back Office checked" marker for this receipt (context 'adsolut').
   boChecked: boolean;
   checkedUtc: string | null;
