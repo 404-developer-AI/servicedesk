@@ -2,7 +2,7 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import DOMPurify from "dompurify";
 import { History } from "lucide-react";
-import { useServerTime, toServerLocal, formatUtcSuffix } from "@/hooks/useServerTime";
+import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
 import {
   Dialog,
   DialogContent,
@@ -56,7 +56,7 @@ function RevisionEntry({
           )}
         </div>
         <span className="text-xs text-muted-foreground shrink-0">
-          {toServerLocal(revision.editedUtc, offset)} <span className="text-muted-foreground/40">{formatUtcSuffix(revision.editedUtc)}</span>
+          {toServerLocal(revision.editedUtc, offset)}
         </span>
       </div>
 

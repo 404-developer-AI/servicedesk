@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useServerTime, toServerLocal, formatUtcSuffix } from "@/hooks/useServerTime";
+import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
 
 const EVENT_TYPES = ["", "rate_limited", "csp_violation", "setting_changed"] as const;
 
@@ -138,9 +138,6 @@ export function AuditLogPage() {
                       <div className="text-foreground/90">
                         {toServerLocal(entry.utc, offsetMinutes, true)}
                       </div>
-                      <div className="text-[10px] text-muted-foreground/60">
-                        {formatUtcSuffix(entry.utc)}
-                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <Badge className="border border-glass bg-glass font-mono text-[10px] font-normal text-foreground">
@@ -194,7 +191,7 @@ export function AuditLogPage() {
           </DialogHeader>
           {selected && (
             <div className="space-y-3 text-xs">
-              <Row label="Time" value={`${toServerLocal(selected.utc, offsetMinutes, true)}  ${formatUtcSuffix(selected.utc)}`} />
+              <Row label="Time" value={toServerLocal(selected.utc, offsetMinutes, true)} />
               <Row label="Target" value={selected.target ?? "—"} />
               <Row label="Client IP" value={selected.clientIp ?? "—"} />
               <Row label="User agent" value={selected.userAgent ?? "—"} />
