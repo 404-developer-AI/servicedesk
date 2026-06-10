@@ -549,6 +549,13 @@ export type OpenGateMatch = {
   /// Plain-text fallback for the original request; null when HTML is
   /// present or the panel is disabled.
   requestBodyText: string | null;
+  /// Where the request panel content came from: the ticket body, or the
+  /// first inbound email (mail-created tickets keep their body empty, so
+  /// the gate falls back to the mail with images stripped).
+  requestSource: "ticket" | "mail";
+  /// Download URL for the original .eml when the request came from mail
+  /// and the raw blob is available; null otherwise.
+  requestEmlUrl: string | null;
 };
 
 export type NewTicketEvent = {

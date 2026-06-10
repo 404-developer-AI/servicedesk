@@ -391,7 +391,7 @@ public static class TicketEndpoints
                 return Results.NotFound();
 
             var gate = await gates.FindMatchingAsync(id, ct);
-            return Results.Ok(new { gate = gate is null ? null : ProjectFirstOpenGateForApi(gate) });
+            return Results.Ok(new { gate = gate is null ? null : ProjectFirstOpenGateForApi(gate, id) });
         }).WithName("ListOpenGates").WithOpenApi();
 
         // Confirm a first-open title-review gate. Applies the (possibly
@@ -446,7 +446,7 @@ public static class TicketEndpoints
                 {
                     error = "The open-gate prompt changed; re-open the dialog.",
                     code = "open_gate_mismatch",
-                    gate = ProjectFirstOpenGateForApi(gate),
+                    gate = ProjectFirstOpenGateForApi(gate, id),
                 });
             }
 
@@ -1964,7 +1964,7 @@ public static class TicketEndpoints
         requesterDisplayName = g.RequesterDisplayName,
     };
 
-    private static object ProjectFirstOpenGateForApi(MatchedFirstOpenGate g) => new
+    private static object ProjectFirstOpenGateForApi(MatchedFirstOpenGate g, Guid ticketId) => new
     {
         triggerId = g.TriggerId,
         name = g.Name,
@@ -1976,6 +1976,12 @@ public static class TicketEndpoints
         showRequest = g.ShowRequest,
         requestBodyHtml = g.RequestBodyHtml,
         requestBodyText = g.RequestBodyText,
+        requestSource = g.RequestFromMail ? "mail" : "ticket",
+        // Reuses the existing audited raw-mail endpoint (Agent + queue-access
+        // gated); null when the mail's .eml blob was never stored.
+        requestEmlUrl = g.RequestMailId is Guid mailId
+            ? $"/api/tickets/{ticketId}/mail/{mailId}/raw"
+            : null,
     };
 
     /// Internal bookkeeping for one gate that passed its confirmation

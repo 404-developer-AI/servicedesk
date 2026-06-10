@@ -28,4 +28,12 @@ public sealed record MatchedFirstOpenGate(
     string? RequestBodyHtml,
     /// Plain-text fallback for the original request when no HTML body
     /// exists. Null when HTML is present or the panel is disabled.
-    string? RequestBodyText);
+    string? RequestBodyText,
+    /// True when the request panel content was sourced from the ticket's
+    /// first inbound email rather than the ticket body — mail-created
+    /// tickets keep their body empty, so the gate falls back to the mail.
+    bool RequestFromMail,
+    /// The mail_messages id of the first inbound email, set only when the
+    /// panel content came from mail AND its raw .eml blob is available, so
+    /// the dialog can offer a download of the original message.
+    Guid? RequestMailId);
