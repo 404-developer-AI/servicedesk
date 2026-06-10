@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { agentQueueApi, settingsApi, taxonomyApi } from "@/lib/api";
-import { useServerTime, toServerLocal, formatUtcSuffix } from "@/hooks/useServerTime";
+import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
 import { AgentPicker } from "@/components/AgentPicker";
 import { ContactFormDialog } from "@/components/ContactFormDialog";
 import { AddContactLinkDialog } from "@/components/AddContactLinkDialog";
@@ -117,12 +117,7 @@ function ServerDate({ iso }: { iso: string | null | undefined }) {
   const { time } = useServerTime();
   const offset = time?.offsetMinutes ?? 0;
   if (!iso) return <span>Not set</span>;
-  return (
-    <span>
-      {toServerLocal(iso, offset)}{" "}
-      <span className="text-muted-foreground/40 text-xs">{formatUtcSuffix(iso)}</span>
-    </span>
-  );
+  return <span>{toServerLocal(iso, offset)}</span>;
 }
 
 function EmptyState({ text }: { text: string }) {

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useServerTime, toServerLocal, formatUtcSuffix } from "@/hooks/useServerTime";
+import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
 import { useActivityFeedSignalR } from "@/hooks/useActivityFeedSignalR";
 
 /// Whitelist of event-type filter options. Kept in this file so it stays
@@ -263,7 +263,6 @@ function ActivityRow({
             {entry.eventType}
           </Badge>
           <span>{toServerLocal(entry.occurredUtc, offsetMinutes, true)}</span>
-          <span className="text-muted-foreground/40">{formatUtcSuffix(entry.occurredUtc)}</span>
         </div>
       </div>
     </li>

@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Paperclip, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useServerTime, toServerLocal, formatUtcSuffix } from "@/hooks/useServerTime";
+import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
 import {
   ApiError,
   mailDiagnosticsApi,
@@ -140,10 +140,7 @@ export function MailDiagnosticsPage() {
                   </div>
                   <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
                     <span>{m.fromAddress || "—"}</span>
-                    <span>
-                      {toServerLocal(m.receivedUtc, offset, true)}{" "}
-                      <span className="text-muted-foreground/40">{formatUtcSuffix(m.receivedUtc)}</span>
-                    </span>
+                    <span>{toServerLocal(m.receivedUtc, offset, true)}</span>
                     <span className="font-mono">{m.mailMessageId}</span>
                   </div>
                 </button>
@@ -231,8 +228,7 @@ function DiagnosticsView({ data, offset }: { data: MailAttachmentDiagnostic; off
           </Header>
           <Header label="From">{data.fromAddress || "—"}</Header>
           <Header label="Received">
-            {toServerLocal(data.receivedUtc, offset, true)}{" "}
-            <span className="text-muted-foreground/40">{formatUtcSuffix(data.receivedUtc)}</span>
+            {toServerLocal(data.receivedUtc, offset, true)}
           </Header>
         </div>
         <Header label="Subject">{data.subject || "(no subject)"}</Header>
@@ -324,12 +320,10 @@ function AttachmentRow({
           <>
             <Field label="Attempts">{a.job.attemptCount}</Field>
             <Field label="Next attempt">
-              {toServerLocal(a.job.nextAttemptUtc, offset, true)}{" "}
-              <span className="text-muted-foreground/40">{formatUtcSuffix(a.job.nextAttemptUtc)}</span>
+              {toServerLocal(a.job.nextAttemptUtc, offset, true)}
             </Field>
             <Field label="Updated">
-              {toServerLocal(a.job.updatedUtc, offset, true)}{" "}
-              <span className="text-muted-foreground/40">{formatUtcSuffix(a.job.updatedUtc)}</span>
+              {toServerLocal(a.job.updatedUtc, offset, true)}
             </Field>
             <Field label="Job id">{a.job.jobId}</Field>
           </>

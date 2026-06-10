@@ -1,6 +1,6 @@
 import * as React from "react";
 import DOMPurify from "dompurify";
-import { useServerTime, toServerLocal, formatUtcSuffix } from "@/hooks/useServerTime";
+import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -850,7 +850,6 @@ function TimelineEvent({
   const { time: serverTime } = useServerTime();
   const offset = serverTime?.offsetMinutes ?? 0;
   const fmtDate = (iso: string) => toServerLocal(iso, offset);
-  const fmtUtc = (iso: string) => formatUtcSuffix(iso);
   const [editing, setEditing] = React.useState(false);
   const [draftHtml, setDraftHtml] = React.useState(
     event.bodyHtml ?? event.bodyText ?? ""
@@ -968,7 +967,7 @@ function TimelineEvent({
                 : (hasTriggerSignal ? "Automatic Trigger" : null);
               return author ? <>{author} · </> : null;
             })()}
-            {fmtDate(event.createdUtc)} <span className="text-muted-foreground/40">{fmtUtc(event.createdUtc)}</span>
+            {fmtDate(event.createdUtc)}
           </span>
         </div>
       ) : (
@@ -1024,7 +1023,7 @@ function TimelineEvent({
             </div>
             <div className="flex items-center gap-1">
               <span className="text-xs text-muted-foreground shrink-0">
-                {fmtDate(event.createdUtc)} <span className="text-muted-foreground/40">{fmtUtc(event.createdUtc)}</span>
+                {fmtDate(event.createdUtc)}
               </span>
               {isPinnable && !editing && (
                 <button

@@ -43,7 +43,7 @@ export function formatServerLocalClock(time: ServerTime): string {
 export function formatServerLocalDate(time: ServerTime): string {
   const d = time.serverLocal;
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+  return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
 }
 
 const EMPTY_SNAPSHOT: StoreSnapshot = { time: null, error: null };
@@ -152,19 +152,11 @@ export function useServerTime() {
 /**
  * Convert a UTC ISO string to server-local display time.
  * Uses the server's offsetMinutes so we never trust the browser's timezone.
- * Returns "yyyy-MM-dd HH:mm" by default, or "yyyy-MM-dd HH:mm:ss" with seconds=true.
+ * Returns "dd/MM/yyyy - HH:mm" by default, or "dd/MM/yyyy - HH:mm:ss" with seconds=true.
  */
 export function toServerLocal(iso: string, offsetMinutes: number, seconds = false): string {
-  const localMs = new Date(iso).getTime() + offsetMinutes * 60_000;
-  const s = new Date(localMs).toISOString().replace("T", " ");
-  return seconds ? s.slice(0, 19) : s.slice(0, 16);
-}
-
-/**
- * Format the UTC portion for gray subtitle display: "(UTC HH:mm)"
- */
-export function formatUtcSuffix(iso: string): string {
-  const d = new Date(iso);
+  const d = new Date(new Date(iso).getTime() + offsetMinutes * 60_000);
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `(UTC ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())})`;
+  const stamp = `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} - ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+  return seconds ? `${stamp}:${pad(d.getUTCSeconds())}` : stamp;
 }
