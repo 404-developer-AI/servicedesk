@@ -143,61 +143,61 @@ public sealed class AdsolutCustomersWriteClientParseTests
     /// but the field-by-field assertions below would diverge).
     private const string FullGetShape = """
     {
-      "name": "Datawolk BV",
+      "name": "Acme Trading BV",
       "alphaCode": null,
       "code": "000",
       "number": "000",
-      "streetName": "Kaulillerweg",
+      "streetName": "Voorbeeldstraat",
       "streetNumber": "4",
       "boxNumber": null,
-      "postalCode": "3950",
-      "city": "Bocholt",
-      "country": { "id": "5c99e5ad-2091-4717-bdd1-c529a8e8934b" },
-      "vatNumber": "0740997252",
+      "postalCode": "2000",
+      "city": "Antwerpen",
+      "country": { "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" },
+      "vatNumber": "0123456789",
       "countryPrefixVatNumber": "BE",
-      "phone": "+3289399392",
+      "phone": "+3212345678",
       "mobilePhone": null,
       "fax": null,
       "email": null,
       "dueDays": 15,
       "dueDate": "AddDueDays",
-      "vatSpecification": { "id": "f421c0f4-6c0d-47b2-b2d8-18c87b033973" },
-      "vatPercentage": { "id": "bcfd77de-df82-4f5a-b595-3b9fe39e856e", "percentage": 21 },
+      "vatSpecification": { "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" },
+      "vatPercentage": { "id": "cccccccc-cccc-cccc-cccc-cccccccccccc", "percentage": 21 },
       "bankAccounts": [
-        { "default": true, "iban": "BE13103064987139", "bicCode": "NICABEBB" }
+        { "default": true, "iban": "BE68539007547034", "bicCode": "TESTBEBB" }
       ],
       "postingRuleLines": [
-        { "vatSpecificationId": "f421c0f4-6c0d-47b2-b2d8-18c87b033973", "vatPercentageId": "bcfd77de-df82-4f5a-b595-3b9fe39e856e", "generalLedgerId": "983cabbf-03d8-419e-a4b0-44ca6e7e405d" }
+        { "vatSpecificationId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "vatPercentageId": "cccccccc-cccc-cccc-cccc-cccccccccccc", "generalLedgerId": "dddddddd-dddd-dddd-dddd-dddddddddddd" }
       ],
-      "currency": { "id": "e43d27e7-571e-4e7a-a26a-34cd6bffe76c", "nameNl": "Euro" },
+      "currency": { "id": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", "nameNl": "Euro" },
       "languageIsoCode": "nl",
       "financialDiscountPercentage": 0,
       "financialDiscountDays": 0,
       "remindersEnabled": true,
       "remarks": null,
-      "id": "7d3b86be-8075-4b40-b3e2-cd76e6ac529e",
+      "id": "77777777-7777-7777-7777-777777777777",
       "lastModified": "2026-04-29T10:12:15+00:00",
       "links": []
     }
     """;
 
-    private static readonly Guid CustomerId = Guid.Parse("7d3b86be-8075-4b40-b3e2-cd76e6ac529e");
+    private static readonly Guid CustomerId = Guid.Parse("77777777-7777-7777-7777-777777777777");
 
     private static AdsolutCustomerWritePayload PayloadOnlyNameChanged() =>
         // Mirrors what the SD pusher would build for "rename to (Test)" —
         // every other managed field stays at the value the pull last persisted.
         new(
-            Name: "Datawolk BV (Test)",
+            Name: "Acme Trading BV (Test)",
             AlphaCode: null,
             Number: "000",
             Email: "",
-            Phone: "+3289399392",
-            StreetName: "Kaulillerweg",
+            Phone: "+3212345678",
+            StreetName: "Voorbeeldstraat",
             StreetNumber: "4",
             BoxNumber: "",
-            PostalCode: "3950",
-            City: "Bocholt",
-            VatNumber: "0740997252",
+            PostalCode: "2000",
+            City: "Antwerpen",
+            VatNumber: "0123456789",
             CountryPrefixVatNumber: "BE");
 
     private static JsonElement Build(string get, AdsolutCustomerWritePayload payload, Guid id)
@@ -214,7 +214,7 @@ public sealed class AdsolutCustomersWriteClientParseTests
         Assert.False(body.TryGetProperty("country", out _),
             "PUT shape uses countryId, not nested country object");
         Assert.Equal(JsonValueKind.String, body.GetProperty("countryId").ValueKind);
-        Assert.Equal("5c99e5ad-2091-4717-bdd1-c529a8e8934b", body.GetProperty("countryId").GetString());
+        Assert.Equal("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", body.GetProperty("countryId").GetString());
     }
 
     [Fact]
@@ -224,8 +224,8 @@ public sealed class AdsolutCustomersWriteClientParseTests
 
         Assert.False(body.TryGetProperty("vatSpecification", out _));
         Assert.False(body.TryGetProperty("vatPercentage", out _));
-        Assert.Equal("f421c0f4-6c0d-47b2-b2d8-18c87b033973", body.GetProperty("vatSpecificationId").GetString());
-        Assert.Equal("bcfd77de-df82-4f5a-b595-3b9fe39e856e", body.GetProperty("vatPercentageId").GetString());
+        Assert.Equal("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", body.GetProperty("vatSpecificationId").GetString());
+        Assert.Equal("cccccccc-cccc-cccc-cccc-cccccccccccc", body.GetProperty("vatPercentageId").GetString());
     }
 
     [Fact]
@@ -239,8 +239,8 @@ public sealed class AdsolutCustomersWriteClientParseTests
         Assert.Equal(1, lines.GetArrayLength());
         var first = lines[0];
         Assert.True(first.GetProperty("default").GetBoolean());
-        Assert.Equal("BE13103064987139", first.GetProperty("iban").GetString());
-        Assert.Equal("NICABEBB", first.GetProperty("bicCode").GetString());
+        Assert.Equal("BE68539007547034", first.GetProperty("iban").GetString());
+        Assert.Equal("TESTBEBB", first.GetProperty("bicCode").GetString());
     }
 
     [Fact]
@@ -280,16 +280,16 @@ public sealed class AdsolutCustomersWriteClientParseTests
         var body = Build(FullGetShape, PayloadOnlyNameChanged(), CustomerId);
 
         // Name is the field the user actually changed.
-        Assert.Equal("Datawolk BV (Test)", body.GetProperty("name").GetString());
+        Assert.Equal("Acme Trading BV (Test)", body.GetProperty("name").GetString());
         // Other managed fields land verbatim from the payload (same as GET
         // here, but the overlay path is what writes them).
-        Assert.Equal("Kaulillerweg", body.GetProperty("streetName").GetString());
+        Assert.Equal("Voorbeeldstraat", body.GetProperty("streetName").GetString());
         Assert.Equal("4", body.GetProperty("streetNumber").GetString());
-        Assert.Equal("3950", body.GetProperty("postalCode").GetString());
-        Assert.Equal("Bocholt", body.GetProperty("city").GetString());
+        Assert.Equal("2000", body.GetProperty("postalCode").GetString());
+        Assert.Equal("Antwerpen", body.GetProperty("city").GetString());
         Assert.Equal("BE", body.GetProperty("countryPrefixVatNumber").GetString());
-        Assert.Equal("0740997252", body.GetProperty("vatNumber").GetString());
-        Assert.Equal("+3289399392", body.GetProperty("phone").GetString());
+        Assert.Equal("0123456789", body.GetProperty("vatNumber").GetString());
+        Assert.Equal("+3212345678", body.GetProperty("phone").GetString());
     }
 
     [Fact]
@@ -411,15 +411,15 @@ public sealed class AdsolutCustomersWriteClientParseTests
         // The full-equal case: SD payload identical to WK row → PUT body
         // identical to GET body (modulo dropped fields + shape transform).
         // No mutation, no lastModified bump, no echo-pull drift.
-        var payload = PayloadOnlyNameChanged() with { Name = "Datawolk BV" }; // same as GET
+        var payload = PayloadOnlyNameChanged() with { Name = "Acme Trading BV" }; // same as GET
 
         var body = Build(FullGetShape, payload, CustomerId);
 
-        Assert.Equal("Datawolk BV", body.GetProperty("name").GetString());
+        Assert.Equal("Acme Trading BV", body.GetProperty("name").GetString());
         // Email stayed null (GET) instead of "" (payload normalization).
         Assert.Equal(JsonValueKind.Null, body.GetProperty("email").ValueKind);
         // Address kept WK's distribution.
-        Assert.Equal("Kaulillerweg", body.GetProperty("streetName").GetString());
+        Assert.Equal("Voorbeeldstraat", body.GetProperty("streetName").GetString());
         Assert.Equal("4", body.GetProperty("streetNumber").GetString());
     }
 
@@ -591,10 +591,10 @@ public sealed class AdsolutCustomersWriteClientParseTests
         var raw = AdsolutCustomersWriteClient.BuildUpdateBody(FullGetShape, overlay: null, CustomerId);
         var body = JsonDocument.Parse(raw).RootElement;
 
-        Assert.Equal("Datawolk BV", body.GetProperty("name").GetString());
-        Assert.Equal("Kaulillerweg", body.GetProperty("streetName").GetString());
+        Assert.Equal("Acme Trading BV", body.GetProperty("name").GetString());
+        Assert.Equal("Voorbeeldstraat", body.GetProperty("streetName").GetString());
         Assert.Equal("4", body.GetProperty("streetNumber").GetString());
-        Assert.Equal("0740997252", body.GetProperty("vatNumber").GetString());
+        Assert.Equal("0123456789", body.GetProperty("vatNumber").GetString());
         Assert.Equal("BE", body.GetProperty("countryPrefixVatNumber").GetString());
         // GET had email = null → PUT slot must be JSON null, not "" — proving
         // the overlay-skip branch ran and SD's null≡"" coercion did not.
@@ -608,7 +608,7 @@ public sealed class AdsolutCustomersWriteClientParseTests
         var body = JsonDocument.Parse(raw).RootElement;
 
         Assert.False(body.TryGetProperty("country", out _));
-        Assert.Equal("5c99e5ad-2091-4717-bdd1-c529a8e8934b", body.GetProperty("countryId").GetString());
+        Assert.Equal("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", body.GetProperty("countryId").GetString());
         Assert.False(body.TryGetProperty("bankAccounts", out _));
         Assert.Equal(JsonValueKind.Array, body.GetProperty("bankAccountLines").ValueKind);
         Assert.False(body.TryGetProperty("code", out _));
