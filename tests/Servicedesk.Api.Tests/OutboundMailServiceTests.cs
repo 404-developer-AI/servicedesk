@@ -384,6 +384,7 @@ public sealed class OutboundMailServiceTests
         }
         public Task<MailThreadAnchor?> GetLatestThreadAnchorAsync(Guid t, CancellationToken ct) => Task.FromResult<MailThreadAnchor?>(null);
         public Task<IReadOnlyList<MailRecipientRow>> ListRecipientsAsync(Guid m, CancellationToken ct) => Task.FromResult<IReadOnlyList<MailRecipientRow>>(Array.Empty<MailRecipientRow>());
+        public Task<MailMessageRow?> GetFirstInboundForTicketAsync(Guid t, CancellationToken ct) => Task.FromResult<MailMessageRow?>(null);
     }
 
     private sealed class StubAttachments : IAttachmentRepository

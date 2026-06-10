@@ -58,6 +58,12 @@ public interface IMailMessageRepository
     /// timeline enricher to surface them on MailReceived events so the
     /// frontend can pre-fill reply-all recipients.
     Task<IReadOnlyList<MailRecipientRow>> ListRecipientsAsync(Guid mailId, CancellationToken ct);
+
+    /// Returns the oldest inbound mail attached to this ticket, or null when
+    /// the ticket has no inbound mail. Used by the first-open title-review
+    /// gate as the original-request fallback for mail-created tickets, whose
+    /// ticket body is intentionally empty.
+    Task<MailMessageRow?> GetFirstInboundForTicketAsync(Guid ticketId, CancellationToken ct);
 }
 
 public sealed record MailMessageRow(

@@ -2,7 +2,9 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure.Auth;
+using Servicedesk.Infrastructure.Mail.Ingest;
 using Servicedesk.Infrastructure.Persistence.Tickets;
+using Servicedesk.Infrastructure.Storage;
 using Servicedesk.Infrastructure.Triggers.Templating;
 
 namespace Servicedesk.Infrastructure.Triggers.FirstOpenGate;
@@ -25,6 +27,8 @@ public sealed class FirstOpenGateService : IFirstOpenGateService
     private readonly ITriggerRenderContextFactory _renderFactory;
     private readonly ITriggerActionDispatcher _dispatcher;
     private readonly IUserService _users;
+    private readonly IMailMessageRepository _mail;
+    private readonly IBlobStore _blobs;
     private readonly ILogger<FirstOpenGateService> _logger;
 
     public FirstOpenGateService(
@@ -34,6 +38,8 @@ public sealed class FirstOpenGateService : IFirstOpenGateService
         ITriggerRenderContextFactory renderFactory,
         ITriggerActionDispatcher dispatcher,
         IUserService users,
+        IMailMessageRepository mail,
+        IBlobStore blobs,
         ILogger<FirstOpenGateService> logger)
     {
         _triggers = triggers;
@@ -42,6 +48,8 @@ public sealed class FirstOpenGateService : IFirstOpenGateService
         _renderFactory = renderFactory;
         _dispatcher = dispatcher;
         _users = users;
+        _mail = mail;
+        _blobs = blobs;
         _logger = logger;
     }
 
@@ -68,13 +76,24 @@ public sealed class FirstOpenGateService : IFirstOpenGateService
         }
         if (rows.Count == 0) return null;
 
+        // Mail-created tickets keep their body intentionally empty (the mail
+        // lands in the timeline instead), so the original-request panel would
+        // come up blank. Fall back to the ticket's first inbound email once,
+        // shared by every candidate gate row.
+        MailRequestFallback? mailFallback = null;
+        if (string.IsNullOrWhiteSpace(detail.Body.BodyHtml)
+            && string.IsNullOrWhiteSpace(detail.Body.BodyText))
+        {
+            mailFallback = await TryLoadMailFallbackAsync(ticketId, ct);
+        }
+
         foreach (var row in rows)
         {
             if (!string.Equals(row.ActivatorMode, "first_open", StringComparison.Ordinal))
                 continue;
 
             MatchedFirstOpenGate? gate;
-            try { gate = ProjectGate(row, detail.Ticket.Subject, detail.Body); }
+            try { gate = ProjectGate(row, detail.Ticket.Subject, detail.Body, mailFallback); }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "First-open gate {TriggerId} has a malformed title_review payload; skipping.", row.Id);
@@ -205,10 +224,59 @@ public sealed class FirstOpenGateService : IFirstOpenGateService
         }
     }
 
+    /// Original-request fallback sourced from the ticket's first inbound
+    /// email. Exactly one of Html/Text is set; RawMailId is non-null only
+    /// when the raw .eml blob is available for download.
+    private sealed record MailRequestFallback(string? Html, string? Text, Guid? RawMailId);
+
+    /// Loads the first inbound mail of the ticket and shapes it into the
+    /// original-request fallback: HTML body (images stripped — inline cid:
+    /// references can't resolve inside the dialog) preferred, plain text
+    /// otherwise. Returns null when the ticket has no inbound mail or the
+    /// mail carries no readable body. Fails open: any storage hiccup just
+    /// means the panel stays empty, exactly like before the fallback.
+    private async Task<MailRequestFallback?> TryLoadMailFallbackAsync(Guid ticketId, CancellationToken ct)
+    {
+        try
+        {
+            var mail = await _mail.GetFirstInboundForTicketAsync(ticketId, ct);
+            if (mail is null) return null;
+
+            string? html = null;
+            if (!string.IsNullOrWhiteSpace(mail.BodyHtmlBlobHash))
+            {
+                await using var stream = await _blobs.OpenReadAsync(mail.BodyHtmlBlobHash, ct);
+                if (stream is not null)
+                {
+                    using var reader = new StreamReader(stream);
+                    var raw = await reader.ReadToEndAsync(ct);
+                    var stripped = MailRequestHtml.StripImages(raw);
+                    if (!string.IsNullOrWhiteSpace(stripped)) html = stripped;
+                }
+            }
+
+            var text = html is null && !string.IsNullOrWhiteSpace(mail.BodyText)
+                ? mail.BodyText
+                : null;
+            if (html is null && text is null) return null;
+
+            var rawMailId = string.IsNullOrWhiteSpace(mail.RawEmlBlobHash) ? (Guid?)null : mail.Id;
+            return new MailRequestFallback(html, text, rawMailId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "First-open gate mail-body fallback failed for ticket {TicketId}; showing no request panel.",
+                ticketId);
+            return null;
+        }
+    }
+
     /// Projects the single title_review action of a gate trigger into the
     /// dialog payload. Returns null when the row carries no title_review
     /// action (the validator prevents this, but defend in depth).
-    private static MatchedFirstOpenGate? ProjectGate(TriggerRow row, string currentSubject, TicketBody body)
+    private static MatchedFirstOpenGate? ProjectGate(
+        TriggerRow row, string currentSubject, TicketBody body, MailRequestFallback? mailFallback)
     {
         if (string.IsNullOrWhiteSpace(row.ActionsJson)) return null;
         using var doc = JsonDocument.Parse(row.ActionsJson);
@@ -240,12 +308,21 @@ public sealed class FirstOpenGateService : IFirstOpenGateService
 
             string? requestHtml = null;
             string? requestText = null;
+            bool requestFromMail = false;
+            Guid? requestMailId = null;
             if (showRequest)
             {
                 if (!string.IsNullOrWhiteSpace(body.BodyHtml))
                     requestHtml = body.BodyHtml;
                 else if (!string.IsNullOrWhiteSpace(body.BodyText))
                     requestText = body.BodyText;
+                else if (mailFallback is not null)
+                {
+                    requestHtml = mailFallback.Html;
+                    requestText = mailFallback.Text;
+                    requestFromMail = true;
+                    requestMailId = mailFallback.RawMailId;
+                }
             }
 
             return new MatchedFirstOpenGate(
@@ -258,7 +335,9 @@ public sealed class FirstOpenGateService : IFirstOpenGateService
                 CurrentSubject: currentSubject,
                 ShowRequest: showRequest,
                 RequestBodyHtml: requestHtml,
-                RequestBodyText: requestText);
+                RequestBodyText: requestText,
+                RequestFromMail: requestFromMail,
+                RequestMailId: requestMailId);
         }
         return null;
     }

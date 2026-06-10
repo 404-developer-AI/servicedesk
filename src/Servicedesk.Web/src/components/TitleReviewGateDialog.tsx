@@ -1,5 +1,6 @@
 import * as React from "react";
 import DOMPurify from "dompurify";
+import { Download } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -80,9 +81,25 @@ export function TitleReviewGateDialog({ gate, onConfirm, submitting }: Props) {
 
         {showRequestPanel && (
           <div className="space-y-1.5">
-            <span className="text-xs font-medium text-muted-foreground">
-              Original request
-            </span>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-muted-foreground">
+                {gate.requestSource === "mail"
+                  ? "Original request — from the first email"
+                  : "Original request"}
+              </span>
+              {gate.requestEmlUrl ? (
+                <a
+                  href={gate.requestEmlUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-glass-hover hover:text-foreground"
+                  title="Download the original email, including images and attachments"
+                >
+                  <Download className="h-3 w-3" />
+                  .eml
+                </a>
+              ) : null}
+            </div>
             <div className="relative max-h-48 overflow-y-auto rounded-md border border-glass bg-glass px-3 py-2">
               {requestDanger ? (
                 <div

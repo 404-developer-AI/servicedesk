@@ -267,6 +267,20 @@ public sealed class MailMessageRepository : IMailMessageRepository
         return rows.ToList();
     }
 
+    public async Task<MailMessageRow?> GetFirstInboundForTicketAsync(Guid ticketId, CancellationToken ct)
+    {
+        var sql = SelectColumns + """
+
+              FROM mail_messages
+             WHERE ticket_id = @ticketId AND direction = 'Inbound'
+             ORDER BY received_utc, id
+             LIMIT 1
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.QueryFirstOrDefaultAsync<MailMessageRow>(
+            new CommandDefinition(sql, new { ticketId }, cancellationToken: ct));
+    }
+
     public async Task<MailThreadAnchor?> GetLatestThreadAnchorAsync(Guid ticketId, CancellationToken ct)
     {
         // Pick the newest mail row for this ticket (inbound or outbound) by
