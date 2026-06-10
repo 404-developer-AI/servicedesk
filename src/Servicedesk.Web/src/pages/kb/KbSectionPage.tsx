@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { StatusPill } from "@/pages/kb/KbHomePage";
+import { InPageSearchProvider, useInPageSearch } from "@/components/InPageSearch";
+import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
 
 type Props = { sectionId: string };
 
@@ -14,9 +16,22 @@ type Props = { sectionId: string };
 /// "+ New article" button. Status filter / search are URL-state-free in
 /// v0.0.31 — quick listing with a fixed pageSize is enough for a typical
 /// KB; pagination + filters land alongside the admin UI in v0.0.32+.
+/// Ctrl+F opens the shared in-page search bar (same as the ticket view):
+/// Filter hides non-matching article rows, Highlight marks matches.
 export function KbSectionPage({ sectionId }: Props) {
+  return (
+    <InPageSearchProvider placeholder="Search in this section…">
+      <SectionContent sectionId={sectionId} />
+    </InPageSearchProvider>
+  );
+}
+
+function SectionContent({ sectionId }: Props) {
   const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState<KbArticleStatus | "All">("All");
+  const { matchesText, mode, query, registerScope } = useInPageSearch();
+  const { time: serverTime } = useServerTime();
+  const offset = serverTime?.offsetMinutes ?? 0;
 
   const { data: section, isLoading: sectionLoading } = useQuery({
     queryKey: ["kb", "section", sectionId],
@@ -47,6 +62,14 @@ export function KbSectionPage({ sectionId }: Props) {
     () => findNode(tree?.tree ?? [], sectionId),
     [tree, sectionId],
   );
+
+  // Filter mode hides rows that don't match the Ctrl+F query; Highlight
+  // mode keeps every row and the provider marks matches in the DOM.
+  const visibleArticles = useMemo(() => {
+    const items = articles?.items ?? [];
+    if (mode !== "filter" || !query.trim()) return items;
+    return items.filter((a) => matchesText(a.title));
+  }, [articles, mode, query, matchesText]);
 
   if (sectionLoading || !section) {
     return (
@@ -127,7 +150,9 @@ export function KbSectionPage({ sectionId }: Props) {
         </div>
         {articles && (
           <Badge className="border border-glass bg-glass text-xs font-normal text-muted-foreground">
-            {articles.totalHits} article{articles.totalHits === 1 ? "" : "s"}
+            {visibleArticles.length !== articles.items.length
+              ? `${visibleArticles.length} / ${articles.totalHits} articles`
+              : `${articles.totalHits} article${articles.totalHits === 1 ? "" : "s"}`}
           </Badge>
         )}
       </div>
@@ -135,7 +160,11 @@ export function KbSectionPage({ sectionId }: Props) {
       {articlesLoading ? (
         <Skeleton className="h-40 w-full" />
       ) : articles && articles.items.length > 0 ? (
-        <section className="glass-card overflow-hidden">
+        // shrink-0: as a flex child of the page column this card would
+        // otherwise be squeezed to the leftover viewport height (its
+        // overflow-hidden zeroes the automatic min-size) and the clipped
+        // rows could never be scrolled to.
+        <section className="glass-card shrink-0 overflow-hidden" ref={registerScope}>
           <table className="w-full text-left text-sm">
             <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-glass">
               <tr>
@@ -146,7 +175,14 @@ export function KbSectionPage({ sectionId }: Props) {
               </tr>
             </thead>
             <tbody>
-              {articles.items.map((a) => (
+              {visibleArticles.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                    No articles match the search.
+                  </td>
+                </tr>
+              )}
+              {visibleArticles.map((a) => (
                 <tr
                   key={a.id}
                   className="border-b border-glass last:border-b-0 hover:bg-glass-hover"
@@ -167,7 +203,7 @@ export function KbSectionPage({ sectionId }: Props) {
                     {a.isFeatured ? "★" : "—"}
                   </td>
                   <td className="px-4 py-3 text-xs text-muted-foreground">
-                    {new Date(a.updatedUtc).toLocaleString()}
+                    {toServerLocal(a.updatedUtc, offset)}
                   </td>
                 </tr>
               ))}

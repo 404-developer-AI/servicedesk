@@ -160,3 +160,12 @@ export function toServerLocal(iso: string, offsetMinutes: number, seconds = fals
   const stamp = `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} - ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
   return seconds ? `${stamp}:${pad(d.getUTCSeconds())}` : stamp;
 }
+
+/**
+ * Date-only variant of toServerLocal: "dd/MM/yyyy".
+ */
+export function toServerLocalDate(iso: string, offsetMinutes: number): string {
+  const d = new Date(new Date(iso).getTime() + offsetMinutes * 60_000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
+}

@@ -17,6 +17,7 @@ import {
   type KbSectionNode,
 } from "@/lib/kb-api";
 import { useCurrentRole } from "@/hooks/useCurrentRole";
+import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SafeHtml } from "@/components/SafeHtml";
@@ -34,6 +35,8 @@ export function KbArticlePage({ articleId }: Props) {
   const queryClient = useQueryClient();
   const role = useCurrentRole();
   const isAdmin = role === "Admin";
+  const { time: serverTime } = useServerTime();
+  const offset = serverTime?.offsetMinutes ?? 0;
 
   const { data, isLoading } = useQuery({
     queryKey: ["kb", "article", articleId, "body"],
@@ -203,11 +206,11 @@ export function KbArticlePage({ articleId }: Props) {
 
         <dl className="glass-card grid grid-cols-1 gap-3 p-5 text-xs">
           <Meta label="Slug" value={article.slug} mono />
-          <Meta label="Created" value={new Date(article.createdUtc).toLocaleString()} />
-          <Meta label="Updated" value={new Date(article.updatedUtc).toLocaleString()} />
+          <Meta label="Created" value={toServerLocal(article.createdUtc, offset)} />
+          <Meta label="Updated" value={toServerLocal(article.updatedUtc, offset)} />
           <Meta
             label="Status changed"
-            value={new Date(article.lastStatusChangedUtc).toLocaleString()}
+            value={toServerLocal(article.lastStatusChangedUtc, offset)}
           />
         </dl>
       </aside>

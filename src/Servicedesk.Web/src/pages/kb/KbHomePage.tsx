@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { useServerTime, toServerLocalDate } from "@/hooks/useServerTime";
 
 /// Landing page for the standalone KB. Three regions: search bar at the top,
 /// section tree on the left, featured + recent on the right. The search box
@@ -117,7 +118,7 @@ export function KbHomePage() {
                         {f.title}
                       </div>
                       <div className="mt-1 text-[11px] text-muted-foreground">
-                        Updated {new Date(f.updatedUtc).toLocaleDateString()}
+                        <UpdatedDate iso={f.updatedUtc} />
                       </div>
                     </Link>
                   </li>
@@ -181,6 +182,11 @@ function SectionTreeNode({ node, depth }: { node: KbSectionNode; depth: number }
   );
 }
 
+function UpdatedDate({ iso }: { iso: string }) {
+  const { time } = useServerTime();
+  return <>Updated {toServerLocalDate(iso, time?.offsetMinutes ?? 0)}</>;
+}
+
 function RecentRow({ item }: { item: KbArticleListItem }) {
   return (
     <li className="py-2">
@@ -192,7 +198,7 @@ function RecentRow({ item }: { item: KbArticleListItem }) {
         <div className="min-w-0">
           <div className="truncate text-sm text-foreground">{item.title}</div>
           <div className="text-[11px] text-muted-foreground">
-            Updated {new Date(item.updatedUtc).toLocaleDateString()}
+            <UpdatedDate iso={item.updatedUtc} />
           </div>
         </div>
         <StatusPill status={item.status} />
