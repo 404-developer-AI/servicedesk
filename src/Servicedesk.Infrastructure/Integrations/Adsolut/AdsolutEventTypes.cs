@@ -267,4 +267,20 @@ public static class AdsolutEventTypes
     /// lines resolve their warehouse/location code+id to a display name
     /// (Stock / Location columns).
     public const string ErpWarehousesList = "erp.warehouses.list";
+
+    // ---- v0.0.76 ERP Articles (artikels) ------------------------------
+
+    /// GET /erp/v1/adm/{adm}/Articles — one page of the cursor-paged article
+    /// catalogue list during an Articles sync tick. Each page is one audit row;
+    /// the list item already carries the full article (code, name, vat), so
+    /// there is no per-article by-id fetch during a normal sync.
+    public const string ErpArticlesList = "erp.articles.list";
+
+    /// GET /erp/v1/adm/{adm}/Articles/{id} — full by-id fetch used only for a
+    /// manual per-row resync.
+    public const string ErpArticlesGet = "erp.articles.get";
+
+    /// One Articles sync-worker tick summary (seen / upserted + duration +
+    /// outcome).
+    public const string ErpArticlesSyncTick = "erp.articles.sync_tick";
 }

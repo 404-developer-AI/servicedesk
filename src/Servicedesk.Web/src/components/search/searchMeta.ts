@@ -18,6 +18,7 @@ export type SearchKind =
   | "triggers"
   | "adsolut-sales-receipts"
   | "adsolut-orders"
+  | "adsolut-articles"
   | (string & {});
 
 export const KIND_LABELS: Record<string, string> = {
@@ -34,6 +35,7 @@ export const KIND_LABELS: Record<string, string> = {
   triggers: "Triggers",
   "adsolut-sales-receipts": "Verkoopbonnen",
   "adsolut-orders": "Orders",
+  "adsolut-articles": "Contract Articles",
 };
 
 export const KIND_ORDER: string[] = [
@@ -50,6 +52,7 @@ export const KIND_ORDER: string[] = [
   "triggers",
   "adsolut-sales-receipts",
   "adsolut-orders",
+  "adsolut-articles",
 ];
 
 export function labelForKind(kind: string): string {
@@ -90,6 +93,10 @@ export function hitHref(hit: SearchHit): string {
       // Orders open in the Orders overview; deep-link the order id so the
       // overview can expand/scroll to it.
       return `/orders?orderId=${hit.entityId}`;
+    case "adsolut-articles":
+      // Articles live in the Contract Articles list (no standalone detail
+      // page); land the user on the list and seed the search with the code.
+      return `/contracts/articles?q=${encodeURIComponent(hit.meta?.code ?? "")}`;
     default:
       return "#";
   }

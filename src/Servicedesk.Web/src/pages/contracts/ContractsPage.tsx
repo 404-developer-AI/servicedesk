@@ -1,17 +1,27 @@
-import { FileSignature, Link2, type LucideIcon } from "lucide-react";
+import { FileSignature, Link2, Package, type LucideIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 
-/// v0.0.76 — Contracts hub. Pure tile launcher: every contract module gets a
-/// tile here that opens its own sub-page. This release ships the hub shell
-/// only — both modules below are placeholders until their data model lands,
-/// so the tiles render as non-interactive "coming soon" cards.
+/// v0.0.76 — Contracts hub. Tile launcher: every contract module gets a tile
+/// here that opens its own sub-page. Tiles with a `to` are live and link
+/// through; the rest render as non-interactive "coming soon" cards until their
+/// data model lands.
 type ContractModule = {
   id: string;
   title: string;
   description: string;
   icon: LucideIcon;
+  /** Live route — present = the tile links through; absent = "coming soon". */
+  to?: string;
 };
 
 const MODULES: readonly ContractModule[] = [
+  {
+    id: "articles",
+    title: "Contract Articles",
+    description: "The Adsolut article catalogue — codes, names and VAT, mirrored from the ERP.",
+    icon: Package,
+    to: "/contracts/articles",
+  },
   {
     id: "overview",
     title: "Contracts overview",
@@ -42,25 +52,43 @@ export function ContractsPage() {
   );
 }
 
-/// A single module tile. Until the module ships this is intentionally not a
-/// link — no hover lift, no pointer cursor — so the "coming soon" state reads
-/// as a preview rather than a broken button.
+/// A single module tile. A live module (with `to`) links through with a hover
+/// lift; a placeholder is intentionally not a link — no hover, no pointer
+/// cursor — so the "coming soon" state reads as a preview rather than a broken
+/// button.
 function ModuleTile({ module }: { module: ContractModule }) {
   const Icon = module.icon;
-  return (
-    <div className="glass-card relative flex flex-col gap-3 p-5">
+  const body = (
+    <>
       <div className="flex items-start justify-between gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-glass bg-glass">
           <Icon className="h-5 w-5 text-primary" />
         </div>
-        <span className="rounded-full border border-glass bg-glass px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
-          Coming soon
-        </span>
+        {!module.to && (
+          <span className="rounded-full border border-glass bg-glass px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+            Coming soon
+          </span>
+        )}
       </div>
       <div className="space-y-1">
-        <h2 className="text-sm font-semibold text-foreground/80">{module.title}</h2>
+        <h2 className={module.to ? "text-sm font-semibold text-foreground" : "text-sm font-semibold text-foreground/80"}>
+          {module.title}
+        </h2>
         <p className="text-xs leading-relaxed text-muted-foreground">{module.description}</p>
       </div>
-    </div>
+    </>
   );
+
+  if (module.to) {
+    return (
+      <Link
+        to={module.to}
+        className="glass-card relative flex flex-col gap-3 p-5 transition-transform hover:-translate-y-0.5 hover:border-glass-strong"
+      >
+        {body}
+      </Link>
+    );
+  }
+
+  return <div className="glass-card relative flex flex-col gap-3 p-5">{body}</div>;
 }

@@ -96,6 +96,10 @@ public static class AdsolutEndpoints
         admin.MapPost("/erp/orders/sync", TriggerErpOrdersSync).WithName("TriggerAdsolutErpOrdersSync").WithOpenApi();
         admin.MapPut("/erp/orders/status-filter", SetErpOrdersStatusFilter).WithName("SetAdsolutErpOrdersStatusFilter").WithOpenApi();
         admin.MapPut("/erp/orders/supplier-status-colors", SetErpOrdersSupplierStatusColors).WithName("SetAdsolutErpOrdersSupplierStatusColors").WithOpenApi();
+        // ERP articles (artikels) mirror — feeds the Contract Articles list
+        // (Contracts → Contract Articles). State surface + "sync now".
+        admin.MapGet("/erp/articles/state", GetErpArticlesState).WithName("GetAdsolutErpArticlesState").WithOpenApi();
+        admin.MapPost("/erp/articles/sync", TriggerErpArticlesSync).WithName("TriggerAdsolutErpArticlesSync").WithOpenApi();
         admin.MapGet("/debug/put-preview", DebugPutPreview).WithName("AdsolutDebugPutPreview").WithOpenApi();
         admin.MapPost("/debug/put", DebugPutCustomer).WithName("AdsolutDebugPutCustomer").WithOpenApi();
         admin.MapGet("/debug/access-token", DebugAccessToken).WithName("AdsolutDebugAccessToken").WithOpenApi()
@@ -1057,6 +1061,61 @@ public static class AdsolutEndpoints
         var (actor, role) = ActorContext.Resolve(http);
         await audit.LogAsync(new AuditEvent(
             EventType: "integration.adsolut.erp_orders.sync_requested",
+            Actor: actor,
+            ActorRole: role,
+            ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString()), ct);
+        return Results.Accepted();
+    }
+
+    // ---- /erp/articles (artikels) mirror controls ----------------------
+
+    private static async Task<IResult> GetErpArticlesState(
+        IAdsolutArticleRepository repo,
+        ISettingsService settings,
+        CancellationToken ct)
+    {
+        var enabled = await settings.GetAsync<bool>(SettingKeys.Adsolut.ErpArticlesEnabled, ct);
+        var intervalMinutes = await settings.GetAsync<int>(SettingKeys.Adsolut.ErpArticlesSyncIntervalMinutes, ct);
+        if (intervalMinutes <= 0) intervalMinutes = 60;
+
+        var state = await repo.GetSyncStateAsync(ct);
+        var total = await repo.GetCountAsync(ct);
+        var nextSyncUtc = Servicedesk.Infrastructure.Health.IntegrationsHealthAggregator
+            .ComputeNextSyncUtc(state?.LastDeltaSyncUtc, Math.Max(5, intervalMinutes));
+
+        return Results.Ok(new
+        {
+            enabled,
+            intervalMinutes,
+            totalMirrored = total,
+            lastFullSyncUtc = state?.LastFullSyncUtc,
+            lastDeltaSyncUtc = state?.LastDeltaSyncUtc,
+            lastError = state?.LastError,
+            lastErrorUtc = state?.LastErrorUtc,
+            articlesSeen = state?.ArticlesSeen ?? 0,
+            articlesUpserted = state?.ArticlesUpserted ?? 0,
+            updatedUtc = state?.UpdatedUtc,
+            nextSyncUtc,
+        });
+    }
+
+    private static async Task<IResult> TriggerErpArticlesSync(
+        HttpContext http,
+        IAdsolutArticlesSyncSignal signal,
+        ISettingsService settings,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        var enabled = await settings.GetAsync<bool>(SettingKeys.Adsolut.ErpArticlesEnabled, ct);
+        if (!enabled)
+        {
+            return Results.BadRequest(new { error = "disabled", message = "Enable 'Pull articles' first." });
+        }
+        signal.RequestImmediateRun();
+        var (actor, role) = ActorContext.Resolve(http);
+        await audit.LogAsync(new AuditEvent(
+            EventType: "integration.adsolut.erp_articles.sync_requested",
             Actor: actor,
             ActorRole: role,
             ClientIp: http.Connection.RemoteIpAddress?.ToString(),

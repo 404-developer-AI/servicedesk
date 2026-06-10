@@ -839,6 +839,22 @@ export type AdsolutErpOrdersState = {
   statusColors: Record<string, string>;
 };
 
+/// ERP Articles (artikels) mirror state — integration-page panel (v0.0.76).
+/// Simple reference-list slice: enable toggle + interval + sync counters.
+export type AdsolutErpArticlesState = {
+  enabled: boolean;
+  intervalMinutes: number;
+  totalMirrored: number;
+  lastFullSyncUtc: string | null;
+  lastDeltaSyncUtc: string | null;
+  lastError: string | null;
+  lastErrorUtc: string | null;
+  articlesSeen: number;
+  articlesUpserted: number;
+  updatedUtc: string | null;
+  nextSyncUtc: string | null;
+};
+
 export type AdsolutSalesReceiptHeader = {
   id: string;
   docNr: number | null;
@@ -1095,6 +1111,55 @@ export const ordersApi = {
     request<{ ok: boolean }>("DELETE", `/api/tickets/${ticketId}/orders/${orderId}`),
 };
 
+// ---- Adsolut Articles (artikels) — v0.0.76 --------------------------
+// Article catalogue mirror behind the Contracts hub ("Contract Articles").
+
+export type AdsolutArticle = {
+  id: string;
+  code: string | null;
+  name: string | null;
+  description: string | null;
+  vatCode: string | null;
+  vatRate: string | null;
+  active: boolean;
+  adsolutCreatedUtc: string | null;
+  adsolutLastModified: string | null;
+  syncedUtc: string;
+};
+
+export type AdsolutArticleListResponse = {
+  items: AdsolutArticle[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+/// Agent-facing Adsolut article-catalogue data (Contract Articles list).
+/// Gated by the per-user contracts_enabled flag (RequireAgent + in-handler
+/// flag check on the backend).
+export const articlesApi = {
+  list: (
+    search: string,
+    page: number,
+    pageSize = 50,
+    sort = "code",
+    dir: "asc" | "desc" = "asc",
+    activeOnly = false,
+  ) => {
+    const qs = new URLSearchParams({
+      page: String(page),
+      pageSize: String(pageSize),
+      sort,
+      dir,
+    });
+    if (search.trim()) qs.set("search", search.trim());
+    if (activeOnly) qs.set("activeOnly", "true");
+    return request<AdsolutArticleListResponse>("GET", `/api/contracts/articles?${qs.toString()}`);
+  },
+  resync: (id: string) => request<AdsolutArticle>("POST", `/api/contracts/articles/${id}/resync`),
+  sync: () => request<void>("POST", "/api/contracts/articles/sync"),
+};
+
 // ---- Back-office Timesheet tabs (Resolved / CWI) — v0.0.56 -----------
 
 export type BackofficeContext = "resolved" | "cwi" | "adsolut";
@@ -1280,6 +1345,14 @@ export const adsolutApi = {
       "/api/admin/integrations/adsolut/erp/orders/supplier-status-colors",
       { colors },
     ),
+  /// ERP Articles (artikels) mirror — integration-page controls (v0.0.76).
+  erpArticlesState: () =>
+    request<AdsolutErpArticlesState>(
+      "GET",
+      "/api/admin/integrations/adsolut/erp/articles/state",
+    ),
+  triggerErpArticlesSync: () =>
+    request<void>("POST", "/api/admin/integrations/adsolut/erp/articles/sync"),
   debugPutPreview: (customerId: string) => {
     const qs = new URLSearchParams({ customerId });
     return request<AdsolutDebugPutPreview>(
