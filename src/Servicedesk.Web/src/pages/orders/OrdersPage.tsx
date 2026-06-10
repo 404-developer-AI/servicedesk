@@ -258,7 +258,7 @@ export function OrdersPage() {
           <div>
             <h1 className="text-display-md font-semibold text-foreground">Orders</h1>
             <p className="text-xs text-muted-foreground">
-              {total.toLocaleString()} bestellingen mirrored from Adsolut
+              {total.toLocaleString()} orders mirrored from Adsolut
             </p>
           </div>
         </div>
