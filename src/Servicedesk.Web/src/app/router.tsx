@@ -32,6 +32,7 @@ import { IntakeFormsSettingsPage } from "@/pages/settings/IntakeFormsSettingsPag
 import { TemplatesSettingsPage } from "@/pages/settings/TemplatesSettingsPage";
 import { PublicIntakeFormPage } from "@/pages/intake/PublicIntakeFormPage";
 import { PublicSurveyPage } from "@/pages/surveys/PublicSurveyPage";
+import { PublicKbArticlePage } from "@/pages/kb/PublicKbArticlePage";
 import { SurveysSettingsPage } from "@/pages/settings/SurveysSettingsPage";
 import { SurveyEditorPage } from "@/pages/settings/surveys/SurveyEditorPage";
 import { SurveyResultsPage } from "@/pages/settings/surveys/SurveyResultsPage";
@@ -111,6 +112,7 @@ function isPublicPath(path: string): boolean {
   if (UNAUTHENTICATED_PATHS.has(path)) return true;
   if (path.startsWith("/intake/")) return true;
   if (path.startsWith("/surveys/")) return true;
+  if (path.startsWith("/kb/public/")) return true;
   return false;
 }
 
@@ -124,6 +126,7 @@ function isBareRoute(path: string): boolean {
   if (path.endsWith("/compose")) return true;
   if (path.startsWith("/intake/")) return true;
   if (path.startsWith("/surveys/")) return true;
+  if (path.startsWith("/kb/public/")) return true;
   return false;
 }
 
@@ -645,6 +648,18 @@ const publicSurveyRoute = createRoute({
   },
 });
 
+// v0.0.75 — public KB article reader. Same bare-shell semantics; the
+// server only serves Published articles (and only while the admin toggle
+// is on), so no beforeLoad gate is needed here.
+const publicKbArticleRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/kb/public/$articleId",
+  component: function PublicKbArticleRoute() {
+    const { articleId } = publicKbArticleRoute.useParams();
+    return <PublicKbArticlePage articleId={articleId} />;
+  },
+});
+
 const settingsViewGroupsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "view-groups",
@@ -744,6 +759,7 @@ const routeTree = rootRoute.addChildren([
   ]),
   publicIntakeRoute,
   publicSurveyRoute,
+  publicKbArticleRoute,
 ]);
 
 export const router = createRouter({

@@ -6,6 +6,7 @@ import { ticketApi, mentionApi } from "@/lib/ticket-api";
 import { preferencesApi } from "@/lib/api";
 import { useAuth } from "@/auth/authStore";
 import { orderMentionItems } from "@/pages/orders/orderMention";
+import { kbLinkMentionItems } from "@/pages/kb/kbLinkMention";
 import { timesheetTicketApi } from "@/lib/timesheet-api";
 import { composeTemplatesApi } from "@/lib/composeTemplates-api";
 import { RichTextEditor, splitMentionIds } from "@/components/RichTextEditor";
@@ -419,8 +420,14 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
           }));
           // v0.0.59 — also offer Adsolut orders in the `::` picker for users
           // with the Orders feature flag. Picking one inserts a clickable pill.
-          const orders = user?.adsolutOrdersEnabled ? await orderMentionItems(q) : [];
-          return [...templates, ...orders];
+          // v0.0.75 — replies also offer Published KB articles as public
+          // links (a reply lands in the customer's mailbox, same as mail).
+          // Internal notes skip the source: a public link has no audience there.
+          const [orders, kbItems] = await Promise.all([
+            user?.adsolutOrdersEnabled ? orderMentionItems(q) : Promise.resolve([]),
+            tab === "reply" ? kbLinkMentionItems(q) : Promise.resolve([]),
+          ]);
+          return [...templates, ...orders, ...kbItems];
         }}
         onEditorReady={(editor) => {
           editorRef.current = editor as typeof editorRef.current;

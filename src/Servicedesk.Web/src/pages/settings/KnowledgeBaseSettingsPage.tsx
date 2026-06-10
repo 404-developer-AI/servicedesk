@@ -8,6 +8,7 @@ import {
   type KbLocale,
   type KbSectionNode,
 } from "@/lib/kb-api";
+import { settingsApi } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -81,6 +82,8 @@ export function KnowledgeBaseSettingsPage() {
           />
         )
       )}
+
+      <PublicLinksCard />
 
       <LocalesCard
         locales={locales ?? []}
@@ -161,6 +164,63 @@ function ConfigCard({
           </Button>
         </div>
       </div>
+    </section>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Public article links — v0.0.75
+// ──────────────────────────────────────────────────────────────────────────
+
+const PUBLIC_LINKS_KEY = "KnowledgeBase.PublicLinks.Enabled";
+
+/// Toggle for the anonymous /kb/public/{id} reader. Off by default; while
+/// off, the public endpoints 404 for everything and the `::` picker hides
+/// the KB-link source so nobody inserts a dead link into a mail.
+function PublicLinksCard() {
+  const queryClient = useQueryClient();
+
+  const { data: entries, isLoading } = useQuery({
+    queryKey: ["settings", "KnowledgeBase"],
+    queryFn: () => settingsApi.list("KnowledgeBase"),
+  });
+  const enabled = entries?.find((e) => e.key === PUBLIC_LINKS_KEY)?.value === "true";
+
+  const save = useMutation({
+    mutationFn: (next: boolean) => settingsApi.update(PUBLIC_LINKS_KEY, String(next)),
+    onSuccess: (_, next) => {
+      toast.success(next ? "Public article links enabled." : "Public article links disabled.");
+      queryClient.invalidateQueries({ queryKey: ["settings", "KnowledgeBase"] });
+    },
+    onError: () => toast.error("Could not save the setting."),
+  });
+
+  return (
+    <section className="glass-card flex flex-col gap-4 p-5">
+      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+        <Globe className="h-4 w-4 text-primary" /> Public article links
+      </div>
+      {isLoading ? (
+        <Skeleton className="h-10 w-full" />
+      ) : (
+        <div className="flex flex-wrap items-center gap-6">
+          <label className="flex items-center gap-3 text-sm">
+            <Switch
+              checked={enabled}
+              disabled={save.isPending}
+              onCheckedChange={(next) => save.mutate(next)}
+            />
+            <span>{enabled ? "Public links are on" : "Public links are off"}</span>
+          </label>
+          <p className="max-w-xl text-xs text-muted-foreground">
+            When on, <span className="font-medium text-foreground/80">Published</span> articles are
+            readable without login via their /kb/public link — the link the
+            <span className="font-mono"> ::</span> picker inserts into outbound mail. Draft,
+            Internal and Archived articles are never served publicly. Flipping an article back out
+            of Published kills its link immediately.
+          </p>
+        </div>
+      )}
     </section>
   );
 }

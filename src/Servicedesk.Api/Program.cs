@@ -348,6 +348,36 @@ builder.Services.AddRateLimiter(options =>
             AutoReplenishment = true,
         });
     });
+
+    // v0.0.75 — public KB article reader partitions by {ip, articleId}.
+    // More permits than surveys because rendering one article also pulls
+    // its inline images through the public attachment route.
+    var kbPublicPermit = builder.Configuration.GetValue<int?>("KnowledgeBase:PublicRateLimit:PermitPerWindow") ?? 60;
+    var kbPublicWindow = builder.Configuration.GetValue<int?>("KnowledgeBase:PublicRateLimit:WindowSeconds") ?? 60;
+    options.AddPolicy("kb-public", ctx =>
+    {
+        var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
+        var path = ctx.Request.Path.Value ?? string.Empty;
+        string articlePart = "-";
+        const string prefix = "/api/public/kb/articles/";
+        if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var rest = path[prefix.Length..];
+            var slash = rest.IndexOf('/');
+            var token = slash < 0 ? rest : rest[..slash];
+            if (token.Length > 36) token = token[..36];
+            if (!string.IsNullOrEmpty(token)) articlePart = token;
+        }
+
+        var key = ip + ":" + articlePart;
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = kbPublicPermit,
+            Window = TimeSpan.FromSeconds(kbPublicWindow),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        });
+    });
 });
 
 var app = builder.Build();
@@ -623,6 +653,7 @@ app.MapKbConfigEndpoints();
 app.MapKbSectionEndpoints();
 app.MapKbArticleEndpoints();
 app.MapKbAttachmentEndpoints();
+app.MapKbPublicEndpoints();
 app.MapTimesheetTaskEndpoints();
 app.MapTimesheetEntryEndpoints();
 app.MapTimesheetManagerEndpoints();

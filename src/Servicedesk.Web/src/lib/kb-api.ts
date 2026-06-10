@@ -247,6 +247,14 @@ export const kbApi = {
     ),
   listFeatured: (limit = 6) =>
     request<KbFeaturedArticle[]>("GET", `/api/kb/featured?limit=${limit}`),
+  // v0.0.75 — tells the `::` picker whether public article links are
+  // enabled and which base URL to build them with (App.PublicBaseUrl;
+  // empty when unset — callers fall back to window.location.origin).
+  publicLinkConfig: () =>
+    request<{ enabled: boolean; publicBaseUrl: string }>(
+      "GET",
+      "/api/kb/public-link-config",
+    ),
   createArticle: (body: KbArticleCreateRequest) =>
     request<{ article: KbArticle; translation: KbArticleTranslation }>(
       "POST",
@@ -293,6 +301,37 @@ export const kbApi = {
       };
       err.status = res.status;
       err.payload = payload;
+      throw err;
+    }
+    return res.json();
+  },
+};
+
+// ─── Public (no-login) article reader — v0.0.75 ───
+
+export type KbPublicArticle = {
+  id: string;
+  slug: string;
+  title: string;
+  bodyHtml: string;
+  updatedUtc: string;
+};
+
+/// Anonymous fetch for the /kb/public/:id reader page. `credentials:
+/// "omit"` like the public intake/survey helpers — the customer has no
+/// session and the endpoint must never depend on one. The server only
+/// serves Published articles and 404s everything else.
+export const publicKbApi = {
+  get: async (id: string): Promise<KbPublicArticle> => {
+    const res = await fetch(`/api/public/kb/articles/${encodeURIComponent(id)}`, {
+      credentials: "omit",
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) {
+      const err = new Error(`Public article fetch failed: ${res.status}`) as Error & {
+        status?: number;
+      };
+      err.status = res.status;
       throw err;
     }
     return res.json();
