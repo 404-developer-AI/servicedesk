@@ -664,6 +664,7 @@ app.MapAdsolutTimesheetEndpoints();
 app.MapBackofficeTimesheetEndpoints();
 app.MapOrdersEndpoints();
 app.MapContractArticlesEndpoints();
+app.MapContractsOverviewEndpoints();
 app.MapViewEndpoints();
 app.MapQueueAccessEndpoints();
 app.MapViewGroupEndpoints();

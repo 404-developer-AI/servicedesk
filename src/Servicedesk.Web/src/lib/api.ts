@@ -1160,6 +1160,112 @@ export const articlesApi = {
   sync: () => request<void>("POST", "/api/contracts/articles/sync"),
 };
 
+// ---- Adsolut Contracts (contracten) — v0.0.77 -----------------------
+// Contract header + line mirror behind the Contracts hub ("Contracts overview").
+
+export type AdsolutContractHeader = {
+  id: string;
+  docNr: number | null;
+  customerAdsolutId: string | null;
+  customerName: string | null;
+  companyId: string | null;
+  companyName: string | null;
+  relationCode: string | null;
+  stateCode: string | null;
+  stateDescription: string | null;
+  docDate: string | null;
+  startDate: string | null;
+  stopDate: string | null;
+  endDate: string | null;
+  description: string | null;
+  memo: string | null;
+  periodicityCode: string | null;
+  periodicityLabel: string | null;
+  invoicingPeriodicityCode: string | null;
+  invoicingPeriodicityLabel: string | null;
+  numberOfTerms: number | null;
+  totalExclVat: number;
+  totalVat: number;
+  totalInclVat: number;
+  adsolutCreatedUtc: string | null;
+  adsolutLastModified: string | null;
+  syncedUtc: string;
+};
+
+export type AdsolutContractLine = {
+  id: string;
+  lineNr: number | null;
+  name: string | null;
+  description: string | null;
+  quantity: number;
+  grossUnitPrice: number | null;
+  discount1: number | null;
+  discount2: number | null;
+  unitPrice: number | null;
+  unitPriceIncl: number | null;
+  startDate: string | null;
+  endDate: string | null;
+};
+
+export type AdsolutContractListResponse = {
+  items: AdsolutContractHeader[];
+  total: number;
+  page: number;
+  pageSize: number;
+  statusFilter: string[];
+  /// Admin-configured status code → hex colour map for the overview pill.
+  statusColors: Record<string, string>;
+};
+
+export type AdsolutContractDetail = {
+  header: AdsolutContractHeader;
+  lines: AdsolutContractLine[];
+};
+
+/// Admin-facing Adsolut ERP Contracts state — integration-page panel.
+export type AdsolutErpContractsState = {
+  enabled: boolean;
+  intervalMinutes: number;
+  statusFilter: string[];
+  totalMirrored: number;
+  lastFullSyncUtc: string | null;
+  lastDeltaSyncUtc: string | null;
+  lastError: string | null;
+  lastErrorUtc: string | null;
+  contractsSeen: number;
+  contractsUpserted: number;
+  updatedUtc: string | null;
+  nextSyncUtc: string | null;
+  statusOptions: { code: string; description: string | null; count: number }[];
+  /// Status code → hex colour map (drives the overview pill colour).
+  statusColors: Record<string, string>;
+};
+
+/// Agent-facing Adsolut Contracts data (overview + detail).
+/// Gated by the per-user contracts_enabled flag (RequireAgent + in-handler
+/// flag check on the backend).
+export const contractsApi = {
+  list: (
+    search: string,
+    page: number,
+    pageSize = 50,
+    sort = "start",
+    dir: "asc" | "desc" = "desc",
+  ) => {
+    const qs = new URLSearchParams({
+      page: String(page),
+      pageSize: String(pageSize),
+      sort,
+      dir,
+    });
+    if (search.trim()) qs.set("search", search.trim());
+    return request<AdsolutContractListResponse>("GET", `/api/contracts/overview?${qs.toString()}`);
+  },
+  detail: (id: string) => request<AdsolutContractDetail>("GET", `/api/contracts/overview/${id}`),
+  resync: (id: string) => request<AdsolutContractDetail>("POST", `/api/contracts/overview/${id}/resync`),
+  sync: () => request<void>("POST", "/api/contracts/overview/sync"),
+};
+
 // ---- Back-office Timesheet tabs (Resolved / CWI) — v0.0.56 -----------
 
 export type BackofficeContext = "resolved" | "cwi" | "adsolut";
@@ -1353,6 +1459,26 @@ export const adsolutApi = {
     ),
   triggerErpArticlesSync: () =>
     request<void>("POST", "/api/admin/integrations/adsolut/erp/articles/sync"),
+  /// ERP Contracts (contracten) mirror — integration-page controls.
+  erpContractsState: () =>
+    request<AdsolutErpContractsState>(
+      "GET",
+      "/api/admin/integrations/adsolut/erp/contracts/state",
+    ),
+  triggerErpContractsSync: () =>
+    request<void>("POST", "/api/admin/integrations/adsolut/erp/contracts/sync"),
+  setErpContractsStatusFilter: (codes: string[]) =>
+    request<{ statusFilter: string[] }>(
+      "PUT",
+      "/api/admin/integrations/adsolut/erp/contracts/status-filter",
+      { codes },
+    ),
+  setErpContractsStatusColors: (colors: Record<string, string>) =>
+    request<{ statusColors: Record<string, string> }>(
+      "PUT",
+      "/api/admin/integrations/adsolut/erp/contracts/status-colors",
+      { colors },
+    ),
   debugPutPreview: (customerId: string) => {
     const qs = new URLSearchParams({ customerId });
     return request<AdsolutDebugPutPreview>(

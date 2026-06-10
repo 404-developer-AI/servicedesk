@@ -19,6 +19,7 @@ public static class SearchSourceKind
     public const string AdsolutSalesReceipts = "adsolut-sales-receipts";
     public const string AdsolutOrders = "adsolut-orders";
     public const string AdsolutArticles = "adsolut-articles";
+    public const string AdsolutContracts = "adsolut-contracts";
     public const string Signatures = "signatures";
 }
 

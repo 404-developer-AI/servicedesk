@@ -283,4 +283,20 @@ public static class AdsolutEventTypes
     /// One Articles sync-worker tick summary (seen / upserted + duration +
     /// outcome).
     public const string ErpArticlesSyncTick = "erp.articles.sync_tick";
+
+    // ---- v0.0.76 ERP Contracts (contracten) ---------------------------
+
+    /// GET /erp/v1/adm/{adm}/Contracts — one page of the cursor-paged contracts
+    /// list during a Contracts sync tick. Each page is one audit row; the list
+    /// item already carries the full contract incl. its article lines, so there
+    /// is no per-contract by-id fetch during a normal sync.
+    public const string ErpContractsList = "erp.contracts.list";
+
+    /// GET /erp/v1/adm/{adm}/Contracts/{id} — full by-id fetch used only for a
+    /// manual per-row resync.
+    public const string ErpContractsGet = "erp.contracts.get";
+
+    /// One Contracts sync-worker tick summary (seen / upserted + duration +
+    /// outcome).
+    public const string ErpContractsSyncTick = "erp.contracts.sync_tick";
 }

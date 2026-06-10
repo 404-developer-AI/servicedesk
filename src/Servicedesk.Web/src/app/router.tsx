@@ -25,6 +25,7 @@ import { OrdersPage } from "@/pages/orders/OrdersPage";
 import { StatisticsPage } from "@/pages/statistics/StatisticsPage";
 import { ContractsPage } from "@/pages/contracts/ContractsPage";
 import { ContractArticlesPage } from "@/pages/contracts/ContractArticlesPage";
+import { ContractsOverviewPage } from "@/pages/contracts/ContractsOverviewPage";
 import { ZammadImportRunsListPage } from "@/pages/settings/zammad/ZammadImportRunsListPage";
 import { ZammadImportRunDetailPage } from "@/pages/settings/zammad/ZammadImportRunDetailPage";
 import { MailSettingsPage } from "@/pages/settings/MailSettingsPage";
@@ -404,6 +405,21 @@ const contractArticlesRoute = createRoute({
   component: ContractArticlesPage,
 });
 
+// Contracts overview — second live module behind the Contracts hub (Adsolut
+// contracts mirror). Same contracts_enabled gate; the /api/contracts/overview
+// endpoints carry RequireAgent + an in-handler flag check server-side.
+const contractsOverviewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/contracts/overview",
+  beforeLoad: (args) => {
+    authGate(["Agent", "Admin"])(args);
+    if (!authedUser()?.contractsEnabled) {
+      throw redirect({ to: "/" });
+    }
+  },
+  component: ContractsOverviewPage,
+});
+
 const profileMentionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/profile/mentions",
@@ -758,6 +774,7 @@ const routeTree = rootRoute.addChildren([
   statisticsRoute,
   contractsRoute,
   contractArticlesRoute,
+  contractsOverviewRoute,
   settingsRoute.addChildren([
     settingsIndexRoute,
     settingsGeneralRoute,

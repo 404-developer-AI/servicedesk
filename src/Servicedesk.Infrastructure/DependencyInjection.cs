@@ -184,6 +184,16 @@ public static class DependencyInjection
         services.AddSingleton<IAdsolutArticlesSyncSignal, AdsolutArticlesSyncSignal>();
         services.AddHostedService<AdsolutArticlesSyncWorker>();
 
+        // ERP Contracts (contracten) mirror → Contracts overview (Contracts hub
+        // → Contracts overview). Opt-in via Adsolut.Erp.Contracts.Enabled;
+        // reuses the shared AdsolutHttpInvoker. The Contracts list returns full
+        // contracts incl. article lines inline, so the sync upserts straight
+        // from the list (no by-id N+1).
+        services.AddSingleton<IAdsolutContractsClient, AdsolutContractsClient>();
+        services.AddSingleton<IAdsolutContractRepository, AdsolutContractRepository>();
+        services.AddSingleton<IAdsolutContractsSyncSignal, AdsolutContractsSyncSignal>();
+        services.AddHostedService<AdsolutContractsSyncWorker>();
+
         // Telavox call-popup integration (v0.0.34). PAPI partner-token is
         // shared install-wide; CAPI tokens are auto-provisioned per linked
         // agent via /api/admin/integrations/telavox/agents/{userId}/provision
@@ -534,6 +544,12 @@ public static class DependencyInjection
         // contracts_enabled flag is set (read per-query).
         services.AddSingleton<Servicedesk.Infrastructure.Search.AdsolutArticleSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<Servicedesk.Infrastructure.Search.AdsolutArticleSearchSource>()));
+
+        // Adsolut contracts search-source (Contracts overview). Customer sees
+        // zero hits; Agent/Admin see hits only when their own contracts_enabled
+        // flag is set (read per-query). Honors the admin's display status filter.
+        services.AddSingleton<Servicedesk.Infrastructure.Search.AdsolutContractSearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<Servicedesk.Infrastructure.Search.AdsolutContractSearchSource>()));
 
         services.AddHostedService<DatabaseBootstrapper>();
         services.AddHostedService<SettingsSeeder>();

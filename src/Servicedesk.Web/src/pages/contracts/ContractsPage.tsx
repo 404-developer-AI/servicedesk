@@ -27,6 +27,7 @@ const MODULES: readonly ContractModule[] = [
     title: "Contracts overview",
     description: "All customer contracts in one place — terms, coverage and renewal dates.",
     icon: FileSignature,
+    to: "/contracts/overview",
   },
   {
     id: "m365-matching",
