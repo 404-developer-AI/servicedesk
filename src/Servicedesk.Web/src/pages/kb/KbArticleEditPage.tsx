@@ -108,6 +108,10 @@ export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
     onSuccess: () => {
       toast.success("Article saved.");
       queryClient.invalidateQueries({ queryKey: ["kb"] });
+      // Saving an edit means "I'm done writing" — drop back into the
+      // reader so the result is immediately visible. Create stays in edit
+      // mode on purpose (image uploads need a persisted article first).
+      navigate({ to: "/kb/articles/$articleId", params: { articleId: articleId! } });
     },
     onError: () => toast.error("Could not save article."),
   });
