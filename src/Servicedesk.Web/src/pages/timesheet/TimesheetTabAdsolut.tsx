@@ -109,6 +109,24 @@ function formatMinutes(minutes: number | null | undefined): string {
   return `${h}u ${m}m`;
 }
 
+/// Split a product line's name + description into a bold label and the free-text
+/// detail a technician added on the verkoopbon. Adsolut repeats the article
+/// label as the first line of `description` and writes the extra notes (bullets)
+/// underneath, so: label = name (or the description's first line when the name
+/// is empty), detail = every line after the first. CRs are stripped; the detail
+/// keeps its line breaks/indentation for whitespace-pre-line rendering.
+function splitLineText(
+  name: string | null | undefined,
+  description: string | null | undefined,
+): { label: string; detail: string } {
+  const desc = (description ?? "").replace(/\r/g, "");
+  const lines = desc.length > 0 ? desc.split("\n") : [];
+  const firstLine = lines.length > 0 ? lines[0].trim() : "";
+  const label = (name ?? "").trim() || firstLine || "—";
+  const detail = lines.slice(1).join("\n").trim();
+  return { label, detail };
+}
+
 // ---- column model -----------------------------------------------------
 
 type ColId =
@@ -1016,18 +1034,28 @@ function ReceiptDetail({ data }: { data: AdsolutSalesReceiptDetail }) {
               </tr>
             </thead>
             <tbody>
-              {lines.map((l) => (
-                <tr key={l.id} className="border-t border-glass">
-                  <td className="py-1 pr-3 text-muted-foreground">{l.lineNr ?? "—"}</td>
-                  <td className="py-1 pr-3 font-mono text-muted-foreground">{l.productCode ?? "—"}</td>
-                  <td className="py-1 pr-3 text-foreground">{l.name ?? l.description ?? "—"}</td>
-                  <td className="py-1 pr-3 text-right tabular-nums">{l.quantity ?? "—"}</td>
-                  <td className="py-1 pr-3 text-right tabular-nums">{formatMoney(l.unitPrice, currency)}</td>
-                  <td className="py-1 text-right tabular-nums text-foreground">
-                    {formatMoney(l.totalExclVat, currency)}
-                  </td>
-                </tr>
-              ))}
+              {lines.map((l) => {
+                const { label, detail } = splitLineText(l.name, l.description);
+                return (
+                  <tr key={l.id} className="border-t border-glass align-top">
+                    <td className="py-1 pr-3 text-muted-foreground">{l.lineNr ?? "—"}</td>
+                    <td className="py-1 pr-3 font-mono text-muted-foreground">{l.productCode ?? "—"}</td>
+                    <td className="py-1 pr-3">
+                      <span className="text-foreground">{label}</span>
+                      {detail && (
+                        <p className="mt-0.5 whitespace-pre-line text-[11px] leading-snug text-muted-foreground/80">
+                          {detail}
+                        </p>
+                      )}
+                    </td>
+                    <td className="py-1 pr-3 text-right tabular-nums">{l.quantity ?? "—"}</td>
+                    <td className="py-1 pr-3 text-right tabular-nums">{formatMoney(l.unitPrice, currency)}</td>
+                    <td className="py-1 text-right tabular-nums text-foreground">
+                      {formatMoney(l.totalExclVat, currency)}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
