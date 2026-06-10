@@ -40,6 +40,8 @@ import {
 } from "@/components/ui/tooltip";
 import {
   Building2,
+  Eye,
+  EyeOff,
   GitMerge,
   Globe,
   Link2,
@@ -63,6 +65,13 @@ type TicketSidePanelProps = {
   onRequestCompanyAssign?: () => void;
   pinned?: boolean;
   onTogglePin?: () => void;
+  /// Timeline view control — lets the agent reveal the otherwise-hidden
+  /// system/audit events in the activity feed for the duration of this
+  /// ticket view. State lives in the detail page (above both the feed and
+  /// this panel) so the choice survives the panel being collapsed.
+  showSystemEvents?: boolean;
+  onToggleSystemEvents?: () => void;
+  systemEventCount?: number;
   /// Relationship strip — all of these come from the detail-response and
   /// drive the "Relationships" block in the Status tab.
   mergedIntoTicketNumber?: string | null;
@@ -145,6 +154,9 @@ export function TicketSidePanel({
   onRequestCompanyAssign,
   pinned = false,
   onTogglePin,
+  showSystemEvents = false,
+  onToggleSystemEvents,
+  systemEventCount = 0,
   mergedIntoTicketNumber,
   mergedSourceTicketNumbers,
   mergedByUserName,
@@ -251,6 +263,9 @@ export function TicketSidePanel({
             onUpdate={onUpdate}
             companyDetail={companyDetail ?? null}
             onRequestCompanyAssign={onRequestCompanyAssign}
+            showSystemEvents={showSystemEvents}
+            onToggleSystemEvents={onToggleSystemEvents}
+            systemEventCount={systemEventCount}
             onRequestMerge={() => setMergeOpen(true)}
             onRequestLinkParent={() => setLinkParentOpen(true)}
             mergedIntoTicketNumber={mergedIntoTicketNumber ?? null}
@@ -301,6 +316,9 @@ function StatusTab({
   onRequestCompanyAssign,
   onRequestMerge,
   onRequestLinkParent,
+  showSystemEvents,
+  onToggleSystemEvents,
+  systemEventCount,
   mergedIntoTicketNumber,
   mergedSourceTicketNumbers,
   mergedByUserName,
@@ -315,6 +333,9 @@ function StatusTab({
   onRequestCompanyAssign?: () => void;
   onRequestMerge: () => void;
   onRequestLinkParent: () => void;
+  showSystemEvents: boolean;
+  onToggleSystemEvents?: () => void;
+  systemEventCount: number;
   mergedIntoTicketNumber: string | null;
   mergedSourceTicketNumbers: number[];
   mergedByUserName: string | null;
@@ -549,6 +570,41 @@ function StatusTab({
           <GitMerge className="h-3.5 w-3.5" />
           Merge into another ticket
         </Button>
+      )}
+
+      {onToggleSystemEvents && systemEventCount > 0 && (
+        <div className="space-y-2 rounded-md border border-glass-strong bg-glass px-2.5 py-2">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
+            Timeline
+          </div>
+          <button
+            type="button"
+            onClick={onToggleSystemEvents}
+            aria-pressed={showSystemEvents}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs transition-colors",
+              showSystemEvents
+                ? "border-primary/40 bg-primary/[0.08] text-foreground"
+                : "border-glass bg-glass text-muted-foreground hover:bg-glass-hover hover:text-foreground",
+            )}
+          >
+            {showSystemEvents ? (
+              <EyeOff className="h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <Eye className="h-3.5 w-3.5 shrink-0" />
+            )}
+            <span className="flex-1 text-left">
+              {showSystemEvents ? "Hide system events" : "Show system events"}
+            </span>
+            <span className="rounded px-1.5 py-0.5 text-[10px] font-medium border border-glass bg-glass-strong text-muted-foreground/80">
+              {systemEventCount}
+            </span>
+          </button>
+          <p className="text-[10px] leading-snug text-muted-foreground/60">
+            Status, assignment, priority and other audit events. Resets when
+            you leave the ticket.
+          </p>
+        </div>
       )}
 
       <ZammadImportBadge ticket={ticket} />

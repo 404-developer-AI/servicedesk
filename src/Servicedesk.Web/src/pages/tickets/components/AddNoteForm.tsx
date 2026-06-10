@@ -280,7 +280,8 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
       ref={formRef}
       className={cn(
         "glass-card p-4",
-        tab === "reply" && "ring-1 ring-amber-500/30",
+        tab === "note" && "ring-1 ring-amber-500/30",
+        tab === "reply" && "ring-1 ring-emerald-500/30",
         tab === "mail" && "ring-1 ring-sky-500/30"
       )}
     >
@@ -294,7 +295,7 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
           className={cn(
             "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
             tab === "note"
-              ? "bg-glass-strong text-foreground"
+              ? "bg-amber-500/15 text-amber-300 border border-amber-500/30"
               : "text-muted-foreground hover:text-foreground hover:bg-glass-hover"
           )}
         >
@@ -309,7 +310,7 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
           className={cn(
             "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
             tab === "reply"
-              ? "bg-amber-500/15 text-amber-300 border border-amber-500/30"
+              ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
               : "text-muted-foreground hover:text-foreground hover:bg-glass-hover"
           )}
         >
@@ -493,8 +494,8 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
           className={cn(
             "px-4 py-2 rounded-md text-sm font-medium transition-colors",
             !isInternal
-              ? "bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30"
-              : "bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30",
+              ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30"
+              : "bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30",
             mutation.isPending && "opacity-50 cursor-not-allowed"
           )}
         >
