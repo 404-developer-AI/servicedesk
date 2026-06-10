@@ -367,6 +367,38 @@ const EVENT_CONFIG: Record<string, EventConfig> = {
   },
 };
 
+/// Event types that are system/audit noise rather than real
+/// communication. Hidden from the timeline by default; an agent reveals
+/// them for an audit pass via the side-panel toggle. Exported so the
+/// detail page can both filter the feed and count what's hidden.
+const SYSTEM_EVENT_TYPES = new Set<string>([
+  "SystemNote",
+  "StatusChange",
+  "AssignmentChange",
+  "PriorityChange",
+  "QueueChange",
+  "CategoryChange",
+  "CompanyAssignment",
+  "RequesterChange",
+  "Created",
+]);
+
+export function isSystemEvent(event: TicketEvent): boolean {
+  return SYSTEM_EVENT_TYPES.has(event.eventType);
+}
+
+/// Left-edge accent colour per content-event type, tying each card back to
+/// its timeline dot — sky for mail (in/out), blue for internal notes,
+/// emerald for customer-visible replies. Internal events override this
+/// with amber (see the card className below).
+const CARD_ACCENT: Record<string, string> = {
+  MailReceived: "border-l-sky-400/60",
+  MailSent: "border-l-sky-500/50",
+  Mail: "border-l-sky-500/50",
+  Note: "border-l-blue-500/50",
+  Comment: "border-l-emerald-500/40",
+};
+
 function parseMetadata(json: string): Record<string, unknown> {
   try {
     return JSON.parse(json) as Record<string, unknown>;
@@ -846,16 +878,7 @@ function TimelineEvent({
   const mergedFromNumber = typeof eventMetadata.mergedFromTicketNumber === "number"
     ? eventMetadata.mergedFromTicketNumber
     : null;
-  const isSystemLike =
-    event.eventType === "SystemNote" ||
-    event.eventType === "StatusChange" ||
-    event.eventType === "AssignmentChange" ||
-    event.eventType === "PriorityChange" ||
-    event.eventType === "QueueChange" ||
-    event.eventType === "CategoryChange" ||
-    event.eventType === "CompanyAssignment" ||
-    event.eventType === "RequesterChange" ||
-    event.eventType === "Created";
+  const isSystemLike = isSystemEvent(event);
 
   const updateMutation = useMutation({
     mutationFn: () => {
@@ -951,8 +974,17 @@ function TimelineEvent({
       ) : (
         <div
           className={cn(
-            "group glass-panel p-4",
-            isPublicComment && "border-l-2 border-amber-500/50"
+            // Two visual axes on every content card:
+            //  · direction → left-accent colour (+ a sky wash on inbound mail)
+            //  · visibility → internal events get a warm amber ring + wash so
+            //    "the customer can't see this" reads at a glance.
+            "group glass-panel p-4 border-l-2 transition-colors",
+            event.isInternal
+              ? "border-l-amber-500/60"
+              : CARD_ACCENT[event.eventType] ?? "border-l-glass-strong",
+            event.isInternal
+              ? "ring-1 ring-amber-500/30 bg-amber-500/[0.04]"
+              : event.eventType === "MailReceived" && "bg-sky-500/[0.05]"
           )}
         >
           <div className="flex items-center justify-between gap-2 mb-2">
@@ -966,8 +998,13 @@ function TimelineEvent({
                 </span>
               )}
               {isPublicComment && (
-                <span className="rounded px-1.5 py-0.5 text-[10px] font-medium border border-amber-500/30 bg-amber-500/10 text-amber-300">
+                <span className="rounded px-1.5 py-0.5 text-[10px] font-medium border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
                   Public
+                </span>
+              )}
+              {event.isInternal && event.eventType !== "Note" && (
+                <span className="rounded px-1.5 py-0.5 text-[10px] font-medium border border-amber-500/30 bg-amber-500/10 text-amber-300">
+                  Internal
                 </span>
               )}
               {event.editedUtc && (
@@ -1043,7 +1080,7 @@ function TimelineEvent({
                   className={cn(
                     "px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
                     !draftInternal
-                      ? "bg-amber-500/15 text-amber-300 border border-amber-500/30"
+                      ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
                       : "text-muted-foreground hover:text-foreground hover:bg-glass-hover"
                   )}
                 >

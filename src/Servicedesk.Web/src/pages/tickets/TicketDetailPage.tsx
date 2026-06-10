@@ -28,7 +28,7 @@ import { useViewingTicket } from "@/hooks/usePresence";
 import { useTicketRealtime } from "@/hooks/useTicketRealtime";
 import { SlaPill } from "@/components/sla/SlaPill";
 import { TicketSidePanel } from "./components/TicketSidePanel";
-import { TicketTimeline } from "./components/TicketTimeline";
+import { TicketTimeline, isSystemEvent } from "./components/TicketTimeline";
 import { PinnedEventsSummary } from "./components/PinnedEventsSummary";
 import { TicketTimesheetPanel } from "./components/TicketTimesheetPanel";
 import { AddNoteForm } from "./components/AddNoteForm";
@@ -770,10 +770,27 @@ function TicketDetailBody({
   childTickets: { id: string; number: string }[];
 }) {
   const { matchesEvent, mode, query, registerScope } = useInTicketSearch();
+
+  // System/audit events (status, assignment, priority, …) are hidden from
+  // the feed by default so the timeline shows only real communication. An
+  // agent can reveal them for an audit pass via the side-panel toggle. The
+  // choice is local to this ticket view and resets when the agent leaves.
+  const [showSystemEvents, setShowSystemEvents] = React.useState(false);
+  React.useEffect(() => {
+    setShowSystemEvents(false);
+  }, [ticketId]);
+
   const visibleEvents = React.useMemo(() => {
-    if (mode !== "filter" || !query.trim()) return events;
-    return events.filter(matchesEvent);
-  }, [events, matchesEvent, mode, query]);
+    let list = events;
+    if (mode === "filter" && query.trim()) list = list.filter(matchesEvent);
+    if (!showSystemEvents) list = list.filter((e) => !isSystemEvent(e));
+    return list;
+  }, [events, matchesEvent, mode, query, showSystemEvents]);
+
+  const systemEventCount = React.useMemo(
+    () => events.filter(isSystemEvent).length,
+    [events],
+  );
 
   // Scroll the activity feed to the latest post when an agent opens (or
   // switches to) a ticket. We park a ref on the same scroll container the
@@ -978,6 +995,9 @@ function TicketDetailBody({
             onRequestCompanyAssign={onRequestCompanyAssign}
             pinned={sidePanelPinned}
             onTogglePin={() => setSidePanelPinned(!sidePanelPinned)}
+            showSystemEvents={showSystemEvents}
+            onToggleSystemEvents={() => setShowSystemEvents((v) => !v)}
+            systemEventCount={systemEventCount}
             mergedIntoTicketNumber={mergedIntoTicketNumber}
             mergedSourceTicketNumbers={mergedSourceTicketNumbers}
             mergedByUserName={mergedByUserName}
