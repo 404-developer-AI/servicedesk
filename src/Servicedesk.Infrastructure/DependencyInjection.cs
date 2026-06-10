@@ -175,6 +175,15 @@ public static class DependencyInjection
         services.AddSingleton<IAdsolutOrdersSyncSignal, AdsolutOrdersSyncSignal>();
         services.AddHostedService<AdsolutOrdersSyncWorker>();
 
+        // ERP Articles (artikels) mirror → Contract Articles list (Contracts →
+        // Contract Articles). Opt-in via Adsolut.Erp.Articles.Enabled; reuses
+        // the shared AdsolutHttpInvoker. The Articles list returns full records
+        // inline, so the sync upserts straight from the list (no by-id N+1).
+        services.AddSingleton<IAdsolutArticlesClient, AdsolutArticlesClient>();
+        services.AddSingleton<IAdsolutArticleRepository, AdsolutArticleRepository>();
+        services.AddSingleton<IAdsolutArticlesSyncSignal, AdsolutArticlesSyncSignal>();
+        services.AddHostedService<AdsolutArticlesSyncWorker>();
+
         // Telavox call-popup integration (v0.0.34). PAPI partner-token is
         // shared install-wide; CAPI tokens are auto-provisioned per linked
         // agent via /api/admin/integrations/telavox/agents/{userId}/provision
@@ -519,6 +528,12 @@ public static class DependencyInjection
         // is set (read per-query). Honors the admin's display status filter.
         services.AddSingleton<Servicedesk.Infrastructure.Search.AdsolutOrderSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<Servicedesk.Infrastructure.Search.AdsolutOrderSearchSource>()));
+
+        // Adsolut article-catalogue search-source (Contract Articles). Customer
+        // sees zero hits; Agent/Admin see hits only when their own
+        // contracts_enabled flag is set (read per-query).
+        services.AddSingleton<Servicedesk.Infrastructure.Search.AdsolutArticleSearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<Servicedesk.Infrastructure.Search.AdsolutArticleSearchSource>()));
 
         services.AddHostedService<DatabaseBootstrapper>();
         services.AddHostedService<SettingsSeeder>();

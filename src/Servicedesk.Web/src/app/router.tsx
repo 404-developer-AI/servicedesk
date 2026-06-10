@@ -24,6 +24,7 @@ import { AssetsPage } from "@/pages/assets/AssetsPage";
 import { OrdersPage } from "@/pages/orders/OrdersPage";
 import { StatisticsPage } from "@/pages/statistics/StatisticsPage";
 import { ContractsPage } from "@/pages/contracts/ContractsPage";
+import { ContractArticlesPage } from "@/pages/contracts/ContractArticlesPage";
 import { ZammadImportRunsListPage } from "@/pages/settings/zammad/ZammadImportRunsListPage";
 import { ZammadImportRunDetailPage } from "@/pages/settings/zammad/ZammadImportRunDetailPage";
 import { MailSettingsPage } from "@/pages/settings/MailSettingsPage";
@@ -387,6 +388,22 @@ const contractsRoute = createRoute({
   component: ContractsPage,
 });
 
+// Contract Articles — first live module behind the Contracts hub (Adsolut
+// article-catalogue mirror). Same contracts_enabled gate as the hub; the
+// /api/contracts/articles endpoints carry RequireAgent + an in-handler flag
+// check, so this route gate is UI-side defence-in-depth.
+const contractArticlesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/contracts/articles",
+  beforeLoad: (args) => {
+    authGate(["Agent", "Admin"])(args);
+    if (!authedUser()?.contractsEnabled) {
+      throw redirect({ to: "/" });
+    }
+  },
+  component: ContractArticlesPage,
+});
+
 const profileMentionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/profile/mentions",
@@ -740,6 +757,7 @@ const routeTree = rootRoute.addChildren([
   ordersRoute,
   statisticsRoute,
   contractsRoute,
+  contractArticlesRoute,
   settingsRoute.addChildren([
     settingsIndexRoute,
     settingsGeneralRoute,

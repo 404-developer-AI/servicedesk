@@ -266,6 +266,19 @@ public static class SettingKeys
         /// The special key NO_STATUS colours order lines/orders with no linked
         /// supplier order. Edited on the integration page; empty = neutral.
         public const string ErpOrdersSupplierStatusColors = "Adsolut.Erp.Orders.SupplierStatusColors";
+
+        // ERP Articles (artikels) pull (v0.0.76). Same opt-in ERP slice as
+        // Orders/SalesReceipts (WK.BE.ERP.Read scope). Feeds the "Contract
+        // Articles" module behind the Contracts hub. Default OFF.
+        /// Master toggle for mirroring the Adsolut ERP article catalogue into
+        /// the Contract Articles list (Contracts → Contract Articles). Off by
+        /// default; flipping it on starts the Articles sync worker ticking
+        /// (provided the integration is connected, a dossier is active, and the
+        /// ERP scope is granted).
+        public const string ErpArticlesEnabled = "Adsolut.Erp.Articles.Enabled";
+
+        /// How often (minutes) the Articles sync worker ticks. Floor 5.
+        public const string ErpArticlesSyncIntervalMinutes = "Adsolut.Erp.Articles.SyncIntervalMinutes";
     }
 
     /// Telavox call-popup integration (v0.0.34). Single-install model: one
@@ -1054,6 +1067,11 @@ public static class SettingDefaults
             "Comma-separated Adsolut order state codes (e.g. 'OPEN') the Orders overview + global search show. Empty = show all statuses. Ticked by the admin on the integration page; the available statuses are discovered dynamically from the orders seen in the mirror. DISPLAY-ONLY: the mirror always holds every status; this selection only narrows what the overview and global search surface — deselecting a status hides it (it is never purged) and re-ticking it shows it again with no re-sync."),
         new SettingDefault(SettingKeys.Adsolut.ErpOrdersSupplierStatusColors, "", "string", "Adsolut",
             "JSON map of Adsolut supplier-order ('bestelling') status code to hex colour, e.g. {\"ONTV\":\"#22c55e\",\"OPEN\":\"#f59e0b\",\"NO_STATUS\":\"#9ca3af\"}. Drives the coloured status chips in the order-detail Bestellingen block. The special key NO_STATUS colours lines/orders without a linked supplier order. Edited on the integration page; empty = neutral grey."),
+
+        new SettingDefault(SettingKeys.Adsolut.ErpArticlesEnabled, "false", "bool", "Adsolut",
+            "When true, the Articles sync worker mirrors the Adsolut ERP article catalogue (artikels) into the Contract Articles list (Contracts → Contract Articles). Requires the WK.BE.ERP.Read scope on the active connection (tick it in the scopes picker + reconnect) and an active dossier. Off by default — Accounting-only installs stay silent. The Articles list returns full article records inline (code, multi-language name/description, vat code) via cursor pagination, so each tick upserts straight from the list. Per-user access is the Contracts feature flag."),
+        new SettingDefault(SettingKeys.Adsolut.ErpArticlesSyncIntervalMinutes, "60", "int", "Adsolut",
+            "How often (minutes) the Adsolut Articles sync worker ticks. Floor 5 — set lower and the worker silently clamps. Independent from the Companies + SalesReceipts + Orders sync intervals. Each tick is a delta-sync keyed on the article's lastModified (?ModifiedSince=lastSuccessfulSync)."),
 
         // Telavox — v0.0.34 call-popup integration. Sync-gating discipline:
         // Enabled defaults OFF so a fresh install is silent until an admin

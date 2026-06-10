@@ -4277,6 +4277,47 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- feature-flags update path rejects Customers).
         ALTER TABLE users
             ADD COLUMN IF NOT EXISTS contracts_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+        -- v0.0.76 Contracts — Articles mirror. Read-mirror of the Adsolut ERP
+        -- Articles endpoint (GET /erp/v1/adm/{adm}/Articles), the catalogue of
+        -- article/product master records. First data-bearing module behind the
+        -- Contracts hub ("Contract Articles" tile). Same ERP machinery as the
+        -- Orders/SalesReceipts slices (WK.BE.ERP.Read scope, cursor pagination,
+        -- ModifiedSince delta). A flat reference list — no lines, no customer,
+        -- no status. name/description come back as multi-language Translation[]
+        -- (the Nl value is stored); vat_code/vat_rate come from the inline
+        -- vatCode object (code + the Nl description, e.g. "21%").
+        CREATE TABLE IF NOT EXISTS adsolut_articles (
+            id                     UUID        PRIMARY KEY,
+            code                   TEXT        NULL,
+            name                   TEXT        NULL,
+            description            TEXT        NULL,
+            vat_code               TEXT        NULL,
+            vat_rate               TEXT        NULL,
+            active                 BOOLEAN     NOT NULL DEFAULT TRUE,
+            adsolut_created_utc    TIMESTAMPTZ NULL,
+            adsolut_last_modified  TIMESTAMPTZ NULL,
+            synced_utc             TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_adsolut_articles_code
+            ON adsolut_articles (code);
+        CREATE INDEX IF NOT EXISTS ix_adsolut_articles_active
+            ON adsolut_articles (active);
+
+        -- Singleton sync-state for the Articles mirror. Own cursor, separate
+        -- from Orders/SalesReceipts/Companies so enabling/pausing one never
+        -- disturbs the others.
+        CREATE TABLE IF NOT EXISTS adsolut_article_sync_state (
+            id                  INTEGER     PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+            last_full_sync_utc  TIMESTAMPTZ NULL,
+            last_delta_sync_utc TIMESTAMPTZ NULL,
+            last_error          TEXT        NULL,
+            last_error_utc      TIMESTAMPTZ NULL,
+            articles_seen       INTEGER     NOT NULL DEFAULT 0,
+            articles_upserted   INTEGER     NOT NULL DEFAULT 0,
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
         """;
 
     private readonly NpgsqlDataSource _dataSource;
