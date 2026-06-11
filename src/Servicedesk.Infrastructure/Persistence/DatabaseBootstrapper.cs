@@ -4410,6 +4410,34 @@ public sealed class DatabaseBootstrapper : IHostedService
             contracts_upserted  INTEGER     NOT NULL DEFAULT 0,
             updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now()
         );
+
+        -- ===================================================================
+        -- v0.0.77 Outbound mail — large attachments (uploadSession).
+        --
+        -- The outbound total-attachment cap default rises 3 MB → 25 MB now
+        -- that parts above Graph's ~3 MB single-request limit ship via a
+        -- chunked upload session on the draft. Existing installs whose
+        -- Mail.MaxOutboundTotalBytes still sits on the old 3 MB default get
+        -- bumped to the new default once; any admin-tuned value (≠ 3145728)
+        -- is preserved. Behind a data_migrations marker because the effect
+        -- (a settings.value write) is not idempotent. On a fresh install the
+        -- settings row doesn't exist yet when this runs — the UPDATE matches
+        -- nothing and EnsureDefaultsAsync later seeds 25 MB directly.
+        DO $do$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM data_migrations
+                WHERE name = 'v0_0_77_raise_outbound_mail_cap_default'
+            ) THEN
+                UPDATE settings
+                SET value = '26214400',
+                    updated_utc = now()
+                WHERE key = 'Mail.MaxOutboundTotalBytes'
+                  AND value = '3145728';
+                INSERT INTO data_migrations (name)
+                    VALUES ('v0_0_77_raise_outbound_mail_cap_default');
+            END IF;
+        END $do$;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

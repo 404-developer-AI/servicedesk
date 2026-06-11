@@ -285,32 +285,136 @@ public sealed class GraphMailClient : IGraphMailClient
         if (string.IsNullOrWhiteSpace(internetMessageId))
             throw new InvalidOperationException($"Graph did not assign an internetMessageId to draft {draftId}.");
 
-        // Attach files *before* send. fileAttachment carries contentBytes
-        // base64-encoded in the draft body — only safe for items <3 MB
-        // total, which is why OutboundMailService caps via
-        // Mail.MaxOutboundTotalBytes. Larger payloads need uploadSession
-        // (deferred — see ROADMAP).
-        if (message.Attachments is { Count: > 0 } items)
+        // Attach files *before* send. Small parts (≤ GraphMailLimits.
+        // SimpleAttachmentMaxBytes) ship as a single fileAttachment POST with
+        // contentBytes base64-encoded in the body — cheapest for inline
+        // images and small files. Larger parts exceed Graph's single-request
+        // limit and are streamed through an upload session on the draft.
+        // OutboundMailService still pre-flights the *total* against
+        // Mail.MaxOutboundTotalBytes so an over-size payload surfaces as a
+        // clean 413 before any Graph call instead of a mid-send error.
+        //
+        // Any failure after draft creation deletes the draft (best-effort)
+        // so an aborted send never leaves an orphan in the Drafts folder.
+        try
         {
-            foreach (var a in items)
+            if (message.Attachments is { Count: > 0 } items)
             {
-                var attachment = new FileAttachment
+                foreach (var a in items)
                 {
-                    Name = string.IsNullOrWhiteSpace(a.FileName) ? "attachment" : a.FileName,
-                    ContentType = string.IsNullOrWhiteSpace(a.ContentType) ? "application/octet-stream" : a.ContentType,
-                    ContentBytes = a.Bytes,
-                    IsInline = a.IsInline,
-                    // ContentId on inline parts links the file to the cid:
-                    // reference rewritten into the body. Outbound mail
-                    // clients render the image inline iff the cid matches.
-                    ContentId = string.IsNullOrWhiteSpace(a.ContentId) ? null : a.ContentId,
-                };
-                await graph.Users[message.FromMailbox].Messages[draftId].Attachments.PostAsync(attachment, cancellationToken: ct);
+                    if (GraphMailLimits.RequiresUploadSession(a.SizeBytes))
+                    {
+                        await UploadAttachmentViaSessionAsync(graph, message.FromMailbox, draftId, a, ct);
+                    }
+                    else
+                    {
+                        await PostSmallAttachmentAsync(graph, message.FromMailbox, draftId, a, ct);
+                    }
+                }
             }
+
+            await graph.Users[message.FromMailbox].Messages[draftId].Send.PostAsync(cancellationToken: ct);
+        }
+        catch
+        {
+            await TryDeleteDraftAsync(graph, message.FromMailbox, draftId);
+            throw;
         }
 
-        await graph.Users[message.FromMailbox].Messages[draftId].Send.PostAsync(cancellationToken: ct);
         return new GraphSentMailResult(internetMessageId, DateTimeOffset.UtcNow);
+    }
+
+    private static async Task PostSmallAttachmentAsync(
+        GraphServiceClient graph, string mailbox, string draftId, GraphOutboundAttachment a, CancellationToken ct)
+    {
+        byte[] bytes;
+        await using (var content = await a.OpenContentAsync(ct))
+        using (var ms = new MemoryStream())
+        {
+            await content.CopyToAsync(ms, ct);
+            bytes = ms.ToArray();
+        }
+
+        var attachment = new FileAttachment
+        {
+            Name = string.IsNullOrWhiteSpace(a.FileName) ? "attachment" : a.FileName,
+            ContentType = string.IsNullOrWhiteSpace(a.ContentType) ? "application/octet-stream" : a.ContentType,
+            ContentBytes = bytes,
+            IsInline = a.IsInline,
+            // ContentId on inline parts links the file to the cid:
+            // reference rewritten into the body. Outbound mail
+            // clients render the image inline iff the cid matches.
+            ContentId = string.IsNullOrWhiteSpace(a.ContentId) ? null : a.ContentId,
+        };
+        await graph.Users[mailbox].Messages[draftId].Attachments.PostAsync(attachment, cancellationToken: ct);
+    }
+
+    private static async Task UploadAttachmentViaSessionAsync(
+        GraphServiceClient graph, string mailbox, string draftId, GraphOutboundAttachment a, CancellationToken ct)
+    {
+        var item = new AttachmentItem
+        {
+            AttachmentType = AttachmentType.File,
+            Name = string.IsNullOrWhiteSpace(a.FileName) ? "attachment" : a.FileName,
+            ContentType = string.IsNullOrWhiteSpace(a.ContentType) ? "application/octet-stream" : a.ContentType,
+            Size = a.SizeBytes,
+            IsInline = a.IsInline,
+        };
+        // Same Kiota backing-store quirk as the draft headers above: a
+        // property assigned null still lands in the serialized JSON, so only
+        // assign contentId when there is a value.
+        if (!string.IsNullOrWhiteSpace(a.ContentId))
+        {
+            item.ContentId = a.ContentId;
+        }
+
+        var session = await graph.Users[mailbox].Messages[draftId].Attachments.CreateUploadSession.PostAsync(
+            new Microsoft.Graph.Users.Item.Messages.Item.Attachments.CreateUploadSession.CreateUploadSessionPostRequestBody
+            {
+                AttachmentItem = item,
+            }, cancellationToken: ct);
+        if (string.IsNullOrWhiteSpace(session?.UploadUrl))
+            throw new InvalidOperationException(
+                $"Graph did not return an upload session for attachment '{a.FileName}' on draft {draftId}.");
+
+        await using var content = await a.OpenContentAsync(ct);
+        var uploadTask = new LargeFileUploadTask<FileAttachment>(
+            session, content, GraphMailLimits.UploadChunkBytes, graph.RequestAdapter);
+
+        UploadResult<FileAttachment> result;
+        try
+        {
+            result = await uploadTask.UploadAsync(cancellationToken: ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Distinct from the pre-flight 413: the cap check passed but the
+            // chunked transfer itself broke (network, Graph 5xx, expired
+            // session). The caller's catch deletes the draft.
+            throw new InvalidOperationException(
+                $"Upload session for attachment '{a.FileName}' ({a.SizeBytes} bytes) failed mid-stream; the mail was not sent.", ex);
+        }
+
+        if (!result.UploadSucceeded)
+            throw new InvalidOperationException(
+                $"Upload session for attachment '{a.FileName}' ({a.SizeBytes} bytes) did not complete; the mail was not sent.");
+    }
+
+    /// Best-effort cleanup after a failed attach/send. Deliberately not
+    /// cancellation-aware — the send's own token may be the reason we're
+    /// here, and the delete should still be attempted. Failure to delete is
+    /// swallowed: the orphaned draft is cosmetic, and the original exception
+    /// is the one that must propagate to the caller/logs.
+    private static async Task TryDeleteDraftAsync(GraphServiceClient graph, string mailbox, string draftId)
+    {
+        try
+        {
+            await graph.Users[mailbox].Messages[draftId].DeleteAsync();
+        }
+        catch
+        {
+            // Intentionally ignored — see doc comment.
+        }
     }
 
     private static List<InternetMessageHeader>? ToHeaderList(IReadOnlyList<GraphOutboundHeader>? source)

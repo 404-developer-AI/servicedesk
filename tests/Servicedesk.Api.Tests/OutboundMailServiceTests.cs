@@ -106,6 +106,70 @@ public sealed class OutboundMailServiceTests
     }
 
     [Fact]
+    public async Task Large_attachment_under_cap_is_sent_with_size_and_streamable_content()
+    {
+        // 8 MB is above Graph's ~3 MB simple-POST limit but under the 25 MB
+        // cap — since v0.0.77 this must go through (GraphMailClient picks the
+        // upload-session transport from SizeBytes; here we assert the
+        // contract it needs: the size and a lazily-openable content stream).
+        var big = ReadyAttachment("application/pdf", "big.pdf", 8L * 1024 * 1024);
+        var (svc, graph, _, _, _) = Build(attachments: new[] { big }, maxOutboundBytes: 25L * 1024 * 1024);
+
+        var result = await svc.SendAsync(new OutboundMailRequest(
+            TicketId, AuthorId, OutboundMailKind.New,
+            To: new[] { new GraphRecipient("dest@example.com", "D") },
+            Cc: Array.Empty<GraphRecipient>(),
+            Bcc: Array.Empty<GraphRecipient>(),
+            Subject: "Subj",
+            BodyHtml: "<p>See attachment.</p>",
+            AttachmentIds: new[] { big.Id }), default);
+
+        Assert.Equal(OutboundMailStatus.Sent, result.Status);
+        var sent = Assert.Single(graph.LastMessage!.Attachments!);
+        Assert.Equal(8L * 1024 * 1024, sent.SizeBytes);
+
+        await using var content = await sent.OpenContentAsync(default);
+        using var reader = new StreamReader(content);
+        Assert.Equal("blob-bytes-for-hash-big.pdf", await reader.ReadToEndAsync());
+    }
+
+    [Fact]
+    public async Task Unset_cap_setting_falls_back_to_25MB_default()
+    {
+        // A zero/unset Mail.MaxOutboundTotalBytes falls back to the same
+        // 25 MB default the settings registration carries — a 10 MB part
+        // passes (the pre-v0.0.77 fallback of 3 MB would have rejected it)
+        // while 26 MB still trips the cap.
+        var tenMb = ReadyAttachment("application/pdf", "ten.pdf", 10L * 1024 * 1024);
+        var (svc, graph, _, _, _) = Build(attachments: new[] { tenMb }, maxOutboundBytes: 0);
+
+        var ok = await svc.SendAsync(new OutboundMailRequest(
+            TicketId, AuthorId, OutboundMailKind.New,
+            To: new[] { new GraphRecipient("dest@example.com", "D") },
+            Cc: Array.Empty<GraphRecipient>(),
+            Bcc: Array.Empty<GraphRecipient>(),
+            Subject: "Subj",
+            BodyHtml: "<p>x</p>",
+            AttachmentIds: new[] { tenMb.Id }), default);
+        Assert.Equal(OutboundMailStatus.Sent, ok.Status);
+        Assert.NotNull(graph.LastMessage);
+
+        var huge = ReadyAttachment("application/zip", "huge.zip", 26L * 1024 * 1024);
+        var (svc2, graph2, _, _, _) = Build(attachments: new[] { huge }, maxOutboundBytes: 0);
+
+        var rejected = await svc2.SendAsync(new OutboundMailRequest(
+            TicketId, AuthorId, OutboundMailKind.New,
+            To: new[] { new GraphRecipient("dest@example.com", "D") },
+            Cc: Array.Empty<GraphRecipient>(),
+            Bcc: Array.Empty<GraphRecipient>(),
+            Subject: "Subj",
+            BodyHtml: "<p>x</p>",
+            AttachmentIds: new[] { huge.Id }), default);
+        Assert.Equal(OutboundMailStatus.AttachmentTooLarge, rejected.Status);
+        Assert.Null(graph2.LastMessage);
+    }
+
+    [Fact]
     public async Task Attachment_owned_by_other_ticket_is_silently_dropped()
     {
         var foreign = ReadyAttachment("application/pdf", "x.pdf", 1024) with

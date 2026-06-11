@@ -126,17 +126,29 @@ public sealed record GraphOutboundMessage(
 /// One custom RFC-5322 header set on an outbound message.
 public sealed record GraphOutboundHeader(string Name, string Value);
 
-/// One file-attachment to ship with an outbound mail. Bytes are passed
-/// in-memory because Graph's <c>fileAttachment</c> resource embeds the bytes
-/// as base64 in the draft-create body. <see cref="ContentId"/> is set for
-/// inline images (referenced from the body via <c>cid:{ContentId}</c>) and
-/// must be unique within the message; left null for plain attachments.
+/// One file-attachment to ship with an outbound mail. Content is exposed as
+/// a stream factory instead of a byte[] so large parts can be streamed from
+/// blob-storage into a Graph upload session without being buffered whole;
+/// <see cref="GraphMailClient"/> picks base64 vs upload-session per part from
+/// <see cref="SizeBytes"/> (see <see cref="GraphMailLimits"/>).
+/// <see cref="ContentId"/> is set for inline images (referenced from the body
+/// via <c>cid:{ContentId}</c>) and must be unique within the message; left
+/// null for plain attachments.
 public sealed record GraphOutboundAttachment(
     string FileName,
     string ContentType,
-    byte[] Bytes,
+    long SizeBytes,
+    Func<CancellationToken, Task<Stream>> OpenContentAsync,
     bool IsInline,
-    string? ContentId);
+    string? ContentId)
+{
+    /// Convenience for parts that are already in memory (signature images).
+    public static GraphOutboundAttachment FromBytes(
+        string fileName, string contentType, byte[] bytes, bool isInline, string? contentId)
+        => new(fileName, contentType, bytes.LongLength,
+            _ => Task.FromResult<Stream>(new MemoryStream(bytes, writable: false)),
+            isInline, contentId);
+}
 
 /// Result of a successful send. InternetMessageId is the RFC-5322 id the
 /// recipient will see in <c>In-Reply-To</c> on their reply — we persist it
