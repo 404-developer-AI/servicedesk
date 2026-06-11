@@ -1520,7 +1520,8 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                    company_id AS CompanyId,
                    awaiting_company_assignment AS AwaitingCompanyAssignment,
                    company_resolved_via AS CompanyResolvedVia,
-                   merged_into_ticket_id AS MergedIntoTicketId
+                   merged_into_ticket_id AS MergedIntoTicketId,
+                   ticket_type_id AS TicketTypeId
             FROM tickets WHERE id = @sourceTicketId AND is_deleted = FALSE
             FOR UPDATE
             """;
@@ -1581,17 +1582,18 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             return new SplitResult(false, null, null, source.Number, SplitFailureReason.DefaultsMissing);
         }
 
-        // Create the new ticket. Requester + company carry over from the source
-        // (the email came from the same person), but queue/priority/status are
-        // system defaults so the agent can re-triage explicitly. Source field
-        // 'Split' marks the intake channel for reporting.
+        // Create the new ticket. Requester + company + ticket type carry over
+        // from the source (the email came from the same person on the same kind
+        // of ticket), but queue/priority/status are system defaults so the agent
+        // can re-triage explicitly. Source field 'Split' marks the intake
+        // channel for reporting.
         const string insertTicketSql = """
             INSERT INTO tickets (subject, requester_contact_id, queue_id,
-                                 status_id, priority_id, source,
+                                 status_id, priority_id, source, ticket_type_id,
                                  company_id, awaiting_company_assignment, company_resolved_via,
                                  split_from_ticket_id, split_from_utc, split_from_user_id)
             VALUES (@Subject, @RequesterContactId, @QueueId,
-                    @StatusId, @PriorityId, 'Split',
+                    @StatusId, @PriorityId, 'Split', @TicketTypeId,
                     @CompanyId, @AwaitingCompanyAssignment, @CompanyResolvedVia,
                     @SplitFromTicketId, now(), @SplitFromUserId)
             RETURNING id, number
@@ -1604,6 +1606,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                 QueueId = defaultQueueId.Value,
                 StatusId = defaultStatusId.Value,
                 PriorityId = defaultPriorityId.Value,
+                source.TicketTypeId,
                 source.CompanyId,
                 source.AwaitingCompanyAssignment,
                 source.CompanyResolvedVia,
@@ -1706,6 +1709,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         public bool AwaitingCompanyAssignment { get; set; }
         public string? CompanyResolvedVia { get; set; }
         public Guid? MergedIntoTicketId { get; set; }
+        public Guid TicketTypeId { get; set; }
     }
 
     private sealed class SplitMailEventRow
@@ -1736,7 +1740,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         const string insertTickets = """
             INSERT INTO tickets (
                 subject, requester_contact_id, queue_id, status_id, priority_id,
-                source, created_utc, updated_utc)
+                source, ticket_type_id, created_utc, updated_utc)
             SELECT
                 'Benchmark ticket ' || g,
                 @contactId,
@@ -1744,6 +1748,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                 (SELECT id FROM statuses   WHERE is_active ORDER BY random() LIMIT 1),
                 (SELECT id FROM priorities WHERE is_active ORDER BY random() LIMIT 1),
                 'Api',
+                (SELECT id FROM ticket_types WHERE code = 'support' LIMIT 1),
                 now() - (g * interval '1 second'),
                 now() - (g * interval '1 second')
             FROM generate_series(1, @count) g
