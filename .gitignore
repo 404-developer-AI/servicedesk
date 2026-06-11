@@ -165,6 +165,7 @@ logo/
 # Claude Code local settings
 .claude/
 .claude-scratch/
+.mcp.json
 
 # Local-only logs from manual smoke tests
 manual-logs/
