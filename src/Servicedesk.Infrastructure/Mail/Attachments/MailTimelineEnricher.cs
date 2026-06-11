@@ -87,7 +87,10 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
                 }
             }
 
-            _logger.LogInformation(
+            // Debug-level on purpose: this fires for every inbound mail on every
+            // ticket-detail load — useful when troubleshooting attachment
+            // processing, pure noise otherwise. Real failures log as warnings below.
+            _logger.LogDebug(
                 "[MailEnrich] ticket={TicketId} mail={MailId} attachments total={Total} ready={Ready} pending={Pending} failed={Failed} cid replaced={Replaced} unmatched={Unmatched}",
                 ticketId, mailId, attachments.Count, readyCount, pendingCount, failedCount, cidReplaced, cidUnmatched);
 
