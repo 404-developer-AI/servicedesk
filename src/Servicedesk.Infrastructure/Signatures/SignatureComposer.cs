@@ -143,12 +143,8 @@ public sealed class SignatureComposer : ISignatureComposer
             }
             using var ms = new MemoryStream();
             await blob.CopyToAsync(ms, ct);
-            attachments.Add(new GraphOutboundAttachment(
-                FileName: a.FileName,
-                ContentType: a.MimeType,
-                Bytes: ms.ToArray(),
-                IsInline: true,
-                ContentId: a.Cid));
+            attachments.Add(GraphOutboundAttachment.FromBytes(
+                a.FileName, a.MimeType, ms.ToArray(), isInline: true, contentId: a.Cid));
         }
 
         return new ComposedSignature(rendered.Html, attachments);

@@ -125,7 +125,7 @@ public sealed class OutboundMailService : IOutboundMailService
         if (request.AttachmentIds is { Count: > 0 } incomingIds)
         {
             var totalCap = await _settings.GetAsync<long>(SettingKeys.Mail.MaxOutboundTotalBytes, ct);
-            if (totalCap <= 0) totalCap = 3 * 1024 * 1024;
+            if (totalCap <= 0) totalCap = 25 * 1024 * 1024;
 
             long running = 0;
             foreach (var attId in incomingIds.Distinct())
@@ -166,16 +166,24 @@ public sealed class OutboundMailService : IOutboundMailService
                     preparedBody = ReplaceAttachmentUrlWithCid(preparedBody, canonicalUrl, contentId);
                 }
 
-                await using var blobStream = await _blobs.OpenReadAsync(row.ContentHash!, ct)
-                    ?? throw new InvalidOperationException(
-                        $"Attachment {row.Id} is Ready but blob {row.ContentHash} is missing from storage.");
-                using var ms = new MemoryStream();
-                await blobStream.CopyToAsync(ms, ct);
+                // Existence is pre-flighted here so a missing blob fails the
+                // request before the Graph draft exists; the bytes themselves
+                // are opened lazily inside GraphMailClient so a large part
+                // streams straight from blob-storage into the upload session
+                // instead of being buffered whole.
+                var contentHash = row.ContentHash!;
+                var attachmentId = row.Id;
+                if (!await _blobs.ExistsAsync(contentHash, ct))
+                    throw new InvalidOperationException(
+                        $"Attachment {attachmentId} is Ready but blob {contentHash} is missing from storage.");
 
                 graphAttachments.Add(new GraphOutboundAttachment(
                     FileName: row.OriginalFilename,
                     ContentType: row.MimeType,
-                    Bytes: ms.ToArray(),
+                    SizeBytes: row.SizeBytes,
+                    OpenContentAsync: async openCt => await _blobs.OpenReadAsync(contentHash, openCt)
+                        ?? throw new InvalidOperationException(
+                            $"Attachment {attachmentId} is Ready but blob {contentHash} is missing from storage."),
                     IsInline: isInline,
                     ContentId: contentId));
 

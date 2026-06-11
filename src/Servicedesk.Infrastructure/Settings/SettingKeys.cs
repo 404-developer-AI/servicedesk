@@ -996,8 +996,8 @@ public static class SettingDefaults
             "[\"gmail.com\",\"outlook.com\",\"hotmail.com\",\"live.com\",\"yahoo.com\",\"icloud.com\",\"me.com\",\"msn.com\",\"aol.com\",\"proton.me\",\"protonmail.com\",\"pm.me\",\"mail.com\",\"gmx.com\",\"gmx.net\",\"yandex.com\",\"yandex.ru\",\"zoho.com\",\"fastmail.com\",\"tutanota.com\",\"web.de\",\"t-online.de\",\"orange.fr\",\"laposte.net\",\"free.fr\",\"telenet.be\",\"skynet.be\"]",
             "json", "Mail",
             "JSON array of freemail/public domains that must never auto-link to a company. The Companies → Domains endpoint also refuses to store any of these as a company domain. Manual contact↔company linking is unaffected."),
-        new SettingDefault(SettingKeys.Mail.MaxOutboundTotalBytes, "3145728", "int", "Mail",
-            "Hard cap (bytes) on the combined size of attachments allowed on a single outbound mail. Default 3 MB matches Microsoft Graph's inline-fileAttachment limit; mails above this are rejected with a clear error."),
+        new SettingDefault(SettingKeys.Mail.MaxOutboundTotalBytes, "26214400", "int", "Mail",
+            "Hard cap (bytes) on the combined size of attachments allowed on a single outbound mail; mails above this are rejected with a clear error. Default 25 MB matches the per-file upload limit (Storage.MaxAttachmentBytes). Parts above ~3 MB are streamed to Microsoft Graph via an upload session automatically; keep this cap within your Exchange Online message-size limit (MaxSendSize)."),
 
         // Companies — v0.0.9.
         new SettingDefault(SettingKeys.Companies.SearchLimit, "25", "int", "Companies",
