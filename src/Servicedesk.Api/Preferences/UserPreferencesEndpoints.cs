@@ -315,7 +315,69 @@ public static class UserPreferencesEndpoints
             return Results.Ok(new PinnedViewsPreference(clean));
         }).WithName("UpdatePinnedViews").WithOpenApi();
 
+        // ── Post-close redirect (v0.0.78) ──
+        //
+        // Per-user choice of where the sidebar's "remove from Recent" (×)
+        // action sends the agent when they dismiss the ticket they currently
+        // have open. Stored as a single token under 'nav:post-close-redirect':
+        //   "dashboard"      → "/"            (factory default)
+        //   "timesheet"      → "/timesheet"
+        //   "view:<guid>"    → "/tickets?viewId=<guid>"
+        // The SPA only offers destinations the agent can actually reach and
+        // re-intersects against the live view set + timesheet flag at click
+        // time, so a stale "view:" token (deleted / access revoked) simply
+        // falls back to the dashboard — no broken navigation.
+
+        group.MapGet("/post-close-redirect", async (
+            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            await using var conn = await dataSource.OpenConnectionAsync(ct);
+            var raw = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
+                "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'nav:post-close-redirect'",
+                new { userId }, cancellationToken: ct));
+            return Results.Ok(new PostCloseRedirectPreference(NormalizePostCloseRedirect(raw) ?? "dashboard"));
+        }).WithName("GetPostCloseRedirect").WithOpenApi();
+
+        group.MapPut("/post-close-redirect", async (
+            [FromBody] UpdatePostCloseRedirectRequest req,
+            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+        {
+            var normalized = NormalizePostCloseRedirect(req.Target);
+            if (normalized is null)
+                return Results.BadRequest(new { error = "Target must be 'dashboard', 'timesheet', or 'view:<guid>'." });
+
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            await using var conn = await dataSource.OpenConnectionAsync(ct);
+            await conn.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO user_preferences (user_id, pref_key, pref_value)
+                VALUES (@userId, 'nav:post-close-redirect', @value)
+                ON CONFLICT (user_id, pref_key) DO UPDATE
+                    SET pref_value = @value, updated_utc = now()
+                """,
+                new { userId, value = normalized }, cancellationToken: ct));
+
+            return Results.Ok(new PostCloseRedirectPreference(normalized));
+        }).WithName("UpdatePostCloseRedirect").WithOpenApi();
+
         return app;
+    }
+
+    /// Validates the post-close redirect token. Accepts the literals
+    /// "dashboard" / "timesheet", or "view:&lt;guid&gt;" with a parseable GUID
+    /// (canonicalised). Returns null for anything else so a bad write is
+    /// rejected and a hand-edited DB row coerces to the default on read.
+    private static string? NormalizePostCloseRedirect(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var v = raw.Trim();
+        if (string.Equals(v, "dashboard", StringComparison.OrdinalIgnoreCase)) return "dashboard";
+        if (string.Equals(v, "timesheet", StringComparison.OrdinalIgnoreCase)) return "timesheet";
+        if (v.StartsWith("view:", StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(v["view:".Length..], out var g))
+            return $"view:{g}";
+        return null;
     }
 
     /// Reads the stored JSON array, coercing any malformed row to an empty
@@ -407,4 +469,6 @@ public static class UserPreferencesEndpoints
     public sealed record UpdatePinnedFeaturesRequest(string[] Paths);
     public sealed record PinnedViewsPreference(string[] Ids);
     public sealed record UpdatePinnedViewsRequest(string[] Ids);
+    public sealed record PostCloseRedirectPreference(string Target);
+    public sealed record UpdatePostCloseRedirectRequest(string Target);
 }

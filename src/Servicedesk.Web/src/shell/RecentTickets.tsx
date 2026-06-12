@@ -1,11 +1,13 @@
 import * as React from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { GripVertical, Ticket, X } from "lucide-react";
 import { useRecentTicketsStore } from "@/stores/useRecentTicketsStore";
 import { getConnection } from "@/hooks/usePresence";
-import { ticketApi } from "@/lib/ticket-api";
-import { taxonomyApi, type Status } from "@/lib/api";
+import { ticketApi, viewApi } from "@/lib/ticket-api";
+import { taxonomyApi, preferencesApi, type Status } from "@/lib/api";
+import { useAuth } from "@/auth/authStore";
+import { resolvePostCloseTarget } from "@/lib/postCloseRedirect";
 import { cn } from "@/lib/utils";
 
 export function RecentTickets({ collapsed }: { collapsed: boolean }) {
@@ -15,8 +17,25 @@ export function RecentTickets({ collapsed }: { collapsed: boolean }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [dragIndex, setDragIndex] = React.useState<number | null>(null);
   const [overIndex, setOverIndex] = React.useState<number | null>(null);
+
+  // Per-user "where to go after dismissing the open ticket via ×". Both
+  // queries are shared (same keys) with the rest of the shell, so this adds
+  // no extra round-trips. The accessible-views list lets us fall the redirect
+  // back to the dashboard if the saved view is no longer reachable.
+  const { data: redirectPref } = useQuery({
+    queryKey: ["preferences", "post-close-redirect"],
+    queryFn: preferencesApi.getPostCloseRedirect,
+    staleTime: 60_000,
+  });
+  const { data: accessibleViews } = useQuery({
+    queryKey: ["views"],
+    queryFn: viewApi.list,
+    staleTime: 60_000,
+  });
+  const canTimesheet = !!(user?.timesheetEnabled || user?.timesheetManager);
 
   // Live-refresh the colour bar + tooltip when another agent (or the
   // current user from another window) changes a recent ticket's status.
@@ -188,8 +207,16 @@ export function RecentTickets({ collapsed }: { collapsed: boolean }) {
                   onClick={(e) => {
                     e.stopPropagation();
                     removeTicket(t.id);
+                    // Only redirect when dismissing the ticket we're actually
+                    // on; removing a background ticket leaves you in place.
                     if (pathname === `/tickets/${t.id}`) {
-                      navigate({ to: "/tickets" });
+                      navigate(
+                        resolvePostCloseTarget(
+                          redirectPref?.target,
+                          accessibleViews ?? [],
+                          canTimesheet,
+                        ),
+                      );
                     }
                   }}
                   className="hidden shrink-0 rounded p-0.5 hover:bg-glass-hover group-hover:inline-flex"

@@ -2732,10 +2732,18 @@ export const preferencesApi = {
     request<PinnedViewsPreference>("GET", "/api/preferences/pinned-views"),
   setPinnedViews: (ids: string[]) =>
     request<PinnedViewsPreference>("PUT", "/api/preferences/pinned-views", { ids }),
+  // v0.0.78 — where the sidebar "remove from Recent" (×) action sends the
+  // agent when they dismiss the ticket they currently have open. Token is
+  // "dashboard", "timesheet", or "view:<guid>".
+  getPostCloseRedirect: () =>
+    request<PostCloseRedirectPreference>("GET", "/api/preferences/post-close-redirect"),
+  setPostCloseRedirect: (target: string) =>
+    request<PostCloseRedirectPreference>("PUT", "/api/preferences/post-close-redirect", { target }),
 };
 
 export type PinnedFeaturesPreference = { paths: string[] };
 export type PinnedViewsPreference = { ids: string[] };
+export type PostCloseRedirectPreference = { target: string };
 
 // ---- SLA ----
 
