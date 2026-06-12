@@ -84,6 +84,7 @@ export function ContactFormDialog({
   const [firstName, setFirstName] = React.useState("");
   const [lastName, setLastName] = React.useState("");
   const [phone, setPhone] = React.useState("");
+  const [mobilePhone, setMobilePhone] = React.useState("");
   const [jobTitle, setJobTitle] = React.useState("");
   const [role, setRole] = React.useState<ContactCompanyRole>("primary");
   const [pickedCompany, setPickedCompany] =
@@ -107,6 +108,7 @@ export function ContactFormDialog({
     setFirstName(initial?.firstName ?? "");
     setLastName(initial?.lastName ?? "");
     setPhone(initial?.phone ?? initialPhone ?? "");
+    setMobilePhone(initial?.mobilePhone ?? "");
     setJobTitle(initial?.jobTitle ?? "");
     setRole("primary");
     setPickedCompany(null);
@@ -120,6 +122,7 @@ export function ContactFormDialog({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         phone: phone.trim(),
+        mobilePhone: mobilePhone.trim(),
         jobTitle: jobTitle.trim(),
         ...(mode === "create" && effectiveCompanyId
           ? { companyId: effectiveCompanyId, role }
@@ -204,14 +207,21 @@ export function ContactFormDialog({
                 placeholder="+32 …"
               />
             </Labelled>
-            <Labelled label="Job title">
+            <Labelled label="Mobile">
               <Input
-                value={jobTitle}
-                onChange={(e) => setJobTitle(e.target.value)}
-                placeholder="Office manager"
+                value={mobilePhone}
+                onChange={(e) => setMobilePhone(e.target.value)}
+                placeholder="+32 4… "
               />
             </Labelled>
           </div>
+          <Labelled label="Job title">
+            <Input
+              value={jobTitle}
+              onChange={(e) => setJobTitle(e.target.value)}
+              placeholder="Office manager"
+            />
+          </Labelled>
 
           {showCompanyPicker && (
             <CompanyLinkPicker
