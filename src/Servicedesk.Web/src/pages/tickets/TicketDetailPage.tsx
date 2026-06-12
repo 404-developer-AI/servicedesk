@@ -27,7 +27,7 @@ import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
 import { useViewingTicket } from "@/hooks/usePresence";
 import { useTicketRealtime } from "@/hooks/useTicketRealtime";
 import { SlaPill } from "@/components/sla/SlaPill";
-import { TicketSidePanel } from "./components/TicketSidePanel";
+import { TicketSidePanel, TicketPresence } from "./components/TicketSidePanel";
 import { TicketTimeline, isSystemEvent } from "./components/TicketTimeline";
 import { PinnedEventsSummary } from "./components/PinnedEventsSummary";
 import { TicketTimesheetPanel } from "./components/TicketTimesheetPanel";
@@ -960,6 +960,7 @@ function TicketDetailBody({
                 }}
               />
             )}
+            <TicketPresence ticketId={ticketId} />
           </div>
         </div>
       </div>
