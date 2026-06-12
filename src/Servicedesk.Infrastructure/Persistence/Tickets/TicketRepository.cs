@@ -570,7 +570,18 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             events.Add(("CategoryChange", System.Text.Json.JsonSerializer.Serialize(
                 new { from = current.CategoryId, to = update.CategoryId, fromName, toName })));
         }
-        if (update.AssigneeUserId.HasValue && update.AssigneeUserId != current.AssigneeUserId)
+        // v0.0.78 — ClearAssignee is the only way to unassign: a plain
+        // null AssigneeUserId means "not provided", so it can't be
+        // distinguished from omission. Skip when already unassigned so a
+        // redundant clear stays a no-op (no spurious timeline event).
+        if (update.ClearAssignee && current.AssigneeUserId.HasValue)
+        {
+            sets.Add("assignee_user_id = NULL");
+            var fromName = await LookupNameAsync("users", current.AssigneeUserId);
+            events.Add(("AssignmentChange", System.Text.Json.JsonSerializer.Serialize(
+                new { from = current.AssigneeUserId, to = (Guid?)null, fromName, toName = (string?)null })));
+        }
+        else if (!update.ClearAssignee && update.AssigneeUserId.HasValue && update.AssigneeUserId != current.AssigneeUserId)
         {
             sets.Add("assignee_user_id = @NewAssigneeUserId");
             var fromName = await LookupNameAsync("users", current.AssigneeUserId);

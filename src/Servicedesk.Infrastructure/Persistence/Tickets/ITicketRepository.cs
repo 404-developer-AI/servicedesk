@@ -269,6 +269,13 @@ public sealed record TicketFieldUpdate(
     string? Subject = null,
     string? BodyText = null,
     string? BodyHtml = null,
+    // v0.0.78 — explicit "unassign" signal. AssigneeUserId is a plain
+    // Guid? where null means "field not provided" (same as every other
+    // nullable here), so it cannot express "clear the assignee". When
+    // this flag is true the repository sets assignee_user_id = NULL and
+    // ignores AssigneeUserId. The two are mutually exclusive; the
+    // endpoint never sets both.
+    bool ClearAssignee = false,
     // v0.0.37 — when provided, sets the ticket's pending_till_utc.
     // Combined with the status-flip auto-clear in UpdateFieldsAsync
     // (status moves OUT of Pending → column is wiped regardless of

@@ -431,6 +431,10 @@ export type TicketFieldUpdate = {
   priorityId?: string;
   categoryId?: string;
   assigneeUserId?: string;
+  /// v0.0.78 — set true to clear the assignee. A null/omitted
+  /// assigneeUserId reads as "no change" on the server, so unassigning
+  /// needs this explicit flag rather than assigneeUserId: null.
+  unassignAssignee?: boolean;
   subject?: string;
   bodyText?: string;
   bodyHtml?: string;
