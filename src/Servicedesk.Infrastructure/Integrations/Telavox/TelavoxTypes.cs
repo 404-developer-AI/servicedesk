@@ -42,12 +42,34 @@ public sealed record TelavoxCreateApiUserResult(
 /// to decide whether to fire a popup. The number fields are intentionally
 /// nullable: an outbound call has no FromNumber from Telavox's perspective,
 /// an inbound from a hidden-CLI caller has none either.
+/// <see cref="Direction"/> is the lower-cased CAPI <c>callDirection</c>
+/// ("incoming" / "outgoing", "" when absent). It feeds two decisions: the
+/// popup stays inbound-only (an outbound call never fires), while the
+/// dashboard call-state indicator tracks calls in <i>either</i> direction so
+/// an agent who is dialling out still shows as busy.
 public sealed record TelavoxCall(
     string CallId,
     string State,
     string? FromNumber,
     string? ToNumber,
-    DateTimeOffset? StartUtc);
+    DateTimeOffset? StartUtc,
+    string Direction);
+
+/// CAPI <c>callDirection</c> vocabulary. The popup-fire gate treats anything
+/// that isn't recognisably outbound as inbound, so a missing/unknown
+/// direction errs on the side of still showing the inbound popup (its
+/// pre-direction behaviour).
+public static class TelavoxCallDirection
+{
+    public const string Incoming = "incoming";
+    public const string Outgoing = "outgoing";
+
+    /// True for the outbound vocabulary ("outgoing", and the "outbound"
+    /// synonym some PBX variants use). Case-insensitive.
+    public static bool IsOutgoing(string? direction) =>
+        string.Equals(direction, Outgoing, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(direction, "outbound", StringComparison.OrdinalIgnoreCase);
+}
 
 /// One row of <c>telavox_agent_links</c>. <see cref="TelavoxUserId"/> is
 /// the PAPI api-user key (e.g. <c>apiUser-123</c>) returned by the create

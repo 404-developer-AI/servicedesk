@@ -15,20 +15,25 @@ public interface ITelavoxCallStateStore
     /// <paramref name="lastState"/> may be null when the current poll
     /// returned no active call — that is the "idle" baseline. The row is
     /// retained even at idle so a future flip to RINGING is detected as a
-    /// transition rather than first-touch.
+    /// transition rather than first-touch. <paramref name="lastDirection"/>
+    /// is the call's direction; persisted so the "call completed" activity
+    /// row can record it on the answered→idle edge, where the live call has
+    /// already gone.
     Task UpsertAsync(
         Guid userId,
         string? lastCallId,
         string? lastState,
+        string? lastDirection,
         DateTime lastSeenUtc,
         CancellationToken ct = default);
 }
 
-/// Snapshot of <c>telavox_call_state</c> for one agent. Both
-/// <see cref="LastCallId"/> and <see cref="LastState"/> may be null when
+/// Snapshot of <c>telavox_call_state</c> for one agent. <see cref="LastCallId"/>,
+/// <see cref="LastState"/> and <see cref="LastDirection"/> are all null when
 /// the agent has been seen at least once but is currently idle.
 public sealed record TelavoxCallStateSnapshot(
     Guid UserId,
     string? LastCallId,
     string? LastState,
+    string? LastDirection,
     DateTime LastSeenUtc);

@@ -285,6 +285,7 @@ public sealed class TelavoxPollingWorker : BackgroundService
                     link.UserId,
                     decision.NewBaseline.LastCallId,
                     decision.NewBaseline.LastState,
+                    decision.NewBaseline.LastDirection,
                     decision.NewBaseline.LastSeenUtc,
                     ct);
 
@@ -320,12 +321,27 @@ public sealed class TelavoxPollingWorker : BackgroundService
                     if (string.Equals(priorCategory, AgentCallStateCategorization.Answered, StringComparison.Ordinal)
                         && string.Equals(newCategory, AgentCallStateCategorization.Idle, StringComparison.Ordinal))
                     {
+                        // Direction comes from the *prior* baseline — the
+                        // just-completed call — since `current` is already
+                        // idle on this edge. Outgoing vs. incoming lets the
+                        // feed distinguish "made a call" from "took a call".
+                        var completedDirection = prior?.LastDirection;
+                        var directionLabel =
+                            TelavoxCallDirection.IsOutgoing(completedDirection) ? "outgoing"
+                            : string.Equals(completedDirection, TelavoxCallDirection.Incoming, StringComparison.OrdinalIgnoreCase) ? "incoming"
+                            : null;
+                        var completedSummary = directionLabel switch
+                        {
+                            "outgoing" => "completed outgoing phone call",
+                            "incoming" => "completed incoming phone call",
+                            _ => "completed phone call",
+                        };
                         try
                         {
                             await activityRecorder.RecordAsync(new ActivityRecord(
                                 AgentId: link.UserId,
                                 EventType: "telavox_call_completed",
-                                Summary: "completed phone call",
+                                Summary: completedSummary,
                                 EntityType: "telavox_call",
                                 EntityId: prior?.LastCallId,
                                 Metadata: new
@@ -333,6 +349,7 @@ public sealed class TelavoxPollingWorker : BackgroundService
                                     callId = prior?.LastCallId,
                                     extension = link.TelavoxExtension,
                                     lastState = prior?.LastState,
+                                    direction = directionLabel,
                                 }), ct);
                         }
                         catch (Exception recEx)

@@ -301,6 +301,7 @@ public sealed class TelavoxApiClientParseTests
         Assert.Equal("0032473584015", call.FromNumber);
         Assert.Null(call.ToNumber);
         Assert.Null(call.StartUtc);
+        Assert.Equal("incoming", call.Direction);
     }
 
     [Fact]
@@ -333,14 +334,19 @@ public sealed class TelavoxApiClientParseTests
     }
 
     [Fact]
-    public void ParseCurrentCall_outgoing_call_is_skipped()
+    public void ParseCurrentCall_outgoing_call_is_parsed_with_direction()
     {
-        // The popup is inbound-only: the agent placed the outbound call,
-        // they already know the callee. Outbound rows must not fire.
+        // The parser no longer drops outbound rows — it carries the
+        // direction so the worker can keep the popup inbound-only (gated in
+        // TelavoxCallTransition) while the dashboard call-state indicator
+        // still tracks an agent dialling out.
         var body = """
         [ { "callerId": "0032473584015", "callDirection": "outgoing", "lineStatus": "up" } ]
         """;
-        Assert.Null(TelavoxApiClient.ParseCurrentCall(body));
+        var call = TelavoxApiClient.ParseCurrentCall(body);
+        Assert.NotNull(call);
+        Assert.Equal("up", call!.State);
+        Assert.Equal("outgoing", call.Direction);
     }
 
     [Fact]
