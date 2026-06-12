@@ -293,6 +293,8 @@ public sealed class MailIngestServiceTests
             => Task.FromResult(ByMessageId.TryGetValue(messageId, out var r) ? r : null);
         public Task<MailMessageRow?> GetByIdAsync(Guid id, CancellationToken ct)
             => Task.FromResult<MailMessageRow?>(null);
+        public Task<MailMessageRow?> GetByTicketEventIdAsync(long ticketEventId, CancellationToken ct)
+            => Task.FromResult<MailMessageRow?>(null);
         public Task<Guid?> FindTicketIdByReferencesAsync(IReadOnlyList<string> messageIds, CancellationToken ct)
         {
             foreach (var m in messageIds)

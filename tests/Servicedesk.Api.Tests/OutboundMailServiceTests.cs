@@ -435,6 +435,7 @@ public sealed class OutboundMailServiceTests
         public List<NewOutboundMailMessage> Outbound { get; } = new();
         public Task<MailMessageRow?> GetByMessageIdAsync(string m, CancellationToken ct) => Task.FromResult<MailMessageRow?>(null);
         public Task<MailMessageRow?> GetByIdAsync(Guid id, CancellationToken ct) => Task.FromResult<MailMessageRow?>(null);
+        public Task<MailMessageRow?> GetByTicketEventIdAsync(long ticketEventId, CancellationToken ct) => Task.FromResult<MailMessageRow?>(null);
         public Task<Guid?> FindTicketIdByReferencesAsync(IReadOnlyList<string> ids, CancellationToken ct) => Task.FromResult<Guid?>(null);
         public Task<Guid> InsertAsync(NewMailMessage row, IReadOnlyList<NewMailRecipient> r, IReadOnlyList<NewMailAttachment> a, CancellationToken ct) => throw new NotImplementedException();
         public Task AttachToTicketAsync(Guid m, Guid t, long e, CancellationToken ct) => Task.CompletedTask;

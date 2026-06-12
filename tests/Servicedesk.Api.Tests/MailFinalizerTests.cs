@@ -154,6 +154,7 @@ public class MailFinalizerTests
 
         public Task<MailMessageRow?> GetByMessageIdAsync(string id, CancellationToken ct) => throw new NotImplementedException();
         public Task<MailMessageRow?> GetByIdAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
+        public Task<MailMessageRow?> GetByTicketEventIdAsync(long ticketEventId, CancellationToken ct) => throw new NotImplementedException();
         public Task<Guid?> FindTicketIdByReferencesAsync(IReadOnlyList<string> ids, CancellationToken ct) => throw new NotImplementedException();
         public Task<Guid> InsertAsync(NewMailMessage row, IReadOnlyList<NewMailRecipient> r, IReadOnlyList<NewMailAttachment> a, CancellationToken ct) => throw new NotImplementedException();
         public Task<Guid> InsertOutboundAsync(NewOutboundMailMessage row, IReadOnlyList<NewMailRecipient> r, CancellationToken ct) => throw new NotImplementedException();

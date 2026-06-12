@@ -67,6 +67,42 @@ public sealed class MailTimelineEnricherTests
         Assert.Equal("<p>keep</p>", result.Events.Single().BodyHtml);
     }
 
+    [Fact]
+    public async Task Injects_from_and_recipients_into_mail_received_metadata()
+    {
+        var recipients = new[]
+        {
+            new MailRecipientRow("to", "to@x", "To Person"),
+            new MailRecipientRow("cc", "cc@x", ""),
+            new MailRecipientRow("bcc", "bcc@x", ""),
+        };
+        var enricher = Build("<p>hi</p>", Array.Empty<AttachmentRow>(), recipients);
+        var detail = MakeDetailWithMailReceivedEvent();
+
+        var result = await enricher.EnrichAsync(detail, default);
+
+        using var doc = JsonDocument.Parse(result.Events.Single().MetadataJson);
+        var root = doc.RootElement;
+        Assert.Equal("from@x", root.GetProperty("from").GetString());
+        Assert.Equal("to@x", root.GetProperty("to")[0].GetProperty("address").GetString());
+        Assert.Equal("To Person", root.GetProperty("to")[0].GetProperty("name").GetString());
+        Assert.Equal("cc@x", root.GetProperty("cc")[0].GetProperty("address").GetString());
+        Assert.Equal("bcc@x", root.GetProperty("bcc")[0].GetProperty("address").GetString());
+    }
+
+    [Fact]
+    public async Task Omits_bcc_key_when_no_blind_recipients()
+    {
+        var recipients = new[] { new MailRecipientRow("to", "to@x", "") };
+        var enricher = Build("<p>hi</p>", Array.Empty<AttachmentRow>(), recipients);
+        var detail = MakeDetailWithMailReceivedEvent();
+
+        var result = await enricher.EnrichAsync(detail, default);
+
+        using var doc = JsonDocument.Parse(result.Events.Single().MetadataJson);
+        Assert.False(doc.RootElement.TryGetProperty("bcc", out _));
+    }
+
     private static TicketDetail MakeDetailWithMailReceivedEvent()
     {
         var metadata = JsonSerializer.Serialize(new { mail_message_id = MailId.ToString() });
@@ -103,9 +139,11 @@ public sealed class MailTimelineEnricherTests
         OriginalFilename: "x.png", IsInline: true, ContentId: contentId,
         ProcessingState: state);
 
-    private static MailTimelineEnricher Build(string html, IReadOnlyList<AttachmentRow> attachments)
+    private static MailTimelineEnricher Build(
+        string html, IReadOnlyList<AttachmentRow> attachments,
+        IReadOnlyList<MailRecipientRow>? recipients = null)
     {
-        var mailRepo = new StubMailRepo(MailId, bodyHtmlHash: "hash-html");
+        var mailRepo = new StubMailRepo(MailId, bodyHtmlHash: "hash-html", recipients);
         var blobs = new StubBlobStore(new Dictionary<string, string> { ["hash-html"] = html });
         var attRepo = new StubAttachmentRepo(attachments);
         return new MailTimelineEnricher(mailRepo, attRepo, blobs, NullLogger<MailTimelineEnricher>.Instance);
@@ -114,12 +152,15 @@ public sealed class MailTimelineEnricherTests
     private sealed class StubMailRepo : IMailMessageRepository
     {
         private readonly MailMessageRow _row;
-        public StubMailRepo(Guid id, string bodyHtmlHash)
+        private readonly IReadOnlyList<MailRecipientRow> _recipients;
+        public StubMailRepo(Guid id, string bodyHtmlHash, IReadOnlyList<MailRecipientRow>? recipients = null)
         {
             _row = new MailMessageRow(id, "mid", null, "s", "from@x", "", "box@x",
                 DateTime.UtcNow, null, bodyHtmlHash, "", null, null, null, null);
+            _recipients = recipients ?? Array.Empty<MailRecipientRow>();
         }
         public Task<MailMessageRow?> GetByIdAsync(Guid id, CancellationToken ct) => Task.FromResult<MailMessageRow?>(_row);
+        public Task<MailMessageRow?> GetByTicketEventIdAsync(long ticketEventId, CancellationToken ct) => Task.FromResult<MailMessageRow?>(_row);
         public Task<MailMessageRow?> GetByMessageIdAsync(string messageId, CancellationToken ct) => Task.FromResult<MailMessageRow?>(null);
         public Task<Guid?> FindTicketIdByReferencesAsync(IReadOnlyList<string> ids, CancellationToken ct) => Task.FromResult<Guid?>(null);
         public Task<Guid> InsertAsync(NewMailMessage row, IReadOnlyList<NewMailRecipient> r, IReadOnlyList<NewMailAttachment> a, CancellationToken ct) => Task.FromResult(Guid.NewGuid());
@@ -131,7 +172,7 @@ public sealed class MailTimelineEnricherTests
             => Task.FromResult<FinalizeCandidate?>(null);
         public Task<Guid> InsertOutboundAsync(NewOutboundMailMessage row, IReadOnlyList<NewMailRecipient> r, CancellationToken ct) => Task.FromResult(Guid.NewGuid());
         public Task<MailThreadAnchor?> GetLatestThreadAnchorAsync(Guid ticketId, CancellationToken ct) => Task.FromResult<MailThreadAnchor?>(null);
-        public Task<IReadOnlyList<MailRecipientRow>> ListRecipientsAsync(Guid mailId, CancellationToken ct) => Task.FromResult<IReadOnlyList<MailRecipientRow>>(Array.Empty<MailRecipientRow>());
+        public Task<IReadOnlyList<MailRecipientRow>> ListRecipientsAsync(Guid mailId, CancellationToken ct) => Task.FromResult(_recipients);
         public Task<MailMessageRow?> GetFirstInboundForTicketAsync(Guid ticketId, CancellationToken ct) => Task.FromResult<MailMessageRow?>(null);
     }
 
