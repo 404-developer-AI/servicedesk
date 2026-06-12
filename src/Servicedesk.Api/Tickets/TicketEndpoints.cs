@@ -667,6 +667,7 @@ public static class TicketEndpoints
                 PriorityId: req.PriorityId,
                 CategoryId: req.CategoryId,
                 AssigneeUserId: req.AssigneeUserId,
+                ClearAssignee: req.UnassignAssignee,
                 Subject: req.Subject?.Trim(),
                 BodyText: req.BodyText,
                 BodyHtml: req.BodyHtml,
@@ -729,7 +730,7 @@ public static class TicketEndpoints
             if (req.StatusId.HasValue) changedFields.Add(TriggerFieldKeys.TicketStatusId);
             if (req.PriorityId.HasValue) changedFields.Add(TriggerFieldKeys.TicketPriorityId);
             if (req.CategoryId.HasValue) changedFields.Add(TriggerFieldKeys.TicketCategoryId);
-            if (req.AssigneeUserId.HasValue) changedFields.Add(TriggerFieldKeys.TicketOwnerId);
+            if (req.AssigneeUserId.HasValue || req.UnassignAssignee) changedFields.Add(TriggerFieldKeys.TicketOwnerId);
             if (req.Subject is not null) changedFields.Add(TriggerFieldKeys.TicketSubject);
             await triggerService.EvaluateAsync(
                 ticketId: id,
@@ -2057,6 +2058,11 @@ public static class TicketEndpoints
         string? BodyText,
         string? BodyHtml,
         DateTime? PendingTillUtc = null,
+        // v0.0.78 — explicit unassign. AssigneeUserId null is
+        // indistinguishable from "field omitted", so the FE sends this
+        // flag (instead of a null assigneeUserId) when the agent picks
+        // "Unassigned". Mutually exclusive with AssigneeUserId.
+        bool UnassignAssignee = false,
         // v0.0.42 — gate confirmations the agent submitted in the
         // status-change dialog. Each entry pairs a gate trigger id with
         // the optional textarea answer. Server re-evaluates the gate set

@@ -500,7 +500,9 @@ function StatusTab({
         <FieldLabel>Assignee</FieldLabel>
         <AgentPicker
           value={ticket.assigneeUserId}
-          onChange={(userId) => onUpdate({ assigneeUserId: userId ?? undefined })}
+          onChange={(userId) =>
+            onUpdate(userId ? { assigneeUserId: userId } : { unassignAssignee: true })
+          }
         />
       </div>
 
