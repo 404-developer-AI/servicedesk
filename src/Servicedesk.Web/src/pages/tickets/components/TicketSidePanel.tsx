@@ -606,8 +606,6 @@ function StatusTab({
       )}
 
       <ZammadImportBadge ticket={ticket} />
-
-      <TicketPresence ticketId={ticket.id} />
     </>
   );
 }
@@ -1512,7 +1510,11 @@ function CompanyContactLinks({
 
 const EMPTY_PRESENCE: PresenceUser[] = [];
 
-function TicketPresence({ ticketId }: { ticketId: string }) {
+// Live "also viewing" strip. Rendered under the compose form in the
+// activity column (not the side panel) so an agent sees who else is in
+// the ticket right where they're about to type. Self-hides whenever the
+// current user is the only viewer.
+export function TicketPresence({ ticketId }: { ticketId: string }) {
   const presence = usePresenceStore((s) => s.byTicket[ticketId] ?? EMPTY_PRESENCE);
   const { user: currentUser } = useAuth();
   const others = presence.filter((u) => u.userId !== currentUser?.id);
@@ -1521,17 +1523,14 @@ function TicketPresence({ ticketId }: { ticketId: string }) {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <>
-        <div className="border-t border-glass" />
-        <div>
-          <FieldLabel>Also viewing</FieldLabel>
-          <div className="flex flex-wrap gap-2">
-            {others.map((u) => (
-              <PresenceChip key={u.userId} user={u} />
-            ))}
-          </div>
-        </div>
-      </>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span className="text-xs uppercase tracking-wider text-muted-foreground">
+          Also viewing
+        </span>
+        {others.map((u) => (
+          <PresenceChip key={u.userId} user={u} />
+        ))}
+      </div>
     </TooltipProvider>
   );
 }
