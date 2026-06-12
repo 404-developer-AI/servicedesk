@@ -28,6 +28,7 @@ import {
   ClipboardCheck,
   ClipboardX,
   GitBranch,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ticketApi, type TicketEvent, type OutboundMailKind } from "@/lib/ticket-api";
@@ -600,11 +601,6 @@ function EventBody({ event }: { event: TicketEvent }) {
       const ccList = Array.isArray(meta.cc)
         ? (meta.cc as Array<{ address: string; name?: string }>)
         : [];
-      const formatList = (list: Array<{ address: string; name?: string }>) =>
-        list
-          .map((r) => (r.name && r.name !== r.address ? `${r.name} <${r.address}>` : r.address))
-          .join(", ");
-
       const normalizedTo = toList
         .filter((r) => typeof r?.address === "string" && r.address.length > 0)
         .map((r) => ({ address: r.address, name: r.name ?? r.address }));
@@ -632,28 +628,6 @@ function EventBody({ event }: { event: TicketEvent }) {
 
       return (
         <div className="space-y-2">
-          <div className="text-xs text-muted-foreground space-y-0.5">
-            {fromAddr ? (
-              <div>
-                From <span className="text-foreground/80">{fromAddr}</span>
-              </div>
-            ) : null}
-            {toList.length > 0 ? (
-              <div>
-                To <span className="text-foreground/80">{formatList(toList)}</span>
-              </div>
-            ) : null}
-            {ccList.length > 0 ? (
-              <div>
-                Cc <span className="text-foreground/80">{formatList(ccList)}</span>
-              </div>
-            ) : null}
-            {subject ? (
-              <div>
-                <span className="text-foreground/80">{subject}</span>
-              </div>
-            ) : null}
-          </div>
           <CollapsibleBody html={event.bodyHtml} text={event.bodyText} />
           <PostAttachmentStrip attachments={sentAttachments} />
           <div className="flex flex-wrap items-center gap-1 pt-1">
@@ -694,7 +668,6 @@ function EventBody({ event }: { event: TicketEvent }) {
         typeof meta.fromName === "string" && meta.fromName.length > 0
           ? meta.fromName
           : null;
-      const fromDisplay = fromNameRaw ?? fromAddrRaw;
       const subject =
         typeof meta.subject === "string" ? meta.subject : null;
       const mailId =
@@ -741,19 +714,6 @@ function EventBody({ event }: { event: TicketEvent }) {
 
       return (
         <div className="space-y-2">
-          <div className="text-xs text-muted-foreground">
-            {fromDisplay ? (
-              <>
-                From <span className="text-foreground/80">{fromDisplay}</span>
-              </>
-            ) : null}
-            {subject ? (
-              <>
-                {fromDisplay ? " · " : ""}
-                <span className="text-foreground/80">{subject}</span>
-              </>
-            ) : null}
-          </div>
           <CollapsibleBody html={event.bodyHtml} text={event.bodyText} />
           {attachments.length > 0 ? (
             <div className="flex flex-wrap gap-2 pt-1">
@@ -832,6 +792,85 @@ function EventBody({ event }: { event: TicketEvent }) {
   }
 }
 
+/* ─── Mail header panel (From / To / Cc / Bcc) ─── */
+
+type MailAddr = { address: string; name?: string };
+
+/// Normalises a metadata `to`/`cc`/`bcc` array into address rows, dropping
+/// entries without a usable address. Returns [] for anything non-array (e.g.
+/// an un-enriched event), so callers can treat length 0 as "nothing to show".
+function parseRecipientList(value: unknown): MailAddr[] {
+  if (!Array.isArray(value)) return [];
+  return (value as Array<{ address?: unknown; name?: unknown }>)
+    .filter((r) => typeof r?.address === "string" && (r.address as string).length > 0)
+    .map((r) => ({
+      address: r.address as string,
+      name:
+        typeof r.name === "string" && (r.name as string).length > 0
+          ? (r.name as string)
+          : undefined,
+    }));
+}
+
+/// Slide-down header strip shown under a mail event's title row. Animated with
+/// the grid-rows 0fr→1fr trick (pure CSS, no extra deps) so it expands from
+/// zero height without a hard-coded max. Rows render only when populated, so
+/// an inbound mail with no Bcc simply omits that line.
+function MailHeaderPanel({
+  open,
+  from,
+  to,
+  cc,
+  bcc,
+}: {
+  open: boolean;
+  from: MailAddr | null;
+  to: MailAddr[];
+  cc: MailAddr[];
+  bcc: MailAddr[];
+}) {
+  const rows: Array<{ label: string; addrs: MailAddr[] }> = [];
+  if (from) rows.push({ label: "From", addrs: [from] });
+  if (to.length) rows.push({ label: "To", addrs: to });
+  if (cc.length) rows.push({ label: "Cc", addrs: cc });
+  if (bcc.length) rows.push({ label: "Bcc", addrs: bcc });
+
+  return (
+    <div
+      className={cn(
+        "grid transition-all duration-200 ease-out",
+        open ? "grid-rows-[1fr] opacity-100 mb-2" : "grid-rows-[0fr] opacity-0"
+      )}
+      aria-hidden={!open}
+    >
+      <div className="overflow-hidden">
+        <div className="rounded-lg border border-glass bg-glass px-3 py-2 text-xs space-y-1">
+          {rows.map((row) => (
+            <div key={row.label} className="flex gap-2">
+              <span className="w-9 shrink-0 pt-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+                {row.label}
+              </span>
+              <span className="flex min-w-0 flex-wrap gap-x-1.5 gap-y-0.5">
+                {row.addrs.map((a, i) => (
+                  <a
+                    key={`${a.address}-${i}`}
+                    href={`mailto:${a.address}`}
+                    title={a.name ? `${a.name} <${a.address}>` : a.address}
+                    className="break-all text-foreground/80 transition-colors hover:text-primary hover:underline"
+                  >
+                    {a.name ? `${a.name} <${a.address}>` : a.address}
+                    {i < row.addrs.length - 1 ? "," : ""}
+                  </a>
+                ))}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Editable event card ─── */
 
 const EDITABLE_TYPES = new Set(["Comment", "Note", "Mail"]);
@@ -878,6 +917,31 @@ function TimelineEvent({
     ? eventMetadata.mergedFromTicketNumber
     : null;
   const isSystemLike = isSystemEvent(event);
+
+  // Mail-header strip (From / To / Cc / Bcc), collapsed by default and toggled
+  // from the event's title row. Inbound carries `from`/`fromName` as plain
+  // strings from ingest; the enricher fills `to`/`cc`/`bcc` for both inbound
+  // and outbound. Only render the toggle when there's something to reveal.
+  const [headersOpen, setHeadersOpen] = React.useState(false);
+  const isMailEvent =
+    event.eventType === "MailReceived" || event.eventType === "MailSent";
+  const mailFromAddr =
+    typeof eventMetadata.from === "string" && eventMetadata.from.length > 0
+      ? eventMetadata.from
+      : null;
+  const mailFromName =
+    typeof eventMetadata.fromName === "string" && eventMetadata.fromName.length > 0
+      ? eventMetadata.fromName
+      : null;
+  const mailFrom: MailAddr | null = mailFromAddr
+    ? { address: mailFromAddr, name: mailFromName ?? undefined }
+    : null;
+  const mailTo = isMailEvent ? parseRecipientList(eventMetadata.to) : [];
+  const mailCc = isMailEvent ? parseRecipientList(eventMetadata.cc) : [];
+  const mailBcc = isMailEvent ? parseRecipientList(eventMetadata.bcc) : [];
+  const hasMailHeaders =
+    isMailEvent &&
+    (!!mailFrom || mailTo.length > 0 || mailCc.length > 0 || mailBcc.length > 0);
 
   const updateMutation = useMutation({
     mutationFn: () => {
@@ -988,9 +1052,27 @@ function TimelineEvent({
         >
           <div className="flex items-center justify-between gap-2 mb-2">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-foreground/80">
-                {config.label}
-              </span>
+              {hasMailHeaders ? (
+                <button
+                  type="button"
+                  onClick={() => setHeadersOpen((o) => !o)}
+                  className="flex items-center gap-1 text-xs font-medium text-foreground/80 transition-colors hover:text-foreground"
+                  title={headersOpen ? "Hide mail details" : "Show mail details"}
+                  aria-expanded={headersOpen}
+                >
+                  {config.label}
+                  <ChevronDown
+                    className={cn(
+                      "h-3 w-3 text-muted-foreground/60 transition-transform",
+                      headersOpen && "rotate-180"
+                    )}
+                  />
+                </button>
+              ) : (
+                <span className="text-xs font-medium text-foreground/80">
+                  {config.label}
+                </span>
+              )}
               {event.authorName && (
                 <span className="text-xs text-muted-foreground/60">
                   by {event.authorName}
@@ -1056,6 +1138,16 @@ function TimelineEvent({
               )}
             </div>
           </div>
+
+          {hasMailHeaders && (
+            <MailHeaderPanel
+              open={headersOpen}
+              from={mailFrom}
+              to={mailTo}
+              cc={mailCc}
+              bcc={mailBcc}
+            />
+          )}
 
           {editing ? (
             <div className="space-y-3">

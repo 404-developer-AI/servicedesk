@@ -46,6 +46,14 @@ public sealed class MailMessageRepository : IMailMessageRepository
             new CommandDefinition(sql, new { id }, cancellationToken: ct));
     }
 
+    public async Task<MailMessageRow?> GetByTicketEventIdAsync(long ticketEventId, CancellationToken ct)
+    {
+        var sql = SelectColumns + " FROM mail_messages WHERE ticket_event_id = @ticketEventId";
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.QueryFirstOrDefaultAsync<MailMessageRow>(
+            new CommandDefinition(sql, new { ticketEventId }, cancellationToken: ct));
+    }
+
     public async Task<Guid?> FindTicketIdByReferencesAsync(IReadOnlyList<string> messageIds, CancellationToken ct)
     {
         if (messageIds.Count == 0) return null;

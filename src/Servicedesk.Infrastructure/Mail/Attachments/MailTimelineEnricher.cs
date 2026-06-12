@@ -53,7 +53,14 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
             // non-inline rows in metadata for the timeline-strip.
             if (evt.EventType == "Note" || evt.EventType == "Comment" || evt.EventType == "MailSent")
             {
-                enriched.Add(await TryAppendEventAttachmentsAsync(detail.Ticket.Id, evt, ct));
+                var e = await TryAppendEventAttachmentsAsync(detail.Ticket.Id, evt, ct);
+                // Outbound mail also gets the From/To/Cc/Bcc header surfaced.
+                // Its metadata carries no mail_message_id (unlike inbound), so
+                // the mail row is found via ticket_event_id. Runs after the
+                // attachment step and preserves whatever it injected.
+                if (evt.EventType == "MailSent")
+                    e = await TryAppendMailSentHeadersAsync(e, ct);
+                enriched.Add(e);
                 continue;
             }
 
@@ -95,7 +102,9 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
                 ticketId, mailId, attachments.Count, readyCount, pendingCount, failedCount, cidReplaced, cidUnmatched);
 
             var recipients = await _mail.ListRecipientsAsync(mailId, ct);
-            var newMetadata = InjectMailAttachmentsAndRecipients(evt.MetadataJson, ticketId, mailId, attachments, recipients);
+            var newMetadata = InjectMailAttachmentsAndRecipients(
+                evt.MetadataJson, ticketId, mailId,
+                mail?.FromAddress, mail?.FromName, attachments, recipients);
             return evt with
             {
                 BodyHtml = rewrittenHtml ?? evt.BodyHtml,
@@ -107,6 +116,25 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
             _logger.LogWarning(ex,
                 "MailTimelineEnricher failed for ticket {TicketId} mail {MailId} — leaving event untouched.",
                 ticketId, mailId);
+            return evt;
+        }
+    }
+
+    private async Task<TicketEvent> TryAppendMailSentHeadersAsync(TicketEvent evt, CancellationToken ct)
+    {
+        try
+        {
+            var mail = await _mail.GetByTicketEventIdAsync(evt.Id, ct);
+            if (mail is null) return evt;
+            var recipients = await _mail.ListRecipientsAsync(mail.Id, ct);
+            var newMetadata = InjectMailHeaders(evt.MetadataJson, mail.FromAddress, mail.FromName, recipients);
+            return evt with { MetadataJson = newMetadata };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "MailTimelineEnricher (sent-headers) failed for event {EventId} — leaving headers off.",
+                evt.Id);
             return evt;
         }
     }
@@ -166,6 +194,7 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
 
     private static string InjectMailAttachmentsAndRecipients(
         string metadataJson, Guid ticketId, Guid mailId,
+        string? fromAddress, string? fromName,
         IReadOnlyList<AttachmentRow> attachments,
         IReadOnlyList<MailRecipientRow> recipients)
     {
@@ -184,17 +213,55 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
             })
             .ToList();
 
-        var toList = recipients.Where(r => r.Kind == "to")
-            .Select(r => new { address = r.Address, name = r.DisplayName }).ToList();
-        var ccList = recipients.Where(r => r.Kind == "cc")
-            .Select(r => new { address = r.Address, name = r.DisplayName }).ToList();
-
         var dict = ParseMetadata(metadataJson);
         dict["attachments"] = JsonSerializer.SerializeToElement(items);
-        dict["to"] = JsonSerializer.SerializeToElement(toList);
-        dict["cc"] = JsonSerializer.SerializeToElement(ccList);
+        AddMailHeaders(dict, fromAddress, fromName, recipients);
         return JsonSerializer.Serialize(dict);
     }
+
+    private static string InjectMailHeaders(
+        string metadataJson, string? fromAddress, string? fromName,
+        IReadOnlyList<MailRecipientRow> recipients)
+    {
+        var dict = ParseMetadata(metadataJson);
+        AddMailHeaders(dict, fromAddress, fromName, recipients);
+        return JsonSerializer.Serialize(dict);
+    }
+
+    // Writes the From/To/Cc/Bcc header fields the timeline's mail-header panel
+    // reads. `from`/`fromName` are plain strings, matching the shape inbound
+    // events already carry from ingest (the reply-action reads them too) — we
+    // never switch them to an object or the existing readers break. `to`/`cc`
+    // are always set (possibly empty so the FE can tell "no recipients" from
+    // "not enriched"); `from` and `bcc` are written only when present —
+    // inbound mail never carries a Bcc, and an unknown sender shouldn't render
+    // a blank "From" row.
+    private static void AddMailHeaders(
+        Dictionary<string, JsonElement> dict,
+        string? fromAddress, string? fromName,
+        IReadOnlyList<MailRecipientRow> recipients)
+    {
+        if (!string.IsNullOrWhiteSpace(fromAddress))
+        {
+            dict["from"] = JsonSerializer.SerializeToElement(fromAddress);
+            if (!string.IsNullOrWhiteSpace(fromName))
+                dict["fromName"] = JsonSerializer.SerializeToElement(fromName);
+        }
+
+        dict["to"] = JsonSerializer.SerializeToElement(RecipientsOfKind(recipients, "to"));
+        dict["cc"] = JsonSerializer.SerializeToElement(RecipientsOfKind(recipients, "cc"));
+
+        var bcc = RecipientsOfKind(recipients, "bcc");
+        if (bcc.Count > 0)
+            dict["bcc"] = JsonSerializer.SerializeToElement(bcc);
+    }
+
+    private static List<object> RecipientsOfKind(
+        IReadOnlyList<MailRecipientRow> recipients, string kind) =>
+        recipients
+            .Where(r => r.Kind == kind)
+            .Select(r => (object)new { address = r.Address, name = r.DisplayName })
+            .ToList();
 
     private static Dictionary<string, JsonElement> ParseMetadata(string metadataJson)
     {

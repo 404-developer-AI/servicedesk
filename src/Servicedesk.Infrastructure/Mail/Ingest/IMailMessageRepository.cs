@@ -6,6 +6,13 @@ public interface IMailMessageRepository
 
     Task<MailMessageRow?> GetByIdAsync(Guid id, CancellationToken ct);
 
+    /// Returns the mail row linked to a given ticket-timeline event, or null
+    /// when the event has no mail (e.g. a non-mail event). Used by the
+    /// timeline enricher to surface the From/To/Cc/Bcc header on outbound
+    /// (MailSent) events, whose metadata — unlike inbound — carries no
+    /// mail_message_id, so the lookup goes the other way via ticket_event_id.
+    Task<MailMessageRow?> GetByTicketEventIdAsync(long ticketEventId, CancellationToken ct);
+
     /// Given a list of RFC-822 Message-IDs (typically In-Reply-To + References
     /// split), return the first matching ticket_id, or null if no known mail
     /// references any of them.
