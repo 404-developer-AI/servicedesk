@@ -47,6 +47,7 @@ import {
   Link2,
   Mail,
   Phone,
+  Smartphone,
   MapPin,
   Briefcase,
   Pencil,
@@ -985,6 +986,17 @@ function ContactTab({
             className="text-primary hover:underline"
           >
             {contact.phone}
+          </a>
+        </FieldRow>
+      )}
+
+      {contact.mobilePhone && (
+        <FieldRow icon={Smartphone} label="Mobile">
+          <a
+            href={`tel:${contact.mobilePhone}`}
+            className="text-primary hover:underline"
+          >
+            {contact.mobilePhone}
           </a>
         </FieldRow>
       )}
