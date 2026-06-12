@@ -20,11 +20,12 @@ public sealed class TelavoxCallStateStore : ITelavoxCallStateStore
     public async Task<TelavoxCallStateSnapshot?> GetAsync(Guid userId, CancellationToken ct = default)
     {
         const string sql = """
-            SELECT user_id       AS "UserId",
-                   last_call_id   AS "LastCallId",
-                   last_state     AS "LastState",
-                   last_direction AS "LastDirection",
-                   last_seen_utc  AS "LastSeenUtc"
+            SELECT user_id          AS "UserId",
+                   last_call_id      AS "LastCallId",
+                   last_state        AS "LastState",
+                   last_direction    AS "LastDirection",
+                   answered_at_utc   AS "AnsweredAtUtc",
+                   last_seen_utc     AS "LastSeenUtc"
               FROM telavox_call_state
              WHERE user_id = @UserId
              LIMIT 1
@@ -40,17 +41,19 @@ public sealed class TelavoxCallStateStore : ITelavoxCallStateStore
         string? lastCallId,
         string? lastState,
         string? lastDirection,
+        DateTime? answeredAtUtc,
         DateTime lastSeenUtc,
         CancellationToken ct = default)
     {
         const string sql = """
-            INSERT INTO telavox_call_state (user_id, last_call_id, last_state, last_direction, last_seen_utc)
-            VALUES (@UserId, @LastCallId, @LastState, @LastDirection, @LastSeenUtc)
+            INSERT INTO telavox_call_state (user_id, last_call_id, last_state, last_direction, answered_at_utc, last_seen_utc)
+            VALUES (@UserId, @LastCallId, @LastState, @LastDirection, @AnsweredAtUtc, @LastSeenUtc)
             ON CONFLICT (user_id) DO UPDATE SET
-                last_call_id   = EXCLUDED.last_call_id,
-                last_state     = EXCLUDED.last_state,
-                last_direction = EXCLUDED.last_direction,
-                last_seen_utc  = EXCLUDED.last_seen_utc
+                last_call_id    = EXCLUDED.last_call_id,
+                last_state      = EXCLUDED.last_state,
+                last_direction  = EXCLUDED.last_direction,
+                answered_at_utc = EXCLUDED.answered_at_utc,
+                last_seen_utc   = EXCLUDED.last_seen_utc
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition(sql, new
@@ -59,6 +62,7 @@ public sealed class TelavoxCallStateStore : ITelavoxCallStateStore
             LastCallId = lastCallId,
             LastState = lastState,
             LastDirection = lastDirection,
+            AnsweredAtUtc = answeredAtUtc,
             LastSeenUtc = lastSeenUtc,
         }, cancellationToken: ct));
     }
@@ -69,9 +73,10 @@ public sealed class TelavoxCallStateStore : ITelavoxCallStateStore
         public string? LastCallId { get; set; }
         public string? LastState { get; set; }
         public string? LastDirection { get; set; }
+        public DateTime? AnsweredAtUtc { get; set; }
         public DateTime LastSeenUtc { get; set; }
 
         public TelavoxCallStateSnapshot ToSnapshot() =>
-            new(UserId, LastCallId, LastState, LastDirection, LastSeenUtc);
+            new(UserId, LastCallId, LastState, LastDirection, AnsweredAtUtc, LastSeenUtc);
     }
 }

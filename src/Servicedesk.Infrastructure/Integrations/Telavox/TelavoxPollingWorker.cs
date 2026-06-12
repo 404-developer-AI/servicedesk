@@ -235,6 +235,11 @@ public sealed class TelavoxPollingWorker : BackgroundService
         var agentActivityBroadcaster = sp.GetRequiredService<IAgentActivityBroadcaster>();
         var activityRecorder = sp.GetRequiredService<IActivityRecorder>();
         var integrationAudit = sp.GetRequiredService<IIntegrationAuditLogger>();
+        // v0.0.78 — resolve the caller's contact on the completed-call edge
+        // so the feed row can name who the agent spoke with. Same indexed
+        // E.164 lookup the call-popup uses, run server-side once per hangup.
+        var phoneNormalizer = sp.GetRequiredService<Phones.IContactPhoneNormalizer>();
+        var companyRepo = sp.GetRequiredService<Persistence.Companies.ICompanyRepository>();
 
         var allLinks = await links.ListAsync(ct);
         if (allLinks.Count == 0) return false;
@@ -286,6 +291,7 @@ public sealed class TelavoxPollingWorker : BackgroundService
                     decision.NewBaseline.LastCallId,
                     decision.NewBaseline.LastState,
                     decision.NewBaseline.LastDirection,
+                    decision.NewBaseline.AnsweredAtUtc,
                     decision.NewBaseline.LastSeenUtc,
                     ct);
 
@@ -330,12 +336,68 @@ public sealed class TelavoxPollingWorker : BackgroundService
                             TelavoxCallDirection.IsOutgoing(completedDirection) ? "outgoing"
                             : string.Equals(completedDirection, TelavoxCallDirection.Incoming, StringComparison.OrdinalIgnoreCase) ? "incoming"
                             : null;
+
+                        // Talk-time: hangup (now) minus the answered anchor.
+                        // The anchor is null only for a call we never saw
+                        // answered — which can't reach this answered→idle
+                        // edge — so in practice it is always set; guard anyway.
+                        int? durationSeconds = null;
+                        if (prior?.AnsweredAtUtc is DateTime answeredAt)
+                        {
+                            var secs = (int)Math.Round((DateTime.UtcNow - answeredAt).TotalSeconds);
+                            durationSeconds = secs < 0 ? 0 : secs;
+                        }
+
+                        // Resolve the other party. prior.LastCallId is the
+                        // CAPI callerId, i.e. the counterpart number in both
+                        // directions. Best-effort: a lookup failure or an
+                        // unknown number just leaves the name null.
+                        var rawNumber = prior?.LastCallId;
+                        string? phoneE164 = null;
+                        string? contactName = null;
+                        string? companyName = null;
+                        if (!string.IsNullOrWhiteSpace(rawNumber))
+                        {
+                            try
+                            {
+                                var e164 = await phoneNormalizer.NormalizeAsync(rawNumber, ct);
+                                if (e164.Length > 0)
+                                {
+                                    phoneE164 = e164;
+                                    var matches = await companyRepo.LookupContactsByPhoneE164Async(e164, 1, ct);
+                                    var hit = matches.Count > 0 ? matches[0] : null;
+                                    if (hit is not null)
+                                    {
+                                        var name = $"{hit.FirstName} {hit.LastName}".Trim();
+                                        contactName = string.IsNullOrWhiteSpace(name) ? null : name;
+                                        companyName = string.IsNullOrWhiteSpace(hit.LinkedCompanyName)
+                                            ? null : hit.LinkedCompanyName;
+                                    }
+                                }
+                            }
+                            catch (Exception lookupEx)
+                            {
+                                _logger.LogWarning(lookupEx,
+                                    "Contact lookup for completed call (user {UserId}) failed; row recorded without a name.",
+                                    link.UserId);
+                            }
+                        }
+
+                        // "with <who>" makes the single summary line useful on
+                        // its own (and searchable): contact name + company
+                        // when known, otherwise the bare number.
+                        var who = contactName is not null
+                            ? (companyName is not null ? $"{contactName} ({companyName})" : contactName)
+                            : (phoneE164 ?? rawNumber);
                         var completedSummary = directionLabel switch
                         {
                             "outgoing" => "completed outgoing phone call",
                             "incoming" => "completed incoming phone call",
                             _ => "completed phone call",
                         };
+                        if (!string.IsNullOrWhiteSpace(who))
+                            completedSummary += $" with {who}";
+
                         try
                         {
                             await activityRecorder.RecordAsync(new ActivityRecord(
@@ -350,6 +412,11 @@ public sealed class TelavoxPollingWorker : BackgroundService
                                     extension = link.TelavoxExtension,
                                     lastState = prior?.LastState,
                                     direction = directionLabel,
+                                    durationSeconds,
+                                    number = rawNumber,
+                                    phoneE164,
+                                    contactName,
+                                    companyName,
                                 }), ct);
                         }
                         catch (Exception recEx)

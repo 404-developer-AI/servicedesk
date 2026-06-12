@@ -2362,6 +2362,13 @@ public sealed class DatabaseBootstrapper : IHostedService
         ALTER TABLE telavox_call_state
             ADD COLUMN IF NOT EXISTS last_direction TEXT NULL;
 
+        -- v0.0.78 — talk-time anchor: the UTC moment the active call first
+        -- reached the answered state, held steady across ticks for the same
+        -- call. The completed-call activity row subtracts this from the
+        -- hangup time to report talk-time. NULL while only ringing, and idle.
+        ALTER TABLE telavox_call_state
+            ADD COLUMN IF NOT EXISTS answered_at_utc TIMESTAMPTZ NULL;
+
         -- ===================================================================
         -- v0.0.35 Timesheet — per-user feature flags. Two independent
         -- booleans live directly on the users row (no new role beside

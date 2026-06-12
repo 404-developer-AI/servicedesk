@@ -56,17 +56,34 @@ public static class TelavoxCallTransition
 
         if (current is null)
         {
-            // Idle: clear baseline. Retains the row so the next flip to
-            // active is detected as a transition rather than first-touch.
+            // Idle: clear baseline (including the talk-time anchor). Retains
+            // the row so the next flip to active is detected as a transition
+            // rather than first-touch.
             return new Decision(
                 ShouldFire: false,
-                NewBaseline: new TelavoxCallStateSnapshot(userId, null, null, null, nowUtc));
+                NewBaseline: new TelavoxCallStateSnapshot(userId, null, null, null, null, nowUtc));
         }
 
         var newCallId = current.CallId;
         var newState = current.State;
+
+        // Talk-time anchor. Set it the first tick this call is observed
+        // answered and hold it steady for the rest of the call (same callId,
+        // already-anchored) so the completed-call row measures connected
+        // time, not ring time. A call that is still only ringing has no
+        // anchor yet. Held across worker restarts because `prior` comes from
+        // the persisted row.
+        DateTime? answeredAtUtc = null;
+        if (IsAnswered(newState))
+        {
+            answeredAtUtc =
+                string.Equals(prior?.LastCallId, newCallId, StringComparison.Ordinal)
+                    ? prior?.AnsweredAtUtc ?? nowUtc
+                    : nowUtc;
+        }
+
         var newBaseline = new TelavoxCallStateSnapshot(
-            userId, newCallId, newState, current.Direction, nowUtc);
+            userId, newCallId, newState, current.Direction, answeredAtUtc, nowUtc);
 
         // Popup is hard inbound-only: an agent's own outbound call never
         // fires, regardless of trigger mode. The baseline above is still
