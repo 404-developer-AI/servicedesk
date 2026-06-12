@@ -18,12 +18,16 @@ public interface ITelavoxCallStateStore
     /// transition rather than first-touch. <paramref name="lastDirection"/>
     /// is the call's direction; persisted so the "call completed" activity
     /// row can record it on the answered→idle edge, where the live call has
-    /// already gone.
+    /// already gone. <paramref name="answeredAtUtc"/> is when the current
+    /// call first reached the answered state — held steady across ticks for
+    /// the same call so the completed-call row can report talk-time; null
+    /// while the call is only ringing, and at idle.
     Task UpsertAsync(
         Guid userId,
         string? lastCallId,
         string? lastState,
         string? lastDirection,
+        DateTime? answeredAtUtc,
         DateTime lastSeenUtc,
         CancellationToken ct = default);
 }
@@ -31,9 +35,13 @@ public interface ITelavoxCallStateStore
 /// Snapshot of <c>telavox_call_state</c> for one agent. <see cref="LastCallId"/>,
 /// <see cref="LastState"/> and <see cref="LastDirection"/> are all null when
 /// the agent has been seen at least once but is currently idle.
+/// <see cref="AnsweredAtUtc"/> is the talk-time anchor: the moment the active
+/// call first reached the answered state, or null when no answered call is in
+/// progress.
 public sealed record TelavoxCallStateSnapshot(
     Guid UserId,
     string? LastCallId,
     string? LastState,
     string? LastDirection,
+    DateTime? AnsweredAtUtc,
     DateTime LastSeenUtc);

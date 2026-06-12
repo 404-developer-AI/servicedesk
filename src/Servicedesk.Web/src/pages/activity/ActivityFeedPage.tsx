@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Activity, Phone, ExternalLink } from "lucide-react";
+import { Activity, Phone, PhoneIncoming, PhoneOutgoing, ExternalLink } from "lucide-react";
 import { activityApi, type ActivityEntry, type ActivityListQuery } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -249,14 +249,33 @@ function ActivityRow({
               <ExternalLink className="h-3 w-3" />
             </button>
           )}
-          {isTelavox && (
-            <span className="inline-flex items-center gap-1 text-emerald-400">
-              <Phone className="h-3 w-3" />
-              <span className="text-xs text-muted-foreground">
-                {(meta["extension"] as string | undefined) ?? "phone call"}
+          {isTelavox && (() => {
+            const direction = meta["direction"] as string | undefined;
+            const durationSeconds =
+              typeof meta["durationSeconds"] === "number"
+                ? (meta["durationSeconds"] as number)
+                : undefined;
+            const DirIcon =
+              direction === "outgoing"
+                ? PhoneOutgoing
+                : direction === "incoming"
+                  ? PhoneIncoming
+                  : Phone;
+            const durationLabel =
+              durationSeconds !== undefined
+                ? `${Math.floor(durationSeconds / 60)}:${String(durationSeconds % 60).padStart(2, "0")}`
+                : undefined;
+            return (
+              <span className="inline-flex items-center gap-1 text-emerald-400">
+                <DirIcon className="h-3 w-3" />
+                <span className="text-xs text-muted-foreground">
+                  {durationLabel ??
+                    (meta["extension"] as string | undefined) ??
+                    "phone call"}
+                </span>
               </span>
-            </span>
-          )}
+            );
+          })()}
         </div>
         <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground/70">
           <Badge className="border border-glass bg-glass font-mono text-[10px] font-normal text-foreground">

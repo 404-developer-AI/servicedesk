@@ -17,10 +17,17 @@ public sealed class TelavoxCallTransitionTests
         new(id, state, FromNumber: "+3245555555", ToNumber: "+3220000000",
             StartUtc: null, Direction: direction);
 
+    /// Convenience: most priors don't care about the talk-time anchor, so
+    /// default it to null and let the anchor-specific tests pass one.
+    private static TelavoxCallStateSnapshot Prior(
+        string? callId, string? state, string? direction, DateTime seenUtc,
+        DateTime? answeredAtUtc = null) =>
+        new(UserId, callId, state, direction, answeredAtUtc, seenUtc);
+
     [Fact]
     public void NoCall_ClearsBaseline_NoFire()
     {
-        var prior = new TelavoxCallStateSnapshot(UserId, "call-1", "ANSWERED", "incoming", Now.AddSeconds(-2));
+        var prior = Prior("call-1", "ANSWERED", "incoming", Now.AddSeconds(-2), Now.AddSeconds(-20));
         var d = TelavoxCallTransition.Evaluate(prior, current: null,
             TelavoxCallTransition.Answered, UserId, Now);
 
@@ -28,6 +35,7 @@ public sealed class TelavoxCallTransitionTests
         Assert.Null(d.NewBaseline.LastCallId);
         Assert.Null(d.NewBaseline.LastState);
         Assert.Null(d.NewBaseline.LastDirection);
+        Assert.Null(d.NewBaseline.AnsweredAtUtc);
         Assert.Equal(Now, d.NewBaseline.LastSeenUtc);
     }
 
@@ -64,7 +72,7 @@ public sealed class TelavoxCallTransitionTests
     public void Answered_RingingToAnswered_Fires()
     {
         // The flagship transition: same callId, state edge RINGING → ANSWERED.
-        var prior = new TelavoxCallStateSnapshot(UserId, "call-1", "RINGING", "incoming", Now.AddSeconds(-2));
+        var prior = Prior("call-1", "RINGING", "incoming", Now.AddSeconds(-2));
         var d = TelavoxCallTransition.Evaluate(
             prior, current: MakeCall("call-1", "ANSWERED"),
             TelavoxCallTransition.Answered, UserId, Now);
@@ -78,7 +86,7 @@ public sealed class TelavoxCallTransitionTests
     public void Answered_SameCallSameState_DoesNotFire()
     {
         // Long-running ANSWERED call must not re-pop on every tick.
-        var prior = new TelavoxCallStateSnapshot(UserId, "call-1", "ANSWERED", "incoming", Now.AddSeconds(-30));
+        var prior = Prior("call-1", "ANSWERED", "incoming", Now.AddSeconds(-30), Now.AddSeconds(-30));
         var d = TelavoxCallTransition.Evaluate(
             prior, current: MakeCall("call-1", "ANSWERED"),
             TelavoxCallTransition.Answered, UserId, Now);
@@ -124,7 +132,7 @@ public sealed class TelavoxCallTransitionTests
         // is still a meaningful transition (popup swaps from "ringing" to
         // "live"). The worker upserts the baseline so the next ANSWERED
         // tick is a same-state debounce, not a re-fire.
-        var prior = new TelavoxCallStateSnapshot(UserId, "call-1", "RINGING", "incoming", Now.AddSeconds(-2));
+        var prior = Prior("call-1", "RINGING", "incoming", Now.AddSeconds(-2));
         var d = TelavoxCallTransition.Evaluate(
             prior, current: MakeCall("call-1", "ANSWERED"),
             TelavoxCallTransition.Either, UserId, Now);
@@ -136,7 +144,7 @@ public sealed class TelavoxCallTransitionTests
     {
         // Caller A hung up (ENDED), caller B is now active. Different
         // callId means we evaluate as a fresh observation.
-        var prior = new TelavoxCallStateSnapshot(UserId, "call-1", "ENDED", "incoming", Now.AddSeconds(-5));
+        var prior = Prior("call-1", "ENDED", "incoming", Now.AddSeconds(-5));
         var d = TelavoxCallTransition.Evaluate(
             prior, current: MakeCall("call-2", "ANSWERED"),
             TelavoxCallTransition.Answered, UserId, Now);
@@ -148,7 +156,7 @@ public sealed class TelavoxCallTransitionTests
     public void UnknownTriggerMode_FailsToAnsweredDefault()
     {
         // Misconfigured setting (typo, ancient seed) must not spam-fire.
-        var prior = new TelavoxCallStateSnapshot(UserId, "call-1", "RINGING", "incoming", Now.AddSeconds(-1));
+        var prior = Prior("call-1", "RINGING", "incoming", Now.AddSeconds(-1));
         var d = TelavoxCallTransition.Evaluate(
             prior, current: MakeCall("call-1", "ANSWERED"),
             triggerMode: "whatever", UserId, Now);
@@ -162,7 +170,7 @@ public sealed class TelavoxCallTransitionTests
         // Some PBX vocabularies use ALERTING instead of RINGING. The
         // transition module treats them as equivalent so a CAPI vocab tweak
         // doesn't silently break the popup.
-        var prior = new TelavoxCallStateSnapshot(UserId, "call-1", "ALERTING", "incoming", Now.AddSeconds(-2));
+        var prior = Prior("call-1", "ALERTING", "incoming", Now.AddSeconds(-2));
         var d = TelavoxCallTransition.Evaluate(
             prior, current: MakeCall("call-1", "ANSWERED"),
             TelavoxCallTransition.Answered, UserId, Now);
@@ -176,7 +184,7 @@ public sealed class TelavoxCallTransitionTests
         // baseline string changes, but IsRinging treats both as ringing,
         // so the edge-detector must NOT re-fire — the ringing toast is
         // already up on the agent's screen.
-        var prior = new TelavoxCallStateSnapshot(UserId, "call-1", "ALERTING", "incoming", Now.AddSeconds(-2));
+        var prior = Prior("call-1", "ALERTING", "incoming", Now.AddSeconds(-2));
         var d = TelavoxCallTransition.Evaluate(
             prior, current: MakeCall("call-1", "RINGING"),
             TelavoxCallTransition.Ringing, UserId, Now);
@@ -190,7 +198,7 @@ public sealed class TelavoxCallTransitionTests
     public void IdleToCall_Ringing_FiresInRingingMode()
     {
         // Prior baseline was idle (last_call_id = null) → fresh callId.
-        var prior = new TelavoxCallStateSnapshot(UserId, null, null, null, Now.AddSeconds(-2));
+        var prior = Prior(null, null, null, Now.AddSeconds(-2));
         var d = TelavoxCallTransition.Evaluate(
             prior, current: MakeCall("call-7", "RINGING"),
             TelavoxCallTransition.Ringing, UserId, Now);
@@ -231,7 +239,7 @@ public sealed class TelavoxCallTransitionTests
     {
         // A full outbound ring→answer edge that would fire for an inbound
         // call must stay silent because the direction is outgoing.
-        var prior = new TelavoxCallStateSnapshot(UserId, "call-9", "ring", "outgoing", Now.AddSeconds(-2));
+        var prior = Prior("call-9", "ring", "outgoing", Now.AddSeconds(-2));
         var d = TelavoxCallTransition.Evaluate(
             prior, current: MakeCall("call-9", "up", TelavoxCallDirection.Outgoing),
             TelavoxCallTransition.Either, UserId, Now);
@@ -260,5 +268,65 @@ public sealed class TelavoxCallTransitionTests
             prior: null, current: MakeCall("call-4", "up", direction: ""),
             TelavoxCallTransition.Answered, UserId, Now);
         Assert.True(d.ShouldFire);
+    }
+
+    // ---- talk-time anchor (v0.0.78) ----
+
+    [Fact]
+    public void Answered_FirstObservation_AnchorsAtNow()
+    {
+        // First answered tick stamps the talk-time anchor at "now" so the
+        // completed-call row can later measure connected time.
+        var d = TelavoxCallTransition.Evaluate(
+            prior: null, current: MakeCall("call-1", "up"),
+            TelavoxCallTransition.Answered, UserId, Now);
+        Assert.Equal(Now, d.NewBaseline.AnsweredAtUtc);
+    }
+
+    [Fact]
+    public void Answered_SameCall_HoldsOriginalAnchorSteady()
+    {
+        // A long answered call must keep its first anchor across ticks so the
+        // duration is measured from the true pickup, not the latest poll.
+        var anchored = Now.AddSeconds(-45);
+        var prior = Prior("call-1", "up", "incoming", Now.AddSeconds(-1), anchored);
+        var d = TelavoxCallTransition.Evaluate(
+            prior, current: MakeCall("call-1", "up"),
+            TelavoxCallTransition.Answered, UserId, Now);
+        Assert.Equal(anchored, d.NewBaseline.AnsweredAtUtc);
+    }
+
+    [Fact]
+    public void Ringing_HasNoAnchorYet()
+    {
+        // Only ringing — talk hasn't started, so no anchor.
+        var d = TelavoxCallTransition.Evaluate(
+            prior: null, current: MakeCall("call-1", "ringing"),
+            TelavoxCallTransition.Ringing, UserId, Now);
+        Assert.Null(d.NewBaseline.AnsweredAtUtc);
+    }
+
+    [Fact]
+    public void RingingToAnswered_AnchorsAtAnswerTime_NotRingTime()
+    {
+        // The prior tick was ringing (no anchor). The answered edge anchors
+        // at "now", so the duration excludes the ring phase (talk-time).
+        var prior = Prior("call-1", "ringing", "incoming", Now.AddSeconds(-8));
+        var d = TelavoxCallTransition.Evaluate(
+            prior, current: MakeCall("call-1", "up"),
+            TelavoxCallTransition.Answered, UserId, Now);
+        Assert.Equal(Now, d.NewBaseline.AnsweredAtUtc);
+    }
+
+    [Fact]
+    public void NewAnsweredCallAfterPriorCall_ReanchorsAtNow()
+    {
+        // A different callId means a fresh anchor even if the prior call was
+        // also answered — the old anchor must not leak into the new call.
+        var prior = Prior("call-1", "up", "incoming", Now.AddSeconds(-1), Now.AddSeconds(-90));
+        var d = TelavoxCallTransition.Evaluate(
+            prior, current: MakeCall("call-2", "up"),
+            TelavoxCallTransition.Answered, UserId, Now);
+        Assert.Equal(Now, d.NewBaseline.AnsweredAtUtc);
     }
 }
