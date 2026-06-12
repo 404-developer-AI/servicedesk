@@ -2355,6 +2355,13 @@ public sealed class DatabaseBootstrapper : IHostedService
             last_seen_utc   TIMESTAMPTZ NOT NULL DEFAULT now()
         );
 
+        -- v0.0.78 — persist the call direction alongside the baseline so the
+        -- "call completed" activity row can record incoming vs. outgoing on
+        -- the answered→idle edge, where the live call snapshot is already
+        -- gone. NULL at idle, "incoming" / "outgoing" while a call is active.
+        ALTER TABLE telavox_call_state
+            ADD COLUMN IF NOT EXISTS last_direction TEXT NULL;
+
         -- ===================================================================
         -- v0.0.35 Timesheet — per-user feature flags. Two independent
         -- booleans live directly on the users row (no new role beside

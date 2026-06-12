@@ -511,9 +511,11 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
     /// <c>[ { callerId, callDirection, lineStatus }, … ]</c>. No callId,
     /// no startTime, no toNumber — the wire shape is intentionally narrow.
     /// Empirically the same call surfaces multiple times during ringing
-    /// (one row per terminal/device); we pick the first <i>incoming</i>
-    /// row that isn't already terminated. Outbound calls are ignored —
-    /// the popup is for inbound only.
+    /// (one row per terminal/device); we pick the first row that isn't
+    /// already terminated, in <i>either</i> direction. The captured
+    /// <c>callDirection</c> rides along on the returned call so the worker
+    /// can keep the popup inbound-only while still flipping the dashboard
+    /// call-state indicator for an agent who is dialling out.
     ///
     /// Because there is no real callId, the synthetic <see cref="TelavoxCall.CallId"/>
     /// is the <c>callerId</c> itself; the same caller is treated as the
@@ -551,9 +553,6 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
 
                 var direction = (TryGetString(el, "callDirection") ?? string.Empty)
                     .ToLowerInvariant();
-                // Outbound calls don't deserve a popup — the agent
-                // initiated them, they already know who's on the line.
-                if (direction == "outgoing") continue;
 
                 var lineStatus = (TryGetString(el, "lineStatus") ?? string.Empty)
                     .ToLowerInvariant();
@@ -561,12 +560,17 @@ public sealed class TelavoxApiClient : ITelavoxApiClient
                 // null `current` in the state-machine.
                 if (lineStatus == "down") continue;
 
+                // Outbound calls are kept (not skipped here): the transition
+                // module gates the popup on direction so the agent never gets
+                // a popup for a call they placed, while the dashboard
+                // call-state indicator still tracks the outbound call.
                 return new TelavoxCall(
                     CallId: callerId,
                     State: lineStatus,
                     FromNumber: callerId,
                     ToNumber: null,
-                    StartUtc: null);
+                    StartUtc: null,
+                    Direction: direction);
             }
             return null;
         }

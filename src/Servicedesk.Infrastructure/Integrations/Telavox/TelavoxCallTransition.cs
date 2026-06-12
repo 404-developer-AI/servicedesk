@@ -60,12 +60,24 @@ public static class TelavoxCallTransition
             // active is detected as a transition rather than first-touch.
             return new Decision(
                 ShouldFire: false,
-                NewBaseline: new TelavoxCallStateSnapshot(userId, null, null, nowUtc));
+                NewBaseline: new TelavoxCallStateSnapshot(userId, null, null, null, nowUtc));
         }
 
         var newCallId = current.CallId;
         var newState = current.State;
-        var newBaseline = new TelavoxCallStateSnapshot(userId, newCallId, newState, nowUtc);
+        var newBaseline = new TelavoxCallStateSnapshot(
+            userId, newCallId, newState, current.Direction, nowUtc);
+
+        // Popup is hard inbound-only: an agent's own outbound call never
+        // fires, regardless of trigger mode. The baseline above is still
+        // written for outbound calls so the dashboard call-state indicator
+        // tracks them — only the SignalR popup is suppressed. An absent /
+        // unknown direction is treated as inbound (its pre-direction
+        // behaviour) so a CAPI vocab gap can't silence real inbound popups.
+        if (TelavoxCallDirection.IsOutgoing(current.Direction))
+        {
+            return new Decision(false, newBaseline);
+        }
 
         var priorCallId = prior?.LastCallId;
         var priorState = prior?.LastState;
