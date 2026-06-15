@@ -266,6 +266,78 @@ public sealed class AdsolutContractsSyncWorker : BackgroundService
                 modifiedSince = modifiedSince?.UtcDateTime,
             }), ct);
 
+        // Resolve any contract customers we don't yet have a relation code for.
+        // This bridges contracts (ERP customer GUID) → companies (relation code
+        // == adsolut_number) and powers the Microsoft 365 matching list. Best
+        // effort: failures are logged and retried next tick; it never fails the
+        // contracts pass.
+        await ResolveCustomersAsync(sp, administrationId, ct);
+
         await notifier.NotifySyncCompletedAsync(AdsolutEventTypes.Integration, ct);
+    }
+
+    /// Walk the contract customers with no cached relation code and fetch each
+    /// via GET /erp/v1/adm/{adm}/Customers/{id}, caching id → code/name. One
+    /// call per distinct unresolved customer (deduped), capped per tick. A 429
+    /// stops the pass early — the remainder resolves on the next tick.
+    private async Task ResolveCustomersAsync(IServiceProvider sp, Guid administrationId, CancellationToken ct)
+    {
+        const int MaxPerTick = 1000;
+        var customersClient = sp.GetRequiredService<IAdsolutErpCustomersClient>();
+        var customerRepo = sp.GetRequiredService<IAdsolutErpCustomerRepository>();
+        var auditLog = sp.GetRequiredService<IIntegrationAuditLogger>();
+
+        var stopwatch = Stopwatch.StartNew();
+        var resolved = 0;
+        var failures = 0;
+        try
+        {
+            var pending = await customerRepo.GetUnresolvedContractCustomerIdsAsync(MaxPerTick, ct);
+            foreach (var id in pending)
+            {
+                ct.ThrowIfCancellationRequested();
+                try
+                {
+                    var customer = await customersClient.GetByIdAsync(administrationId, id, ct);
+                    // Cache even a null/empty result (as a NULL-code row) so we
+                    // don't re-fetch a codeless customer every tick.
+                    await customerRepo.UpsertAsync(customer ?? new AdsolutErpCustomer(id, null, null), ct);
+                    resolved++;
+                }
+                catch (AdsolutApiException ex) when (ex.HttpStatus == 429)
+                {
+                    _logger.LogWarning(ex, "Adsolut ERP customer resolution hit 429 — pausing; resumes next tick.");
+                    break;
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    failures++;
+                    _logger.LogWarning(ex, "Adsolut ERP customer {Id} resolution failed; continuing.", id);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Adsolut ERP customer resolution step failed.");
+        }
+        stopwatch.Stop();
+
+        if (resolved > 0 || failures > 0)
+        {
+            await auditLog.LogAsync(new IntegrationAuditEvent(
+                Integration: AdsolutEventTypes.Integration,
+                EventType: AdsolutEventTypes.ErpCustomersGet,
+                Outcome: failures == 0 ? IntegrationAuditOutcome.Ok : IntegrationAuditOutcome.Warn,
+                LatencyMs: (int)stopwatch.ElapsedMilliseconds,
+                Payload: new { administrationId, resolved, failures }), CancellationToken.None);
+        }
     }
 }

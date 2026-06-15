@@ -27,10 +27,11 @@ public sealed class AdsolutContractStatusOption
 }
 
 /// Header row for the Contracts overview + detail. CompanyId/CompanyName/
-/// RelationCode are LEFT-JOINed from the local companies mirror on
-/// adsolut_id = customer_adsolut_id — the relation link the user asked for.
-/// When no company matches, those are null and the UI falls back to CustomerName
-/// (the company name copied onto the contract).
+/// RelationCode are LEFT-JOINed from the local companies mirror via the relation
+/// code (contract → adsolut_erp_customers → companies.adsolut_number), because
+/// the contract's ERP customer GUID does not match companies.adsolut_id. When no
+/// company matches (customer not resolved yet, or no local company), those are
+/// null and the UI falls back to CustomerName (the name copied onto the contract).
 public sealed class AdsolutContractRow
 {
     public Guid Id { get; set; }
@@ -81,6 +82,17 @@ public sealed record AdsolutContractDetail(
     AdsolutContractRow Header,
     IReadOnlyList<AdsolutContractLineRow> Lines);
 
+/// One company that has at least one contract line referencing a selected
+/// "Microsoft 365" article — a row in the Microsoft 365 matching list.
+/// CompanyCode = companies.adsolut_number (the relation/customer code).
+/// Distinct per company regardless of how many matching lines it has.
+public sealed class AdsolutM365CompanyRow
+{
+    public Guid CompanyId { get; set; }
+    public string? CompanyCode { get; set; }
+    public string? CompanyName { get; set; }
+}
+
 public sealed record AdsolutContractListResult(
     IReadOnlyList<AdsolutContractRow> Items,
     int Total,
@@ -113,6 +125,12 @@ public interface IAdsolutContractRepository
 
     /// One contract with its article lines (overview expand + detail).
     Task<AdsolutContractDetail?> GetDetailAsync(Guid id, CancellationToken ct = default);
+
+    /// Distinct companies that have one or more contract lines referencing any
+    /// of <paramref name="articleIds"/> — the Microsoft 365 matching list. Each
+    /// company appears once. Empty input → empty result.
+    Task<IReadOnlyList<AdsolutM365CompanyRow>> GetM365CompaniesAsync(
+        IReadOnlyCollection<Guid> articleIds, CancellationToken ct = default);
 }
 
 public sealed class AdsolutContractRepository : IAdsolutContractRepository
@@ -323,7 +341,9 @@ public sealed class AdsolutContractRepository : IAdsolutContractRepository
     }
 
     // Header columns + the LEFT-JOINed company link (relation). `c` = the
-    // contract, `co` = the local company matched on adsolut_id.
+    // contract, `ec` = the resolved ERP customer (id → relation code), `co` =
+    // the local company matched on that code. See FromClause for why the link
+    // goes through the relation code and not the ERP customer GUID.
     private const string HeaderColumns = """
         c.id                          AS Id,
         c.doc_nr                      AS DocNr,
@@ -353,9 +373,17 @@ public sealed class AdsolutContractRepository : IAdsolutContractRepository
         c.synced_utc                  AS SyncedUtc
         """;
 
+    // A contract carries the ERP customer GUID, which does NOT match
+    // companies.adsolut_id (ERP vs Accounting assign different GUIDs to the same
+    // relation). Bridge via the relation CODE: contract → adsolut_erp_customers
+    // (resolved id → code, populated by the Contracts sync) → companies on
+    // adsolut_number = code. Both joins are LEFT so a contract still lists when
+    // its customer isn't resolved yet or has no local company (the UI then falls
+    // back to the contract's own customer_name).
     private const string FromClause = """
         FROM adsolut_contracts c
-        LEFT JOIN companies co ON co.adsolut_id = c.customer_adsolut_id
+        LEFT JOIN adsolut_erp_customers ec ON ec.id = c.customer_adsolut_id
+        LEFT JOIN companies co ON co.adsolut_number = ec.code AND ec.code IS NOT NULL
         """;
 
     public async Task<AdsolutContractListResult> ListAsync(
@@ -437,5 +465,35 @@ public sealed class AdsolutContractRepository : IAdsolutContractRepository
             new { id }, cancellationToken: ct));
 
         return new AdsolutContractDetail(header, lines.ToList());
+    }
+
+    public async Task<IReadOnlyList<AdsolutM365CompanyRow>> GetM365CompaniesAsync(
+        IReadOnlyCollection<Guid> articleIds, CancellationToken ct = default)
+    {
+        if (articleIds.Count == 0) return Array.Empty<AdsolutM365CompanyRow>();
+
+        // The ERP customer GUID on a contract does NOT match companies.adsolut_id
+        // (ERP vs Accounting assign different GUIDs to the same relation). The
+        // shared key is the relation CODE: contracts → adsolut_erp_customers
+        // (resolved id → code) → companies.adsolut_number. Same bridge the
+        // Orders/SalesReceipts mirrors use.
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<AdsolutM365CompanyRow>(new CommandDefinition(
+            """
+            SELECT DISTINCT
+                co.id             AS CompanyId,
+                co.adsolut_number AS CompanyCode,
+                co.name           AS CompanyName
+            FROM adsolut_contract_lines l
+            JOIN adsolut_contracts c      ON c.id = l.contract_id
+            JOIN adsolut_erp_customers ec ON ec.id = c.customer_adsolut_id
+            JOIN companies co             ON co.adsolut_number = ec.code
+            WHERE l.article_id = ANY(@ArticleIds::uuid[])
+              AND ec.code IS NOT NULL
+            ORDER BY co.name ASC NULLS LAST
+            """,
+            new { ArticleIds = articleIds.ToArray() },
+            cancellationToken: ct));
+        return rows.ToList();
     }
 }

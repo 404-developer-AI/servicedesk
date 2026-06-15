@@ -26,6 +26,7 @@ import { StatisticsPage } from "@/pages/statistics/StatisticsPage";
 import { ContractsPage } from "@/pages/contracts/ContractsPage";
 import { ContractArticlesPage } from "@/pages/contracts/ContractArticlesPage";
 import { ContractsOverviewPage } from "@/pages/contracts/ContractsOverviewPage";
+import { ContractM365Page } from "@/pages/contracts/ContractM365Page";
 import { ZammadImportRunsListPage } from "@/pages/settings/zammad/ZammadImportRunsListPage";
 import { ZammadImportRunDetailPage } from "@/pages/settings/zammad/ZammadImportRunDetailPage";
 import { MailSettingsPage } from "@/pages/settings/MailSettingsPage";
@@ -420,6 +421,22 @@ const contractsOverviewRoute = createRoute({
   component: ContractsOverviewPage,
 });
 
+// Microsoft 365 matching — third live module behind the Contracts hub. Lists
+// companies whose contracts reference admin-curated "M365-related" Adsolut
+// articles. Same contracts_enabled gate; the /api/contracts/m365 endpoints
+// carry RequireAgent + an in-handler flag check server-side.
+const contractM365Route = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/contracts/m365-matching",
+  beforeLoad: (args) => {
+    authGate(["Agent", "Admin"])(args);
+    if (!authedUser()?.contractsEnabled) {
+      throw redirect({ to: "/" });
+    }
+  },
+  component: ContractM365Page,
+});
+
 const profileMentionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/profile/mentions",
@@ -775,6 +792,7 @@ const routeTree = rootRoute.addChildren([
   contractsRoute,
   contractArticlesRoute,
   contractsOverviewRoute,
+  contractM365Route,
   settingsRoute.addChildren([
     settingsIndexRoute,
     settingsGeneralRoute,

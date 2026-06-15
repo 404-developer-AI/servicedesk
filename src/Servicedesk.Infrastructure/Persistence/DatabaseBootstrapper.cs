@@ -4410,6 +4410,9 @@ public sealed class DatabaseBootstrapper : IHostedService
 
         CREATE INDEX IF NOT EXISTS ix_adsolut_contract_lines_contract
             ON adsolut_contract_lines (contract_id);
+        -- The Microsoft 365 matching list filters lines by article_id, so index it.
+        CREATE INDEX IF NOT EXISTS ix_adsolut_contract_lines_article
+            ON adsolut_contract_lines (article_id);
 
         -- Singleton sync-state for the Contracts mirror. Own cursor, separate
         -- from Orders/SalesReceipts/Articles/Companies so enabling/pausing one
@@ -4424,6 +4427,24 @@ public sealed class DatabaseBootstrapper : IHostedService
             contracts_upserted  INTEGER     NOT NULL DEFAULT 0,
             updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now()
         );
+
+        -- ERP customer (relation) resolution map. A contract references its
+        -- customer by the ERP customer GUID (customerId); the ERP and Accounting
+        -- APIs hold the SAME relations but assign DIFFERENT GUIDs, so that GUID
+        -- does not match companies.adsolut_id. The shared key is the relation
+        -- CODE: GET /erp/v1/adm/{adm}/Customers/{id} returns it, and it equals
+        -- companies.adsolut_number (exactly how Orders/SalesReceipts bridge to a
+        -- local company). This table caches id → code resolved during the
+        -- Contracts sync so the matching join stays a fast pure-DB lookup. A row
+        -- with NULL code means "resolved, but the ERP customer carried no code".
+        CREATE TABLE IF NOT EXISTS adsolut_erp_customers (
+            id         UUID        PRIMARY KEY,
+            code       TEXT        NULL,
+            name       TEXT        NULL,
+            synced_utc TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS ix_adsolut_erp_customers_code
+            ON adsolut_erp_customers (code);
 
         -- ===================================================================
         -- v0.0.77 Outbound mail — large attachments (uploadSession).

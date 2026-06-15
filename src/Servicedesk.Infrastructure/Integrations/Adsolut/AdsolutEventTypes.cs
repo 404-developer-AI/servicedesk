@@ -299,4 +299,9 @@ public static class AdsolutEventTypes
     /// One Contracts sync-worker tick summary (seen / upserted + duration +
     /// outcome).
     public const string ErpContractsSyncTick = "erp.contracts.sync_tick";
+
+    /// GET /erp/v1/adm/{adm}/Customers/{id} — resolve an ERP customer GUID to
+    /// its relation code (== companies.adsolut_number) for contract↔company
+    /// matching. Called during the Contracts sync for unresolved customers only.
+    public const string ErpCustomersGet = "erp.customers.get";
 }
