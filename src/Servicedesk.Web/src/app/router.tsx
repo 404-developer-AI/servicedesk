@@ -22,6 +22,7 @@ import { ZammadIntegrationPage } from "@/pages/settings/ZammadIntegrationPage";
 import { TrmmIntegrationPage } from "@/pages/settings/TrmmIntegrationPage";
 import { M365IntegrationPage } from "@/pages/settings/M365IntegrationPage";
 import { SophosIntegrationPage } from "@/pages/settings/SophosIntegrationPage";
+import { VeeamIntegrationPage } from "@/pages/settings/VeeamIntegrationPage";
 import { AssetsPage } from "@/pages/assets/AssetsPage";
 import { OrdersPage } from "@/pages/orders/OrdersPage";
 import { StatisticsPage } from "@/pages/statistics/StatisticsPage";
@@ -654,6 +655,15 @@ const settingsSophosIntegrationRoute = createRoute({
   component: SophosIntegrationPage,
 });
 
+// Veeam backup matching. Admin-only. Houses the VSPC connection (base URL +
+// username + self-signed-TLS toggle), the password secret, the enable toggle,
+// sync interval, a connection test and the integration_audit reader.
+const settingsVeeamIntegrationRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "integrations/veeam",
+  component: VeeamIntegrationPage,
+});
+
 // v0.0.41 phase 3 — dry-run engine pages. Runs-list lives on its own
 // URL so admins can deep-link to past runs from a separate tab; the
 // detail page renders the per-ticket mapping verdict for one run.
@@ -861,6 +871,7 @@ const routeTree = rootRoute.addChildren([
     settingsTrmmIntegrationRoute,
     settingsM365IntegrationRoute,
     settingsSophosIntegrationRoute,
+    settingsVeeamIntegrationRoute,
     settingsTicketsRoute,
     settingsCompaniesRoute,
     settingsContactsRoute,

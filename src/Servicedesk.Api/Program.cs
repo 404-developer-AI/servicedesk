@@ -648,6 +648,7 @@ app.MapZammadKbImportEndpoints();
 app.MapTrmmEndpoints();
 app.MapM365Endpoints();
 app.MapSophosEndpoints();
+app.MapVeeamEndpoints();
 app.MapAssetsEndpoints();
 app.MapAdminMailDiagnosticsEndpoints();
 app.MapMailMailboxEndpoints();
