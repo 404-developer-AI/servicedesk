@@ -14,6 +14,12 @@ import { contractM365Api, type M365Mailbox } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   M365StatusBadge,
   openConsentWindow,
   relativeFromUtc,
@@ -69,6 +75,7 @@ export function ContractM365CompanyPage({ companyId }: { companyId: string }) {
 
   const mailboxes = data?.mailboxes ?? [];
   const spamFilterAvailable = data?.spamFilterAvailable ?? false;
+  const veeamAvailable = data?.veeamAvailable ?? false;
   const byType = useMemo(() => summariseByType(mailboxes), [mailboxes]);
 
   const title = data?.companyName || data?.companyCode || "Company";
@@ -189,27 +196,40 @@ export function ContractM365CompanyPage({ companyId }: { companyId: string }) {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-glass text-left text-[11px] uppercase tracking-wider text-muted-foreground/70">
-                  <th className="px-3 py-2.5 font-medium">Type</th>
-                  <th className="px-3 py-2.5 font-medium">Name</th>
-                  <th className="px-3 py-2.5 font-medium">UPN</th>
-                  <th className="px-3 py-2.5 font-medium">Enabled</th>
-                  {spamFilterAvailable && (
-                    <th className="px-3 py-2.5 font-medium">Spam filter</th>
-                  )}
-                  <th className="px-3 py-2.5 font-medium">Licenses</th>
-                </tr>
-              </thead>
-              <tbody>
-                {mailboxes.map((m) => (
-                  <MailboxRow key={m.objectId} mailbox={m} showSpamFilter={spamFilterAvailable} />
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <TooltipProvider delayDuration={100}>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-glass text-left text-[11px] uppercase tracking-wider text-muted-foreground/70">
+                    <th className="px-3 py-2.5 font-medium">Type</th>
+                    <th className="px-3 py-2.5 font-medium">Name</th>
+                    <th className="px-3 py-2.5 font-medium">UPN</th>
+                    <th className="px-3 py-2.5 font-medium">Enabled</th>
+                    {spamFilterAvailable && (
+                      <th className="px-3 py-2.5 font-medium">Spam filter</th>
+                    )}
+                    {veeamAvailable && (
+                      <>
+                        <th className="px-3 py-2.5 font-medium">OneDrive</th>
+                        <th className="px-3 py-2.5 font-medium">Exchange</th>
+                      </>
+                    )}
+                    <th className="px-3 py-2.5 font-medium">Licenses</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mailboxes.map((m) => (
+                    <MailboxRow
+                      key={m.objectId}
+                      mailbox={m}
+                      showSpamFilter={spamFilterAvailable}
+                      showVeeam={veeamAvailable}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </TooltipProvider>
         )}
       </div>
     </div>
@@ -219,9 +239,11 @@ export function ContractM365CompanyPage({ companyId }: { companyId: string }) {
 function MailboxRow({
   mailbox,
   showSpamFilter,
+  showVeeam,
 }: {
   mailbox: M365Mailbox;
   showSpamFilter: boolean;
+  showVeeam: boolean;
 }) {
   return (
     <tr className="border-b border-glass align-top transition-colors hover:bg-glass-hover">
@@ -246,9 +268,87 @@ function MailboxRow({
           <SpamFilterBadge protected_={mailbox.spamFilterProtected} />
         </td>
       )}
+      {showVeeam && (
+        <>
+          <td className="px-3 py-2.5">
+            <BackupBadge
+              protected_={mailbox.onedriveProtected}
+              restorePoints={mailbox.onedriveRestorePoints}
+              lastBackupUtc={mailbox.onedriveLastBackupUtc}
+            />
+          </td>
+          <td className="px-3 py-2.5">
+            <BackupBadge
+              protected_={mailbox.exchangeProtected}
+              restorePoints={mailbox.exchangeRestorePoints}
+              lastBackupUtc={mailbox.exchangeLastBackupUtc}
+            />
+          </td>
+        </>
+      )}
       <td className="px-3 py-2.5 text-xs text-muted-foreground">{mailbox.licenses || "—"}</td>
     </tr>
   );
+}
+
+/// Veeam backup verdict for one mailbox+service. Protected = VSPC has a backup
+/// object for this display name in that repository; hovering the pill reveals
+/// the last-backup time and how many restore points we hold. Unprotected = the
+/// company is in VSPC but this mailbox has no backup object for the service.
+function BackupBadge({
+  protected_,
+  restorePoints,
+  lastBackupUtc,
+}: {
+  protected_: boolean | null;
+  restorePoints: number | null;
+  lastBackupUtc: string | null;
+}) {
+  if (protected_ === null) return <span className="text-muted-foreground">—</span>;
+  if (!protected_) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-glass-strong bg-glass-strong px-2 py-0.5 text-[11px] text-muted-foreground">
+        <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" /> Unprotected
+      </span>
+    );
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex cursor-default items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-300">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Protected
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="border border-glass-strong bg-popover text-popover-foreground">
+        <div className="space-y-0.5">
+          <div className="text-[11px] text-muted-foreground">
+            Last backup:{" "}
+            <span className="text-foreground">{formatBackupStamp(lastBackupUtc)}</span>
+          </div>
+          <div className="text-[11px] text-muted-foreground">
+            Restore points:{" "}
+            <span className="tabular-nums text-foreground">{restorePoints ?? 0}</span>
+          </div>
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/// Absolute, server-sourced backup timestamp for the Protected pill hover.
+function formatBackupStamp(iso: string | null): string {
+  if (!iso) return "unknown";
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
 }
 
 /// Sophos spam-filter verdict for one mailbox. Protected = its address is in

@@ -1200,6 +1200,15 @@ export type M365Mailbox = {
   // (integration off or no matched tenant); otherwise Protected (true) /
   // Unprotected (false).
   spamFilterProtected: boolean | null;
+  // Veeam backup status per service. null when Veeam is off or the company is
+  // not known in VSPC; the restore-point count + last-backup date feed the
+  // Protected pill's hover.
+  exchangeProtected: boolean | null;
+  exchangeRestorePoints: number | null;
+  exchangeLastBackupUtc: string | null;
+  onedriveProtected: boolean | null;
+  onedriveRestorePoints: number | null;
+  onedriveLastBackupUtc: string | null;
 };
 
 export type M365CompanyMailboxes = {
@@ -1215,6 +1224,9 @@ export type M365CompanyMailboxes = {
   // When true, the Sophos spam-filter column is shown and each mailbox carries
   // a Protected/Unprotected verdict.
   spamFilterAvailable: boolean;
+  // When true, the OneDrive + Exchange backup columns are shown (the company is
+  // known in VSPC).
+  veeamAvailable: boolean;
   mailboxes: M365Mailbox[];
 };
 
@@ -2182,6 +2194,12 @@ export type VeeamStatus = {
   passwordConfigured: boolean;
   syncIntervalMinutes: number;
   allowSelfSignedTls: boolean;
+  lastCheckedUtc: string | null;
+  lastChangedUtc: string | null;
+  lastStatus: string | null;
+  lastError: string | null;
+  companyCount: number;
+  objectCount: number;
 };
 
 export type VeeamSecretStatus = { configured: boolean };
@@ -2191,6 +2209,25 @@ export type VeeamTestResult = {
   error?: string;
   message?: string;
   latencyMs: number;
+  companyCount?: number;
+};
+
+export type VeeamSyncResult = {
+  success: boolean;
+  status: string;
+  error: string | null;
+  companyCount: number;
+  objectCount: number;
+  changed: boolean;
+};
+
+export type VeeamCompany = {
+  companyId: string;
+  companyCode: string | null;
+  companyName: string | null;
+  vspcCompanyName: string | null;
+  objectCount: number;
+  lastSyncedUtc: string | null;
 };
 
 export const veeamAdminApi = {
@@ -2224,6 +2261,13 @@ export const veeamAdminApi = {
     request<VeeamTestResult>(
       "POST",
       "/api/admin/integrations/veeam/test-connection",
+    ),
+  sync: () =>
+    request<VeeamSyncResult>("POST", "/api/admin/integrations/veeam/sync"),
+  companies: () =>
+    request<{ items: VeeamCompany[] }>(
+      "GET",
+      "/api/admin/integrations/veeam/companies",
     ),
   auditLog: (cursor: number | null, limit = 50) => {
     const qs = new URLSearchParams();

@@ -290,6 +290,23 @@ public static class DependencyInjection
             Servicedesk.Infrastructure.Integrations.Sophos.SophosSyncService>();
         services.AddHostedService<Servicedesk.Infrastructure.Integrations.Sophos.SophosSyncWorker>();
 
+        // Veeam backup matching (Veeam Service Provider Console). The VSPC
+        // company code (ownerCredentials.userName) bridges to
+        // companies.adsolut_number; for each M365-connected company matched in
+        // VSPC we pull the VB365 protected objects (Exchange / OneDrive split,
+        // restore-point counts, last-backup date) and key them by display name
+        // — the only identity VSPC exposes. The M365 company view overlays each
+        // mailbox with OneDrive / Exchange Protected pills. The api client is a
+        // singleton so the password-grant token cache survives across ticks; the
+        // worker runs the Veeam.SyncIntervalMinutes cadence.
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.Veeam.IVeeamStore,
+            Servicedesk.Infrastructure.Integrations.Veeam.VeeamStore>();
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.Veeam.IVeeamApiClient,
+            Servicedesk.Infrastructure.Integrations.Veeam.VeeamApiClient>();
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.Veeam.IVeeamSyncService,
+            Servicedesk.Infrastructure.Integrations.Veeam.VeeamSyncService>();
+        services.AddHostedService<Servicedesk.Infrastructure.Integrations.Veeam.VeeamSyncWorker>();
+
         // EOL data feed (v0.0.52) — pulls endoflife.date weekly into the
         // local eol_releases mirror so the Assets page can tint rows
         // past or near end-of-support without a live API call on render.

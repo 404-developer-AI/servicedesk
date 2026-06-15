@@ -1,6 +1,5 @@
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
-using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Audit;
@@ -40,6 +39,9 @@ public static class VeeamEndpoints
 
         admin.MapPost("/test-connection", TestConnection).WithName("TestVeeamConnection").WithOpenApi();
 
+        admin.MapPost("/sync", SyncNow).WithName("SyncVeeamNow").WithOpenApi();
+        admin.MapGet("/companies", GetCompanies).WithName("GetVeeamCompanies").WithOpenApi();
+
         admin.MapGet("/audit", GetAuditLog).WithName("GetVeeamAuditLog").WithOpenApi();
 
         return app;
@@ -50,6 +52,7 @@ public static class VeeamEndpoints
     private static async Task<IResult> GetStatus(
         ISettingsService settings,
         IProtectedSecretStore secrets,
+        IVeeamStore store,
         CancellationToken ct)
     {
         var enabled = await settings.GetAsync<bool>(SettingKeys.Veeam.Enabled, ct);
@@ -58,6 +61,7 @@ public static class VeeamEndpoints
         var allowSelfSigned = await settings.GetAsync<bool>(SettingKeys.Veeam.AllowSelfSignedTls, ct);
         var hasSecret = await secrets.HasAsync(ProtectedSecretKeys.VeeamPassword, ct);
         var syncIntervalMinutes = Math.Max(60, await settings.GetAsync<int>(SettingKeys.Veeam.SyncIntervalMinutes, ct));
+        var sync = await store.GetSyncStateAsync(ct);
 
         var configured = baseUrl.Length > 0 && username.Length > 0 && hasSecret;
         var state = !enabled
@@ -73,6 +77,12 @@ public static class VeeamEndpoints
             passwordConfigured = hasSecret,
             syncIntervalMinutes,
             allowSelfSignedTls = allowSelfSigned,
+            lastCheckedUtc = sync?.LastCheckedUtc,
+            lastChangedUtc = sync?.LastChangedUtc,
+            lastStatus = sync?.LastStatus,
+            lastError = sync?.LastError,
+            companyCount = sync?.CompanyCount ?? 0,
+            objectCount = sync?.ObjectCount ?? 0,
         });
     }
 
@@ -253,6 +263,7 @@ public static class VeeamEndpoints
         HttpContext http,
         ISettingsService settings,
         IProtectedSecretStore secrets,
+        IVeeamApiClient client,
         IAuditLogger audit,
         CancellationToken ct)
     {
@@ -277,71 +288,64 @@ public static class VeeamEndpoints
         var sw = Stopwatch.StartNew();
         var (actor, role) = ActorContext.Resolve(http);
 
-        using var handler = new HttpClientHandler();
-        if (allowSelfSigned)
-        {
-            // Explicit, audited opt-in (Veeam.AllowSelfSignedTls). VSPC appliances
-            // ship self-signed certs; never bypass validation without this flag.
-            handler.ServerCertificateCustomValidationCallback =
-                HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
-        }
-        using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
+        var conn = new VeeamConnection(baseUrl, username, password, allowSelfSigned);
+        var probe = await client.ProbeAsync(conn, ct);
+        sw.Stop();
 
-        try
+        if (probe.Success)
         {
-            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            await LogTest(audit, http, actor, role, success: true, ct);
+            return Results.Ok(new
             {
-                ["grant_type"] = "password",
-                ["username"] = username,
-                ["password"] = password,
+                success = true,
+                latencyMs = (int)sw.ElapsedMilliseconds,
+                companyCount = probe.CompanyCount,
             });
-
-            using var resp = await client.PostAsync($"{baseUrl}/api/v3/token", content, ct);
-            sw.Stop();
-
-            var body = await resp.Content.ReadAsStringAsync(ct);
-
-            var hasToken = false;
-            string? errorCode = null;
-            string? description = null;
-            try
-            {
-                using var doc = JsonDocument.Parse(body);
-                if (doc.RootElement.TryGetProperty("access_token", out var t) && t.ValueKind == JsonValueKind.String)
-                    hasToken = !string.IsNullOrEmpty(t.GetString());
-                if (doc.RootElement.TryGetProperty("error", out var e)) errorCode = e.GetString();
-                if (doc.RootElement.TryGetProperty("message", out var m)) description = m.GetString();
-                else if (doc.RootElement.TryGetProperty("error_description", out var d)) description = d.GetString();
-            }
-            catch (JsonException) { /* non-JSON upstream body — keep raw below */ }
-
-            if (resp.IsSuccessStatusCode && hasToken)
-            {
-                await LogTest(audit, http, actor, role, success: true, ct);
-                return Results.Ok(new { success = true, latencyMs = (int)sw.ElapsedMilliseconds });
-            }
-
-            await LogTest(audit, http, actor, role, success: false, ct);
-            return Results.Json(new
-            {
-                success = false,
-                error = errorCode ?? "token_request_failed",
-                message = description ?? (body.Length > 0 ? body : $"HTTP {(int)resp.StatusCode}"),
-                latencyMs = (int)sw.ElapsedMilliseconds,
-            }, statusCode: 502);
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+
+        await LogTest(audit, http, actor, role, success: false, ct);
+        return Results.Json(new
         {
-            sw.Stop();
-            await LogTest(audit, http, actor, role, success: false, ct);
-            return Results.Json(new
+            success = false,
+            error = "token_request_failed",
+            message = probe.Error ?? "The Veeam console rejected the connection.",
+            latencyMs = (int)sw.ElapsedMilliseconds,
+        }, statusCode: 502);
+    }
+
+    // ---- /sync ---------------------------------------------------------
+
+    private static async Task<IResult> SyncNow(IVeeamSyncService sync, CancellationToken ct)
+    {
+        var outcome = await sync.SyncAsync(ct);
+        return Results.Ok(new
+        {
+            success = outcome.Success,
+            status = outcome.Status,
+            error = outcome.Error,
+            companyCount = outcome.CompanyCount,
+            objectCount = outcome.ObjectCount,
+            changed = outcome.Changed,
+        });
+    }
+
+    // ---- /companies ----------------------------------------------------
+
+    private static async Task<IResult> GetCompanies(IVeeamStore store, CancellationToken ct)
+    {
+        var rows = await store.GetCompaniesAsync(ct);
+        return Results.Ok(new
+        {
+            items = rows.Select(c => new
             {
-                success = false,
-                error = "network_error",
-                message = ex.Message,
-                latencyMs = (int)sw.ElapsedMilliseconds,
-            }, statusCode: 502);
-        }
+                companyId = c.CompanyId,
+                companyCode = c.CompanyCode,
+                companyName = c.CompanyName,
+                vspcCompanyName = c.VspcCompanyName,
+                objectCount = c.ObjectCount,
+                lastSyncedUtc = c.LastSyncedUtc,
+            }),
+        });
     }
 
     private static Task LogTest(

@@ -6,6 +6,7 @@ using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Integrations.Adsolut;
 using Servicedesk.Infrastructure.Integrations.M365;
 using Servicedesk.Infrastructure.Integrations.Sophos;
+using Servicedesk.Infrastructure.Integrations.Veeam;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
 
@@ -292,6 +293,7 @@ public static class ContractM365Endpoints
         IUserService users,
         IM365TenantStore store,
         ISophosStore sophos,
+        IVeeamStore veeam,
         ISettingsService settings,
         CancellationToken ct)
     {
@@ -323,6 +325,26 @@ public static class ContractM365Endpoints
             return false;
         }
 
+        // Veeam backup overlay. Only computed when the integration is on and this
+        // company is known in VSPC. Joined per mailbox on the normalized display
+        // name (the only identity VSPC exposes — no email / UPN / Entra id).
+        var veeamEnabled = await settings.GetAsync<bool>(SettingKeys.Veeam.Enabled, ct);
+        var veeamAvailable = false;
+        Dictionary<string, VeeamBackupRow> backupsByName = new(StringComparer.Ordinal);
+        if (veeamEnabled)
+        {
+            var (known, byName) = await veeam.GetCompanyBackupsAsync(companyId, ct);
+            veeamAvailable = known;
+            backupsByName = byName;
+        }
+
+        VeeamBackupRow? BackupFor(string? displayName)
+        {
+            if (!veeamAvailable) return null;
+            var key = VeeamMatch.Key(displayName);
+            return key is not null && backupsByName.TryGetValue(key, out var row) ? row : null;
+        }
+
         return Results.Ok(new
         {
             companyId,
@@ -335,18 +357,31 @@ public static class ContractM365Endpoints
             lastChangedUtc = syncState?.LastChangedUtc,
             lastError = link?.LastError ?? syncState?.LastError,
             spamFilterAvailable,
-            mailboxes = mailboxes.Select(m => new
+            veeamAvailable,
+            mailboxes = mailboxes.Select(m =>
             {
-                objectId = m.ObjectId,
-                mailboxType = m.MailboxType,
-                displayName = m.DisplayName,
-                givenName = m.GivenName,
-                surname = m.Surname,
-                upn = m.Upn,
-                mail = m.Mail,
-                enabled = m.Enabled,
-                licenses = m.Licenses,
-                spamFilterProtected = ProtectedFor(m.Mail, m.Upn),
+                var backup = BackupFor(m.DisplayName);
+                return new
+                {
+                    objectId = m.ObjectId,
+                    mailboxType = m.MailboxType,
+                    displayName = m.DisplayName,
+                    givenName = m.GivenName,
+                    surname = m.Surname,
+                    upn = m.Upn,
+                    mail = m.Mail,
+                    enabled = m.Enabled,
+                    licenses = m.Licenses,
+                    spamFilterProtected = ProtectedFor(m.Mail, m.Upn),
+                    // Per-service Veeam backup status; null when Veeam is off or
+                    // the company is not known in VSPC.
+                    exchangeProtected = veeamAvailable ? backup?.ExchangeProtected ?? false : (bool?)null,
+                    exchangeRestorePoints = backup?.ExchangeRestorePoints,
+                    exchangeLastBackupUtc = backup?.ExchangeLastBackupUtc,
+                    onedriveProtected = veeamAvailable ? backup?.OneDriveProtected ?? false : (bool?)null,
+                    onedriveRestorePoints = backup?.OneDriveRestorePoints,
+                    onedriveLastBackupUtc = backup?.OneDriveLastBackupUtc,
+                };
             }),
         });
     }

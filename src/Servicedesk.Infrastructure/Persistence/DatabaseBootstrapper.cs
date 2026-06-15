@@ -4610,6 +4610,63 @@ public sealed class DatabaseBootstrapper : IHostedService
             content_hash     TEXT        NULL,
             duration_ms      INT         NULL
         );
+
+        -- ===================================================================
+        -- Veeam backup matching (Veeam Service Provider Console).
+        --
+        -- For each Microsoft 365-connected company we resolve its relation code
+        -- (companies.adsolut_number) to a VSPC company (ownerCredentials.userName)
+        -- and pull that company's VB365 protected objects. VSPC exposes no email
+        -- / UPN / Entra id at the object level — only the display name — so the
+        -- per-mailbox backup status is keyed by the normalized display name and
+        -- joined to the M365 mailbox table on that. The M365 company view shows
+        -- each mailbox an OneDrive / Exchange Protected (or Unprotected) pill.
+
+        -- One row per company that matched a VSPC company. Presence (with a
+        -- non-null vspc_company_uid) is what makes the company "known in Veeam"
+        -- and surfaces the backup columns. object_count is the raw VB365
+        -- protected-object count last seen for the company.
+        CREATE TABLE IF NOT EXISTS veeam_companies (
+            company_id        UUID        PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+            vspc_company_uid  TEXT        NULL,
+            vspc_company_name TEXT        NULL,
+            object_count      INT         NOT NULL DEFAULT 0,
+            last_synced_utc   TIMESTAMPTZ NULL
+        );
+
+        -- Per-mailbox backup status for a matched company, keyed by the
+        -- normalized display name (lower(trim(name))). Exchange and OneDrive
+        -- fold into one row. Cascades when its company row leaves the snapshot.
+        CREATE TABLE IF NOT EXISTS veeam_backups (
+            company_id               UUID        NOT NULL REFERENCES veeam_companies(company_id) ON DELETE CASCADE,
+            match_key                TEXT        NOT NULL,
+            display_name             TEXT        NULL,
+            exchange_protected       BOOLEAN     NOT NULL DEFAULT false,
+            exchange_restore_points  INT         NULL,
+            exchange_last_backup_utc TIMESTAMPTZ NULL,
+            onedrive_protected       BOOLEAN     NOT NULL DEFAULT false,
+            onedrive_restore_points  INT         NULL,
+            onedrive_last_backup_utc TIMESTAMPTZ NULL,
+            synced_utc               TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (company_id, match_key)
+        );
+        CREATE INDEX IF NOT EXISTS ix_veeam_backups_company
+            ON veeam_backups (company_id);
+
+        -- Singleton global sync state (one row, id = 1). content_hash lets a
+        -- tick cheaply detect "nothing changed" and record last_checked without
+        -- bumping last_changed.
+        CREATE TABLE IF NOT EXISTS veeam_sync_state (
+            id               INT         PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+            last_checked_utc TIMESTAMPTZ NULL,
+            last_changed_utc TIMESTAMPTZ NULL,
+            last_status      TEXT        NULL,
+            last_error       TEXT        NULL,
+            company_count    INT         NOT NULL DEFAULT 0,
+            object_count     INT         NOT NULL DEFAULT 0,
+            content_hash     TEXT        NULL,
+            duration_ms      INT         NULL
+        );
         """;
 
     private readonly NpgsqlDataSource _dataSource;
