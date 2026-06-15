@@ -9,17 +9,20 @@ import {
 import {
   adsolutApi,
   m365AdminApi,
+  sophosAdminApi,
   telavoxAdminApi,
   trmmAdminApi,
   zammadAdminApi,
   type AdsolutState,
   type M365ConnectionState,
+  type SophosConnectionState,
   type TelavoxConnectionState,
   type TrmmConnectionState,
   type ZammadConnectionState,
 } from "@/lib/api";
 import adsolutLogo from "@/assets/integrations/adsolut.ico";
 import microsoftLogo from "@/assets/integrations/microsoft.svg";
+import sophosLogo from "@/assets/integrations/sophos.svg";
 import telavoxLogo from "@/assets/integrations/telavox.svg";
 import trmmLogo from "@/assets/integrations/trmm.png";
 import zammadLogo from "@/assets/integrations/zammad.svg";
@@ -87,6 +90,17 @@ function m365TileStatus(state: M365ConnectionState | undefined): IntegrationStat
   }
 }
 
+function sophosTileStatus(state: SophosConnectionState | undefined): IntegrationStatus {
+  switch (state) {
+    case "ready":
+      return "online";
+    case "not-configured":
+      return "warning";
+    default:
+      return "not-configured";
+  }
+}
+
 export function IntegrationsSettingsPage() {
   const navigate = useNavigate();
 
@@ -116,20 +130,27 @@ export function IntegrationsSettingsPage() {
     queryFn: () => m365AdminApi.status(),
     staleTime: 30_000,
   });
+  const sophosStatus = useQuery({
+    queryKey: ["integrations", "sophos", "status"] as const,
+    queryFn: () => sophosAdminApi.status(),
+    staleTime: 30_000,
+  });
 
   const adsolutTileStatus = tileStatusFor(adsolutStatus.data?.state);
   const telavoxStatusTile = telavoxTileStatus(telavoxStatus.data?.state);
   const zammadStatusTile = zammadTileStatus(zammadStatus.data?.state);
   const trmmStatusTile = trmmTileStatus(trmmStatus.data?.state);
   const m365StatusTile = m365TileStatus(m365Status.data?.state);
+  const sophosStatusTile = sophosTileStatus(sophosStatus.data?.state);
   const tilesConfigured = [
     adsolutTileStatus,
     telavoxStatusTile,
     zammadStatusTile,
     trmmStatusTile,
     m365StatusTile,
+    sophosStatusTile,
   ].filter((s) => s === "online" || s === "warning").length;
-  const totalCount = 5;
+  const totalCount = 6;
   const noneConfigured = tilesConfigured === 0;
   const connectedCount = tilesConfigured;
 
@@ -219,6 +240,13 @@ export function IntegrationsSettingsPage() {
           imgClassName="max-h-20 max-w-[80%]"
           status={m365StatusTile}
           onClick={() => navigate({ to: "/settings/integrations/m365" })}
+        />
+        <IntegrationTile
+          name="Sophos"
+          logo={sophosLogo}
+          variant="icon"
+          status={sophosStatusTile}
+          onClick={() => navigate({ to: "/settings/integrations/sophos" })}
         />
       </section>
     </div>

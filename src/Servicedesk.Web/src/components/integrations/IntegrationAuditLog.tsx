@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   adsolutApi,
   m365AdminApi,
+  sophosAdminApi,
   telavoxAdminApi,
   trmmAdminApi,
   zammadAdminApi,
@@ -49,7 +50,7 @@ type Props = {
   /** Which integration to query. Each backend exposes its own /audit
    * endpoint scoped to its `integration_audit.integration` column, so
    * the dispatch lives here. */
-  integration: "adsolut" | "telavox" | "zammad" | "trmm" | "m365";
+  integration: "adsolut" | "telavox" | "zammad" | "trmm" | "m365" | "sophos";
 };
 
 export function IntegrationAuditLog({ integration }: Props) {
@@ -75,6 +76,8 @@ export function IntegrationAuditLog({ integration }: Props) {
           return trmmAdminApi.auditLog(cursor, PAGE_SIZE);
         case "m365":
           return m365AdminApi.auditLog(cursor, PAGE_SIZE);
+        case "sophos":
+          return sophosAdminApi.auditLog(cursor, PAGE_SIZE);
       }
     },
     getNextPageParam: (last) => last.nextCursor ?? null,

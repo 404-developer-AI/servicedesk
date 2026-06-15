@@ -158,6 +158,31 @@ public static class SettingKeys
         public const string ConsentLinkTtlMinutes = "M365.ConsentLinkTtlMinutes";
     }
 
+    /// Sophos Central spam-filter matching (v0.0.78). MSP partner model: one
+    /// API credential pair (client id + secret, both in protected_secrets)
+    /// covers the whole partner. A background worker pulls the partner tenant
+    /// list — each tenant's <c>showAs</c> carries the customer code as
+    /// <c>[NNN]</c>, the same relation-code bridge the M365 matching uses
+    /// (companies.adsolut_number) — and, for tenants matched to an
+    /// M365-connected company, pulls that tenant's protected mailbox addresses.
+    /// The Microsoft 365 matching company view then marks each M365 mailbox
+    /// Protected/Unprotected by membership in that set. Tenant ids and api hosts
+    /// are identifiers (not secrets); only the two credentials are secret.
+    public static class Sophos
+    {
+        /// Master kill-switch. When false the sync worker is dormant and no
+        /// Sophos API calls are made. Default off so a fresh install is silent
+        /// until the admin configures the credentials and opts in.
+        public const string Enabled = "Sophos.Enabled";
+
+        /// How often (minutes) the Sophos sync worker re-reads the partner
+        /// tenant list and the protected mailboxes of M365-connected tenants.
+        /// Floor 60 — set lower and the worker clamps. Unchanged snapshots are
+        /// detected via a content hash and skip the rewrite, so a shorter
+        /// interval is cheap.
+        public const string SyncIntervalMinutes = "Sophos.SyncIntervalMinutes";
+    }
+
     /// Adsolut (Wolters Kluwer TAA) OAuth integration. Single-install,
     /// single-administration: one admin authorizes our access to one Adsolut
     /// dossier, all agents in this servicedesk read the synced data. The
@@ -1500,6 +1525,11 @@ public static class SettingDefaults
             "How often (minutes) each connected customer tenant is re-read and checked for changes. Floor 60 — set lower and the worker clamps. Unchanged tenants are detected via a content hash and skip the rewrite, so a shorter interval is cheap. Independent from the Mail and Adsolut sync intervals."),
         new SettingDefault(SettingKeys.M365.ConsentLinkTtlMinutes, "30", "int", "Microsoft 365",
             "How long (minutes) a per-company 'Connect with M365' consent link stays valid before the callback rejects it. Clamped to [5, 120]. Short by design — the link is used immediately during the consent round-trip, so a long window only widens the replay surface."),
+
+        new SettingDefault(SettingKeys.Sophos.Enabled, "false", "bool", "Sophos",
+            "Master kill-switch for the Sophos Central spam-filter matching. When false, no Sophos API calls are made. Flip on once the API client id and secret are configured."),
+        new SettingDefault(SettingKeys.Sophos.SyncIntervalMinutes, "360", "int", "Sophos",
+            "How often (minutes) the Sophos sync worker re-reads the partner tenant list and the protected mailboxes of Microsoft 365-connected tenants. Floor 60 — set lower and the worker clamps. Unchanged snapshots are detected via a content hash and skip the rewrite, so a shorter interval is cheap."),
 
         // End-of-life data feed — v0.0.52. The Assets page row-tint
         // depends on these knobs (red = expired, amber = within

@@ -4546,6 +4546,70 @@ public sealed class DatabaseBootstrapper : IHostedService
         );
         CREATE INDEX IF NOT EXISTS ix_m365_mailboxes_company
             ON m365_mailboxes (company_id);
+
+        -- ===================================================================
+        -- Sophos Central spam-filter matching (v0.0.78).
+        --
+        -- MSP partner model: one credential pair (in protected_secrets) lists
+        -- every tenant the partner manages. Each tenant's showAs carries the
+        -- customer code as "[NNN] Name" — the same relation-code bridge the
+        -- M365 matching uses (companies.adsolut_number). For tenants matched to
+        -- an M365-connected company we also pull the tenant's protected mailbox
+        -- addresses; the M365 company view marks each M365 mailbox
+        -- Protected/Unprotected by membership in that set.
+
+        -- Partner tenant snapshot. tenant_id + api_host are identifiers, not
+        -- secrets. company_code is the parsed [NNN]; company_id is resolved
+        -- against companies.adsolut_number after each pull (NULL = unmatched).
+        CREATE TABLE IF NOT EXISTS sophos_tenants (
+            tenant_id        TEXT        PRIMARY KEY,
+            name             TEXT        NULL,
+            show_as          TEXT        NULL,
+            company_code     TEXT        NULL,
+            company_id       UUID        NULL REFERENCES companies(id) ON DELETE SET NULL,
+            api_host         TEXT        NULL,
+            status           TEXT        NULL,
+            data_region      TEXT        NULL,
+            billing_type     TEXT        NULL,
+            mailbox_count    INT         NOT NULL DEFAULT 0,
+            last_synced_utc  TIMESTAMPTZ NULL,
+            created_utc      TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc      TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS ix_sophos_tenants_company_code
+            ON sophos_tenants (company_code);
+        CREATE INDEX IF NOT EXISTS ix_sophos_tenants_company
+            ON sophos_tenants (company_id);
+
+        -- Protected (spam-filtered) mailbox addresses for the M365-matched
+        -- tenants. email is citext so the Protected/Unprotected match against
+        -- an M365 mailbox is case-insensitive. Cascades when its tenant leaves
+        -- the partner snapshot.
+        CREATE TABLE IF NOT EXISTS sophos_mailboxes (
+            tenant_id     TEXT        NOT NULL REFERENCES sophos_tenants(tenant_id) ON DELETE CASCADE,
+            email         CITEXT      NOT NULL,
+            display_name  TEXT        NULL,
+            mailbox_type  TEXT        NULL,
+            synced_utc    TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (tenant_id, email)
+        );
+        CREATE INDEX IF NOT EXISTS ix_sophos_mailboxes_email
+            ON sophos_mailboxes (email);
+
+        -- Singleton global sync state (one row, id = 1). content_hash lets a
+        -- tick cheaply detect "nothing changed" and record last_checked without
+        -- bumping last_changed.
+        CREATE TABLE IF NOT EXISTS sophos_sync_state (
+            id               INT         PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+            last_checked_utc TIMESTAMPTZ NULL,
+            last_changed_utc TIMESTAMPTZ NULL,
+            last_status      TEXT        NULL,
+            last_error       TEXT        NULL,
+            tenant_count     INT         NOT NULL DEFAULT 0,
+            mailbox_count    INT         NOT NULL DEFAULT 0,
+            content_hash     TEXT        NULL,
+            duration_ms      INT         NULL
+        );
         """;
 
     private readonly NpgsqlDataSource _dataSource;

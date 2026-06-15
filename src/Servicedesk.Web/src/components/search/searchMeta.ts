@@ -21,6 +21,7 @@ export type SearchKind =
   | "adsolut-articles"
   | "adsolut-contracts"
   | "m365-mailboxes"
+  | "sophos-tenants"
   | (string & {});
 
 export const KIND_LABELS: Record<string, string> = {
@@ -40,6 +41,7 @@ export const KIND_LABELS: Record<string, string> = {
   "adsolut-articles": "Contract Articles",
   "adsolut-contracts": "Contracts",
   "m365-mailboxes": "Microsoft 365 mailboxes",
+  "sophos-tenants": "Sophos spam filter",
 };
 
 export const KIND_ORDER: string[] = [
@@ -59,6 +61,7 @@ export const KIND_ORDER: string[] = [
   "adsolut-articles",
   "adsolut-contracts",
   "m365-mailboxes",
+  "sophos-tenants",
 ];
 
 export function labelForKind(kind: string): string {
@@ -109,6 +112,10 @@ export function hitHref(hit: SearchHit): string {
       return "/contracts/overview";
     case "m365-mailboxes":
       // A mailbox hit links to its owning company's M365 detail page.
+      return `/contracts/m365-matching/${hit.entityId}`;
+    case "sophos-tenants":
+      // A Sophos tenant hit links to its matched company's M365 detail page,
+      // where the spam-filter (Protected/Unprotected) column lives.
       return `/contracts/m365-matching/${hit.entityId}`;
     default:
       return "#";
