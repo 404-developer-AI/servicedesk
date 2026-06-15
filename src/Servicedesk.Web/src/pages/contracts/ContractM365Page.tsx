@@ -1,14 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Link } from "@tanstack/react-router";
-import { Building2, Check, ChevronLeft, Search, Settings2, X } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import {
+  Building2,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Plug,
+  RefreshCw,
+  Search,
+  Settings2,
+  X,
+} from "lucide-react";
 import {
   articlesApi,
   contractM365Api,
   type M365Company,
+  type M365Connection,
+  type M365LinkStatus,
   type M365SelectedArticle,
 } from "@/lib/api";
+import { M365StatusBadge, openConsentWindow } from "@/components/contracts/m365Connection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,6 +36,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const COMPANIES_KEY = ["contracts", "m365", "companies"] as const;
+const CONNECTIONS_KEY = ["contracts", "m365", "connections"] as const;
 const SELECTION_KEY = ["contracts", "m365", "selection"] as const;
 
 /// Contracts → Microsoft 365 matching. Mounted only when the user has the
@@ -39,8 +53,26 @@ export function ContractM365Page() {
     queryFn: () => contractM365Api.companies(),
   });
 
+  // Connection status per company. Refetches on window focus so the badge
+  // updates when the agent returns from the consent tab.
+  const connections = useQuery({
+    queryKey: CONNECTIONS_KEY,
+    queryFn: () => contractM365Api.connections(),
+    refetchOnWindowFocus: true,
+    staleTime: 10_000,
+  });
+
+  const connectionMap = useMemo(() => {
+    const map = new Map<string, M365Connection>();
+    for (const c of connections.data?.items ?? []) map.set(c.companyId, c);
+    return map;
+  }, [connections.data]);
+
   const items = companies.data?.items ?? [];
   const total = items.length;
+  const connectedCount = (connections.data?.items ?? []).filter(
+    (c) => c.status === "connected",
+  ).length;
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
@@ -57,6 +89,9 @@ export function ContractM365Page() {
             <h1 className="text-display-md font-semibold text-foreground">Microsoft 365 matching</h1>
             <p className="text-xs text-muted-foreground">
               {total.toLocaleString()} {total === 1 ? "company" : "companies"} with a matching contract article
+              {connectedCount > 0 && (
+                <span className="text-muted-foreground/70"> · {connectedCount} connected</span>
+              )}
             </p>
           </div>
         </div>
@@ -102,12 +137,16 @@ export function ContractM365Page() {
                 <tr className="border-b border-glass text-left text-[11px] uppercase tracking-wider text-muted-foreground/70">
                   <th className="px-3 py-2.5 font-medium">Customer code</th>
                   <th className="px-3 py-2.5 font-medium">Customer name</th>
-                  <th className="w-48 px-3 py-2.5" />
+                  <th className="w-72 px-3 py-2.5 font-medium">Microsoft 365</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((c) => (
-                  <CompanyRow key={c.companyId} company={c} />
+                  <CompanyRow
+                    key={c.companyId}
+                    company={c}
+                    connection={connectionMap.get(c.companyId)}
+                  />
                 ))}
               </tbody>
             </table>
@@ -122,18 +161,109 @@ export function ContractM365Page() {
 
 // ---- company row ------------------------------------------------------
 
-function CompanyRow({ company }: { company: M365Company }) {
+function CompanyRow({
+  company,
+  connection,
+}: {
+  company: M365Company;
+  connection: M365Connection | undefined;
+}) {
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const status: M365LinkStatus | null = connection?.status ?? null;
+  const connected = status === "connected";
+  const needsConsent = status === null || status === "disconnected" || status === "needs_reconsent";
+
+  const connect = useMutation({
+    mutationFn: () => openConsentWindow(() => contractM365Api.connect(company.companyId)),
+    onError: () =>
+      toast.error(
+        "Could not start the Microsoft 365 connection. Check that the integration is configured under Settings → Integrations.",
+      ),
+  });
+
+  const sync = useMutation({
+    mutationFn: () => contractM365Api.sync(company.companyId),
+    onSuccess: (r) => {
+      if (r.success) toast.success(r.changed ? `Synced — ${r.mailboxCount} mailboxes updated.` : "Synced — no changes.");
+      else toast.error(r.error ?? "Sync failed.");
+      qc.invalidateQueries({ queryKey: CONNECTIONS_KEY });
+    },
+    onError: () => toast.error("Sync failed."),
+  });
+
+  const open = () => navigate({ to: "/contracts/m365-matching/$companyId", params: { companyId: company.companyId } });
+
   return (
     <tr className="border-b border-glass transition-colors hover:bg-glass-hover">
       <td className="px-3 py-2.5">
         <span className="font-mono text-xs text-foreground">{company.code ?? "—"}</span>
       </td>
-      <td className="px-3 py-2.5 text-foreground">{company.name || "—"}</td>
-      <td className="px-3 py-2.5 text-right">
-        {/* No-op for now — wiring lands in a later iteration. */}
-        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => {}}>
-          Connect with M365
-        </Button>
+      <td className="px-3 py-2.5">
+        <button
+          type="button"
+          onClick={open}
+          className="text-left text-foreground transition-colors hover:text-primary"
+        >
+          {company.name || "—"}
+        </button>
+      </td>
+      <td className="px-3 py-2.5">
+        <div className="flex items-center justify-end gap-2">
+          {connected && (
+            <button
+              type="button"
+              onClick={open}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <M365StatusBadge status={status} />
+              <span className="tabular-nums">{connection?.mailboxCount ?? 0}</span>
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {connected && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 gap-1.5 px-2"
+              onClick={() => sync.mutate()}
+              disabled={sync.isPending}
+              aria-label="Sync now"
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", sync.isPending && "animate-spin")} />
+            </Button>
+          )}
+          {needsConsent && (
+            <>
+              {status === "needs_reconsent" && <M365StatusBadge status={status} />}
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => connect.mutate()}
+                disabled={connect.isPending}
+              >
+                <Plug className="h-3.5 w-3.5" />
+                {status === "needs_reconsent" ? "Reconnect" : "Connect with M365"}
+              </Button>
+            </>
+          )}
+          {status === "error" && (
+            <>
+              <M365StatusBadge status={status} />
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 gap-1.5 px-2"
+                onClick={() => sync.mutate()}
+                disabled={sync.isPending}
+                aria-label="Retry sync"
+              >
+                <RefreshCw className={cn("h-3.5 w-3.5", sync.isPending && "animate-spin")} />
+              </Button>
+            </>
+          )}
+        </div>
       </td>
     </tr>
   );

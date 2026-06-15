@@ -14,4 +14,13 @@ public static class M365EventTypes
     public const string SecurityConfigUpdated     = "integration.m365.config.updated";
     public const string SecurityEnabledChanged    = "integration.m365.enabled.changed";
     public const string SecurityConnectionTested  = "integration.m365.connection.tested";
+
+    // Operational events for the per-customer connect flow. These land in the
+    // integration_audit trail (via IIntegrationAuditLogger) under Integration
+    // "m365", so they surface in the connector's audit log on the tile.
+    public const string ConsentStarted   = "integration.m365.consent.started";
+    public const string ConsentGranted   = "integration.m365.consent.granted";
+    public const string ConsentRejected  = "integration.m365.consent.rejected";
+    public const string Disconnected     = "integration.m365.disconnected";
+    public const string SyncTick         = "integration.m365.sync.tick";
 }

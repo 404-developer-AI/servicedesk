@@ -20,6 +20,7 @@ public static class SearchSourceKind
     public const string AdsolutOrders = "adsolut-orders";
     public const string AdsolutArticles = "adsolut-articles";
     public const string AdsolutContracts = "adsolut-contracts";
+    public const string M365Mailboxes = "m365-mailboxes";
     public const string Signatures = "signatures";
 }
 

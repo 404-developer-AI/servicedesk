@@ -4473,6 +4473,79 @@ public sealed class DatabaseBootstrapper : IHostedService
                     VALUES ('v0_0_77_raise_outbound_mail_cap_default');
             END IF;
         END $do$;
+
+        -- ===================================================================
+        -- Microsoft 365 per-customer connect (consent + Graph read).
+        --
+        -- The MSP owns one multi-tenant app (the M365.* settings + the
+        -- protected client secret). Each customer admin grants admin consent
+        -- once, after which we read that customer's tenant app-only. Three
+        -- concerns, three+1 tables: a short-lived anti-CSRF state for the
+        -- consent round-trip, the per-company tenant link, the synced mailbox
+        -- mirror, and per-company sync metadata.
+
+        -- Pending consent round-trips. The state token is the entire trust
+        -- model of the PUBLIC callback (the customer admin is not signed in to
+        -- Servicedesk): single-use, server-time-boxed, tied to the initiating
+        -- company + agent. Consumed/expired rows are swept best-effort.
+        CREATE TABLE IF NOT EXISTS m365_consent_states (
+            state        TEXT        PRIMARY KEY,
+            company_id   UUID        NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            initiated_by UUID        NULL,
+            created_utc  TIMESTAMPTZ NOT NULL DEFAULT now(),
+            expires_utc  TIMESTAMPTZ NOT NULL,
+            consumed_utc TIMESTAMPTZ NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_m365_consent_states_company
+            ON m365_consent_states (company_id);
+
+        -- One link per company. tenant_id is the customer's directory id
+        -- returned by Azure on consent — an identifier, not a secret. status
+        -- drives the button: connected / needs_reconsent / disconnected / error.
+        CREATE TABLE IF NOT EXISTS m365_tenant_links (
+            company_id        UUID        PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+            tenant_id         TEXT        NOT NULL,
+            status            TEXT        NOT NULL DEFAULT 'connected',
+            consented_at      TIMESTAMPTZ NULL,
+            granted_by        UUID        NULL,
+            last_verified_utc TIMESTAMPTZ NULL,
+            last_error        TEXT        NULL,
+            created_utc       TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc       TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        -- Per-company sync metadata. content_hash lets a tick cheaply detect
+        -- "nothing changed" and record last_checked without bumping last_changed.
+        CREATE TABLE IF NOT EXISTS m365_company_sync (
+            company_id       UUID        PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+            last_checked_utc TIMESTAMPTZ NULL,
+            last_changed_utc TIMESTAMPTZ NULL,
+            last_status      TEXT        NULL,
+            last_error       TEXT        NULL,
+            mailbox_count    INT         NOT NULL DEFAULT 0,
+            content_hash     TEXT        NULL,
+            duration_ms      INT         NULL
+        );
+
+        -- Synced mailbox mirror. One row per directory object that has a
+        -- mailbox. licenses is a readable, comma-separated SKU part-number list
+        -- (display copy). mailbox_type is the mailboxSettings.userPurpose value.
+        CREATE TABLE IF NOT EXISTS m365_mailboxes (
+            company_id   UUID        NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            object_id    TEXT        NOT NULL,
+            mailbox_type TEXT        NULL,
+            display_name TEXT        NULL,
+            given_name   TEXT        NULL,
+            surname      TEXT        NULL,
+            upn          TEXT        NULL,
+            mail         TEXT        NULL,
+            enabled      BOOLEAN     NULL,
+            licenses     TEXT        NULL,
+            synced_utc   TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (company_id, object_id)
+        );
+        CREATE INDEX IF NOT EXISTS ix_m365_mailboxes_company
+            ON m365_mailboxes (company_id);
         """;
 
     private readonly NpgsqlDataSource _dataSource;
