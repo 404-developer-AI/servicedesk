@@ -4,8 +4,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   ArrowLeft,
+  Building2,
   CheckCircle2,
   Clock,
+  DatabaseBackup,
   Globe,
   KeyRound,
   RefreshCw,
@@ -30,6 +32,21 @@ import { cn } from "@/lib/utils";
 
 const STATUS_QK = ["integrations", "veeam", "status"] as const;
 const SECRET_QK = ["integrations", "veeam", "secret"] as const;
+const COMPANIES_QK = ["integrations", "veeam", "companies"] as const;
+
+function relativeStamp(iso: string | null | undefined): string {
+  if (!iso) return "never";
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
 
 const STATE_LABEL: Record<
   VeeamConnectionState,
@@ -141,12 +158,40 @@ export function VeeamIntegrationPage() {
     mutationFn: () => veeamAdminApi.testConnection(),
     onSuccess: (result) => {
       if (result.success) {
-        toast.success(`Connection valid — token acquired in ${result.latencyMs} ms`);
+        const seen =
+          typeof result.companyCount === "number"
+            ? ` — ${result.companyCount} companies visible`
+            : "";
+        toast.success(`Connection valid${seen} (${result.latencyMs} ms)`);
       } else {
         toast.error(result.message ?? "Test failed");
       }
     },
     onError: onErr,
+  });
+
+  const sync = useMutation({
+    mutationFn: () => veeamAdminApi.sync(),
+    onSuccess: (r) => {
+      if (r.success) {
+        toast.success(
+          r.changed
+            ? `Synced — ${r.companyCount} companies, ${r.objectCount} backup objects`
+            : "Synced — no changes",
+        );
+      } else {
+        toast.error(r.error ?? "Sync failed");
+      }
+      qc.invalidateQueries({ queryKey: STATUS_QK });
+      qc.invalidateQueries({ queryKey: COMPANIES_QK });
+    },
+    onError: onErr,
+  });
+
+  const companies = useQuery({
+    queryKey: COMPANIES_QK,
+    queryFn: veeamAdminApi.companies,
+    enabled: state === "ready",
   });
 
   const urlValid = /^https?:\/\/.+/i.test(urlDraft.trim());
@@ -377,6 +422,90 @@ export function VeeamIntegrationPage() {
               </Button>
             </div>
           </>
+        )}
+      </section>
+
+      {/* Backup data */}
+      <section className="rounded-lg border border-glass bg-glass p-5 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <DatabaseBackup className="h-4 w-4 text-primary" /> Backup data
+            </div>
+            <p className="max-w-xl text-xs text-muted-foreground">
+              Reads the VB365 protected objects for every Microsoft 365-connected company that
+              matches a VSPC company by relation code. The per-mailbox OneDrive / Exchange
+              backup status appears on each company under{" "}
+              <strong>Contracts → Microsoft 365 matching</strong>.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => sync.mutate()}
+            disabled={state !== "ready" || sync.isPending}
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", sync.isPending && "animate-spin")} />
+            Sync now
+          </Button>
+        </div>
+
+        {state === "ready" && (
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-[11px] text-muted-foreground">
+            <span>
+              Last checked:{" "}
+              <span className="text-foreground">{relativeStamp(status.data?.lastCheckedUtc)}</span>
+            </span>
+            <span>
+              Last change:{" "}
+              <span className="text-foreground">{relativeStamp(status.data?.lastChangedUtc)}</span>
+            </span>
+            <span>
+              Matched companies:{" "}
+              <span className="tabular-nums text-foreground">{status.data?.companyCount ?? 0}</span>
+            </span>
+            <span>
+              Backup objects:{" "}
+              <span className="tabular-nums text-foreground">{status.data?.objectCount ?? 0}</span>
+            </span>
+            {status.data?.lastStatus && status.data.lastStatus !== "ok" && (
+              <span className="text-amber-300">
+                {status.data.lastError ?? status.data.lastStatus}
+              </span>
+            )}
+          </div>
+        )}
+
+        {state === "ready" && (companies.data?.items.length ?? 0) > 0 && (
+          <div className="overflow-hidden rounded-md border border-glass-strong">
+            <table className="w-full text-xs">
+              <thead className="text-[10px] uppercase tracking-widest text-muted-foreground/60">
+                <tr className="border-b border-glass">
+                  <th className="px-3 py-2 text-left">Company</th>
+                  <th className="px-3 py-2 text-left">Code</th>
+                  <th className="px-3 py-2 text-left">VSPC name</th>
+                  <th className="px-3 py-2 text-right">Objects</th>
+                  <th className="px-3 py-2 text-right">Synced</th>
+                </tr>
+              </thead>
+              <tbody>
+                {companies.data!.items.map((c) => (
+                  <tr key={c.companyId} className="border-b border-glass last:border-b-0">
+                    <td className="px-3 py-2 text-foreground">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Building2 className="h-3 w-3 text-muted-foreground/60" />
+                        {c.companyName ?? "—"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 font-mono text-muted-foreground">{c.companyCode ?? "—"}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{c.vspcCompanyName ?? "—"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{c.objectCount}</td>
+                    <td className="px-3 py-2 text-right text-muted-foreground">{relativeStamp(c.lastSyncedUtc)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
 

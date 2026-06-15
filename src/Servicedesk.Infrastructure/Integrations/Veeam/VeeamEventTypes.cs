@@ -14,4 +14,8 @@ public static class VeeamEventTypes
     public const string SecurityConfigUpdated    = "integration.veeam.config.updated";
     public const string SecurityEnabledChanged   = "integration.veeam.enabled.changed";
     public const string SecurityConnectionTested = "integration.veeam.connection.tested";
+
+    /// Operational (not security) — one sync pass result. Lands in the
+    /// integration_audit trail, not the hash-chained security log.
+    public const string SyncTick = "integration.veeam.sync.tick";
 }
