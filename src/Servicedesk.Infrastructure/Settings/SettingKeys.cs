@@ -123,6 +123,30 @@ public static class SettingKeys
         public const string MicrosoftEnabled = "Auth.Microsoft.Enabled";
     }
 
+    /// Microsoft 365 customer-tenant reader (v0.0.77). A dedicated
+    /// **multi-tenant** app registration in the MSP tenant — entirely separate
+    /// from the single-tenant <see cref="Graph"/> app used for mail + OIDC.
+    /// Each customer admin grants admin consent once; we then read their tenant
+    /// app-only (users, assigned licenses, mailbox types) via client-credentials
+    /// against that customer's own tenant id. Tenant id + client id are
+    /// identifiers (not secrets) and live here; the client secret lives in
+    /// protected_secrets under <c>M365.ClientSecret</c>. Per-customer tenant ids
+    /// are stored per-company, not here.
+    public static class M365
+    {
+        /// Master kill-switch for the Microsoft 365 customer-tenant reader.
+        /// Default off; flip on once the MSP app credentials are configured.
+        public const string Enabled = "M365.Enabled";
+
+        /// Directory (tenant) ID of the MSP tenant that owns the multi-tenant
+        /// app registration. Used only to validate the app credentials; each
+        /// per-customer read uses that customer's own tenant id.
+        public const string TenantId = "M365.TenantId";
+
+        /// Application (client) ID of the multi-tenant app registration.
+        public const string ClientId = "M365.ClientId";
+    }
+
     /// Adsolut (Wolters Kluwer TAA) OAuth integration. Single-install,
     /// single-administration: one admin authorizes our access to one Adsolut
     /// dossier, all agents in this servicedesk read the synced data. The
@@ -1454,6 +1478,13 @@ public static class SettingDefaults
             "Background sync cadence (minutes). The worker pulls clients + sites + agents per tick and upserts into the local mirror tables. Clamped to [1, 1440]."),
         new SettingDefault(SettingKeys.Trmm.RequestTimeoutSeconds, "30", "int", "Tactical RMM",
             "HTTP timeout per TRMM API call, in seconds. Clamped to [5, 300]. Lower = fail-fast on a slow upstream; higher = tolerate occasional latency without aborting a sync."),
+
+        new SettingDefault(SettingKeys.M365.Enabled, "false", "bool", "Microsoft 365",
+            "Master kill-switch for the Microsoft 365 customer-tenant reader (multi-tenant app). When false, no customer-tenant reads are attempted. Flip on once the MSP app's tenant id, client id and client secret are configured."),
+        new SettingDefault(SettingKeys.M365.TenantId, "", "string", "Microsoft 365",
+            "Directory (tenant) ID of the MSP tenant that owns the multi-tenant app registration. Used only to validate the app credentials; per-customer reads use each customer's own tenant id."),
+        new SettingDefault(SettingKeys.M365.ClientId, "", "string", "Microsoft 365",
+            "Application (client) ID of the multi-tenant app registration in the MSP tenant. The matching client secret is stored separately in the protected-secrets store."),
 
         // End-of-life data feed — v0.0.52. The Assets page row-tint
         // depends on these knobs (red = expired, amber = within

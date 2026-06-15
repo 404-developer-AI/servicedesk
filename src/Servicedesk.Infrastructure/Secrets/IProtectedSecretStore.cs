@@ -45,6 +45,13 @@ public static class ProtectedSecretKeys
     /// the <c>X-API-KEY</c> header.
     public const string TrmmApiKey = "Trmm.ApiKey";
 
+    /// Microsoft 365 customer-tenant reader (v0.0.77). Client secret of the
+    /// MSP tenant's multi-tenant app registration. One install-wide secret;
+    /// customer tenants contribute only a tenant id (stored per-company),
+    /// never a secret. Distinct from <see cref="GraphClientSecret"/>, which is
+    /// the single-tenant app used for mail + OIDC.
+    public const string M365ClientSecret = "M365.ClientSecret";
+
     /// Timesheet migration import (v0.0.54). One install-wide pre-shared
     /// secret minted by an admin under Settings → Timesheet → Migration
     /// import. The standalone migration tool sends it on every call to the

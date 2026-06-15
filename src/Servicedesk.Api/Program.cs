@@ -646,6 +646,7 @@ app.MapZammadMappingEndpoints();
 app.MapZammadDryRunEndpoints();
 app.MapZammadKbImportEndpoints();
 app.MapTrmmEndpoints();
+app.MapM365Endpoints();
 app.MapAssetsEndpoints();
 app.MapAdminMailDiagnosticsEndpoints();
 app.MapMailMailboxEndpoints();

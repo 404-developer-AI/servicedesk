@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   adsolutApi,
+  m365AdminApi,
   telavoxAdminApi,
   trmmAdminApi,
   zammadAdminApi,
@@ -48,7 +49,7 @@ type Props = {
   /** Which integration to query. Each backend exposes its own /audit
    * endpoint scoped to its `integration_audit.integration` column, so
    * the dispatch lives here. */
-  integration: "adsolut" | "telavox" | "zammad" | "trmm";
+  integration: "adsolut" | "telavox" | "zammad" | "trmm" | "m365";
 };
 
 export function IntegrationAuditLog({ integration }: Props) {
@@ -72,6 +73,8 @@ export function IntegrationAuditLog({ integration }: Props) {
           return zammadAdminApi.auditLog(cursor, PAGE_SIZE);
         case "trmm":
           return trmmAdminApi.auditLog(cursor, PAGE_SIZE);
+        case "m365":
+          return m365AdminApi.auditLog(cursor, PAGE_SIZE);
       }
     },
     getNextPageParam: (last) => last.nextCursor ?? null,

@@ -8,15 +8,18 @@ import {
 } from "@/components/integrations/IntegrationTile";
 import {
   adsolutApi,
+  m365AdminApi,
   telavoxAdminApi,
   trmmAdminApi,
   zammadAdminApi,
   type AdsolutState,
+  type M365ConnectionState,
   type TelavoxConnectionState,
   type TrmmConnectionState,
   type ZammadConnectionState,
 } from "@/lib/api";
 import adsolutLogo from "@/assets/integrations/adsolut.ico";
+import microsoftLogo from "@/assets/integrations/microsoft.svg";
 import telavoxLogo from "@/assets/integrations/telavox.svg";
 import trmmLogo from "@/assets/integrations/trmm.png";
 import zammadLogo from "@/assets/integrations/zammad.svg";
@@ -73,6 +76,17 @@ function trmmTileStatus(state: TrmmConnectionState | undefined): IntegrationStat
   }
 }
 
+function m365TileStatus(state: M365ConnectionState | undefined): IntegrationStatus {
+  switch (state) {
+    case "ready":
+      return "online";
+    case "not-configured":
+      return "warning";
+    default:
+      return "not-configured";
+  }
+}
+
 export function IntegrationsSettingsPage() {
   const navigate = useNavigate();
 
@@ -97,15 +111,25 @@ export function IntegrationsSettingsPage() {
     queryFn: () => trmmAdminApi.status(),
     staleTime: 30_000,
   });
+  const m365Status = useQuery({
+    queryKey: ["integrations", "m365", "status"] as const,
+    queryFn: () => m365AdminApi.status(),
+    staleTime: 30_000,
+  });
 
   const adsolutTileStatus = tileStatusFor(adsolutStatus.data?.state);
   const telavoxStatusTile = telavoxTileStatus(telavoxStatus.data?.state);
   const zammadStatusTile = zammadTileStatus(zammadStatus.data?.state);
   const trmmStatusTile = trmmTileStatus(trmmStatus.data?.state);
-  const tilesConfigured = [adsolutTileStatus, telavoxStatusTile, zammadStatusTile, trmmStatusTile].filter(
-    (s) => s === "online" || s === "warning",
-  ).length;
-  const totalCount = 4;
+  const m365StatusTile = m365TileStatus(m365Status.data?.state);
+  const tilesConfigured = [
+    adsolutTileStatus,
+    telavoxStatusTile,
+    zammadStatusTile,
+    trmmStatusTile,
+    m365StatusTile,
+  ].filter((s) => s === "online" || s === "warning").length;
+  const totalCount = 5;
   const noneConfigured = tilesConfigured === 0;
   const connectedCount = tilesConfigured;
 
@@ -187,6 +211,14 @@ export function IntegrationsSettingsPage() {
           variant="icon"
           status={zammadStatusTile}
           onClick={() => navigate({ to: "/settings/integrations/zammad" })}
+        />
+        <IntegrationTile
+          name="Microsoft 365"
+          logo={microsoftLogo}
+          variant="icon"
+          imgClassName="max-h-20 max-w-[80%]"
+          status={m365StatusTile}
+          onClick={() => navigate({ to: "/settings/integrations/m365" })}
         />
       </section>
     </div>
