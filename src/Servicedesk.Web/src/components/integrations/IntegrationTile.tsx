@@ -41,6 +41,9 @@ export type IntegrationTileProps = {
   status: IntegrationStatus;
   onClick?: () => void;
   className?: string;
+  /** Override the logo sizing classes — e.g. a square brand mark that needs to
+   * read larger than the default icon cap. Replaces the variant's size cap. */
+  imgClassName?: string;
 };
 
 export function IntegrationTile({
@@ -50,6 +53,7 @@ export function IntegrationTile({
   status,
   onClick,
   className,
+  imgClassName,
 }: IntegrationTileProps) {
   const style = STATUS_STYLES[status];
   const interactive = typeof onClick === "function";
@@ -70,7 +74,8 @@ export function IntegrationTile({
         draggable={false}
         className={cn(
           "w-auto select-none object-contain",
-          variant === "icon" ? "max-h-16 max-w-[60%]" : "max-h-12 max-w-[75%]",
+          imgClassName ??
+            (variant === "icon" ? "max-h-16 max-w-[60%]" : "max-h-12 max-w-[75%]"),
         )}
       />
       <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">

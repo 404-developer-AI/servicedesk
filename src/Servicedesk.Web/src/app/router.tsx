@@ -20,6 +20,7 @@ import { AdsolutCoveragePage } from "@/pages/settings/AdsolutCoveragePage";
 import { TelavoxIntegrationPage } from "@/pages/settings/TelavoxIntegrationPage";
 import { ZammadIntegrationPage } from "@/pages/settings/ZammadIntegrationPage";
 import { TrmmIntegrationPage } from "@/pages/settings/TrmmIntegrationPage";
+import { M365IntegrationPage } from "@/pages/settings/M365IntegrationPage";
 import { AssetsPage } from "@/pages/assets/AssetsPage";
 import { OrdersPage } from "@/pages/orders/OrdersPage";
 import { StatisticsPage } from "@/pages/statistics/StatisticsPage";
@@ -614,6 +615,16 @@ const settingsTrmmIntegrationRoute = createRoute({
   component: TrmmIntegrationPage,
 });
 
+// v0.0.77 — Microsoft 365 customer-tenant reader. Admin-only. Houses the
+// shared multi-tenant app credentials (tenant id, client id, client secret),
+// the required Graph Application permissions + redirect URI an admin must
+// register in Entra ID, a credential test, and the integration_audit reader.
+const settingsM365IntegrationRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "integrations/m365",
+  component: M365IntegrationPage,
+});
+
 // v0.0.41 phase 3 — dry-run engine pages. Runs-list lives on its own
 // URL so admins can deep-link to past runs from a separate tab; the
 // detail page renders the per-ticket mapping verdict for one run.
@@ -818,6 +829,7 @@ const routeTree = rootRoute.addChildren([
     settingsZammadRunsListRoute,
     settingsZammadRunDetailRoute,
     settingsTrmmIntegrationRoute,
+    settingsM365IntegrationRoute,
     settingsTicketsRoute,
     settingsCompaniesRoute,
     settingsContactsRoute,
