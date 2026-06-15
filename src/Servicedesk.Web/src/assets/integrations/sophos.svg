@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Sophos">
+  <defs>
+    <linearGradient id="sophosShield" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1aa0ff"/>
+      <stop offset="1" stop-color="#0b63c4"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#sophosShield)"
+        d="M32 4 54 12v18c0 14-9.4 24.3-22 30C19.4 54.3 10 44 10 30V12L32 4Z"/>
+  <path fill="#fff"
+        d="M37.8 24.6c-1.1-1.7-3-2.8-5.6-2.8-3.9 0-6.7 2.3-6.7 5.6 0 3.1 2.2 4.6 5.6 5.4 2.7.6 3.5 1.1 3.5 2.2 0 1.1-1 1.8-2.7 1.8-1.9 0-3.2-.9-4-2.3l-3.6 2.1c1.3 2.5 3.9 4 7.5 4 4.3 0 7.2-2.2 7.2-5.8 0-3.4-2.5-4.8-5.9-5.6-2.5-.6-3.2-1-3.2-2 0-.9.8-1.6 2.3-1.6 1.6 0 2.7.7 3.4 1.9l3.5-2.6Z"/>
+</svg>

@@ -273,6 +273,23 @@ public static class DependencyInjection
             Servicedesk.Infrastructure.Integrations.M365.M365SyncService>();
         services.AddHostedService<Servicedesk.Infrastructure.Integrations.M365.M365SyncWorker>();
 
+        // Sophos Central spam-filter matching (v0.0.78). One partner credential
+        // pair (in protected_secrets) lists every managed tenant; the [NNN] in
+        // each tenant's showAs bridges to companies.adsolut_number. For tenants
+        // matched to an M365-connected company we pull the protected mailbox
+        // set, which the M365 company view uses to mark each mailbox
+        // Protected/Unprotected. The api client is a singleton so the partner
+        // token cache survives across ticks; the worker runs the
+        // Sophos.SyncIntervalMinutes cadence.
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.Sophos.ISophosStore,
+            Servicedesk.Infrastructure.Integrations.Sophos.SophosStore>();
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.Sophos.ISophosApiClient,
+            Servicedesk.Infrastructure.Integrations.Sophos.SophosApiClient>();
+        services.AddHttpClient(Servicedesk.Infrastructure.Integrations.Sophos.SophosApiClient.HttpClientName);
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.Sophos.ISophosSyncService,
+            Servicedesk.Infrastructure.Integrations.Sophos.SophosSyncService>();
+        services.AddHostedService<Servicedesk.Infrastructure.Integrations.Sophos.SophosSyncWorker>();
+
         // EOL data feed (v0.0.52) — pulls endoflife.date weekly into the
         // local eol_releases mirror so the Assets page can tint rows
         // past or near end-of-support without a live API call on render.
@@ -577,6 +594,12 @@ public static class DependencyInjection
         // flag is set (read per-query). A hit links to the owning company.
         services.AddSingleton<Servicedesk.Infrastructure.Search.M365MailboxSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<Servicedesk.Infrastructure.Search.M365MailboxSearchSource>()));
+
+        // Sophos tenant search-source (Contracts → M365 matching spam-filter
+        // overlay). Same contracts_enabled gate; a hit links to the matched
+        // company's Microsoft 365 detail page.
+        services.AddSingleton<Servicedesk.Infrastructure.Search.SophosTenantSearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<Servicedesk.Infrastructure.Search.SophosTenantSearchSource>()));
 
         services.AddHostedService<DatabaseBootstrapper>();
         services.AddHostedService<SettingsSeeder>();

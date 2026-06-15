@@ -5,6 +5,7 @@ using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Integrations.Adsolut;
 using Servicedesk.Infrastructure.Integrations.M365;
+using Servicedesk.Infrastructure.Integrations.Sophos;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
 
@@ -279,11 +280,19 @@ public static class ContractM365Endpoints
     }
 
     /// The synced mailbox view for one company (status + sync meta + rows).
+    /// Each mailbox carries a Sophos spam-filter verdict when the Sophos
+    /// integration is enabled and this company has a matched Sophos tenant:
+    /// <c>spamFilterProtected</c> is true when the mailbox's primary address (or
+    /// UPN) is present in that tenant's protected mailbox set, false otherwise.
+    /// When Sophos is off or the company has no matched tenant,
+    /// <c>spamFilterAvailable</c> is false and the per-mailbox flag is null.
     private static async Task<IResult> GetMailboxes(
         Guid companyId,
         HttpContext http,
         IUserService users,
         IM365TenantStore store,
+        ISophosStore sophos,
+        ISettingsService settings,
         CancellationToken ct)
     {
         var (_, deny) = await RequireContractsFlagAsync(http, users, ct);
@@ -293,6 +302,26 @@ public static class ContractM365Endpoints
         var link = await store.GetLinkAsync(companyId, ct);
         var syncState = await store.GetSyncStateAsync(companyId, ct);
         var mailboxes = await store.GetMailboxesAsync(companyId, ct);
+
+        // Sophos spam-filter overlay. Only computed when the integration is on
+        // and a Sophos tenant maps to this company.
+        var sophosEnabled = await settings.GetAsync<bool>(SettingKeys.Sophos.Enabled, ct);
+        var spamFilterAvailable = false;
+        HashSet<string> protectedEmails = new(StringComparer.OrdinalIgnoreCase);
+        if (sophosEnabled)
+        {
+            var (tenantMatched, emails) = await sophos.GetCompanySpamFilterAsync(companyId, ct);
+            spamFilterAvailable = tenantMatched;
+            protectedEmails = emails;
+        }
+
+        bool? ProtectedFor(string? mail, string? upn)
+        {
+            if (!spamFilterAvailable) return null;
+            if (!string.IsNullOrWhiteSpace(mail) && protectedEmails.Contains(mail.Trim())) return true;
+            if (!string.IsNullOrWhiteSpace(upn) && protectedEmails.Contains(upn.Trim())) return true;
+            return false;
+        }
 
         return Results.Ok(new
         {
@@ -305,6 +334,7 @@ public static class ContractM365Endpoints
             lastCheckedUtc = syncState?.LastCheckedUtc,
             lastChangedUtc = syncState?.LastChangedUtc,
             lastError = link?.LastError ?? syncState?.LastError,
+            spamFilterAvailable,
             mailboxes = mailboxes.Select(m => new
             {
                 objectId = m.ObjectId,
@@ -316,6 +346,7 @@ public static class ContractM365Endpoints
                 mail = m.Mail,
                 enabled = m.Enabled,
                 licenses = m.Licenses,
+                spamFilterProtected = ProtectedFor(m.Mail, m.Upn),
             }),
         });
     }

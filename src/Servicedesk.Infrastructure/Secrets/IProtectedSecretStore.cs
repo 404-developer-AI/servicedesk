@@ -52,6 +52,14 @@ public static class ProtectedSecretKeys
     /// the single-tenant app used for mail + OIDC.
     public const string M365ClientSecret = "M365.ClientSecret";
 
+    /// Sophos Central spam-filter matching (v0.0.78). The MSP partner API
+    /// credential pair. Both are write-only secrets in the partner model: the
+    /// client id is provisioned alongside the secret in the Sophos Central
+    /// partner dashboard and is not a per-customer identifier, so it is kept in
+    /// the encrypted store rather than the plaintext settings table.
+    public const string SophosClientId = "Sophos.ClientId";
+    public const string SophosClientSecret = "Sophos.ClientSecret";
+
     /// Timesheet migration import (v0.0.54). One install-wide pre-shared
     /// secret minted by an admin under Settings → Timesheet → Migration
     /// import. The standalone migration tool sends it on every call to the

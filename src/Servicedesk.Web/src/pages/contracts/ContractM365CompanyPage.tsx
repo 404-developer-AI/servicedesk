@@ -68,6 +68,7 @@ export function ContractM365CompanyPage({ companyId }: { companyId: string }) {
   });
 
   const mailboxes = data?.mailboxes ?? [];
+  const spamFilterAvailable = data?.spamFilterAvailable ?? false;
   const byType = useMemo(() => summariseByType(mailboxes), [mailboxes]);
 
   const title = data?.companyName || data?.companyCode || "Company";
@@ -196,12 +197,15 @@ export function ContractM365CompanyPage({ companyId }: { companyId: string }) {
                   <th className="px-3 py-2.5 font-medium">Name</th>
                   <th className="px-3 py-2.5 font-medium">UPN</th>
                   <th className="px-3 py-2.5 font-medium">Enabled</th>
+                  {spamFilterAvailable && (
+                    <th className="px-3 py-2.5 font-medium">Spam filter</th>
+                  )}
                   <th className="px-3 py-2.5 font-medium">Licenses</th>
                 </tr>
               </thead>
               <tbody>
                 {mailboxes.map((m) => (
-                  <MailboxRow key={m.objectId} mailbox={m} />
+                  <MailboxRow key={m.objectId} mailbox={m} showSpamFilter={spamFilterAvailable} />
                 ))}
               </tbody>
             </table>
@@ -212,7 +216,13 @@ export function ContractM365CompanyPage({ companyId }: { companyId: string }) {
   );
 }
 
-function MailboxRow({ mailbox }: { mailbox: M365Mailbox }) {
+function MailboxRow({
+  mailbox,
+  showSpamFilter,
+}: {
+  mailbox: M365Mailbox;
+  showSpamFilter: boolean;
+}) {
   return (
     <tr className="border-b border-glass align-top transition-colors hover:bg-glass-hover">
       <td className="px-3 py-2.5">
@@ -231,8 +241,28 @@ function MailboxRow({ mailbox }: { mailbox: M365Mailbox }) {
           <span className="text-rose-300">No</span>
         )}
       </td>
+      {showSpamFilter && (
+        <td className="px-3 py-2.5">
+          <SpamFilterBadge protected_={mailbox.spamFilterProtected} />
+        </td>
+      )}
       <td className="px-3 py-2.5 text-xs text-muted-foreground">{mailbox.licenses || "—"}</td>
     </tr>
+  );
+}
+
+/// Sophos spam-filter verdict for one mailbox. Protected = its address is in
+/// the matched Sophos tenant's mailbox set; Unprotected = it is not.
+function SpamFilterBadge({ protected_ }: { protected_: boolean | null }) {
+  if (protected_ === null) return <span className="text-muted-foreground">—</span>;
+  return protected_ ? (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-300">
+      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Protected
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-glass-strong bg-glass-strong px-2 py-0.5 text-[11px] text-muted-foreground">
+      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" /> Unprotected
+    </span>
   );
 }
 
