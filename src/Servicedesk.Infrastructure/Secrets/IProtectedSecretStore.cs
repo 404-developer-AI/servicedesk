@@ -60,6 +60,11 @@ public static class ProtectedSecretKeys
     public const string SophosClientId = "Sophos.ClientId";
     public const string SophosClientSecret = "Sophos.ClientSecret";
 
+    /// Veeam backup matching. Password of the Veeam Service Provider Console
+    /// (VSPC) API account used for the OAuth2 password grant. One install-wide
+    /// credential; the username + base URL are non-secret settings.
+    public const string VeeamPassword = "Veeam.Password";
+
     /// Timesheet migration import (v0.0.54). One install-wide pre-shared
     /// secret minted by an admin under Settings → Timesheet → Migration
     /// import. The standalone migration tool sends it on every call to the

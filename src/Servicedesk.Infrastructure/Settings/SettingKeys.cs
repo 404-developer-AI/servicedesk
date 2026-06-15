@@ -158,6 +158,37 @@ public static class SettingKeys
         public const string ConsentLinkTtlMinutes = "M365.ConsentLinkTtlMinutes";
     }
 
+    /// Veeam backup matching. Reads the MSP's Veeam Service Provider Console
+    /// (VSPC) REST API to surface, per customer, which M365 mailboxes are backed
+    /// up (Exchange / OneDrive). The base URL is unique per install and has no
+    /// default (so the app never points at someone else's console); the API
+    /// username lives here, the password in protected_secrets under
+    /// <c>Veeam.Password</c>.
+    public static class Veeam
+    {
+        /// Master kill-switch for the Veeam backup matching. Default off; flip
+        /// on once the VSPC URL and login are configured.
+        public const string Enabled = "Veeam.Enabled";
+
+        /// Base URL of the VSPC REST API, including the port (e.g.
+        /// https://host:1280). Unique per install — intentionally blank, no
+        /// default, no placeholder pointing anywhere.
+        public const string BaseUrl = "Veeam.BaseUrl";
+
+        /// Username of the VSPC API account used for the OAuth2 password grant.
+        /// The matching password lives in protected_secrets.
+        public const string Username = "Veeam.Username";
+
+        /// How often (minutes) the Veeam backup data is re-read. Floor 60 —
+        /// set lower and the worker clamps.
+        public const string SyncIntervalMinutes = "Veeam.SyncIntervalMinutes";
+
+        /// Accept a self-signed / untrusted TLS certificate on the Veeam
+        /// endpoint. VSPC appliances commonly ship a self-signed cert; off by
+        /// default (strict validation).
+        public const string AllowSelfSignedTls = "Veeam.AllowSelfSignedTls";
+    }
+
     /// Sophos Central spam-filter matching (v0.0.78). MSP partner model: one
     /// API credential pair (client id + secret, both in protected_secrets)
     /// covers the whole partner. A background worker pulls the partner tenant
@@ -1530,6 +1561,17 @@ public static class SettingDefaults
             "Master kill-switch for the Sophos Central spam-filter matching. When false, no Sophos API calls are made. Flip on once the API client id and secret are configured."),
         new SettingDefault(SettingKeys.Sophos.SyncIntervalMinutes, "360", "int", "Sophos",
             "How often (minutes) the Sophos sync worker re-reads the partner tenant list and the protected mailboxes of Microsoft 365-connected tenants. Floor 60 — set lower and the worker clamps. Unchanged snapshots are detected via a content hash and skip the rewrite, so a shorter interval is cheap."),
+
+        new SettingDefault(SettingKeys.Veeam.Enabled, "false", "bool", "Veeam",
+            "Master kill-switch for the Veeam backup matching (Veeam Service Provider Console). When false, no Veeam API calls are made. Flip on once the VSPC URL and login are configured."),
+        new SettingDefault(SettingKeys.Veeam.BaseUrl, "", "string", "Veeam",
+            "Base URL of your Veeam Service Provider Console REST API, including the port (e.g. https://host:1280). Unique to your install — intentionally left blank, with no default, so the app never points at another tenant's console. No trailing path or slash."),
+        new SettingDefault(SettingKeys.Veeam.Username, "", "string", "Veeam",
+            "Username of the VSPC API account used to obtain an access token (OAuth2 password grant). The matching password is stored separately, encrypted, in the protected-secrets store."),
+        new SettingDefault(SettingKeys.Veeam.SyncIntervalMinutes, "360", "int", "Veeam",
+            "How often (minutes) the Veeam backup data is re-read. Floor 60 — set lower and the worker clamps. Independent from the Mail, Adsolut, Microsoft 365 and Sophos sync intervals."),
+        new SettingDefault(SettingKeys.Veeam.AllowSelfSignedTls, "false", "bool", "Veeam",
+            "Accept a self-signed / untrusted TLS certificate on the Veeam endpoint. VSPC appliances commonly ship a self-signed certificate; turn this on only if you trust the network path to the console. Off = strict certificate validation."),
 
         // End-of-life data feed — v0.0.52. The Assets page row-tint
         // depends on these knobs (red = expired, amber = within

@@ -2170,6 +2170,72 @@ export const m365AdminApi = {
   },
 };
 
+// ---- Veeam backup matching (Veeam Service Provider Console) ----
+
+export type VeeamConnectionState = "disabled" | "not-configured" | "ready";
+
+export type VeeamStatus = {
+  state: VeeamConnectionState;
+  enabled: boolean;
+  baseUrl: string | null;
+  username: string | null;
+  passwordConfigured: boolean;
+  syncIntervalMinutes: number;
+  allowSelfSignedTls: boolean;
+};
+
+export type VeeamSecretStatus = { configured: boolean };
+
+export type VeeamTestResult = {
+  success: boolean;
+  error?: string;
+  message?: string;
+  latencyMs: number;
+};
+
+export const veeamAdminApi = {
+  status: () =>
+    request<VeeamStatus>("GET", "/api/admin/integrations/veeam/status"),
+  secretStatus: () =>
+    request<VeeamSecretStatus>("GET", "/api/admin/integrations/veeam/secret"),
+  setSecret: (value: string) =>
+    request<void>("PUT", "/api/admin/integrations/veeam/secret", { value }),
+  deleteSecret: () =>
+    request<void>("DELETE", "/api/admin/integrations/veeam/secret"),
+  setConfig: (baseUrl: string, username: string, allowSelfSignedTls: boolean) =>
+    request<{ baseUrl: string; username: string; allowSelfSignedTls: boolean }>(
+      "PUT",
+      "/api/admin/integrations/veeam/config",
+      { baseUrl, username, allowSelfSignedTls },
+    ),
+  setEnabled: (enabled: boolean) =>
+    request<{ enabled: boolean }>(
+      "PUT",
+      "/api/admin/integrations/veeam/enabled",
+      { enabled },
+    ),
+  setSyncInterval: (minutes: number) =>
+    request<{ syncIntervalMinutes: number }>(
+      "PUT",
+      "/api/admin/integrations/veeam/sync-interval",
+      { minutes },
+    ),
+  testConnection: () =>
+    request<VeeamTestResult>(
+      "POST",
+      "/api/admin/integrations/veeam/test-connection",
+    ),
+  auditLog: (cursor: number | null, limit = 50) => {
+    const qs = new URLSearchParams();
+    if (cursor !== null) qs.set("cursor", String(cursor));
+    qs.set("limit", String(limit));
+    return request<IntegrationAuditPage>(
+      "GET",
+      `/api/admin/integrations/veeam/audit?${qs.toString()}`,
+    );
+  },
+};
+
 // ---- Sophos Central spam-filter matching (v0.0.78) ----
 
 export type SophosConnectionState = "disabled" | "not-configured" | "ready";

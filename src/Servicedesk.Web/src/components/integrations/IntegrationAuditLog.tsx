@@ -9,6 +9,7 @@ import {
   sophosAdminApi,
   telavoxAdminApi,
   trmmAdminApi,
+  veeamAdminApi,
   zammadAdminApi,
   type IntegrationAuditEntry,
   type IntegrationAuditOutcome,
@@ -50,7 +51,7 @@ type Props = {
   /** Which integration to query. Each backend exposes its own /audit
    * endpoint scoped to its `integration_audit.integration` column, so
    * the dispatch lives here. */
-  integration: "adsolut" | "telavox" | "zammad" | "trmm" | "m365" | "sophos";
+  integration: "adsolut" | "telavox" | "zammad" | "trmm" | "m365" | "sophos" | "veeam";
 };
 
 export function IntegrationAuditLog({ integration }: Props) {
@@ -78,6 +79,8 @@ export function IntegrationAuditLog({ integration }: Props) {
           return m365AdminApi.auditLog(cursor, PAGE_SIZE);
         case "sophos":
           return sophosAdminApi.auditLog(cursor, PAGE_SIZE);
+        case "veeam":
+          return veeamAdminApi.auditLog(cursor, PAGE_SIZE);
       }
     },
     getNextPageParam: (last) => last.nextCursor ?? null,

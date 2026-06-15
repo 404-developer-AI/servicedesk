@@ -12,12 +12,14 @@ import {
   sophosAdminApi,
   telavoxAdminApi,
   trmmAdminApi,
+  veeamAdminApi,
   zammadAdminApi,
   type AdsolutState,
   type M365ConnectionState,
   type SophosConnectionState,
   type TelavoxConnectionState,
   type TrmmConnectionState,
+  type VeeamConnectionState,
   type ZammadConnectionState,
 } from "@/lib/api";
 import adsolutLogo from "@/assets/integrations/adsolut.ico";
@@ -25,6 +27,7 @@ import microsoftLogo from "@/assets/integrations/microsoft.svg";
 import sophosLogo from "@/assets/integrations/sophos.svg";
 import telavoxLogo from "@/assets/integrations/telavox.svg";
 import trmmLogo from "@/assets/integrations/trmm.png";
+import veeamLogo from "@/assets/integrations/veeam.svg";
 import zammadLogo from "@/assets/integrations/zammad.svg";
 
 function tileStatusFor(state: AdsolutState | undefined): IntegrationStatus {
@@ -101,6 +104,17 @@ function sophosTileStatus(state: SophosConnectionState | undefined): Integration
   }
 }
 
+function veeamTileStatus(state: VeeamConnectionState | undefined): IntegrationStatus {
+  switch (state) {
+    case "ready":
+      return "online";
+    case "not-configured":
+      return "warning";
+    default:
+      return "not-configured";
+  }
+}
+
 export function IntegrationsSettingsPage() {
   const navigate = useNavigate();
 
@@ -135,6 +149,11 @@ export function IntegrationsSettingsPage() {
     queryFn: () => sophosAdminApi.status(),
     staleTime: 30_000,
   });
+  const veeamStatus = useQuery({
+    queryKey: ["integrations", "veeam", "status"] as const,
+    queryFn: () => veeamAdminApi.status(),
+    staleTime: 30_000,
+  });
 
   const adsolutTileStatus = tileStatusFor(adsolutStatus.data?.state);
   const telavoxStatusTile = telavoxTileStatus(telavoxStatus.data?.state);
@@ -142,6 +161,7 @@ export function IntegrationsSettingsPage() {
   const trmmStatusTile = trmmTileStatus(trmmStatus.data?.state);
   const m365StatusTile = m365TileStatus(m365Status.data?.state);
   const sophosStatusTile = sophosTileStatus(sophosStatus.data?.state);
+  const veeamStatusTile = veeamTileStatus(veeamStatus.data?.state);
   const tilesConfigured = [
     adsolutTileStatus,
     telavoxStatusTile,
@@ -149,8 +169,9 @@ export function IntegrationsSettingsPage() {
     trmmStatusTile,
     m365StatusTile,
     sophosStatusTile,
+    veeamStatusTile,
   ].filter((s) => s === "online" || s === "warning").length;
-  const totalCount = 6;
+  const totalCount = 7;
   const noneConfigured = tilesConfigured === 0;
   const connectedCount = tilesConfigured;
 
@@ -247,6 +268,13 @@ export function IntegrationsSettingsPage() {
           variant="icon"
           status={sophosStatusTile}
           onClick={() => navigate({ to: "/settings/integrations/sophos" })}
+        />
+        <IntegrationTile
+          name="Veeam"
+          logo={veeamLogo}
+          variant="icon"
+          status={veeamStatusTile}
+          onClick={() => navigate({ to: "/settings/integrations/veeam" })}
         />
       </section>
     </div>
