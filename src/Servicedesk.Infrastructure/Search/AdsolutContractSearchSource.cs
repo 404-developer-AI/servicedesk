@@ -94,7 +94,11 @@ public sealed class AdsolutContractSearchSource : ISearchSource
                         END AS rank,
                         COUNT(*) OVER () AS total_hits
                   FROM adsolut_contracts c
-                  LEFT JOIN companies co ON co.adsolut_id = c.customer_adsolut_id
+                  -- Bridge to the local company via the relation CODE, not the
+                  -- ERP customer GUID (which differs from companies.adsolut_id):
+                  -- contract → adsolut_erp_customers (id → code) → companies.
+                  LEFT JOIN adsolut_erp_customers ec ON ec.id = c.customer_adsolut_id
+                  LEFT JOIN companies co ON co.adsolut_number = ec.code AND ec.code IS NOT NULL
                  WHERE (@statuses::text[] IS NULL OR c.state_code = ANY(@statuses::text[]))
                    AND ((@docProbe IS NOT NULL AND c.doc_nr = @docProbe)
                         OR c.description     ILIKE @like

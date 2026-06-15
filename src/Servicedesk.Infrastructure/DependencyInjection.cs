@@ -192,6 +192,12 @@ public static class DependencyInjection
         services.AddSingleton<IAdsolutContractsClient, AdsolutContractsClient>();
         services.AddSingleton<IAdsolutContractRepository, AdsolutContractRepository>();
         services.AddSingleton<IAdsolutContractsSyncSignal, AdsolutContractsSyncSignal>();
+        // ERP customer (relation) resolution: maps a contract's ERP customer GUID
+        // to its relation code (== companies.adsolut_number) via the ERP
+        // Customers endpoint, so the Microsoft 365 matching list can bridge a
+        // contract to a local company. Populated during the Contracts sync.
+        services.AddSingleton<IAdsolutErpCustomersClient, AdsolutErpCustomersClient>();
+        services.AddSingleton<IAdsolutErpCustomerRepository, AdsolutErpCustomerRepository>();
         services.AddHostedService<AdsolutContractsSyncWorker>();
 
         // Telavox call-popup integration (v0.0.34). PAPI partner-token is

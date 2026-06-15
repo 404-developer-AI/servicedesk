@@ -34,6 +34,7 @@ const MODULES: readonly ContractModule[] = [
     title: "Microsoft 365 matching",
     description: "Match contracts against Microsoft 365 licenses and spot mismatches.",
     icon: Link2,
+    to: "/contracts/m365-matching",
   },
 ];
 

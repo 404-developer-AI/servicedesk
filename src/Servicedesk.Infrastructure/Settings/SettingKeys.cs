@@ -304,6 +304,14 @@ public static class SettingKeys
         /// the Contracts overview. Edited on the integration page (a colour per
         /// discovered status); empty = neutral glass pill.
         public const string ErpContractsStatusColors = "Adsolut.Erp.Contracts.StatusColors";
+
+        /// Comma-separated list of Adsolut article ids (uuids) flagged as
+        /// "Microsoft 365 related". Powers the Contracts → Microsoft 365
+        /// matching list: a company surfaces there when one or more of its
+        /// contract lines reference any of these articles (each company once).
+        /// Curated via the gear on the matching page; empty = nothing selected,
+        /// so the list is empty.
+        public const string M365MatchArticleIds = "Adsolut.Erp.Contracts.M365ArticleIds";
     }
 
     /// Telavox call-popup integration (v0.0.34). Single-install model: one
@@ -1102,6 +1110,8 @@ public static class SettingDefaults
             "When true, the Contracts sync worker mirrors the Adsolut ERP contracts (contracten) into the Contracts overview (Contracts → Contracts overview). Requires the WK.BE.ERP.Read scope on the active connection (tick it in the scopes picker + reconnect) and an active dossier. Off by default — Accounting-only installs stay silent. The Contracts list returns the full contract incl. its article lines inline via cursor pagination, so each tick upserts straight from the list (no by-id N+1). A contract has no Ticket# ref — it links to a relation via its customer id (matched to the local company on adsolut_id). Per-user access is the Contracts feature flag."),
         new SettingDefault(SettingKeys.Adsolut.ErpContractsSyncIntervalMinutes, "60", "int", "Adsolut",
             "How often (minutes) the Adsolut Contracts sync worker ticks. Floor 5 — set lower and the worker silently clamps. Independent from the Companies + SalesReceipts + Orders + Articles sync intervals. Each tick is a delta-sync keyed on the contract's lastModified (?ModifiedSince=lastSuccessfulSync)."),
+        new SettingDefault(SettingKeys.Adsolut.M365MatchArticleIds, "", "string", "Adsolut",
+            "Comma-separated Adsolut article ids (uuids) flagged as Microsoft 365 related. Drives the Contracts → Microsoft 365 matching list: a company appears there when one or more of its contract lines reference any of these articles (each company listed once). Curated via the gear on the matching page, not normally edited here. Empty = no articles selected, so the list is empty."),
         new SettingDefault(SettingKeys.Adsolut.ErpContractsStatusFilter, "", "string", "Adsolut",
             "Comma-separated Adsolut contract state codes (e.g. 'CO,GEPL') the Contracts overview + global search show. Empty = show all statuses. Ticked by the admin on the integration page; the available statuses are discovered dynamically from the contracts seen in the mirror. DISPLAY-ONLY: the mirror always holds every status; this selection only narrows what the overview and global search surface — deselecting a status hides it (it is never purged) and re-ticking it shows it again with no re-sync."),
         new SettingDefault(SettingKeys.Adsolut.ErpContractsStatusColors, "", "string", "Adsolut",

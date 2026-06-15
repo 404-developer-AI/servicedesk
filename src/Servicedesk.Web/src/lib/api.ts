@@ -1160,6 +1160,22 @@ export const articlesApi = {
   sync: () => request<void>("POST", "/api/contracts/articles/sync"),
 };
 
+// ---- Contracts → Microsoft 365 matching -----------------------------
+// Curated "M365-related" article selection (the gear) + the matched-companies
+// list. A company surfaces when any of its contract lines reference a selected
+// article (each company once). Same contracts_enabled gate as the rest.
+
+export type M365SelectedArticle = { id: string; code: string | null; name: string | null };
+export type M365Company = { companyId: string; code: string | null; name: string | null };
+
+export const contractM365Api = {
+  getSelection: () =>
+    request<{ articles: M365SelectedArticle[] }>("GET", "/api/contracts/m365/selection"),
+  saveSelection: (articleIds: string[]) =>
+    request<{ ok: boolean; count: number }>("PUT", "/api/contracts/m365/selection", { articleIds }),
+  companies: () => request<{ items: M365Company[] }>("GET", "/api/contracts/m365/companies"),
+};
+
 // ---- Adsolut Contracts (contracten) — v0.0.77 -----------------------
 // Contract header + line mirror behind the Contracts hub ("Contracts overview").
 

@@ -57,6 +57,10 @@ public interface IAdsolutArticleRepository
 
     /// One article by id (per-row resync read-back).
     Task<AdsolutArticleRow?> GetByIdAsync(Guid id, CancellationToken ct = default);
+
+    /// The given articles by id (the M365 selection chips). Missing ids are
+    /// silently skipped; ordered by code. Empty input → empty result.
+    Task<IReadOnlyList<AdsolutArticleRow>> GetByIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default);
 }
 
 public sealed class AdsolutArticleRepository : IAdsolutArticleRepository
@@ -232,5 +236,21 @@ public sealed class AdsolutArticleRepository : IAdsolutArticleRepository
         return await conn.QueryFirstOrDefaultAsync<AdsolutArticleRow>(new CommandDefinition(
             $"SELECT {Columns} FROM adsolut_articles WHERE id = @id",
             new { id }, cancellationToken: ct));
+    }
+
+    public async Task<IReadOnlyList<AdsolutArticleRow>> GetByIdsAsync(
+        IReadOnlyCollection<Guid> ids, CancellationToken ct = default)
+    {
+        if (ids.Count == 0) return Array.Empty<AdsolutArticleRow>();
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<AdsolutArticleRow>(new CommandDefinition(
+            $"""
+            SELECT {Columns}
+            FROM adsolut_articles
+            WHERE id = ANY(@Ids::uuid[])
+            ORDER BY code ASC NULLS LAST
+            """,
+            new { Ids = ids.ToArray() }, cancellationToken: ct));
+        return rows.ToList();
     }
 }
