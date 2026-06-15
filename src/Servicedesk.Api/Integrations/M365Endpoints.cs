@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
+using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
@@ -30,7 +31,7 @@ public static class M365Endpoints
     /// Servicedesk — lands here after granting consent; it will be validated
     /// by a server-issued state token when that flow is built. Surfaced here so
     /// the value shown in the UI matches what we will actually use.
-    private const string ConsentCallbackPath = "/api/integrations/m365/consent-callback";
+    public const string ConsentCallbackPath = "/api/integrations/m365/consent-callback";
 
     /// Application (app-only) permissions the multi-tenant app needs, consented
     /// by each customer admin. Single-sourced here so the UI never drifts from
@@ -71,12 +72,122 @@ public static class M365Endpoints
 
         admin.MapPut("/config", SetConfig).WithName("SetM365Config").WithOpenApi();
         admin.MapPut("/enabled", SetEnabled).WithName("SetM365Enabled").WithOpenApi();
+        admin.MapPut("/sync-interval", SetSyncInterval).WithName("SetM365SyncInterval").WithOpenApi();
 
         admin.MapPost("/test-connection", TestConnection).WithName("TestM365Connection").WithOpenApi();
 
         admin.MapGet("/audit", GetAuditLog).WithName("GetM365AuditLog").WithOpenApi();
 
+        // PUBLIC consent callback — the customer's admin lands here after
+        // granting (or declining) admin consent in their own tenant; they are
+        // NOT signed in to Servicedesk, so this route is anonymous. Security
+        // rests entirely on the single-use, server-time-boxed `state` token
+        // minted by the per-company connect endpoint.
+        app.MapGet(ConsentCallbackPath, ConsentCallback)
+            .AllowAnonymous()
+            .WithName("M365ConsentCallback")
+            .ExcludeFromDescription();
+
         return app;
+    }
+
+    // ---- consent callback (public) -------------------------------------
+
+    private static async Task<IResult> ConsentCallback(
+        HttpContext http,
+        [FromQuery] string? state,
+        [FromQuery] string? tenant,
+        [FromQuery(Name = "admin_consent")] string? adminConsent,
+        [FromQuery] string? error,
+        [FromQuery(Name = "error_description")] string? errorDescription,
+        IM365TenantStore store,
+        IM365SyncService sync,
+        IIntegrationAuditLogger audit,
+        CancellationToken ct)
+    {
+        // 1. The state token is the whole trust model: consume it atomically.
+        if (string.IsNullOrWhiteSpace(state))
+            return ConsentResultPage(false, "Missing consent token. Start the connection again from Servicedesk.");
+
+        var pending = await store.ConsumeConsentStateAsync(state, DateTime.UtcNow, ct);
+        if (pending is null)
+        {
+            await audit.LogAsync(new IntegrationAuditEvent(
+                Integration: M365EventTypes.Integration,
+                EventType: M365EventTypes.ConsentRejected,
+                Outcome: IntegrationAuditOutcome.Warn,
+                ErrorCode: "invalid_state",
+                Payload: new { reason = "unknown_expired_or_replayed" }), ct);
+            return ConsentResultPage(false, "This consent link is invalid, already used or expired. Start the connection again from Servicedesk.");
+        }
+
+        // 2. Azure must report a granted consent and a tenant id.
+        var granted = string.Equals(adminConsent, "true", StringComparison.OrdinalIgnoreCase);
+        if (!granted || string.IsNullOrWhiteSpace(tenant) || !Guid.TryParse(tenant, out _))
+        {
+            await audit.LogAsync(new IntegrationAuditEvent(
+                Integration: M365EventTypes.Integration,
+                EventType: M365EventTypes.ConsentRejected,
+                Outcome: IntegrationAuditOutcome.Warn,
+                ErrorCode: error ?? "consent_declined",
+                Payload: new { companyId = pending.CompanyId, hasTenant = !string.IsNullOrWhiteSpace(tenant) }), ct);
+            var detail = string.IsNullOrWhiteSpace(errorDescription)
+                ? "Consent was not granted."
+                : errorDescription;
+            return ConsentResultPage(false, detail);
+        }
+
+        // 3. Persist the link (tenant id is an identifier, not a secret) and
+        //    kick an immediate first sync so the data shows up right away.
+        await store.UpsertConnectedLinkAsync(pending.CompanyId, tenant.Trim(), pending.InitiatedBy, DateTime.UtcNow, ct);
+        await audit.LogAsync(new IntegrationAuditEvent(
+            Integration: M365EventTypes.Integration,
+            EventType: M365EventTypes.ConsentGranted,
+            Outcome: IntegrationAuditOutcome.Ok,
+            Payload: new { companyId = pending.CompanyId }), ct);
+
+        var companyId = pending.CompanyId;
+        _ = Task.Run(async () =>
+        {
+            try { await sync.SyncCompanyAsync(companyId, CancellationToken.None); }
+            catch { /* best-effort first sync; the worker will retry on its cadence */ }
+        }, CancellationToken.None);
+
+        return ConsentResultPage(true, "Microsoft 365 is connected for this customer. You can close this tab and return to Servicedesk.");
+    }
+
+    /// Minimal self-contained result page. The customer admin is not a
+    /// Servicedesk user, so it links nowhere — it just confirms the outcome.
+    private static IResult ConsentResultPage(bool success, string message)
+    {
+        var title = success ? "Connected" : "Not connected";
+        var accent = success ? "#34d399" : "#fb7185";
+        var icon = success ? "&#10003;" : "&#10005;";
+        var safeMessage = WebUtility.HtmlEncode(message);
+        var html = $$"""
+            <!doctype html>
+            <html lang="en"><head><meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Microsoft 365 — {{title}}</title>
+            <style>
+              :root { color-scheme: dark; }
+              body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+                     background:#0b1020; color:#e5e7eb; font-family:'Segoe UI',system-ui,sans-serif; }
+              .card { max-width:30rem; padding:2.5rem; border-radius:1rem; background:rgba(255,255,255,0.04);
+                      border:1px solid rgba(255,255,255,0.08); text-align:center; }
+              .badge { width:3.25rem; height:3.25rem; border-radius:9999px; display:flex; align-items:center;
+                       justify-content:center; margin:0 auto 1.25rem; font-size:1.5rem; color:{{accent}};
+                       background:rgba(255,255,255,0.06); border:1px solid {{accent}}33; }
+              h1 { font-size:1.25rem; margin:0 0 .5rem; }
+              p { color:#9ca3af; line-height:1.5; margin:0; }
+            </style></head>
+            <body><div class="card">
+              <div class="badge">{{icon}}</div>
+              <h1>Microsoft 365 — {{title}}</h1>
+              <p>{{safeMessage}}</p>
+            </div></body></html>
+            """;
+        return Results.Content(html, "text/html");
     }
 
     // ---- /status -------------------------------------------------------
@@ -91,6 +202,7 @@ public static class M365Endpoints
         var tenantId = (await settings.GetAsync<string>(SettingKeys.M365.TenantId, ct) ?? string.Empty).Trim();
         var clientId = (await settings.GetAsync<string>(SettingKeys.M365.ClientId, ct) ?? string.Empty).Trim();
         var hasSecret = await secrets.HasAsync(ProtectedSecretKeys.M365ClientSecret, ct);
+        var syncIntervalMinutes = Math.Max(60, await settings.GetAsync<int>(SettingKeys.M365.SyncIntervalMinutes, ct));
 
         var configured = tenantId.Length > 0 && clientId.Length > 0 && hasSecret;
         var state = !enabled
@@ -108,6 +220,7 @@ public static class M365Endpoints
             clientSecretConfigured = hasSecret,
             redirectUri = publicBase + ConsentCallbackPath,
             requiredPermissions = RequiredPermissions,
+            syncIntervalMinutes,
         });
     }
 
@@ -248,6 +361,35 @@ public static class M365Endpoints
             UserAgent: http.Request.Headers.UserAgent.ToString(),
             Payload: new { enabled = req.Enabled }), ct);
         return Results.Ok(new { enabled = req.Enabled });
+    }
+
+    // ---- /sync-interval ------------------------------------------------
+
+    public sealed record SetSyncIntervalRequest([property: Required] int Minutes);
+
+    private static async Task<IResult> SetSyncInterval(
+        [FromBody] SetSyncIntervalRequest req,
+        HttpContext http,
+        ISettingsService settings,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        if (req is null) return Results.BadRequest(new { error = "missing_body" });
+        // Floor 60 (the worker clamps anyway); a generous ceiling keeps the
+        // value sane without being restrictive (1 week).
+        var minutes = Math.Clamp(req.Minutes, 60, 10080);
+
+        var (actor, role) = ActorContext.Resolve(http);
+        await settings.SetAsync(SettingKeys.M365.SyncIntervalMinutes, minutes.ToString(), actor, role, ct);
+        await audit.LogAsync(new AuditEvent(
+            EventType: M365EventTypes.SecurityConfigUpdated,
+            Actor: actor,
+            ActorRole: role,
+            Target: SettingKeys.M365.SyncIntervalMinutes,
+            ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString(),
+            Payload: new { syncIntervalMinutes = minutes }), ct);
+        return Results.Ok(new { syncIntervalMinutes = minutes });
     }
 
     // ---- /test-connection ----------------------------------------------
@@ -398,7 +540,7 @@ public static class M365Endpoints
             "^(?=.{1,253}$)([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}$");
     }
 
-    private static async Task<string> ResolvePublicBaseAsync(
+    internal static async Task<string> ResolvePublicBaseAsync(
         HttpContext httpContext,
         ISettingsService settings,
         CancellationToken ct)

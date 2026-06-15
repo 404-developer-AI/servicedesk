@@ -145,6 +145,17 @@ public static class SettingKeys
 
         /// Application (client) ID of the multi-tenant app registration.
         public const string ClientId = "M365.ClientId";
+
+        /// How often (minutes) the M365 sync worker re-reads each connected
+        /// customer tenant and checks for changes. Floor 60 — set lower and the
+        /// worker clamps. Unchanged tenants are detected via a content hash and
+        /// skip the rewrite, so a short interval is cheap.
+        public const string SyncIntervalMinutes = "M365.SyncIntervalMinutes";
+
+        /// How long (minutes) a per-company "Connect with M365" consent link
+        /// stays valid before the callback rejects its state token. Short by
+        /// design — the link is used immediately during the consent round-trip.
+        public const string ConsentLinkTtlMinutes = "M365.ConsentLinkTtlMinutes";
     }
 
     /// Adsolut (Wolters Kluwer TAA) OAuth integration. Single-install,
@@ -1485,6 +1496,10 @@ public static class SettingDefaults
             "Directory (tenant) ID of the MSP tenant that owns the multi-tenant app registration. Used only to validate the app credentials; per-customer reads use each customer's own tenant id."),
         new SettingDefault(SettingKeys.M365.ClientId, "", "string", "Microsoft 365",
             "Application (client) ID of the multi-tenant app registration in the MSP tenant. The matching client secret is stored separately in the protected-secrets store."),
+        new SettingDefault(SettingKeys.M365.SyncIntervalMinutes, "360", "int", "Microsoft 365",
+            "How often (minutes) each connected customer tenant is re-read and checked for changes. Floor 60 — set lower and the worker clamps. Unchanged tenants are detected via a content hash and skip the rewrite, so a shorter interval is cheap. Independent from the Mail and Adsolut sync intervals."),
+        new SettingDefault(SettingKeys.M365.ConsentLinkTtlMinutes, "30", "int", "Microsoft 365",
+            "How long (minutes) a per-company 'Connect with M365' consent link stays valid before the callback rejects it. Clamped to [5, 120]. Short by design — the link is used immediately during the consent round-trip, so a long window only widens the replay surface."),
 
         // End-of-life data feed — v0.0.52. The Assets page row-tint
         // depends on these knobs (red = expired, amber = within

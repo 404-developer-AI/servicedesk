@@ -1168,12 +1168,82 @@ export const articlesApi = {
 export type M365SelectedArticle = { id: string; code: string | null; name: string | null };
 export type M365Company = { companyId: string; code: string | null; name: string | null };
 
+/// Per-company connection lifecycle. "needs_reconsent" means a read failed with
+/// 401/403 (consent revoked or a new permission added); "error" is transient.
+export type M365LinkStatus =
+  | "connected"
+  | "needs_reconsent"
+  | "error"
+  | "disconnected";
+
+export type M365Connection = {
+  companyId: string;
+  status: M365LinkStatus;
+  consentedAt: string | null;
+  lastCheckedUtc: string | null;
+  lastChangedUtc: string | null;
+  mailboxCount: number;
+  lastError: string | null;
+};
+
+export type M365Mailbox = {
+  objectId: string;
+  mailboxType: string | null;
+  displayName: string | null;
+  givenName: string | null;
+  surname: string | null;
+  upn: string | null;
+  mail: string | null;
+  enabled: boolean | null;
+  licenses: string | null;
+};
+
+export type M365CompanyMailboxes = {
+  companyId: string;
+  companyCode: string | null;
+  companyName: string | null;
+  status: M365LinkStatus | null;
+  tenantId: string | null;
+  consentedAt: string | null;
+  lastCheckedUtc: string | null;
+  lastChangedUtc: string | null;
+  lastError: string | null;
+  mailboxes: M365Mailbox[];
+};
+
+export type M365SyncResult = {
+  success: boolean;
+  status: string;
+  error: string | null;
+  mailboxCount: number;
+  changed: boolean;
+};
+
 export const contractM365Api = {
   getSelection: () =>
     request<{ articles: M365SelectedArticle[] }>("GET", "/api/contracts/m365/selection"),
   saveSelection: (articleIds: string[]) =>
     request<{ ok: boolean; count: number }>("PUT", "/api/contracts/m365/selection", { articleIds }),
   companies: () => request<{ items: M365Company[] }>("GET", "/api/contracts/m365/companies"),
+  connections: () =>
+    request<{ items: M365Connection[] }>("GET", "/api/contracts/m365/companies/connections"),
+  connect: (companyId: string) =>
+    request<{ consentUrl: string }>(
+      "POST",
+      `/api/contracts/m365/companies/${companyId}/connect`,
+    ),
+  sync: (companyId: string) =>
+    request<M365SyncResult>("POST", `/api/contracts/m365/companies/${companyId}/sync`),
+  disconnect: (companyId: string) =>
+    request<{ ok: boolean }>(
+      "POST",
+      `/api/contracts/m365/companies/${companyId}/disconnect`,
+    ),
+  mailboxes: (companyId: string) =>
+    request<M365CompanyMailboxes>(
+      "GET",
+      `/api/contracts/m365/companies/${companyId}/mailboxes`,
+    ),
 };
 
 // ---- Adsolut Contracts (contracten) — v0.0.77 -----------------------
@@ -2038,6 +2108,7 @@ export type M365Status = {
   clientSecretConfigured: boolean;
   redirectUri: string;
   requiredPermissions: M365RequiredPermission[];
+  syncIntervalMinutes: number;
 };
 
 export type M365SecretStatus = { configured: boolean };
@@ -2069,6 +2140,12 @@ export const m365AdminApi = {
       "PUT",
       "/api/admin/integrations/m365/enabled",
       { enabled },
+    ),
+  setSyncInterval: (minutes: number) =>
+    request<{ syncIntervalMinutes: number }>(
+      "PUT",
+      "/api/admin/integrations/m365/sync-interval",
+      { minutes },
     ),
   testConnection: () =>
     request<M365TestResult>(

@@ -258,6 +258,21 @@ public static class DependencyInjection
             Servicedesk.Infrastructure.Integrations.Trmm.AssetRepository>();
         services.AddHostedService<Servicedesk.Infrastructure.Integrations.Trmm.TrmmSyncWorker>();
 
+        // Microsoft 365 per-customer connect (consent + Graph read). One
+        // multi-tenant MSP app (M365.* settings + protected secret) reads each
+        // consented customer tenant app-only. The store owns the consent
+        // states + tenant links + mailbox mirror; the reader is the C#
+        // translation of the probe script (token → subscribedSkus → users →
+        // mailboxSettings.userPurpose via $batch); the sync service reconciles
+        // one tenant; the worker runs the M365.SyncIntervalMinutes cadence.
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.M365.IM365TenantStore,
+            Servicedesk.Infrastructure.Integrations.M365.M365TenantStore>();
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.M365.IM365GraphReader,
+            Servicedesk.Infrastructure.Integrations.M365.M365GraphReader>();
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.M365.IM365SyncService,
+            Servicedesk.Infrastructure.Integrations.M365.M365SyncService>();
+        services.AddHostedService<Servicedesk.Infrastructure.Integrations.M365.M365SyncWorker>();
+
         // EOL data feed (v0.0.52) — pulls endoflife.date weekly into the
         // local eol_releases mirror so the Assets page can tint rows
         // past or near end-of-support without a live API call on render.
@@ -556,6 +571,12 @@ public static class DependencyInjection
         // flag is set (read per-query). Honors the admin's display status filter.
         services.AddSingleton<Servicedesk.Infrastructure.Search.AdsolutContractSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<Servicedesk.Infrastructure.Search.AdsolutContractSearchSource>()));
+
+        // Microsoft 365 mailbox search-source (Contracts → M365 matching). Customer
+        // sees zero hits; Agent/Admin see hits only when their own contracts_enabled
+        // flag is set (read per-query). A hit links to the owning company.
+        services.AddSingleton<Servicedesk.Infrastructure.Search.M365MailboxSearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<Servicedesk.Infrastructure.Search.M365MailboxSearchSource>()));
 
         services.AddHostedService<DatabaseBootstrapper>();
         services.AddHostedService<SettingsSeeder>();

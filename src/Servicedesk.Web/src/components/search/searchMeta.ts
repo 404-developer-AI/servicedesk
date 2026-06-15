@@ -20,6 +20,7 @@ export type SearchKind =
   | "adsolut-orders"
   | "adsolut-articles"
   | "adsolut-contracts"
+  | "m365-mailboxes"
   | (string & {});
 
 export const KIND_LABELS: Record<string, string> = {
@@ -38,6 +39,7 @@ export const KIND_LABELS: Record<string, string> = {
   "adsolut-orders": "Orders",
   "adsolut-articles": "Contract Articles",
   "adsolut-contracts": "Contracts",
+  "m365-mailboxes": "Microsoft 365 mailboxes",
 };
 
 export const KIND_ORDER: string[] = [
@@ -56,6 +58,7 @@ export const KIND_ORDER: string[] = [
   "adsolut-orders",
   "adsolut-articles",
   "adsolut-contracts",
+  "m365-mailboxes",
 ];
 
 export function labelForKind(kind: string): string {
@@ -104,6 +107,9 @@ export function hitHref(hit: SearchHit): string {
       // Contracts live in the Contracts overview list; no standalone detail
       // page — land the user on the overview.
       return "/contracts/overview";
+    case "m365-mailboxes":
+      // A mailbox hit links to its owning company's M365 detail page.
+      return `/contracts/m365-matching/${hit.entityId}`;
     default:
       return "#";
   }

@@ -7,6 +7,7 @@ import {
   BadgeCheck,
   Building2,
   CheckCircle2,
+  Clock,
   Copy,
   Fingerprint,
   KeyRound,
@@ -83,6 +84,7 @@ export function M365IntegrationPage() {
   const [tenantDraft, setTenantDraft] = useState("");
   const [clientDraft, setClientDraft] = useState("");
   const [secretDraft, setSecretDraft] = useState("");
+  const [intervalDraft, setIntervalDraft] = useState("");
   const [seeded, setSeeded] = useState(false);
 
   // Seed the editable identifiers once from the server, so an admin sees the
@@ -91,6 +93,7 @@ export function M365IntegrationPage() {
     if (!seeded && status.data) {
       setTenantDraft(status.data.tenantId ?? "");
       setClientDraft(status.data.clientId ?? "");
+      setIntervalDraft(String(status.data.syncIntervalMinutes ?? 360));
       setSeeded(true);
     }
   }, [seeded, status.data]);
@@ -148,6 +151,16 @@ export function M365IntegrationPage() {
     onError: onErr,
   });
 
+  const saveInterval = useMutation({
+    mutationFn: () => m365AdminApi.setSyncInterval(Number(intervalDraft)),
+    onSuccess: (r) => {
+      toast.success(`Sync interval set to ${r.syncIntervalMinutes} minutes`);
+      setIntervalDraft(String(r.syncIntervalMinutes));
+      qc.invalidateQueries({ queryKey: STATUS_QK });
+    },
+    onError: onErr,
+  });
+
   const test = useMutation({
     mutationFn: () => m365AdminApi.testConnection(),
     onSuccess: (result) => {
@@ -173,6 +186,14 @@ export function M365IntegrationPage() {
     (status.data?.clientId?.length ?? 0) > 0 &&
     hasSecret &&
     !test.isPending;
+
+  const intervalNum = Number(intervalDraft);
+  const canSaveInterval =
+    Number.isFinite(intervalNum) &&
+    intervalNum >= 60 &&
+    intervalNum <= 10080 &&
+    intervalNum !== (status.data?.syncIntervalMinutes ?? 360) &&
+    !saveInterval.isPending;
 
   return (
     <div className="flex flex-col gap-6">
@@ -219,6 +240,39 @@ export function M365IntegrationPage() {
             onCheckedChange={(v) => toggleEnabled.mutate(v)}
             aria-label="Enable Microsoft 365 integration"
           />
+        </div>
+      </section>
+
+      {/* Sync schedule */}
+      <section className="rounded-lg border border-glass bg-glass p-5">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <Clock className="h-4 w-4 text-primary" /> Sync schedule
+            </div>
+            <p className="max-w-xl text-xs text-muted-foreground">
+              How often every connected customer tenant is re-read and checked for changes.
+              Unchanged tenants are detected cheaply and skip the rewrite, so a shorter interval
+              is inexpensive. Minimum 60 minutes.
+            </p>
+          </div>
+          <div className="flex items-end gap-2">
+            <label className="space-y-1.5">
+              <span className="text-[11px] font-medium text-muted-foreground">Interval (minutes)</span>
+              <Input
+                type="number"
+                min={60}
+                max={10080}
+                step={30}
+                value={intervalDraft}
+                onChange={(e) => setIntervalDraft(e.target.value)}
+                className="w-32"
+              />
+            </label>
+            <Button onClick={() => saveInterval.mutate()} disabled={!canSaveInterval}>
+              Save
+            </Button>
+          </div>
         </div>
       </section>
 

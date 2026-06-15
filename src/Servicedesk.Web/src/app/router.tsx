@@ -28,6 +28,7 @@ import { ContractsPage } from "@/pages/contracts/ContractsPage";
 import { ContractArticlesPage } from "@/pages/contracts/ContractArticlesPage";
 import { ContractsOverviewPage } from "@/pages/contracts/ContractsOverviewPage";
 import { ContractM365Page } from "@/pages/contracts/ContractM365Page";
+import { ContractM365CompanyPage } from "@/pages/contracts/ContractM365CompanyPage";
 import { ZammadImportRunsListPage } from "@/pages/settings/zammad/ZammadImportRunsListPage";
 import { ZammadImportRunDetailPage } from "@/pages/settings/zammad/ZammadImportRunDetailPage";
 import { MailSettingsPage } from "@/pages/settings/MailSettingsPage";
@@ -438,6 +439,23 @@ const contractM365Route = createRoute({
   component: ContractM365Page,
 });
 
+// One company's synced Microsoft 365 mailboxes (reached from the matching list).
+// Same contracts_enabled gate as the list; the mailbox endpoint re-checks it.
+const contractM365CompanyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/contracts/m365-matching/$companyId",
+  beforeLoad: (args) => {
+    authGate(["Agent", "Admin"])(args);
+    if (!authedUser()?.contractsEnabled) {
+      throw redirect({ to: "/" });
+    }
+  },
+  component: function ContractM365CompanyRoute() {
+    const { companyId } = contractM365CompanyRoute.useParams();
+    return <ContractM365CompanyPage companyId={companyId} />;
+  },
+});
+
 const profileMentionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/profile/mentions",
@@ -804,6 +822,7 @@ const routeTree = rootRoute.addChildren([
   contractArticlesRoute,
   contractsOverviewRoute,
   contractM365Route,
+  contractM365CompanyRoute,
   settingsRoute.addChildren([
     settingsIndexRoute,
     settingsGeneralRoute,
