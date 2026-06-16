@@ -1,7 +1,9 @@
 using Dapper;
 using Npgsql;
 using Servicedesk.Infrastructure.Integrations.Adsolut;
+using Servicedesk.Infrastructure.Integrations.Sophos;
 using Servicedesk.Infrastructure.Integrations.Telavox;
+using Servicedesk.Infrastructure.Integrations.Veeam;
 using Servicedesk.Infrastructure.Integrations.Zammad;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
@@ -58,6 +60,8 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
     private readonly IAdsolutConnectionStore _adsolutConnections;
     private readonly IAdsolutSyncStateStore _adsolutSyncState;
     private readonly ITelavoxAgentLinkStore _telavoxLinks;
+    private readonly ISophosStore _sophos;
+    private readonly IVeeamStore _veeam;
     private readonly NpgsqlDataSource _dataSource;
 
     public IntegrationsHealthAggregator(
@@ -66,6 +70,8 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
         IAdsolutConnectionStore adsolutConnections,
         IAdsolutSyncStateStore adsolutSyncState,
         ITelavoxAgentLinkStore telavoxLinks,
+        ISophosStore sophos,
+        IVeeamStore veeam,
         NpgsqlDataSource dataSource)
     {
         _secrets = secrets;
@@ -73,6 +79,8 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
         _adsolutConnections = adsolutConnections;
         _adsolutSyncState = adsolutSyncState;
         _telavoxLinks = telavoxLinks;
+        _sophos = sophos;
+        _veeam = veeam;
         _dataSource = dataSource;
     }
 
@@ -88,6 +96,15 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
 
         var zammad = await BuildZammadAsync(ct);
         if (zammad is not null) integrations.Add(zammad);
+
+        var m365 = await BuildM365Async(ct);
+        if (m365 is not null) integrations.Add(m365);
+
+        var sophos = await BuildSophosAsync(ct);
+        if (sophos is not null) integrations.Add(sophos);
+
+        var veeam = await BuildVeeamAsync(ct);
+        if (veeam is not null) integrations.Add(veeam);
 
         var rollup = integrations.Aggregate(HealthStatus.Ok,
             (acc, i) => i.Rollup > acc ? i.Rollup : acc);
@@ -727,5 +744,353 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
         public DateTime StartedUtc { get; set; }
         public DateTime? FinishedUtc { get; set; }
         public string? ErrorMessage { get; set; }
+    }
+
+    // ---- Microsoft 365 -------------------------------------------------
+
+    /// One aggregate row over the per-company M365 tables — link states and the
+    /// rolled-up sync metadata. Unlike Sophos/Veeam (one console, one sync row)
+    /// M365 syncs each connected customer tenant independently, so the tile
+    /// summarises the fleet: how many are connected / need re-consent / errored,
+    /// the newest sync timestamp and how many failed their last tick.
+    private const string M365AggregateSql = """
+        SELECT
+            (SELECT count(*) FROM m365_tenant_links)::int                                AS LinkCount,
+            (SELECT count(*) FROM m365_tenant_links WHERE status = 'connected')::int     AS ConnectedCount,
+            (SELECT count(*) FROM m365_tenant_links WHERE status = 'needs_reconsent')::int AS NeedsReconsentCount,
+            (SELECT count(*) FROM m365_tenant_links WHERE status = 'error')::int         AS ErrorCount,
+            (SELECT max(last_checked_utc) FROM m365_company_sync)                        AS LastCheckedUtc,
+            (SELECT coalesce(sum(mailbox_count), 0) FROM m365_company_sync)::bigint      AS MailboxCount,
+            (SELECT count(*) FROM m365_company_sync WHERE last_error IS NOT NULL)::int   AS SyncErrorCount
+        """;
+
+    private sealed class M365AggregateRow
+    {
+        public int LinkCount { get; set; }
+        public int ConnectedCount { get; set; }
+        public int NeedsReconsentCount { get; set; }
+        public int ErrorCount { get; set; }
+        public DateTime? LastCheckedUtc { get; set; }
+        public long MailboxCount { get; set; }
+        public int SyncErrorCount { get; set; }
+    }
+
+    /// Visibility rule mirrors the M365 status endpoint's "configured" gate:
+    /// only surface the tile once the multi-tenant app is enabled and fully
+    /// configured (tenant id + client id + secret). The per-customer connect
+    /// state then lives inside the Connection check.
+    private async Task<IntegrationHealth?> BuildM365Async(CancellationToken ct)
+    {
+        var enabled = await _settings.GetAsync<bool>(SettingKeys.M365.Enabled, ct);
+        var tenantId = (await _settings.GetAsync<string>(SettingKeys.M365.TenantId, ct) ?? string.Empty).Trim();
+        var clientId = (await _settings.GetAsync<string>(SettingKeys.M365.ClientId, ct) ?? string.Empty).Trim();
+        var hasSecret = await _secrets.HasAsync(ProtectedSecretKeys.M365ClientSecret, ct);
+        if (!enabled || tenantId.Length == 0 || clientId.Length == 0 || !hasSecret)
+        {
+            return null;
+        }
+
+        var interval = Math.Max(60, await _settings.GetAsync<int>(SettingKeys.M365.SyncIntervalMinutes, ct));
+
+        M365AggregateRow agg;
+        try
+        {
+            await using var conn = await _dataSource.OpenConnectionAsync(ct);
+            agg = await conn.QuerySingleAsync<M365AggregateRow>(
+                new CommandDefinition(M365AggregateSql, cancellationToken: ct));
+        }
+        catch
+        {
+            // Health endpoint must never throw — degrade to an empty aggregate.
+            agg = new M365AggregateRow();
+        }
+
+        var connectionCheck = BuildM365ConnectionCheck(agg);
+        var syncCheck = BuildM365SyncCheck(agg, interval);
+        var checks = new[] { connectionCheck, syncCheck };
+        var rollup = checks.Aggregate(HealthStatus.Ok, (acc, c) => c.Status > acc ? c.Status : acc);
+
+        // "Sync now" only makes sense when at least one customer is connected —
+        // the global trigger walks every active link, so with zero links it
+        // would no-op and leave the admin staring at an empty toast.
+        var tileActions = new List<HealthAction>();
+        if (agg.ConnectedCount > 0)
+        {
+            tileActions.Add(new HealthAction(
+                Key: "m365-sync-now",
+                Label: "Sync now",
+                Endpoint: "/api/admin/integrations/m365/sync",
+                ConfirmMessage: null));
+        }
+
+        return new IntegrationHealth(
+            Key: "m365",
+            Name: "Microsoft 365",
+            LogoKey: "m365",
+            Rollup: rollup,
+            Checks: checks,
+            Actions: tileActions);
+    }
+
+    private static SubsystemHealth BuildM365ConnectionCheck(M365AggregateRow agg)
+    {
+        var details = new List<HealthDetail>
+        {
+            new("Connected customers", agg.ConnectedCount.ToString()),
+        };
+        if (agg.NeedsReconsentCount > 0)
+            details.Add(new HealthDetail("Needs re-consent", agg.NeedsReconsentCount.ToString()));
+        if (agg.ErrorCount > 0)
+            details.Add(new HealthDetail("In error", agg.ErrorCount.ToString()));
+
+        HealthStatus status;
+        string summary;
+        if (agg.LinkCount == 0)
+        {
+            status = HealthStatus.Ok;
+            summary = "Configured — no customers connected yet. Connect them from Contracts → Microsoft 365.";
+        }
+        else if (agg.NeedsReconsentCount > 0)
+        {
+            status = HealthStatus.Warning;
+            summary = $"{agg.NeedsReconsentCount} customer(s) need admin re-consent.";
+        }
+        else if (agg.ErrorCount > 0)
+        {
+            status = HealthStatus.Warning;
+            summary = $"{agg.ErrorCount} customer(s) hit a read error on the last tick.";
+        }
+        else
+        {
+            status = HealthStatus.Ok;
+            summary = $"{agg.ConnectedCount} customer(s) connected.";
+        }
+
+        return new SubsystemHealth(
+            Key: "m365-connection",
+            Label: "Connection",
+            Status: status,
+            Summary: summary,
+            Details: details,
+            Actions: Array.Empty<HealthAction>());
+    }
+
+    private static SubsystemHealth BuildM365SyncCheck(M365AggregateRow agg, int intervalMinutes)
+    {
+        if (agg.LinkCount == 0)
+        {
+            return new SubsystemHealth(
+                Key: "m365-sync",
+                Label: "Sync",
+                Status: HealthStatus.Ok,
+                Summary: "Sync idle — no customers connected.",
+                Details: new[] { new HealthDetail("State", "Waiting for the first customer connection.") },
+                Actions: Array.Empty<HealthAction>());
+        }
+
+        var now = DateTime.UtcNow;
+        var staleThreshold = TimeSpan.FromMinutes(Math.Max(1, intervalMinutes) * DefaultStaleIntervalMultiplier);
+        var isStale = agg.LastCheckedUtc is { } lc && (now - lc) > staleThreshold;
+
+        HealthStatus status;
+        string summary;
+        if (agg.SyncErrorCount > 0)
+        {
+            status = HealthStatus.Warning;
+            summary = $"{agg.SyncErrorCount} customer(s) failed their last sync.";
+        }
+        else if (isStale)
+        {
+            status = HealthStatus.Warning;
+            summary = $"No successful sync in over {(int)staleThreshold.TotalMinutes} minutes.";
+        }
+        else if (agg.LastCheckedUtc is null)
+        {
+            status = HealthStatus.Ok;
+            summary = "Waiting for first sync tick…";
+        }
+        else
+        {
+            status = HealthStatus.Ok;
+            summary = $"Last sync OK at {agg.LastCheckedUtc.Value:u}.";
+        }
+
+        var details = new List<HealthDetail>
+        {
+            new("Connected customers", agg.ConnectedCount.ToString()),
+            new("Mailboxes mirrored", agg.MailboxCount.ToString()),
+        };
+        if (agg.LastCheckedUtc is { } lcd)
+            details.Add(new HealthDetail("Last sync", lcd.ToString("u")));
+        details.Add(new HealthDetail("Next sync", ComputeNextSyncUtc(agg.LastCheckedUtc, intervalMinutes).ToString("u")));
+        details.Add(new HealthDetail("Tick interval", $"{intervalMinutes} minute(s)"));
+
+        return new SubsystemHealth(
+            Key: "m365-sync",
+            Label: "Sync",
+            Status: status,
+            Summary: summary,
+            Details: details,
+            Actions: Array.Empty<HealthAction>());
+    }
+
+    // ---- Sophos Central ------------------------------------------------
+
+    private async Task<IntegrationHealth?> BuildSophosAsync(CancellationToken ct)
+    {
+        var enabled = await _settings.GetAsync<bool>(SettingKeys.Sophos.Enabled, ct);
+        var hasClientId = await _secrets.HasAsync(ProtectedSecretKeys.SophosClientId, ct);
+        var hasSecret = await _secrets.HasAsync(ProtectedSecretKeys.SophosClientSecret, ct);
+        if (!enabled || !hasClientId || !hasSecret)
+        {
+            return null;
+        }
+
+        var interval = Math.Max(60, await _settings.GetAsync<int>(SettingKeys.Sophos.SyncIntervalMinutes, ct));
+        var sync = await _sophos.GetSyncStateAsync(ct);
+
+        var connectionCheck = new SubsystemHealth(
+            Key: "sophos-connection",
+            Label: "Connection",
+            Status: HealthStatus.Ok,
+            Summary: "Configured — partner API credentials stored.",
+            Details: new[] { new HealthDetail("Credentials", "Stored (encrypted)") },
+            Actions: Array.Empty<HealthAction>());
+
+        var counters = new List<HealthDetail>
+        {
+            new("Tenants", (sync?.TenantCount ?? 0).ToString()),
+            new("Protected mailboxes", (sync?.MailboxCount ?? 0).ToString()),
+        };
+        var syncCheck = BuildSingletonSyncCheck(
+            "sophos-sync", sync?.LastCheckedUtc, sync?.LastError, interval, counters);
+
+        var checks = new[] { connectionCheck, syncCheck };
+        var rollup = checks.Aggregate(HealthStatus.Ok, (acc, c) => c.Status > acc ? c.Status : acc);
+
+        var tileActions = new List<HealthAction>
+        {
+            new(Key: "sophos-sync-now", Label: "Sync now",
+                Endpoint: "/api/admin/integrations/sophos/sync", ConfirmMessage: null),
+        };
+        return new IntegrationHealth(
+            Key: "sophos",
+            Name: "Sophos Central",
+            LogoKey: "sophos",
+            Rollup: rollup,
+            Checks: checks,
+            Actions: tileActions);
+    }
+
+    // ---- Veeam ---------------------------------------------------------
+
+    private async Task<IntegrationHealth?> BuildVeeamAsync(CancellationToken ct)
+    {
+        var enabled = await _settings.GetAsync<bool>(SettingKeys.Veeam.Enabled, ct);
+        var baseUrl = (await _settings.GetAsync<string>(SettingKeys.Veeam.BaseUrl, ct) ?? string.Empty).Trim();
+        var username = (await _settings.GetAsync<string>(SettingKeys.Veeam.Username, ct) ?? string.Empty).Trim();
+        var hasSecret = await _secrets.HasAsync(ProtectedSecretKeys.VeeamPassword, ct);
+        if (!enabled || baseUrl.Length == 0 || username.Length == 0 || !hasSecret)
+        {
+            return null;
+        }
+
+        var interval = Math.Max(60, await _settings.GetAsync<int>(SettingKeys.Veeam.SyncIntervalMinutes, ct));
+        var sync = await _veeam.GetSyncStateAsync(ct);
+
+        var connectionCheck = new SubsystemHealth(
+            Key: "veeam-connection",
+            Label: "Connection",
+            Status: HealthStatus.Ok,
+            Summary: "Configured — VSPC console credentials stored.",
+            Details: new[]
+            {
+                new HealthDetail("Console", baseUrl),
+                new HealthDetail("Username", username),
+            },
+            Actions: Array.Empty<HealthAction>());
+
+        var counters = new List<HealthDetail>
+        {
+            new("Companies", (sync?.CompanyCount ?? 0).ToString()),
+            new("Backup objects", (sync?.ObjectCount ?? 0).ToString()),
+        };
+        var syncCheck = BuildSingletonSyncCheck(
+            "veeam-sync", sync?.LastCheckedUtc, sync?.LastError, interval, counters);
+
+        var checks = new[] { connectionCheck, syncCheck };
+        var rollup = checks.Aggregate(HealthStatus.Ok, (acc, c) => c.Status > acc ? c.Status : acc);
+
+        var tileActions = new List<HealthAction>
+        {
+            new(Key: "veeam-sync-now", Label: "Sync now",
+                Endpoint: "/api/admin/integrations/veeam/sync", ConfirmMessage: null),
+        };
+        return new IntegrationHealth(
+            Key: "veeam",
+            Name: "Veeam",
+            LogoKey: "veeam",
+            Rollup: rollup,
+            Checks: checks,
+            Actions: tileActions);
+    }
+
+    // ---- shared --------------------------------------------------------
+
+    /// Sync check for the single-console integrations (Sophos, Veeam): one
+    /// <c>*_sync_state</c> row whose <c>last_error</c> is cleared on a
+    /// successful tick. Warning when the last tick failed or the cursor has
+    /// gone stale past <see cref="DefaultStaleIntervalMultiplier"/> intervals;
+    /// the caller passes integration-specific counters (tenants, objects, …)
+    /// that are shown above the shared last-sync / next-sync / interval lines.
+    private static SubsystemHealth BuildSingletonSyncCheck(
+        string key,
+        DateTime? lastCheckedUtc,
+        string? lastError,
+        int intervalMinutes,
+        List<HealthDetail> counters)
+    {
+        var now = DateTime.UtcNow;
+        var staleThreshold = TimeSpan.FromMinutes(Math.Max(1, intervalMinutes) * DefaultStaleIntervalMultiplier);
+        var hasError = !string.IsNullOrEmpty(lastError);
+        var isStale = lastCheckedUtc is { } lc && (now - lc) > staleThreshold;
+
+        HealthStatus status;
+        string summary;
+        if (hasError)
+        {
+            status = HealthStatus.Warning;
+            summary = $"Last sync failed: {lastError}";
+        }
+        else if (isStale)
+        {
+            status = HealthStatus.Warning;
+            summary = $"No successful sync in over {(int)staleThreshold.TotalMinutes} minutes.";
+        }
+        else if (lastCheckedUtc is null)
+        {
+            status = HealthStatus.Ok;
+            summary = "Waiting for first sync tick…";
+        }
+        else
+        {
+            status = HealthStatus.Ok;
+            summary = $"Last sync OK at {lastCheckedUtc.Value:u}.";
+        }
+
+        if (lastCheckedUtc is { } lcd)
+            counters.Add(new HealthDetail("Last sync", lcd.ToString("u")));
+        counters.Add(new HealthDetail("Next sync", ComputeNextSyncUtc(lastCheckedUtc, intervalMinutes).ToString("u")));
+        counters.Add(new HealthDetail("Tick interval", $"{intervalMinutes} minute(s)"));
+        if (hasError)
+            counters.Add(new HealthDetail("Last error", lastError!));
+
+        return new SubsystemHealth(
+            Key: key,
+            Label: "Sync",
+            Status: status,
+            Summary: summary,
+            Details: counters,
+            Actions: Array.Empty<HealthAction>());
     }
 }
