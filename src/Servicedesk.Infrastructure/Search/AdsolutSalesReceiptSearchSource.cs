@@ -26,7 +26,7 @@ public sealed class AdsolutSalesReceiptSearchSource : ISearchSource
     public string Kind => SearchSourceKind.AdsolutSalesReceipts;
 
     public bool IsAvailableFor(SearchPrincipal principal) =>
-        principal.IsAdmin || principal.IsAgent;
+        principal.IsAdmin || (principal.IsAgent && principal.HasFeature(SearchFeature.AdsolutTimesheet));
 
     public async Task<SearchGroup> SearchAsync(
         SearchRequest request, SearchPrincipal principal, CancellationToken ct)
@@ -41,17 +41,10 @@ public sealed class AdsolutSalesReceiptSearchSource : ISearchSource
         var limit = Math.Clamp(request.Limit, 1, 100);
         var offset = Math.Max(0, request.Offset);
 
+        // Feature-flag gate (adsolut_timesheet_enabled) is enforced by
+        // IsAvailableFor via the principal — checked at the top of this method
+        // and by the search façade before it ever queries this source.
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-
-        // Feature-flag gate: a user without adsolut_timesheet_enabled gets
-        // zero hits, exactly like the tab is hidden from them. This is the
-        // row-level authorization required of every search source.
-        var enabled = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
-            "SELECT COALESCE(adsolut_timesheet_enabled, FALSE) FROM users WHERE id = @userId",
-            new { userId = principal.UserId },
-            cancellationToken: ct));
-        if (!enabled)
-            return new SearchGroup(Kind, Array.Empty<SearchHit>(), 0, false);
 
         long? docProbe = long.TryParse(normalized, NumberStyles.Integer, CultureInfo.InvariantCulture, out var dn)
             ? dn

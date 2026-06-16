@@ -24,7 +24,7 @@ public sealed class M365MailboxSearchSource : ISearchSource
     public string Kind => SearchSourceKind.M365Mailboxes;
 
     public bool IsAvailableFor(SearchPrincipal principal) =>
-        principal.IsAdmin || principal.IsAgent;
+        principal.IsAdmin || (principal.IsAgent && principal.HasFeature(SearchFeature.Contracts));
 
     public async Task<SearchGroup> SearchAsync(
         SearchRequest request, SearchPrincipal principal, CancellationToken ct)
@@ -39,16 +39,10 @@ public sealed class M365MailboxSearchSource : ISearchSource
         var limit = Math.Clamp(request.Limit, 1, 100);
         var offset = Math.Max(0, request.Offset);
 
+        // Feature-flag gate (contracts_enabled) is enforced by IsAvailableFor
+        // via the principal — checked at the top of this method and by the
+        // search façade before it ever queries this source.
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-
-        // Feature-flag gate: a user without contracts_enabled gets zero hits,
-        // exactly like the Microsoft 365 matching page is hidden from them.
-        var enabled = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
-            "SELECT COALESCE(contracts_enabled, FALSE) FROM users WHERE id = @userId",
-            new { userId = principal.UserId },
-            cancellationToken: ct));
-        if (!enabled)
-            return new SearchGroup(Kind, Array.Empty<SearchHit>(), 0, false);
 
         const string sql = """
             WITH hits AS (

@@ -131,6 +131,14 @@ public interface IUserService
     /// entry and is the authorization boundary for the /api/feedback/*
     /// endpoints. Returns false on missing rows.
     Task<bool> GetFeedbackEnabledAsync(Guid userId, CancellationToken ct = default);
+
+    /// Loads the per-user feature flags that gate availability of
+    /// feature-flagged global-search sources (Orders, Contracts family,
+    /// Employee Feedback, …) in a single round-trip. Returns the set of
+    /// enabled <see cref="Servicedesk.Domain.Search.SearchFeature"/> keys;
+    /// empty for a missing row. Used to build the <c>SearchPrincipal</c> so
+    /// the search dropdown only lists sources the user can actually use.
+    Task<IReadOnlySet<string>> GetSearchFeatureFlagsAsync(Guid userId, CancellationToken ct = default);
 }
 
 /// Per-user Timesheet feature flags. Empty struct-y record so the call
@@ -540,6 +548,36 @@ public sealed class UserService : IUserService
         var value = await connection.QuerySingleOrDefaultAsync<bool?>(
             new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
         return value ?? false;
+    }
+
+    public async Task<IReadOnlySet<string>> GetSearchFeatureFlagsAsync(Guid userId, CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT COALESCE(contracts_enabled, FALSE)        AS Contracts,
+                   COALESCE(adsolut_orders_enabled, FALSE)   AS AdsolutOrders,
+                   COALESCE(adsolut_timesheet_enabled, FALSE) AS AdsolutTimesheet,
+                   COALESCE(feedback_enabled, FALSE)         AS Feedback
+            FROM users WHERE id = @id
+            """;
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var row = await connection.QuerySingleOrDefaultAsync<SearchFeatureRow>(
+            new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
+
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        if (row is null) return set;
+        if (row.Contracts) set.Add(Domain.Search.SearchFeature.Contracts);
+        if (row.AdsolutOrders) set.Add(Domain.Search.SearchFeature.AdsolutOrders);
+        if (row.AdsolutTimesheet) set.Add(Domain.Search.SearchFeature.AdsolutTimesheet);
+        if (row.Feedback) set.Add(Domain.Search.SearchFeature.Feedback);
+        return set;
+    }
+
+    private sealed class SearchFeatureRow
+    {
+        public bool Contracts { get; set; }
+        public bool AdsolutOrders { get; set; }
+        public bool AdsolutTimesheet { get; set; }
+        public bool Feedback { get; set; }
     }
 }
 

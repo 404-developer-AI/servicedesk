@@ -587,6 +587,7 @@ public sealed class OutboundMailServiceTests
         public Task<bool> GetStatisticsWriteEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetContractsEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetFeedbackEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
+        public Task<IReadOnlySet<string>> GetSearchFeatureFlagsAsync(Guid userId, CancellationToken ct = default) => Task.FromResult<IReadOnlySet<string>>(new HashSet<string>());
     }
 
     private sealed class StubIntakeForms : IIntakeFormRepository

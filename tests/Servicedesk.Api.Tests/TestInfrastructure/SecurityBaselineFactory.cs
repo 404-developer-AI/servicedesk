@@ -381,6 +381,9 @@ public sealed class FakeUserService : IUserService
 
     public Task<bool> GetFeedbackEnabledAsync(Guid userId, CancellationToken ct = default) =>
         Task.FromResult(false);
+
+    public Task<IReadOnlySet<string>> GetSearchFeatureFlagsAsync(Guid userId, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlySet<string>>(new HashSet<string>());
 }
 
 public sealed class FakeSessionService : ISessionService

@@ -27,11 +27,15 @@ public sealed class AdsolutOrderSearchSourceTests
     public void Agent_and_admin_principals_are_available()
     {
         var src = new Infrastructure.Search.AdsolutOrderSearchSource(null!, null!);
-        var agent = new SearchPrincipal(Guid.NewGuid(), "Agent", Array.Empty<Guid>());
+        var flaggedAgent = new SearchPrincipal(Guid.NewGuid(), "Agent", Array.Empty<Guid>(),
+            new HashSet<string> { SearchFeature.AdsolutOrders });
+        var plainAgent = new SearchPrincipal(Guid.NewGuid(), "Agent", Array.Empty<Guid>());
         var admin = new SearchPrincipal(Guid.NewGuid(), "Admin", null);
 
-        Assert.True(src.IsAvailableFor(agent));
+        Assert.True(src.IsAvailableFor(flaggedAgent));
         Assert.True(src.IsAvailableFor(admin));
+        // Without adsolut_orders_enabled the source is hidden from the dropdown.
+        Assert.False(src.IsAvailableFor(plainAgent));
     }
 
     [Fact]

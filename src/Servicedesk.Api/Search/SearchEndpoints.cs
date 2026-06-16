@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Servicedesk.Api.Auth;
 using Servicedesk.Domain.Search;
 using Servicedesk.Infrastructure.Access;
+using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Api.Search;
@@ -23,10 +24,11 @@ public static class SearchEndpoints
             HttpContext http,
             ISearchService search,
             IQueueAccessService queueAccess,
+            IUserService users,
             ISettingsService settings,
             CancellationToken ct) =>
         {
-            var principal = await BuildPrincipalAsync(http, queueAccess, ct);
+            var principal = await BuildPrincipalAsync(http, queueAccess, users, ct);
             var minLen = await settings.GetAsync<int>(SettingKeys.Search.MinQueryLength, ct);
             var capped = Math.Clamp(limit ?? 8, 1, 25);
 
@@ -61,13 +63,14 @@ public static class SearchEndpoints
             HttpContext http,
             ISearchService search,
             IQueueAccessService queueAccess,
+            IUserService users,
             ISettingsService settings,
             CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(type))
                 return Results.BadRequest(new { error = "type is required." });
 
-            var principal = await BuildPrincipalAsync(http, queueAccess, ct);
+            var principal = await BuildPrincipalAsync(http, queueAccess, users, ct);
             var minLen = await settings.GetAsync<int>(SettingKeys.Search.MinQueryLength, ct);
             var query = (q ?? string.Empty).Trim();
             if (query.Length < minLen)
@@ -107,13 +110,18 @@ public static class SearchEndpoints
     }
 
     private static async Task<SearchPrincipal> BuildPrincipalAsync(
-        HttpContext http, IQueueAccessService queueAccess, CancellationToken ct)
+        HttpContext http, IQueueAccessService queueAccess, IUserService users, CancellationToken ct)
     {
         var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
         var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
-        IReadOnlyList<Guid>? allowed = null;
-        if (!string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
-            allowed = await queueAccess.GetAccessibleQueueIdsAsync(userId, role, ct);
-        return new SearchPrincipal(userId, role, allowed);
+
+        // Admins bypass both queue scoping and feature gating — no need to
+        // hit the DB for either.
+        if (string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
+            return new SearchPrincipal(userId, role, allowedQueueIds: null);
+
+        var allowed = await queueAccess.GetAccessibleQueueIdsAsync(userId, role, ct);
+        var features = await users.GetSearchFeatureFlagsAsync(userId, ct);
+        return new SearchPrincipal(userId, role, allowed, features);
     }
 }
