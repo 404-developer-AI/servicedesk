@@ -431,16 +431,16 @@ function StatusTab({
       {user?.adsolutOrdersEnabled && <SyncOrdersButton />}
       {showContactNotLinked && (
         <div
-          className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-200 animate-pulse"
+          className="flex items-start gap-2 rounded-md border border-amber-400/70 bg-amber-100/80 px-2.5 py-1.5 text-xs text-amber-800 animate-pulse dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
           title="The requester is not linked to any company. Open the Contact tab to add a company link."
         >
           <span
             aria-hidden
-            className="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]"
+            className="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(251,191,36,0.6)] dark:bg-amber-400"
           />
           <div className="min-w-0">
             <div className="font-medium">Contact not linked</div>
-            <div className="text-[11px] text-amber-300/80">Please link to a company</div>
+            <div className="text-[11px] text-amber-700 dark:text-amber-300/80">Please link to a company</div>
           </div>
         </div>
       )}
