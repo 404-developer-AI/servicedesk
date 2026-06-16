@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Activity, Phone, PhoneIncoming, PhoneOutgoing, ExternalLink } from "lucide-react";
+import { Activity, Phone, PhoneIncoming, PhoneOutgoing, ExternalLink, Lock } from "lucide-react";
 import { activityApi, type ActivityEntry, type ActivityListQuery } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -237,7 +237,15 @@ function ActivityRow({
         <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
           <span className="font-medium text-foreground">{entry.agentEmail}</span>
           <span className="text-muted-foreground">{entry.summary}</span>
-          {isTicket && entry.ticketNumber !== null && (
+          {entry.ticketRestricted ? (
+            <span
+              className="inline-flex items-center gap-1 italic text-muted-foreground/70"
+              title="You don't have access to this ticket's queue"
+            >
+              <Lock className="h-3 w-3" />
+              Restricted ticket
+            </span>
+          ) : isTicket && entry.ticketNumber !== null ? (
             <button
               type="button"
               onClick={() => onTicketClick(entry.entityId!)}
@@ -248,7 +256,7 @@ function ActivityRow({
               {entry.ticketSubject ? ` — ${entry.ticketSubject}` : ""}
               <ExternalLink className="h-3 w-3" />
             </button>
-          )}
+          ) : null}
           {isTelavox && (() => {
             const direction = meta["direction"] as string | undefined;
             const durationSeconds =

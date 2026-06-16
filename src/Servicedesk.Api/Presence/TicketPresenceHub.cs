@@ -18,6 +18,24 @@ public sealed class TicketPresenceHub : Hub
     // Key: connectionId → connection state.
     private static readonly ConcurrentDictionary<string, ConnectionState> Connections = new();
 
+    // Connections currently subscribed to the agent-activity stream
+    // (dashboard tile mounted). Mirrors AgentActivityBroadcastGroup
+    // membership but, unlike a SignalR group, lets the broadcaster
+    // enumerate recipients so it can mask each agent's tickets per the
+    // recipient's own queue access. Key: connectionId → subscriber.
+    private static readonly ConcurrentDictionary<string, AgentActivitySubscriber> AgentActivitySubscribers = new();
+
+    /// A recipient of the agent-activity broadcast: their user id + role,
+    /// captured at join time so the broadcaster can resolve their queue
+    /// access without a claims principal on hand.
+    public readonly record struct AgentActivitySubscriber(Guid UserId, string Role);
+
+    /// Snapshot of the agent-activity subscribers (connectionId →
+    /// recipient). Used by <see cref="SignalRAgentActivityBroadcaster"/>
+    /// to fan out a per-recipient masked payload.
+    public static IReadOnlyList<KeyValuePair<string, AgentActivitySubscriber>> GetAgentActivitySubscribers()
+        => AgentActivitySubscribers.ToArray();
+
     /// SignalR group that receives the per-agent AgentActivity broadcasts
     /// powering the dashboard tile. v0.0.44 opened the tile to Agents
     /// (admin-grantable per user), so any non-customer connection joins
@@ -64,6 +82,7 @@ public sealed class TicketPresenceHub : Hub
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
+        AgentActivitySubscribers.TryRemove(Context.ConnectionId, out _);
         if (Connections.TryRemove(Context.ConnectionId, out var state))
         {
             // Broadcast removal for any ticket this connection was viewing or had recent
@@ -102,6 +121,16 @@ public sealed class TicketPresenceHub : Hub
         }
         await Groups.AddToGroupAsync(Context.ConnectionId, AgentActivityBroadcastGroup);
 
+        // Register the connection so the broadcaster can mask each agent's
+        // tickets for this recipient's queue access. Customers were already
+        // refused above.
+        var subIdClaim = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (Guid.TryParse(subIdClaim, out var subUserId))
+        {
+            AgentActivitySubscribers[Context.ConnectionId] =
+                new AgentActivitySubscriber(subUserId, role!);
+        }
+
         // Push a fresh record for the caller now that they're in the group.
         // The OnConnectedAsync broadcast fired before this join, so the
         // caller missed their own online status; and the REST snapshot
@@ -123,6 +152,7 @@ public sealed class TicketPresenceHub : Hub
     /// </summary>
     public async Task LeaveAgentActivity()
     {
+        AgentActivitySubscribers.TryRemove(Context.ConnectionId, out _);
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, AgentActivityBroadcastGroup);
     }
 

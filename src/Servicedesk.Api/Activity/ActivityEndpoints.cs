@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Activity;
 using Servicedesk.Infrastructure.Auth;
 
@@ -22,6 +23,7 @@ public static class ActivityEndpoints
             HttpContext httpContext,
             IUserService users,
             IActivityFeedQuery query,
+            IQueueAccessService queueAccess,
             [FromQuery] int? limit,
             CancellationToken ct) =>
         {
@@ -32,8 +34,9 @@ public static class ActivityEndpoints
                 return Results.Forbid();
             }
 
+            var scope = await queueAccess.GetScopeAsync(userId.Value, ResolveRole(httpContext), ct);
             var clampedLimit = Math.Clamp(limit ?? 25, 1, 100);
-            var rows = await query.ListRecentAsync(clampedLimit, ct);
+            var rows = await query.ListRecentAsync(scope, clampedLimit, ct);
             return Results.Ok(new { items = rows });
         }).WithName("ActivityRecent").WithOpenApi();
 
@@ -41,6 +44,7 @@ public static class ActivityEndpoints
             HttpContext httpContext,
             IUserService users,
             IActivityFeedQuery query,
+            IQueueAccessService queueAccess,
             [FromQuery] Guid? agentId,
             [FromQuery] string? eventType,
             [FromQuery] DateTimeOffset? fromUtc,
@@ -57,6 +61,7 @@ public static class ActivityEndpoints
                 return Results.Forbid();
             }
 
+            var scope = await queueAccess.GetScopeAsync(userId.Value, ResolveRole(httpContext), ct);
             var filter = new ActivityFeedFilter(
                 AgentId: agentId,
                 EventType: string.IsNullOrWhiteSpace(eventType) ? null : eventType,
@@ -66,7 +71,7 @@ public static class ActivityEndpoints
                 CursorId: cursor,
                 Limit: limit ?? 50);
 
-            var page = await query.ListAsync(filter, ct);
+            var page = await query.ListAsync(scope, filter, ct);
             return Results.Ok(new
             {
                 items = page.Items,
@@ -82,4 +87,7 @@ public static class ActivityEndpoints
         var raw = httpContext.User?.FindFirstValue(ClaimTypes.NameIdentifier);
         return Guid.TryParse(raw, out var id) ? id : null;
     }
+
+    private static string ResolveRole(HttpContext httpContext)
+        => httpContext.User?.FindFirstValue(ClaimTypes.Role) ?? "Agent";
 }

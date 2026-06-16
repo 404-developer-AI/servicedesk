@@ -138,21 +138,30 @@ public sealed class AgentActivityService : IAgentActivityService
             return new Dictionary<Guid, AgentActivityTicket>();
         }
 
+        // queue_id is carried so the broadcaster / snapshot endpoint can
+        // mask the ticket for viewers without access to that queue. It is
+        // never serialized (JsonIgnore on the DTO).
         const string sql = """
             SELECT t.id              AS Id,
                    t.number          AS Number,
                    t.subject         AS Subject,
                    s.name            AS StatusName,
                    s.color           AS StatusColor,
-                   s.state_category  AS StatusStateCategory
+                   s.state_category  AS StatusStateCategory,
+                   t.queue_id        AS QueueId
             FROM tickets t
             JOIN statuses s ON s.id = t.status_id
             WHERE t.id = ANY(@ids) AND t.is_deleted = FALSE
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        var rows = await conn.QueryAsync<AgentActivityTicket>(
+        var rows = await conn.QueryAsync<TicketRow>(
             new CommandDefinition(sql, new { ids = ticketIds.ToArray() }, cancellationToken: ct));
-        return rows.ToDictionary(t => t.Id);
+        return rows.ToDictionary(
+            r => r.Id,
+            r => new AgentActivityTicket(
+                r.Id, r.Number, r.Subject,
+                r.StatusName, r.StatusColor, r.StatusStateCategory,
+                Restricted: false, QueueId: r.QueueId));
     }
 
     private async Task<IReadOnlyDictionary<Guid, string?>> GetCallStatesAsync(
@@ -188,6 +197,17 @@ public sealed class AgentActivityService : IAgentActivityService
         public Guid Id { get; set; }
         public string Email { get; set; } = "";
         public string RoleName { get; set; } = "";
+    }
+
+    private sealed class TicketRow
+    {
+        public Guid Id { get; set; }
+        public long Number { get; set; }
+        public string Subject { get; set; } = "";
+        public string StatusName { get; set; } = "";
+        public string StatusColor { get; set; } = "";
+        public string StatusStateCategory { get; set; } = "";
+        public Guid QueueId { get; set; }
     }
 
     private sealed class CallStateRow

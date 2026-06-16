@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronRight, Phone, UsersRound } from "lucide-react";
+import { ChevronRight, Lock, Phone, UsersRound } from "lucide-react";
 import {
   dashboardApi,
   type AgentActivity,
@@ -314,6 +314,27 @@ function TicketRow({
 }) {
   const navigate = useNavigate();
   const statusColor = ticket.statusColor || "#6b7280";
+
+  // Restricted: the viewer has no queue access to this ticket. Render a
+  // muted, non-clickable placeholder — the agent is busy, but with what
+  // stays hidden.
+  if (ticket.restricted) {
+    return (
+      <div
+        className="relative flex w-full items-center gap-3 overflow-hidden rounded-md border border-glass bg-glass py-2 pl-4 pr-3 text-left opacity-70"
+        title="You don't have access to this ticket's queue"
+      >
+        <span
+          aria-hidden
+          className="absolute inset-y-1 left-1 w-1 rounded-full bg-white/15"
+        />
+        <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+        <span className="min-w-0 flex-1 truncate text-sm italic text-muted-foreground">
+          Restricted ticket
+        </span>
+      </div>
+    );
+  }
 
   return (
     <button

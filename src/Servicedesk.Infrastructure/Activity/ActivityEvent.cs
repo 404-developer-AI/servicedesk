@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Servicedesk.Infrastructure.Activity;
 
 /// One row in the agent activity feed. Append-only — the feed reflects
@@ -26,9 +28,23 @@ public sealed class ActivityFeedEntry
     /// Optional enrichment: the ticket subject + number when EntityType
     /// == "ticket". The feed query LEFT-JOINs the tickets table so the
     /// UI can render a clean link without a second round-trip; null for
-    /// non-ticket entities.
+    /// non-ticket entities. Also null when the row is masked for a viewer
+    /// without access to the ticket's queue (see <see cref="TicketRestricted"/>).
     public long? TicketNumber { get; set; }
     public string? TicketSubject { get; set; }
+
+    /// The ticket's queue id — server-only (never serialized). Carried by
+    /// the raw <c>GetByIdAsync</c> read so the SignalR broadcaster can
+    /// mask the row per recipient. The list reads mask in SQL and leave
+    /// this null.
+    [JsonIgnore]
+    public Guid? TicketQueueId { get; set; }
+
+    /// True when this row references a ticket the viewer has no queue
+    /// access to. The client renders a non-clickable "Restricted ticket"
+    /// placeholder; subject, number and (for masked list rows) entity id
+    /// are stripped.
+    public bool TicketRestricted { get; set; }
 }
 
 /// Input to <see cref="IActivityRecorder.RecordAsync"/>. Caller fills in
