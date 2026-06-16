@@ -935,7 +935,7 @@ function TicketDetailBody({
             which subtree to walk — nothing outside this container gets
             mutated. */}
         <div ref={setScrollRef} className="flex-1 min-h-0 overflow-y-auto pr-1">
-          <TicketTimeline ticketId={ticketId} events={visibleEvents} pinnedEventIds={pinnedEventIds} />
+          <TicketTimeline ticketId={ticketId} ticketNumber={ticket.number} events={visibleEvents} pinnedEventIds={pinnedEventIds} />
           {mode === "filter" && query.trim() && visibleEvents.length === 0 && (
             <div className="py-6 text-center text-sm text-muted-foreground">
               Geen events matchen "{query}".

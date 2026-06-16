@@ -67,6 +67,20 @@ public interface IAttachmentRepository
     /// row was actually deleted. The blob is content-addressed and swept
     /// separately when it becomes orphaned.
     Task<bool> DeleteKbAttachmentAsync(Guid attachmentId, Guid articleId, CancellationToken ct);
+
+    /// Insert a fully-stored attachment owned by an Employee-Feedback entry.
+    /// Mirrors <see cref="CreateForKbArticleAsync"/> but stamps
+    /// <c>owner_kind='FeedbackEntry'</c> + <c>owner_id=entryId</c>. Backs the
+    /// inline images pasted into the feedback / management-remarks editors.
+    Task<Guid> CreateForFeedbackEntryAsync(NewFeedbackEntryAttachment input, CancellationToken ct);
+
+    /// Every Ready attachment owned by a feedback entry, newest first.
+    Task<IReadOnlyList<AttachmentRow>> ListByFeedbackEntryAsync(Guid entryId, CancellationToken ct);
+
+    /// Remove one feedback-entry attachment, scoped to its owning entry so an
+    /// id from another entry can't be deleted via this path. Returns true when
+    /// a row was actually deleted.
+    Task<bool> DeleteFeedbackAttachmentAsync(Guid attachmentId, Guid entryId, CancellationToken ct);
 }
 
 public sealed record AttachmentRow(
@@ -91,6 +105,13 @@ public sealed record NewUploadedAttachment(
 
 public sealed record NewKbArticleAttachment(
     Guid ArticleId,
+    string ContentHash,
+    long SizeBytes,
+    string MimeType,
+    string OriginalFilename);
+
+public sealed record NewFeedbackEntryAttachment(
+    Guid EntryId,
     string ContentHash,
     long SizeBytes,
     string MimeType,

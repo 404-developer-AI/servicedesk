@@ -16,6 +16,7 @@ import {
   BarChart3,
   PencilRuler,
   FileSignature,
+  MessageSquareText,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -79,6 +80,10 @@ const FLAG_GROUPS: Group[] = [
   {
     title: "Contracts",
     flags: [{ key: "contractsEnabled", label: "Contracts", icon: FileSignature }],
+  },
+  {
+    title: "Employee Feedback",
+    flags: [{ key: "feedbackEnabled", label: "Employee Feedback", icon: MessageSquareText }],
   },
 ];
 

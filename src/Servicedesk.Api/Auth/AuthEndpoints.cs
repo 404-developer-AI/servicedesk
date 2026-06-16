@@ -385,6 +385,9 @@ public static class AuthEndpoints
         // v0.0.76 — per-user opt-in for the Contracts page (tile hub; the
         // contract data model lands later). Drives the sidebar nav entry.
         var contractsEnabled = await users.GetContractsEnabledAsync(userId, ct);
+        // Per-user opt-in for the Employee Feedback board. Drives the sidebar
+        // nav entry; the /api/feedback/* endpoints enforce the same flag.
+        var feedbackEnabled = await users.GetFeedbackEnabledAsync(userId, ct);
         // Whether the Adsolut integration is connected (configured + valid
         // refresh token, no refresh error). Resolved here so a non-admin
         // agent can gate the Adsolut timesheet tab without the admin-only
@@ -432,6 +435,7 @@ public static class AuthEndpoints
                 statisticsRead,
                 statisticsWrite,
                 contractsEnabled,
+                feedbackEnabled,
                 adsolutConnected,
                 dashboardTiles = tiles.Select(t => new { tileId = t.TileId, size = t.Size }).ToList(),
                 effectiveTheme,

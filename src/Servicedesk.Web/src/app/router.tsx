@@ -75,6 +75,8 @@ import { TimesheetPage } from "@/pages/timesheet/TimesheetPage";
 import { TimesheetSettingsPage } from "@/pages/settings/TimesheetSettingsPage";
 import { ActivityFeedPage } from "@/pages/activity/ActivityFeedPage";
 import { SignaturesSettingsPage } from "@/pages/settings/SignaturesSettingsPage";
+import { FeedbackPage } from "@/pages/feedback/FeedbackPage";
+import { FeedbackSettingsPage } from "@/pages/settings/FeedbackSettingsPage";
 
 // The router reads the "current role" outside of React here (for the
 // beforeLoad gate). The auth store is populated by bootstrapAuth() in
@@ -473,6 +475,21 @@ const contractM365CompanyRoute = createRoute({
   },
 });
 
+// Employee Feedback board. Agent + Admin role gate plus the per-user
+// `feedback_enabled` flag, mirroring the contracts gate pattern.
+// The backend /api/feedback endpoints carry RequireAgent + the same flag check.
+const feedbackRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/feedback",
+  beforeLoad: (args) => {
+    authGate(["Agent", "Admin"])(args);
+    if (!authedUser()?.feedbackEnabled) {
+      throw redirect({ to: "/" });
+    }
+  },
+  component: FeedbackPage,
+});
+
 const profileMentionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/profile/mentions",
@@ -716,6 +733,12 @@ const settingsAdsolutCoverageRoute = createRoute({
   component: AdsolutCoveragePage,
 });
 
+const settingsFeedbackRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "feedback",
+  component: FeedbackSettingsPage,
+});
+
 const settingsAuditRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "audit",
@@ -860,6 +883,7 @@ const routeTree = rootRoute.addChildren([
   contractM365Route,
   contractM365CompanyRoute,
   contractsSettingsRoute,
+  feedbackRoute,
   settingsRoute.addChildren([
     settingsIndexRoute,
     settingsGeneralRoute,
@@ -877,6 +901,7 @@ const routeTree = rootRoute.addChildren([
     settingsTriggerRunsRoute,
     settingsKnowledgeBaseRoute,
     settingsTimesheetRoute,
+    settingsFeedbackRoute,
     settingsIntegrationsRoute,
     settingsAdsolutIntegrationRoute,
     settingsAdsolutCoverageRoute,

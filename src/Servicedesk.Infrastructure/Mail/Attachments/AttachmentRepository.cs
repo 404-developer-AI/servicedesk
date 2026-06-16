@@ -139,6 +139,47 @@ public sealed class AttachmentRepository : IAttachmentRepository
         return affected > 0;
     }
 
+    public async Task<Guid> CreateForFeedbackEntryAsync(NewFeedbackEntryAttachment input, CancellationToken ct)
+    {
+        const string sql = """
+            INSERT INTO attachments
+                (content_hash, size_bytes, mime_type, original_filename,
+                 owner_kind, owner_id, is_inline, content_id, processing_state)
+            VALUES
+                (@ContentHash, @SizeBytes, @MimeType, @OriginalFilename,
+                 'FeedbackEntry', @EntryId, FALSE, NULL, 'Ready')
+            RETURNING id
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.ExecuteScalarAsync<Guid>(
+            new CommandDefinition(sql, input, cancellationToken: ct));
+    }
+
+    public async Task<IReadOnlyList<AttachmentRow>> ListByFeedbackEntryAsync(Guid entryId, CancellationToken ct)
+    {
+        var sql = SelectColumns +
+            " FROM attachments WHERE owner_kind = 'FeedbackEntry' AND owner_id = @entryId AND processing_state = 'Ready'" +
+            " ORDER BY created_utc DESC, id";
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<AttachmentRow>(
+            new CommandDefinition(sql, new { entryId }, cancellationToken: ct));
+        return rows.ToList();
+    }
+
+    public async Task<bool> DeleteFeedbackAttachmentAsync(Guid attachmentId, Guid entryId, CancellationToken ct)
+    {
+        const string sql = """
+            DELETE FROM attachments
+             WHERE id = @attachmentId
+               AND owner_kind = 'FeedbackEntry'
+               AND owner_id   = @entryId
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var affected = await conn.ExecuteAsync(
+            new CommandDefinition(sql, new { attachmentId, entryId }, cancellationToken: ct));
+        return affected > 0;
+    }
+
     public async Task<int> ReassignToEventAsync(IReadOnlyList<Guid> attachmentIds, Guid ticketId, long eventId, CancellationToken ct)
     {
         if (attachmentIds.Count == 0) return 0;

@@ -8,6 +8,7 @@ import {
   Eye,
   FileText,
   Mail,
+  MessageSquareText,
   Paperclip,
   PenLine,
   Plug,
@@ -161,6 +162,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       "Global defaults for the registration grid (start time of a new day, daily and weekly targets, work-days set), the task catalogue agents pick from, and the reply-template HTML fragments. Timing defaults can be overridden per user from Users → row action → Timesheet overrides.",
     icon: Clock,
+  },
+  {
+    slug: "feedback",
+    label: "Employee Feedback",
+    description:
+      "Work-point type catalogue — the categories agents and managers can assign to feedback entries. Manage names, colors and sort order; deactivate types that are in use.",
+    icon: MessageSquareText,
   },
   {
     slug: "mail-diagnostics",

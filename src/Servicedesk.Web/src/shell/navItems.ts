@@ -10,6 +10,7 @@ import {
   ShoppingCart,
   BarChart3,
   FileSignature,
+  MessageSquareText,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "@/lib/roles";
@@ -138,6 +139,18 @@ export const NAV_ITEMS: readonly NavItem[] = [
     roles: ["Agent", "Admin"],
     comingIn: "",
     description: "Contract management hub — contracts overview and Microsoft 365 matching modules.",
+    section: "main",
+  },
+  // Per-user opt-in (feedback_enabled flag). Role gate is Agent+Admin; the
+  // per-user flag is checked in Sidebar.tsx, and the backend /api/feedback
+  // endpoints carry RequireAgent. Sits after Contracts in the nav.
+  {
+    label: "Feedback",
+    to: "/feedback",
+    icon: MessageSquareText,
+    roles: ["Agent", "Admin"],
+    comingIn: "",
+    description: "Employee feedback board — inline-editable entries with rich text, work-point types and ticket links.",
     section: "main",
   },
   // Profile is reachable from the header avatar dropdown (top-right) and via

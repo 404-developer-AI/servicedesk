@@ -126,6 +126,11 @@ public interface IUserService
     /// contract data model lands later). Drives the sidebar nav entry.
     /// Returns false on missing rows.
     Task<bool> GetContractsEnabledAsync(Guid userId, CancellationToken ct = default);
+
+    /// Per-user opt-in for the Employee Feedback board. Gates the page nav
+    /// entry and is the authorization boundary for the /api/feedback/*
+    /// endpoints. Returns false on missing rows.
+    Task<bool> GetFeedbackEnabledAsync(Guid userId, CancellationToken ct = default);
 }
 
 /// Per-user Timesheet feature flags. Empty struct-y record so the call
@@ -522,6 +527,15 @@ public sealed class UserService : IUserService
     public async Task<bool> GetContractsEnabledAsync(Guid userId, CancellationToken ct = default)
     {
         const string sql = "SELECT contracts_enabled FROM users WHERE id = @id";
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var value = await connection.QuerySingleOrDefaultAsync<bool?>(
+            new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
+        return value ?? false;
+    }
+
+    public async Task<bool> GetFeedbackEnabledAsync(Guid userId, CancellationToken ct = default)
+    {
+        const string sql = "SELECT feedback_enabled FROM users WHERE id = @id";
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         var value = await connection.QuerySingleOrDefaultAsync<bool?>(
             new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));

@@ -253,6 +253,12 @@ public sealed class KbPublicEndpointsTests
             throw new NotImplementedException();
         public Task<bool> DeleteKbAttachmentAsync(Guid attachmentId, Guid articleId, CancellationToken ct) =>
             throw new NotImplementedException();
+        public Task<Guid> CreateForFeedbackEntryAsync(NewFeedbackEntryAttachment input, CancellationToken ct) =>
+            throw new NotImplementedException();
+        public Task<IReadOnlyList<AttachmentRow>> ListByFeedbackEntryAsync(Guid entryId, CancellationToken ct) =>
+            throw new NotImplementedException();
+        public Task<bool> DeleteFeedbackAttachmentAsync(Guid attachmentId, Guid entryId, CancellationToken ct) =>
+            throw new NotImplementedException();
     }
 
     private sealed class FakeBlobStore : IBlobStore
