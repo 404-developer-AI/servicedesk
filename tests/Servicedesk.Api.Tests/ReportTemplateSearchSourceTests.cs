@@ -26,11 +26,15 @@ public sealed class ReportTemplateSearchSourceTests
     public void Agent_and_admin_principals_are_available()
     {
         var src = new ReportTemplateSearchSource(null!);
-        var agent = new SearchPrincipal(Guid.NewGuid(), "Agent", Array.Empty<Guid>());
+        var flaggedAgent = new SearchPrincipal(Guid.NewGuid(), "Agent", Array.Empty<Guid>(),
+            new HashSet<string> { SearchFeature.Contracts });
+        var plainAgent = new SearchPrincipal(Guid.NewGuid(), "Agent", Array.Empty<Guid>());
         var admin = new SearchPrincipal(Guid.NewGuid(), "Admin", null);
 
-        Assert.True(src.IsAvailableFor(agent));
+        Assert.True(src.IsAvailableFor(flaggedAgent));
         Assert.True(src.IsAvailableFor(admin));
+        // Without contracts_enabled the source is hidden from the dropdown.
+        Assert.False(src.IsAvailableFor(plainAgent));
     }
 
     [Fact]

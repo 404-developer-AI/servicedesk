@@ -9,9 +9,11 @@ namespace Servicedesk.Infrastructure.Search;
 /// authorization mirrors the board itself: a Customer never sees hits; an
 /// Agent/Admin sees hits only when allowed to open the board — Admins always,
 /// other agents only when their own user row has <c>feedback_enabled = TRUE</c>.
-/// The flag is checked inside <see cref="SearchAsync"/> (a single cheap point
-/// lookup, only when the user actually searches). Because the board is shared,
-/// an authorized user sees every entry — there is no per-row owner scope.
+/// The flag rides on the <see cref="SearchPrincipal"/> (resolved once when the
+/// principal is built), so <see cref="IsAvailableFor"/> can keep this source
+/// out of the search dropdown for users without it — no per-query DB lookup.
+/// Because the board is shared, an authorized user sees every entry — there is
+/// no per-row owner scope.
 ///
 /// Matches against the feedback body (tags stripped), the employee email, and
 /// the work-point type name.
@@ -27,7 +29,7 @@ public sealed class FeedbackSearchSource : ISearchSource
     public string Kind => SearchSourceKind.EmployeeFeedback;
 
     public bool IsAvailableFor(SearchPrincipal principal) =>
-        principal.IsAdmin || principal.IsAgent;
+        principal.IsAdmin || (principal.IsAgent && principal.HasFeature(SearchFeature.Feedback));
 
     public async Task<SearchGroup> SearchAsync(
         SearchRequest request, SearchPrincipal principal, CancellationToken ct)
@@ -42,19 +44,10 @@ public sealed class FeedbackSearchSource : ISearchSource
         var limit = Math.Clamp(request.Limit, 1, 100);
         var offset = Math.Max(0, request.Offset);
 
+        // Feature-flag gate (feedback_enabled) is enforced by IsAvailableFor
+        // via the principal — checked at the top of this method and by the
+        // search façade before it ever queries this source.
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-
-        // Feature-flag gate: a non-admin without feedback_enabled gets zero
-        // hits, exactly as the board is hidden from them. Admins always pass.
-        if (!principal.IsAdmin)
-        {
-            var enabled = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
-                "SELECT COALESCE(feedback_enabled, FALSE) FROM users WHERE id = @userId",
-                new { userId = principal.UserId },
-                cancellationToken: ct));
-            if (!enabled)
-                return new SearchGroup(Kind, Array.Empty<SearchHit>(), 0, false);
-        }
 
         const string sql = """
             WITH hits AS (

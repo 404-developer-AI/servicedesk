@@ -27,6 +27,27 @@ public static class SearchSourceKind
     public const string EmployeeFeedback = "employee-feedback";
 }
 
+/// Per-user feature flags that gate availability of certain search sources.
+/// Loaded once into the <see cref="SearchPrincipal"/> so a source can decide
+/// in <c>IsAvailableFor</c> (synchronously, no DB) whether the user may use
+/// it — keeping sources the user has no access to out of the search dropdown
+/// entirely, instead of showing an empty tab. Customers never reach these.
+public static class SearchFeature
+{
+    /// Gates the Adsolut/Wolters-Kluwer "Contracts" family: contracts,
+    /// articles, report templates, and the M365/Sophos protection sources.
+    public const string Contracts = "contracts";
+
+    /// Gates the Adsolut Orders source.
+    public const string AdsolutOrders = "adsolutOrders";
+
+    /// Gates the Adsolut sales-receipts (mirrored timesheet) source.
+    public const string AdsolutTimesheet = "adsolutTimesheet";
+
+    /// Gates the Employee Feedback board source.
+    public const string Feedback = "feedback";
+}
+
 /// A single request to the search façade. <see cref="Type"/> is null for
 /// the dropdown query (all sources, top-N each); non-null for the full
 /// results page (single source, paginated).
