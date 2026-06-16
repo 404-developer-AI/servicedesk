@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Activity, Phone, ChevronRight } from "lucide-react";
+import { Activity, Phone, ChevronRight, Lock } from "lucide-react";
 import { activityApi, type ActivityEntry } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useActivityFeedSignalR } from "@/hooks/useActivityFeedSignalR";
@@ -45,7 +45,15 @@ function ActivityRow({ entry, onTicketClick }: {
             {localPartOf(entry.agentEmail)}
           </span>
           <span className="text-muted-foreground">{entry.summary}</span>
-          {isTicket && entry.ticketNumber !== null && (
+          {entry.ticketRestricted ? (
+            <span
+              className="inline-flex items-center gap-1 italic text-muted-foreground/70"
+              title="You don't have access to this ticket's queue"
+            >
+              <Lock className="h-3 w-3" />
+              Restricted ticket
+            </span>
+          ) : isTicket && entry.ticketNumber !== null ? (
             <button
               type="button"
               onClick={() => onTicketClick(entry.entityId!)}
@@ -55,7 +63,7 @@ function ActivityRow({ entry, onTicketClick }: {
               #{entry.ticketNumber}
               {entry.ticketSubject ? ` — ${entry.ticketSubject}` : ""}
             </button>
-          )}
+          ) : null}
           {isTelavox && (
             <span className="inline-flex items-center gap-1 text-emerald-400">
               <Phone className="h-3 w-3" />

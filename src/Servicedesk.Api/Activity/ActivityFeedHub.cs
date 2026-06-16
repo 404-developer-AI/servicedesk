@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
@@ -21,6 +22,23 @@ public sealed class ActivityFeedHub : Hub
 {
     public const string ViewersGroup = "activity-viewers";
 
+    // Connections enrolled in ViewersGroup, with the recipient's user id +
+    // role. A SignalR group can't be enumerated, but the broadcaster needs
+    // to fan out a per-recipient masked payload (a viewer never sees the
+    // subject/number of a ticket in a queue they can't access), so we
+    // track membership alongside the group. Key: connectionId → subscriber.
+    private static readonly ConcurrentDictionary<string, Subscriber> Subscribers = new();
+
+    /// A live activity-feed subscriber: their user id + role, captured on
+    /// connect so the broadcaster can resolve queue access without a
+    /// claims principal on hand.
+    public readonly record struct Subscriber(Guid UserId, string Role);
+
+    /// Snapshot of current subscribers (connectionId → recipient), used by
+    /// <see cref="SignalRActivityBroadcaster"/> to mask per recipient.
+    public static IReadOnlyList<KeyValuePair<string, Subscriber>> GetSubscribers()
+        => Subscribers.ToArray();
+
     private readonly IUserService _users;
 
     public ActivityFeedHub(IUserService users)
@@ -37,8 +55,16 @@ public sealed class ActivityFeedHub : Hub
             if (enabled)
             {
                 await Groups.AddToGroupAsync(Context.ConnectionId, ViewersGroup);
+                var role = Context.User?.FindFirstValue(ClaimTypes.Role) ?? "Agent";
+                Subscribers[Context.ConnectionId] = new Subscriber(userId, role);
             }
         }
         await base.OnConnectedAsync();
+    }
+
+    public override Task OnDisconnectedAsync(Exception? exception)
+    {
+        Subscribers.TryRemove(Context.ConnectionId, out _);
+        return base.OnDisconnectedAsync(exception);
     }
 }

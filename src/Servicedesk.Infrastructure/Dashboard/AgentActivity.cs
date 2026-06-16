@@ -1,3 +1,6 @@
+using System.Text.Json.Serialization;
+using Servicedesk.Infrastructure.Access;
+
 namespace Servicedesk.Infrastructure.Dashboard;
 
 /// Enriched per-agent activity snapshot consumed by the dashboard
@@ -20,13 +23,20 @@ public sealed record AgentActivity(
 /// Ticket-summary shape carried inside <see cref="AgentActivity"/>. Kept
 /// deliberately small so a frequent broadcast doesn't ship the full
 /// ticket detail per agent change.
+///
+/// <see cref="QueueId"/> is server-only (never serialized) — it drives
+/// the per-recipient masking in <see cref="AgentActivityMasking"/> so a
+/// viewer without access to the ticket's queue receives a
+/// <see cref="Restricted"/> placeholder with no subject or number.
 public sealed record AgentActivityTicket(
     Guid Id,
     long Number,
     string Subject,
     string StatusName,
     string StatusColor,
-    string StatusStateCategory);
+    string StatusStateCategory,
+    bool Restricted = false,
+    [property: JsonIgnore] Guid QueueId = default);
 
 /// Pure presence state per agent, as known by the SignalR hub. The
 /// service combines this with the users table to produce
@@ -96,4 +106,58 @@ public interface IAgentActivityService
 public interface IAgentActivityBroadcaster
 {
     Task BroadcastForUserAsync(Guid userId, CancellationToken ct);
+}
+
+/// Masks ticket references in an <see cref="AgentActivity"/> for a
+/// specific viewer. The service builds the record once with full ticket
+/// data (carrying <see cref="AgentActivityTicket.QueueId"/>); this helper
+/// then produces the per-viewer projection so the REST snapshot and the
+/// SignalR broadcast both enforce the same queue-level authorization the
+/// ticket-detail endpoint applies. A ticket in a queue the viewer cannot
+/// access becomes a <see cref="AgentActivityTicket.Restricted"/>
+/// placeholder: no subject, no number, no status — the row stays so the
+/// viewer still sees that the agent is busy, without learning what with.
+public static class AgentActivityMasking
+{
+    public static AgentActivity ForViewer(AgentActivity full, QueueAccessScope viewer)
+    {
+        // Admins (and any viewer who can see every referenced queue) get
+        // the record unchanged — avoids allocating copies on the hot path.
+        if (viewer.IsAdmin) return full;
+
+        var viewing = full.Viewing is null ? null : MaskTicket(full.Viewing, viewer);
+        var recent = full.Recent;
+        List<AgentActivityTicket>? maskedRecent = null;
+        for (var i = 0; i < recent.Count; i++)
+        {
+            var masked = MaskTicket(recent[i], viewer);
+            if (!ReferenceEquals(masked, recent[i]))
+            {
+                maskedRecent ??= new List<AgentActivityTicket>(recent);
+                maskedRecent[i] = masked;
+            }
+        }
+
+        if (ReferenceEquals(viewing, full.Viewing) && maskedRecent is null)
+            return full;
+
+        return full with { Viewing = viewing, Recent = maskedRecent ?? recent };
+    }
+
+    private static AgentActivityTicket MaskTicket(AgentActivityTicket t, QueueAccessScope viewer)
+    {
+        if (viewer.CanSee(t.QueueId)) return t;
+        // Keep Id so React can key the row; drop everything else and flag
+        // it restricted. Number 0 / empty strings are never rendered once
+        // the client sees Restricted = true.
+        return new AgentActivityTicket(
+            Id: t.Id,
+            Number: 0,
+            Subject: "",
+            StatusName: "",
+            StatusColor: "",
+            StatusStateCategory: "",
+            Restricted: true,
+            QueueId: default);
+    }
 }

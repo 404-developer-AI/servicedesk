@@ -283,6 +283,10 @@ export type AgentActivityTicket = {
   statusName: string;
   statusColor: string;
   statusStateCategory: string;
+  /// True when the viewer has no queue access to this ticket — subject,
+  /// number and status are blank and the row renders as a non-clickable
+  /// "Restricted ticket" placeholder.
+  restricted?: boolean;
 };
 
 /// "idle" — no Telavox call (default for users without a linked
@@ -329,9 +333,13 @@ export type ActivityEntry = {
   summary: string;
   metadataJson: string;
   /// Enriched at query time for ticket-typed events. Null for any
-  /// other entity type.
+  /// other entity type, and null when masked (see ticketRestricted).
   ticketNumber: number | null;
   ticketSubject: string | null;
+  /// True when this row references a ticket in a queue the viewer cannot
+  /// access. The subject/number/entityId are stripped server-side; the
+  /// UI shows a non-clickable "Restricted ticket" placeholder.
+  ticketRestricted?: boolean;
 };
 
 export type ActivityListQuery = {
