@@ -23,6 +23,7 @@ public static class SearchSourceKind
     public const string M365Mailboxes = "m365-mailboxes";
     public const string SophosTenants = "sophos-tenants";
     public const string Signatures = "signatures";
+    public const string ReportTemplates = "report-templates";
 }
 
 /// A single request to the search façade. <see cref="Type"/> is null for

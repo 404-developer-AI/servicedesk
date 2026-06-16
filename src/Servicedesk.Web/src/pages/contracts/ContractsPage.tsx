@@ -1,4 +1,4 @@
-import { FileSignature, Link2, Package, type LucideIcon } from "lucide-react";
+import { FileSignature, Link2, Package, Settings2, type LucideIcon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 
 /// v0.0.76 — Contracts hub. Tile launcher: every contract module gets a tile
@@ -35,6 +35,13 @@ const MODULES: readonly ContractModule[] = [
     description: "Match contracts against Microsoft 365 licenses and spot mismatches.",
     icon: Link2,
     to: "/contracts/m365-matching",
+  },
+  {
+    id: "settings",
+    title: "Contract settings",
+    description: "Report email templates and reporting contacts.",
+    icon: Settings2,
+    to: "/contracts/settings",
   },
 ];
 

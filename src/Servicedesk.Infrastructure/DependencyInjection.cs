@@ -618,6 +618,23 @@ public static class DependencyInjection
         services.AddSingleton<Servicedesk.Infrastructure.Search.SophosTenantSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<Servicedesk.Infrastructure.Search.SophosTenantSearchSource>()));
 
+        // Contract reports (v0.1.x). Report email templates + the per-company
+        // "Send report" pipeline behind the Contracts hub. The matching service
+        // factors the Sophos/Veeam overlay logic out of the M365 detail endpoint
+        // so the endpoint and the report renderer share one enriched view.
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.M365.IM365MatchingService,
+            Servicedesk.Infrastructure.Integrations.M365.M365MatchingService>();
+        services.AddSingleton<Servicedesk.Infrastructure.Contracts.Reports.IReportTemplateRepository,
+            Servicedesk.Infrastructure.Contracts.Reports.ReportTemplateRepository>();
+        services.AddSingleton<Servicedesk.Infrastructure.Contracts.Reports.IReportingContactStore,
+            Servicedesk.Infrastructure.Contracts.Reports.ReportingContactStore>();
+        services.AddSingleton<Servicedesk.Infrastructure.Contracts.Reports.IM365ReportSendLog,
+            Servicedesk.Infrastructure.Contracts.Reports.M365ReportSendLog>();
+        services.AddSingleton<Servicedesk.Infrastructure.Contracts.Reports.IM365ReportSender,
+            Servicedesk.Infrastructure.Contracts.Reports.M365ReportSender>();
+        services.AddSingleton<Servicedesk.Infrastructure.Search.ReportTemplateSearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<Servicedesk.Infrastructure.Search.ReportTemplateSearchSource>()));
+
         services.AddHostedService<DatabaseBootstrapper>();
         services.AddHostedService<SettingsSeeder>();
         // Lazy E.164 backfill for contacts that existed before v0.0.34

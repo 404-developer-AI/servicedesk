@@ -106,6 +106,18 @@ public static class SettingKeys
         public const string PageSize = "Contacts.PageSize";
     }
 
+    /// Contract reports (v0.1.x). Tunables for the "Send report" feature behind
+    /// the Contracts hub. The per-template column selection lives on the
+    /// template row; this only carries the factory default a brand-new template
+    /// (and the send screen) starts from.
+    public static class Reports
+    {
+        /// Comma-separated default column keys for a new Microsoft 365 report
+        /// template / the send screen. Valid keys: type, name, upn, mail,
+        /// enabled, licenses, spam, onedrive, exchange.
+        public const string DefaultColumns = "Contracts.Reports.DefaultColumns";
+    }
+
     public static class Graph
     {
         public const string TenantId = "Graph.TenantId";
@@ -1203,6 +1215,8 @@ public static class SettingDefaults
             "How often (minutes) the Adsolut Contracts sync worker ticks. Floor 5 — set lower and the worker silently clamps. Independent from the Companies + SalesReceipts + Orders + Articles sync intervals. Each tick is a delta-sync keyed on the contract's lastModified (?ModifiedSince=lastSuccessfulSync)."),
         new SettingDefault(SettingKeys.Adsolut.M365MatchArticleIds, "", "string", "Adsolut",
             "Comma-separated Adsolut article ids (uuids) flagged as Microsoft 365 related. Drives the Contracts → Microsoft 365 matching list: a company appears there when one or more of its contract lines reference any of these articles (each company listed once). Curated via the gear on the matching page, not normally edited here. Empty = no articles selected, so the list is empty."),
+        new SettingDefault(SettingKeys.Reports.DefaultColumns, "type,name,upn,spam,onedrive,exchange", "string", "Contracts",
+            "Comma-separated default column keys a new Microsoft 365 report template (and the Send report screen) starts from. Valid keys: type, name, upn, mail, enabled, licenses, spam, onedrive, exchange. The per-template selection overrides this; this is only the factory default."),
         new SettingDefault(SettingKeys.Adsolut.ErpContractsStatusFilter, "", "string", "Adsolut",
             "Comma-separated Adsolut contract state codes (e.g. 'CO,GEPL') the Contracts overview + global search show. Empty = show all statuses. Ticked by the admin on the integration page; the available statuses are discovered dynamically from the contracts seen in the mirror. DISPLAY-ONLY: the mirror always holds every status; this selection only narrows what the overview and global search surface — deselecting a status hides it (it is never purged) and re-ticking it shows it again with no re-sync."),
         new SettingDefault(SettingKeys.Adsolut.ErpContractsStatusColors, "", "string", "Adsolut",

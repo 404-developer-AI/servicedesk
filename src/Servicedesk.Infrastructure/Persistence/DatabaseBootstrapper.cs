@@ -4548,6 +4548,81 @@ public sealed class DatabaseBootstrapper : IHostedService
             ON m365_mailboxes (company_id);
 
         -- ===================================================================
+        -- Contract reports (v0.1.x). Agent-authored email templates plus a
+        -- per-company "Send report" audit trail. Lives behind the Contracts
+        -- hub (contracts_enabled flag), available to anyone with contracts
+        -- access — not admin-only. The first report kind is the Microsoft 365
+        -- matching overview (which mailboxes are spam/backup protected); the
+        -- `purpose` discriminator keeps the door open for future report kinds
+        -- and the planned bulk-send screen without a schema change.
+        -- ===================================================================
+
+        -- One reusable report email template. body_html carries {{tokens}}
+        -- including {{report.table}} (where the generated overview is injected)
+        -- and summary tokens. queue_id picks the FROM mailbox (the queue's
+        -- outbound/inbound address) so the sender is fixed at authoring time.
+        -- columns is the default column selection; scope is 'all' or
+        -- 'unprotected'. attach_pdf toggles the PDF copy of the overview.
+        CREATE TABLE IF NOT EXISTS report_templates (
+            id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            purpose     TEXT        NOT NULL DEFAULT 'm365',
+            name        TEXT        NOT NULL,
+            description TEXT        NULL,
+            subject     TEXT        NOT NULL DEFAULT '',
+            body_html   TEXT        NOT NULL DEFAULT '',
+            queue_id    UUID        NULL REFERENCES queues(id) ON DELETE SET NULL,
+            columns     TEXT[]      NOT NULL DEFAULT '{}',
+            scope       TEXT        NOT NULL DEFAULT 'all',
+            attach_pdf  BOOLEAN     NOT NULL DEFAULT TRUE,
+            is_active   BOOLEAN     NOT NULL DEFAULT TRUE,
+            created_utc TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc TIMESTAMPTZ NOT NULL DEFAULT now(),
+            created_by  UUID        NULL,
+            CONSTRAINT chk_report_templates_scope CHECK (scope IN ('all','unprotected'))
+        );
+        -- At most one active template per (purpose, name) — case-insensitive.
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_report_templates_active_name
+            ON report_templates (purpose, lower(name)) WHERE is_active;
+
+        -- Per-company send audit / history. Drives the "last sent" stamp on the
+        -- matching list and a future send-history view. recipients is a frozen
+        -- JSON snapshot of who it went to; the summary counts let the history
+        -- show protection at the time of sending without re-deriving it.
+        CREATE TABLE IF NOT EXISTS m365_report_sends (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id          UUID        NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            template_id         UUID        NULL REFERENCES report_templates(id) ON DELETE SET NULL,
+            template_name       TEXT        NULL,
+            sent_by             UUID        NULL,
+            sent_by_name        TEXT        NULL,
+            sent_utc            TIMESTAMPTZ NOT NULL DEFAULT now(),
+            subject             TEXT        NOT NULL DEFAULT '',
+            recipients          JSONB       NOT NULL DEFAULT '[]'::jsonb,
+            columns             TEXT[]      NOT NULL DEFAULT '{}',
+            scope               TEXT        NOT NULL DEFAULT 'all',
+            mailbox_count       INT         NOT NULL DEFAULT 0,
+            spam_protected      INT         NULL,
+            exchange_protected  INT         NULL,
+            onedrive_protected  INT         NULL,
+            internet_message_id TEXT        NULL,
+            status              TEXT        NOT NULL DEFAULT 'sent',
+            error               TEXT        NULL,
+            CONSTRAINT chk_m365_report_sends_status CHECK (status IN ('sent','failed'))
+        );
+        CREATE INDEX IF NOT EXISTS ix_m365_report_sends_company_sent
+            ON m365_report_sends (company_id, sent_utc DESC);
+
+        -- Reporting contacts: a per-(contact,company) flag marking which linked
+        -- contacts receive contract reports by default. The send screen
+        -- pre-fills these; a company with none triggers a warning + inline
+        -- "designate" action. Lives on the link table because the same contact
+        -- can be a reporting contact for one company but not another.
+        ALTER TABLE contact_companies
+            ADD COLUMN IF NOT EXISTS is_reporting_contact BOOLEAN NOT NULL DEFAULT FALSE;
+        CREATE INDEX IF NOT EXISTS ix_contact_companies_reporting
+            ON contact_companies (company_id) WHERE is_reporting_contact;
+
+        -- ===================================================================
         -- Sophos Central spam-filter matching (v0.0.78).
         --
         -- MSP partner model: one credential pair (in protected_secrets) lists

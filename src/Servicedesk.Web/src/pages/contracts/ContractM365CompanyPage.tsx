@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -9,6 +9,7 @@ import {
   Plug,
   Power,
   RefreshCw,
+  Send,
 } from "lucide-react";
 import { contractM365Api, type M365Mailbox } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,8 @@ import {
   relativeFromUtc,
 } from "@/components/contracts/m365Connection";
 import { cn } from "@/lib/utils";
+import { contractReportsApi } from "@/lib/contractReports-api";
+import { SendReportModal } from "./reports/SendReportModal";
 
 /// One company's synced Microsoft 365 mailboxes, reached from the matching list.
 /// Shows the connection state + the same mailbox classification the probe
@@ -33,6 +36,7 @@ import { cn } from "@/lib/utils";
 export function ContractM365CompanyPage({ companyId }: { companyId: string }) {
   const qc = useQueryClient();
   const queryKey = ["contracts", "m365", "mailboxes", companyId] as const;
+  const [sendOpen, setSendOpen] = useState(false);
 
   const detail = useQuery({
     queryKey,
@@ -78,6 +82,41 @@ export function ContractM365CompanyPage({ companyId }: { companyId: string }) {
   const veeamAvailable = data?.veeamAvailable ?? false;
   const byType = useMemo(() => summariseByType(mailboxes), [mailboxes]);
 
+  // Protection summary (matches the emailed report's header chips). Denominator
+  // counts only mailboxes where the axis has a verdict — when the integration is
+  // available that is every mailbox, so it reads e.g. "9 / 15".
+  const protection = useMemo(() => {
+    const tally = (pick: (m: (typeof mailboxes)[number]) => boolean | null | undefined) => {
+      let total = 0;
+      let ok = 0;
+      for (const m of mailboxes) {
+        const v = pick(m);
+        if (v === null || v === undefined) continue;
+        total++;
+        if (v) ok++;
+      }
+      return { ok, total };
+    };
+    // Unique mailboxes with a backup licence in use = at least one of
+    // OneDrive / Exchange backed up (a mailbox with both still counts once).
+    const backupLicenseUsed = mailboxes.filter(
+      (m) => m.onedriveProtected === true || m.exchangeProtected === true,
+    ).length;
+    return {
+      spam: tally((m) => m.spamFilterProtected),
+      onedrive: tally((m) => m.onedriveProtected),
+      exchange: tally((m) => m.exchangeProtected),
+      backupLicenseUsed,
+    };
+  }, [mailboxes]);
+
+  const lastSentQ = useQuery({
+    queryKey: ["contract-report-last-sent"],
+    queryFn: () => contractReportsApi.lastSent(),
+    staleTime: 60_000,
+  });
+  const lastSentEntry = lastSentQ.data?.items.find((s) => s.companyId === companyId) ?? null;
+
   const title = data?.companyName || data?.companyCode || "Company";
   const lastChecked = relativeFromUtc(data?.lastCheckedUtc);
   const lastChanged = relativeFromUtc(data?.lastChangedUtc);
@@ -111,6 +150,29 @@ export function ContractM365CompanyPage({ companyId }: { companyId: string }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={mailboxes.length === 0 ? 0 : undefined}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5"
+                    onClick={() => setSendOpen(true)}
+                    disabled={mailboxes.length === 0}
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                    Send report
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              {mailboxes.length === 0 && (
+                <TooltipContent className="border border-glass-strong bg-popover text-popover-foreground">
+                  No mailboxes synced yet
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
           {connected && (
             <Button
               size="sm"
@@ -150,6 +212,26 @@ export function ContractM365CompanyPage({ companyId }: { companyId: string }) {
         </div>
       </div>
 
+      {lastSentEntry && (
+        <p className="text-xs text-muted-foreground/70">
+          Last report sent {relativeFromUtc(lastSentEntry.sentUtc)}
+          {lastSentEntry.sentByName && <> by {lastSentEntry.sentByName}</>}
+          {lastSentEntry.subject && (
+            <span className="text-muted-foreground/50"> · {lastSentEntry.subject}</span>
+          )}
+        </p>
+      )}
+
+      <SendReportModal
+        companyId={companyId}
+        companyName={title}
+        open={sendOpen}
+        onOpenChange={setSendOpen}
+        onSent={() => {
+          lastSentQ.refetch();
+        }}
+      />
+
       {data?.lastError && (status === "needs_reconsent" || status === "error") && (
         <div className="flex items-start gap-2.5 rounded-lg border border-amber-400/20 bg-amber-500/[0.06] p-3 text-xs text-amber-200">
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
@@ -162,8 +244,25 @@ export function ContractM365CompanyPage({ companyId }: { companyId: string }) {
         </div>
       )}
 
-      {byType.length > 0 && (
-        <div className="flex flex-wrap gap-2">
+      {mailboxes.length > 0 && (spamFilterAvailable || veeamAvailable || byType.length > 0) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {spamFilterAvailable && (
+            <ProtectionChip tone="blue" label="Spam filter" ok={protection.spam.ok} total={protection.spam.total} />
+          )}
+          {veeamAvailable && (
+            <ProtectionChip
+              tone="green"
+              label="Backup license used"
+              ok={protection.backupLicenseUsed}
+              total={mailboxes.length}
+            />
+          )}
+          {veeamAvailable && (
+            <ProtectionChip tone="grey" label="OneDrive backup" ok={protection.onedrive.ok} total={protection.onedrive.total} />
+          )}
+          {veeamAvailable && (
+            <ProtectionChip tone="grey" label="Exchange backup" ok={protection.exchange.ok} total={protection.exchange.total} />
+          )}
           {byType.map((t) => (
             <span
               key={t.type}
@@ -362,6 +461,42 @@ function SpamFilterBadge({ protected_ }: { protected_: boolean | null }) {
   ) : (
     <span className="inline-flex items-center gap-1.5 rounded-full border border-glass-strong bg-glass-strong px-2 py-0.5 text-[11px] text-muted-foreground">
       <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" /> Unprotected
+    </span>
+  );
+}
+
+/// Header summary chip: a labelled count (e.g. "Spam filter 9/15"). The tone is
+/// brand-coded rather than coverage-coded — Sophos blue for the spam filter,
+/// Veeam green for backup licences, neutral grey for everything else.
+type ChipTone = "blue" | "green" | "grey";
+
+const CHIP_TONES: Record<ChipTone, string> = {
+  blue: "border-sky-400/30 bg-sky-500/10 text-sky-300",
+  green: "border-emerald-400/30 bg-emerald-500/10 text-emerald-300",
+  grey: "border-glass bg-glass text-muted-foreground",
+};
+
+function ProtectionChip({
+  label,
+  ok,
+  total,
+  tone,
+}: {
+  label: string;
+  ok: number;
+  total: number;
+  tone: ChipTone;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs",
+        CHIP_TONES[tone],
+      )}
+    >
+      <span className="text-foreground/90">{label}</span>
+      <span className="tabular-nums font-medium">{ok}</span>
+      <span className="tabular-nums text-muted-foreground">/ {total}</span>
     </span>
   );
 }

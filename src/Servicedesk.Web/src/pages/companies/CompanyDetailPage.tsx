@@ -2,8 +2,9 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { ArrowLeft, Bell, Building2, Pencil, Plus, RefreshCw, Trash2, UserPlus } from "lucide-react";
+import { ArrowLeft, Bell, Building2, Pencil, Plus, RefreshCw, Star, Trash2, UserPlus } from "lucide-react";
 import { adsolutApi, ApiError } from "@/lib/api";
+import { contractReportsApi } from "@/lib/contractReports-api";
 import { authStore } from "@/auth/authStore";
 import {
   companyApi,
@@ -265,6 +266,7 @@ function ContactsTab({
   isAdmin: boolean;
 }) {
   const qc = useQueryClient();
+  const contractsEnabled = authStore.get().user?.contractsEnabled ?? false;
   const [linking, setLinking] = useState(false);
   const [linkQuery, setLinkQuery] = useState("");
   const [creating, setCreating] = useState(false);
@@ -274,6 +276,30 @@ function ContactsTab({
   const { data: contacts, isLoading } = useQuery({
     queryKey: ["companies", "contacts", companyId],
     queryFn: () => companyApi.listContacts(companyId),
+  });
+
+  const reportingContactsQ = useQuery({
+    queryKey: ["contract-report-reporting-contacts", companyId],
+    queryFn: () => contractReportsApi.reportingContacts(companyId),
+    enabled: contractsEnabled,
+    staleTime: 30_000,
+  });
+
+  const isReportingContactMap = useMemo(() => {
+    const m = new Map<string, boolean>();
+    for (const rc of reportingContactsQ.data?.items ?? []) {
+      m.set(rc.contactId, rc.isReportingContact);
+    }
+    return m;
+  }, [reportingContactsQ.data]);
+
+  const toggleReportingContact = useMutation({
+    mutationFn: ({ contactId, isReporting }: { contactId: string; isReporting: boolean }) =>
+      contractReportsApi.setReportingContact(companyId, contactId, isReporting),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["contract-report-reporting-contacts", companyId] });
+    },
+    onError: () => toast.error("Could not update reporting contact."),
   });
 
   const { data: links } = useQuery({
@@ -481,6 +507,33 @@ function ContactsTab({
                   disabled={setRole.isPending}
                   onChange={(r) => handleRoleChange(c, r)}
                 />
+                {contractsEnabled && (
+                  <button
+                    type="button"
+                    title={
+                      isReportingContactMap.get(c.id)
+                        ? "Remove as reporting contact"
+                        : "Mark as reporting contact"
+                    }
+                    className={cn(
+                      "flex h-7 w-7 items-center justify-center rounded transition-colors hover:text-foreground",
+                      isReportingContactMap.get(c.id)
+                        ? "text-amber-400"
+                        : "text-muted-foreground/30 hover:text-muted-foreground",
+                    )}
+                    onClick={() =>
+                      toggleReportingContact.mutate({
+                        contactId: c.id,
+                        isReporting: !isReportingContactMap.get(c.id),
+                      })
+                    }
+                  >
+                    <Star
+                      className="h-3.5 w-3.5"
+                      fill={isReportingContactMap.get(c.id) ? "currentColor" : "none"}
+                    />
+                  </button>
+                )}
                 <Button
                   size="sm"
                   variant="ghost"
