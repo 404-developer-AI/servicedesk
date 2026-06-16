@@ -9,6 +9,8 @@ import {
   Trash2,
   ArrowUpRight,
   ArrowDown,
+  Paperclip,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -46,6 +48,11 @@ export function KbArticlePage({ articleId }: Props) {
   const { data: tree } = useQuery({
     queryKey: ["kb", "sections"],
     queryFn: kbApi.listSections,
+  });
+
+  const { data: attachments } = useQuery({
+    queryKey: ["kb", "article", articleId, "attachments"],
+    queryFn: () => kbApi.listAttachments(articleId),
   });
 
   const breadcrumb = useMemo(() => {
@@ -92,6 +99,10 @@ export function KbArticlePage({ articleId }: Props) {
 
   const { article, translation } = data;
   const title = translation?.title ?? article.slug;
+  // File attachments only — inline images already render inside the body.
+  const fileAttachments = (attachments?.items ?? []).filter(
+    (a) => !a.mimeType.startsWith("image/"),
+  );
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -213,9 +224,46 @@ export function KbArticlePage({ articleId }: Props) {
             value={toServerLocal(article.lastStatusChangedUtc, offset)}
           />
         </dl>
+
+        {fileAttachments.length > 0 && (
+          <div className="glass-card flex flex-col gap-2.5 p-5">
+            <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
+              <Paperclip className="h-3.5 w-3.5" />
+              Attachments
+              <span className="tabular-nums text-muted-foreground/60">
+                ({fileAttachments.length})
+              </span>
+            </div>
+            <ul className="flex flex-col gap-1.5">
+              {fileAttachments.map((a) => (
+                <li key={a.id}>
+                  <a
+                    href={a.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={`Download ${a.filename}`}
+                    className="flex items-center gap-2 rounded-md border border-glass bg-glass px-2.5 py-1.5 text-xs text-foreground transition-colors hover:bg-glass-hover hover:text-primary"
+                  >
+                    <Download className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate">{a.filename}</span>
+                    <span className="shrink-0 tabular-nums text-muted-foreground/60">
+                      {formatBytes(a.size)}
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </aside>
     </div>
   );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function StatusFlipButton({

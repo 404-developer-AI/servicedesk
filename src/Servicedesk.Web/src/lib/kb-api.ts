@@ -305,6 +305,24 @@ export const kbApi = {
     }
     return res.json();
   },
+
+  /// List the article's attachments (newest first). The edit page filters out
+  /// inline images for its "Attachments" panel.
+  listAttachments: (articleId: string) =>
+    request<{ items: KbAttachment[] }>("GET", `/api/kb/articles/${articleId}/attachments`),
+
+  /// Remove one attachment from the article. Any link to it left in the body
+  /// becomes a dead link until the author edits it out.
+  deleteAttachment: (articleId: string, attachmentId: string) =>
+    request<void>("DELETE", `/api/kb/articles/${articleId}/attachments/${attachmentId}`),
+};
+
+export type KbAttachment = {
+  id: string;
+  url: string;
+  mimeType: string;
+  size: number;
+  filename: string;
 };
 
 // ─── Public (no-login) article reader — v0.0.75 ───

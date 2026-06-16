@@ -48,6 +48,12 @@ type RichTextEditorProps = {
   /// them in an <AttachmentTray />). Returning null tells the editor the
   /// upload failed and not to insert anything.
   onUploadFile?: (file: File) => Promise<TicketAttachmentMeta | null>;
+  /// When true, non-image uploads are inserted into the body as a clickable
+  /// download link (instead of being dropped). Use this where the document body
+  /// is the only home for attachments — e.g. KB articles, which have no separate
+  /// attachment tray. Left off for tickets/mail, which render non-image uploads
+  /// in their own <AttachmentTray />. Images are always inserted inline.
+  linkNonImageUploads?: boolean;
   /// When provided, the editor enables the @@-mention typeahead: typing `@@`
   /// opens a popover fed by this callback (debounced to ~120ms by the editor).
   /// Selecting a row inserts a Mention node whose `id` is the agent's user-id.
@@ -132,6 +138,7 @@ export function RichTextEditor({
   className,
   autoFocus = false,
   onUploadFile,
+  linkNonImageUploads = false,
   onMentionQuery,
   onMentionsChange,
   onIntakeQuery,
@@ -150,6 +157,13 @@ export function RichTextEditor({
   useEffect(() => {
     uploadRef.current = onUploadFile;
   }, [onUploadFile]);
+
+  // Same ref trick for the non-image-link flag so the paste/drop handlers
+  // (constructed once) read the freshest value.
+  const linkNonImageRef = useRef(linkNonImageUploads);
+  useEffect(() => {
+    linkNonImageRef.current = linkNonImageUploads;
+  }, [linkNonImageUploads]);
 
   const mentionQueryRef = useRef<typeof onMentionQuery>(onMentionQuery);
   useEffect(() => {
@@ -418,7 +432,7 @@ export function RichTextEditor({
         if (files.length === 0) return false;
         event.preventDefault();
         void handleFiles(files, uploadRef.current!, (meta) =>
-          insertImageIfApplicable(editorInstance(), meta),
+          insertUpload(editorInstance(), meta, linkNonImageRef.current),
         );
         return true;
       },
@@ -430,7 +444,7 @@ export function RichTextEditor({
         if (files.length === 0) return false;
         event.preventDefault();
         void handleFiles(files, uploadRef.current!, (meta) =>
-          insertImageIfApplicable(editorInstance(), meta),
+          insertUpload(editorInstance(), meta, linkNonImageRef.current),
         );
         return true;
       },
@@ -499,7 +513,7 @@ export function RichTextEditor({
       const files = input.files ? Array.from(input.files) : [];
       if (files.length === 0) return;
       void handleFiles(files, upload, (meta) =>
-        insertImageIfApplicable(editor, meta),
+        insertUpload(editor, meta, linkNonImageRef.current),
       );
     };
     input.click();
@@ -800,18 +814,38 @@ async function handleFiles(
   }
 }
 
-function insertImageIfApplicable(
+function insertUpload(
   editor: ReturnType<typeof useEditor> | null,
   meta: TicketAttachmentMeta,
+  linkNonImage: boolean,
 ): void {
   if (!editor) return;
-  if (!meta.mimeType?.startsWith("image/")) return;
-  // setImage is provided by @tiptap/extension-image.
-  // alt is the filename so screen readers + the timeline preview have a
-  // meaningful label, even when the image fails to load.
-  (editor.chain() as unknown as { focus: () => { setImage: (attrs: { src: string; alt: string }) => { run: () => void } } })
+  if (meta.mimeType?.startsWith("image/")) {
+    // setImage is provided by @tiptap/extension-image.
+    // alt is the filename so screen readers + the timeline preview have a
+    // meaningful label, even when the image fails to load.
+    (editor.chain() as unknown as { focus: () => { setImage: (attrs: { src: string; alt: string }) => { run: () => void } } })
+      .focus()
+      .setImage({ src: meta.url, alt: meta.filename })
+      .run();
+    return;
+  }
+  // Non-image upload. Callers that own an attachment tray (tickets/mail) opt
+  // out and render it themselves; document-only contexts (KB) insert a
+  // clickable download link into the body so the file isn't orphaned. The
+  // link mark + text node form sidesteps any HTML escaping concerns.
+  if (!linkNonImage) return;
+  editor
+    .chain()
     .focus()
-    .setImage({ src: meta.url, alt: meta.filename })
+    .insertContent([
+      {
+        type: "text",
+        text: meta.filename || "attachment",
+        marks: [{ type: "link", attrs: { href: meta.url } }],
+      },
+      { type: "text", text: " " },
+    ])
     .run();
 }
 

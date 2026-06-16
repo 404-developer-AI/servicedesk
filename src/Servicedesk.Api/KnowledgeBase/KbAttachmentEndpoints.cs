@@ -107,6 +107,54 @@ public static class KbAttachmentEndpoints
         }).WithName("UploadKbAttachment").WithOpenApi()
           .DisableRequestTimeout();
 
+        // GET /api/kb/articles/{id}/attachments — list the article's attachments
+        // (newest first). Backs the article-edit "Attachments" panel; the client
+        // filters out inline images from the panel itself.
+        group.MapGet("/articles/{id:guid}/attachments", async (
+            Guid id,
+            IKbArticleRepository articleRepo,
+            IAttachmentRepository attachments,
+            CancellationToken ct) =>
+        {
+            var article = await articleRepo.GetArticleAsync(id, ct);
+            if (article is null) return Results.NotFound();
+
+            var rows = await attachments.ListByKbArticleAsync(id, ct);
+            return Results.Ok(new
+            {
+                items = rows.Select(a => new
+                {
+                    id = a.Id,
+                    url = $"/api/kb/articles/{id}/attachments/{a.Id}",
+                    mimeType = a.MimeType,
+                    size = a.SizeBytes,
+                    filename = a.OriginalFilename,
+                }),
+            });
+        }).WithName("ListKbAttachments").WithOpenApi();
+
+        // DELETE /api/kb/articles/{id}/attachments/{attachmentId} — remove an
+        // attachment from the panel. Scoped to the owning article. Any link to
+        // it left in the body becomes a dead link until the author edits it out
+        // (intentional — the body is the author's to manage).
+        group.MapDelete("/articles/{id:guid}/attachments/{attachmentId:guid}", async (
+            Guid id, Guid attachmentId, HttpContext http,
+            IKbArticleRepository articleRepo,
+            IAttachmentRepository attachments, IAuditLogger audit,
+            CancellationToken ct) =>
+        {
+            var article = await articleRepo.GetArticleAsync(id, ct);
+            if (article is null) return Results.NotFound();
+
+            var deleted = await attachments.DeleteKbAttachmentAsync(attachmentId, id, ct);
+            if (!deleted) return Results.NotFound();
+
+            await KbAudit.WriteAsync(audit, http, "kb.article.attachment.removed", attachmentId.ToString(),
+                new { articleId = id });
+
+            return Results.NoContent();
+        }).WithName("DeleteKbAttachment").WithOpenApi();
+
         // GET /api/kb/articles/{id}/attachments/{attachmentId} — download.
         // ETag from the content-hash makes repeated <img> renders cache-hits.
         // The article-existence + owner check refuses cross-article guesses

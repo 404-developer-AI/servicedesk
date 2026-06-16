@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Save, Send, Archive, ImageOff } from "lucide-react";
+import { Save, Send, Archive, ImageOff, Paperclip, Trash2, Download } from "lucide-react";
 import { toast } from "sonner";
 import {
   kbApi,
   type KbArticleStatus,
+  type KbAttachment,
   type KbSectionNode,
 } from "@/lib/kb-api";
 import { Button } from "@/components/ui/button";
@@ -50,6 +51,25 @@ export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
     queryKey: ["kb", "article", articleId, "body"],
     queryFn: () => kbApi.getArticle(articleId!, true),
     enabled: !isCreate,
+  });
+
+  const attachmentsQuery = useQuery({
+    queryKey: ["kb", "article", articleId, "attachments"],
+    queryFn: () => kbApi.listAttachments(articleId!),
+    enabled: !isCreate,
+  });
+  // The panel lists file attachments only — inline images live in the body.
+  const fileAttachments = useMemo(
+    () => (attachmentsQuery.data?.items ?? []).filter((a) => !a.mimeType.startsWith("image/")),
+    [attachmentsQuery.data],
+  );
+  const deleteAttachment = useMutation({
+    mutationFn: (attachmentId: string) => kbApi.deleteAttachment(articleId!, attachmentId),
+    onSuccess: () => {
+      toast.success("Attachment removed.");
+      queryClient.invalidateQueries({ queryKey: ["kb", "article", articleId, "attachments"] });
+    },
+    onError: () => toast.error("Could not remove attachment."),
   });
 
   const [sectionId, setSectionId] = useState<string>("");
@@ -178,6 +198,7 @@ export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
               placeholder="Write the article body. Headings, lists, code, links, and images are supported."
               minHeight="320px"
               maxHeight="60vh"
+              linkNonImageUploads
               onUploadFile={async (file) => {
                 if (isCreate) {
                   toast.warning(
@@ -188,6 +209,11 @@ export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
                 }
                 try {
                   const meta = await kbApi.uploadAttachment(articleId!, file);
+                  // Refresh the Attachments panel so a freshly added file shows
+                  // up there too (not only as a body link / inline image).
+                  queryClient.invalidateQueries({
+                    queryKey: ["kb", "article", articleId, "attachments"],
+                  });
                   return {
                     id: meta.id,
                     url: meta.url,
@@ -284,10 +310,90 @@ export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
               </div>
             )}
           </div>
+
+          {!isCreate && (
+            <div className="glass-card flex flex-col gap-3 p-5">
+              <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
+                <Paperclip className="h-3.5 w-3.5" />
+                Attachments
+                {fileAttachments.length > 0 && (
+                  <span className="tabular-nums text-muted-foreground/60">
+                    ({fileAttachments.length})
+                  </span>
+                )}
+              </div>
+
+              {fileAttachments.length === 0 ? (
+                <p className="text-xs text-muted-foreground/70">
+                  No file attachments yet. Drag a file into the editor, paste it,
+                  or use the paperclip — non-image files are listed here.
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-1.5">
+                  {fileAttachments.map((a) => (
+                    <AttachmentRow
+                      key={a.id}
+                      attachment={a}
+                      onDelete={() => {
+                        if (confirm(`Remove "${a.filename}" from this article?`)) {
+                          deleteAttachment.mutate(a.id);
+                        }
+                      }}
+                      deleting={deleteAttachment.isPending}
+                    />
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </aside>
       </div>
     </div>
   );
+}
+
+function AttachmentRow({
+  attachment,
+  onDelete,
+  deleting,
+}: {
+  attachment: KbAttachment;
+  onDelete: () => void;
+  deleting: boolean;
+}) {
+  return (
+    <li className="flex items-center gap-2 rounded-md border border-glass bg-glass px-2.5 py-1.5">
+      <a
+        href={attachment.url}
+        target="_blank"
+        rel="noreferrer"
+        className="flex min-w-0 flex-1 items-center gap-2 text-xs text-foreground hover:text-primary"
+        title={`Download ${attachment.filename}`}
+      >
+        <Download className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate">{attachment.filename}</span>
+        <span className="shrink-0 tabular-nums text-muted-foreground/60">
+          {formatBytes(attachment.size)}
+        </span>
+      </a>
+      <button
+        type="button"
+        onClick={onDelete}
+        disabled={deleting}
+        title="Remove attachment"
+        aria-label={`Remove ${attachment.filename}`}
+        className="shrink-0 rounded p-1 text-muted-foreground/60 transition-colors hover:bg-glass-hover hover:text-rose-300 disabled:opacity-40"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+    </li>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function FlipButton({
