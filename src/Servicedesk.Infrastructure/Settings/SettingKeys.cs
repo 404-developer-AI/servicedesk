@@ -983,6 +983,16 @@ public static class SettingKeys
         public const string PhotoFrameBlobHash = "Signatures.PhotoFrameBlobHash";
         public const string PhotoFrameMime = "Signatures.PhotoFrameMime";
     }
+
+    /// Employee Feedback board ("Aandachtspunten & Successen"). Tunables that
+    /// govern the feedback / management-remarks rich-text fields.
+    public static class Feedback
+    {
+        /// Maximum length (characters) of a sanitized feedback body or
+        /// management-remarks body. Guards the DB against pasted mega-images /
+        /// runaway content. Default 20000.
+        public const string BodyMaxChars = "Feedback.BodyMaxChars";
+    }
 }
 
 public sealed record SettingDefault(
@@ -1619,5 +1629,8 @@ public static class SettingDefaults
             "Internal pointer to the admin-uploaded profile-photo frame image (blob hash). Set via the Team profiles photo editor, not by hand. Empty = no frame."),
         new SettingDefault(SettingKeys.Signatures.PhotoFrameMime, "", "string", "Signatures",
             "MIME type of the uploaded profile-photo frame image. Set automatically alongside the frame upload."),
+
+        new SettingDefault(SettingKeys.Feedback.BodyMaxChars, "20000", "int", "Employee Feedback",
+            "Maximum length (characters) of a sanitized feedback or management-remarks rich-text body."),
     };
 }

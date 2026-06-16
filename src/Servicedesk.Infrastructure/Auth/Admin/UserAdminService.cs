@@ -55,7 +55,8 @@ public sealed class UserAdminService : IUserAdminService
                     u.adsolut_orders_enabled AS AdsolutOrdersEnabled,
                     u.statistics_read   AS StatisticsRead,
                     u.statistics_write  AS StatisticsWrite,
-                    u.contracts_enabled AS ContractsEnabled
+                    u.contracts_enabled AS ContractsEnabled,
+                    u.feedback_enabled  AS FeedbackEnabled
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             ORDER BY u.created_utc ASC
@@ -104,7 +105,8 @@ public sealed class UserAdminService : IUserAdminService
                     u.adsolut_orders_enabled AS AdsolutOrdersEnabled,
                     u.statistics_read   AS StatisticsRead,
                     u.statistics_write  AS StatisticsWrite,
-                    u.contracts_enabled AS ContractsEnabled
+                    u.contracts_enabled AS ContractsEnabled,
+                    u.feedback_enabled  AS FeedbackEnabled
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             WHERE u.id = @id
@@ -768,7 +770,8 @@ public sealed class UserAdminService : IUserAdminService
             && update.AdsolutOrdersEnabled is null
             && update.StatisticsRead is null
             && update.StatisticsWrite is null
-            && update.ContractsEnabled is null)
+            && update.ContractsEnabled is null
+            && update.FeedbackEnabled is null)
         {
             return new UpdateFeatureFlagsResult.NoChange();
         }
@@ -814,7 +817,8 @@ public sealed class UserAdminService : IUserAdminService
                 adsolut_orders_enabled = COALESCE(@adsolutOrdersEnabled, adsolut_orders_enabled),
                 statistics_read  = COALESCE(@statisticsRead,  statistics_read),
                 statistics_write = COALESCE(@statisticsWrite, statistics_write),
-                contracts_enabled = COALESCE(@contractsEnabled, contracts_enabled)
+                contracts_enabled = COALESCE(@contractsEnabled, contracts_enabled),
+                feedback_enabled = COALESCE(@feedbackEnabled, feedback_enabled)
             WHERE id = @id
             """,
             new
@@ -834,6 +838,7 @@ public sealed class UserAdminService : IUserAdminService
                 statisticsRead = update.StatisticsRead,
                 statisticsWrite = update.StatisticsWrite,
                 contractsEnabled = update.ContractsEnabled,
+                feedbackEnabled = update.FeedbackEnabled,
             },
             tx,
             cancellationToken: ct));

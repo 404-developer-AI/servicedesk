@@ -24,6 +24,7 @@ public static class SearchSourceKind
     public const string SophosTenants = "sophos-tenants";
     public const string Signatures = "signatures";
     public const string ReportTemplates = "report-templates";
+    public const string EmployeeFeedback = "employee-feedback";
 }
 
 /// A single request to the search façade. <see cref="Type"/> is null for

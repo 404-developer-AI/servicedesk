@@ -402,6 +402,12 @@ public static class DependencyInjection
         services.AddSingleton<ITicketNumberLookup>(sp =>
             (ITicketNumberLookup)sp.GetRequiredService<ITicketRepository>());
 
+        // Employee Feedback board. EntryService is uncached (the board is hit
+        // once per page-load); the work-point-type catalogue is cached like
+        // the timesheet-task catalogue.
+        services.AddSingleton<Feedback.IFeedbackEntryService, Feedback.FeedbackEntryService>();
+        services.AddSingleton<Feedback.IFeedbackWorkPointTypeService, Feedback.FeedbackWorkPointTypeService>();
+
         services.AddHttpClient();
 
         // Global search. Every source is wrapped in ScopedSearchSource so
@@ -581,6 +587,12 @@ public static class DependencyInjection
         // flag (read per-query from the users row).
         services.AddSingleton<TimesheetSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<TimesheetSearchSource>()));
+
+        // Employee Feedback search-source. Customer sees zero hits; Agent/Admin
+        // see hits only when allowed to open the shared board — Admins always,
+        // other agents only with feedback_enabled (read per-query).
+        services.AddSingleton<Servicedesk.Infrastructure.Search.FeedbackSearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<Servicedesk.Infrastructure.Search.FeedbackSearchSource>()));
 
         // Adsolut sales-receipts (verkoopbonnen) search-source. Customer sees
         // zero hits; Agent/Admin see hits only when their own

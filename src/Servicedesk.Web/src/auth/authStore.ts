@@ -51,6 +51,9 @@ export type AuthUser = {
   /// contract data model lands later). Gates the sidebar nav entry and
   /// the /contracts route.
   contractsEnabled: boolean;
+  /// Per-user opt-in for the Employee Feedback feature. Gates the sidebar
+  /// nav entry and the /feedback route.
+  feedbackEnabled: boolean;
   /// Whether the Adsolut integration is currently connected (server-
   /// resolved at /auth/me time). Tenant-global rather than per-user, but
   /// surfaced here so the Adsolut timesheet tab can gate without the

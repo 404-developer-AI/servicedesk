@@ -180,6 +180,11 @@ export function Sidebar() {
     if (item.to === "/contracts" && !user?.contractsEnabled) {
       return false;
     }
+    // Employee Feedback is per-user opt-in (feedback_enabled). Role gates
+    // Agent+Admin; the /feedback route gate enforces the same flag.
+    if (item.to === "/feedback" && !user?.feedbackEnabled) {
+      return false;
+    }
     return true;
   });
 

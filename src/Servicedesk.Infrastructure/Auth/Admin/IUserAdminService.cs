@@ -149,7 +149,8 @@ public sealed record UserAdminRow(
     bool AdsolutOrdersEnabled = false,
     bool StatisticsRead = false,
     bool StatisticsWrite = false,
-    bool ContractsEnabled = false)
+    bool ContractsEnabled = false,
+    bool FeedbackEnabled = false)
 {
     /// Per-user Dashboard tile preferences sourced from
     /// `user_dashboard_tiles`. Empty list = no tiles enabled
@@ -259,7 +260,8 @@ public sealed record FeatureFlagsUpdate(
     bool? AdsolutOrdersEnabled = null,
     bool? StatisticsRead = null,
     bool? StatisticsWrite = null,
-    bool? ContractsEnabled = null);
+    bool? ContractsEnabled = null,
+    bool? FeedbackEnabled = null);
 
 public abstract record UpdateFeatureFlagsResult
 {

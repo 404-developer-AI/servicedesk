@@ -481,6 +481,9 @@ public sealed class OutboundMailServiceTests
         public Task<Guid> CreateForKbArticleAsync(NewKbArticleAttachment input, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<AttachmentRow>> ListByKbArticleAsync(Guid articleId, CancellationToken ct) => throw new NotImplementedException();
         public Task<bool> DeleteKbAttachmentAsync(Guid attachmentId, Guid articleId, CancellationToken ct) => throw new NotImplementedException();
+        public Task<Guid> CreateForFeedbackEntryAsync(NewFeedbackEntryAttachment input, CancellationToken ct) => throw new NotImplementedException();
+        public Task<IReadOnlyList<AttachmentRow>> ListByFeedbackEntryAsync(Guid entryId, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> DeleteFeedbackAttachmentAsync(Guid attachmentId, Guid entryId, CancellationToken ct) => throw new NotImplementedException();
     }
 
     private sealed class StubBlobs : IBlobStore
@@ -583,6 +586,7 @@ public sealed class OutboundMailServiceTests
         public Task<bool> GetStatisticsReadEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetStatisticsWriteEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetContractsEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
+        public Task<bool> GetFeedbackEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
     }
 
     private sealed class StubIntakeForms : IIntakeFormRepository

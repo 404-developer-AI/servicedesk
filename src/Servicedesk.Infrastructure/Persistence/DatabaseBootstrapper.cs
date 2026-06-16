@@ -2122,9 +2122,13 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- Extend the existing attachments owner-kind whitelist to include
         -- KbArticle. Constraint is dropped + re-added so the SQL stays
         -- idempotent across upgrades from older schemas.
+        -- Whitelist also covers 'FeedbackEntry' (Employee Feedback inline
+        -- images, added later). It is declared here — the single re-add point —
+        -- rather than in a second drop/re-add, so the batch never leaves a
+        -- narrower constraint that an existing FeedbackEntry row would violate.
         ALTER TABLE attachments DROP CONSTRAINT IF EXISTS chk_attachments_owner_kind;
         ALTER TABLE attachments ADD CONSTRAINT chk_attachments_owner_kind
-            CHECK (owner_kind IN ('Mail','Ticket','User','KbArticle'));
+            CHECK (owner_kind IN ('Mail','Ticket','User','KbArticle','FeedbackEntry'));
 
         CREATE TABLE IF NOT EXISTS kb_locales (
             code            TEXT        PRIMARY KEY,
@@ -4742,6 +4746,111 @@ public sealed class DatabaseBootstrapper : IHostedService
             content_hash     TEXT        NULL,
             duration_ms      INT         NULL
         );
+
+        -- ===================================================================
+        -- Employee Feedback ("Points of attention & successes"). A shared,
+        -- Excel-like management board: every user with the feedback_enabled
+        -- flag (plus Admins) sees and edits all rows. Opt-in per user, like
+        -- the Timesheet flags above.
+        --
+        --   feedback_enabled — may open the Employee Feedback board and CRUD
+        --                       its rows. Default FALSE so an upgrade is
+        --                       silent; admins opt users in explicitly. The
+        --                       API rejects the mutation for Customers.
+        --
+        -- feedback_work_point_types is an admin-managed catalogue (Settings →
+        -- Employee Feedback). It starts EMPTY — there are no seed rows; the
+        -- admin creates the work-point types themselves. Soft-deleted via
+        -- is_active so historical entries keep a readable type name.
+        --
+        -- feedback_entries stores one feedback record about an employee
+        -- (target_user_id). body_html / management_remarks_html are Tiptap
+        -- rich-text bodies; inline images reuse the blob pipeline via
+        -- owner_kind='FeedbackEntry'. linked_ticket_number is denormalized
+        -- alongside linked_ticket_id so the grid renders the clickable ticket
+        -- ref without a join. completed_* records who ticked "afgewerkt" and
+        -- when (server time).
+        -- ===================================================================
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS feedback_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+        -- NOTE: the attachments owner_kind whitelist already includes
+        -- 'FeedbackEntry' — it is declared at the single re-add point earlier in
+        -- this script (alongside 'KbArticle'), not in a second drop/re-add here.
+        -- Splitting it would leave a narrower constraint mid-batch that an
+        -- existing FeedbackEntry row would violate on the next startup.
+
+        -- Admin catalogue. Mirrors timesheet_tasks: a partial unique index
+        -- forbids two ACTIVE types with the same name (case-insensitive);
+        -- soft-deleted rows are excluded so a name can be reused after a type
+        -- is retired. No seed rows — the list starts empty.
+        CREATE TABLE IF NOT EXISTS feedback_work_point_types (
+            id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            name        TEXT        NOT NULL,
+            color       TEXT        NOT NULL DEFAULT '#7c7cff',
+            sort_order  INT         NOT NULL DEFAULT 0,
+            is_active   BOOLEAN     NOT NULL DEFAULT TRUE,
+            created_utc TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_feedback_work_point_types_name_active
+            ON feedback_work_point_types (lower(name)) WHERE is_active = TRUE;
+
+        CREATE TABLE IF NOT EXISTS feedback_entries (
+            id                       UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            target_user_id           UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            entry_date               DATE        NOT NULL DEFAULT current_date,
+            body_html                TEXT        NOT NULL DEFAULT '',
+            management_remarks_html  TEXT        NOT NULL DEFAULT '',
+            work_point_type_id       UUID        NULL REFERENCES feedback_work_point_types(id) ON DELETE SET NULL,
+            is_completed             BOOLEAN     NOT NULL DEFAULT FALSE,
+            completed_by_user_id     UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            completed_utc            TIMESTAMPTZ NULL,
+            linked_ticket_id         UUID        NULL REFERENCES tickets(id) ON DELETE SET NULL,
+            linked_ticket_number     BIGINT      NULL,
+            created_by_user_id       UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            created_utc              TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc              TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS ix_feedback_entries_target_user
+            ON feedback_entries (target_user_id);
+        CREATE INDEX IF NOT EXISTS ix_feedback_entries_type
+            ON feedback_entries (work_point_type_id) WHERE work_point_type_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS ix_feedback_entries_completed
+            ON feedback_entries (is_completed);
+        CREATE INDEX IF NOT EXISTS ix_feedback_entries_date
+            ON feedback_entries (entry_date);
+        CREATE INDEX IF NOT EXISTS ix_feedback_entries_ticket
+            ON feedback_entries (linked_ticket_id) WHERE linked_ticket_id IS NOT NULL;
+
+        -- Provenance + deep-link to a timeline event. `source` records whether
+        -- the entry was typed on the board ('manual') or logged from a ticket
+        -- timeline item via the activity "Log feedback" button ('activity').
+        -- `linked_ticket_event_id` points at the exact ticket_events row that
+        -- was logged, so the board's ticket link can deep-link to it
+        -- (/tickets/{id}#event-{eventId}). Added via ALTER for existing installs.
+        ALTER TABLE feedback_entries
+            ADD COLUMN IF NOT EXISTS source                 TEXT   NOT NULL DEFAULT 'manual',
+            ADD COLUMN IF NOT EXISTS linked_ticket_event_id BIGINT NULL;
+        DO $feedback_entries_constraints$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'ck_feedback_entries_source'
+            ) THEN
+                ALTER TABLE feedback_entries
+                    ADD CONSTRAINT ck_feedback_entries_source
+                    CHECK (source IN ('manual','activity'));
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'fk_feedback_entries_event'
+            ) THEN
+                ALTER TABLE feedback_entries
+                    ADD CONSTRAINT fk_feedback_entries_event
+                    FOREIGN KEY (linked_ticket_event_id)
+                    REFERENCES ticket_events(id) ON DELETE SET NULL;
+            END IF;
+        END
+        $feedback_entries_constraints$;
         """;
 
     private readonly NpgsqlDataSource _dataSource;
