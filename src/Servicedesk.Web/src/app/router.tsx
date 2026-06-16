@@ -31,6 +31,7 @@ import { ContractArticlesPage } from "@/pages/contracts/ContractArticlesPage";
 import { ContractsOverviewPage } from "@/pages/contracts/ContractsOverviewPage";
 import { ContractM365Page } from "@/pages/contracts/ContractM365Page";
 import { ContractM365CompanyPage } from "@/pages/contracts/ContractM365CompanyPage";
+import { ContractsSettingsPage } from "@/pages/contracts/ContractsSettingsPage";
 import { ZammadImportRunsListPage } from "@/pages/settings/zammad/ZammadImportRunsListPage";
 import { ZammadImportRunDetailPage } from "@/pages/settings/zammad/ZammadImportRunDetailPage";
 import { MailSettingsPage } from "@/pages/settings/MailSettingsPage";
@@ -441,6 +442,20 @@ const contractM365Route = createRoute({
   component: ContractM365Page,
 });
 
+// Contract settings — report templates and reporting contacts. Same
+// contracts_enabled gate as the hub; backend endpoints re-check server-side.
+const contractsSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/contracts/settings",
+  beforeLoad: (args) => {
+    authGate(["Agent", "Admin"])(args);
+    if (!authedUser()?.contractsEnabled) {
+      throw redirect({ to: "/" });
+    }
+  },
+  component: ContractsSettingsPage,
+});
+
 // One company's synced Microsoft 365 mailboxes (reached from the matching list).
 // Same contracts_enabled gate as the list; the mailbox endpoint re-checks it.
 const contractM365CompanyRoute = createRoute({
@@ -844,6 +859,7 @@ const routeTree = rootRoute.addChildren([
   contractsOverviewRoute,
   contractM365Route,
   contractM365CompanyRoute,
+  contractsSettingsRoute,
   settingsRoute.addChildren([
     settingsIndexRoute,
     settingsGeneralRoute,

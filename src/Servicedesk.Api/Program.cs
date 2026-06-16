@@ -669,6 +669,7 @@ app.MapOrdersEndpoints();
 app.MapContractArticlesEndpoints();
 app.MapContractsOverviewEndpoints();
 app.MapContractM365Endpoints();
+app.MapContractReportsEndpoints();
 app.MapViewEndpoints();
 app.MapQueueAccessEndpoints();
 app.MapViewGroupEndpoints();
