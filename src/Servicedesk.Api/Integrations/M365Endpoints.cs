@@ -75,6 +75,7 @@ public static class M365Endpoints
         admin.MapPut("/sync-interval", SetSyncInterval).WithName("SetM365SyncInterval").WithOpenApi();
 
         admin.MapPost("/test-connection", TestConnection).WithName("TestM365Connection").WithOpenApi();
+        admin.MapPost("/sync", SyncNow).WithName("SyncM365Now").WithOpenApi();
 
         admin.MapGet("/audit", GetAuditLog).WithName("GetM365AuditLog").WithOpenApi();
 
@@ -485,6 +486,20 @@ public static class M365Endpoints
                 latencyMs = (int)sw.ElapsedMilliseconds,
             }, statusCode: 502);
         }
+    }
+
+    // ---- /sync ---------------------------------------------------------
+
+    /// Walk every active customer link and reconcile its mirror now, instead of
+    /// waiting for the worker's cadence. Runs synchronously so the dashboard
+    /// tile reflects the fresh sync state the moment the call returns (matching
+    /// the Sophos/Veeam "Sync now" behaviour). Per-tenant failures are
+    /// classified onto each link, never thrown, so one bad tenant can't fail the
+    /// whole request.
+    private static async Task<IResult> SyncNow(IM365SyncService sync, CancellationToken ct)
+    {
+        await sync.SyncAllAsync(ct);
+        return Results.Ok(new { success = true });
     }
 
     private static Task LogTest(

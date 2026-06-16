@@ -28,7 +28,10 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import adsolutLogo from "@/assets/integrations/adsolut.ico";
+import microsoftLogo from "@/assets/integrations/microsoft.svg";
+import sophosLogo from "@/assets/integrations/sophos.svg";
 import telavoxLogo from "@/assets/integrations/telavox.svg";
+import veeamLogo from "@/assets/integrations/veeam.svg";
 import zammadLogo from "@/assets/integrations/zammad.svg";
 
 const QUERY_KEY = ["admin", "integrations-health"] as const;
@@ -69,12 +72,18 @@ const LOGOS: Record<string, string> = {
   adsolut: adsolutLogo,
   telavox: telavoxLogo,
   zammad: zammadLogo,
+  m365: microsoftLogo,
+  sophos: sophosLogo,
+  veeam: veeamLogo,
 };
 
 const DETAIL_ROUTES: Record<string, string> = {
   adsolut: "/settings/integrations/adsolut",
   telavox: "/settings/integrations/telavox",
   zammad: "/settings/integrations/zammad",
+  m365: "/settings/integrations/m365",
+  sophos: "/settings/integrations/sophos",
+  veeam: "/settings/integrations/veeam",
 };
 
 /// Admin-only dashboard tile. Shows a compact roll-up of every configured

@@ -479,6 +479,8 @@ public sealed class OutboundMailServiceTests
             return Task.FromResult(assignments.Count);
         }
         public Task<Guid> CreateForKbArticleAsync(NewKbArticleAttachment input, CancellationToken ct) => throw new NotImplementedException();
+        public Task<IReadOnlyList<AttachmentRow>> ListByKbArticleAsync(Guid articleId, CancellationToken ct) => throw new NotImplementedException();
+        public Task<bool> DeleteKbAttachmentAsync(Guid attachmentId, Guid articleId, CancellationToken ct) => throw new NotImplementedException();
     }
 
     private sealed class StubBlobs : IBlobStore
