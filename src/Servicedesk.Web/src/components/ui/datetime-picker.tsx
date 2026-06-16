@@ -21,6 +21,9 @@ export type DateTimePickerProps = {
   className?: string;
   /** Optional minimum (UTC ISO) — earlier picks are disabled. */
   minUtc?: string | null;
+  /** Fires when the picker popover closes (Done / outside-click / Escape).
+   *  Lets callers that buffer edits commit once, on close. */
+  onClose?: () => void;
 };
 
 type LocalParts = { y: number; m: number; d: number; hh: number; mm: number };
@@ -85,8 +88,14 @@ export function DateTimePicker({
   placeholder = "Select date & time",
   className,
   minUtc,
+  onClose,
 }: DateTimePickerProps) {
   const [open, setOpen] = React.useState(false);
+
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    if (!next) onClose?.();
+  };
 
   const valueParts = utcIsoToLocalParts(value, offsetMinutes);
   const minParts = utcIsoToLocalParts(minUtc ?? null, offsetMinutes);
@@ -132,6 +141,15 @@ export function DateTimePicker({
     setView({ y: cell.y, m: cell.m });
   };
 
+  // Jump to (server-local) today, keeping the current time-of-day — or the
+  // default time when nothing is picked yet. Also snaps the visible month.
+  const todayBeforeMin = minParts ? compareDate(today, minParts) < 0 : false;
+  const onToday = () => {
+    const base = valueParts ?? { ...today, ...defaultTime };
+    commit({ ...base, y: today.y, m: today.m, d: today.d });
+    setView({ y: today.y, m: today.m });
+  };
+
   const onPickHour = (raw: string) => {
     const n = clamp(parseInt(raw, 10), 0, 23);
     if (Number.isNaN(n)) return;
@@ -149,7 +167,7 @@ export function DateTimePicker({
   const hasValue = valueParts !== null;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -270,13 +288,23 @@ export function DateTimePicker({
             step={5}
             onChange={(v) => onPickMinute(String(v))}
           />
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            className="ml-auto rounded-md bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-1 text-xs font-medium text-white shadow-sm transition-opacity hover:opacity-90"
-          >
-            Done
-          </button>
+          <div className="ml-auto flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={onToday}
+              disabled={todayBeforeMin}
+              className="rounded-md border border-glass px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-glass-hover hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Today
+            </button>
+            <button
+              type="button"
+              onClick={() => handleOpenChange(false)}
+              className="rounded-md bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-1 text-xs font-medium text-white shadow-sm transition-opacity hover:opacity-90"
+            >
+              Done
+            </button>
+          </div>
         </div>
       </PopoverContent>
     </Popover>

@@ -867,6 +867,7 @@ export function NewTicketDrawer({
                             <PendingTillField
                               value={field.value ?? null}
                               onCommit={field.onChange}
+                              commitOnChange
                             />
                           )}
                         />
