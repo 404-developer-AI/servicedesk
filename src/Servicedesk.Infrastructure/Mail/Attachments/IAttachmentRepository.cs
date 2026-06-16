@@ -57,6 +57,16 @@ public interface IAttachmentRepository
     /// attachments don't move between owners (no Mail/event re-assignment),
     /// so they land Ready and stay Ready until the article is hard-deleted.
     Task<Guid> CreateForKbArticleAsync(NewKbArticleAttachment input, CancellationToken ct);
+
+    /// Every Ready attachment owned by a KB article, newest first. Backs the
+    /// article-edit "Attachments" panel.
+    Task<IReadOnlyList<AttachmentRow>> ListByKbArticleAsync(Guid articleId, CancellationToken ct);
+
+    /// Remove one KB-article attachment, scoped to its owning article so an id
+    /// from another article can't be deleted via this path. Returns true when a
+    /// row was actually deleted. The blob is content-addressed and swept
+    /// separately when it becomes orphaned.
+    Task<bool> DeleteKbAttachmentAsync(Guid attachmentId, Guid articleId, CancellationToken ct);
 }
 
 public sealed record AttachmentRow(

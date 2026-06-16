@@ -114,6 +114,31 @@ public sealed class AttachmentRepository : IAttachmentRepository
             new CommandDefinition(sql, input, cancellationToken: ct));
     }
 
+    public async Task<IReadOnlyList<AttachmentRow>> ListByKbArticleAsync(Guid articleId, CancellationToken ct)
+    {
+        var sql = SelectColumns +
+            " FROM attachments WHERE owner_kind = 'KbArticle' AND owner_id = @articleId AND processing_state = 'Ready'" +
+            " ORDER BY created_utc DESC, id";
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<AttachmentRow>(
+            new CommandDefinition(sql, new { articleId }, cancellationToken: ct));
+        return rows.ToList();
+    }
+
+    public async Task<bool> DeleteKbAttachmentAsync(Guid attachmentId, Guid articleId, CancellationToken ct)
+    {
+        const string sql = """
+            DELETE FROM attachments
+             WHERE id = @attachmentId
+               AND owner_kind = 'KbArticle'
+               AND owner_id   = @articleId
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var affected = await conn.ExecuteAsync(
+            new CommandDefinition(sql, new { attachmentId, articleId }, cancellationToken: ct));
+        return affected > 0;
+    }
+
     public async Task<int> ReassignToEventAsync(IReadOnlyList<Guid> attachmentIds, Guid ticketId, long eventId, CancellationToken ct)
     {
         if (attachmentIds.Count == 0) return 0;
