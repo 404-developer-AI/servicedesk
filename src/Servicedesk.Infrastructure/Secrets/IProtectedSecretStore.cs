@@ -72,6 +72,14 @@ public static class ProtectedSecretKeys
     /// clearable from the same panel; clearing it disables the surface.
     public const string TimesheetImportToken = "Timesheet.ImportToken";
 
+    /// Claude AI assist integration. The Anthropic API key used for the
+    /// "AI proposal" feature inside a ticket. One install-wide key, sent on
+    /// every Messages API call via the <c>x-api-key</c> header. Write-only:
+    /// only its existence is ever reported back to the admin UI, never the
+    /// value. The organisation that owns this key must be configured for
+    /// zero data retention (a separate, admin-confirmed precondition).
+    public const string ClaudeApiKey = "Claude.ApiKey";
+
     /// Encrypted-secret key for a per-agent Telavox CAPI token. Returns a
     /// stable string built from the SD user-id so the protected_secrets
     /// row can be located on every poll and cleared on de-provision.

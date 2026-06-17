@@ -2374,6 +2374,49 @@ public sealed class DatabaseBootstrapper : IHostedService
             ADD COLUMN IF NOT EXISTS answered_at_utc TIMESTAMPTZ NULL;
 
         -- ===================================================================
+        -- Claude AI ticket-assist. Per-agent monthly budget override (euro
+        -- cents) on the users row; NULL = use the Claude.DefaultMonthlyBudgetEurCents
+        -- global default, so bumping the default cascades to every
+        -- uncustomised agent. An effective budget of 0 blocks that agent.
+        -- ===================================================================
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS claude_monthly_budget_eur_cents INT NULL;
+
+        -- Append-only usage log: one row per attempted proposal call, written
+        -- whether it succeeded, errored or was blocked by a guard (budget,
+        -- kill-switch, ZDR). Drives the per-agent monthly spend enforcement
+        -- and the admin usage overview. cost_micro_eur freezes the call's cost
+        -- at log time (tokens × the prices configured then) in millionths of a
+        -- euro, so historical totals stay correct after a price change and
+        -- sub-cent calls aren't rounded away. request_id is the Anthropic
+        -- request-id, kept for support tracing (matters under zero data
+        -- retention, where Anthropic keeps nothing server-side).
+        CREATE TABLE IF NOT EXISTS claude_usage_log (
+            id                  BIGSERIAL   PRIMARY KEY,
+            utc                 TIMESTAMPTZ NOT NULL DEFAULT now(),
+            user_id             UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            ticket_id           UUID        NULL REFERENCES tickets(id) ON DELETE SET NULL,
+            model               TEXT        NOT NULL DEFAULT '',
+            input_tokens        INT         NOT NULL DEFAULT 0,
+            output_tokens       INT         NOT NULL DEFAULT 0,
+            cost_micro_eur      BIGINT      NOT NULL DEFAULT 0,
+            image_count         INT         NOT NULL DEFAULT 0,
+            outcome             TEXT        NOT NULL DEFAULT 'ok',
+            error_code          TEXT        NULL,
+            request_id          TEXT        NULL,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT chk_claude_usage_outcome
+                CHECK (outcome IN ('ok','error','blocked'))
+        );
+
+        -- Hot path: sum a single agent's cost for the current month (budget
+        -- enforcement) and list recent rows per agent for the overview.
+        CREATE INDEX IF NOT EXISTS ix_claude_usage_user_utc
+            ON claude_usage_log (user_id, utc DESC);
+        CREATE INDEX IF NOT EXISTS ix_claude_usage_ticket
+            ON claude_usage_log (ticket_id);
+
+        -- ===================================================================
         -- v0.0.35 Timesheet — per-user feature flags. Two independent
         -- booleans live directly on the users row (no new role beside
         -- Customer/Agent/Admin):

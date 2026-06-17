@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { MessageCircle, ExternalLink, Clock } from "lucide-react";
+import { Clock, ExternalLink, MessageCircle, Sparkles } from "lucide-react";
 import { ticketApi, mentionApi } from "@/lib/ticket-api";
 import { preferencesApi } from "@/lib/api";
 import { useAuth } from "@/auth/authStore";
@@ -13,6 +13,20 @@ import { RichTextEditor, splitMentionIds } from "@/components/RichTextEditor";
 import { substituteComposeTokens } from "@/lib/composeTokens";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import {
+  claudeTicketApi,
+  ApiError,
+  type ClaudeTicketImage,
+} from "@/lib/claude-api";
 import { SendMailForm, type MailContext } from "./SendMailForm";
 import { AttachmentTray } from "./AttachmentTray";
 import { useAttachmentUploads } from "../hooks/useAttachmentUploads";
@@ -84,6 +98,10 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
   // collapses so the next open attempts again on an empty body.
   const autoInsertAttemptedRef = React.useRef(false);
   const [importing, setImporting] = React.useState(false);
+  const [aiLoading, setAiLoading] = React.useState(false);
+  const [aiImages, setAiImages] = React.useState<ClaudeTicketImage[] | null>(null);
+  const [aiImageDialogOpen, setAiImageDialogOpen] = React.useState(false);
+  const [aiSelectedIds, setAiSelectedIds] = React.useState<string[]>([]);
   const queryClient = useQueryClient();
   const attachments = useAttachmentUploads(ticketId);
   const formRef = React.useRef<HTMLDivElement>(null);
@@ -247,6 +265,82 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
       toast.error("Failed to submit — please try again");
     },
   });
+
+  async function runAiProposal(attachmentIds: string[]) {
+    setAiLoading(true);
+    try {
+      const result = await claudeTicketApi.createTicketProposal(ticketId, attachmentIds);
+
+      if ("refused" in result && result.refused) {
+        toast.warning(result.message);
+        return;
+      }
+
+      const { proposalHtml, costMicroEur } = result as import("@/lib/claude-api").ClaudeProposalSuccess;
+      const costDisplay = `€${(costMicroEur / 1_000_000).toFixed(4)}`;
+
+      const editor = editorRef.current;
+      if (editor) {
+        editor.chain().focus().setContent(proposalHtml).run();
+      }
+      setBodyHtml(proposalHtml);
+      updateDraft(proposalHtml, "note");
+      setTab("note");
+      setExpanded(true);
+
+      toast.success(`AI proposal added as a draft note (${costDisplay})`);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const body = err.body as Record<string, unknown> | null;
+        const code = body && typeof body.error === "string" ? body.error : null;
+        const msg = body && typeof body.message === "string" ? body.message : null;
+
+        if (err.status === 409) {
+          const spendMicro =
+            body && typeof body.monthSpendMicroEur === "number"
+              ? body.monthSpendMicroEur as number
+              : null;
+          const budgetMicro =
+            body && typeof body.monthBudgetMicroEur === "number"
+              ? body.monthBudgetMicroEur as number
+              : null;
+          const detail =
+            spendMicro !== null && budgetMicro !== null
+              ? ` (spent €${(spendMicro / 1_000_000).toFixed(2)} of €${(budgetMicro / 1_000_000).toFixed(2)})`
+              : "";
+          toast.error((msg ?? code ?? "Budget limit reached") + detail);
+        } else if (err.status === 502) {
+          toast.error(`AI service error: ${msg ?? "upstream error"}`);
+        } else {
+          toast.error(msg ?? "AI proposal failed");
+        }
+      } else {
+        toast.error("AI proposal failed");
+      }
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  async function handleAskAi() {
+    if (aiLoading) return;
+    setAiLoading(true);
+    try {
+      const { items } = await claudeTicketApi.getTicketImages(ticketId);
+      if (items.length === 0) {
+        setAiLoading(false);
+        await runAiProposal([]);
+      } else {
+        setAiImages(items);
+        setAiSelectedIds([]);
+        setAiImageDialogOpen(true);
+        setAiLoading(false);
+      }
+    } catch {
+      setAiLoading(false);
+      toast.error("Failed to load ticket images");
+    }
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -475,6 +569,44 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
         </div>
       )}
 
+      {user?.role !== "Customer" && (
+        <div className="mt-2">
+          <button
+            type="button"
+            disabled={aiLoading}
+            onClick={handleAskAi}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+              "border-amber-400/30 bg-amber-400/10 text-amber-200 hover:bg-amber-400/15",
+              aiLoading && "opacity-50 cursor-not-allowed",
+            )}
+            title="Generate a draft internal note using Claude AI based on the ticket context"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            {aiLoading ? "Generating…" : "Ask AI"}
+          </button>
+        </div>
+      )}
+
+      {aiImages !== null && (
+        <AiImagePickerDialog
+          open={aiImageDialogOpen}
+          onOpenChange={setAiImageDialogOpen}
+          images={aiImages}
+          selectedIds={aiSelectedIds}
+          onToggle={(id) =>
+            setAiSelectedIds((prev) =>
+              prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+            )
+          }
+          onGenerate={async () => {
+            setAiImageDialogOpen(false);
+            await runAiProposal(aiSelectedIds);
+          }}
+          busy={aiLoading}
+        />
+      )}
+
       <AttachmentTray items={attachments.items} onRemove={attachments.remove} />
 
       <div className="mt-3 flex items-center justify-between">
@@ -516,5 +648,89 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
         </form>
       )}
     </div>
+  );
+}
+
+function AiImagePickerDialog({
+  open,
+  onOpenChange,
+  images,
+  selectedIds,
+  onToggle,
+  onGenerate,
+  busy,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  images: ClaudeTicketImage[];
+  selectedIds: string[];
+  onToggle: (id: string) => void;
+  onGenerate: () => void;
+  busy: boolean;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Select screenshots for AI</DialogTitle>
+          <DialogDescription>
+            Choose which screenshots to include with your AI proposal request.
+            Uncheck any that are not relevant to reduce cost and improve focus.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 max-h-80 overflow-y-auto">
+          {images.map((img) => {
+            const checked = selectedIds.includes(img.id);
+            return (
+              <label
+                key={img.id}
+                className="flex items-center gap-3 cursor-pointer rounded-lg border border-glass p-2 hover:bg-glass-hover transition-colors"
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => onToggle(img.id)}
+                  className="h-4 w-4 shrink-0 accent-violet-500"
+                />
+                <img
+                  src={img.url}
+                  alt={img.filename}
+                  className="h-12 w-12 shrink-0 rounded object-cover border border-glass"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {img.filename}
+                  </p>
+                  <p className="text-xs text-muted-foreground/60">
+                    {img.mimeType} · {(img.sizeBytes / 1024).toFixed(0)} KB
+                  </p>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+
+        <DialogFooter>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+            disabled={busy}
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={onGenerate}
+            className="gap-1.5"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Generate proposal
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

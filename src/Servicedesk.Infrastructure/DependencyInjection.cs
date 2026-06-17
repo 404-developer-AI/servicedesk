@@ -216,6 +216,16 @@ public static class DependencyInjection
         services.AddHttpClient(TelavoxApiClient.HttpClientName);
         services.AddHostedService<TelavoxPollingWorker>();
 
+        // Claude AI ticket-assist integration. One install-wide Anthropic API
+        // key (protected_secrets); a single, tool-free Messages API call per
+        // "AI proposal" action, strictly scoped to the one ticket. Per-agent
+        // monthly euro budget enforced before each call; usage/cost logged to
+        // claude_usage_log. No background worker — the feature is request-driven.
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.Claude.IClaudeApiClient, Servicedesk.Infrastructure.Integrations.Claude.ClaudeApiClient>();
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.Claude.IClaudeUsageStore, Servicedesk.Infrastructure.Integrations.Claude.ClaudeUsageStore>();
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.Claude.IClaudeAssistService, Servicedesk.Infrastructure.Integrations.Claude.ClaudeAssistService>();
+        services.AddHttpClient(Servicedesk.Infrastructure.Integrations.Claude.ClaudeApiClient.HttpClientName);
+
         // Zammad migration link (v0.0.41). One install-wide HTTP token +
         // base URL; no background worker in fase 1 — the integration is
         // admin-driven (Test connection click). Fasen 2-5 add ticket-

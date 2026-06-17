@@ -22,7 +22,12 @@ import {
   type VeeamConnectionState,
   type ZammadConnectionState,
 } from "@/lib/api";
+import {
+  claudeAdminApi,
+  type ClaudeConnectionState,
+} from "@/lib/claude-api";
 import adsolutLogo from "@/assets/integrations/adsolut.ico";
+import claudeLogo from "@/assets/integrations/claude.svg";
 import microsoftLogo from "@/assets/integrations/microsoft.svg";
 import sophosLogo from "@/assets/integrations/sophos.svg";
 import telavoxLogo from "@/assets/integrations/telavox.svg";
@@ -115,6 +120,19 @@ function veeamTileStatus(state: VeeamConnectionState | undefined): IntegrationSt
   }
 }
 
+function claudeTileStatus(state: ClaudeConnectionState | undefined): IntegrationStatus {
+  switch (state) {
+    case "Ready":
+      return "online";
+    case "NeedsZeroDataRetention":
+      return "warning";
+    case "NotConfigured":
+    case "Disabled":
+    default:
+      return "not-configured";
+  }
+}
+
 export function IntegrationsSettingsPage() {
   const navigate = useNavigate();
 
@@ -154,6 +172,11 @@ export function IntegrationsSettingsPage() {
     queryFn: () => veeamAdminApi.status(),
     staleTime: 30_000,
   });
+  const claudeStatus = useQuery({
+    queryKey: ["integrations", "claude", "status"] as const,
+    queryFn: () => claudeAdminApi.status(),
+    staleTime: 30_000,
+  });
 
   const adsolutTileStatus = tileStatusFor(adsolutStatus.data?.state);
   const telavoxStatusTile = telavoxTileStatus(telavoxStatus.data?.state);
@@ -162,6 +185,7 @@ export function IntegrationsSettingsPage() {
   const m365StatusTile = m365TileStatus(m365Status.data?.state);
   const sophosStatusTile = sophosTileStatus(sophosStatus.data?.state);
   const veeamStatusTile = veeamTileStatus(veeamStatus.data?.state);
+  const claudeStatusTile = claudeTileStatus(claudeStatus.data?.state);
   const tilesConfigured = [
     adsolutTileStatus,
     telavoxStatusTile,
@@ -170,8 +194,9 @@ export function IntegrationsSettingsPage() {
     m365StatusTile,
     sophosStatusTile,
     veeamStatusTile,
+    claudeStatusTile,
   ].filter((s) => s === "online" || s === "warning").length;
-  const totalCount = 7;
+  const totalCount = 8;
   const noneConfigured = tilesConfigured === 0;
   const connectedCount = tilesConfigured;
 
@@ -275,6 +300,13 @@ export function IntegrationsSettingsPage() {
           variant="icon"
           status={veeamStatusTile}
           onClick={() => navigate({ to: "/settings/integrations/veeam" })}
+        />
+        <IntegrationTile
+          name="Claude AI"
+          logo={claudeLogo}
+          variant="icon"
+          status={claudeStatusTile}
+          onClick={() => navigate({ to: "/settings/integrations/claude-ai" })}
         />
       </section>
     </div>
