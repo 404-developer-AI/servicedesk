@@ -16,7 +16,8 @@ public interface ISophosStore
         IReadOnlyList<SophosTenantRow> tenants, DateTime nowUtc, CancellationToken ct);
 
     /// Tenants we should pull mailboxes for: queryable (active + api host) AND
-    /// matched to a company that is connected with Microsoft 365.
+    /// either matched to a Microsoft 365-connected company by relation code OR
+    /// manually linked to a Microsoft 365-connected company.
     Task<IReadOnlyList<SophosMailboxTarget>> GetMailboxTargetsAsync(CancellationToken ct);
 
     /// Replace one tenant's protected mailbox set and stamp its count.
@@ -29,12 +30,28 @@ public interface ISophosStore
 
     Task<IReadOnlyList<SophosTenantListRow>> GetTenantsAsync(CancellationToken ct);
 
+    /// Every manual tenant→company rollup link, joined with the parent company
+    /// name, for the settings tenant list.
+    Task<IReadOnlyList<SophosTenantLinkRow>> GetTenantLinksAsync(CancellationToken ct);
+
+    /// The Microsoft 365-connected companies an admin may roll a tenant into.
+    Task<IReadOnlyList<SophosLinkableCompany>> GetLinkableCompaniesAsync(CancellationToken ct);
+
+    /// Add a manual tenant→company rollup link (idempotent). Returns false when
+    /// the tenant or the company does not exist (or the company is not
+    /// M365-connected); true when the link is present afterwards.
+    Task<bool> AddTenantLinkAsync(string tenantId, Guid companyId, Guid? createdBy, CancellationToken ct);
+
+    /// Remove a manual tenant→company rollup link (idempotent).
+    Task RemoveTenantLinkAsync(string tenantId, Guid companyId, CancellationToken ct);
+
     Task<SophosSyncStateRow?> GetSyncStateAsync(CancellationToken ct);
     Task SaveSyncStateAsync(SophosSyncStateRow state, CancellationToken ct);
 
-    /// For the Microsoft 365 company view: whether the company has a matched
-    /// Sophos tenant at all, and the set of protected mailbox addresses across
-    /// its matched tenant(s) (case-insensitive).
+    /// For the Microsoft 365 company view: whether the company has a matched or
+    /// linked Sophos tenant at all, and the set of protected mailbox addresses
+    /// across its automatically-matched AND manually-linked tenant(s)
+    /// (case-insensitive).
     Task<(bool TenantMatched, HashSet<string> Emails)> GetCompanySpamFilterAsync(
         Guid companyId, CancellationToken ct);
 }
@@ -117,15 +134,22 @@ public sealed class SophosStore : ISophosStore
     public async Task<IReadOnlyList<SophosMailboxTarget>> GetMailboxTargetsAsync(CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        // Queryable tenants whose company (automatic match) is M365-connected,
+        // UNION'd with queryable tenants manually linked to an M365-connected
+        // company (the daughter rollup). DISTINCT folds a tenant that is both.
         var rows = await conn.QueryAsync<SophosMailboxTarget>(new CommandDefinition(
             """
-            SELECT t.tenant_id AS TenantId,
-                   t.api_host  AS ApiHost
+            SELECT DISTINCT t.tenant_id AS TenantId,
+                            t.api_host  AS ApiHost
               FROM sophos_tenants t
-              JOIN m365_tenant_links l ON l.company_id = t.company_id
-             WHERE t.company_id IS NOT NULL
-               AND t.api_host IS NOT NULL
+             WHERE t.api_host IS NOT NULL
                AND lower(t.status) = 'active'
+               AND (
+                     EXISTS (SELECT 1 FROM m365_tenant_links l WHERE l.company_id = t.company_id)
+                  OR EXISTS (SELECT 1 FROM sophos_tenant_links sl
+                              JOIN m365_tenant_links l ON l.company_id = sl.company_id
+                             WHERE sl.tenant_id = t.tenant_id)
+                   )
             """, cancellationToken: ct));
         return rows.ToList();
     }
@@ -205,6 +229,70 @@ public sealed class SophosStore : ISophosStore
         return rows.ToList();
     }
 
+    public async Task<IReadOnlyList<SophosTenantLinkRow>> GetTenantLinksAsync(CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<SophosTenantLinkRow>(new CommandDefinition(
+            """
+            SELECT sl.tenant_id  AS TenantId,
+                   sl.company_id AS CompanyId,
+                   c.name        AS CompanyName
+              FROM sophos_tenant_links sl
+              JOIN companies c ON c.id = sl.company_id
+             ORDER BY c.name ASC NULLS LAST
+            """, cancellationToken: ct));
+        return rows.ToList();
+    }
+
+    public async Task<IReadOnlyList<SophosLinkableCompany>> GetLinkableCompaniesAsync(CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<SophosLinkableCompany>(new CommandDefinition(
+            """
+            SELECT c.id             AS CompanyId,
+                   c.name           AS Name,
+                   c.adsolut_number AS Code
+              FROM companies c
+              JOIN m365_tenant_links l ON l.company_id = c.id
+             ORDER BY c.name ASC NULLS LAST
+            """, cancellationToken: ct));
+        return rows.ToList();
+    }
+
+    public async Task<bool> AddTenantLinkAsync(string tenantId, Guid companyId, Guid? createdBy, CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+
+        // Guard: tenant must exist, and the company must be M365-connected (the
+        // only valid rollup target). A failed guard returns false so the API
+        // answers 404/422 rather than silently inserting a dangling link.
+        var tenantExists = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
+            "SELECT EXISTS (SELECT 1 FROM sophos_tenants WHERE tenant_id = @tenantId)",
+            new { tenantId }, cancellationToken: ct));
+        if (!tenantExists) return false;
+
+        var companyOk = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
+            "SELECT EXISTS (SELECT 1 FROM m365_tenant_links WHERE company_id = @companyId)",
+            new { companyId }, cancellationToken: ct));
+        if (!companyOk) return false;
+
+        await conn.ExecuteAsync(new CommandDefinition(
+            """
+            INSERT INTO sophos_tenant_links (tenant_id, company_id, created_by)
+            VALUES (@tenantId, @companyId, @createdBy)
+            ON CONFLICT (tenant_id, company_id) DO NOTHING
+            """, new { tenantId, companyId, createdBy }, cancellationToken: ct));
+        return true;
+    }
+
+    public async Task RemoveTenantLinkAsync(string tenantId, Guid companyId, CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM sophos_tenant_links WHERE tenant_id = @tenantId AND company_id = @companyId",
+            new { tenantId, companyId }, cancellationToken: ct));
+    }
+
     public async Task<SophosSyncStateRow?> GetSyncStateAsync(CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -253,15 +341,20 @@ public sealed class SophosStore : ISophosStore
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
 
         var tenantMatched = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
-            "SELECT EXISTS (SELECT 1 FROM sophos_tenants WHERE company_id = @companyId)",
-            new { companyId }, cancellationToken: ct));
+            """
+            SELECT EXISTS (SELECT 1 FROM sophos_tenants WHERE company_id = @companyId)
+                OR EXISTS (SELECT 1 FROM sophos_tenant_links WHERE company_id = @companyId)
+            """, new { companyId }, cancellationToken: ct));
 
+        // Union the protected addresses of the company's automatically-matched
+        // tenant(s) AND its manually-linked tenant(s) — the daughter rollup.
         var emails = await conn.QueryAsync<string>(new CommandDefinition(
             """
             SELECT DISTINCT m.email::text
               FROM sophos_mailboxes m
               JOIN sophos_tenants t ON t.tenant_id = m.tenant_id
              WHERE t.company_id = @companyId
+                OR t.tenant_id IN (SELECT tenant_id FROM sophos_tenant_links WHERE company_id = @companyId)
             """, new { companyId }, cancellationToken: ct));
 
         var set = new HashSet<string>(

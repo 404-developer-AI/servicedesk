@@ -15,6 +15,8 @@ public static class SophosEventTypes
     public const string SecurityEnabledChanged   = "integration.sophos.enabled.changed";
     public const string SecurityConfigUpdated    = "integration.sophos.config.updated";
     public const string SecurityConnectionTested = "integration.sophos.connection.tested";
+    public const string SecurityTenantLinked     = "integration.sophos.tenant.linked";
+    public const string SecurityTenantUnlinked   = "integration.sophos.tenant.unlinked";
 
     // Operational event for the background sync — integration_audit trail.
     public const string SyncTick = "integration.sophos.sync.tick";

@@ -71,6 +71,25 @@ public sealed class SophosTenantListRow
     public DateTime? LastSyncedUtc { get; set; }
 }
 
+/// One manual tenant→company rollup link, joined with the parent company name
+/// for display in the settings tenant list.
+public sealed class SophosTenantLinkRow
+{
+    public string TenantId { get; set; } = string.Empty;
+    public Guid CompanyId { get; set; }
+    public string? CompanyName { get; set; }
+}
+
+/// A Microsoft 365-connected company an admin can roll an extra tenant into.
+/// Only M365-connected companies are offered — they are the only ones with a
+/// mailbox view for the rollup to surface in.
+public sealed class SophosLinkableCompany
+{
+    public Guid CompanyId { get; set; }
+    public string? Name { get; set; }
+    public string? Code { get; set; }
+}
+
 /// Helpers for parsing the Sophos <c>showAs</c> string.
 public static class SophosShowAs
 {

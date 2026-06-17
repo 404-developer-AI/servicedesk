@@ -2239,6 +2239,22 @@ export type VeeamCompany = {
   lastSyncedUtc: string | null;
 };
 
+export type VeeamVspcCompany = {
+  vspcCompanyUid: string;
+  code: string | null;
+  name: string | null;
+  matchedCompanyId: string | null;
+  matchedCompanyName: string | null;
+};
+
+export type VeeamCompanyLink = {
+  parentCompanyId: string;
+  parentCompanyName: string | null;
+  vspcCompanyUid: string;
+  vspcCompanyName: string | null;
+  vspcCompanyCode: string | null;
+};
+
 export const veeamAdminApi = {
   status: () =>
     request<VeeamStatus>("GET", "/api/admin/integrations/veeam/status"),
@@ -2277,6 +2293,31 @@ export const veeamAdminApi = {
     request<{ items: VeeamCompany[] }>(
       "GET",
       "/api/admin/integrations/veeam/companies",
+    ),
+  vspcCompanies: () =>
+    request<{ items: VeeamVspcCompany[] }>(
+      "GET",
+      "/api/admin/integrations/veeam/vspc-companies",
+    ),
+  links: () =>
+    request<{ items: VeeamCompanyLink[] }>(
+      "GET",
+      "/api/admin/integrations/veeam/links",
+    ),
+  linkableCompanies: () =>
+    request<{ items: IntegrationLinkableCompany[] }>(
+      "GET",
+      "/api/admin/integrations/veeam/linkable-companies",
+    ),
+  addLink: (parentCompanyId: string, vspcCompanyUid: string) =>
+    request<void>("POST", "/api/admin/integrations/veeam/links", {
+      parentCompanyId,
+      vspcCompanyUid,
+    }),
+  removeLink: (parentCompanyId: string, vspcCompanyUid: string) =>
+    request<void>(
+      "DELETE",
+      `/api/admin/integrations/veeam/links/${parentCompanyId}/${encodeURIComponent(vspcCompanyUid)}`,
     ),
   auditLog: (cursor: number | null, limit = 50) => {
     const qs = new URLSearchParams();
@@ -2324,6 +2365,18 @@ export type SophosSyncResult = {
   changed: boolean;
 };
 
+/** A Microsoft 365-connected company an extra tenant can be rolled into. */
+export type IntegrationLinkableCompany = {
+  companyId: string;
+  name: string | null;
+  code: string | null;
+};
+
+export type SophosTenantLink = {
+  companyId: string;
+  companyName: string | null;
+};
+
 export type SophosTenant = {
   tenantId: string;
   name: string | null;
@@ -2335,6 +2388,7 @@ export type SophosTenant = {
   m365Connected: boolean;
   mailboxCount: number;
   lastSyncedUtc: string | null;
+  links: SophosTenantLink[];
 };
 
 export const sophosAdminApi = {
@@ -2363,6 +2417,22 @@ export const sophosAdminApi = {
     request<SophosSyncResult>("POST", "/api/admin/integrations/sophos/sync"),
   tenants: () =>
     request<{ items: SophosTenant[] }>("GET", "/api/admin/integrations/sophos/tenants"),
+  linkableCompanies: () =>
+    request<{ items: IntegrationLinkableCompany[] }>(
+      "GET",
+      "/api/admin/integrations/sophos/linkable-companies",
+    ),
+  addTenantLink: (tenantId: string, companyId: string) =>
+    request<void>(
+      "POST",
+      `/api/admin/integrations/sophos/tenants/${encodeURIComponent(tenantId)}/links`,
+      { companyId },
+    ),
+  removeTenantLink: (tenantId: string, companyId: string) =>
+    request<void>(
+      "DELETE",
+      `/api/admin/integrations/sophos/tenants/${encodeURIComponent(tenantId)}/links/${companyId}`,
+    ),
   auditLog: (cursor: number | null, limit = 50) => {
     const qs = new URLSearchParams();
     if (cursor !== null) qs.set("cursor", String(cursor));

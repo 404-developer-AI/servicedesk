@@ -104,44 +104,107 @@ public sealed class VeeamSyncService : IVeeamSyncService
                 prior?.CompanyCount ?? 0, prior?.ObjectCount ?? 0, false);
         }
 
+        // Snapshot every VSPC company (the pick list for the link UI).
+        await _store.ReplaceVspcCompaniesAsync(companiesResult.Companies, nowUtc, ct);
+
+        var vspcByUid = companiesResult.Companies
+            .Where(c => !string.IsNullOrWhiteSpace(c.InstanceUid))
+            .GroupBy(c => c.InstanceUid, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+
         // Match VSPC companies to M365-connected companies by relation code.
         var targets = await _store.GetSyncTargetsAsync(ct);
         var targetByCode = targets
             .GroupBy(t => t.Code.Trim(), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First().CompanyId, StringComparer.OrdinalIgnoreCase);
 
-        var matched = companiesResult.Companies
-            .Where(c => !string.IsNullOrWhiteSpace(c.Code)
-                && !string.IsNullOrWhiteSpace(c.InstanceUid)
-                && targetByCode.ContainsKey(c.Code!.Trim()))
-            .ToList();
+        // Per parent company: the ordered, de-duplicated VSPC source uids whose
+        // protected objects fold into the parent's backup set. The automatic
+        // (code) match is the primary source; the manual links add the daughter
+        // companies on top. primaryByCompany prefers the automatic match's uid
+        // for the stored vspc identity, falling back to the first linked uid.
+        var sourcesByCompany = new Dictionary<Guid, List<string>>();
+        var primaryByCompany = new Dictionary<Guid, string>();
+
+        void AddSource(Guid cid, string uid)
+        {
+            if (string.IsNullOrWhiteSpace(uid)) return;
+            if (!sourcesByCompany.TryGetValue(cid, out var list))
+            {
+                list = new List<string>();
+                sourcesByCompany[cid] = list;
+            }
+            if (!list.Contains(uid, StringComparer.Ordinal)) list.Add(uid);
+        }
+
+        foreach (var c in companiesResult.Companies)
+        {
+            if (string.IsNullOrWhiteSpace(c.Code) || string.IsNullOrWhiteSpace(c.InstanceUid)) continue;
+            if (!targetByCode.TryGetValue(c.Code!.Trim(), out var matchedId)) continue;
+            AddSource(matchedId, c.InstanceUid);
+            primaryByCompany.TryAdd(matchedId, c.InstanceUid);
+        }
+
+        var links = await _store.GetCompanyLinksAsync(ct);
+        foreach (var link in links)
+            AddSource(link.ParentCompanyId, link.VspcCompanyUid);
 
         var keepCompanyIds = new List<Guid>();
         var totalObjects = 0;
         var hashParts = new List<string>();
 
-        foreach (var company in matched)
+        // Cache object reads by uid so a VSPC company linked to several parents
+        // is pulled (and throttled) once per pass.
+        var objectsCache = new Dictionary<string, VeeamProtectedObjectsResult>(StringComparer.Ordinal);
+
+        async Task<VeeamProtectedObjectsResult?> ReadObjectsAsync(string uid)
+        {
+            if (objectsCache.TryGetValue(uid, out var cached)) return cached;
+            // A linked uid that has left the console is no longer in the
+            // snapshot — skip it (null) rather than failing the parent.
+            if (!vspcByUid.ContainsKey(uid)) return null;
+            var result = await _client.ListProtectedObjectsAsync(conn, uid, ct);
+            objectsCache[uid] = result;
+            if (PerCompanyDelay > TimeSpan.Zero)
+            {
+                try { await Task.Delay(PerCompanyDelay, ct); }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            }
+            return result;
+        }
+
+        foreach (var (companyId, sourceUids) in sourcesByCompany)
         {
             ct.ThrowIfCancellationRequested();
-            var companyId = targetByCode[company.Code!.Trim()];
 
-            var objectsResult = await _client.ListProtectedObjectsAsync(conn, company.InstanceUid, ct);
-            if (!objectsResult.Success)
+            var combined = new List<VeeamProtectedObjectRow>();
+            var readFailed = false;
+            foreach (var uid in sourceUids)
+            {
+                var objectsResult = await ReadObjectsAsync(uid);
+                if (objectsResult is null) continue; // stale linked company
+                if (!objectsResult.Success) { readFailed = true; break; }
+                combined.AddRange(objectsResult.Objects);
+            }
+
+            if (readFailed)
             {
                 // Keep the prior snapshot for this company; one bad read never
-                // sinks the whole pass.
+                // sinks the whole pass nor drops a sibling source's rows.
                 _logger.LogWarning(
-                    "Veeam protected-objects read for company {CompanyId} ({Code}) failed ({Error}); keeping prior snapshot.",
-                    companyId, company.Code, objectsResult.Error);
+                    "Veeam protected-objects read for company {CompanyId} failed; keeping prior snapshot.",
+                    companyId);
                 keepCompanyIds.Add(companyId);
                 continue;
             }
 
-            var rows = BuildBackupRows(objectsResult.Objects);
-            await _store.ReplaceCompanyBackupsAsync(
-                companyId, company.InstanceUid, company.Name, rows, nowUtc, ct);
+            var storedUid = primaryByCompany.TryGetValue(companyId, out var p) ? p : sourceUids[0];
+            var storedName = vspcByUid.TryGetValue(storedUid, out var vc) ? vc.Name : null;
+
+            var rows = BuildBackupRows(combined);
+            await _store.ReplaceCompanyBackupsAsync(companyId, storedUid, storedName, rows, nowUtc, ct);
             keepCompanyIds.Add(companyId);
-            totalObjects += objectsResult.Objects.Count;
+            totalObjects += combined.Count;
 
             foreach (var r in rows.OrderBy(r => r.MatchKey, StringComparer.Ordinal))
             {
@@ -152,19 +215,15 @@ public sealed class VeeamSyncService : IVeeamSyncService
                     r.OneDriveProtected ? "1" : "0", r.OneDriveRestorePoints?.ToString() ?? "",
                     r.OneDriveLastBackupUtc?.ToString("O") ?? ""));
             }
-
-            if (PerCompanyDelay > TimeSpan.Zero)
-            {
-                try { await Task.Delay(PerCompanyDelay, ct); }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            }
         }
 
-        // Drop companies that no longer match a VSPC company (cascades backups).
+        // Drop companies that no longer match or link to a VSPC company
+        // (cascades backups).
         await _store.ClearCompaniesExceptAsync(keepCompanyIds, ct);
 
         sw.Stop();
 
+        var companyCount = keepCompanyIds.Count;
         var hash = ComputeHash(hashParts);
         var prior2 = await _store.GetSyncStateAsync(ct);
         var changed = prior2?.ContentHash != hash;
@@ -175,14 +234,14 @@ public sealed class VeeamSyncService : IVeeamSyncService
             LastChangedUtc = changed ? nowUtc : prior2?.LastChangedUtc,
             LastStatus = StatusOk,
             LastError = null,
-            CompanyCount = matched.Count,
+            CompanyCount = companyCount,
             ObjectCount = totalObjects,
             ContentHash = hash,
             DurationMs = (int)sw.ElapsedMilliseconds,
         }, ct);
 
-        await LogTickAsync(StatusOk, null, matched.Count, totalObjects, changed, (int)sw.ElapsedMilliseconds, ct);
-        return new VeeamSyncOutcome(true, StatusOk, null, matched.Count, totalObjects, changed);
+        await LogTickAsync(StatusOk, null, companyCount, totalObjects, changed, (int)sw.ElapsedMilliseconds, ct);
+        return new VeeamSyncOutcome(true, StatusOk, null, companyCount, totalObjects, changed);
     }
 
     /// Group the protected objects of one company into per-mailbox rows keyed by
