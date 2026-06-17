@@ -320,7 +320,7 @@ public class TriggerSchedulerTests
         public Task<int> InsertFakeBatchAsync(int count, CancellationToken ct) => throw new NotImplementedException();
         public Task<bool> IsTitleReviewedAsync(Guid ticketId, CancellationToken ct) => throw new NotImplementedException();
         public Task<bool> MarkTitleReviewedAsync(Guid ticketId, Guid actorUserId, CancellationToken ct) => throw new NotImplementedException();
-        public Task<IReadOnlyList<TicketPickerHit>> SearchPickerAsync(string? search, Guid excludeTicketId, IReadOnlyCollection<Guid>? accessibleQueueIds, int limit, CancellationToken ct) => throw new NotImplementedException();
+        public Task<IReadOnlyList<TicketPickerHit>> SearchPickerAsync(string? search, Guid excludeTicketId, IReadOnlyCollection<Guid>? accessibleQueueIds, Guid? recentForUserId, int limit, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<long>> GetMergedSourceTicketNumbersAsync(Guid targetTicketId, CancellationToken ct) => throw new NotImplementedException();
         public Task<MergeResult?> MergeAsync(Guid sourceTicketId, Guid targetTicketId, Guid actorUserId, bool acknowledgedCrossCustomer, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<SplitChildTicket>> GetSplitChildrenAsync(Guid parentTicketId, CancellationToken ct) => throw new NotImplementedException();
