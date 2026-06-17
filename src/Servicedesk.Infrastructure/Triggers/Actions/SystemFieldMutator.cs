@@ -122,6 +122,16 @@ internal sealed class SystemFieldMutator
         };
         if (toCategory == "Resolved") sets.Add("resolved_utc = COALESCE(resolved_utc, now())");
         if (toCategory == "Closed") sets.Add("closed_utc = COALESCE(closed_utc, now())");
+        // Leaving Pending wipes the reminder (and its chained trigger
+        // pointer), mirroring the manual-edit auto-clear in
+        // TicketRepository.UpdateFieldsAsync. A trigger that flips a
+        // pending ticket back to Open (e.g. on customer reply) must not
+        // leave a stale pending_till_utc behind.
+        if (fromCategory == "Pending" && toCategory != "Pending")
+        {
+            sets.Add("pending_till_utc = NULL");
+            sets.Add("pending_till_next_trigger_id = NULL");
+        }
 
         var updateSql = $"UPDATE tickets SET {string.Join(", ", sets)} WHERE id = @ticketId AND is_deleted = FALSE";
         var rows = await conn.ExecuteAsync(new CommandDefinition(updateSql,
