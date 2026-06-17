@@ -45,8 +45,12 @@ const SELECTION_KEY = ["contracts", "m365", "selection"] as const;
 /// of the curated "M365-related" Adsolut articles — each company once. The
 /// gear (top-right) opens a dialog to pick which articles those are; the
 /// "Connect with M365" button per company is intentionally a no-op for now.
+type ConnFilter = "all" | "connected" | "not-connected";
+
 export function ContractM365Page() {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [connFilter, setConnFilter] = useState<ConnFilter>("all");
 
   const companies = useQuery({
     queryKey: COMPANIES_KEY,
@@ -73,6 +77,24 @@ export function ContractM365Page() {
   const connectedCount = (connections.data?.items ?? []).filter(
     (c) => c.status === "connected",
   ).length;
+
+  // Name/code search + M365 connection filter, both client-side over the
+  // already-loaded list (the matching set is bounded — one row per company).
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return items.filter((c) => {
+      if (needle) {
+        const hay = `${c.name ?? ""} ${c.code ?? ""}`.toLowerCase();
+        if (!hay.includes(needle)) return false;
+      }
+      if (connFilter !== "all") {
+        const isConnected = connectionMap.get(c.companyId)?.status === "connected";
+        if (connFilter === "connected" && !isConnected) return false;
+        if (connFilter === "not-connected" && isConnected) return false;
+      }
+      return true;
+    });
+  }, [items, search, connFilter, connectionMap]);
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
@@ -107,6 +129,41 @@ export function ContractM365Page() {
         </Button>
       </div>
 
+      {!companies.isLoading && !companies.isError && items.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[14rem] flex-1 sm:max-w-sm">
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search name or code…"
+              className="pl-9"
+            />
+          </div>
+          <div className="flex items-center gap-1 rounded-full border border-glass bg-glass p-0.5">
+            {([
+              { key: "all", label: "All" },
+              { key: "connected", label: "Connected" },
+              { key: "not-connected", label: "Not connected" },
+            ] as { key: ConnFilter; label: string }[]).map((opt) => (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => setConnFilter(opt.key)}
+                className={cn(
+                  "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                  connFilter === opt.key
+                    ? "bg-glass-strong text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="glass-panel flex-1 overflow-hidden">
         {companies.isLoading ? (
           <div className="space-y-2 p-4">
@@ -130,6 +187,13 @@ export function ContractM365Page() {
               Configure articles
             </Button>
           </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 p-12 text-center">
+            <Search className="h-6 w-6 text-muted-foreground" />
+            <p className="max-w-md text-sm text-muted-foreground">
+              No companies match your search or filter.
+            </p>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -141,7 +205,7 @@ export function ContractM365Page() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((c) => (
+                {filtered.map((c) => (
                   <CompanyRow
                     key={c.companyId}
                     company={c}
