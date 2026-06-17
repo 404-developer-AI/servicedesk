@@ -18,6 +18,7 @@ import { IntegrationsSettingsPage } from "@/pages/settings/IntegrationsSettingsP
 import { AdsolutIntegrationPage } from "@/pages/settings/AdsolutIntegrationPage";
 import { AdsolutCoveragePage } from "@/pages/settings/AdsolutCoveragePage";
 import { TelavoxIntegrationPage } from "@/pages/settings/TelavoxIntegrationPage";
+import { ClaudeIntegrationPage } from "@/pages/settings/ClaudeIntegrationPage";
 import { ZammadIntegrationPage } from "@/pages/settings/ZammadIntegrationPage";
 import { TrmmIntegrationPage } from "@/pages/settings/TrmmIntegrationPage";
 import { M365IntegrationPage } from "@/pages/settings/M365IntegrationPage";
@@ -696,6 +697,14 @@ const settingsVeeamIntegrationRoute = createRoute({
   component: VeeamIntegrationPage,
 });
 
+// Claude AI ticket-assist. Admin-only. Houses the Anthropic API key, ZDR
+// confirmation gate, model/prompt/budget settings, and per-agent usage overview.
+const settingsClaudeIntegrationRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "integrations/claude-ai",
+  component: ClaudeIntegrationPage,
+});
+
 // v0.0.41 phase 3 — dry-run engine pages. Runs-list lives on its own
 // URL so admins can deep-link to past runs from a separate tab; the
 // detail page renders the per-ticket mapping verdict for one run.
@@ -913,6 +922,7 @@ const routeTree = rootRoute.addChildren([
     settingsM365IntegrationRoute,
     settingsSophosIntegrationRoute,
     settingsVeeamIntegrationRoute,
+    settingsClaudeIntegrationRoute,
     settingsTicketsRoute,
     settingsCompaniesRoute,
     settingsContactsRoute,
