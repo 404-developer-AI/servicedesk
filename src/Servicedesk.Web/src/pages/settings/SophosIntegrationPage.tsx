@@ -11,6 +11,7 @@ import {
   KeyRound,
   RefreshCw,
   Trash2,
+  X,
 } from "lucide-react";
 import {
   ApiError,
@@ -24,11 +25,13 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditLog";
+import { CompanyLinkPicker } from "@/components/integrations/CompanyLinkPicker";
 import sophosLogo from "@/assets/integrations/sophos.svg";
 import { cn } from "@/lib/utils";
 
 const STATUS_QK = ["integrations", "sophos", "status"] as const;
 const TENANTS_QK = ["integrations", "sophos", "tenants"] as const;
+const LINKABLE_QK = ["integrations", "sophos", "linkable-companies"] as const;
 
 const STATE_LABEL: Record<
   SophosConnectionState,
@@ -68,6 +71,10 @@ export function SophosIntegrationPage() {
   const qc = useQueryClient();
   const status = useQuery({ queryKey: STATUS_QK, queryFn: sophosAdminApi.status });
   const tenants = useQuery({ queryKey: TENANTS_QK, queryFn: sophosAdminApi.tenants });
+  const linkable = useQuery({
+    queryKey: LINKABLE_QK,
+    queryFn: sophosAdminApi.linkableCompanies,
+  });
 
   const [clientIdDraft, setClientIdDraft] = useState("");
   const [secretDraft, setSecretDraft] = useState("");
@@ -167,6 +174,28 @@ export function SophosIntegrationPage() {
     },
     onError: onErr,
   });
+
+  const addLink = useMutation({
+    mutationFn: (vars: { tenantId: string; companyId: string }) =>
+      sophosAdminApi.addTenantLink(vars.tenantId, vars.companyId),
+    onSuccess: () => {
+      toast.success("Tenant linked — its mailboxes roll into that company");
+      qc.invalidateQueries({ queryKey: TENANTS_QK });
+    },
+    onError: onErr,
+  });
+
+  const removeLink = useMutation({
+    mutationFn: (vars: { tenantId: string; companyId: string }) =>
+      sophosAdminApi.removeTenantLink(vars.tenantId, vars.companyId),
+    onSuccess: () => {
+      toast.success("Tenant link removed");
+      qc.invalidateQueries({ queryKey: TENANTS_QK });
+    },
+    onError: onErr,
+  });
+
+  const linkableCompanies = linkable.data?.items ?? [];
 
   const intervalNum = Number(intervalDraft);
   const canSaveInterval =
@@ -385,7 +414,14 @@ export function SophosIntegrationPage() {
 
       {/* Tenant list */}
       <section className="rounded-lg border border-glass bg-glass p-5">
-        <h2 className="mb-3 text-sm font-medium text-foreground">Tenants</h2>
+        <h2 className="text-sm font-medium text-foreground">Tenants</h2>
+        <p className="mb-3 mt-1 max-w-3xl text-xs text-muted-foreground">
+          Each tenant is matched to a company automatically by its <code>[NNN]</code> code. When a
+          customer runs several companies under one Microsoft 365 tenant but a separate spam-filter
+          tenant per company, use <strong>Rollup</strong> to additionally attach a tenant to the
+          parent company — its protected mailboxes then count towards that company's Microsoft 365
+          matching view, on top of the automatic match.
+        </p>
         {tenants.isLoading ? (
           <div className="space-y-2">
             <Skeleton className="h-9 w-full" />
@@ -404,12 +440,19 @@ export function SophosIntegrationPage() {
                   <th className="px-3 py-2.5 font-medium">Sophos tenant</th>
                   <th className="px-3 py-2.5 font-medium">Code</th>
                   <th className="px-3 py-2.5 font-medium">Matched company</th>
+                  <th className="px-3 py-2.5 font-medium">Rollup</th>
                   <th className="px-3 py-2.5 font-medium">M365</th>
                   <th className="px-3 py-2.5 font-medium text-right">Protected</th>
                 </tr>
               </thead>
               <tbody>
-                {tenants.data?.items.map((t) => (
+                {tenants.data?.items.map((t) => {
+                  const excludeIds = new Set<string>(
+                    [...t.links.map((l) => l.companyId), t.companyId].filter(
+                      (id): id is string => Boolean(id),
+                    ),
+                  );
+                  return (
                   <tr key={t.tenantId} className="border-b border-glass last:border-0">
                     <td className="px-3 py-2.5 text-foreground">{t.showAs || t.name || "—"}</td>
                     <td className="px-3 py-2.5 font-mono text-xs text-muted-foreground">
@@ -421,6 +464,38 @@ export function SophosIntegrationPage() {
                       ) : (
                         <span className="text-muted-foreground/60">Unmatched</span>
                       )}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {t.links.map((l) => (
+                          <span
+                            key={l.companyId}
+                            className="inline-flex items-center gap-1 rounded-full border border-glass bg-glass px-2 py-0.5 text-[11px] text-foreground"
+                          >
+                            {l.companyName ?? "—"}
+                            <button
+                              type="button"
+                              aria-label="Remove rollup link"
+                              disabled={removeLink.isPending}
+                              onClick={() =>
+                                removeLink.mutate({ tenantId: t.tenantId, companyId: l.companyId })
+                              }
+                              className="text-muted-foreground/70 transition-colors hover:text-rose-300 disabled:opacity-50"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                        <CompanyLinkPicker
+                          companies={linkableCompanies}
+                          excludeIds={excludeIds}
+                          disabled={addLink.isPending}
+                          label={t.links.length > 0 ? "Add" : "Link company"}
+                          onSelect={(companyId) =>
+                            addLink.mutate({ tenantId: t.tenantId, companyId })
+                          }
+                        />
+                      </div>
                     </td>
                     <td className="px-3 py-2.5">
                       {t.m365Connected ? (
@@ -435,7 +510,8 @@ export function SophosIntegrationPage() {
                       {t.m365Connected ? t.mailboxCount : "—"}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

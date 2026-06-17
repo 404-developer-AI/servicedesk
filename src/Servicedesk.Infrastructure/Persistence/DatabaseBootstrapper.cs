@@ -4748,6 +4748,65 @@ public sealed class DatabaseBootstrapper : IHostedService
         );
 
         -- ===================================================================
+        -- Multi-tenant rollup for the spam-filter / backup matching.
+        --
+        -- The automatic relation-code match assumes one external tenant per
+        -- company. A parent customer can, however, run several daughter
+        -- companies under a single Microsoft 365 tenant while each daughter has
+        -- its OWN Sophos / Veeam tenant under its own code. The automatic match
+        -- then attributes only the parent's own tenant to the parent, so its
+        -- M365 mailbox view shows partial coverage (e.g. "29/114 protected").
+        --
+        -- These two link tables let an admin ADDITIVELY attach extra Sophos
+        -- tenants and Veeam (VSPC) companies to a parent company, on top of the
+        -- automatic match. The matching unions the linked tenants into the
+        -- parent's view; the automatic match itself is untouched (it is
+        -- recomputed every sync), so a link survives every sync. Only companies
+        -- with a Microsoft 365 link are valid parents — they are the only ones
+        -- with a mailbox view to roll into.
+
+        -- Extra Sophos tenants rolled into a parent company. A tenant may be
+        -- linked to several companies and a company may collect several tenants
+        -- (the daughter case). Cascades when either side disappears.
+        CREATE TABLE IF NOT EXISTS sophos_tenant_links (
+            tenant_id   TEXT        NOT NULL REFERENCES sophos_tenants(tenant_id) ON DELETE CASCADE,
+            company_id  UUID        NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            created_utc TIMESTAMPTZ NOT NULL DEFAULT now(),
+            created_by  UUID        NULL,
+            PRIMARY KEY (tenant_id, company_id)
+        );
+        CREATE INDEX IF NOT EXISTS ix_sophos_tenant_links_company
+            ON sophos_tenant_links (company_id);
+
+        -- Snapshot of every VSPC company seen on the last sync, including the
+        -- ones that do NOT match a Servicedesk company. This is the pick list
+        -- for the Veeam link UI (Sophos already keeps its full tenant list in
+        -- sophos_tenants). uid + code + name are identifiers, not secrets.
+        CREATE TABLE IF NOT EXISTS veeam_vspc_companies (
+            vspc_company_uid  TEXT        PRIMARY KEY,
+            code              TEXT        NULL,
+            name              TEXT        NULL,
+            updated_utc       TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        -- Extra VSPC companies rolled into a parent company. The daughter VSPC
+        -- company need not match a Servicedesk company of its own, so the link
+        -- carries a cached name/code for display even if it later leaves the
+        -- snapshot. The sync merges each linked VSPC company's protected objects
+        -- into the parent's backup set.
+        CREATE TABLE IF NOT EXISTS veeam_company_links (
+            parent_company_id UUID        NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            vspc_company_uid  TEXT        NOT NULL,
+            vspc_company_name TEXT        NULL,
+            vspc_company_code TEXT        NULL,
+            created_utc       TIMESTAMPTZ NOT NULL DEFAULT now(),
+            created_by        UUID        NULL,
+            PRIMARY KEY (parent_company_id, vspc_company_uid)
+        );
+        CREATE INDEX IF NOT EXISTS ix_veeam_company_links_parent
+            ON veeam_company_links (parent_company_id);
+
+        -- ===================================================================
         -- Employee Feedback ("Points of attention & successes"). A shared,
         -- Excel-like management board: every user with the feedback_enabled
         -- flag (plus Admins) sees and edits all rows. Opt-in per user, like

@@ -32,6 +32,33 @@ public interface IVeeamStore
 
     Task<IReadOnlyList<VeeamCompanyListRow>> GetCompaniesAsync(CancellationToken ct);
 
+    /// Replace the snapshot of every VSPC company seen this sync (the pick list
+    /// for the link UI), including the ones that match no Servicedesk company.
+    Task ReplaceVspcCompaniesAsync(
+        IReadOnlyList<VeeamCompanyRow> companies, DateTime nowUtc, CancellationToken ct);
+
+    /// The VSPC company snapshot joined with its automatic company match, for
+    /// the link picker.
+    Task<IReadOnlyList<VeeamVspcCompanyRow>> GetVspcCompaniesAsync(CancellationToken ct);
+
+    /// Every manual VSPC-company→parent rollup link, joined with the parent
+    /// company name, for the settings UI and the sync's source map.
+    Task<IReadOnlyList<VeeamCompanyLinkRow>> GetCompanyLinksAsync(CancellationToken ct);
+
+    /// The Microsoft 365-connected companies an admin may roll a VSPC company
+    /// into.
+    Task<IReadOnlyList<VeeamLinkableCompany>> GetLinkableCompaniesAsync(CancellationToken ct);
+
+    /// Add a manual VSPC-company→parent rollup link (idempotent). The VSPC name
+    /// and code are snapshotted onto the link for display resilience. Returns
+    /// false when the parent is not M365-connected or the VSPC company is not in
+    /// the snapshot; true when the link is present afterwards.
+    Task<bool> AddCompanyLinkAsync(
+        Guid parentCompanyId, string vspcCompanyUid, Guid? createdBy, CancellationToken ct);
+
+    /// Remove a manual VSPC-company→parent rollup link (idempotent).
+    Task RemoveCompanyLinkAsync(Guid parentCompanyId, string vspcCompanyUid, CancellationToken ct);
+
     Task<VeeamSyncStateRow?> GetSyncStateAsync(CancellationToken ct);
     Task SaveSyncStateAsync(VeeamSyncStateRow state, CancellationToken ct);
 }
@@ -193,6 +220,128 @@ public sealed class VeeamStore : IVeeamStore
              ORDER BY c.name ASC NULLS LAST
             """, cancellationToken: ct));
         return rows.ToList();
+    }
+
+    public async Task ReplaceVspcCompaniesAsync(
+        IReadOnlyList<VeeamCompanyRow> companies, DateTime nowUtc, CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        if (companies.Count > 0)
+        {
+            await conn.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO veeam_vspc_companies (vspc_company_uid, code, name, updated_utc)
+                VALUES (@InstanceUid, @Code, @Name, @NowUtc)
+                ON CONFLICT (vspc_company_uid) DO UPDATE SET
+                    code        = EXCLUDED.code,
+                    name        = EXCLUDED.name,
+                    updated_utc = EXCLUDED.updated_utc
+                """,
+                companies
+                    .Where(c => !string.IsNullOrWhiteSpace(c.InstanceUid))
+                    .Select(c => new { c.InstanceUid, c.Code, c.Name, NowUtc = nowUtc }),
+                tx, cancellationToken: ct));
+        }
+
+        var keep = companies
+            .Where(c => !string.IsNullOrWhiteSpace(c.InstanceUid))
+            .Select(c => c.InstanceUid).ToArray();
+        await conn.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM veeam_vspc_companies WHERE NOT (vspc_company_uid = ANY(@keep))",
+            new { keep }, tx, cancellationToken: ct));
+
+        await tx.CommitAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<VeeamVspcCompanyRow>> GetVspcCompaniesAsync(CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<VeeamVspcCompanyRow>(new CommandDefinition(
+            """
+            SELECT v.vspc_company_uid AS VspcCompanyUid,
+                   v.code             AS Code,
+                   v.name             AS Name,
+                   c.id               AS MatchedCompanyId,
+                   c.name             AS MatchedCompanyName
+              FROM veeam_vspc_companies v
+              LEFT JOIN companies c
+                     ON v.code IS NOT NULL
+                    AND c.adsolut_number = v.code
+             ORDER BY v.name ASC NULLS LAST
+            """, cancellationToken: ct));
+        return rows.ToList();
+    }
+
+    public async Task<IReadOnlyList<VeeamCompanyLinkRow>> GetCompanyLinksAsync(CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<VeeamCompanyLinkRow>(new CommandDefinition(
+            """
+            SELECT k.parent_company_id  AS ParentCompanyId,
+                   c.name               AS ParentCompanyName,
+                   k.vspc_company_uid   AS VspcCompanyUid,
+                   COALESCE(v.name, k.vspc_company_name) AS VspcCompanyName,
+                   COALESCE(v.code, k.vspc_company_code) AS VspcCompanyCode
+              FROM veeam_company_links k
+              JOIN companies c ON c.id = k.parent_company_id
+              LEFT JOIN veeam_vspc_companies v ON v.vspc_company_uid = k.vspc_company_uid
+             ORDER BY c.name ASC NULLS LAST
+            """, cancellationToken: ct));
+        return rows.ToList();
+    }
+
+    public async Task<IReadOnlyList<VeeamLinkableCompany>> GetLinkableCompaniesAsync(CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<VeeamLinkableCompany>(new CommandDefinition(
+            """
+            SELECT c.id             AS CompanyId,
+                   c.name           AS Name,
+                   c.adsolut_number AS Code
+              FROM companies c
+              JOIN m365_tenant_links l ON l.company_id = c.id
+             ORDER BY c.name ASC NULLS LAST
+            """, cancellationToken: ct));
+        return rows.ToList();
+    }
+
+    public async Task<bool> AddCompanyLinkAsync(
+        Guid parentCompanyId, string vspcCompanyUid, Guid? createdBy, CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+
+        var parentOk = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
+            "SELECT EXISTS (SELECT 1 FROM m365_tenant_links WHERE company_id = @parentCompanyId)",
+            new { parentCompanyId }, cancellationToken: ct));
+        if (!parentOk) return false;
+
+        var vspc = await conn.QuerySingleOrDefaultAsync<VeeamVspcCompanyRow>(new CommandDefinition(
+            "SELECT name AS Name, code AS Code FROM veeam_vspc_companies WHERE vspc_company_uid = @vspcCompanyUid",
+            new { vspcCompanyUid }, cancellationToken: ct));
+        if (vspc is null) return false;
+
+        await conn.ExecuteAsync(new CommandDefinition(
+            """
+            INSERT INTO veeam_company_links
+                (parent_company_id, vspc_company_uid, vspc_company_name, vspc_company_code, created_by)
+            VALUES (@parentCompanyId, @vspcCompanyUid, @Name, @Code, @createdBy)
+            ON CONFLICT (parent_company_id, vspc_company_uid) DO UPDATE SET
+                vspc_company_name = EXCLUDED.vspc_company_name,
+                vspc_company_code = EXCLUDED.vspc_company_code
+            """,
+            new { parentCompanyId, vspcCompanyUid, vspc.Name, vspc.Code, createdBy },
+            cancellationToken: ct));
+        return true;
+    }
+
+    public async Task RemoveCompanyLinkAsync(Guid parentCompanyId, string vspcCompanyUid, CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM veeam_company_links WHERE parent_company_id = @parentCompanyId AND vspc_company_uid = @vspcCompanyUid",
+            new { parentCompanyId, vspcCompanyUid }, cancellationToken: ct));
     }
 
     public async Task<VeeamSyncStateRow?> GetSyncStateAsync(CancellationToken ct)

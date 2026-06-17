@@ -30,6 +30,9 @@ public static class SophosEndpoints
         admin.MapPost("/test-connection", TestConnection).WithName("TestSophosConnection").WithOpenApi();
         admin.MapPost("/sync", SyncNow).WithName("SyncSophosNow").WithOpenApi();
         admin.MapGet("/tenants", GetTenants).WithName("GetSophosTenants").WithOpenApi();
+        admin.MapGet("/linkable-companies", GetLinkableCompanies).WithName("GetSophosLinkableCompanies").WithOpenApi();
+        admin.MapPost("/tenants/{tenantId}/links", AddTenantLink).WithName("AddSophosTenantLink").WithOpenApi();
+        admin.MapDelete("/tenants/{tenantId}/links/{companyId:guid}", RemoveTenantLink).WithName("RemoveSophosTenantLink").WithOpenApi();
         admin.MapGet("/audit", GetAuditLog).WithName("GetSophosAuditLog").WithOpenApi();
 
         return app;
@@ -254,6 +257,11 @@ public static class SophosEndpoints
     private static async Task<IResult> GetTenants(ISophosStore store, CancellationToken ct)
     {
         var rows = await store.GetTenantsAsync(ct);
+        var links = await store.GetTenantLinksAsync(ct);
+        var linksByTenant = links
+            .GroupBy(l => l.TenantId, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+
         return Results.Ok(new
         {
             items = rows.Select(t => new
@@ -268,8 +276,76 @@ public static class SophosEndpoints
                 m365Connected = t.M365Connected,
                 mailboxCount = t.MailboxCount,
                 lastSyncedUtc = t.LastSyncedUtc,
+                links = (linksByTenant.TryGetValue(t.TenantId, out var ls) ? ls : new())
+                    .Select(l => new { companyId = l.CompanyId, companyName = l.CompanyName }),
             }),
         });
+    }
+
+    // ---- /linkable-companies + /tenants/{id}/links ---------------------
+
+    private static async Task<IResult> GetLinkableCompanies(ISophosStore store, CancellationToken ct)
+    {
+        var rows = await store.GetLinkableCompaniesAsync(ct);
+        return Results.Ok(new
+        {
+            items = rows.Select(c => new { companyId = c.CompanyId, name = c.Name, code = c.Code }),
+        });
+    }
+
+    public sealed record AddTenantLinkRequest([property: Required] Guid CompanyId);
+
+    private static async Task<IResult> AddTenantLink(
+        string tenantId,
+        [FromBody] AddTenantLinkRequest req,
+        HttpContext http,
+        ISophosStore store,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        if (req is null || req.CompanyId == Guid.Empty)
+            return Results.BadRequest(new { error = "missing_company", message = "A company is required." });
+
+        var ok = await store.AddTenantLinkAsync(tenantId, req.CompanyId, ActorContext.GetUserId(http), ct);
+        if (!ok)
+            return Results.BadRequest(new
+            {
+                error = "invalid_link",
+                message = "Unknown tenant, or the company is not connected with Microsoft 365.",
+            });
+
+        var (actor, role) = ActorContext.Resolve(http);
+        await audit.LogAsync(new AuditEvent(
+            EventType: SophosEventTypes.SecurityTenantLinked,
+            Actor: actor,
+            ActorRole: role,
+            Target: tenantId,
+            ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString(),
+            Payload: new { tenantId, companyId = req.CompanyId }), ct);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> RemoveTenantLink(
+        string tenantId,
+        Guid companyId,
+        HttpContext http,
+        ISophosStore store,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        await store.RemoveTenantLinkAsync(tenantId, companyId, ct);
+
+        var (actor, role) = ActorContext.Resolve(http);
+        await audit.LogAsync(new AuditEvent(
+            EventType: SophosEventTypes.SecurityTenantUnlinked,
+            Actor: actor,
+            ActorRole: role,
+            Target: tenantId,
+            ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString(),
+            Payload: new { tenantId, companyId }), ct);
+        return Results.NoContent();
     }
 
     // ---- /audit --------------------------------------------------------

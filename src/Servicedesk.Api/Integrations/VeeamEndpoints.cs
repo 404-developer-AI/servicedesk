@@ -42,6 +42,12 @@ public static class VeeamEndpoints
         admin.MapPost("/sync", SyncNow).WithName("SyncVeeamNow").WithOpenApi();
         admin.MapGet("/companies", GetCompanies).WithName("GetVeeamCompanies").WithOpenApi();
 
+        admin.MapGet("/vspc-companies", GetVspcCompanies).WithName("GetVeeamVspcCompanies").WithOpenApi();
+        admin.MapGet("/links", GetCompanyLinks).WithName("GetVeeamCompanyLinks").WithOpenApi();
+        admin.MapGet("/linkable-companies", GetLinkableCompanies).WithName("GetVeeamLinkableCompanies").WithOpenApi();
+        admin.MapPost("/links", AddCompanyLink).WithName("AddVeeamCompanyLink").WithOpenApi();
+        admin.MapDelete("/links/{parentCompanyId:guid}/{vspcCompanyUid}", RemoveCompanyLink).WithName("RemoveVeeamCompanyLink").WithOpenApi();
+
         admin.MapGet("/audit", GetAuditLog).WithName("GetVeeamAuditLog").WithOpenApi();
 
         return app;
@@ -346,6 +352,106 @@ public static class VeeamEndpoints
                 lastSyncedUtc = c.LastSyncedUtc,
             }),
         });
+    }
+
+    // ---- VSPC company rollup links -------------------------------------
+
+    private static async Task<IResult> GetVspcCompanies(IVeeamStore store, CancellationToken ct)
+    {
+        var rows = await store.GetVspcCompaniesAsync(ct);
+        return Results.Ok(new
+        {
+            items = rows.Select(v => new
+            {
+                vspcCompanyUid = v.VspcCompanyUid,
+                code = v.Code,
+                name = v.Name,
+                matchedCompanyId = v.MatchedCompanyId,
+                matchedCompanyName = v.MatchedCompanyName,
+            }),
+        });
+    }
+
+    private static async Task<IResult> GetCompanyLinks(IVeeamStore store, CancellationToken ct)
+    {
+        var rows = await store.GetCompanyLinksAsync(ct);
+        return Results.Ok(new
+        {
+            items = rows.Select(l => new
+            {
+                parentCompanyId = l.ParentCompanyId,
+                parentCompanyName = l.ParentCompanyName,
+                vspcCompanyUid = l.VspcCompanyUid,
+                vspcCompanyName = l.VspcCompanyName,
+                vspcCompanyCode = l.VspcCompanyCode,
+            }),
+        });
+    }
+
+    private static async Task<IResult> GetLinkableCompanies(IVeeamStore store, CancellationToken ct)
+    {
+        var rows = await store.GetLinkableCompaniesAsync(ct);
+        return Results.Ok(new
+        {
+            items = rows.Select(c => new { companyId = c.CompanyId, name = c.Name, code = c.Code }),
+        });
+    }
+
+    public sealed record AddCompanyLinkRequest(
+        [property: Required] Guid ParentCompanyId,
+        [property: Required] string VspcCompanyUid);
+
+    private static async Task<IResult> AddCompanyLink(
+        [FromBody] AddCompanyLinkRequest req,
+        HttpContext http,
+        IVeeamStore store,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        if (req is null || req.ParentCompanyId == Guid.Empty || string.IsNullOrWhiteSpace(req.VspcCompanyUid))
+            return Results.BadRequest(new { error = "missing_value", message = "A company and a VSPC company are required." });
+
+        var ok = await store.AddCompanyLinkAsync(
+            req.ParentCompanyId, req.VspcCompanyUid.Trim(), ActorContext.GetUserId(http), ct);
+        if (!ok)
+            return Results.BadRequest(new
+            {
+                error = "invalid_link",
+                message = "The company is not connected with Microsoft 365, or the VSPC company is not in the last sync.",
+            });
+
+        var (actor, role) = ActorContext.Resolve(http);
+        await audit.LogAsync(new AuditEvent(
+            EventType: VeeamEventTypes.SecurityCompanyLinked,
+            Actor: actor,
+            ActorRole: role,
+            Target: req.VspcCompanyUid,
+            ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString(),
+            Payload: new { parentCompanyId = req.ParentCompanyId, vspcCompanyUid = req.VspcCompanyUid }), ct);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> RemoveCompanyLink(
+        Guid parentCompanyId,
+        string vspcCompanyUid,
+        HttpContext http,
+        IVeeamStore store,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        await store.RemoveCompanyLinkAsync(parentCompanyId, vspcCompanyUid, ct);
+
+        var (actor, role) = ActorContext.Resolve(http);
+        await audit.LogAsync(new AuditEvent(
+            EventType: VeeamEventTypes.SecurityCompanyUnlinked,
+            Actor: actor,
+            ActorRole: role,
+            Target: vspcCompanyUid,
+            ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString(),
+            Payload: new { parentCompanyId, vspcCompanyUid }), ct);
+        return Results.NoContent();
     }
 
     private static Task LogTest(

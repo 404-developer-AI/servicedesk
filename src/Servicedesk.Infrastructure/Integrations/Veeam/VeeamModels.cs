@@ -116,6 +116,39 @@ public sealed class VeeamCompanyListRow
     public DateTime? LastSyncedUtc { get; set; }
 }
 
+/// One VSPC company from the last sync snapshot, with its automatic match (if
+/// any), for the Veeam link picker. Includes the unmatched daughters that the
+/// per-mailbox storage (keyed by Servicedesk company_id) never surfaces.
+public sealed class VeeamVspcCompanyRow
+{
+    public string VspcCompanyUid { get; set; } = string.Empty;
+    public string? Code { get; set; }
+    public string? Name { get; set; }
+    public Guid? MatchedCompanyId { get; set; }
+    public string? MatchedCompanyName { get; set; }
+}
+
+/// One manual VSPC-company→parent rollup link, joined with the parent company
+/// name, for the settings UI.
+public sealed class VeeamCompanyLinkRow
+{
+    public Guid ParentCompanyId { get; set; }
+    public string? ParentCompanyName { get; set; }
+    public string VspcCompanyUid { get; set; } = string.Empty;
+    public string? VspcCompanyName { get; set; }
+    public string? VspcCompanyCode { get; set; }
+}
+
+/// A Microsoft 365-connected company an admin can roll an extra VSPC company
+/// into. Only M365-connected companies are offered — they are the only ones
+/// with a mailbox view for the rollup to surface in.
+public sealed class VeeamLinkableCompany
+{
+    public Guid CompanyId { get; set; }
+    public string? Name { get; set; }
+    public string? Code { get; set; }
+}
+
 /// Helpers for normalizing the display name used as the VSPC ↔ M365 join key.
 public static class VeeamMatch
 {

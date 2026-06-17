@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -10,10 +10,13 @@ import {
   DatabaseBackup,
   Globe,
   KeyRound,
+  Network,
   RefreshCw,
+  Search,
   ShieldAlert,
   Trash2,
   User,
+  X,
 } from "lucide-react";
 import {
   ApiError,
@@ -27,12 +30,16 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditLog";
+import { CompanyLinkPicker } from "@/components/integrations/CompanyLinkPicker";
 import veeamLogo from "@/assets/integrations/veeam.svg";
 import { cn } from "@/lib/utils";
 
 const STATUS_QK = ["integrations", "veeam", "status"] as const;
 const SECRET_QK = ["integrations", "veeam", "secret"] as const;
 const COMPANIES_QK = ["integrations", "veeam", "companies"] as const;
+const VSPC_QK = ["integrations", "veeam", "vspc-companies"] as const;
+const LINKS_QK = ["integrations", "veeam", "links"] as const;
+const LINKABLE_QK = ["integrations", "veeam", "linkable-companies"] as const;
 
 function relativeStamp(iso: string | null | undefined): string {
   if (!iso) return "never";
@@ -193,6 +200,67 @@ export function VeeamIntegrationPage() {
     queryFn: veeamAdminApi.companies,
     enabled: state === "ready",
   });
+
+  const vspcCompanies = useQuery({
+    queryKey: VSPC_QK,
+    queryFn: veeamAdminApi.vspcCompanies,
+    enabled: state === "ready",
+  });
+  const links = useQuery({
+    queryKey: LINKS_QK,
+    queryFn: veeamAdminApi.links,
+    enabled: state === "ready",
+  });
+  const linkable = useQuery({
+    queryKey: LINKABLE_QK,
+    queryFn: veeamAdminApi.linkableCompanies,
+    enabled: state === "ready",
+  });
+
+  const [vspcFilter, setVspcFilter] = useState("");
+
+  const addLink = useMutation({
+    mutationFn: (vars: { parentCompanyId: string; vspcCompanyUid: string }) =>
+      veeamAdminApi.addLink(vars.parentCompanyId, vars.vspcCompanyUid),
+    onSuccess: () => {
+      toast.success("VSPC company linked — its backups roll into that company on the next sync");
+      qc.invalidateQueries({ queryKey: LINKS_QK });
+    },
+    onError: onErr,
+  });
+  const removeLink = useMutation({
+    mutationFn: (vars: { parentCompanyId: string; vspcCompanyUid: string }) =>
+      veeamAdminApi.removeLink(vars.parentCompanyId, vars.vspcCompanyUid),
+    onSuccess: () => {
+      toast.success("VSPC company link removed");
+      qc.invalidateQueries({ queryKey: LINKS_QK });
+    },
+    onError: onErr,
+  });
+
+  const linkableCompanies = linkable.data?.items ?? [];
+
+  // Parent links grouped per VSPC company uid, for the rollup table.
+  const linksByUid = useMemo(() => {
+    const map = new Map<string, { parentCompanyId: string; parentCompanyName: string | null }[]>();
+    for (const l of links.data?.items ?? []) {
+      const list = map.get(l.vspcCompanyUid) ?? [];
+      list.push({ parentCompanyId: l.parentCompanyId, parentCompanyName: l.parentCompanyName });
+      map.set(l.vspcCompanyUid, list);
+    }
+    return map;
+  }, [links.data]);
+
+  const filteredVspc = useMemo(() => {
+    const needle = vspcFilter.trim().toLowerCase();
+    const items = vspcCompanies.data?.items ?? [];
+    if (needle.length === 0) return items;
+    return items.filter(
+      (v) =>
+        (v.name ?? "").toLowerCase().includes(needle) ||
+        (v.code ?? "").toLowerCase().includes(needle),
+    );
+  }, [vspcCompanies.data, vspcFilter]);
 
   const urlValid = /^https?:\/\/.+/i.test(urlDraft.trim());
   const configDirty =
@@ -508,6 +576,120 @@ export function VeeamIntegrationPage() {
           </div>
         )}
       </section>
+
+      {/* Rollup links */}
+      {state === "ready" && (
+        <section className="rounded-lg border border-glass bg-glass p-5 space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <Network className="h-4 w-4 text-primary" /> Rollup links
+              </div>
+              <p className="max-w-2xl text-xs text-muted-foreground">
+                Each VSPC company is matched to a Servicedesk company automatically by relation
+                code. When a customer runs several companies under one Microsoft 365 tenant but a
+                separate Veeam (VSPC) company per company, attach the extra VSPC companies to the
+                parent — their backups then merge into that company's Microsoft 365 matching view on
+                the next sync, on top of the automatic match.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 rounded-md border border-glass-strong bg-black/10 px-2.5 py-1.5">
+              <Search className="h-3.5 w-3.5 text-muted-foreground" />
+              <input
+                value={vspcFilter}
+                onChange={(e) => setVspcFilter(e.target.value)}
+                placeholder="Filter VSPC companies…"
+                spellCheck={false}
+                className="w-44 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/60"
+              />
+            </div>
+          </div>
+
+          {vspcCompanies.isLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-9 w-full" />
+            </div>
+          ) : (vspcCompanies.data?.items.length ?? 0) === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No VSPC companies yet. Run a sync to load the company list.
+            </p>
+          ) : (
+            <div className="overflow-x-auto rounded-md border border-glass-strong">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-glass text-left text-[11px] uppercase tracking-wider text-muted-foreground/70">
+                    <th className="px-3 py-2.5 font-medium">VSPC company</th>
+                    <th className="px-3 py-2.5 font-medium">Code</th>
+                    <th className="px-3 py-2.5 font-medium">Auto-match</th>
+                    <th className="px-3 py-2.5 font-medium">Rollup into</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredVspc.map((v) => {
+                    const rowLinks = linksByUid.get(v.vspcCompanyUid) ?? [];
+                    const excludeIds = new Set<string>(rowLinks.map((l) => l.parentCompanyId));
+                    return (
+                      <tr key={v.vspcCompanyUid} className="border-b border-glass last:border-0">
+                        <td className="px-3 py-2.5 text-foreground">{v.name ?? "—"}</td>
+                        <td className="px-3 py-2.5 font-mono text-xs text-muted-foreground">
+                          {v.code ?? "—"}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {v.matchedCompanyName ? (
+                            <span className="text-foreground">{v.matchedCompanyName}</span>
+                          ) : (
+                            <span className="text-muted-foreground/60">Unmatched</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {rowLinks.map((l) => (
+                              <span
+                                key={l.parentCompanyId}
+                                className="inline-flex items-center gap-1 rounded-full border border-glass bg-glass px-2 py-0.5 text-[11px] text-foreground"
+                              >
+                                {l.parentCompanyName ?? "—"}
+                                <button
+                                  type="button"
+                                  aria-label="Remove rollup link"
+                                  disabled={removeLink.isPending}
+                                  onClick={() =>
+                                    removeLink.mutate({
+                                      parentCompanyId: l.parentCompanyId,
+                                      vspcCompanyUid: v.vspcCompanyUid,
+                                    })
+                                  }
+                                  className="text-muted-foreground/70 transition-colors hover:text-rose-300 disabled:opacity-50"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </span>
+                            ))}
+                            <CompanyLinkPicker
+                              companies={linkableCompanies}
+                              excludeIds={excludeIds}
+                              disabled={addLink.isPending}
+                              label={rowLinks.length > 0 ? "Add" : "Link company"}
+                              onSelect={(parentCompanyId) =>
+                                addLink.mutate({
+                                  parentCompanyId,
+                                  vspcCompanyUid: v.vspcCompanyUid,
+                                })
+                              }
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Audit log */}
       <section className="rounded-lg border border-glass bg-glass p-5">
