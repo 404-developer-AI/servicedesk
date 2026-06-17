@@ -70,11 +70,33 @@ public static class ContractM365Endpoints
     private static List<Guid> ParseCsv(string? csv) =>
         ParseIds(csv?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
+    /// Distinct, trimmed, non-blank status codes (each capped at 64 chars, the
+    /// whole set capped at 200). Defensive — the setting is normally only written
+    /// by SaveSelection, but never trust stored text.
+    private static List<string> ParseStatusCodes(IEnumerable<string?>? raw)
+    {
+        var codes = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        if (raw is null) return codes;
+        foreach (var part in raw)
+        {
+            var code = part?.Trim();
+            if (string.IsNullOrEmpty(code) || code.Length > 64) continue;
+            if (seen.Add(code)) codes.Add(code);
+            if (codes.Count >= 200) break;
+        }
+        return codes;
+    }
+
+    private static List<string> ParseStatusCsv(string? csv) =>
+        ParseStatusCodes(csv?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
     private static async Task<IResult> GetSelection(
         HttpContext http,
         IUserService users,
         ISettingsService settings,
         IAdsolutArticleRepository articles,
+        IAdsolutContractRepository contracts,
         CancellationToken ct)
     {
         var (_, deny) = await RequireContractsFlagAsync(http, users, ct);
@@ -82,9 +104,20 @@ public static class ContractM365Endpoints
 
         var ids = ParseCsv(await settings.GetAsync<string>(SettingKeys.Adsolut.M365MatchArticleIds, ct));
         var rows = await articles.GetByIdsAsync(ids, ct);
+
+        var statusCodes = ParseStatusCsv(await settings.GetAsync<string>(SettingKeys.Adsolut.M365MatchStatusFilter, ct));
+        var statusOptions = await contracts.GetStatusOptionsAsync(ct);
+
         return Results.Ok(new
         {
             articles = rows.Select(a => new { id = a.Id, code = a.Code, name = a.Name }),
+            statusCodes,
+            statusOptions = statusOptions.Select(s => new
+            {
+                code = s.Code,
+                description = s.Description,
+                count = s.Count,
+            }),
         });
     }
 
@@ -105,17 +138,20 @@ public static class ContractM365Endpoints
             return Results.BadRequest(new { error = "too_many", message = "Too many articles selected." });
         }
 
+        var statusCodes = ParseStatusCodes(body.StatusCodes);
+
         var (actor, role) = ActorContext.Resolve(http);
         await settings.SetAsync(SettingKeys.Adsolut.M365MatchArticleIds, string.Join(",", ids), actor, role, ct);
+        await settings.SetAsync(SettingKeys.Adsolut.M365MatchStatusFilter, string.Join(",", statusCodes), actor, role, ct);
         await audit.LogAsync(new AuditEvent(
             EventType: "contracts.m365.selection_saved",
             Actor: actor,
             ActorRole: role,
             ClientIp: http.Connection.RemoteIpAddress?.ToString(),
             UserAgent: http.Request.Headers.UserAgent.ToString(),
-            Payload: new { count = ids.Count }), ct);
+            Payload: new { count = ids.Count, statusCount = statusCodes.Count }), ct);
 
-        return Results.Ok(new { ok = true, count = ids.Count });
+        return Results.Ok(new { ok = true, count = ids.Count, statusCount = statusCodes.Count });
     }
 
     private static async Task<IResult> ListCompanies(
@@ -129,7 +165,8 @@ public static class ContractM365Endpoints
         if (deny is not null) return deny;
 
         var ids = ParseCsv(await settings.GetAsync<string>(SettingKeys.Adsolut.M365MatchArticleIds, ct));
-        var rows = await contracts.GetM365CompaniesAsync(ids, ct);
+        var statusCodes = ParseStatusCsv(await settings.GetAsync<string>(SettingKeys.Adsolut.M365MatchStatusFilter, ct));
+        var rows = await contracts.GetM365CompaniesAsync(ids, statusCodes, ct);
         return Results.Ok(new
         {
             items = rows.Select(r => new
@@ -341,5 +378,5 @@ public static class ContractM365Endpoints
             .Replace('+', '-').Replace('/', '_').TrimEnd('=');
     }
 
-    private sealed record M365SelectionRequest(string[]? ArticleIds);
+    private sealed record M365SelectionRequest(string[]? ArticleIds, string[]? StatusCodes);
 }

@@ -128,9 +128,12 @@ public interface IAdsolutContractRepository
 
     /// Distinct companies that have one or more contract lines referencing any
     /// of <paramref name="articleIds"/> — the Microsoft 365 matching list. Each
-    /// company appears once. Empty input → empty result.
+    /// company appears once. Empty input → empty result. When
+    /// <paramref name="statusFilter"/> is non-empty, only contracts whose
+    /// state_code is in that set count (empty = any status).
     Task<IReadOnlyList<AdsolutM365CompanyRow>> GetM365CompaniesAsync(
-        IReadOnlyCollection<Guid> articleIds, CancellationToken ct = default);
+        IReadOnlyCollection<Guid> articleIds, IReadOnlyCollection<string> statusFilter,
+        CancellationToken ct = default);
 }
 
 public sealed class AdsolutContractRepository : IAdsolutContractRepository
@@ -468,15 +471,20 @@ public sealed class AdsolutContractRepository : IAdsolutContractRepository
     }
 
     public async Task<IReadOnlyList<AdsolutM365CompanyRow>> GetM365CompaniesAsync(
-        IReadOnlyCollection<Guid> articleIds, CancellationToken ct = default)
+        IReadOnlyCollection<Guid> articleIds, IReadOnlyCollection<string> statusFilter,
+        CancellationToken ct = default)
     {
         if (articleIds.Count == 0) return Array.Empty<AdsolutM365CompanyRow>();
+
+        var statuses = statusFilter.Count == 0 ? null : statusFilter.ToArray();
 
         // The ERP customer GUID on a contract does NOT match companies.adsolut_id
         // (ERP vs Accounting assign different GUIDs to the same relation). The
         // shared key is the relation CODE: contracts → adsolut_erp_customers
         // (resolved id → code) → companies.adsolut_number. Same bridge the
-        // Orders/SalesReceipts mirrors use.
+        // Orders/SalesReceipts mirrors use. The optional status filter keeps a
+        // company out when its only matching contract has an excluded state
+        // (e.g. terminated) — empty filter = any status counts.
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var rows = await conn.QueryAsync<AdsolutM365CompanyRow>(new CommandDefinition(
             """
@@ -490,9 +498,10 @@ public sealed class AdsolutContractRepository : IAdsolutContractRepository
             JOIN companies co             ON co.adsolut_number = ec.code
             WHERE l.article_id = ANY(@ArticleIds::uuid[])
               AND ec.code IS NOT NULL
+              AND (@Statuses::text[] IS NULL OR c.state_code = ANY(@Statuses::text[]))
             ORDER BY co.name ASC NULLS LAST
             """,
-            new { ArticleIds = articleIds.ToArray() },
+            new { ArticleIds = articleIds.ToArray(), Statuses = statuses },
             cancellationToken: ct));
         return rows.ToList();
     }

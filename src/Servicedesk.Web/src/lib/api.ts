@@ -1176,6 +1176,16 @@ export const articlesApi = {
 
 export type M365SelectedArticle = { id: string; code: string | null; name: string | null };
 export type M365Company = { companyId: string; code: string | null; name: string | null };
+export type M365ContractStatusOption = {
+  code: string;
+  description: string | null;
+  count: number;
+};
+export type M365Selection = {
+  articles: M365SelectedArticle[];
+  statusCodes: string[];
+  statusOptions: M365ContractStatusOption[];
+};
 
 /// Per-company connection lifecycle. "needs_reconsent" means a read failed with
 /// 401/403 (consent revoked or a new permission added); "error" is transient.
@@ -1249,9 +1259,13 @@ export type M365SyncResult = {
 
 export const contractM365Api = {
   getSelection: () =>
-    request<{ articles: M365SelectedArticle[] }>("GET", "/api/contracts/m365/selection"),
-  saveSelection: (articleIds: string[]) =>
-    request<{ ok: boolean; count: number }>("PUT", "/api/contracts/m365/selection", { articleIds }),
+    request<M365Selection>("GET", "/api/contracts/m365/selection"),
+  saveSelection: (articleIds: string[], statusCodes: string[]) =>
+    request<{ ok: boolean; count: number; statusCount: number }>(
+      "PUT",
+      "/api/contracts/m365/selection",
+      { articleIds, statusCodes },
+    ),
   companies: () => request<{ items: M365Company[] }>("GET", "/api/contracts/m365/companies"),
   connections: () =>
     request<{ items: M365Connection[] }>("GET", "/api/contracts/m365/companies/connections"),

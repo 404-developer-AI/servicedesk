@@ -415,6 +415,13 @@ public static class SettingKeys
         /// Curated via the gear on the matching page; empty = nothing selected,
         /// so the list is empty.
         public const string M365MatchArticleIds = "Adsolut.Erp.Contracts.M365ArticleIds";
+
+        /// Comma-separated Adsolut contract state codes (e.g. 'CO,GEPL') that a
+        /// contract must have for its company to surface in the Contracts →
+        /// Microsoft 365 matching list. Empty = any status counts (so a company
+        /// whose only matching contract has since been terminated still shows).
+        /// Curated via the gear on the matching page, alongside the articles.
+        public const string M365MatchStatusFilter = "Adsolut.Erp.Contracts.M365StatusFilter";
     }
 
     /// Telavox call-popup integration (v0.0.34). Single-install model: one
@@ -1225,6 +1232,8 @@ public static class SettingDefaults
             "How often (minutes) the Adsolut Contracts sync worker ticks. Floor 5 — set lower and the worker silently clamps. Independent from the Companies + SalesReceipts + Orders + Articles sync intervals. Each tick is a delta-sync keyed on the contract's lastModified (?ModifiedSince=lastSuccessfulSync)."),
         new SettingDefault(SettingKeys.Adsolut.M365MatchArticleIds, "", "string", "Adsolut",
             "Comma-separated Adsolut article ids (uuids) flagged as Microsoft 365 related. Drives the Contracts → Microsoft 365 matching list: a company appears there when one or more of its contract lines reference any of these articles (each company listed once). Curated via the gear on the matching page, not normally edited here. Empty = no articles selected, so the list is empty."),
+        new SettingDefault(SettingKeys.Adsolut.M365MatchStatusFilter, "", "string", "Adsolut",
+            "Comma-separated Adsolut contract state codes a contract must have for its company to surface in the Contracts → Microsoft 365 matching list (e.g. 'CO,GEPL'). Empty = any status counts, so a company whose only matching contract has since been terminated still shows. Curated via the gear on the matching page, alongside the article selection; available statuses are discovered dynamically from the contracts in the mirror. DISPLAY-ONLY: this only narrows which companies the matching list surfaces, it never purges anything."),
         new SettingDefault(SettingKeys.Reports.DefaultColumns, "type,name,upn,spam,onedrive,exchange", "string", "Contracts",
             "Comma-separated default column keys a new Microsoft 365 report template (and the Send report screen) starts from. Valid keys: type, name, upn, mail, enabled, licenses, spam, onedrive, exchange. The per-template selection overrides this; this is only the factory default."),
         new SettingDefault(SettingKeys.Adsolut.ErpContractsStatusFilter, "", "string", "Adsolut",

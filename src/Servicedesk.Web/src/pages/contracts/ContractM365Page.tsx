@@ -354,6 +354,8 @@ function ArticleSelectionDialog({
   const [page, setPage] = useState(1);
   // id → {code,name}. The presence of a key means "selected".
   const [selected, setSelected] = useState<Map<string, M365SelectedArticle>>(new Map());
+  // Selected contract state codes. Empty = any status counts.
+  const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set());
   const [seeded, setSeeded] = useState(false);
 
   const selection = useQuery({
@@ -374,6 +376,7 @@ function ArticleSelectionDialog({
     const next = new Map<string, M365SelectedArticle>();
     for (const a of selection.data.articles) next.set(a.id, a);
     setSelected(next);
+    setSelectedStatuses(new Set(selection.data.statusCodes));
     setSeeded(true);
   }, [open, seeded, selection.data]);
 
@@ -388,7 +391,11 @@ function ArticleSelectionDialog({
   const pageItems = list.data?.items ?? [];
 
   const save = useMutation({
-    mutationFn: () => contractM365Api.saveSelection(Array.from(selected.keys())),
+    mutationFn: () =>
+      contractM365Api.saveSelection(
+        Array.from(selected.keys()),
+        Array.from(selectedStatuses),
+      ),
     onSuccess: () => {
       toast.success("Microsoft 365 articles saved.");
       qc.invalidateQueries({ queryKey: COMPANIES_KEY });
@@ -397,6 +404,17 @@ function ArticleSelectionDialog({
     },
     onError: () => toast.error("Could not save the article selection."),
   });
+
+  const toggleStatus = (code: string) => {
+    setSelectedStatuses((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  };
+
+  const statusOptions = selection.data?.statusOptions ?? [];
 
   const toggle = (a: M365SelectedArticle) => {
     setSelected((prev) => {
@@ -411,7 +429,7 @@ function ArticleSelectionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Microsoft 365 articles</DialogTitle>
           <DialogDescription>
@@ -491,6 +509,52 @@ function ArticleSelectionDialog({
                 );
               })}
             </ul>
+          )}
+        </div>
+
+        <div className="space-y-2 rounded-xl border border-glass bg-glass p-3">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-xs font-medium text-foreground">Contract status</span>
+            <span className="text-[11px] text-muted-foreground">
+              {selectedStatuses.size === 0
+                ? "Any status counts"
+                : `${selectedStatuses.size} selected`}
+            </span>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Only count a company when one of its matching contracts has a ticked status. Leave all
+            unticked to count every status (including terminated contracts).
+          </p>
+          {statusOptions.length === 0 ? (
+            <p className="text-[11px] text-muted-foreground/70">
+              No contract statuses discovered yet — run a contracts sync first.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {statusOptions.map((s) => {
+                const on = selectedStatuses.has(s.code);
+                return (
+                  <button
+                    key={s.code}
+                    type="button"
+                    onClick={() => toggleStatus(s.code)}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors",
+                      on
+                        ? "border-purple-400 bg-purple-400/20 text-purple-100"
+                        : "border-glass-strong bg-glass text-muted-foreground hover:bg-glass-hover hover:text-foreground",
+                    )}
+                  >
+                    {on && <Check className="h-3 w-3" />}
+                    <span className="font-mono text-[11px]">{s.code}</span>
+                    {s.description && (
+                      <span className="max-w-[12rem] truncate">{s.description}</span>
+                    )}
+                    <span className="tabular-nums text-muted-foreground/70">{s.count}</span>
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
 
