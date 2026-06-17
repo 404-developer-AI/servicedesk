@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Link2, Search } from "lucide-react";
+import { ArrowRight, Clock, Link2, Search } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -57,7 +57,7 @@ export function LinkParentDialog({
       setSearching(true);
       setSearchError(null);
       try {
-        const response = await ticketApi.picker(query.trim() || undefined, source.id, 20);
+        const response = await ticketApi.picker(query.trim() || undefined, source.id, 20, true);
         setResults(response.items);
       } catch (err) {
         setSearchError(err instanceof Error ? err.message : "Search failed");
@@ -90,6 +90,9 @@ export function LinkParentDialog({
   });
 
   const sourceLabel = `#${source.number} — ${source.subject}`;
+  // No search term yet → the list is the user's recently-opened tickets
+  // (server-side default), so label it as such instead of "search results".
+  const isRecentView = query.trim().length === 0;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && !linkMutation.isPending && onClose()}>
@@ -133,7 +136,22 @@ export function LinkParentDialog({
                 className="pl-8"
               />
             </div>
-            <div className="mt-2 max-h-56 overflow-y-auto rounded-md border border-glass bg-glass">
+            {!searchError && (results.length > 0 || isRecentView) && (
+              <div className="mt-2 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                {isRecentView ? (
+                  <>
+                    <Clock className="h-3 w-3" aria-hidden />
+                    Recently opened
+                  </>
+                ) : (
+                  <>
+                    <Search className="h-3 w-3" aria-hidden />
+                    Search results
+                  </>
+                )}
+              </div>
+            )}
+            <div className="mt-1 max-h-56 overflow-y-auto rounded-md border border-glass bg-glass">
               {searching && (
                 <div className="px-3 py-2 text-xs text-muted-foreground/70">
                   Searching...
@@ -146,7 +164,9 @@ export function LinkParentDialog({
               )}
               {!searching && !searchError && results.length === 0 && (
                 <div className="px-3 py-2 text-xs text-muted-foreground/70">
-                  No tickets found.
+                  {isRecentView
+                    ? "No recent tickets yet — start typing to search."
+                    : "No tickets found."}
                 </div>
               )}
               {!searching && !searchError && results.length > 0 && (

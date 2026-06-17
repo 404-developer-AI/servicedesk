@@ -994,11 +994,14 @@ export const ticketApi = {
     request<TicketDetail>("PATCH", `/api/tickets/${id}/company`, body),
   changeRequester: (id: string, contactId: string) =>
     request<TicketDetail>("PATCH", `/api/tickets/${id}/requester`, { contactId }),
-  picker: (q?: string, excludeTicketId?: string, limit = 20) => {
+  picker: (q?: string, excludeTicketId?: string, limit = 20, recentFirst = false) => {
     const params = new URLSearchParams();
     if (q) params.set("q", q);
     if (excludeTicketId) params.set("excludeTicketId", excludeTicketId);
     params.set("limit", String(limit));
+    // When set, an empty query returns the caller's recently-opened tickets
+    // first; a typed query still searches all accessible tickets.
+    if (recentFirst) params.set("recentFirst", "true");
     return request<{ items: TicketPickerItem[] }>(
       "GET",
       `/api/tickets/picker?${params.toString()}`,

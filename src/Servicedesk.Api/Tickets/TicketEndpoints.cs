@@ -1325,7 +1325,7 @@ public static class TicketEndpoints
         // enforced server-side: an agent cannot merge into a queue they can't
         // see, regardless of what the client sends.
         group.MapGet("/picker", async (
-            string? q, Guid? excludeTicketId, int? limit,
+            string? q, Guid? excludeTicketId, int? limit, bool? recentFirst,
             HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess,
             ISettingsService settings, CancellationToken ct) =>
         {
@@ -1342,10 +1342,15 @@ public static class TicketEndpoints
 
             var normalizedQuery = await NormalizeTicketSearchAsync(q, settings, ct);
 
+            // The link-parent dialog opts in to a recent-first default
+            // (recentFirst=true); the merge dialog leaves it off and keeps the
+            // plain global ordering. recentForUserId only changes the no-search
+            // case — a typed query always searches every accessible ticket.
             var hits = await repo.SearchPickerAsync(
                 search: normalizedQuery,
                 excludeTicketId: excludeTicketId ?? Guid.Empty,
                 accessibleQueueIds: accessibleQueueIds,
+                recentForUserId: recentFirst == true ? userId : null,
                 limit: limit ?? 20,
                 ct: ct);
             return Results.Ok(new { items = hits });

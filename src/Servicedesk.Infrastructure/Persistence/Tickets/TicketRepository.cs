@@ -1151,10 +1151,35 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             new CommandDefinition(sql, new { ticketId }, cancellationToken: ct));
     }
 
+    // Identical projection + base joins for every picker variant, so a row
+    // renders the same whether it came from the user's recent list, the
+    // global fill, or a search. Variant-specific JOINs/filters/ORDER BY are
+    // appended after this fragment.
+    private const string PickerSelectFrom = """
+        SELECT t.id            AS Id,
+               t.number        AS Number,
+               t.subject       AS Subject,
+               t.status_id     AS StatusId,
+               s.name          AS StatusName,
+               s.color         AS StatusColor,
+               s.state_category AS StatusStateCategory,
+               t.company_id    AS CompanyId,
+               co.name         AS CompanyName,
+               t.requester_contact_id AS RequesterContactId,
+               c.email         AS RequesterEmail,
+               c.first_name    AS RequesterFirstName,
+               c.last_name     AS RequesterLastName
+        FROM tickets t
+        JOIN statuses s ON s.id = t.status_id
+        JOIN contacts c ON c.id = t.requester_contact_id
+        LEFT JOIN companies co ON co.id = t.company_id
+        """;
+
     public async Task<IReadOnlyList<TicketPickerHit>> SearchPickerAsync(
         string? search,
         Guid excludeTicketId,
         IReadOnlyCollection<Guid>? accessibleQueueIds,
+        Guid? recentForUserId,
         int limit,
         CancellationToken ct)
     {
@@ -1163,46 +1188,86 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         // (no-op merge) and respect queue-access — admins pass null and skip
         // the filter. Limit is clamped to a sane range to keep typeahead snappy.
         var clampedLimit = Math.Clamp(limit, 1, 50);
-        var sql = new StringBuilder("""
-            SELECT t.id            AS Id,
-                   t.number        AS Number,
-                   t.subject       AS Subject,
-                   t.status_id     AS StatusId,
-                   s.name          AS StatusName,
-                   s.color         AS StatusColor,
-                   s.state_category AS StatusStateCategory,
-                   t.company_id    AS CompanyId,
-                   co.name         AS CompanyName,
-                   t.requester_contact_id AS RequesterContactId,
-                   c.email         AS RequesterEmail,
-                   c.first_name    AS RequesterFirstName,
-                   c.last_name     AS RequesterLastName
-            FROM tickets t
-            JOIN statuses s ON s.id = t.status_id
-            JOIN contacts c ON c.id = t.requester_contact_id
-            LEFT JOIN companies co ON co.id = t.company_id
+        var hasSearch = !string.IsNullOrWhiteSpace(search);
+
+        var queueFilter = accessibleQueueIds is not null
+            ? " AND t.queue_id = ANY(@AccessibleQueueIds)"
+            : string.Empty;
+        var queueParam = accessibleQueueIds as IEnumerable<Guid>;
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+
+        // Link-parent default view: the dialog opens with no search term, so
+        // lead with the tickets THIS user most recently opened
+        // (user_recent_tickets.added_utc is bumped to now() on every re-view),
+        // newest first. The global "most recently updated" list backfills any
+        // remaining slots so a user with little history still sees candidates.
+        // The fill keeps using the (updated_utc DESC, id DESC) index — we never
+        // sort the whole tickets table by the joined recency column.
+        if (recentForUserId.HasValue && !hasSearch)
+        {
+            var recentSql = $"""
+                {PickerSelectFrom}
+                JOIN user_recent_tickets urt
+                  ON urt.ticket_id = t.id AND urt.user_id = @RecentUserId
+                WHERE t.is_deleted = FALSE
+                  AND t.merged_into_ticket_id IS NULL
+                  AND t.id <> @excludeTicketId{queueFilter}
+                ORDER BY urt.added_utc DESC
+                LIMIT @Limit
+                """;
+            var recent = (await conn.QueryAsync<TicketPickerHit>(new CommandDefinition(recentSql, new
+            {
+                RecentUserId = recentForUserId.Value,
+                excludeTicketId,
+                AccessibleQueueIds = queueParam,
+                Limit = clampedLimit,
+            }, cancellationToken: ct))).ToList();
+
+            if (recent.Count >= clampedLimit)
+                return recent;
+
+            // Backfill, skipping the ids we already have so nothing shows twice.
+            var seenIds = recent.Select(r => r.Id).ToArray();
+            var fillSql = $"""
+                {PickerSelectFrom}
+                WHERE t.is_deleted = FALSE
+                  AND t.merged_into_ticket_id IS NULL
+                  AND t.id <> @excludeTicketId
+                  AND t.id <> ALL(@SeenIds){queueFilter}
+                ORDER BY t.updated_utc DESC, t.id DESC
+                LIMIT @Fill
+                """;
+            var fill = await conn.QueryAsync<TicketPickerHit>(new CommandDefinition(fillSql, new
+            {
+                excludeTicketId,
+                SeenIds = seenIds,
+                AccessibleQueueIds = queueParam,
+                Fill = clampedLimit - recent.Count,
+            }, cancellationToken: ct));
+            recent.AddRange(fill);
+            return recent;
+        }
+
+        // Search path (and the merge picker, which never asks for recent-first):
+        // full-text on subject OR exact ticket-number match — same shape as the
+        // list endpoint so an agent can paste a number and find it.
+        var sql = new StringBuilder(PickerSelectFrom);
+        sql.Append("""
+
             WHERE t.is_deleted = FALSE
               AND t.merged_into_ticket_id IS NULL
               AND t.id <> @excludeTicketId
             """);
-
-        if (accessibleQueueIds is not null)
-            sql.Append(" AND t.queue_id = ANY(@AccessibleQueueIds)");
-
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            // FTS on subject OR exact ticket-number match — same shape as the
-            // list endpoint so an agent can paste a number and find it.
+        sql.Append(queueFilter);
+        if (hasSearch)
             sql.Append(" AND (t.search_vector @@ plainto_tsquery('simple', @Search) OR t.number::text = @SearchRaw)");
-        }
-
         sql.Append(" ORDER BY t.updated_utc DESC, t.id DESC LIMIT @Limit");
 
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var rows = await conn.QueryAsync<TicketPickerHit>(new CommandDefinition(sql.ToString(), new
         {
             excludeTicketId,
-            AccessibleQueueIds = accessibleQueueIds as IEnumerable<Guid>,
+            AccessibleQueueIds = queueParam,
             Search = search ?? string.Empty,
             SearchRaw = search ?? string.Empty,
             Limit = clampedLimit,

@@ -54,13 +54,18 @@ public interface ITicketRepository
     Task<IReadOnlyDictionary<Guid, int>> GetOpenCountsByQueueAsync(CancellationToken ct);
     Task<int> InsertFakeBatchAsync(int count, CancellationToken ct);
 
-    /// Lightweight ticket numbers + subjects for the merge picker autocomplete.
-    /// Filters out merged/deleted tickets and the source ticket itself; queue
-    /// access is enforced by the caller passing AccessibleQueueIds (null = admin).
+    /// Lightweight ticket numbers + subjects for the merge / link-parent picker
+    /// autocomplete. Filters out merged/deleted tickets and the source ticket
+    /// itself; queue access is enforced by the caller passing AccessibleQueueIds
+    /// (null = admin). When <paramref name="recentForUserId"/> is supplied AND no
+    /// search term is given, the result leads with the tickets that user most
+    /// recently opened (newest first), backfilled with the global most-recently-
+    /// updated list — so the link-parent dialog opens on the user's own context.
     Task<IReadOnlyList<TicketPickerHit>> SearchPickerAsync(
         string? search,
         Guid excludeTicketId,
         IReadOnlyCollection<Guid>? accessibleQueueIds,
+        Guid? recentForUserId,
         int limit,
         CancellationToken ct);
 
