@@ -228,7 +228,8 @@ public sealed class CompanyRepository : ICompanyRepository
             : $"SELECT {ContactCols} FROM contacts WHERE 1=1";
         if (!string.IsNullOrWhiteSpace(search))
         {
-            sql += " AND (email ILIKE @search OR first_name ILIKE @search OR last_name ILIKE @search)";
+            sql += " AND (email ILIKE @search OR first_name ILIKE @search OR last_name ILIKE @search"
+                + " OR (coalesce(first_name,'') || ' ' || coalesce(last_name,'')) ILIKE @search)";
         }
         sql += " ORDER BY last_name, first_name LIMIT 500";
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
