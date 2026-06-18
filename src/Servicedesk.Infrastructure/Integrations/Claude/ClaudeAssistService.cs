@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using Dapper;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -126,7 +127,7 @@ public sealed class ClaudeAssistService : IClaudeAssistService
             return new ClaudeProposalResult(
                 ClaudeProposalOutcome.Ok,
                 result.Text,
-                TextToHtml(result.Text),
+                MarkdownToHtml(result.Text),
                 null,
                 result.InputTokens, result.OutputTokens, costMicro, images.Count, newSpend, budgetMicro);
         }
@@ -282,25 +283,177 @@ public sealed class ClaudeAssistService : IClaudeAssistService
         return result;
     }
 
-    // ---- HTML rendering ------------------------------------------------
+    // ---- Markdown rendering --------------------------------------------
 
-    /// Renders the model's plain-text proposal as minimal, escaped HTML so it
-    /// can drop straight into the Tiptap draft editor: blank lines become
-    /// paragraphs, single newlines become line breaks. No model output is
-    /// trusted as markup.
-    private static string TextToHtml(string text)
+    /// Renders the model's markdown proposal into a small, safe subset of
+    /// HTML that drops straight into the Tiptap draft editor: headings, bold,
+    /// italic, inline & fenced code, bullet/numbered lists, block quotes,
+    /// horizontal rules and paragraphs. Every piece of text is HTML-escaped;
+    /// no raw markup from the model is ever trusted — only structure the
+    /// parser itself recognises becomes a tag, so the model cannot inject
+    /// arbitrary HTML. The model emits markdown (see the system prompt), and
+    /// without this it would land in the editor as literal '#', '**', '-'.
+    /// Internal for unit tests (escaping is security-sensitive).
+    internal static string MarkdownToHtml(string text)
     {
-        var paragraphs = text.Replace("\r\n", "\n").Replace('\r', '\n')
-            .Split("\n\n", StringSplitOptions.None);
+        var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
         var sb = new StringBuilder();
-        foreach (var para in paragraphs)
+        var i = 0;
+
+        while (i < lines.Length)
         {
-            var trimmed = para.Trim('\n');
-            if (trimmed.Length == 0) continue;
-            var escaped = Escape(trimmed).Replace("\n", "<br />");
-            sb.Append("<p>").Append(escaped).Append("</p>");
+            var trimmed = lines[i].Trim();
+
+            // Blank line — just a block separator.
+            if (trimmed.Length == 0) { i++; continue; }
+
+            // Fenced code block: ``` … ```
+            if (trimmed.StartsWith("```", StringComparison.Ordinal))
+            {
+                i++;
+                var code = new StringBuilder();
+                while (i < lines.Length && !lines[i].TrimStart().StartsWith("```", StringComparison.Ordinal))
+                {
+                    code.Append(Escape(lines[i])).Append('\n');
+                    i++;
+                }
+                if (i < lines.Length) i++; // skip the closing fence
+                sb.Append("<pre><code>").Append(code.ToString().TrimEnd('\n')).Append("</code></pre>");
+                continue;
+            }
+
+            // Horizontal rule: ---, ***, ___ (3+ of the same char, alone).
+            if (IsHorizontalRule(trimmed)) { sb.Append("<hr />"); i++; continue; }
+
+            // Heading: #..###### text
+            var level = HeadingLevel(trimmed);
+            if (level > 0)
+            {
+                var tag = "h" + Math.Clamp(level, 2, 4);
+                var content = trimmed[level..].TrimStart('#', ' ');
+                sb.Append('<').Append(tag).Append('>')
+                  .Append(InlineToHtml(content))
+                  .Append("</").Append(tag).Append('>');
+                i++;
+                continue;
+            }
+
+            // Unordered list.
+            if (IsBullet(trimmed))
+            {
+                sb.Append("<ul>");
+                while (i < lines.Length && IsBullet(lines[i].Trim()))
+                {
+                    sb.Append("<li>").Append(InlineToHtml(StripBullet(lines[i].Trim()))).Append("</li>");
+                    i++;
+                }
+                sb.Append("</ul>");
+                continue;
+            }
+
+            // Ordered list.
+            if (IsOrdered(trimmed))
+            {
+                sb.Append("<ol>");
+                while (i < lines.Length && IsOrdered(lines[i].Trim()))
+                {
+                    sb.Append("<li>").Append(InlineToHtml(StripOrdered(lines[i].Trim()))).Append("</li>");
+                    i++;
+                }
+                sb.Append("</ol>");
+                continue;
+            }
+
+            // Block quote.
+            if (trimmed.StartsWith(">", StringComparison.Ordinal))
+            {
+                var quote = new StringBuilder();
+                var first = true;
+                while (i < lines.Length && lines[i].Trim().StartsWith(">", StringComparison.Ordinal))
+                {
+                    var q = lines[i].Trim();
+                    q = q.Length > 1 ? q[1..].TrimStart() : string.Empty;
+                    if (!first) quote.Append("<br />");
+                    quote.Append(InlineToHtml(q));
+                    first = false;
+                    i++;
+                }
+                sb.Append("<blockquote><p>").Append(quote).Append("</p></blockquote>");
+                continue;
+            }
+
+            // Paragraph: gather consecutive "plain" lines, soft-wrapped.
+            var para = new StringBuilder();
+            var firstLine = true;
+            while (i < lines.Length)
+            {
+                var l = lines[i].Trim();
+                if (l.Length == 0 || IsHorizontalRule(l) || HeadingLevel(l) > 0 ||
+                    IsBullet(l) || IsOrdered(l) ||
+                    l.StartsWith(">", StringComparison.Ordinal) ||
+                    l.StartsWith("```", StringComparison.Ordinal))
+                    break;
+                if (!firstLine) para.Append("<br />");
+                para.Append(InlineToHtml(l));
+                firstLine = false;
+                i++;
+            }
+            sb.Append("<p>").Append(para).Append("</p>");
         }
+
         return sb.Length == 0 ? "<p></p>" : sb.ToString();
+    }
+
+    /// Applies inline markdown (code, bold, italic) to a single run of text.
+    /// The text is HTML-escaped first; code spans are stashed behind a NUL
+    /// sentinel so emphasis markers inside them are left untouched.
+    private static string InlineToHtml(string raw)
+    {
+        var s = Escape(raw);
+
+        var codeSpans = new List<string>();
+        s = Regex.Replace(s, "`([^`]+)`", m =>
+        {
+            codeSpans.Add(m.Groups[1].Value);
+            return " " + (codeSpans.Count - 1) + " ";
+        });
+
+        s = Regex.Replace(s, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
+        s = Regex.Replace(s, @"\*(.+?)\*", "<em>$1</em>");
+
+        s = Regex.Replace(s, " (\\d+) ",
+            m => "<code>" + codeSpans[int.Parse(m.Groups[1].Value)] + "</code>");
+
+        return s;
+    }
+
+    private static bool IsHorizontalRule(string s) =>
+        s.Length >= 3 && (s.All(c => c == '-') || s.All(c => c == '*') || s.All(c => c == '_'));
+
+    private static int HeadingLevel(string s)
+    {
+        var n = 0;
+        while (n < s.Length && s[n] == '#') n++;
+        return n is >= 1 and <= 6 && n < s.Length && s[n] == ' ' ? n : 0;
+    }
+
+    private static bool IsBullet(string s) =>
+        s.Length >= 2 && s[0] is '-' or '*' or '+' && s[1] == ' ';
+
+    private static string StripBullet(string s) => s[2..].TrimStart();
+
+    private static bool IsOrdered(string s)
+    {
+        var n = 0;
+        while (n < s.Length && char.IsDigit(s[n])) n++;
+        return n > 0 && n + 1 < s.Length && s[n] is '.' or ')' && s[n + 1] == ' ';
+    }
+
+    private static string StripOrdered(string s)
+    {
+        var n = 0;
+        while (n < s.Length && char.IsDigit(s[n])) n++;
+        return s[(n + 1)..].TrimStart();
     }
 
     private static string Escape(string s) => s

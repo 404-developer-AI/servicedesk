@@ -468,6 +468,9 @@ export type Queue = {
   inboundFolderId?: string | null;
   inboundFolderName?: string | null;
   inboundPollingEnabled?: boolean;
+  // Per-queue switch for the Claude AI ticket-assist action. Defaults true on
+  // the server; gates the "Analyze & propose a solution by AI" button.
+  aiAssistEnabled?: boolean;
   inboundMailboxes?: QueueInboundMailbox[];
   // v0.0.40 polish — per-queue status scope. Empty array = all
   // statuses available. Non-empty = dropdown filters to these ids.
@@ -550,6 +553,7 @@ export type QueueInput = {
   // drives the auto-flip on queue change.
   allowedStatusIds?: string[];
   defaultStatusId?: string | null;
+  aiAssistEnabled?: boolean;
 };
 
 export type PriorityInput = {

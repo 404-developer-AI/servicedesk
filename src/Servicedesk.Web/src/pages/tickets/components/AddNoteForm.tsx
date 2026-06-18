@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Clock, ExternalLink, MessageCircle, Sparkles } from "lucide-react";
 import { ticketApi, mentionApi } from "@/lib/ticket-api";
-import { preferencesApi } from "@/lib/api";
+import { preferencesApi, agentQueueApi } from "@/lib/api";
 import { useAuth } from "@/auth/authStore";
 import { orderMentionItems } from "@/pages/orders/orderMention";
 import { kbLinkMentionItems } from "@/pages/kb/kbLinkMention";
@@ -54,6 +54,18 @@ type TabType = "reply" | "note" | "mail";
 
 export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailContext, isPopup = false }: AddNoteFormProps) {
   const { user } = useAuth();
+
+  // Per-queue gate for the AI-assist button. Shares the cached accessible-queues
+  // query (same key as the ticket pages). Only hide the button when we
+  // positively know the queue has AI assist switched off; the endpoint enforces
+  // the same rule server-side, so an undefined/loading queue still shows it.
+  const { data: accessibleQueues } = useQuery({
+    queryKey: ["accessible-queues"],
+    queryFn: agentQueueApi.list,
+    staleTime: 60_000,
+  });
+  const aiAssistEnabledForQueue =
+    accessibleQueues?.find((q) => q.id === queueId)?.aiAssistEnabled !== false;
   const savedDraft = useWorkspaceStore.getState().getDraft(ticketId);
   // Mail drafts live in a separate slot (see SendMailForm) so a note and a mail
   // can both be in progress on the same ticket. Either one auto-expands the
@@ -569,7 +581,7 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
         </div>
       )}
 
-      {user?.role !== "Customer" && (
+      {user?.role !== "Customer" && aiAssistEnabledForQueue && (
         <div className="mt-2">
           <button
             type="button"
@@ -583,7 +595,7 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
             title="Generate a draft internal note using Claude AI based on the ticket context"
           >
             <Sparkles className="h-3.5 w-3.5" />
-            {aiLoading ? "Generating…" : "Ask AI"}
+            {aiLoading ? "Generating…" : "Analyze & propose a solution by AI"}
           </button>
         </div>
       )}

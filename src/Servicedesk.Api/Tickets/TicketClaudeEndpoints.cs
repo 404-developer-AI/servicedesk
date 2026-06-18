@@ -4,6 +4,7 @@ using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Integrations.Claude;
+using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 
 namespace Servicedesk.Api.Tickets;
@@ -120,6 +121,7 @@ public static class TicketClaudeEndpoints
         HttpContext http,
         ITicketRepository tickets,
         IQueueAccessService queueAccess,
+        ITaxonomyRepository taxonomy,
         IClaudeAssistService assist,
         IAuditLogger audit,
         CancellationToken ct)
@@ -131,6 +133,20 @@ public static class TicketClaudeEndpoints
         var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
         if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.Ticket.QueueId, ct))
             return Results.NotFound();
+
+        // Per-queue availability gate. The button is hidden client-side when a
+        // queue has AI assist switched off, but the same check is enforced here
+        // so the call can't be replayed against a disabled queue.
+        var queue = await taxonomy.GetQueueAsync(ticket.Ticket.QueueId, ct);
+        if (queue is null || !queue.AiAssistEnabled)
+        {
+            await WriteAuditAsync(audit, http, id, "queue_disabled", ct);
+            return Results.Json(new
+            {
+                error = "queue_disabled",
+                message = "The AI assistant is not enabled for this ticket's queue.",
+            }, statusCode: 409);
+        }
 
         var attachmentIds = (req?.AttachmentIds ?? Array.Empty<Guid>())
             .Distinct()
