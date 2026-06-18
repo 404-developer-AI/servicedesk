@@ -667,6 +667,7 @@ app.MapTimesheetManagerEndpoints();
 app.MapTicketTimesheetEndpoints();
 app.MapTimesheetImportEndpoints();
 app.MapAdsolutTimesheetEndpoints();
+app.MapAdsolutCatalogueProductsEndpoints();
 app.MapBackofficeTimesheetEndpoints();
 app.MapOrdersEndpoints();
 app.MapContractArticlesEndpoints();

@@ -304,4 +304,18 @@ public static class AdsolutEventTypes
     /// its relation code (== companies.adsolut_number) for contract↔company
     /// matching. Called during the Contracts sync for unresolved customers only.
     public const string ErpCustomersGet = "erp.customers.get";
+
+    // ---- v0.0.84 ERP CatalogueProducts (verkoopbon-artikels) ----------
+
+    /// GET /erp/v1/adm/{adm}/CatalogueProducts — one page of the cursor-paged
+    /// product catalogue during a CatalogueProducts sync tick. Each page is one
+    /// audit row; the list item already carries the full product (code, name,
+    /// flags), so there is no per-product by-id fetch. Feeds the Timesheet →
+    /// Adsolut "VK Werkuren" matching (which catalogue products count as work
+    /// hours).
+    public const string ErpCatalogueProductsList = "erp.catalogue_products.list";
+
+    /// One CatalogueProducts sync-worker tick summary (seen / upserted +
+    /// duration + outcome).
+    public const string ErpCatalogueProductsSyncTick = "erp.catalogue_products.sync_tick";
 }

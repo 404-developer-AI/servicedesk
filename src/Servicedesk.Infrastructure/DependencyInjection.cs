@@ -184,6 +184,16 @@ public static class DependencyInjection
         services.AddSingleton<IAdsolutArticlesSyncSignal, AdsolutArticlesSyncSignal>();
         services.AddHostedService<AdsolutArticlesSyncWorker>();
 
+        // ERP CatalogueProducts (verkoopbon-artikels) mirror → Timesheet →
+        // Adsolut "VK Werkuren" matching. Shares the SalesReceipts opt-in
+        // (Adsolut.Erp.SalesReceipts.Enabled); reuses the shared
+        // AdsolutHttpInvoker. The CatalogueProducts list returns full records
+        // inline, so the sync upserts straight from the list (no by-id N+1).
+        services.AddSingleton<IAdsolutCatalogueProductsClient, AdsolutCatalogueProductsClient>();
+        services.AddSingleton<IAdsolutCatalogueProductRepository, AdsolutCatalogueProductRepository>();
+        services.AddSingleton<IAdsolutCatalogueProductsSyncSignal, AdsolutCatalogueProductsSyncSignal>();
+        services.AddHostedService<AdsolutCatalogueProductsSyncWorker>();
+
         // ERP Contracts (contracten) mirror → Contracts overview (Contracts hub
         // → Contracts overview). Opt-in via Adsolut.Erp.Contracts.Enabled;
         // reuses the shared AdsolutHttpInvoker. The Contracts list returns full

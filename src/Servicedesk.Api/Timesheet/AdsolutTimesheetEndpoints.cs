@@ -188,6 +188,8 @@ public static class AdsolutTimesheetEndpoints
         ticketReceiptCount = r.TicketReceiptCount,
         ticketReceiptOrdinal = r.TicketReceiptOrdinal,
         combinedTotalExclVat = r.CombinedTotalExclVat,
+        werkurenExclVat = r.WerkurenExclVat,
+        combinedWerkurenExclVat = r.CombinedWerkurenExclVat,
         boChecked = r.BoChecked,
         checkedUtc = r.CheckedUtc,
         checkedByEmail = r.CheckedByEmail,

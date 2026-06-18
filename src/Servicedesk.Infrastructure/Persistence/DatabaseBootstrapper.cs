@@ -1880,6 +1880,12 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_adsolut_sales_receipt_lines_receipt
             ON adsolut_sales_receipt_lines (receipt_id);
 
+        -- Match a receipt line to its catalogue product (by product code) for the
+        -- Timesheet → Adsolut "VK Werkuren" total, which sums only the lines whose
+        -- product is flagged as counting toward work hours.
+        CREATE INDEX IF NOT EXISTS ix_adsolut_sales_receipt_lines_product_code
+            ON adsolut_sales_receipt_lines (product_code);
+
         CREATE TABLE IF NOT EXISTS adsolut_sales_receipt_performances (
             id                       UUID          PRIMARY KEY,
             receipt_id               UUID          NOT NULL
@@ -4385,6 +4391,56 @@ public sealed class DatabaseBootstrapper : IHostedService
             last_error_utc      TIMESTAMPTZ NULL,
             articles_seen       INTEGER     NOT NULL DEFAULT 0,
             articles_upserted   INTEGER     NOT NULL DEFAULT 0,
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        -- ERP CatalogueProducts mirror → Timesheet → Adsolut "VK Werkuren"
+        -- matching (v0.0.84). The full product catalogue that can appear on a
+        -- verkoopbon, mirrored via cursor pagination (?ModifiedSince delta). This
+        -- is SEPARATE from adsolut_articles (the contract-article catalogue): a
+        -- different Adsolut endpoint, and it carries our own admin-owned
+        -- counts_as_work_hours flag (default FALSE) that decides whether a
+        -- product's line excl-VAT total is summed into the receipt's work-hours
+        -- total. name comes back as a multi-language Translation[] (the Nl value
+        -- is stored). A sync refreshes only the Adsolut-sourced columns; the
+        -- work-hours flag + its audit columns are never overwritten.
+        CREATE TABLE IF NOT EXISTS adsolut_catalogue_products (
+            id                     UUID        PRIMARY KEY,
+            code                   TEXT        NULL,
+            name                   TEXT        NULL,
+            service_product        BOOLEAN     NOT NULL DEFAULT FALSE,
+            is_active              BOOLEAN     NOT NULL DEFAULT FALSE,
+            blocked                BOOLEAN     NOT NULL DEFAULT FALSE,
+            end_of_series          BOOLEAN     NOT NULL DEFAULT FALSE,
+            counts_as_work_hours   BOOLEAN     NOT NULL DEFAULT FALSE,
+            work_hours_updated_utc TIMESTAMPTZ NULL,
+            -- Actor user id, stored loosely (no FK) the way the other audit-ish
+            -- "who touched this" columns are; the list LEFT JOINs users for the
+            -- email and tolerates a missing/removed user.
+            work_hours_updated_by  UUID        NULL,
+            adsolut_created_utc    TIMESTAMPTZ NULL,
+            adsolut_last_modified  TIMESTAMPTZ NULL,
+            synced_utc             TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        -- Code is the join key against adsolut_sales_receipt_lines.product_code,
+        -- so it must be unique (Adsolut product codes are unique). Partial: a
+        -- product with no code never participates in the match.
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_adsolut_catalogue_products_code
+            ON adsolut_catalogue_products (code) WHERE code IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS ix_adsolut_catalogue_products_workhours
+            ON adsolut_catalogue_products (counts_as_work_hours) WHERE counts_as_work_hours;
+
+        -- Singleton sync-state for the CatalogueProducts mirror. Own cursor,
+        -- separate from the other ERP mirrors.
+        CREATE TABLE IF NOT EXISTS adsolut_catalogue_product_sync_state (
+            id                  INTEGER     PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+            last_full_sync_utc  TIMESTAMPTZ NULL,
+            last_delta_sync_utc TIMESTAMPTZ NULL,
+            last_error          TEXT        NULL,
+            last_error_utc      TIMESTAMPTZ NULL,
+            products_seen       INTEGER     NOT NULL DEFAULT 0,
+            products_upserted   INTEGER     NOT NULL DEFAULT 0,
             updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now()
         );
 

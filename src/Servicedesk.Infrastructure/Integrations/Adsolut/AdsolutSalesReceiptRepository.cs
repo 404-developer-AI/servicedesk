@@ -74,6 +74,17 @@ public sealed class AdsolutSalesReceiptRow
     public int TicketReceiptOrdinal { get; set; }
     public decimal CombinedTotalExclVat { get; set; }
 
+    /// "VK Werkuren" — the excl-VAT total of only this receipt's product lines
+    /// whose product is flagged as counting toward work hours (adsolut_catalogue
+    /// _products.counts_as_work_hours). Hardware and other non-work-hours lines
+    /// are excluded, so this — not TotalExclVat — is what the registered hours
+    /// are matched against. CombinedWerkurenExclVat is the same figure summed
+    /// over every receipt on the ticket (the value the Difference uses on the
+    /// primary receipt). 0 when no line maps to a flagged product (incl. before
+    /// the catalogue is synced).
+    public decimal WerkurenExclVat { get; set; }
+    public decimal CombinedWerkurenExclVat { get; set; }
+
     /// "Back Office checked" marker for this receipt (context 'adsolut' in
     /// timesheet_bo_checks). CheckedByEmail / CheckedUtc record who/when.
     public bool BoChecked { get; set; }
@@ -484,9 +495,13 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
             "customer" => "r.customer_name",
             "status" => "r.state_code",
             "total" => "r.total_excl_vat",
+            "werkuren" => "g.werkuren_total",
             "hours" => primaryMinutes,
             "bruto" => $"(@Rate * {primaryMinutes} / 60.0)",
-            "difference" => $"(g.combined_total - @Rate * {primaryMinutes} / 60.0)",
+            // Difference now compares the registered-hours bruto against the
+            // ticket-wide WORK-HOURS total (VK Werkuren), not the full excl-VAT
+            // total — hardware no longer skews the match.
+            "difference" => $"(g.combined_werkuren - @Rate * {primaryMinutes} / 60.0)",
             _ => "r.sales_receipt_date",
         };
         var dirSql = string.Equals(dir, "asc", StringComparison.OrdinalIgnoreCase) ? "ASC" : "DESC";
@@ -538,6 +553,8 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
                 g.cnt                   AS TicketReceiptCount,
                 g.ord                   AS TicketReceiptOrdinal,
                 g.combined_total        AS CombinedTotalExclVat,
+                COALESCE(g.werkuren_total, 0)    AS WerkurenExclVat,
+                COALESCE(g.combined_werkuren, 0) AS CombinedWerkurenExclVat,
                 (bo.entity_id IS NOT NULL) AS BoChecked,
                 bo.checked_utc          AS CheckedUtc,
                 bu.email                AS CheckedByEmail
@@ -554,13 +571,27 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
             -- 'solo:<id>' partition key so they never group together.
             LEFT JOIN (
                 SELECT
-                    id,
-                    COUNT(*)            OVER w AS cnt,
-                    ROW_NUMBER()        OVER (PARTITION BY COALESCE(ticket_number::text, 'solo:' || id::text)
-                                              ORDER BY doc_nr ASC NULLS LAST, id) AS ord,
-                    SUM(total_excl_vat) OVER w AS combined_total
-                FROM adsolut_sales_receipts
-                WINDOW w AS (PARTITION BY COALESCE(ticket_number::text, 'solo:' || id::text))
+                    s.id,
+                    COUNT(*)              OVER w AS cnt,
+                    ROW_NUMBER()          OVER (PARTITION BY COALESCE(s.ticket_number::text, 'solo:' || s.id::text)
+                                                ORDER BY s.doc_nr ASC NULLS LAST, s.id) AS ord,
+                    SUM(s.total_excl_vat) OVER w AS combined_total,
+                    -- This receipt's own work-hours total + the ticket-wide sum.
+                    COALESCE(wl.werkuren_total, 0)         AS werkuren_total,
+                    SUM(COALESCE(wl.werkuren_total, 0)) OVER w AS combined_werkuren
+                FROM adsolut_sales_receipts s
+                LEFT JOIN (
+                    -- Per-receipt VK Werkuren: sum the excl-VAT of only the lines
+                    -- whose product code maps to a catalogue product flagged as
+                    -- counting toward work hours. Computed live, so toggling a
+                    -- flag is reflected immediately (no receipt re-sync needed).
+                    SELECT l.receipt_id, SUM(l.total_excl_vat) AS werkuren_total
+                    FROM adsolut_sales_receipt_lines l
+                    JOIN adsolut_catalogue_products cp
+                      ON cp.code = l.product_code AND cp.counts_as_work_hours = TRUE
+                    GROUP BY l.receipt_id
+                ) wl ON wl.receipt_id = s.id
+                WINDOW w AS (PARTITION BY COALESCE(s.ticket_number::text, 'solo:' || s.id::text))
             ) g ON g.id = r.id
             LEFT JOIN timesheet_bo_checks bo ON bo.entity_id = r.id AND bo.context = 'adsolut'
             LEFT JOIN users bu ON bu.id = bo.checked_by
