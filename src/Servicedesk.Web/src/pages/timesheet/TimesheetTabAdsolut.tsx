@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Columns3,
   CornerDownRight,
+  ExternalLink,
   GripVertical,
   Receipt,
   RefreshCw,
@@ -37,6 +38,7 @@ import {
   type AdsolutSalesReceiptDetail,
   type AdsolutSalesReceiptHeader,
 } from "@/lib/api";
+import { openTicketInSharedWindow } from "@/lib/ticketWindow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -132,6 +134,7 @@ function splitLineText(
 
 type ColId =
   | "doc"
+  | "ticket"
   | "date"
   | "customer"
   | "status"
@@ -166,6 +169,13 @@ const ALL_COLUMNS: ColDef[] = [
         {r.docNr ?? "—"}
       </span>
     ),
+  },
+  {
+    id: "ticket",
+    label: "Ticket",
+    align: "left",
+    interactive: true,
+    render: (r) => <TicketNumberLink ticketNumber={r.ticketNumber} ticketId={r.ticketId} />,
   },
   {
     id: "date",
@@ -676,6 +686,45 @@ function ReceiptRow({
         </tr>
       )}
     </>
+  );
+}
+
+// ---- clickable ticket number ------------------------------------------
+
+/// The receipt's ticket number, rendered as a single clickable control. One
+/// click copies the *bare* number (no "Ticket#" prefix) to the clipboard and,
+/// when the ticket exists in this install, opens it in the shared ticket
+/// window (reused across clicks, brought to the front each time). When no
+/// ticket matches (ticketId null) it still copies, but cannot open.
+function TicketNumberLink({
+  ticketNumber,
+  ticketId,
+}: {
+  ticketNumber: number | null;
+  ticketId: string | null;
+}) {
+  if (ticketNumber === null) return <span className="text-muted-foreground/40">—</span>;
+
+  const handleClick = async () => {
+    try {
+      await navigator.clipboard.writeText(String(ticketNumber));
+      toast.success(ticketId ? `Ticket #${ticketNumber} copied — opening…` : `Ticket #${ticketNumber} copied`);
+    } catch {
+      toast.error("Could not copy the ticket number");
+    }
+    if (ticketId) openTicketInSharedWindow(ticketId);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      title={ticketId ? "Copy number & open the ticket" : "Copy number (no matching ticket in this install)"}
+      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-xs text-purple-200 transition-colors hover:bg-purple-500/15 hover:text-purple-100"
+    >
+      #{ticketNumber}
+      {ticketId && <ExternalLink className="h-3 w-3 opacity-50" />}
+    </button>
   );
 }
 

@@ -181,6 +181,7 @@ public static class AdsolutTimesheetEndpoints
         adsolutLastModified = r.AdsolutLastModified,
         syncedUtc = r.SyncedUtc,
         ticketNumber = r.TicketNumber,
+        ticketId = r.TicketId,
         totalMinutes = r.TotalMinutes,
         brutoPrice,
         isPrimary = r.IsPrimary,
