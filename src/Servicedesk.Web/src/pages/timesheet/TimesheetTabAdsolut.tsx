@@ -629,8 +629,11 @@ function ReceiptRow({
     <>
       <tr
         className={cn(
-          "cursor-pointer border-b border-glass transition-colors hover:bg-glass-hover",
-          expanded && "bg-glass-hover",
+          "cursor-pointer border-b border-glass transition-colors",
+          // Highlight the row you clicked open with the purple accent so it
+          // clearly reads as "selected" — distinct from the neutral hover. The
+          // expanded detail panel below keeps its own (un-highlighted) styling.
+          expanded ? "bg-purple-500/[0.13] hover:bg-purple-500/[0.16]" : "hover:bg-glass-hover",
         )}
         onClick={onToggle}
       >
@@ -673,7 +676,7 @@ function ReceiptRow({
       </tr>
 
       {expanded && (
-        <tr className="border-b border-glass bg-glass">
+        <tr className="border-b border-glass bg-purple-500/[0.05]">
           <td colSpan={colCount} className="px-6 py-4">
             {detail.isLoading ? (
               <Skeleton className="h-20 w-full" />
