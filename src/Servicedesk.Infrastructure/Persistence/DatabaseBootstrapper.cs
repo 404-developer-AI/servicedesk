@@ -3113,6 +3113,14 @@ public sealed class DatabaseBootstrapper : IHostedService
             ADD COLUMN IF NOT EXISTS default_status_id UUID NULL
                 REFERENCES statuses(id) ON DELETE SET NULL;
 
+        -- Per-queue switch for the Claude AI ticket-assist action ("Analyze &
+        -- propose a solution by AI"). DEFAULT TRUE so existing queues keep the
+        -- button when the global feature is enabled; admins untick the queues
+        -- where it should not appear. The endpoint enforces this server-side,
+        -- so hiding the button is only the UX half of the gate.
+        ALTER TABLE queues
+            ADD COLUMN IF NOT EXISTS ai_assist_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+
         -- Per-user Sidebar feature flag for the global search bar.
         -- DEFAULT TRUE so brownfield Agent/Admin users do not lose
         -- the bar on upgrade. Customer rows carry TRUE too but the

@@ -153,7 +153,10 @@ public static class TaxonomyEndpoints
         // queue. DefaultStatusId drives auto-flip on queue change when
         // the current status is no longer allowed.
         Guid[]? AllowedStatusIds = null,
-        Guid? DefaultStatusId = null);
+        Guid? DefaultStatusId = null,
+        // Per-queue switch for the Claude AI ticket-assist action. Defaults
+        // true so existing queues keep the button when the global feature is on.
+        bool AiAssistEnabled = true);
 
     public sealed record InboundMailboxInput(
         Guid? Id,
@@ -192,6 +195,7 @@ public static class TaxonomyEndpoints
         q.InboundFolderId,
         q.InboundFolderName,
         q.InboundPollingEnabled,
+        q.AiAssistEnabled,
         AllowedStatusIds = q.AllowedStatusIds ?? Array.Empty<Guid>(),
         q.DefaultStatusId,
         InboundMailboxes = sources.Select(s => new QueueInboundMailboxResponse(
@@ -251,7 +255,7 @@ public static class TaxonomyEndpoints
                 InboundFolderId: null,
                 InboundFolderName: null,
                 (IReadOnlyList<Guid>)(req.AllowedStatusIds ?? Array.Empty<Guid>()),
-                req.DefaultStatusId), ct);
+                req.DefaultStatusId, AiAssistEnabled: req.AiAssistEnabled), ct);
 
             foreach (var s in normalized)
                 await sources.AddAsync(created.Id, s.Mailbox, s.FolderId, s.FolderName, s.PollingEnabled, ct);
@@ -291,7 +295,7 @@ public static class TaxonomyEndpoints
                 inboundFolderId: null,
                 inboundFolderName: null,
                 (IReadOnlyList<Guid>)(req.AllowedStatusIds ?? Array.Empty<Guid>()),
-                req.DefaultStatusId, ct);
+                req.DefaultStatusId, req.AiAssistEnabled, ct);
             if (updated is null) return Results.NotFound();
 
             // Reconcile the source list against what exists.

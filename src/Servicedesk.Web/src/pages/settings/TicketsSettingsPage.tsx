@@ -557,6 +557,7 @@ function QueueDialog({
     outboundMailboxAddress: queue?.outboundMailboxAddress ?? "",
     allowedStatusIds: queue?.allowedStatusIds ?? [],
     defaultStatusId: queue?.defaultStatusId ?? null,
+    aiAssistEnabled: queue?.aiAssistEnabled ?? true,
   }));
 
   // v0.0.66 — a queue can have many inbound mailbox sources. Each editable row
@@ -712,6 +713,14 @@ function QueueDialog({
               onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
             />
             Active (visible to agents when creating tickets)
+          </label>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={form.aiAssistEnabled ?? true}
+              onChange={(e) => setForm((f) => ({ ...f, aiAssistEnabled: e.target.checked }))}
+            />
+            AI assist (show "Analyze &amp; propose a solution by AI" on tickets in this queue)
           </label>
 
           {/* v0.0.40 polish — status scope. Leave empty to keep the

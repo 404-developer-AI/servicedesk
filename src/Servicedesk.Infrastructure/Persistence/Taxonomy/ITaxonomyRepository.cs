@@ -15,7 +15,7 @@ public interface ITaxonomyRepository
     Task<IReadOnlyList<Queue>> ListQueuesAsync(CancellationToken ct);
     Task<Queue?> GetQueueAsync(Guid id, CancellationToken ct);
     Task<Queue> CreateQueueAsync(Queue q, CancellationToken ct);
-    Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, string? inboundMailboxAddress, string? outboundMailboxAddress, string? inboundFolderId, string? inboundFolderName, IReadOnlyList<Guid> allowedStatusIds, Guid? defaultStatusId, CancellationToken ct);
+    Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, string? inboundMailboxAddress, string? outboundMailboxAddress, string? inboundFolderId, string? inboundFolderName, IReadOnlyList<Guid> allowedStatusIds, Guid? defaultStatusId, bool aiAssistEnabled, CancellationToken ct);
     /// Toggles inbound mail polling for a single queue's mailbox without
     /// touching its other fields. Returns false if the queue no longer exists.
     Task<bool> SetQueueInboundPollingAsync(Guid id, bool enabled, CancellationToken ct);

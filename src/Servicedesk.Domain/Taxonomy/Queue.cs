@@ -36,4 +36,8 @@ public sealed record Queue(
     // MailPollingService skips this queue's mailbox entirely while keeping its
     // delta-state, so re-enabling resumes from where it left off instead of
     // re-reading the whole inbox. Defaults true so existing queues keep polling.
-    bool InboundPollingEnabled = true);
+    bool InboundPollingEnabled = true,
+    // Per-queue switch for the Claude AI ticket-assist action. Defaults true so
+    // existing queues keep the button when the global feature is on; admins can
+    // turn it off per queue. Enforced server-side in the AI-proposal endpoint.
+    bool AiAssistEnabled = true);

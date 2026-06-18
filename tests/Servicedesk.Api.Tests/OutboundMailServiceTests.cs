@@ -336,7 +336,7 @@ public sealed class OutboundMailServiceTests
         public Task<Queue?> GetQueueAsync(Guid id, CancellationToken ct) => Task.FromResult<Queue?>(Q);
         public Task<IReadOnlyList<Queue>> ListQueuesAsync(CancellationToken ct) => throw new NotImplementedException();
         public Task<Queue> CreateQueueAsync(Queue q, CancellationToken ct) => throw new NotImplementedException();
-        public Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, string? inbound, string? outbound, string? inboundFolderId, string? inboundFolderName, IReadOnlyList<Guid> allowedStatusIds, Guid? defaultStatusId, CancellationToken ct) => throw new NotImplementedException();
+        public Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, string? inbound, string? outbound, string? inboundFolderId, string? inboundFolderName, IReadOnlyList<Guid> allowedStatusIds, Guid? defaultStatusId, bool aiAssistEnabled, CancellationToken ct) => throw new NotImplementedException();
         public Task<DeleteResult> DeleteQueueAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
         public Task<bool> SetQueueInboundPollingAsync(Guid id, bool enabled, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<TicketType>> ListTicketTypesAsync(CancellationToken ct) => throw new NotImplementedException();
