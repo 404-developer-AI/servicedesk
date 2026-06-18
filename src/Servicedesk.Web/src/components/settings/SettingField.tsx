@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Info } from "lucide-react";
+import { Info, RotateCcw } from "lucide-react";
 import { settingsApi, type SettingEntry } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import {
@@ -83,6 +83,12 @@ export function SettingField({ entry, queryKey, label, hint, readOnly }: Props) 
     save.mutate(next);
   };
 
+  const isModified = entry.value !== entry.defaultValue;
+  const resetToDefault = () => {
+    setDraft(entry.defaultValue);
+    commit(entry.defaultValue);
+  };
+
   // Description-on-hover: the verbose hint paragraph used to render
   // inline as muted-grey text under the label, which made dense settings
   // panels (Adsolut integration, mail, …) feel noisy. We keep the copy
@@ -124,7 +130,30 @@ export function SettingField({ entry, queryKey, label, hint, readOnly }: Props) 
           {entry.key}
         </p>
       </div>
-      <div className="shrink-0 flex items-center">
+      <div className="shrink-0 flex items-center gap-2">
+        {isModified && !readOnly && (
+          <TooltipProvider delayDuration={150}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Reset to default"
+                  disabled={save.isPending}
+                  onClick={resetToDefault}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-glass hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent
+                side="left"
+                className="border border-glass bg-popover/95 text-xs text-muted-foreground shadow-xl backdrop-blur"
+              >
+                Reset to default
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
         {isBool ? (
           <ToggleSwitch
             checked={draft === "true"}
