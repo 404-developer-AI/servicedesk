@@ -888,6 +888,9 @@ export type AdsolutSalesReceiptHeader = {
   syncedUtc: string;
   // Ticket number parsed from the description ("Ticket#<n>"), or null.
   ticketNumber: number | null;
+  // Id of the matching ticket (null when no Ticket# ref or no such ticket in
+  // this install). Drives the "open the ticket" link in the Adsolut tab.
+  ticketId: string | null;
   // Total registered timesheet minutes on the matched ticket, computed live.
   // null = no Ticket# ref, no matching ticket, no registered hours, or this is
   // a non-primary receipt of a ticket billed across multiple verkoopbonnen

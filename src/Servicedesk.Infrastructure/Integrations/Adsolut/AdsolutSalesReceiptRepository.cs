@@ -50,6 +50,11 @@ public sealed class AdsolutSalesReceiptRow
     /// Ticket number parsed from the description ("Ticket#<digits>"), or null.
     public long? TicketNumber { get; set; }
 
+    /// Id of the matching ticket (tickets.number = parsed ticket_number), or
+    /// null when there is no Ticket# ref or no ticket with that number exists
+    /// in this install. Drives the "open the ticket" link in the timesheet UI.
+    public Guid? TicketId { get; set; }
+
     /// Total registered timesheet minutes on the matched ticket — computed
     /// live in the list query. Null when there is no Ticket# in the
     /// description, no matching ticket, or no registered hours. Surfaced only
@@ -527,6 +532,7 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
                 r.adsolut_last_modified AS AdsolutLastModified,
                 r.synced_utc            AS SyncedUtc,
                 r.ticket_number         AS TicketNumber,
+                tk.id                   AS TicketId,
                 (CASE WHEN g.ord = 1 THEN te.total_minutes END) AS TotalMinutes,
                 (g.ord = 1)             AS IsPrimary,
                 g.cnt                   AS TicketReceiptCount,
