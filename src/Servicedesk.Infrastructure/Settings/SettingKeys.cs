@@ -383,6 +383,16 @@ public static class SettingKeys
         /// How often (minutes) the Articles sync worker ticks. Floor 5.
         public const string ErpArticlesSyncIntervalMinutes = "Adsolut.Erp.Articles.SyncIntervalMinutes";
 
+        // ERP CatalogueProducts (verkoopbon-artikels) pull (v0.0.84). Mirrors the
+        // full product catalogue that can appear on verkoopbonnen, so an admin can
+        // flag which products count as billable work hours for the Timesheet →
+        // Adsolut "VK Werkuren" matching. Shares the SalesReceipts opt-in
+        // (Adsolut.Erp.SalesReceipts.Enabled) — no separate enable.
+        /// How often (minutes) the CatalogueProducts sync worker ticks. Floor 5.
+        /// Gated by Adsolut.Erp.SalesReceipts.Enabled. Each tick is a delta-sync
+        /// keyed on the product's lastModified after the first full import.
+        public const string ErpCatalogueProductsSyncIntervalMinutes = "Adsolut.Erp.CatalogueProducts.SyncIntervalMinutes";
+
         // ERP Contracts (contracten) pull (v0.0.76). Same opt-in ERP slice as
         // Orders/Articles (WK.BE.ERP.Read scope). Feeds the "Contracts overview"
         // module behind the Contracts hub. Default OFF.
@@ -1311,6 +1321,9 @@ public static class SettingDefaults
             "When true, the Articles sync worker mirrors the Adsolut ERP article catalogue (artikels) into the Contract Articles list (Contracts → Contract Articles). Requires the WK.BE.ERP.Read scope on the active connection (tick it in the scopes picker + reconnect) and an active dossier. Off by default — Accounting-only installs stay silent. The Articles list returns full article records inline (code, multi-language name/description, vat code) via cursor pagination, so each tick upserts straight from the list. Per-user access is the Contracts feature flag."),
         new SettingDefault(SettingKeys.Adsolut.ErpArticlesSyncIntervalMinutes, "60", "int", "Adsolut",
             "How often (minutes) the Adsolut Articles sync worker ticks. Floor 5 — set lower and the worker silently clamps. Independent from the Companies + SalesReceipts + Orders sync intervals. Each tick is a delta-sync keyed on the article's lastModified (?ModifiedSince=lastSuccessfulSync)."),
+
+        new SettingDefault(SettingKeys.Adsolut.ErpCatalogueProductsSyncIntervalMinutes, "1440", "int", "Adsolut",
+            "How often (minutes) the Adsolut CatalogueProducts sync worker ticks (default 1440 = daily; the catalogue changes rarely). Floor 5 — set lower and the worker silently clamps. This worker shares the SalesReceipts opt-in (Adsolut.Erp.SalesReceipts.Enabled): it only runs when sales-receipt mirroring is on, because the product catalogue exists to drive the Timesheet → Adsolut 'VK Werkuren' matching (which products count as billable work hours). The first tick is a full import; each later tick is a delta keyed on the product's lastModified (?ModifiedSince=lastSuccessfulSync). The admin-set work-hours flag on each product is never touched by a sync."),
 
         new SettingDefault(SettingKeys.Adsolut.ErpContractsEnabled, "false", "bool", "Adsolut",
             "When true, the Contracts sync worker mirrors the Adsolut ERP contracts (contracten) into the Contracts overview (Contracts → Contracts overview). Requires the WK.BE.ERP.Read scope on the active connection (tick it in the scopes picker + reconnect) and an active dossier. Off by default — Accounting-only installs stay silent. The Contracts list returns the full contract incl. its article lines inline via cursor pagination, so each tick upserts straight from the list (no by-id N+1). A contract has no Ticket# ref — it links to a relation via its customer id (matched to the local company on adsolut_id). Per-user access is the Contracts feature flag."),

@@ -908,6 +908,14 @@ export type AdsolutSalesReceiptHeader = {
   ticketReceiptCount: number;
   ticketReceiptOrdinal: number;
   combinedTotalExclVat: number;
+  // "VK Werkuren" — excl-VAT total of only the product lines whose product is
+  // flagged as counting toward work hours (Settings → Timesheet → work-hours
+  // articles). werkurenExclVat is this receipt's own figure; combinedWerkuren
+  // ExclVat sums it across every receipt on the ticket — what the registered
+  // hours (Difference) are matched against, replacing the full excl-VAT total.
+  // 0 until the product catalogue is synced and articles are flagged.
+  werkurenExclVat: number;
+  combinedWerkurenExclVat: number;
   // "Back Office checked" marker for this receipt (context 'adsolut').
   boChecked: boolean;
   checkedUtc: string | null;
@@ -998,6 +1006,85 @@ export const adsolutTimesheetApi = {
       "POST",
       `/api/timesheet/adsolut/receipts/${id}/resync`,
     ),
+};
+
+// ---- Adsolut catalogue products (VK Werkuren article flags) — v0.0.84 ---
+
+export type AdsolutCatalogueProduct = {
+  id: string;
+  code: string | null;
+  name: string | null;
+  serviceProduct: boolean;
+  isActive: boolean;
+  blocked: boolean;
+  endOfSeries: boolean;
+  // Admin flag: does this product's line total count toward the receipt's VK
+  // Werkuren (and thus the timesheet matching)?
+  countsAsWorkHours: boolean;
+  workHoursUpdatedUtc: string | null;
+  workHoursUpdatedByEmail: string | null;
+  adsolutLastModified: string | null;
+  syncedUtc: string;
+};
+
+export type AdsolutCatalogueProductListResponse = {
+  items: AdsolutCatalogueProduct[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type AdsolutCatalogueProductsState = {
+  enabled: boolean;
+  intervalMinutes: number;
+  totalMirrored: number;
+  workHoursCount: number;
+  lastFullSyncUtc: string | null;
+  lastDeltaSyncUtc: string | null;
+  lastError: string | null;
+  lastErrorUtc: string | null;
+  productsSeen: number;
+  productsUpserted: number;
+  updatedUtc: string | null;
+  nextSyncUtc: string | null;
+};
+
+/// Admin-facing manager for which Adsolut catalogue products count as billable
+/// work hours (drives the Timesheet → Adsolut "VK Werkuren" matching).
+export const adsolutCatalogueProductsApi = {
+  list: (
+    search: string,
+    page: number,
+    pageSize = 50,
+    sort = "code",
+    dir: "asc" | "desc" = "asc",
+    activeOnly = false,
+    workHours: "all" | "yes" | "no" = "all",
+  ) => {
+    const qs = new URLSearchParams({
+      page: String(page),
+      pageSize: String(pageSize),
+      sort,
+      dir,
+    });
+    if (search.trim()) qs.set("search", search.trim());
+    if (activeOnly) qs.set("activeOnly", "true");
+    if (workHours !== "all") qs.set("workHours", workHours);
+    return request<AdsolutCatalogueProductListResponse>(
+      "GET",
+      `/api/timesheet/adsolut/catalogue-products?${qs.toString()}`,
+    );
+  },
+  state: () =>
+    request<AdsolutCatalogueProductsState>("GET", "/api/timesheet/adsolut/catalogue-products/state"),
+  setWorkHours: (id: string, countsAsWorkHours: boolean) =>
+    request<{ id: string; countsAsWorkHours: boolean }>(
+      "POST",
+      `/api/timesheet/adsolut/catalogue-products/${id}/work-hours`,
+      { countsAsWorkHours },
+    ),
+  sync: () =>
+    request<void>("POST", "/api/timesheet/adsolut/catalogue-products/sync"),
 };
 
 // ---- Adsolut Orders (bestellingen) — v0.0.59 ------------------------

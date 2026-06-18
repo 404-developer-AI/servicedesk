@@ -141,6 +141,7 @@ type ColId =
   | "description"
   | "employee"
   | "total"
+  | "werkuren"
   | "hours"
   | "bruto"
   | "difference"
@@ -232,6 +233,13 @@ const ALL_COLUMNS: ColDef[] = [
     render: (r) => (
       <span className="whitespace-nowrap tabular-nums text-foreground">{formatMoney(r.totalExclVat, r.currencyIso)}</span>
     ),
+  },
+  {
+    id: "werkuren",
+    label: "VK Werkuren",
+    align: "right",
+    sortKey: "werkuren",
+    render: (r) => <WerkurenCell receipt={r} />,
   },
   {
     id: "hours",
@@ -760,23 +768,48 @@ function SiblingMarker({ receipt }: { receipt: AdsolutSalesReceiptHeader }) {
       </TooltipTrigger>
       <TooltipContent>
         Part of ticket #{receipt.ticketNumber} — the hours are shown once on the first receipt of
-        this ticket, compared against the combined total of all {receipt.ticketReceiptCount}{" "}
+        this ticket, compared against the combined VK Werkuren of all {receipt.ticketReceiptCount}{" "}
         receipts.
       </TooltipContent>
     </Tooltip>
   );
 }
 
+// ---- VK Werkuren cell -------------------------------------------------
+
+/// This receipt's "VK Werkuren": the excl-VAT total of only the product lines
+/// whose product is flagged (Settings → Timesheet) as counting toward work
+/// hours. Hardware and other lines are excluded. Shown muted when 0 (no
+/// work-hours line, or the catalogue isn't synced/flagged yet) so it still
+/// explains a negative Difference.
+function WerkurenCell({ receipt }: { receipt: AdsolutSalesReceiptHeader }) {
+  const value = receipt.werkurenExclVat;
+  if (!value) {
+    return (
+      <span className="whitespace-nowrap tabular-nums text-muted-foreground/40">
+        {formatMoney(0, receipt.currencyIso)}
+      </span>
+    );
+  }
+  return (
+    <span className="whitespace-nowrap tabular-nums text-purple-200">
+      {formatMoney(value, receipt.currencyIso)}
+    </span>
+  );
+}
+
 // ---- difference cell --------------------------------------------------
 
-/// Combined receipt total (excl. VAT) − Bruto Price. Green when positive
+/// Combined VK Werkuren (excl. VAT) − Bruto Price. Green when positive
 /// (margin), red when negative. Empty when there's no bruto price (no rate /
-/// no hours). For a ticket billed across several verkoopbonnen the comparison
-/// runs once, on the primary receipt, against the COMBINED total of every
-/// receipt on that ticket — siblings show a pointer (SiblingMarker) instead.
+/// no hours). The comparison runs against the work-hours total (VK Werkuren),
+/// not the full excl-VAT total, so hardware lines never skew it. For a ticket
+/// billed across several verkoopbonnen the comparison runs once, on the primary
+/// receipt, against the COMBINED VK Werkuren of every receipt on that ticket —
+/// siblings show a pointer (SiblingMarker) instead.
 function DifferenceCell({ receipt }: { receipt: AdsolutSalesReceiptHeader }) {
   if (isSibling(receipt)) return <SiblingMarker receipt={receipt} />;
-  const billed = receipt.combinedTotalExclVat;
+  const billed = receipt.combinedWerkurenExclVat;
   if (receipt.brutoPrice === null || billed === null || billed === undefined) {
     return <span className="text-muted-foreground/40">—</span>;
   }
@@ -868,8 +901,8 @@ function HoursCell({ receipt }: { receipt: AdsolutSalesReceiptHeader }) {
         </TooltipTrigger>
         <TooltipContent>
           These hours cover all {receipt.ticketReceiptCount} receipts of ticket #
-          {receipt.ticketNumber} — the Difference compares them against the combined total of all
-          {" "}
+          {receipt.ticketNumber} — the Difference compares them against the combined VK Werkuren of
+          all{" "}
           {receipt.ticketReceiptCount} receipts.
         </TooltipContent>
       </Tooltip>
