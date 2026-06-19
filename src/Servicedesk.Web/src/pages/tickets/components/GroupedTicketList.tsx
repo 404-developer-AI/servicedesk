@@ -7,7 +7,7 @@ import {
 } from "@tanstack/react-table";
 import { ChevronDown } from "lucide-react";
 import { ALL_COLUMNS } from "./TicketTable";
-import { taxonomyApi } from "@/lib/api";
+import { taxonomyApi, settingsApi, type TicketGroupingSettings } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
 import { useTheme } from "@/app/ThemeProvider";
@@ -44,6 +44,65 @@ type TicketGroup = {
   color?: string;
   items: TicketListItem[];
 };
+
+// ---- Per-group (per-state) sorting ----
+
+// A high-priority ticket only floats while it is still New or Open; once it is
+// Pending (or Resolved/Closed) it drops back into the normal list.
+function isFloatable(t: TicketListItem): boolean {
+  return (
+    !t.priorityIsDefault &&
+    (t.statusStateCategory === "New" || t.statusStateCategory === "Open")
+  );
+}
+
+// Numeric sort keys for the per-state group sort. Timestamps become epoch ms;
+// a missing value yields NaN and is always pushed to the end of the group.
+const GROUP_SORT_ACCESSORS: Record<string, (t: TicketListItem) => number> = {
+  updatedUtc: (t) => Date.parse(t.updatedUtc),
+  createdUtc: (t) => Date.parse(t.createdUtc),
+  pendingTillUtc: (t) => (t.pendingTillUtc ? Date.parse(t.pendingTillUtc) : NaN),
+  dueUtc: (t) => (t.dueUtc ? Date.parse(t.dueUtc) : NaN),
+  priorityLevel: (t) => t.priorityLevel,
+  number: (t) => t.number,
+};
+
+function sortGroupItems(
+  items: TicketListItem[],
+  field: string,
+  direction: "asc" | "desc",
+): TicketListItem[] {
+  const accessor = GROUP_SORT_ACCESSORS[field];
+  if (!accessor) return items;
+  const dir = direction === "desc" ? -1 : 1;
+  return [...items].sort((a, b) => {
+    const av = accessor(a);
+    const bv = accessor(b);
+    const aNan = Number.isNaN(av);
+    const bNan = Number.isNaN(bv);
+    if (aNan && bNan) return 0;
+    if (aNan) return 1; // nulls/blanks last regardless of direction
+    if (bNan) return -1;
+    return (av - bv) * dir;
+  });
+}
+
+// Apply the configured per-state sort to a status group. Pending groups use the
+// Pending rule; New/Open groups use the Open/New rule; everything else keeps the
+// incoming (global view) order.
+function applyGroupSort(
+  group: TicketGroup,
+  cfg: TicketGroupingSettings,
+): TicketGroup {
+  const category = group.items[0]?.statusStateCategory;
+  if (category === "Pending") {
+    return { ...group, items: sortGroupItems(group.items, cfg.pendingField, cfg.pendingDirection) };
+  }
+  if (category === "New" || category === "Open") {
+    return { ...group, items: sortGroupItems(group.items, cfg.openNewField, cfg.openNewDirection) };
+  }
+  return group;
+}
 
 function groupTickets(
   items: TicketListItem[],
@@ -162,6 +221,14 @@ export function GroupedTicketList({
   const taxonomySortMap = useTaxonomySortMap(groupBy);
   const { visibleColumns } = useColumnPrefsStore();
 
+  // Per-state group sort config (admin-tunable). Only consumed when grouping by
+  // Status; falls open to the global view sort if absent or disabled.
+  const { data: groupingCfg } = useQuery({
+    queryKey: ["settings", "ticket-grouping"],
+    queryFn: () => settingsApi.ticketGrouping(),
+    staleTime: 5 * 60_000,
+  });
+
   const columns = React.useMemo(
     () => ALL_COLUMNS.filter((col) => visibleColumns.includes(col.id!)),
     [visibleColumns],
@@ -183,8 +250,8 @@ export function GroupedTicketList({
     let normalItems: TicketListItem[] = items;
 
     if (hasPriorityFloat) {
-      floatItems = items.filter((t) => !t.priorityIsDefault);
-      normalItems = items.filter((t) => t.priorityIsDefault);
+      floatItems = items.filter(isFloatable);
+      normalItems = items.filter((t) => !isFloatable(t));
     }
 
     const result: TicketGroup[] = [];
@@ -195,14 +262,18 @@ export function GroupedTicketList({
 
     if (hasGrouping) {
       const raw = groupTickets(normalItems, groupBy!);
-      const ordered = orderGroups(raw, displayConfig.groupOrder, taxonomySortMap);
+      let ordered = orderGroups(raw, displayConfig.groupOrder, taxonomySortMap);
+      // Per-state sort only when grouping by Status and the admin toggle is on.
+      if (groupBy === "statusId" && groupingCfg?.enabled) {
+        ordered = ordered.map((g) => applyGroupSort(g, groupingCfg));
+      }
       result.push(...ordered);
     } else if (normalItems.length > 0) {
       result.push({ key: "__all__", label: "All tickets", color: undefined, items: normalItems });
     }
 
     return result;
-  }, [items, hasGrouping, hasPriorityFloat, groupBy, displayConfig.groupOrder, taxonomySortMap]);
+  }, [items, hasGrouping, hasPriorityFloat, groupBy, displayConfig.groupOrder, taxonomySortMap, groupingCfg]);
 
   const showGroupHeaders = hasGrouping || hasPriorityFloat;
   const colCount = columns.length;

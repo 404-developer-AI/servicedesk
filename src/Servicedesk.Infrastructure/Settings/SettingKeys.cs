@@ -68,6 +68,15 @@ public static class SettingKeys
         /// the same value. Bare numbers and a leading "#" are always accepted
         /// too, so changing this never strands anyone mid-paste.
         public const string ReferencePrefix = "Tickets.ReferencePrefix";
+
+        // v0.0.85 — per-group sorting in the ticket list when grouped by Status.
+        // Applies a distinct sort inside each status group based on its semantic
+        // state category, overriding the view's global sort for those rows.
+        public const string GroupSortEnabled = "Tickets.GroupSortEnabled";
+        public const string GroupSortPendingField = "Tickets.GroupSortPendingField";
+        public const string GroupSortPendingDirection = "Tickets.GroupSortPendingDirection";
+        public const string GroupSortOpenNewField = "Tickets.GroupSortOpenNewField";
+        public const string GroupSortOpenNewDirection = "Tickets.GroupSortOpenNewDirection";
     }
 
     public static class Storage
@@ -1182,6 +1191,18 @@ public static class SettingDefaults
             "Show a pulsing 'Contact not linked' warning in the ticket side panel when the requester has no current company links."),
         new SettingDefault(SettingKeys.Tickets.ReferencePrefix, "Ticket#", "string", "Tickets",
             "Human-facing prefix for a ticket reference (e.g. \"Ticket#\" produces \"Ticket#1234\"). Used by the copy-to-clipboard button, the outbound mail subject tag, the #{ticket.reference} template variable, and survey-invite default text. Pasting a reference in this form into global search, the ticket picker, or a timesheet link resolves it back to the ticket; a bare number or a leading \"#\" are always accepted as well."),
+
+        // v0.0.85 — per-state sorting inside status groups (ticket list grouped by Status).
+        new SettingDefault(SettingKeys.Tickets.GroupSortEnabled, "true", "bool", "Tickets",
+            "When the ticket list is grouped by Status, sort each group by its semantic state category instead of the view's global sort. Pending groups and Open/New groups each get their own field + direction below. Resolved/Closed groups keep the global sort. Turn off to use the global sort everywhere."),
+        new SettingDefault(SettingKeys.Tickets.GroupSortPendingField, "pendingTillUtc", "string", "Tickets",
+            "Sort field for status groups in the Pending state category. One of: updatedUtc, createdUtc, pendingTillUtc, dueUtc, priorityLevel, number."),
+        new SettingDefault(SettingKeys.Tickets.GroupSortPendingDirection, "asc", "string", "Tickets",
+            "Sort direction for Pending groups: 'asc' (earliest/lowest first) or 'desc'. Default 'asc' surfaces the soonest pending-till first."),
+        new SettingDefault(SettingKeys.Tickets.GroupSortOpenNewField, "updatedUtc", "string", "Tickets",
+            "Sort field for status groups in the Open or New state category. One of: updatedUtc, createdUtc, pendingTillUtc, dueUtc, priorityLevel, number."),
+        new SettingDefault(SettingKeys.Tickets.GroupSortOpenNewDirection, "asc", "string", "Tickets",
+            "Sort direction for Open/New groups: 'asc' (oldest first) or 'desc'. Default 'asc' surfaces the least recently updated first."),
 
         // Storage — ADR-001 (v0.0.8). Keys only; runtime consumers land in later steps.
         new SettingDefault(SettingKeys.Storage.BlobRoot, "/var/lib/servicedesk/blobs", "string", "Storage",

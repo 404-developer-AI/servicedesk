@@ -82,6 +82,26 @@ public static class SettingEndpoints
         .WithName("GetMailComposeSettings")
         .WithOpenApi();
 
+        // ---- Ticket grouping settings (v0.0.85, agent-readable) ----
+        // The grouped ticket list applies a per-state sort inside status groups.
+        // Exposed here (agent-safe projection) so the list can read it without the
+        // admin-only `/api/settings` endpoint. Falls open to the view's global
+        // sort if the read fails or grouping is disabled.
+        app.MapGet("/api/settings/ticket-grouping", async (ISettingsService svc, CancellationToken ct) =>
+        {
+            var enabled = await svc.GetAsync<bool>(SettingKeys.Tickets.GroupSortEnabled, ct);
+            var pendingField = await svc.GetAsync<string>(SettingKeys.Tickets.GroupSortPendingField, ct) ?? "pendingTillUtc";
+            var pendingDirection = await svc.GetAsync<string>(SettingKeys.Tickets.GroupSortPendingDirection, ct) ?? "asc";
+            var openNewField = await svc.GetAsync<string>(SettingKeys.Tickets.GroupSortOpenNewField, ct) ?? "updatedUtc";
+            var openNewDirection = await svc.GetAsync<string>(SettingKeys.Tickets.GroupSortOpenNewDirection, ct) ?? "asc";
+            return Results.Ok(new TicketGroupingSettings(
+                enabled, pendingField, pendingDirection, openNewField, openNewDirection));
+        })
+        .WithTags("Settings")
+        .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+        .WithName("GetTicketGroupingSettings")
+        .WithOpenApi();
+
         return app;
     }
 
@@ -89,4 +109,10 @@ public static class SettingEndpoints
     public sealed record NavigationSettings(bool ShowOpenTickets);
     public sealed record NotificationsSettings(int PopupDurationSeconds);
     public sealed record MailComposeSettings(bool ForgottenAttachmentEnabled, string ForgottenAttachmentKeywords);
+    public sealed record TicketGroupingSettings(
+        bool Enabled,
+        string PendingField,
+        string PendingDirection,
+        string OpenNewField,
+        string OpenNewDirection);
 }

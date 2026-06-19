@@ -666,6 +666,18 @@ export type MailComposeSettings = {
   forgottenAttachmentKeywords: string;
 };
 
+export type TicketGroupingSettings = {
+  /// When true and the ticket list is grouped by Status, each group is sorted by
+  /// its semantic state category instead of the view's global sort.
+  enabled: boolean;
+  /// Sort field/direction applied inside Pending-state status groups.
+  pendingField: string;
+  pendingDirection: "asc" | "desc";
+  /// Sort field/direction applied inside Open- or New-state status groups.
+  openNewField: string;
+  openNewDirection: "asc" | "desc";
+};
+
 export const settingsApi = {
   list: (category?: string) => {
     const params = category ? `?category=${encodeURIComponent(category)}` : "";
@@ -679,6 +691,8 @@ export const settingsApi = {
     request<NotificationsSettings>("GET", "/api/settings/notifications"),
   mailCompose: () =>
     request<MailComposeSettings>("GET", "/api/settings/mail-compose"),
+  ticketGrouping: () =>
+    request<TicketGroupingSettings>("GET", "/api/settings/ticket-grouping"),
 };
 
 // ---- Microsoft Graph admin ----

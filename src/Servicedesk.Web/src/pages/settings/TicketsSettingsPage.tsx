@@ -43,7 +43,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-type TabKey = "queues" | "priorities" | "statuses" | "categories" | "types" | "iso27001" | "warnings" | "general";
+type TabKey = "queues" | "priorities" | "statuses" | "categories" | "types" | "iso27001" | "warnings" | "grouping" | "general";
 
 const TABS: { key: TabKey; label: string; description: string }[] = [
   {
@@ -87,6 +87,12 @@ const TABS: { key: TabKey; label: string; description: string }[] = [
     label: "Warnings",
     description:
       "Visual alerts that surface in the ticket side panel when something needs attention.",
+  },
+  {
+    key: "grouping",
+    label: "Grouping",
+    description:
+      "How the ticket list orders rows inside each group when it is grouped by Status. Pending groups and Open/New groups each get their own sort; Resolved/Closed keep the view's global sort.",
   },
   {
     key: "general",
@@ -144,6 +150,7 @@ export function TicketsSettingsPage() {
         {tab === "types" && <TicketTypesTab />}
         {tab === "iso27001" && <Iso27001Tab />}
         {tab === "warnings" && <WarningsTab />}
+        {tab === "grouping" && <GroupingTab />}
         {tab === "general" && <GeneralTab />}
       </div>
     </div>
@@ -197,6 +204,169 @@ function WarningsTab() {
                 value: v ? "true" : "false",
               })
             }
+          />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+const GROUP_SORT_FIELDS: { value: string; label: string }[] = [
+  { value: "pendingTillUtc", label: "Pending till" },
+  { value: "updatedUtc", label: "Last updated" },
+  { value: "createdUtc", label: "Created" },
+  { value: "dueUtc", label: "Due" },
+  { value: "priorityLevel", label: "Priority level" },
+  { value: "number", label: "Ticket number" },
+];
+
+const GROUP_SORT_DIRECTIONS: { value: string; label: string }[] = [
+  { value: "asc", label: "Ascending (oldest / soonest / lowest first)" },
+  { value: "desc", label: "Descending (newest / latest / highest first)" },
+];
+
+function GroupSortRow({
+  label,
+  description,
+  field,
+  direction,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  field: string;
+  direction: string;
+  disabled?: boolean;
+  onChange: (patch: { field?: string; direction?: string }) => void;
+}) {
+  return (
+    <div className="space-y-2 rounded-md border border-glass bg-glass px-3 py-3">
+      <div className="space-y-0.5">
+        <div className="text-sm font-medium text-foreground">{label}</div>
+        <div className="text-xs text-muted-foreground">{description}</div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="space-y-1.5">
+          <span className="text-xs text-muted-foreground">Field</span>
+          <Select value={field} disabled={disabled} onValueChange={(v) => onChange({ field: v })}>
+            <SelectTrigger className="h-9 border-glass bg-glass">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="border-glass bg-popover/80 backdrop-blur-xl">
+              {GROUP_SORT_FIELDS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+        <label className="space-y-1.5">
+          <span className="text-xs text-muted-foreground">Direction</span>
+          <Select value={direction} disabled={disabled} onValueChange={(v) => onChange({ direction: v })}>
+            <SelectTrigger className="h-9 border-glass bg-glass">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="border-glass bg-popover/80 backdrop-blur-xl">
+              {GROUP_SORT_DIRECTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function GroupingTab() {
+  const qc = useQueryClient();
+  const { data: entries, isLoading } = useQuery({
+    queryKey: ["settings", "tickets-grouping"],
+    queryFn: () => settingsApi.list("Tickets"),
+    staleTime: 60_000,
+  });
+
+  const get = (key: string, fallback: string) =>
+    entries?.find((e) => e.key === key)?.value ?? fallback;
+
+  const enabled = get("Tickets.GroupSortEnabled", "true") === "true";
+  const pendingField = get("Tickets.GroupSortPendingField", "pendingTillUtc");
+  const pendingDir = get("Tickets.GroupSortPendingDirection", "asc");
+  const openNewField = get("Tickets.GroupSortOpenNewField", "updatedUtc");
+  const openNewDir = get("Tickets.GroupSortOpenNewDirection", "asc");
+
+  const update = useMutation({
+    mutationFn: ({ key, value }: { key: string; value: string }) =>
+      settingsApi.update(key, value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "tickets-grouping"] });
+      // The grouped ticket list reads the agent-safe projection — refresh it so
+      // a change takes effect without a reload.
+      qc.invalidateQueries({ queryKey: ["settings", "ticket-grouping"] });
+      toast.success("Setting updated");
+    },
+    onError: () => toast.error("Could not update setting"),
+  });
+
+  const busy = isLoading || update.isPending;
+  const rowsDisabled = busy || !enabled;
+
+  return (
+    <div className="space-y-6">
+      <section className="glass-card p-5">
+        <div className="space-y-1">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            Per-state group sorting
+          </h2>
+          <p className="text-xs text-muted-foreground/70">
+            Only applies when the ticket list is grouped by <strong>Status</strong>.
+            Each status group is then sorted by its semantic state category instead
+            of the view's global sort. Resolved and Closed groups always keep the
+            global sort.
+          </p>
+        </div>
+        <div className="mt-4 space-y-3">
+          <ToggleRow
+            label="Enable per-state group sorting"
+            description="Off = every group uses the view's global sort."
+            checked={enabled}
+            disabled={busy}
+            onCheckedChange={(v) =>
+              update.mutate({
+                key: "Tickets.GroupSortEnabled",
+                value: v ? "true" : "false",
+              })
+            }
+          />
+          <GroupSortRow
+            label="Pending groups"
+            description="Tickets in a Pending-category status. Default: soonest pending-till first."
+            field={pendingField}
+            direction={pendingDir}
+            disabled={rowsDisabled}
+            onChange={(p) => {
+              if (p.field !== undefined)
+                update.mutate({ key: "Tickets.GroupSortPendingField", value: p.field });
+              if (p.direction !== undefined)
+                update.mutate({ key: "Tickets.GroupSortPendingDirection", value: p.direction });
+            }}
+          />
+          <GroupSortRow
+            label="Open & New groups"
+            description="Tickets in an Open- or New-category status. Default: least recently updated first."
+            field={openNewField}
+            direction={openNewDir}
+            disabled={rowsDisabled}
+            onChange={(p) => {
+              if (p.field !== undefined)
+                update.mutate({ key: "Tickets.GroupSortOpenNewField", value: p.field });
+              if (p.direction !== undefined)
+                update.mutate({ key: "Tickets.GroupSortOpenNewDirection", value: p.direction });
+            }}
           />
         </div>
       </section>
