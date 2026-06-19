@@ -983,6 +983,8 @@ export const adsolutTimesheetApi = {
     sort = "date",
     dir: "asc" | "desc" = "desc",
     boFilter: "all" | "checked" | "unchecked" = "all",
+    year?: number,
+    month?: number,
   ) => {
     const qs = new URLSearchParams({
       page: String(page),
@@ -992,6 +994,10 @@ export const adsolutTimesheetApi = {
     });
     if (search.trim()) qs.set("search", search.trim());
     if (boFilter !== "all") qs.set("boFilter", boFilter);
+    if (year !== undefined && month !== undefined) {
+      qs.set("year", String(year));
+      qs.set("month", String(month));
+    }
     return request<AdsolutSalesReceiptListResponse>(
       "GET",
       `/api/timesheet/adsolut/receipts?${qs.toString()}`,

@@ -6,6 +6,7 @@ import {
   ArrowUp,
   CheckCheck,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Columns3,
   CornerDownRight,
@@ -302,6 +303,20 @@ function mergeConfig(raw: string | undefined): ColConfig[] {
   return merged.length > 0 ? merged : DEFAULT_CONFIG;
 }
 
+// ---- month switcher label ---------------------------------------------
+
+function MonthLabel({ year, month, all }: { year: number; month: number; all: boolean }) {
+  const d = new Date(year, month - 1, 1);
+  const label = all
+    ? "All months"
+    : d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  return (
+    <span className="min-w-[9rem] px-2 text-center text-sm font-medium text-foreground">
+      {label}
+    </span>
+  );
+}
+
 // ---- main tab ---------------------------------------------------------
 
 /// Timesheet → Adsolut tab. Mounted only when the Adsolut integration is
@@ -313,6 +328,41 @@ function mergeConfig(raw: string | undefined): ColConfig[] {
 export function TimesheetTabAdsolut() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
+  // Single-month scope on the receipt date, mirroring the Resolved/CWI tabs:
+  // prev/next stepping and a "This month" reset. Defaults to the current month.
+  // "All" lifts the month scope entirely (every mirrored receipt) — stepping a
+  // month or "This month" re-enables scoping from the last selected month.
+  const [{ year, month }, setYM] = useState(() => {
+    const d = new Date();
+    return { year: d.getFullYear(), month: d.getMonth() + 1 };
+  });
+  const [allMonths, setAllMonths] = useState(false);
+  const goMonth = (delta: number) => {
+    setPage(1);
+    setAllMonths(false);
+    setYM(({ year: yy, month: mm }) => {
+      let y = yy;
+      let m = mm + delta;
+      if (m < 1) {
+        m = 12;
+        y -= 1;
+      } else if (m > 12) {
+        m = 1;
+        y += 1;
+      }
+      return { year: y, month: m };
+    });
+  };
+  const thisMonth = () => {
+    const d = new Date();
+    setPage(1);
+    setAllMonths(false);
+    setYM({ year: d.getFullYear(), month: d.getMonth() + 1 });
+  };
+  const showAll = () => {
+    setPage(1);
+    setAllMonths(true);
+  };
   const [page, setPage] = useState(1);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState("date");
@@ -350,9 +400,12 @@ export function TimesheetTabAdsolut() {
     [effectiveConfig],
   );
 
+  const scopeYear = allMonths ? undefined : year;
+  const scopeMonth = allMonths ? undefined : month;
   const list = useQuery({
-    queryKey: [...RECEIPTS_KEY, search, page, sortKey, sortDir, boFilter],
-    queryFn: () => adsolutTimesheetApi.listReceipts(search, page, PAGE_SIZE, sortKey, sortDir, boFilter),
+    queryKey: [...RECEIPTS_KEY, search, page, sortKey, sortDir, boFilter, scopeYear, scopeMonth],
+    queryFn: () =>
+      adsolutTimesheetApi.listReceipts(search, page, PAGE_SIZE, sortKey, sortDir, boFilter, scopeYear, scopeMonth),
   });
 
   const total = list.data?.total ?? 0;
@@ -364,7 +417,7 @@ export function TimesheetTabAdsolut() {
   // sort or BO filter), so a hidden row never lingers in a bulk action.
   useEffect(() => {
     setSelected(new Set());
-  }, [page, search, sortKey, sortDir, boFilter]);
+  }, [page, search, sortKey, sortDir, boFilter, scopeYear, scopeMonth]);
 
   const setChecks = useMutation({
     mutationFn: (vars: { ids: string[]; checked: boolean }) =>
@@ -413,20 +466,63 @@ export function TimesheetTabAdsolut() {
   return (
    <TooltipProvider delayDuration={150}>
     <div className="flex flex-1 flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full border border-glass bg-glass">
-            <Receipt className="h-4 w-4 text-muted-foreground" />
-          </div>
-          <div>
-            <h2 className="text-display-sm font-semibold text-foreground">Sales receipts</h2>
-            <p className="text-xs text-muted-foreground">
-              {total.toLocaleString()} verkoopbonnen mirrored from Adsolut
-            </p>
-          </div>
+      <div className="flex items-center gap-2">
+        <div className="flex h-9 w-9 items-center justify-center rounded-full border border-glass bg-glass">
+          <Receipt className="h-4 w-4 text-muted-foreground" />
+        </div>
+        <div>
+          <h2 className="text-display-sm font-semibold text-foreground">Sales receipts</h2>
+          <p className="text-xs text-muted-foreground">
+            {total.toLocaleString()} verkoopbonnen mirrored from Adsolut
+          </p>
+        </div>
+      </div>
+
+      {/* Toolbar: month scope (left) + search / filters (right). */}
+      <div className="glass-panel flex flex-wrap items-center justify-between gap-3 p-3">
+        <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => goMonth(-1)}
+            className="h-8 w-8 p-0"
+            aria-label="Previous month"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <MonthLabel year={year} month={month} all={allMonths} />
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => goMonth(1)}
+            className="h-8 w-8 p-0"
+            aria-label="Next month"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={thisMonth}
+            className="h-8 px-2 text-xs"
+          >
+            This month
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={showAll}
+            aria-pressed={allMonths}
+            className={cn(
+              "h-8 px-2 text-xs",
+              allMonths && "bg-primary/15 text-primary hover:bg-primary/20",
+            )}
+          >
+            All
+          </Button>
         </div>
         <div className="flex items-center gap-2">
-          <div className="relative w-full max-w-xs">
+          <div className="relative w-64 max-w-xs">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
