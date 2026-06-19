@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Reply, ReplyAll, Forward as ForwardIcon, Mail, Paperclip } from "lucide-react";
+import { Paperclip } from "lucide-react";
 import {
   ticketApi,
   mentionApi,
@@ -241,8 +241,11 @@ function typedTextMentionsAttachment(bodyHtml: string, keywords: string[]): bool
 
 export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent, onCancel }: Props) {
   const { user } = useAuth();
+  // Reply / Reply-all / Forward only ever start from an explicit feed action
+  // (initialIntent). Composing through the note → "Send mail" tab is always a
+  // fresh "New" mail; there is no in-composer mode switcher.
   const [kind, setKind] = React.useState<OutboundMailKind>(
-    initialIntent?.kind ?? (context.latestInbound ? "Reply" : "New"),
+    initialIntent?.kind ?? "New",
   );
   const [to, setTo] = React.useState<MailRecipientInput[]>([]);
   const [cc, setCc] = React.useState<MailRecipientInput[]>([]);
@@ -507,7 +510,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
       setEditorKey((k) => k + 1);
       return;
     }
-    applyKind(context.latestInbound ? "Reply" : "New");
+    applyKind("New");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialIntent?.id]);
 
@@ -614,70 +617,9 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
     mutation.mutate();
   }
 
-  const canReply = context.latestInbound !== null;
-
   return (
     <>
     <form onSubmit={handleSubmit} className="space-y-3">
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => applyKind("Reply")}
-          disabled={!canReply}
-          className={cn(
-            "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
-            kind === "Reply"
-              ? "bg-sky-500/15 text-sky-300 border border-sky-500/30"
-              : "text-muted-foreground hover:text-foreground hover:bg-glass-hover",
-            !canReply && "opacity-40 cursor-not-allowed",
-          )}
-        >
-          <Reply className="h-3.5 w-3.5" />
-          Reply
-        </button>
-        <button
-          type="button"
-          onClick={() => applyKind("ReplyAll")}
-          disabled={!canReply}
-          className={cn(
-            "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
-            kind === "ReplyAll"
-              ? "bg-sky-500/15 text-sky-300 border border-sky-500/30"
-              : "text-muted-foreground hover:text-foreground hover:bg-glass-hover",
-            !canReply && "opacity-40 cursor-not-allowed",
-          )}
-        >
-          <ReplyAll className="h-3.5 w-3.5" />
-          Reply all
-        </button>
-        <button
-          type="button"
-          onClick={() => applyKind("Forward")}
-          className={cn(
-            "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
-            kind === "Forward"
-              ? "bg-sky-500/15 text-sky-300 border border-sky-500/30"
-              : "text-muted-foreground hover:text-foreground hover:bg-glass-hover",
-          )}
-        >
-          <ForwardIcon className="h-3.5 w-3.5" />
-          Forward
-        </button>
-        <button
-          type="button"
-          onClick={() => applyKind("New")}
-          className={cn(
-            "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
-            kind === "New"
-              ? "bg-sky-500/15 text-sky-300 border border-sky-500/30"
-              : "text-muted-foreground hover:text-foreground hover:bg-glass-hover",
-          )}
-        >
-          <Mail className="h-3.5 w-3.5" />
-          New
-        </button>
-      </div>
-
       <div className="space-y-1.5 text-sm">
         <div className="flex items-center gap-2">
           <label className="w-10 shrink-0 text-xs text-muted-foreground">To</label>
