@@ -101,6 +101,21 @@ export function TimesheetTab2() {
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(DEFAULT_PAGE_SIZE);
   const [editingId, setEditingId] = React.useState<string | null>(null);
+  // Ad-hoc multi-select: ctrl/cmd-click toggles a row, shift-click extends a
+  // range from the last clicked row. We store id → logged minutes (not just
+  // ids) so the "Selected" total stays correct even after paging away from the
+  // rows that make up the selection (their minutes are no longer in `entries`).
+  const [selected, setSelected] = React.useState<Map<string, number>>(() => new Map());
+  const selectionAnchor = React.useRef<string | null>(null);
+  const clearSelection = React.useCallback(() => {
+    setSelected(new Map());
+    selectionAnchor.current = null;
+  }, []);
+  const selectedMinutes = React.useMemo(() => {
+    let sum = 0;
+    for (const m of selected.values()) sum += m;
+    return sum;
+  }, [selected]);
 
   const tasksQuery = useQuery({
     queryKey: ["timesheet", "tasks"],
@@ -144,6 +159,7 @@ export function TimesheetTab2() {
     setFilter({ ...draft });
     setPage(1);
     setEditingId(null);
+    clearSelection();
   };
   const resetFilter = () => {
     const d = defaultFilter();
@@ -151,15 +167,48 @@ export function TimesheetTab2() {
     setFilter(d);
     setPage(1);
     setEditingId(null);
+    clearSelection();
   };
   const changePageSize = (next: number) => {
     setPageSize(next);
     setPage(1);
     setEditingId(null);
+    clearSelection();
   };
   const goToPage = (next: number) => {
     setPage(Math.min(Math.max(1, next), totalPages));
     setEditingId(null);
+  };
+
+  // Translate a modified click on a row into a selection change. A plain click
+  // (no modifier) is a no-op so existing behaviour is untouched.
+  const handleRowSelect = (entry: TimesheetEntry, e: React.MouseEvent) => {
+    if (e.shiftKey) {
+      const anchorId = selectionAnchor.current;
+      const anchorIdx = anchorId ? entries.findIndex((x) => x.id === anchorId) : -1;
+      const clickedIdx = entries.findIndex((x) => x.id === entry.id);
+      setSelected((prev) => {
+        const next = new Map(prev);
+        if (anchorIdx === -1) {
+          next.set(entry.id, entry.minutes);
+        } else {
+          const [lo, hi] = anchorIdx < clickedIdx ? [anchorIdx, clickedIdx] : [clickedIdx, anchorIdx];
+          for (let i = lo; i <= hi; i++) next.set(entries[i].id, entries[i].minutes);
+        }
+        return next;
+      });
+      // Shift-click keeps the original anchor so the range can be re-extended.
+      return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      setSelected((prev) => {
+        const next = new Map(prev);
+        if (next.has(entry.id)) next.delete(entry.id);
+        else next.set(entry.id, entry.minutes);
+        return next;
+      });
+      selectionAnchor.current = entry.id;
+    }
   };
 
   return (
@@ -174,6 +223,9 @@ export function TimesheetTab2() {
         loading={entriesQuery.isFetching}
         total={total}
         totalMinutes={totalMinutes}
+        selectedCount={selected.size}
+        selectedMinutes={selectedMinutes}
+        onClearSelection={clearSelection}
         page={page}
         pageSize={pageSize}
         totalPages={totalPages}
@@ -228,6 +280,7 @@ export function TimesheetTab2() {
                     onCancel={() => setEditingId(null)}
                     onSaved={() => {
                       setEditingId(null);
+                      clearSelection();
                       invalidate();
                     }}
                   />
@@ -235,8 +288,13 @@ export function TimesheetTab2() {
                   <ManagerDisplayRow
                     key={entry.id}
                     entry={entry}
+                    selected={selected.has(entry.id)}
+                    onSelect={(e) => handleRowSelect(entry, e)}
                     onEdit={() => setEditingId(entry.id)}
-                    onDeleted={() => invalidate()}
+                    onDeleted={() => {
+                      clearSelection();
+                      invalidate();
+                    }}
                   />
                 ),
               )}
@@ -287,6 +345,9 @@ function FilterBar({
   loading,
   total,
   totalMinutes,
+  selectedCount,
+  selectedMinutes,
+  onClearSelection,
   page,
   pageSize,
   totalPages,
@@ -302,6 +363,9 @@ function FilterBar({
   loading: boolean;
   total: number;
   totalMinutes: number;
+  selectedCount: number;
+  selectedMinutes: number;
+  onClearSelection: () => void;
   page: number;
   pageSize: number;
   totalPages: number;
@@ -440,6 +504,23 @@ function FilterBar({
           </span>
         </div>
         <div className="flex items-center gap-3">
+          {selectedCount > 0 && (
+            <span className="flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-primary">
+              Selected:{" "}
+              <span className="font-mono font-medium">
+                {selectedCount} {selectedCount === 1 ? "line" : "lines"} ·{" "}
+                {formatDuration(selectedMinutes)}
+              </span>
+              <button
+                type="button"
+                onClick={onClearSelection}
+                className="ml-0.5 rounded-full p-0.5 hover:bg-primary/20"
+                aria-label="Clear selection"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          )}
           <span>
             Total:{" "}
             <span className="font-mono font-medium text-foreground">
@@ -500,10 +581,14 @@ function FieldGroup({
 
 function ManagerDisplayRow({
   entry,
+  selected,
+  onSelect,
   onEdit,
   onDeleted,
 }: {
   entry: TimesheetEntry;
+  selected: boolean;
+  onSelect: (e: React.MouseEvent) => void;
   onEdit: () => void;
   onDeleted: () => void;
 }) {
@@ -517,7 +602,17 @@ function ManagerDisplayRow({
   });
 
   return (
-    <tr className="border-b border-glass last:border-b-0 hover:bg-glass-hover">
+    <tr
+      onClick={onSelect}
+      // Stop the browser from range-selecting text when shift-clicking rows.
+      onMouseDown={(e) => {
+        if (e.shiftKey) e.preventDefault();
+      }}
+      className={cn(
+        "border-b border-glass last:border-b-0",
+        selected ? "bg-primary/10 hover:bg-primary/15" : "hover:bg-glass-hover",
+      )}
+    >
       <td className="px-3 py-2 font-mono text-xs text-foreground/90">
         {entry.entryDate.slice(0, 10)}
       </td>
@@ -568,7 +663,10 @@ function ManagerDisplayRow({
             size="sm"
             variant="ghost"
             className="h-7 w-7 p-0"
-            onClick={onEdit}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
             aria-label="Edit entry"
           >
             <Pencil className="h-3.5 w-3.5" />
@@ -578,7 +676,8 @@ function ManagerDisplayRow({
             variant="ghost"
             className="h-7 w-7 p-0 text-red-300/80 hover:text-red-300"
             disabled={deleteMutation.isPending}
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               if (
                 window.confirm(
                   `Remove this entry of ${entry.userEmail || "this user"}? This is logged in the audit trail.`,
