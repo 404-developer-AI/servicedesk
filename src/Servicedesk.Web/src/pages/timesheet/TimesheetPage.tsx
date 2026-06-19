@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Clock,
   Users as UsersIcon,
@@ -6,18 +7,21 @@ import {
   Receipt,
   ClipboardCheck,
   FileX2,
+  MessageSquare,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/authStore";
+import { timesheetCommentsApi } from "@/lib/api";
 import { useTimesheetManagerRealtime } from "@/hooks/useTimesheetRealtime";
 import { TimesheetTab1 } from "@/pages/timesheet/TimesheetTab1";
 import { TimesheetTab2 } from "@/pages/timesheet/TimesheetTab2";
 import { TimesheetTab3 } from "@/pages/timesheet/TimesheetTab3";
 import { TimesheetTabAdsolut } from "@/pages/timesheet/TimesheetTabAdsolut";
 import { TimesheetTabBackoffice } from "@/pages/timesheet/TimesheetTabBackoffice";
+import { TimesheetTabComments } from "@/pages/timesheet/TimesheetTabComments";
 
-type Tab = "day" | "manager" | "month" | "adsolut" | "resolved" | "cwi";
+type Tab = "day" | "manager" | "month" | "adsolut" | "resolved" | "cwi" | "comments";
 
 /// Top-level Timesheet page. Hosts up to four tabs:
 ///   1. **My day** (Tab 1) — the agent's own daily registration. Always
@@ -47,6 +51,15 @@ export function TimesheetPage() {
   // another manager (or from an agent's Tab 1 save). Non-managers skip the
   // join entirely.
   useTimesheetManagerRealtime(isManager);
+
+  // v0.0.84 — unread Comments count drives the red dot on the Comments tab.
+  // Kept fresh by the shell-level SignalR push (invalidates ["timesheet"]).
+  const commentsUnread = useQuery({
+    queryKey: ["timesheet", "comments", "unread"],
+    queryFn: () => timesheetCommentsApi.unreadCount(),
+    staleTime: 30_000,
+  });
+  const hasUnreadComments = (commentsUnread.data?.count ?? 0) > 0;
 
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col gap-6">
@@ -108,6 +121,13 @@ export function TimesheetPage() {
             />
           </>
         )}
+        <TabButton
+          active={tab === "comments"}
+          onClick={() => setTab("comments")}
+          icon={<MessageSquare className="h-3.5 w-3.5" />}
+          label="Comments"
+          badge={hasUnreadComments}
+        />
       </div>
 
       {tab === "day" && <TimesheetTab1 />}
@@ -116,6 +136,7 @@ export function TimesheetPage() {
       {tab === "adsolut" && showAdsolut && <TimesheetTabAdsolut />}
       {tab === "resolved" && showBackoffice && <TimesheetTabBackoffice context="resolved" />}
       {tab === "cwi" && showBackoffice && <TimesheetTabBackoffice context="cwi" />}
+      {tab === "comments" && <TimesheetTabComments />}
     </div>
   );
 }
@@ -126,12 +147,15 @@ function TabButton({
   icon,
   label,
   disabled,
+  badge,
 }: {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
   disabled?: boolean;
+  /// When true, a small red dot is shown on the tab (unread indicator).
+  badge?: boolean;
 }) {
   return (
     <button
@@ -139,7 +163,7 @@ function TabButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors",
+        "relative inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors",
         active
           ? "bg-glass-strong text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
           : "text-muted-foreground hover:bg-glass-hover hover:text-foreground",
@@ -149,6 +173,9 @@ function TabButton({
     >
       {icon}
       {label}
+      {badge && (
+        <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-red-500" />
+      )}
     </button>
   );
 }

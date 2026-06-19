@@ -177,6 +177,10 @@ builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.ITelavoxCallNo
 // (TicketTimesheetPanel) via the existing TicketPresenceHub.
 builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.ITimesheetEntryNotifier,
     Servicedesk.Api.Presence.SignalRTimesheetEntryNotifier>();
+// v0.0.84 — Timesheet → Comments per-user push (TimesheetCommentReceived on
+// the same UserNotificationHub the mention raamwerk uses).
+builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.ITimesheetCommentNotifier,
+    Servicedesk.Api.Presence.SignalRTimesheetCommentNotifier>();
 // v0.0.52 — Tactical RMM sync worker emits an AssetsChanged ping on
 // TicketPresenceHub so the Assets page invalidates after every cycle.
 builder.Services.AddSingleton<Servicedesk.Infrastructure.Integrations.Trmm.ITrmmSyncNotifier,
@@ -669,6 +673,7 @@ app.MapTimesheetImportEndpoints();
 app.MapAdsolutTimesheetEndpoints();
 app.MapAdsolutCatalogueProductsEndpoints();
 app.MapBackofficeTimesheetEndpoints();
+app.MapTimesheetCommentEndpoints();
 app.MapOrdersEndpoints();
 app.MapContractArticlesEndpoints();
 app.MapContractsOverviewEndpoints();

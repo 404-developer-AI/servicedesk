@@ -90,6 +90,14 @@ public sealed class AdsolutSalesReceiptRow
     public bool BoChecked { get; set; }
     public DateTime? CheckedUtc { get; set; }
     public string? CheckedByEmail { get; set; }
+
+    /// v0.0.84 — Timesheet → Comments. The shared per-ticket comment thread id
+    /// (matched on this receipt's ticket_number; null when none exists yet),
+    /// whether any comment exists, and whether the viewing user has an unread
+    /// message linked to them on that ticket.
+    public Guid? CommentThreadId { get; set; }
+    public bool HasComments { get; set; }
+    public bool CommentsUnread { get; set; }
 }
 
 /// One task's registered minutes for a receipt's matched ticket (hours pill
@@ -177,7 +185,7 @@ public interface IAdsolutSalesReceiptRepository
     /// whose siblings fall in another month keeps its true ticket-wide totals.
     Task<AdsolutSalesReceiptListResult> ListAsync(
         string? search, int page, int pageSize, string? sort, string? dir, decimal hourlyRate,
-        string? boFilter, int? year, int? month, CancellationToken ct = default);
+        string? boFilter, int? year, int? month, Guid viewerId, bool withComments, CancellationToken ct = default);
 
     /// One receipt with its product + performance lines (for the expand view).
     Task<AdsolutSalesReceiptDetail?> GetDetailAsync(Guid id, CancellationToken ct = default);
@@ -467,7 +475,7 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
 
     public async Task<AdsolutSalesReceiptListResult> ListAsync(
         string? search, int page, int pageSize, string? sort, string? dir, decimal hourlyRate,
-        string? boFilter, int? year, int? month, CancellationToken ct = default)
+        string? boFilter, int? year, int? month, Guid viewerId, bool withComments, CancellationToken ct = default)
     {
         var safePage = Math.Max(1, page);
         var safePageSize = Math.Clamp(pageSize, 1, 200);
@@ -501,6 +509,10 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
             _ => string.Empty,
         };
 
+        // v0.0.84 — optional "only rows with a comment thread" filter (the
+        // reviewer's per-row chat). Joined on the receipt's ticket_number.
+        var commentsClause = withComments ? "AND cth.id IS NOT NULL" : string.Empty;
+
         // Whitelisted sort expression (no user string ever reaches the SQL).
         // bruto/difference order on rate × registered hours via the @Rate param.
         // Hours live only on the primary receipt of a ticket (g.ord = 1), so the
@@ -531,12 +543,14 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
             SELECT COUNT(*)::int
             FROM adsolut_sales_receipts r
             LEFT JOIN timesheet_bo_checks bo ON bo.entity_id = r.id AND bo.context = 'adsolut'
+            LEFT JOIN timesheet_comment_threads cth ON cth.ticket_number = r.ticket_number
             WHERE (@HasSearch = FALSE
                    OR r.customer_name ILIKE @Like
                    OR r.description ILIKE @Like
                    OR (@DocProbe IS NOT NULL AND r.doc_nr = @DocProbe))
             {boClause}
             {monthClause}
+            {commentsClause}
             """,
             new { HasSearch = hasSearch, Like = like, DocProbe = docProbe, MonthStart = monthStart, MonthEnd = monthEnd },
             cancellationToken: ct));
@@ -577,7 +591,10 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
                 COALESCE(g.combined_werkuren, 0) AS CombinedWerkurenExclVat,
                 (bo.entity_id IS NOT NULL) AS BoChecked,
                 bo.checked_utc          AS CheckedUtc,
-                bu.email                AS CheckedByEmail
+                bu.email                AS CheckedByEmail,
+                cth.id                  AS CommentThreadId,
+                (cth.id IS NOT NULL)    AS HasComments,
+                COALESCE(cu.unread, FALSE) AS CommentsUnread
             FROM adsolut_sales_receipts r
             LEFT JOIN tickets tk ON tk.number = r.ticket_number
             LEFT JOIN (
@@ -615,16 +632,25 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
             ) g ON g.id = r.id
             LEFT JOIN timesheet_bo_checks bo ON bo.entity_id = r.id AND bo.context = 'adsolut'
             LEFT JOIN users bu ON bu.id = bo.checked_by
+            LEFT JOIN timesheet_comment_threads cth ON cth.ticket_number = r.ticket_number
+            LEFT JOIN LATERAL (
+                SELECT TRUE AS unread
+                FROM timesheet_comments cm
+                JOIN timesheet_comment_recipients cr ON cr.comment_id = cm.id
+                WHERE cm.thread_id = cth.id AND cr.user_id = @ViewerId AND cr.read_utc IS NULL
+                LIMIT 1
+            ) cu ON TRUE
             WHERE (@HasSearch = FALSE
                    OR r.customer_name ILIKE @Like
                    OR r.description ILIKE @Like
                    OR (@DocProbe IS NOT NULL AND r.doc_nr = @DocProbe))
             {boClause}
             {monthClause}
+            {commentsClause}
             ORDER BY {sortExpr} {dirSql} NULLS LAST, r.doc_nr DESC NULLS LAST
             LIMIT @Limit OFFSET @Offset
             """,
-            new { HasSearch = hasSearch, Like = like, DocProbe = docProbe, Rate = hourlyRate, Limit = safePageSize, Offset = offset, MonthStart = monthStart, MonthEnd = monthEnd },
+            new { HasSearch = hasSearch, Like = like, DocProbe = docProbe, Rate = hourlyRate, Limit = safePageSize, Offset = offset, MonthStart = monthStart, MonthEnd = monthEnd, ViewerId = viewerId },
             cancellationToken: ct));
 
         return new AdsolutSalesReceiptListResult(items.ToList(), total, safePage, safePageSize);

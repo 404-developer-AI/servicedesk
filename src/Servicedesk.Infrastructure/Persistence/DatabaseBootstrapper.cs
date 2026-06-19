@@ -3926,6 +3926,61 @@ public sealed class DatabaseBootstrapper : IHostedService
             ON timesheet_bo_checks (context, entity_id);
 
         -- ===================================================================
+        -- v0.0.84 — Timesheet review comments ("Comments" tab)
+        --
+        -- A reviewer working the Adsolut / Resolved / CWI tabs can open a
+        -- chat thread on a ticket line and link it to one or more colleagues
+        -- (anyone with timesheet active). Threads are shared per ticket (one
+        -- per ticket_number); each remembers the tab it was raised from
+        -- (origin_context) and the exact row id there (origin_entity_id —
+        -- a sales-receipt id for 'adsolut', a ticket id for 'resolved'/'cwi').
+        -- That origin row's BO-checked state drives whether the thread is
+        -- hidden from the linked user's Comments inbox — the reviewer keeps
+        -- the per-row button + history on the tab regardless.
+        --
+        -- Every message links ≥1 recipient; the per-recipient read_utc powers
+        -- the red-dot unread state in both directions (reviewer ↔ agent).
+        -- Author / checker references SET NULL on user delete so history
+        -- survives. Thread ids are app-generated (no pgcrypto dependency);
+        -- message ids are a BIGINT identity.
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS timesheet_comment_threads (
+            id               UUID        PRIMARY KEY,
+            ticket_number    BIGINT      NOT NULL,
+            ticket_id        UUID        NULL REFERENCES tickets(id) ON DELETE SET NULL,
+            origin_context   TEXT        NOT NULL,
+            origin_entity_id UUID        NOT NULL,
+            created_by       UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            created_utc      TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_message_utc TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT chk_ts_comment_threads_context
+                CHECK (origin_context IN ('resolved','cwi','adsolut'))
+        );
+        -- One shared thread per ticket.
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_ts_comment_threads_ticket
+            ON timesheet_comment_threads (ticket_number);
+
+        CREATE TABLE IF NOT EXISTS timesheet_comments (
+            id          BIGINT      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            thread_id   UUID        NOT NULL REFERENCES timesheet_comment_threads(id) ON DELETE CASCADE,
+            author_id   UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            body        TEXT        NOT NULL,
+            created_utc TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS ix_ts_comments_thread
+            ON timesheet_comments (thread_id, created_utc, id);
+
+        CREATE TABLE IF NOT EXISTS timesheet_comment_recipients (
+            comment_id  BIGINT      NOT NULL REFERENCES timesheet_comments(id) ON DELETE CASCADE,
+            user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            read_utc    TIMESTAMPTZ NULL,
+            PRIMARY KEY (comment_id, user_id)
+        );
+        -- Hot path for the unread red-dot: a user's still-unread recipient rows.
+        CREATE INDEX IF NOT EXISTS ix_ts_comment_recipients_unread
+            ON timesheet_comment_recipients (user_id) WHERE read_utc IS NULL;
+
+        -- ===================================================================
         -- v0.0.52 — End-of-life data (endoflife.date mirror)
         --
         -- A background worker pulls the Microsoft Windows + Windows Server

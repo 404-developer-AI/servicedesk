@@ -31,20 +31,22 @@ public static class BackofficeTimesheetEndpoints
     private static async Task<IResult> GetResolved(
         int? year,
         int? month,
+        HttpContext http,
         IBackofficeTimesheetService svc,
         ISettingsService settings,
         CancellationToken ct)
         => await ListAsync("resolved", excludeWithReceipt: true,
-            SettingKeys.Timesheet.ResolvedTabStatusIds, year, month, svc, settings, ct);
+            SettingKeys.Timesheet.ResolvedTabStatusIds, year, month, http, svc, settings, ct);
 
     private static async Task<IResult> GetCwi(
         int? year,
         int? month,
+        HttpContext http,
         IBackofficeTimesheetService svc,
         ISettingsService settings,
         CancellationToken ct)
         => await ListAsync("cwi", excludeWithReceipt: false,
-            SettingKeys.Timesheet.CwiTabStatusIds, year, month, svc, settings, ct);
+            SettingKeys.Timesheet.CwiTabStatusIds, year, month, http, svc, settings, ct);
 
     private static async Task<IResult> ListAsync(
         string context,
@@ -52,6 +54,7 @@ public static class BackofficeTimesheetEndpoints
         string statusSettingKey,
         int? year,
         int? month,
+        HttpContext http,
         IBackofficeTimesheetService svc,
         ISettingsService settings,
         CancellationToken ct)
@@ -62,8 +65,9 @@ public static class BackofficeTimesheetEndpoints
         var csv = await settings.GetAsync<string>(statusSettingKey, ct);
         var statusIds = ParseStatusIds(csv);
         var (fromUtc, toUtc) = MonthRangeUtc(y, m);
+        var viewerId = ActorContext.GetUserId(http);
 
-        var rows = await svc.ListAsync(statusIds, context, excludeWithReceipt, fromUtc, toUtc, ct);
+        var rows = await svc.ListAsync(statusIds, context, excludeWithReceipt, fromUtc, toUtc, viewerId, ct);
         return Results.Ok(new
         {
             year = y,
@@ -80,6 +84,9 @@ public static class BackofficeTimesheetEndpoints
                 checkedUtc = r.CheckedUtc,
                 checkedByEmail = r.CheckedByEmail,
                 enteredUtc = r.EnteredUtc,
+                commentThreadId = r.CommentThreadId,
+                hasComments = r.HasComments,
+                commentsUnread = r.CommentsUnread,
             }),
         });
     }

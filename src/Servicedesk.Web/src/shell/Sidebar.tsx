@@ -28,7 +28,7 @@ import {
   formatServerLocalDate,
 } from "@/hooks/useServerTime";
 import { viewApi, type View } from "@/lib/ticket-api";
-import { settingsApi, preferencesApi } from "@/lib/api";
+import { settingsApi, preferencesApi, timesheetCommentsApi } from "@/lib/api";
 import { RecentTickets } from "@/shell/RecentTickets";
 import { NotificationsWidget } from "@/shell/NotificationsWidget";
 import { GlobalSearchBar } from "@/components/search/GlobalSearchBar";
@@ -135,6 +135,17 @@ export function Sidebar() {
   const inView = !!activeViewId;
 
   const { user } = useAuth();
+  // v0.0.84 — unread Timesheet → Comments drives a red dot on the Timesheet
+  // nav entry. Only fetched for users with timesheet active; kept fresh by the
+  // shell-level SignalR push (invalidates ["timesheet"]).
+  const hasTimesheet = !!user?.timesheetEnabled || !!user?.timesheetManager;
+  const { data: tsCommentsUnread } = useQuery({
+    queryKey: ["timesheet", "comments", "unread"],
+    queryFn: timesheetCommentsApi.unreadCount,
+    enabled: hasTimesheet,
+    staleTime: 30_000,
+  });
+  const timesheetBadge = (tsCommentsUnread?.count ?? 0) > 0;
   const items = allItems.filter((item) => {
     if (item.to === "/tickets" && (inView || (navSettings && !navSettings.showOpenTickets))) return false;
     // v0.0.35 — Timesheet is per-user opt-in. Even with the right role,
@@ -310,7 +321,13 @@ export function Sidebar() {
 
       <nav className="flex min-h-0 flex-1 flex-col space-y-1 px-3">
         {corePinnedItems.map((item) => (
-          <NavRow key={item.to} item={item} active={pathname === item.to} collapsed={collapsed} />
+          <NavRow
+            key={item.to}
+            item={item}
+            active={pathname === item.to}
+            collapsed={collapsed}
+            badge={item.to === "/timesheet" && timesheetBadge}
+          />
         ))}
         {collapseFeatures ? (
           <>
@@ -321,6 +338,7 @@ export function Sidebar() {
                 active={pathname === item.to}
                 collapsed={collapsed}
                 onUnpin={() => unpinFeature(item.to)}
+                badge={item.to === "/timesheet" && timesheetBadge}
               />
             ))}
             {flyoutFeatureItems.length > 0 && (
@@ -329,12 +347,19 @@ export function Sidebar() {
                 collapsed={collapsed}
                 pathname={pathname}
                 onPin={pinFeature}
+                badgedPaths={timesheetBadge ? ["/timesheet"] : []}
               />
             )}
           </>
         ) : (
           featureItems.map((item) => (
-            <NavRow key={item.to} item={item} active={pathname === item.to} collapsed={collapsed} />
+            <NavRow
+              key={item.to}
+              item={item}
+              active={pathname === item.to}
+              collapsed={collapsed}
+              badge={item.to === "/timesheet" && timesheetBadge}
+            />
           ))
         )}
         {views && views.length > 0 && (
@@ -570,11 +595,14 @@ function NavRow({
   active,
   collapsed,
   onUnpin,
+  badge,
 }: {
   item: NavItem;
   active: boolean;
   collapsed: boolean;
   onUnpin?: () => void;
+  /// When true, a small red dot is shown on the icon (unread indicator).
+  badge?: boolean;
 }) {
   const Icon = item.icon;
   const link = (
@@ -589,7 +617,12 @@ function NavRow({
         onUnpin && !collapsed && "pr-9",
       )}
     >
-      <Icon className={cn("h-4 w-4 shrink-0", active && "text-primary")} />
+      <span className="relative shrink-0">
+        <Icon className={cn("h-4 w-4", active && "text-primary")} />
+        {badge && (
+          <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500 shadow-[0_0_0_2px_hsl(var(--background))]" />
+        )}
+      </span>
       {!collapsed && <span className="truncate">{item.label}</span>}
     </Link>
   );
@@ -622,16 +655,20 @@ function FeaturesFlyout({
   collapsed,
   pathname,
   onPin,
+  badgedPaths = [],
 }: {
   items: readonly NavItem[];
   collapsed: boolean;
   pathname: string;
   onPin: (path: string) => void;
+  /// Nav paths that should show a red unread dot (e.g. "/timesheet").
+  badgedPaths?: string[];
 }) {
   const [open, setOpen] = React.useState(false);
   const isFeatureActive = (to: string) =>
     pathname === to || pathname.startsWith(`${to}/`);
   const anyActive = items.some((i) => isFeatureActive(i.to));
+  const anyBadged = items.some((i) => badgedPaths.includes(i.to));
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -647,7 +684,12 @@ function FeaturesFlyout({
             collapsed && "justify-center px-2",
           )}
         >
-          <LayoutGrid className={cn("h-4 w-4 shrink-0", anyActive && "text-primary")} />
+          <span className="relative shrink-0">
+            <LayoutGrid className={cn("h-4 w-4", anyActive && "text-primary")} />
+            {anyBadged && (
+              <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500 shadow-[0_0_0_2px_hsl(var(--background))]" />
+            )}
+          </span>
           {!collapsed && (
             <>
               <span className="truncate">Features</span>
@@ -680,7 +722,12 @@ function FeaturesFlyout({
                     active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  <Icon className={cn("h-4 w-4 shrink-0", active && "text-primary")} />
+                  <span className="relative shrink-0">
+                    <Icon className={cn("h-4 w-4", active && "text-primary")} />
+                    {badgedPaths.includes(item.to) && (
+                      <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500 shadow-[0_0_0_2px_hsl(var(--background))]" />
+                    )}
+                  </span>
                   <span className="truncate">{item.label}</span>
                 </Link>
                 <button

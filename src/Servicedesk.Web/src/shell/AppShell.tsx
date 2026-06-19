@@ -8,6 +8,7 @@ import { IncomingCallPopup } from "@/components/integrations/IncomingCallPopup";
 import { useSecondarySidebarStore } from "@/stores/useSecondarySidebarStore";
 import { usePresenceConnection } from "@/hooks/usePresence";
 import { useNotificationSignalR } from "@/hooks/useNotificationSignalR";
+import { useTimesheetCommentsSignalR } from "@/hooks/useTimesheetCommentsSignalR";
 import { useIntegrationsSignalR } from "@/hooks/useIntegrationsSignalR";
 import { useTelavoxCallStream } from "@/hooks/useTelavoxCallStream";
 import { useWorkspaceAutoSave } from "@/hooks/useWorkspaceAutoSave";
@@ -39,6 +40,8 @@ export function AppShell() {
   });
   const popupDurationMs = (notificationSettings.data?.popupDurationSeconds ?? 10) * 1000;
   useNotificationSignalR(popupDurationMs);
+  // v0.0.84 — Timesheet → Comments per-user push (red dots + inbox refresh).
+  useTimesheetCommentsSignalR();
 
   const secondarySidebar = useSecondarySidebarStore((s) => s.content);
   const { user } = useAuth();

@@ -12,6 +12,7 @@ import {
   CornerDownRight,
   ExternalLink,
   GripVertical,
+  MessageSquare,
   Receipt,
   RefreshCw,
   Search,
@@ -40,6 +41,7 @@ import {
   type AdsolutSalesReceiptHeader,
 } from "@/lib/api";
 import { openTicketInSharedWindow } from "@/lib/ticketWindow";
+import { CommentThreadDrawer, type CommentTarget } from "@/pages/timesheet/CommentThreadDrawer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -146,6 +148,7 @@ type ColId =
   | "hours"
   | "bruto"
   | "difference"
+  | "comments"
   | "bochecked";
 
 type ColDef = {
@@ -266,6 +269,13 @@ const ALL_COLUMNS: ColDef[] = [
     render: (r) => <DifferenceCell receipt={r} />,
   },
   {
+    id: "comments",
+    label: "Comments",
+    align: "right",
+    interactive: true,
+    render: (r) => <CommentCell receipt={r} />,
+  },
+  {
     id: "bochecked",
     label: "BO checked",
     align: "right",
@@ -368,6 +378,9 @@ export function TimesheetTabAdsolut() {
   const [sortKey, setSortKey] = useState("date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [boFilter, setBoFilter] = useState<BoFilter>("all");
+  // v0.0.84 — reviewer filter: only receipts whose ticket has a comment
+  // thread. Scoped server-side (the list is paged).
+  const [commentsOnly, setCommentsOnly] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   // Per-agent column config — load once from the workspace prefs, then own it
@@ -403,9 +416,9 @@ export function TimesheetTabAdsolut() {
   const scopeYear = allMonths ? undefined : year;
   const scopeMonth = allMonths ? undefined : month;
   const list = useQuery({
-    queryKey: [...RECEIPTS_KEY, search, page, sortKey, sortDir, boFilter, scopeYear, scopeMonth],
+    queryKey: [...RECEIPTS_KEY, search, page, sortKey, sortDir, boFilter, scopeYear, scopeMonth, commentsOnly],
     queryFn: () =>
-      adsolutTimesheetApi.listReceipts(search, page, PAGE_SIZE, sortKey, sortDir, boFilter, scopeYear, scopeMonth),
+      adsolutTimesheetApi.listReceipts(search, page, PAGE_SIZE, sortKey, sortDir, boFilter, scopeYear, scopeMonth, commentsOnly),
   });
 
   const total = list.data?.total ?? 0;
@@ -417,7 +430,7 @@ export function TimesheetTabAdsolut() {
   // sort or BO filter), so a hidden row never lingers in a bulk action.
   useEffect(() => {
     setSelected(new Set());
-  }, [page, search, sortKey, sortDir, boFilter, scopeYear, scopeMonth]);
+  }, [page, search, sortKey, sortDir, boFilter, scopeYear, scopeMonth, commentsOnly]);
 
   const setChecks = useMutation({
     mutationFn: (vars: { ids: string[]; checked: boolean }) =>
@@ -534,6 +547,23 @@ export function TimesheetTabAdsolut() {
               className="pl-9"
             />
           </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setCommentsOnly((v) => !v);
+              setPage(1);
+            }}
+            aria-pressed={commentsOnly}
+            className={cn(
+              "h-8 gap-1.5 border border-glass px-2 text-xs",
+              commentsOnly && "border-primary/40 bg-primary/15 text-primary hover:bg-primary/20",
+            )}
+            title="Show only receipts with comments"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            With comments
+          </Button>
           <BoFilterSelect
             value={boFilter}
             onChange={(v) => {
@@ -1113,6 +1143,56 @@ function BoCheckedCell({ receipt }: { receipt: AdsolutSalesReceiptHeader }) {
           </div>
         </TooltipContent>
       </Tooltip>
+    </div>
+  );
+}
+
+// ---- comment cell -----------------------------------------------------
+
+/// Per-row comment trigger for the Adsolut tab. Self-contained (owns its
+/// drawer, like BoCheckedCell owns its mutation). Only shown for receipts that
+/// carry a ticket number — comments are anchored to a ticket. A red dot marks
+/// an unread message for the viewer; a filled tint marks an existing thread.
+function CommentCell({ receipt }: { receipt: AdsolutSalesReceiptHeader }) {
+  const [open, setOpen] = useState(false);
+
+  if (receipt.ticketNumber === null) {
+    return <span className="text-muted-foreground/30">—</span>;
+  }
+
+  const target: CommentTarget = {
+    threadId: receipt.commentThreadId,
+    ticketNumber: receipt.ticketNumber,
+    ticketId: receipt.ticketId,
+    context: "adsolut",
+    entityId: receipt.id,
+  };
+
+  return (
+    <div className="flex justify-end">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+        className={cn(
+          "relative inline-flex h-7 w-7 items-center justify-center rounded-md border transition-colors",
+          receipt.hasComments
+            ? "border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
+            : "border-glass bg-glass text-muted-foreground hover:bg-glass-hover hover:text-foreground",
+        )}
+        title={receipt.hasComments ? "Open comments" : "Add a comment"}
+        aria-label={receipt.hasComments ? "Open comments" : "Add a comment"}
+      >
+        <MessageSquare className="h-3.5 w-3.5" />
+        {receipt.commentsUnread && (
+          <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500 shadow-[0_0_0_2px_hsl(var(--background))]" />
+        )}
+      </button>
+      {open && (
+        <CommentThreadDrawer open={open} onOpenChange={setOpen} target={target} />
+      )}
     </div>
   );
 }
