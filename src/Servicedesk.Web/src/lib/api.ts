@@ -920,6 +920,12 @@ export type AdsolutSalesReceiptHeader = {
   boChecked: boolean;
   checkedUtc: string | null;
   checkedByEmail: string | null;
+  // v0.0.84 — Timesheet → Comments. The shared per-ticket thread id (null when
+  // none yet), whether any comment exists, and whether this user has an unread
+  // message linked to them on this ticket.
+  commentThreadId: string | null;
+  hasComments: boolean;
+  commentsUnread: boolean;
 };
 
 export type AdsolutReceiptHours = {
@@ -985,6 +991,7 @@ export const adsolutTimesheetApi = {
     boFilter: "all" | "checked" | "unchecked" = "all",
     year?: number,
     month?: number,
+    withComments = false,
   ) => {
     const qs = new URLSearchParams({
       page: String(page),
@@ -998,6 +1005,7 @@ export const adsolutTimesheetApi = {
       qs.set("year", String(year));
       qs.set("month", String(month));
     }
+    if (withComments) qs.set("withComments", "true");
     return request<AdsolutSalesReceiptListResponse>(
       "GET",
       `/api/timesheet/adsolut/receipts?${qs.toString()}`,
@@ -1510,6 +1518,10 @@ export type BackofficeTicket = {
   checkedByEmail: string | null;
   /// When the ticket entered its current status (server-resolved).
   enteredUtc: string;
+  // v0.0.84 — Timesheet → Comments (shared per-ticket thread).
+  commentThreadId: string | null;
+  hasComments: boolean;
+  commentsUnread: boolean;
 };
 
 export type BackofficeListResponse = {
@@ -1553,6 +1565,80 @@ export const backofficeTimesheetApi = {
       "POST",
       "/api/timesheet/backoffice/checks",
       { context, ids, checked },
+    ),
+};
+
+// ---- Timesheet → Comments (per-ticket review chat) — v0.0.84 ----------
+
+/// One row in the current user's Comments inbox: a thread they are linked into
+/// that is still active (its origin row is not yet BO-checked).
+export type CommentInboxItem = {
+  threadId: string;
+  ticketNumber: number;
+  ticketId: string | null;
+  originContext: BackofficeContext;
+  lastMessageUtc: string;
+  lastMessagePreview: string | null;
+  lastAuthorEmail: string | null;
+  unreadCount: number;
+};
+
+export type CommentRecipient = { userId: string; email: string };
+
+export type CommentMessage = {
+  id: number;
+  authorId: string | null;
+  authorEmail: string | null;
+  body: string;
+  createdUtc: string;
+  recipients: CommentRecipient[];
+};
+
+export type CommentThread = {
+  id: string;
+  ticketNumber: number;
+  ticketId: string | null;
+  originContext: BackofficeContext;
+  createdBy: string | null;
+  createdByEmail: string | null;
+  messages: CommentMessage[];
+};
+
+export type CommentUserOption = { id: string; email: string };
+
+/// Body for posting a message. `threadId` continues an existing thread (a
+/// reply); omit it to find-or-create the shared thread for `ticketNumber`, in
+/// which case `context` + `entityId` (the origin row) are required. Linking
+/// `recipientIds` (≥1) is mandatory both ways.
+export type PostCommentBody = {
+  threadId?: string;
+  ticketNumber: number;
+  ticketId?: string | null;
+  context?: BackofficeContext;
+  entityId?: string;
+  body: string;
+  recipientIds: string[];
+};
+
+export const timesheetCommentsApi = {
+  inbox: () => request<CommentInboxItem[]>("GET", "/api/timesheet/comments/inbox"),
+  unreadCount: () =>
+    request<{ count: number }>("GET", "/api/timesheet/comments/unread-count"),
+  recipients: () =>
+    request<CommentUserOption[]>("GET", "/api/timesheet/comments/recipients"),
+  thread: (threadId: string) =>
+    request<CommentThread>("GET", `/api/timesheet/comments/threads/${threadId}`),
+  markRead: (threadId: string) =>
+    request<{ ok: boolean }>(
+      "POST",
+      `/api/timesheet/comments/threads/${threadId}/read`,
+      {},
+    ),
+  post: (body: PostCommentBody) =>
+    request<{ ok: boolean; threadId: string; messageId: number }>(
+      "POST",
+      "/api/timesheet/comments/messages",
+      body,
     ),
 };
 

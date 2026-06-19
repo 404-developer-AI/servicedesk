@@ -179,6 +179,13 @@ export function getNotificationConnection(): HubConnection | null {
   return connection;
 }
 
+/// Get-or-create the shared /hubs/notifications connection. Other hooks
+/// (e.g. the Timesheet comments stream) reuse this singleton so the app keeps
+/// a single per-user hub connection rather than opening a second one.
+export function ensureNotificationConnection(): HubConnection {
+  return getConnection();
+}
+
 /// Expose the payload type so consumers (toast handlers, tests) can
 /// import the shape without duplicating it.
 export type { NotificationPush };

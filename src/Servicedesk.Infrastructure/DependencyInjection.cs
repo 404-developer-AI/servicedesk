@@ -408,11 +408,14 @@ public static class DependencyInjection
         services.AddSingleton<Timesheet.ITicketTimesheetService, Timesheet.TicketTimesheetService>();
         // v0.0.56 — back-office Resolved / CWI tabs backend.
         services.AddSingleton<Timesheet.IBackofficeTimesheetService, Timesheet.BackofficeTimesheetService>();
+        // v0.0.84 — Timesheet → Comments (per-ticket review chat) backend.
+        services.AddSingleton<Timesheet.ITimesheetCommentService, Timesheet.TimesheetCommentService>();
         // v0.0.54 — migration import surface backend.
         services.AddSingleton<Timesheet.ITimesheetImportService, Timesheet.TimesheetImportService>();
         // Default to the no-op notifier; the Api project overrides this
         // with the SignalR-backed implementation.
         services.AddSingleton<Realtime.ITimesheetEntryNotifier, Realtime.NullTimesheetEntryNotifier>();
+        services.AddSingleton<Realtime.ITimesheetCommentNotifier, Realtime.NullTimesheetCommentNotifier>();
         services.AddSingleton<IMailAttachmentDiagnostics, MailAttachmentDiagnostics>();
         services.AddSingleton<IMailTimelineEnricher, MailTimelineEnricher>();
         services.AddSingleton<IMailFinalizer, MailFinalizer>();

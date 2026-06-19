@@ -10,6 +10,7 @@ import {
   Columns3,
   GripVertical,
   Inbox,
+  MessageSquare,
   Settings2,
 } from "lucide-react";
 import {
@@ -50,6 +51,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { CommentThreadDrawer, type CommentTarget } from "@/pages/timesheet/CommentThreadDrawer";
 
 type BoFilter = "all" | "checked" | "unchecked";
 type SortDir = "asc" | "desc";
@@ -84,7 +86,7 @@ function formatDateTime(iso: string | null | undefined): string {
 
 // ---- column model -----------------------------------------------------
 
-type ColId = "number" | "subject" | "customer" | "hours" | "bochecked";
+type ColId = "number" | "subject" | "customer" | "hours" | "comments" | "bochecked";
 
 type ColMeta = {
   id: ColId;
@@ -103,6 +105,7 @@ const ALL_COLUMNS: ColMeta[] = [
   { id: "subject", label: "Title", align: "left", defaultDir: "asc" },
   { id: "customer", label: "Customer", align: "left", defaultDir: "asc" },
   { id: "hours", label: "Hours", align: "right", interactive: true, defaultDir: "desc" },
+  { id: "comments", label: "Comments", align: "right", interactive: true, defaultDir: "desc" },
   { id: "bochecked", label: "BO checked", align: "right", interactive: true, defaultDir: "desc" },
 ];
 
@@ -163,6 +166,11 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
   // plain-clicked checkbox). Null until the first checkbox click.
   const [anchorId, setAnchorId] = useState<string | null>(null);
   const [boFilter, setBoFilter] = useState<BoFilter>("all");
+  // v0.0.84 — reviewer filter: show only rows that already have a comment
+  // thread. Client-side (the whole month is loaded).
+  const [commentsOnly, setCommentsOnly] = useState(false);
+  // The open comment drawer's target (null = closed).
+  const [commentTarget, setCommentTarget] = useState<CommentTarget | null>(null);
   // null = server order (entered status, newest first). Clicking a header
   // sorts the already-loaded month client-side; no extra round-trip.
   const [sort, setSort] = useState<SortState | null>(null);
@@ -228,10 +236,11 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
   const allItems = list.data?.items ?? [];
   const items = useMemo(
     () =>
-      allItems.filter((r) =>
-        boFilter === "all" ? true : boFilter === "checked" ? r.boChecked : !r.boChecked,
-      ),
-    [allItems, boFilter],
+      allItems.filter((r) => {
+        const boOk = boFilter === "all" ? true : boFilter === "checked" ? r.boChecked : !r.boChecked;
+        return boOk && (!commentsOnly || r.hasComments);
+      }),
+    [allItems, boFilter, commentsOnly],
   );
 
   const sortedItems = useMemo(() => {
@@ -254,6 +263,12 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
           break;
         case "hours":
           cmp = a.totalMinutes - b.totalMinutes;
+          break;
+        case "comments":
+          // Unread first, then any comments, then none.
+          cmp =
+            (Number(a.commentsUnread) * 2 + Number(a.hasComments)) -
+            (Number(b.commentsUnread) * 2 + Number(b.hasComments));
           break;
         case "bochecked":
           cmp = Number(a.boChecked) - Number(b.boChecked);
@@ -382,6 +397,20 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
           </div>
 
           <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setCommentsOnly((v) => !v)}
+              aria-pressed={commentsOnly}
+              className={cn(
+                "h-8 gap-1.5 border border-glass px-2 text-xs",
+                commentsOnly && "border-primary/40 bg-primary/15 text-primary hover:bg-primary/20",
+              )}
+              title="Show only rows with comments"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              With comments
+            </Button>
             <BoFilterSelect value={boFilter} onChange={setBoFilter} />
             <ColumnPicker config={effectiveConfig} onChange={persistConfig} />
           </div>
@@ -513,6 +542,15 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
                       onSetCheck={(checked) =>
                         setChecks.mutate({ ids: [r.ticketId], checked })
                       }
+                      onOpenComments={() =>
+                        setCommentTarget({
+                          threadId: r.commentThreadId,
+                          ticketNumber: r.ticketNumber,
+                          ticketId: r.ticketId,
+                          context,
+                          entityId: r.ticketId,
+                        })
+                      }
                       busy={setChecks.isPending}
                     />
                   ))}
@@ -526,7 +564,16 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
           <div className="text-xs text-muted-foreground">
             {items.length.toLocaleString()} ticket{items.length === 1 ? "" : "s"}
             {boFilter !== "all" && ` (${boFilter})`}
+            {commentsOnly && " · with comments"}
           </div>
+        )}
+
+        {commentTarget && (
+          <CommentThreadDrawer
+            open={!!commentTarget}
+            onOpenChange={(o) => !o && setCommentTarget(null)}
+            target={commentTarget}
+          />
         )}
       </div>
     </TooltipProvider>
@@ -541,6 +588,7 @@ function TicketRow({
   selected,
   onSelect,
   onSetCheck,
+  onOpenComments,
   busy,
 }: {
   row: BackofficeTicket;
@@ -548,6 +596,7 @@ function TicketRow({
   selected: boolean;
   onSelect: (shift: boolean) => void;
   onSetCheck: (checked: boolean) => void;
+  onOpenComments: () => void;
   busy: boolean;
 }) {
   return (
@@ -578,7 +627,7 @@ function TicketRow({
           key={col.id}
           className={cn("px-3 py-2.5", col.align === "right" && "text-right")}
         >
-          {renderCell(col.id, row, onSetCheck, busy)}
+          {renderCell(col.id, row, onSetCheck, onOpenComments, busy)}
         </td>
       ))}
     </tr>
@@ -589,6 +638,7 @@ function renderCell(
   id: ColId,
   row: BackofficeTicket,
   onSetCheck: (checked: boolean) => void,
+  onOpenComments: () => void,
   busy: boolean,
 ) {
   switch (id) {
@@ -600,11 +650,57 @@ function renderCell(
       return <span className="text-muted-foreground">{row.companyName ?? "—"}</span>;
     case "hours":
       return <HoursCell row={row} />;
+    case "comments":
+      return (
+        <CommentButton
+          hasComments={row.hasComments}
+          unread={row.commentsUnread}
+          onClick={onOpenComments}
+        />
+      );
     case "bochecked":
       return <BoCheckedCell row={row} onSetCheck={onSetCheck} busy={busy} />;
     default:
       return null;
   }
+}
+
+/// Shared per-row comment trigger used across the review tabs. A red dot marks
+/// an unread message linked to the viewer; a filled tint marks an existing
+/// thread; an outline means "no comments yet — start one".
+function CommentButton({
+  hasComments,
+  unread,
+  onClick,
+}: {
+  hasComments: boolean;
+  unread: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <div className="flex justify-end">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick();
+        }}
+        className={cn(
+          "relative inline-flex h-7 w-7 items-center justify-center rounded-md border transition-colors",
+          hasComments
+            ? "border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
+            : "border-glass bg-glass text-muted-foreground hover:bg-glass-hover hover:text-foreground",
+        )}
+        title={hasComments ? "Open comments" : "Add a comment"}
+        aria-label={hasComments ? "Open comments" : "Add a comment"}
+      >
+        <MessageSquare className="h-3.5 w-3.5" />
+        {unread && (
+          <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500 shadow-[0_0_0_2px_hsl(var(--background))]" />
+        )}
+      </button>
+    </div>
+  );
 }
 
 // ---- hours pill -------------------------------------------------------

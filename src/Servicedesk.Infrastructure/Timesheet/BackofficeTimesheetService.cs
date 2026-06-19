@@ -25,6 +25,13 @@ public sealed class BackofficeTicketRow
     /// event log, falling back to creation). Used both for the month filter
     /// and as the secondary sort.
     public DateTime EnteredUtc { get; set; }
+
+    /// v0.0.84 — Timesheet → Comments. The shared per-ticket comment thread
+    /// id (null when none exists yet), whether any comment exists, and whether
+    /// the viewing user has an unread message linked to them on this ticket.
+    public Guid? CommentThreadId { get; set; }
+    public bool HasComments { get; set; }
+    public bool CommentsUnread { get; set; }
 }
 
 /// One task's registered minutes for a ticket — feeds the hours-pill
@@ -48,6 +55,7 @@ public interface IBackofficeTimesheetService
         bool excludeWithReceipt,
         DateTime fromUtc,
         DateTime toUtc,
+        Guid viewerId,
         CancellationToken ct = default);
 
     Task<IReadOnlyList<BackofficeTaskHoursRow>> GetTicketHoursAsync(
@@ -82,6 +90,7 @@ public sealed class BackofficeTimesheetService : IBackofficeTimesheetService
         bool excludeWithReceipt,
         DateTime fromUtc,
         DateTime toUtc,
+        Guid viewerId,
         CancellationToken ct = default)
     {
         // No statuses configured for this tab → nothing to show. Skip the
@@ -107,7 +116,10 @@ public sealed class BackofficeTimesheetService : IBackofficeTimesheetService
                    (bo.entity_id IS NOT NULL) AS BoChecked,
                    bo.checked_utc AS CheckedUtc,
                    bu.email    AS CheckedByEmail,
-                   COALESCE(ent.entered_utc, t.created_utc) AS EnteredUtc
+                   COALESCE(ent.entered_utc, t.created_utc) AS EnteredUtc,
+                   cth.id      AS CommentThreadId,
+                   (cth.id IS NOT NULL) AS HasComments,
+                   COALESCE(cu.unread, FALSE) AS CommentsUnread
             FROM tickets t
             LEFT JOIN companies c ON c.id = t.company_id
             LEFT JOIN LATERAL (
@@ -124,6 +136,14 @@ public sealed class BackofficeTimesheetService : IBackofficeTimesheetService
             ) hrs ON TRUE
             LEFT JOIN timesheet_bo_checks bo ON bo.entity_id = t.id AND bo.context = @Context
             LEFT JOIN users bu ON bu.id = bo.checked_by
+            LEFT JOIN timesheet_comment_threads cth ON cth.ticket_number = t.number
+            LEFT JOIN LATERAL (
+                SELECT TRUE AS unread
+                FROM timesheet_comments cm
+                JOIN timesheet_comment_recipients cr ON cr.comment_id = cm.id
+                WHERE cm.thread_id = cth.id AND cr.user_id = @ViewerId AND cr.read_utc IS NULL
+                LIMIT 1
+            ) cu ON TRUE
             WHERE t.is_deleted = FALSE
               AND t.status_id = ANY(@StatusIds)
               AND COALESCE(ent.entered_utc, t.created_utc) >= @FromUtc
@@ -135,7 +155,7 @@ public sealed class BackofficeTimesheetService : IBackofficeTimesheetService
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         var rows = await connection.QueryAsync<BackofficeTicketRow>(new CommandDefinition(
             sql,
-            new { StatusIds = statusIds, Context = context, FromUtc = fromUtc, ToUtc = toUtc },
+            new { StatusIds = statusIds, Context = context, FromUtc = fromUtc, ToUtc = toUtc, ViewerId = viewerId },
             cancellationToken: ct));
         return rows.ToList();
     }
