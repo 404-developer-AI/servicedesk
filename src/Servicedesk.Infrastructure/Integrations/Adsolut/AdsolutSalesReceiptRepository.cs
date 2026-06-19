@@ -170,9 +170,14 @@ public interface IAdsolutSalesReceiptRepository
     /// <paramref name="dir"/> is "asc"/"desc". <paramref name="hourlyRate"/> lets the
     /// bruto/difference sorts order on rate × registered hours. Empty values always
     /// sort last regardless of direction.
+    /// <paramref name="year"/>/<paramref name="month"/> optionally scope the list to a
+    /// single calendar month by <c>sales_receipt_date</c> (a half-open UTC range, so the
+    /// indexed column is used). Both null = no date scope (all receipts). The per-ticket
+    /// grouping (count/ordinal/combined totals) still spans the whole mirror, so a receipt
+    /// whose siblings fall in another month keeps its true ticket-wide totals.
     Task<AdsolutSalesReceiptListResult> ListAsync(
         string? search, int page, int pageSize, string? sort, string? dir, decimal hourlyRate,
-        string? boFilter, CancellationToken ct = default);
+        string? boFilter, int? year, int? month, CancellationToken ct = default);
 
     /// One receipt with its product + performance lines (for the expand view).
     Task<AdsolutSalesReceiptDetail?> GetDetailAsync(Guid id, CancellationToken ct = default);
@@ -462,7 +467,7 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
 
     public async Task<AdsolutSalesReceiptListResult> ListAsync(
         string? search, int page, int pageSize, string? sort, string? dir, decimal hourlyRate,
-        string? boFilter, CancellationToken ct = default)
+        string? boFilter, int? year, int? month, CancellationToken ct = default)
     {
         var safePage = Math.Max(1, page);
         var safePageSize = Math.Clamp(pageSize, 1, 200);
@@ -471,6 +476,20 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
         var hasSearch = term.Length > 0;
         var like = "%" + term.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
         long? docProbe = long.TryParse(term, out var dn) ? dn : null;
+
+        // Optional single-month scope on the indexed sales_receipt_date. A
+        // half-open UTC range [start, start+1month) keeps the DESC index usable;
+        // both params are always passed (null when unscoped) so the same SQL text
+        // serves both the filtered and the all-receipts case.
+        DateTime? monthStart = null, monthEnd = null;
+        if (year is int y && month is int m && m is >= 1 and <= 12 && y is >= 1 and <= 9999)
+        {
+            monthStart = new DateTime(y, m, 1, 0, 0, 0, DateTimeKind.Utc);
+            monthEnd = monthStart.Value.AddMonths(1);
+        }
+        var monthClause = monthStart is null
+            ? string.Empty
+            : "AND r.sales_receipt_date >= @MonthStart AND r.sales_receipt_date < @MonthEnd";
 
         // Whitelisted "BO checked" filter. The bo join is on receipt id with
         // context 'adsolut'; both the count and the page query carry it so
@@ -517,8 +536,9 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
                    OR r.description ILIKE @Like
                    OR (@DocProbe IS NOT NULL AND r.doc_nr = @DocProbe))
             {boClause}
+            {monthClause}
             """,
-            new { HasSearch = hasSearch, Like = like, DocProbe = docProbe },
+            new { HasSearch = hasSearch, Like = like, DocProbe = docProbe, MonthStart = monthStart, MonthEnd = monthEnd },
             cancellationToken: ct));
 
         // Registered timesheet hours are computed live: match the receipt's
@@ -600,10 +620,11 @@ public sealed class AdsolutSalesReceiptRepository : IAdsolutSalesReceiptReposito
                    OR r.description ILIKE @Like
                    OR (@DocProbe IS NOT NULL AND r.doc_nr = @DocProbe))
             {boClause}
+            {monthClause}
             ORDER BY {sortExpr} {dirSql} NULLS LAST, r.doc_nr DESC NULLS LAST
             LIMIT @Limit OFFSET @Offset
             """,
-            new { HasSearch = hasSearch, Like = like, DocProbe = docProbe, Rate = hourlyRate, Limit = safePageSize, Offset = offset },
+            new { HasSearch = hasSearch, Like = like, DocProbe = docProbe, Rate = hourlyRate, Limit = safePageSize, Offset = offset, MonthStart = monthStart, MonthEnd = monthEnd },
             cancellationToken: ct));
 
         return new AdsolutSalesReceiptListResult(items.ToList(), total, safePage, safePageSize);

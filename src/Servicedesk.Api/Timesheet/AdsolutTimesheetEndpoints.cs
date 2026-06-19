@@ -37,12 +37,14 @@ public static class AdsolutTimesheetEndpoints
         string? sort,
         string? dir,
         string? boFilter,
+        int? year,
+        int? month,
         IAdsolutSalesReceiptRepository repo,
         ISettingsService settings,
         CancellationToken ct)
     {
         var rate = await ReadHourlyRateAsync(settings, ct);
-        var result = await repo.ListAsync(search, page ?? 1, pageSize ?? 50, sort, dir, rate, boFilter, ct);
+        var result = await repo.ListAsync(search, page ?? 1, pageSize ?? 50, sort, dir, rate, boFilter, year, month, ct);
         return Results.Ok(new
         {
             items = result.Items.Select(r => ToHeaderDto(r, ComputeBruto(rate, r.TotalMinutes))),
