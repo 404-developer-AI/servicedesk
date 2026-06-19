@@ -38,6 +38,15 @@ const SECTIONS: Section[] = [
     ],
   },
   {
+    title: "Forgotten-attachment warning",
+    description:
+      "Warn the agent before sending if their own typed message mentions an attachment but none is attached. Only the text the agent typed is scanned — never the quoted original — so replying to a customer who wrote 'attachment' never triggers it. Keywords are case- and accent-insensitive, comma-separated, and matched as substrings (EN + NL).",
+    keys: [
+      "Mail.ForgottenAttachmentEnabled",
+      "Mail.ForgottenAttachmentKeywords",
+    ],
+  },
+  {
     title: "Attachment limits",
     description: "Hard ceilings on incoming attachment and inline-image sizes.",
     keys: [

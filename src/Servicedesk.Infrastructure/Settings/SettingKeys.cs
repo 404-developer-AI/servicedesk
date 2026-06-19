@@ -94,6 +94,8 @@ public static class SettingKeys
         public const string AutoLinkCompanyByDomain = "Mail.AutoLinkCompanyByDomain";
         public const string AutoLinkDomainBlacklist = "Mail.AutoLinkDomainBlacklist";
         public const string MaxOutboundTotalBytes = "Mail.MaxOutboundTotalBytes";
+        public const string ForgottenAttachmentEnabled = "Mail.ForgottenAttachmentEnabled";
+        public const string ForgottenAttachmentKeywords = "Mail.ForgottenAttachmentKeywords";
     }
 
     public static class Companies
@@ -1222,6 +1224,10 @@ public static class SettingDefaults
             "JSON array of freemail/public domains that must never auto-link to a company. The Companies → Domains endpoint also refuses to store any of these as a company domain. Manual contact↔company linking is unaffected."),
         new SettingDefault(SettingKeys.Mail.MaxOutboundTotalBytes, "26214400", "int", "Mail",
             "Hard cap (bytes) on the combined size of attachments allowed on a single outbound mail; mails above this are rejected with a clear error. Default 25 MB matches the per-file upload limit (Storage.MaxAttachmentBytes). Parts above ~3 MB are streamed to Microsoft Graph via an upload session automatically; keep this cap within your Exchange Online message-size limit (MaxSendSize)."),
+        new SettingDefault(SettingKeys.Mail.ForgottenAttachmentEnabled, "true", "bool", "Mail",
+            "When sending a mail (reply/forward/new), warn and ask for confirmation if your own typed message mentions an attachment but no file is attached. Only the text you typed is scanned — never the quoted original — so replying to a customer who wrote 'attachment' never triggers it."),
+        new SettingDefault(SettingKeys.Mail.ForgottenAttachmentKeywords, "attach,enclosed,enclosure,bijlage,bijgevoegd,aangehecht", "string", "Mail",
+            "Comma-separated keywords (EN + NL) that trigger the forgotten-attachment warning. Matching is case- and accent-insensitive and substring-based, so a stem like 'attach' covers attached/attachment and 'bijlage' covers bijlagen. Leave empty to effectively disable the check."),
 
         // Companies — v0.0.9.
         new SettingDefault(SettingKeys.Companies.SearchLimit, "25", "int", "Companies",

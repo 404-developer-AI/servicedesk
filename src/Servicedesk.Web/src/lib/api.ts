@@ -658,6 +658,14 @@ export type NotificationsSettings = {
   popupDurationSeconds: number;
 };
 
+export type MailComposeSettings = {
+  /// When true, the composer warns before sending if the typed message mentions
+  /// an attachment but none is attached.
+  forgottenAttachmentEnabled: boolean;
+  /// Comma-separated EN+NL keywords that trigger the warning.
+  forgottenAttachmentKeywords: string;
+};
+
 export const settingsApi = {
   list: (category?: string) => {
     const params = category ? `?category=${encodeURIComponent(category)}` : "";
@@ -669,6 +677,8 @@ export const settingsApi = {
     request<NavigationSettings>("GET", "/api/settings/navigation"),
   notifications: () =>
     request<NotificationsSettings>("GET", "/api/settings/notifications"),
+  mailCompose: () =>
+    request<MailComposeSettings>("GET", "/api/settings/mail-compose"),
 };
 
 // ---- Microsoft Graph admin ----

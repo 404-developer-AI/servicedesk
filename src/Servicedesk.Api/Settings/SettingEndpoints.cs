@@ -67,10 +67,26 @@ public static class SettingEndpoints
         .WithName("GetNotificationsSettings")
         .WithOpenApi();
 
+        // ---- Mail compose settings (v0.0.85, agent-readable) ----
+        // The composer's "forgotten attachment" warning needs the enable flag
+        // and keyword list on the client. Exposed here (agent-safe projection)
+        // so the read stays off the admin-only `/api/settings` endpoint.
+        app.MapGet("/api/settings/mail-compose", async (ISettingsService svc, CancellationToken ct) =>
+        {
+            var enabled = await svc.GetAsync<bool>(SettingKeys.Mail.ForgottenAttachmentEnabled, ct);
+            var keywords = await svc.GetAsync<string>(SettingKeys.Mail.ForgottenAttachmentKeywords, ct) ?? string.Empty;
+            return Results.Ok(new MailComposeSettings(enabled, keywords));
+        })
+        .WithTags("Settings")
+        .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+        .WithName("GetMailComposeSettings")
+        .WithOpenApi();
+
         return app;
     }
 
     public sealed record UpdateSettingRequest([property: Required] string Value);
     public sealed record NavigationSettings(bool ShowOpenTickets);
     public sealed record NotificationsSettings(int PopupDurationSeconds);
+    public sealed record MailComposeSettings(bool ForgottenAttachmentEnabled, string ForgottenAttachmentKeywords);
 }

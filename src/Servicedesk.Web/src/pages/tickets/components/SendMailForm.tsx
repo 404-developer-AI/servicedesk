@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Reply, ReplyAll, Forward as ForwardIcon, Mail } from "lucide-react";
+import { Reply, ReplyAll, Forward as ForwardIcon, Mail, Paperclip } from "lucide-react";
 import {
   ticketApi,
   mentionApi,
@@ -15,7 +15,16 @@ import {
 } from "@/components/SignatureBlockNode";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore, type PendingMailAction } from "@/stores/useWorkspaceStore";
-import { preferencesApi } from "@/lib/api";
+import { preferencesApi, settingsApi } from "@/lib/api";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { AttachmentTray } from "./AttachmentTray";
 import { RecipientInput } from "./RecipientInput";
 import { useAttachmentUploads } from "../hooks/useAttachmentUploads";
@@ -174,6 +183,62 @@ function assembleContent(
   };
 }
 
+// ---- forgotten-attachment warning (v0.0.85) ---------------------------
+
+/// Isolate only the text the agent typed from the serialized body — never the
+/// signature or the quoted/forwarded original. The composer always lays the
+/// content out as [typed] → [signature marker] → [quote], so we cut at the
+/// earliest of: the (bare) signature marker, the forwarded-message header, or
+/// the first <blockquote>. A trailing reply preamble ("… wrote:") left just
+/// before the quote is dropped too.
+function extractTypedBody(html: string): string {
+  const delimiters = [
+    /<div[^>]*\bdata-sd-signature\b/i,
+    /----------\s*Forwarded message\s*----------/i,
+    /<blockquote/i,
+  ];
+  let cut = html.length;
+  for (const re of delimiters) {
+    const i = html.search(re);
+    if (i >= 0 && i < cut) cut = i;
+  }
+  return html.slice(0, cut).replace(/<p>[^<]*\bwrote:\s*<\/p>\s*$/i, "");
+}
+
+/// Strip HTML to plain text, inserting a space at block boundaries so adjacent
+/// paragraphs/words don't fuse (textContent alone would glue them).
+function htmlToPlainText(html: string): string {
+  const spaced = html
+    .replace(/<\/(p|div|li|h[1-6]|tr|blockquote)>/gi, " ")
+    .replace(/<br\s*\/?>/gi, " ");
+  const el = document.createElement("div");
+  el.innerHTML = spaced;
+  return (el.textContent || "").replace(/\s+/g, " ").trim();
+}
+
+/// Lower-case + strip diacritics so matching is case- and accent-insensitive.
+function normalizeForMatch(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+}
+
+function parseKeywords(csv: string): string[] {
+  return csv
+    .split(",")
+    .map((k) => normalizeForMatch(k.trim()))
+    .filter((k) => k.length > 0);
+}
+
+/// True when the agent's own typed text contains any keyword (substring match).
+function typedTextMentionsAttachment(bodyHtml: string, keywords: string[]): boolean {
+  if (keywords.length === 0) return false;
+  const text = normalizeForMatch(htmlToPlainText(extractTypedBody(bodyHtml)));
+  if (!text) return false;
+  return keywords.some((kw) => text.includes(kw));
+}
+
 export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent, onCancel }: Props) {
   const { user } = useAuth();
   const [kind, setKind] = React.useState<OutboundMailKind>(
@@ -206,6 +271,14 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
   const composeTokens = tokensQ.data?.tokens;
   const queryClient = useQueryClient();
   const attachments = useAttachmentUploads(ticketId);
+
+  // v0.0.85 — "forgotten attachment" warning config (agent-readable, admin-set).
+  const mailComposeSettings = useQuery({
+    queryKey: ["settings", "mail-compose"],
+    queryFn: () => settingsApi.mailCompose(),
+    staleTime: 5 * 60_000,
+  });
+  const [showAttachmentWarning, setShowAttachmentWarning] = React.useState(false);
 
   // v0.0.61 — resolved signature preview to pre-load as a fixed block above the
   // quote. Keyed by reply-ness so the server's reply gating (AppendOnReplies)
@@ -526,12 +599,25 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
       toast.error("Wait for attachment uploads to finish");
       return;
     }
+    // Forgotten-attachment warning: scan only the agent's own typed text (never
+    // the quoted original). If it mentions an attachment but nothing is
+    // attached, confirm before sending. Off when disabled or the list is empty.
+    const cfg = mailComposeSettings.data;
+    if (
+      cfg?.forgottenAttachmentEnabled &&
+      attachments.readyAttachmentIds.length === 0 &&
+      typedTextMentionsAttachment(bodyHtml, parseKeywords(cfg.forgottenAttachmentKeywords))
+    ) {
+      setShowAttachmentWarning(true);
+      return;
+    }
     mutation.mutate();
   }
 
   const canReply = context.latestInbound !== null;
 
   return (
+    <>
     <form onSubmit={handleSubmit} className="space-y-3">
       <div className="flex items-center gap-1">
         <button
@@ -775,5 +861,37 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
         </button>
       </div>
     </form>
+
+    <Dialog open={showAttachmentWarning} onOpenChange={setShowAttachmentWarning}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Paperclip className="h-4 w-4 text-amber-400" />
+            No attachment added
+          </DialogTitle>
+          <DialogDescription>
+            Your message mentions an attachment, but no file is attached. Do you
+            want to send it anyway?
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button
+            variant="ghost"
+            onClick={() => setShowAttachmentWarning(false)}
+          >
+            Go back
+          </Button>
+          <Button
+            onClick={() => {
+              setShowAttachmentWarning(false);
+              mutation.mutate();
+            }}
+          >
+            Send anyway
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
