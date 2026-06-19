@@ -179,7 +179,10 @@ const ALL_COLUMNS: ColDef[] = [
     id: "ticket",
     label: "Ticket",
     align: "left",
-    interactive: true,
+    // Intentionally NOT interactive: the ticket click should bubble to the row
+    // so it also expands the row (3 actions in one click — copy the number,
+    // open the ticket window, and toggle the row). TicketNumberLink itself does
+    // not stop propagation.
     render: (r) => <TicketNumberLink ticketNumber={r.ticketNumber} ticketId={r.ticketId} />,
   },
   {
