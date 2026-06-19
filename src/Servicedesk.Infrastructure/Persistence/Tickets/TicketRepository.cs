@@ -235,8 +235,12 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             orderClauses.Add("(CASE WHEN s.state_category IN ('Resolved','Closed') THEN 1 ELSE 0 END) ASC");
         if (query.PriorityFloat)
         {
-            orderClauses.Add("(CASE WHEN p.is_default THEN 1 ELSE 0 END)");
-            orderClauses.Add("CASE WHEN NOT p.is_default THEN p.level END ASC");
+            // Only float non-default-priority tickets that are still New or Open.
+            // A high-priority ticket that has moved to Pending (or Resolved/Closed)
+            // drops back into the normal order among the other rows, matching the
+            // grouped-list client bucketing.
+            orderClauses.Add("(CASE WHEN (NOT p.is_default) AND s.state_category IN ('New','Open') THEN 0 ELSE 1 END)");
+            orderClauses.Add("CASE WHEN (NOT p.is_default) AND s.state_category IN ('New','Open') THEN p.level END ASC");
         }
         if (query.SortField is not null && SortFieldMap.TryGetValue(query.SortField, out var sortColumn))
         {
