@@ -30,6 +30,11 @@ export type MailDraft = {
   // the send call still asks the server to swap the marker for the real
   // signature rather than appending at the bottom.
   signaturePreloaded: boolean;
+  // The id of the feed Reply/Reply-all/Forward action this draft was started
+  // from (null for a plain "New" compose). Lets the composer tell a remount of
+  // the same action — where the in-progress draft must be restored — from a
+  // genuinely new feed click, which deliberately overrides the draft.
+  intentId: number | null;
   updatedUtc: string;
 };
 

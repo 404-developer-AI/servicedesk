@@ -14,7 +14,7 @@ import {
   signatureMarkerBare,
 } from "@/components/SignatureBlockNode";
 import { cn } from "@/lib/utils";
-import { useWorkspaceStore, type PendingMailAction } from "@/stores/useWorkspaceStore";
+import { useWorkspaceStore, type PendingMailAction, type MailDraft } from "@/stores/useWorkspaceStore";
 import { preferencesApi, settingsApi } from "@/lib/api";
 import {
   Dialog,
@@ -467,47 +467,60 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
     setEditorKey((k) => k + 1);
   }, [signatureHtml, bodyHtml]);
 
+  // Restore an in-progress mail draft (body, recipients, subject, kind) so
+  // navigating away, switching tabs or reloading keeps what the agent typed.
+  // The saved body already carries the folded-in signature marker + quote, so
+  // it is set verbatim and the signature re-fold is suppressed for this session
+  // via `restoredDraftRef`.
+  const restoreDraft = (draft: MailDraft) => {
+    restoredDraftRef.current = true;
+    // Leave `agentEditedRef` false: the draft already lives in the store, so
+    // it is re-persisted by the auto-save flush as-is. The first real edit
+    // (onChange ≠ baseline) flips the flag and resumes saving. Flipping it
+    // here would let the persist effect fire once with stale-empty state on
+    // mount and clobber the saved draft before the restore re-render lands.
+    signaturePreloadedRef.current = draft.signaturePreloaded;
+    setKind(draft.kind);
+    setTo(draft.to);
+    setCc(draft.cc);
+    setBcc(draft.bcc);
+    setShowCc(draft.showCc || draft.cc.length > 0);
+    setShowBcc(draft.showBcc || draft.bcc.length > 0);
+    setSubject(draft.subject);
+    // The saved body carries only the BARE signature marker, so inflate it
+    // with the resolved preview for DISPLAY; `bodyHtml` stays bare for send.
+    // If the signature query hasn't resolved yet, the re-inflate effect below
+    // folds it in once it loads (while the agent is still pristine).
+    const sig = draft.signaturePreloaded ? signatureHtmlRef.current : null;
+    setInitialEditorContent(inflateSignatureMarker(draft.bodyHtml, sig) || undefined);
+    setBodyHtml(draft.bodyHtml);
+    lastQuoteRef.current = ""; // non-null so guards downstream behave
+    lastSigRef.current = sig; // tracks the signature already inflated for display
+    lastAppliedBareRef.current = null; // no pristine baseline to revert to
+    setEditorKey((k) => k + 1);
+  };
+
   // Initial pre-fill on mount + whenever a new pending-intent arrives (the
   // `id` is monotonic so clicking the same event twice still re-applies).
   React.useEffect(() => {
-    // A deliberate Reply / Reply-all / Forward click starts a fresh
-    // composition from that event and overrides any saved draft.
+    const draft = savedMailDraftRef.current;
     if (initialIntent) {
+      // A feed Reply / Reply-all / Forward click. When the in-progress draft
+      // was started from *this very action* — a remount after navigating away
+      // to another ticket and back — restore what the agent already typed
+      // rather than re-applying the intent (which would wipe the draft). A
+      // different (or absent) intent id means a deliberate new action, which
+      // overrides any saved draft.
+      if (draft && draft.intentId === initialIntent.id) {
+        restoreDraft(draft);
+        return;
+      }
       applyKind(initialIntent.kind, initialIntent.source);
       return;
     }
-    // Restore an in-progress mail draft (body, recipients, subject, kind) so
-    // navigating away, switching tabs or reloading keeps what the agent typed.
-    // The saved body already carries the folded-in signature marker + quote, so
-    // it is set verbatim and the signature re-fold is suppressed for this
-    // session via `restoredDraftRef`.
-    const draft = savedMailDraftRef.current;
+    // No active intent: restore an in-progress draft, else start a fresh New.
     if (draft) {
-      restoredDraftRef.current = true;
-      // Leave `agentEditedRef` false: the draft already lives in the store, so
-      // it is re-persisted by the auto-save flush as-is. The first real edit
-      // (onChange ≠ baseline) flips the flag and resumes saving. Flipping it
-      // here would let the persist effect fire once with stale-empty state on
-      // mount and clobber the saved draft before the restore re-render lands.
-      signaturePreloadedRef.current = draft.signaturePreloaded;
-      setKind(draft.kind);
-      setTo(draft.to);
-      setCc(draft.cc);
-      setBcc(draft.bcc);
-      setShowCc(draft.showCc || draft.cc.length > 0);
-      setShowBcc(draft.showBcc || draft.bcc.length > 0);
-      setSubject(draft.subject);
-      // The saved body carries only the BARE signature marker, so inflate it
-      // with the resolved preview for DISPLAY; `bodyHtml` stays bare for send.
-      // If the signature query hasn't resolved yet, the re-inflate effect below
-      // folds it in once it loads (while the agent is still pristine).
-      const sig = draft.signaturePreloaded ? signatureHtmlRef.current : null;
-      setInitialEditorContent(inflateSignatureMarker(draft.bodyHtml, sig) || undefined);
-      setBodyHtml(draft.bodyHtml);
-      lastQuoteRef.current = ""; // non-null so guards downstream behave
-      lastSigRef.current = sig; // tracks the signature already inflated for display
-      lastAppliedBareRef.current = null; // no pristine baseline to revert to
-      setEditorKey((k) => k + 1);
+      restoreDraft(draft);
       return;
     }
     applyKind("New");
@@ -535,6 +548,9 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
       subject,
       bodyHtml,
       signaturePreloaded: signaturePreloadedRef.current,
+      // Tag the draft with the feed action it belongs to so a remount restores
+      // it instead of re-applying the intent. null for a plain New compose.
+      intentId: initialIntent?.id ?? null,
     });
   }, [ticketId, kind, to, cc, bcc, showCc, showBcc, subject, bodyHtml]);
 
