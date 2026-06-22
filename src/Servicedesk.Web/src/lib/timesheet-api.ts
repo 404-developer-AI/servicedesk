@@ -322,6 +322,21 @@ export type TicketTimesheetResponse = {
   totalMinutes: number;
 };
 
+// v0.0.87 — per-ticket hour-limit alert snapshot. All fields are
+// server-derived; the client only displays them and never recomputes the
+// limit or the `exceeded` decision.
+export type TicketTimeAlertStatus = {
+  enabled: boolean;
+  thresholdMinutes: number;
+  extraMinutes: number;
+  limitMinutes: number;
+  totalMinutes: number;
+  remainingMinutes: number;
+  exceeded: boolean;
+  defaultExtraMinutes: number;
+  confirmationText: string;
+};
+
 export const timesheetTicketApi = {
   list: (ticketId: string) =>
     request<TicketTimesheetResponse>("GET", `/api/timesheet/ticket/${ticketId}`),
@@ -330,6 +345,33 @@ export const timesheetTicketApi = {
   /// Settings → Timesheet. The reply editor pastes this verbatim.
   replyHtml: (ticketId: string) =>
     request<{ html: string }>("GET", `/api/timesheet/ticket/${ticketId}/reply-html`),
+
+  /// v0.0.87 — hour-limit status for the ticket-open warning + remaining
+  /// time display.
+  timeAlert: (ticketId: string) =>
+    request<TicketTimeAlertStatus>(
+      "GET",
+      `/api/timesheet/ticket/${ticketId}/time-alert`,
+    ),
+
+  /// Agent dismissed the warning (logged, limit unchanged).
+  dismissTimeAlert: (ticketId: string) =>
+    request<void>(
+      "POST",
+      `/api/timesheet/ticket/${ticketId}/time-alert/dismiss`,
+    ),
+
+  /// Agent raised the ticket's limit. `customerConfirmed` is the mandatory
+  /// written-confirmation tick; the server re-checks it.
+  extendTimeAlert: (
+    ticketId: string,
+    body: { addMinutes: number; customerConfirmed: boolean },
+  ) =>
+    request<void>(
+      "POST",
+      `/api/timesheet/ticket/${ticketId}/time-alert/extend`,
+      body,
+    ),
 };
 
 export const timesheetManagerApi = {

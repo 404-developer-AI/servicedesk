@@ -40,7 +40,9 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
         allowed_status_ids AS AllowedStatusIds,
         default_status_id AS DefaultStatusId,
         inbound_polling_enabled AS InboundPollingEnabled,
-        ai_assist_enabled AS AiAssistEnabled
+        ai_assist_enabled AS AiAssistEnabled,
+        time_alert_mode AS TimeAlertMode,
+        time_alert_threshold_minutes AS TimeAlertThresholdMinutes
         """;
 
     private static Queue MapQueueRow(QueueRow r) => new(
@@ -51,7 +53,9 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
         r.AllowedStatusIds ?? Array.Empty<Guid>(),
         r.DefaultStatusId,
         r.InboundPollingEnabled,
-        r.AiAssistEnabled);
+        r.AiAssistEnabled,
+        r.TimeAlertMode,
+        r.TimeAlertThresholdMinutes);
 
     private sealed class QueueRow
     {
@@ -74,6 +78,8 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
         public Guid? DefaultStatusId { get; set; }
         public bool InboundPollingEnabled { get; set; } = true;
         public bool AiAssistEnabled { get; set; } = true;
+        public string TimeAlertMode { get; set; } = "inherit";
+        public int? TimeAlertThresholdMinutes { get; set; }
     }
 
     public async Task<IReadOnlyList<Queue>> ListQueuesAsync(CancellationToken ct)
@@ -98,11 +104,13 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
             INSERT INTO queues (name, slug, description, color, icon, sort_order, is_active, is_system,
                                 inbound_mailbox_address, outbound_mailbox_address,
                                 inbound_folder_id, inbound_folder_name,
-                                allowed_status_ids, default_status_id, ai_assist_enabled)
+                                allowed_status_ids, default_status_id, ai_assist_enabled,
+                                time_alert_mode, time_alert_threshold_minutes)
             VALUES (@Name, @Slug, @Description, @Color, @Icon, @SortOrder, @IsActive, @IsSystem,
                     @InboundMailboxAddress, @OutboundMailboxAddress,
                     @InboundFolderId, @InboundFolderName,
-                    COALESCE(@AllowedStatusIds, '{}'::uuid[]), @DefaultStatusId, @AiAssistEnabled)
+                    COALESCE(@AllowedStatusIds, '{}'::uuid[]), @DefaultStatusId, @AiAssistEnabled,
+                    @TimeAlertMode, @TimeAlertThresholdMinutes)
             RETURNING {{QueueSelectColumns}}
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -115,11 +123,13 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
             AllowedStatusIds = (q.AllowedStatusIds ?? Array.Empty<Guid>()).ToArray(),
             q.DefaultStatusId,
             q.AiAssistEnabled,
+            q.TimeAlertMode,
+            q.TimeAlertThresholdMinutes,
         }, cancellationToken: ct));
         return MapQueueRow(row);
     }
 
-    public async Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, string? inboundMailboxAddress, string? outboundMailboxAddress, string? inboundFolderId, string? inboundFolderName, IReadOnlyList<Guid> allowedStatusIds, Guid? defaultStatusId, bool aiAssistEnabled, CancellationToken ct)
+    public async Task<Queue?> UpdateQueueAsync(Guid id, string name, string slug, string description, string color, string icon, int sortOrder, bool isActive, string? inboundMailboxAddress, string? outboundMailboxAddress, string? inboundFolderId, string? inboundFolderName, IReadOnlyList<Guid> allowedStatusIds, Guid? defaultStatusId, bool aiAssistEnabled, string timeAlertMode, int? timeAlertThresholdMinutes, CancellationToken ct)
     {
         // The inbound_* columns are a denormalized mirror of the queue's first
         // inbound source (v0.0.66); the caller passes them through but then
@@ -138,6 +148,8 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
                               allowed_status_ids = COALESCE(@allowedStatusIds, '{}'::uuid[]),
                               default_status_id = @defaultStatusId,
                               ai_assist_enabled = @aiAssistEnabled,
+                              time_alert_mode = @timeAlertMode,
+                              time_alert_threshold_minutes = @timeAlertThresholdMinutes,
                               updated_utc = now()
             WHERE id = @id
             RETURNING {{QueueSelectColumns}}
@@ -148,7 +160,8 @@ public sealed class TaxonomyRepository : ITaxonomyRepository
                   inboundMailboxAddress, outboundMailboxAddress,
                   inboundFolderId, inboundFolderName,
                   allowedStatusIds = allowedStatusIds.ToArray(),
-                  defaultStatusId, aiAssistEnabled }, cancellationToken: ct));
+                  defaultStatusId, aiAssistEnabled,
+                  timeAlertMode, timeAlertThresholdMinutes }, cancellationToken: ct));
         return row is null ? null : MapQueueRow(row);
     }
 

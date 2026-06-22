@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Timesheet;
 
@@ -40,6 +41,62 @@ public static class TicketTimesheetEndpoints
         .WithName("GetTicketTimesheetReplyHtml")
         .WithOpenApi();
 
+        // v0.0.87 — per-ticket hour-limit alert. Status drives both the
+        // ticket-open warning popup and the "Time logged" remaining display.
+        group.MapGet("/{ticketId:guid}/time-alert", async (
+            Guid ticketId,
+            ITicketTimeAlertService svc,
+            CancellationToken ct) =>
+        {
+            var status = await svc.GetStatusAsync(ticketId, ct);
+            return Results.Ok(status);
+        })
+        .WithName("GetTicketTimeAlertStatus")
+        .WithOpenApi();
+
+        // Agent dismissed the warning: logged, limit unchanged, recurs on
+        // the next open while still over limit.
+        group.MapPost("/{ticketId:guid}/time-alert/dismiss", async (
+            Guid ticketId,
+            HttpContext http,
+            ITicketTimeAlertService svc,
+            CancellationToken ct) =>
+        {
+            await svc.DismissAsync(ticketId, ActorContext.GetUserId(http), ct);
+            return Results.NoContent();
+        })
+        .WithName("DismissTicketTimeAlert")
+        .WithOpenApi();
+
+        // Agent raised the ticket's limit. The mandatory customer-confirmation
+        // tick is enforced server-side, not just in the dialog.
+        group.MapPost("/{ticketId:guid}/time-alert/extend", async (
+            Guid ticketId,
+            [FromBody] ExtendTimeAlertRequest req,
+            HttpContext http,
+            ITicketTimeAlertService svc,
+            CancellationToken ct) =>
+        {
+            var result = await svc.ExtendAsync(
+                ticketId, ActorContext.GetUserId(http),
+                req.AddMinutes, req.CustomerConfirmed, ct);
+            return result switch
+            {
+                TicketTimeAlertExtendResult.Ok => Results.NoContent(),
+                TicketTimeAlertExtendResult.NotConfirmed =>
+                    Results.Problem("Customer confirmation is required before raising the limit.", statusCode: 422),
+                TicketTimeAlertExtendResult.InvalidMinutes =>
+                    Results.Problem("The number of minutes to add is invalid.", statusCode: 400),
+                TicketTimeAlertExtendResult.TicketNotFound => Results.NotFound(),
+                _ => Results.Problem("Could not raise the ticket limit.", statusCode: 409),
+            };
+        })
+        .WithName("ExtendTicketTimeAlert")
+        .WithOpenApi();
+
         return app;
     }
+
+    /// Body of the "allow more time" action.
+    public sealed record ExtendTimeAlertRequest(int AddMinutes, bool CustomerConfirmed);
 }

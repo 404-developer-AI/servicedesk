@@ -728,6 +728,8 @@ function QueueDialog({
     allowedStatusIds: queue?.allowedStatusIds ?? [],
     defaultStatusId: queue?.defaultStatusId ?? null,
     aiAssistEnabled: queue?.aiAssistEnabled ?? true,
+    timeAlertMode: queue?.timeAlertMode ?? "inherit",
+    timeAlertThresholdMinutes: queue?.timeAlertThresholdMinutes ?? null,
   }));
 
   // v0.0.66 — a queue can have many inbound mailbox sources. Each editable row
@@ -892,6 +894,57 @@ function QueueDialog({
             />
             AI assist (show "Analyze &amp; propose a solution by AI" on tickets in this queue)
           </label>
+
+          {/* v0.0.87 — per-queue override for the ticket hour-limit alert.
+              "Inherit" uses the global Settings → Timesheet switch + limit;
+              On/Off force it for this queue; the limit override replaces the
+              global limit for tickets in this queue only. */}
+          <div className="mt-2 space-y-3 rounded-md border border-glass-strong bg-glass p-3">
+            <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+              Hour-limit alert
+            </div>
+            <Field label="Mode">
+              <select
+                value={form.timeAlertMode ?? "inherit"}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    timeAlertMode: e.target.value as "inherit" | "on" | "off",
+                  }))
+                }
+                className="h-9 w-full rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="inherit">Inherit global setting</option>
+                <option value="on">Always on for this queue</option>
+                <option value="off">Off for this queue</option>
+              </select>
+            </Field>
+            {form.timeAlertMode !== "off" && (
+              <Field label="Limit override (minutes, empty = global)">
+                <Input
+                  type="number"
+                  min={1}
+                  value={form.timeAlertThresholdMinutes ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value.trim();
+                    const n = v === "" ? null : Number.parseInt(v, 10);
+                    setForm((f) => ({
+                      ...f,
+                      timeAlertThresholdMinutes:
+                        n !== null && Number.isFinite(n) && n > 0 ? n : null,
+                    }));
+                  }}
+                  placeholder="Use global limit"
+                  className="font-mono"
+                />
+              </Field>
+            )}
+            <p className="text-[11px] text-muted-foreground/70">
+              Controls the per-ticket hour-limit warning for tickets in this
+              queue. The queue active on a ticket when it is opened (or its queue
+              is changed) decides which rule applies.
+            </p>
+          </div>
 
           {/* v0.0.40 polish — status scope. Leave empty to keep the
               current behaviour (all statuses available); pick a subset

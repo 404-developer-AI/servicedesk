@@ -156,7 +156,12 @@ public static class TaxonomyEndpoints
         Guid? DefaultStatusId = null,
         // Per-queue switch for the Claude AI ticket-assist action. Defaults
         // true so existing queues keep the button when the global feature is on.
-        bool AiAssistEnabled = true);
+        bool AiAssistEnabled = true,
+        // v0.0.87 — per-queue override for the ticket hour-limit alert.
+        // Mode: 'inherit' | 'on' | 'off'. ThresholdMinutes overrides the global
+        // limit for this queue; null = inherit the global limit.
+        string? TimeAlertMode = "inherit",
+        int? TimeAlertThresholdMinutes = null);
 
     public sealed record InboundMailboxInput(
         Guid? Id,
@@ -196,12 +201,29 @@ public static class TaxonomyEndpoints
         q.InboundFolderName,
         q.InboundPollingEnabled,
         q.AiAssistEnabled,
+        q.TimeAlertMode,
+        q.TimeAlertThresholdMinutes,
         AllowedStatusIds = q.AllowedStatusIds ?? Array.Empty<Guid>(),
         q.DefaultStatusId,
         InboundMailboxes = sources.Select(s => new QueueInboundMailboxResponse(
             s.Id, s.MailboxAddress, s.FolderId, s.FolderName, s.PollingEnabled,
             s.LastPolledUtc, s.LastError, s.ConsecutiveFailures)).ToList(),
     };
+
+    /// Normalizes the per-queue hour-limit override: mode is clamped to the
+    /// allowed set ('inherit' default) and a threshold is only kept when it is a
+    /// positive minute count (otherwise the queue inherits the global limit).
+    private static (string Mode, int? Threshold) NormalizeTimeAlert(string? mode, int? threshold)
+    {
+        var m = (mode?.Trim().ToLowerInvariant()) switch
+        {
+            "on" => "on",
+            "off" => "off",
+            _ => "inherit",
+        };
+        var t = threshold is > 0 ? threshold : null;
+        return (m, t);
+    }
 
     private static void MapQueues(RouteGroupBuilder group)
     {
@@ -246,6 +268,7 @@ public static class TaxonomyEndpoints
             }
 
             var now = DateTime.UtcNow;
+            var (taMode, taThreshold) = NormalizeTimeAlert(req.TimeAlertMode, req.TimeAlertThresholdMinutes);
             var created = await repo.CreateQueueAsync(new Queue(
                 Guid.Empty, req.Name.Trim(), Slugify(req.Name), req.Description ?? "",
                 Normalize(req.Color, "#7c7cff"), Normalize(req.Icon, "inbox"),
@@ -255,7 +278,8 @@ public static class TaxonomyEndpoints
                 InboundFolderId: null,
                 InboundFolderName: null,
                 (IReadOnlyList<Guid>)(req.AllowedStatusIds ?? Array.Empty<Guid>()),
-                req.DefaultStatusId, AiAssistEnabled: req.AiAssistEnabled), ct);
+                req.DefaultStatusId, AiAssistEnabled: req.AiAssistEnabled,
+                TimeAlertMode: taMode, TimeAlertThresholdMinutes: taThreshold), ct);
 
             foreach (var s in normalized)
                 await sources.AddAsync(created.Id, s.Mailbox, s.FolderId, s.FolderName, s.PollingEnabled, ct);
@@ -287,6 +311,7 @@ public static class TaxonomyEndpoints
                     return Results.Conflict(new { error = $"The mailbox {s.Mailbox} / {s.FolderName} is already assigned to another queue." });
             }
 
+            var (taMode, taThreshold) = NormalizeTimeAlert(req.TimeAlertMode, req.TimeAlertThresholdMinutes);
             var updated = await repo.UpdateQueueAsync(id, req.Name.Trim(), Slugify(req.Name),
                 req.Description ?? "", Normalize(req.Color, "#7c7cff"), Normalize(req.Icon, "inbox"),
                 req.SortOrder, req.IsActive,
@@ -295,7 +320,7 @@ public static class TaxonomyEndpoints
                 inboundFolderId: null,
                 inboundFolderName: null,
                 (IReadOnlyList<Guid>)(req.AllowedStatusIds ?? Array.Empty<Guid>()),
-                req.DefaultStatusId, req.AiAssistEnabled, ct);
+                req.DefaultStatusId, req.AiAssistEnabled, taMode, taThreshold, ct);
             if (updated is null) return Results.NotFound();
 
             // Reconcile the source list against what exists.

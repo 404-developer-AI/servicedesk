@@ -411,6 +411,8 @@ public static class DependencyInjection
         services.AddSingleton<Timesheet.IManagerTimesheetService, Timesheet.ManagerTimesheetService>();
         services.AddSingleton<Timesheet.ITimesheetPreferencesService, Timesheet.TimesheetPreferencesService>();
         services.AddSingleton<Timesheet.ITicketTimesheetService, Timesheet.TicketTimesheetService>();
+        // v0.0.87 — per-ticket hour-limit alert backend.
+        services.AddSingleton<Timesheet.ITicketTimeAlertService, Timesheet.TicketTimeAlertService>();
         // v0.0.56 — back-office Resolved / CWI tabs backend.
         services.AddSingleton<Timesheet.IBackofficeTimesheetService, Timesheet.BackofficeTimesheetService>();
         // v0.0.84 — Timesheet → Comments (per-ticket review chat) backend.

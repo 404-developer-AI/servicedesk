@@ -31,6 +31,7 @@ import { TicketSidePanel, TicketPresence } from "./components/TicketSidePanel";
 import { TicketTimeline, isSystemEvent } from "./components/TicketTimeline";
 import { PinnedEventsSummary } from "./components/PinnedEventsSummary";
 import { TicketTimesheetPanel } from "./components/TicketTimesheetPanel";
+import { TicketTimeAlertDialog } from "./components/TicketTimeAlertDialog";
 import { AddNoteForm } from "./components/AddNoteForm";
 import { buildMailContext, flattenQueueMailboxes } from "./mailContext";
 import { InTicketSearchProvider, useInTicketSearch } from "./components/InTicketSearch";
@@ -913,8 +914,13 @@ function TicketDetailBody({
 
         {/* v0.0.35-F — time-logged expand panel */}
         <div className="shrink-0 pb-3">
-          <TicketTimesheetPanel ticketId={ticketId} />
+          <TicketTimesheetPanel ticketId={ticketId} queueId={ticket.queueId} />
         </div>
+
+        {/* v0.0.87 — per-ticket hour-limit warning (self-gating: only opens
+            when the feature is on and the ticket is over its limit). The queue
+            drives re-evaluation on open and on queue change. */}
+        <TicketTimeAlertDialog ticketId={ticketId} queueId={ticket.queueId} />
 
         {/* Static: activity divider */}
         <div className="shrink-0 pb-3">
