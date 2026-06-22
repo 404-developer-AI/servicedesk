@@ -1056,6 +1056,28 @@ public static class SettingKeys
         /// the back-office "CWI" (Closed Without Invoice) tab. Same storage
         /// as ResolvedTabStatusIds. Empty = the CWI tab shows nothing.
         public const string CwiTabStatusIds = "Timesheet.CwiTabStatusIds";
+
+        /// v0.0.87 — master switch for the per-ticket hour-limit alert.
+        /// Default OFF. When ON, opening a ticket whose total logged time
+        /// (all agents combined) exceeds its effective limit pops a warning
+        /// the agent must either dismiss (logged, recurs next open) or act
+        /// on by raising the ticket's limit.
+        public const string TimeAlertEnabled = "Timesheet.TimeAlertEnabled";
+
+        /// v0.0.87 — global default limit (minutes) above which the
+        /// per-ticket hour alert fires. Per-ticket grants add on top of this:
+        /// a ticket's effective limit = this default + the minutes granted on
+        /// that ticket (tickets.time_alert_extra_minutes).
+        public const string TimeAlertThresholdMinutes = "Timesheet.TimeAlertThresholdMinutes";
+
+        /// v0.0.87 — minutes pre-filled in the "allow more time" dialog when
+        /// an agent raises a ticket's limit from the alert. Editable per use.
+        public const string TimeAlertDefaultExtraMinutes = "Timesheet.TimeAlertDefaultExtraMinutes";
+
+        /// v0.0.87 — label next to the mandatory confirmation tick on the
+        /// "allow more time" dialog (the customer must be informed / has
+        /// confirmed in writing before work continues). Admin-editable.
+        public const string TimeAlertConfirmationText = "Timesheet.TimeAlertConfirmationText";
     }
 
     /// v0.0.69 — Statistics feature. Status-group definitions used by the
@@ -1731,6 +1753,22 @@ public static class SettingDefaults
             "Statuses whose tickets appear on the back-office 'Resolved' tab. A ticket is listed in the month it entered one of these statuses, and only when it has no Adsolut sales receipt yet. Pick one or more statuses by name on the Settings → Timesheet → Back-office tabs panel. Empty = the Resolved tab shows nothing."),
         new SettingDefault(SettingKeys.Timesheet.CwiTabStatusIds, "", "string", "Timesheet",
             "Statuses whose tickets appear on the back-office 'CWI' (Closed Without Invoice) tab. A ticket is listed in the month it entered one of these statuses. Pick one or more statuses by name on the Settings → Timesheet → Back-office tabs panel. Empty = the CWI tab shows nothing."),
+
+        // v0.0.87 — per-ticket hour-limit alert. Off by default; default
+        // limit 480 min (8h). The dialog pre-fills 60 extra minutes and
+        // forces a written-customer-confirmation tick before raising a
+        // ticket's limit. The threshold counts ALL logged time on a ticket
+        // regardless of the billed/invoiced flag (see TicketTimeAlertService).
+        new SettingDefault(SettingKeys.Timesheet.TimeAlertEnabled, "false", "bool", "Timesheet",
+            "Master switch for the per-ticket hour-limit alert. When ON, opening a ticket whose total logged time (all agents combined) exceeds its limit shows a warning the agent must act on. Default OFF."),
+        new SettingDefault(SettingKeys.Timesheet.TimeAlertThresholdMinutes, "480", "int", "Timesheet",
+            "Default limit in minutes before the per-ticket hour-limit alert fires. 480 = 8h. Counts all logged time on the ticket regardless of the billed/invoiced flag. Per-ticket extensions add on top, so a ticket's effective limit = this default + the minutes granted on that ticket."),
+        new SettingDefault(SettingKeys.Timesheet.TimeAlertDefaultExtraMinutes, "60", "int", "Timesheet",
+            "Minutes pre-filled in the 'allow more time' dialog when an agent raises a ticket's limit from the alert. The agent can change it before confirming. Default 60."),
+        new SettingDefault(SettingKeys.Timesheet.TimeAlertConfirmationText,
+            "The customer must be informed — or has already been informed and confirmed in writing — before we continue working on this ticket.",
+            "string", "Timesheet",
+            "Label shown next to the mandatory confirmation checkbox on the 'allow more time' dialog. The agent must tick it before a ticket's limit can be raised. Edit to match your house wording."),
 
         // Statistics — v0.0.69. Status-group definitions for the "Hours by
         // status group" metric. Resolved/CWI reuse the back-office sets above;

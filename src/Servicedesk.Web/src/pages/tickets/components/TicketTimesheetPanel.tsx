@@ -1,7 +1,13 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, Clock, AlertCircle, Check } from "lucide-react";
+import { ChevronDown, Clock, AlertCircle, Check, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useTicketTimesheetRealtime } from "@/hooks/useTimesheetRealtime";
 import {
   timesheetTicketApi,
@@ -9,15 +15,19 @@ import {
   formatDuration,
   type TimesheetEntry,
 } from "@/lib/timesheet-api";
+import { timeAlertQueryKey } from "./TicketTimeAlertDialog";
 
 type Props = {
   ticketId: string;
+  /// The ticket's current queue — part of the alert query key so the
+  /// remaining-time badge re-resolves when the queue changes.
+  queueId: string | null | undefined;
 };
 
 /// v0.0.35-F — collapsible panel that lists every timesheet entry linked
 /// to this ticket (across all agents). Collapsed by default so it does
 /// not push the activity feed down on tickets that have no entries yet.
-export function TicketTimesheetPanel({ ticketId }: Props) {
+export function TicketTimesheetPanel({ ticketId, queueId }: Props) {
   const [open, setOpen] = React.useState(false);
 
   // v0.0.35 commit H — live-refresh when another agent saves time against
@@ -29,6 +39,14 @@ export function TicketTimesheetPanel({ ticketId }: Props) {
     queryKey: ["timesheet", "ticket", ticketId],
     queryFn: () => timesheetTicketApi.list(ticketId),
     staleTime: 30_000,
+  });
+
+  // v0.0.87 — hour-limit snapshot (shares the cache with the warning dialog).
+  // Only used to surface "time remaining before the limit" in the header.
+  const { data: alert } = useQuery({
+    queryKey: timeAlertQueryKey(ticketId, queueId),
+    queryFn: () => timesheetTicketApi.timeAlert(ticketId),
+    staleTime: 15_000,
   });
 
   const items = data?.items ?? [];
@@ -82,30 +100,17 @@ export function TicketTimesheetPanel({ ticketId }: Props) {
             </span>
           ) : (
             <>
-              {byTask.map((t) => (
-                <span
-                  key={t.taskId}
-                  className={cn(
-                    "inline-flex max-w-[10rem] items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px]",
-                    t.isAbsence
-                      ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
-                      : "border-glass bg-glass text-foreground/80",
-                  )}
-                  title={`${t.name} — ${formatDuration(t.minutes)}`}
-                >
-                  <span className="truncate text-muted-foreground/80">
-                    {t.name}
-                  </span>
-                  <span className="font-mono font-medium tabular-nums shrink-0">
-                    {formatDuration(t.minutes)}
-                  </span>
-                </span>
-              ))}
+              {/* Per-task breakdown. Collapses to a single "N tasks" pill
+                  (with a hover tooltip listing each task) when there isn't
+                  room to show every badge, so nothing silently disappears.
+                  The total + remaining stay pinned (shrink-0). */}
+              <TaskBreakdownBadges byTask={byTask} />
               <span className="inline-flex shrink-0 items-center rounded-md border border-violet-400/30 bg-violet-400/10 px-2 py-0.5 text-xs font-medium text-violet-200">
                 {formatDuration(totalMinutes)}
               </span>
             </>
           )}
+          {alert?.enabled && <RemainingPill alert={alert} />}
           <ChevronDown
             className={cn(
               "h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform",
@@ -138,6 +143,141 @@ export function TicketTimesheetPanel({ ticketId }: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+type TaskAgg = {
+  taskId: string;
+  name: string;
+  isAbsence: boolean;
+  minutes: number;
+};
+
+function TaskPill({ t }: { t: TaskAgg }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-[10rem] shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px]",
+        t.isAbsence
+          ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
+          : "border-glass bg-glass text-foreground/80",
+      )}
+      title={`${t.name} — ${formatDuration(t.minutes)}`}
+    >
+      <span className="truncate text-muted-foreground/80">{t.name}</span>
+      <span className="font-mono font-medium tabular-nums shrink-0">
+        {formatDuration(t.minutes)}
+      </span>
+    </span>
+  );
+}
+
+/// Per-task breakdown for the collapsed header. Measures the full set of
+/// badges against the space actually available and, when they don't all fit,
+/// collapses them into a single "N tasks" pill whose tooltip lists every task
+/// and its duration — so a crowded ticket never silently drops a badge.
+function TaskBreakdownBadges({ byTask }: { byTask: TaskAgg[] }) {
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const measureRef = React.useRef<HTMLDivElement>(null);
+  const [collapsed, setCollapsed] = React.useState(false);
+
+  React.useLayoutEffect(() => {
+    const container = containerRef.current;
+    const measure = measureRef.current;
+    if (!container || !measure) return;
+    // The measurer renders the full breakdown off-layout, so its width is the
+    // natural width regardless of the collapsed state — the decision can never
+    // oscillate. +1 absorbs sub-pixel rounding.
+    const check = () =>
+      setCollapsed(measure.offsetWidth > container.clientWidth + 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [byTask]);
+
+  const count = byTask.length;
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative flex min-w-0 flex-1 items-center justify-end gap-1.5 overflow-hidden"
+    >
+      {/* Off-layout natural-width measurer (never visible). */}
+      <div
+        ref={measureRef}
+        aria-hidden
+        className="pointer-events-none absolute right-0 flex items-center gap-1.5 opacity-0"
+      >
+        {byTask.map((t) => (
+          <TaskPill key={t.taskId} t={t} />
+        ))}
+      </div>
+
+      {collapsed ? (
+        <TooltipProvider delayDuration={150}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex shrink-0 cursor-default items-center gap-1.5 rounded-md border border-glass bg-glass px-2 py-0.5 text-[11px] text-foreground/80">
+                <Layers className="h-3 w-3 text-muted-foreground/80" />
+                {count} {count === 1 ? "task" : "tasks"}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs border border-glass bg-glass-strong text-foreground">
+              <div className="flex flex-col gap-1">
+                {byTask.map((t) => (
+                  <div
+                    key={t.taskId}
+                    className="flex items-center justify-between gap-4 text-[11px]"
+                  >
+                    <span className={cn(t.isAbsence && "text-amber-200")}>
+                      {t.name}
+                    </span>
+                    <span className="font-mono tabular-nums text-muted-foreground/90">
+                      {formatDuration(t.minutes)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ) : (
+        byTask.map((t) => <TaskPill key={t.taskId} t={t} />)
+      )}
+    </div>
+  );
+}
+
+/// v0.0.87 — shows how much time may still be logged on this ticket before
+/// its effective limit is reached, or by how much it is already over. Server
+/// computes the limit; this only renders the snapshot.
+function RemainingPill({
+  alert,
+}: {
+  alert: { exceeded: boolean; remainingMinutes: number; limitMinutes: number };
+}) {
+  const over = alert.exceeded || alert.remainingMinutes < 0;
+  const magnitude = Math.abs(alert.remainingMinutes);
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium",
+        over
+          ? "border-amber-400/40 bg-amber-400/10 text-amber-200"
+          : "border-emerald-400/30 bg-emerald-400/10 text-emerald-200",
+      )}
+      title={`Limit ${formatDuration(alert.limitMinutes)}`}
+    >
+      {over ? (
+        <>
+          <AlertCircle className="h-3 w-3" />
+          {formatDuration(magnitude)} over limit
+        </>
+      ) : (
+        <>{formatDuration(magnitude)} left</>
+      )}
+    </span>
   );
 }
 

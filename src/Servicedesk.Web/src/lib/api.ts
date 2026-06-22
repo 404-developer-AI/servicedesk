@@ -476,6 +476,12 @@ export type Queue = {
   // statuses available. Non-empty = dropdown filters to these ids.
   allowedStatusIds: string[];
   defaultStatusId: string | null;
+  // v0.0.87 — per-queue override for the ticket hour-limit alert.
+  // "inherit" uses the global Timesheet settings; "on"/"off" force it for
+  // this queue. timeAlertThresholdMinutes overrides the global limit
+  // (null = inherit the global limit).
+  timeAlertMode?: "inherit" | "on" | "off";
+  timeAlertThresholdMinutes?: number | null;
 };
 
 export type Priority = {
@@ -554,6 +560,9 @@ export type QueueInput = {
   allowedStatusIds?: string[];
   defaultStatusId?: string | null;
   aiAssistEnabled?: boolean;
+  // v0.0.87 — per-queue hour-limit alert override.
+  timeAlertMode?: "inherit" | "on" | "off";
+  timeAlertThresholdMinutes?: number | null;
 };
 
 export type PriorityInput = {

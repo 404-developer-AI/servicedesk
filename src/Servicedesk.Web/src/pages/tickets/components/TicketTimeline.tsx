@@ -29,6 +29,8 @@ import {
   ClipboardX,
   GitBranch,
   ChevronDown,
+  AlertTriangle,
+  TimerReset,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ticketApi, ApiError, type TicketEvent, type OutboundMailKind } from "@/lib/ticket-api";
@@ -55,6 +57,7 @@ import {
 import { EventRevisionDialog } from "./EventRevisionDialog";
 import { IntakeSubmissionPanel } from "@/components/intake/IntakeSubmissionPanel";
 import { SplitMailDialog } from "@/components/SplitMailDialog";
+import { formatDuration } from "@/lib/timesheet-api";
 
 type PreviewContextValue = {
   open: (preview: AttachmentPreview) => void;
@@ -374,6 +377,16 @@ const EVENT_CONFIG: Record<string, EventConfig> = {
     dotColor: "bg-orange-400",
     label: "Intake form expired",
   },
+  TimeLimitAlertDismissed: {
+    icon: AlertTriangle,
+    dotColor: "bg-amber-500",
+    label: "Hour-limit warning dismissed",
+  },
+  TimeLimitExtended: {
+    icon: TimerReset,
+    dotColor: "bg-violet-500",
+    label: "Hour limit raised",
+  },
 };
 
 /// Event types that are system/audit noise rather than real
@@ -390,6 +403,8 @@ const SYSTEM_EVENT_TYPES = new Set<string>([
   "CompanyAssignment",
   "RequesterChange",
   "Created",
+  "TimeLimitAlertDismissed",
+  "TimeLimitExtended",
 ]);
 
 export function isSystemEvent(event: TicketEvent): boolean {
@@ -561,6 +576,41 @@ function EventBody({ event }: { event: TicketEvent }) {
           {event.bodyText ?? "System event"}
         </span>
       );
+
+    case "TimeLimitAlertDismissed": {
+      const total = typeof meta.totalMinutes === "number" ? meta.totalMinutes : null;
+      const limit = typeof meta.limitMinutes === "number" ? meta.limitMinutes : null;
+      return (
+        <span className="text-sm text-muted-foreground">
+          Hour-limit warning dismissed
+          {total !== null && limit !== null && (
+            <span className="text-muted-foreground/70">
+              {" "}
+              ({formatDuration(total)} logged, limit {formatDuration(limit)})
+            </span>
+          )}
+        </span>
+      );
+    }
+
+    case "TimeLimitExtended": {
+      const added = typeof meta.addedMinutes === "number" ? meta.addedMinutes : null;
+      const newLimit =
+        typeof meta.newLimitMinutes === "number" ? meta.newLimitMinutes : null;
+      return (
+        <span className="text-sm text-muted-foreground">
+          Hour limit raised
+          {added !== null && <span className="text-foreground/80"> by {formatDuration(added)}</span>}
+          {newLimit !== null && (
+            <span className="text-muted-foreground/70">
+              {" "}
+              (new limit {formatDuration(newLimit)})
+            </span>
+          )}
+          <span className="text-muted-foreground/70"> — customer confirmation recorded</span>
+        </span>
+      );
+    }
 
     case "IntakeFormSent":
     case "IntakeFormSubmitted":

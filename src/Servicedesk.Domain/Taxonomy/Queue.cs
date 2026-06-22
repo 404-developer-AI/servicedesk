@@ -40,4 +40,12 @@ public sealed record Queue(
     // Per-queue switch for the Claude AI ticket-assist action. Defaults true so
     // existing queues keep the button when the global feature is on; admins can
     // turn it off per queue. Enforced server-side in the AI-proposal endpoint.
-    bool AiAssistEnabled = true);
+    bool AiAssistEnabled = true,
+    // v0.0.87 — per-queue override for the ticket hour-limit alert. Mode is
+    // 'inherit' (use the global Timesheet.TimeAlert* settings), 'on' (force the
+    // alert on for this queue even when globally off) or 'off' (disable it on
+    // this queue even when globally on). TimeAlertThresholdMinutes overrides the
+    // global limit for this queue; null = inherit the global limit. The queue
+    // active on the ticket at open / queue-change time decides which applies.
+    string TimeAlertMode = "inherit",
+    int? TimeAlertThresholdMinutes = null);

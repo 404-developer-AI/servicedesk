@@ -2,6 +2,7 @@ import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  AlertTriangle,
   Archive,
   ArchiveRestore,
   Bed,
@@ -67,6 +68,10 @@ const KEY_WFQ_STATUSES = "Statistics.WfqStatusIds";
 const KEY_REPLY_HEADER = "Timesheet.ReplyHeaderHtml";
 const KEY_REPLY_ROW = "Timesheet.ReplyRowHtml";
 const KEY_REPLY_FOOTER = "Timesheet.ReplyFooterHtml";
+const KEY_TIME_ALERT_ENABLED = "Timesheet.TimeAlertEnabled";
+const KEY_TIME_ALERT_THRESHOLD = "Timesheet.TimeAlertThresholdMinutes";
+const KEY_TIME_ALERT_EXTRA = "Timesheet.TimeAlertDefaultExtraMinutes";
+const KEY_TIME_ALERT_CONFIRM = "Timesheet.TimeAlertConfirmationText";
 
 const WEEKDAYS: { iso: number; label: string }[] = [
   { iso: 1, label: "Mon" },
@@ -103,6 +108,10 @@ export function TimesheetSettingsPage() {
   const replyHeaderEntry = findEntry(query.data, KEY_REPLY_HEADER);
   const replyRowEntry = findEntry(query.data, KEY_REPLY_ROW);
   const replyFooterEntry = findEntry(query.data, KEY_REPLY_FOOTER);
+  const timeAlertEnabledEntry = findEntry(query.data, KEY_TIME_ALERT_ENABLED);
+  const timeAlertThresholdEntry = findEntry(query.data, KEY_TIME_ALERT_THRESHOLD);
+  const timeAlertExtraEntry = findEntry(query.data, KEY_TIME_ALERT_EXTRA);
+  const timeAlertConfirmEntry = findEntry(query.data, KEY_TIME_ALERT_CONFIRM);
 
   return (
     <div className="flex flex-col gap-6">
@@ -231,6 +240,52 @@ export function TimesheetSettingsPage() {
           </section>
 
           <WorkHoursArticlesSection />
+
+          <section className="glass-card p-6">
+            <SectionHeader
+              icon={<AlertTriangle className="h-5 w-5" />}
+              title="Ticket hour-limit alert"
+              description="Warn agents when too much time has been logged on a ticket. When enabled, opening a ticket whose total logged time (all agents combined) exceeds its limit shows a popup the agent must dismiss or act on by raising the ticket's limit. The threshold counts all logged time regardless of the billed flag. Off by default. These are the global defaults — individual queues can override the limit or force the alert on/off under Settings → Tickets → Queues."
+            />
+            <div className="space-y-1">
+              {timeAlertEnabledEntry ? (
+                <ToggleField
+                  entry={timeAlertEnabledEntry}
+                  label="Enable hour-limit alert"
+                  hint="Master switch. When off, no popup is shown unless a queue is set to force it on. Queues set to 'off' stay silent even when this is on."
+                />
+              ) : (
+                <MissingEntry keyName={KEY_TIME_ALERT_ENABLED} />
+              )}
+              {timeAlertThresholdEntry ? (
+                <MinutesField
+                  entry={timeAlertThresholdEntry}
+                  label="Default limit"
+                  hint="In minutes. 480 = 8h. The popup fires once a ticket's total logged time exceeds this. Per-ticket extensions add on top of this default."
+                />
+              ) : (
+                <MissingEntry keyName={KEY_TIME_ALERT_THRESHOLD} />
+              )}
+              {timeAlertExtraEntry ? (
+                <MinutesField
+                  entry={timeAlertExtraEntry}
+                  label="Default extra minutes"
+                  hint="Pre-filled amount in the 'allow more time' dialog. The agent can change it before confirming. 60 = 1h."
+                />
+              ) : (
+                <MissingEntry keyName={KEY_TIME_ALERT_EXTRA} />
+              )}
+              {timeAlertConfirmEntry ? (
+                <TextAreaField
+                  entry={timeAlertConfirmEntry}
+                  label="Confirmation checkbox text"
+                  hint="The mandatory tick an agent must accept before a ticket's limit can be raised. Re-checked server-side."
+                />
+              ) : (
+                <MissingEntry keyName={KEY_TIME_ALERT_CONFIRM} />
+              )}
+            </div>
+          </section>
 
           <section className="glass-card p-6">
             <SectionHeader
@@ -797,6 +852,95 @@ function MinutesField({
         <span className="text-xs text-muted-foreground">= {hourSummary}</span>
       </div>
     </FieldRow>
+  );
+}
+
+// ---- Boolean toggle field (saves "true"/"false") ----------------------
+
+function ToggleField({
+  entry,
+  label,
+  hint,
+}: {
+  entry: SettingEntry;
+  label: string;
+  hint: string;
+}) {
+  const qc = useQueryClient();
+  const checked = entry.value === "true";
+
+  const save = useMutation({
+    mutationFn: (val: boolean) => settingsApi.update(entry.key, String(val)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QUERY_KEY });
+      toast.success(`${label} updated`);
+    },
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : "Failed to save"),
+  });
+
+  return (
+    <FieldRow label={label} hint={hint}>
+      <Switch
+        checked={checked}
+        disabled={save.isPending}
+        onCheckedChange={(v) => save.mutate(v)}
+      />
+    </FieldRow>
+  );
+}
+
+// ---- Multi-line text field (full-width) -------------------------------
+
+function TextAreaField({
+  entry,
+  label,
+  hint,
+}: {
+  entry: SettingEntry;
+  label: string;
+  hint: string;
+}) {
+  const qc = useQueryClient();
+  const [draft, setDraft] = React.useState(entry.value);
+  React.useEffect(() => setDraft(entry.value), [entry.value]);
+
+  const save = useMutation({
+    mutationFn: (val: string) => settingsApi.update(entry.key, val),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QUERY_KEY });
+      toast.success(`${label} updated`);
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+      setDraft(entry.value);
+    },
+  });
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    if (trimmed === entry.value) return;
+    if (trimmed.length === 0) {
+      toast.error("This text cannot be empty");
+      setDraft(entry.value);
+      return;
+    }
+    save.mutate(trimmed);
+  };
+
+  return (
+    <div className="border-b border-glass py-3 last:border-b-0">
+      <p className="text-sm font-medium text-foreground">{label}</p>
+      <p className="mt-0.5 mb-2 text-xs text-muted-foreground">{hint}</p>
+      <textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        rows={2}
+        className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+        disabled={save.isPending}
+      />
+    </div>
   );
 }
 

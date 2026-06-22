@@ -20,4 +20,7 @@ public enum TicketEventType
     SurveySent,
     SurveySubmitted,
     SurveyExpired,
+    // v0.0.87 — per-ticket hour-limit alert outcomes.
+    TimeLimitAlertDismissed,
+    TimeLimitExtended,
 }

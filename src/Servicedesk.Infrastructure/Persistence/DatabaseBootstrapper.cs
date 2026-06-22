@@ -5072,6 +5072,47 @@ public sealed class DatabaseBootstrapper : IHostedService
             END IF;
         END
         $feedback_entries_constraints$;
+
+        -- ===================================================================
+        -- v0.0.87 Per-ticket hour-limit alert (timesheet)
+        -- ===================================================================
+        -- Cumulative extra minutes granted on a ticket from the hour-limit
+        -- alert dialog. A ticket's effective limit = the resolved default
+        -- (queue override or Timesheet.TimeAlertThresholdMinutes) + this column.
+        -- Starts at 0; each "allow more time" action adds the granted minutes.
+        ALTER TABLE tickets
+            ADD COLUMN IF NOT EXISTS time_alert_extra_minutes INT NOT NULL DEFAULT 0;
+
+        -- Per-queue override for the hour-limit alert. Mode 'inherit' uses the
+        -- global Timesheet.TimeAlert* settings; 'on' forces the alert on for
+        -- this queue even when globally off; 'off' disables it for this queue
+        -- even when globally on. time_alert_threshold_minutes overrides the
+        -- global limit for this queue (NULL = inherit the global limit). The
+        -- queue active on the ticket at open/queue-change time decides which
+        -- applies.
+        ALTER TABLE queues
+            ADD COLUMN IF NOT EXISTS time_alert_mode TEXT NOT NULL DEFAULT 'inherit',
+            ADD COLUMN IF NOT EXISTS time_alert_threshold_minutes INT NULL;
+        ALTER TABLE queues DROP CONSTRAINT IF EXISTS chk_queue_time_alert_mode;
+        ALTER TABLE queues ADD CONSTRAINT chk_queue_time_alert_mode
+            CHECK (time_alert_mode IN ('inherit','on','off')) NOT VALID;
+
+        -- Two new timeline event types: the agent dismissed the alert
+        -- ('TimeLimitAlertDismissed', which recurs the next time the ticket
+        -- is opened while still over limit) or raised the limit
+        -- ('TimeLimitExtended'). Same NOT VALID drop+recreate pattern as the
+        -- earlier extensions — legacy rows are already compliant (the enum is
+        -- append-only), only new writes enforce the whitelist.
+        ALTER TABLE ticket_events DROP CONSTRAINT IF EXISTS chk_ticket_event_type;
+        ALTER TABLE ticket_events ADD CONSTRAINT chk_ticket_event_type
+            CHECK (event_type IN ('Created','Comment','Mail','Note','StatusChange',
+                                  'AssignmentChange','PriorityChange','QueueChange',
+                                  'CategoryChange','SystemNote','MailReceived',
+                                  'MailSent','CompanyAssignment','RequesterChange',
+                                  'IntakeFormSent','IntakeFormSubmitted','IntakeFormExpired',
+                                  'ParentLinked','ParentUnlinked',
+                                  'SurveySent','SurveySubmitted','SurveyExpired',
+                                  'TimeLimitAlertDismissed','TimeLimitExtended')) NOT VALID;
         """;
 
     private readonly NpgsqlDataSource _dataSource;
