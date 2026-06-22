@@ -234,6 +234,11 @@ public static class DependencyInjection
         services.AddSingleton<Servicedesk.Infrastructure.Integrations.Claude.IClaudeApiClient, Servicedesk.Infrastructure.Integrations.Claude.ClaudeApiClient>();
         services.AddSingleton<Servicedesk.Infrastructure.Integrations.Claude.IClaudeUsageStore, Servicedesk.Infrastructure.Integrations.Claude.ClaudeUsageStore>();
         services.AddSingleton<Servicedesk.Infrastructure.Integrations.Claude.IClaudeAssistService, Servicedesk.Infrastructure.Integrations.Claude.ClaudeAssistService>();
+        // KB chat assistant (v0.0.86): the agent-facing floating chat. Shares
+        // the API key, ZDR gate, per-agent budget, pricing and usage log; uses
+        // a single auth-scoped KB search tool (no internet, no other tool).
+        // Request-driven, no background worker.
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.Claude.IKbChatService, Servicedesk.Infrastructure.Integrations.Claude.KbChatService>();
         services.AddHttpClient(Servicedesk.Infrastructure.Integrations.Claude.ClaudeApiClient.HttpClientName);
 
         // Zammad migration link (v0.0.41). One install-wide HTTP token +

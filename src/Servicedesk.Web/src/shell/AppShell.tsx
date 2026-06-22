@@ -5,6 +5,7 @@ import { Sidebar } from "@/shell/Sidebar";
 import { CriticalBanner } from "@/components/health/CriticalBanner";
 import { MaintenanceBanner } from "@/components/maintenance/MaintenanceBanner";
 import { IncomingCallPopup } from "@/components/integrations/IncomingCallPopup";
+import { KbChatWidget } from "@/components/integrations/KbChatWidget";
 import { useSecondarySidebarStore } from "@/stores/useSecondarySidebarStore";
 import { usePresenceConnection } from "@/hooks/usePresence";
 import { useNotificationSignalR } from "@/hooks/useNotificationSignalR";
@@ -59,6 +60,7 @@ export function AppShell() {
       </div>
       <Toaster theme="dark" position="bottom-right" />
       <IncomingCallPopup />
+      <KbChatWidget />
       {user?.adsolutOrdersEnabled && <OrderPillHost />}
     </div>
   );

@@ -656,6 +656,7 @@ app.MapM365Endpoints();
 app.MapSophosEndpoints();
 app.MapVeeamEndpoints();
 app.MapClaudeEndpoints();
+app.MapKbChatEndpoints();
 app.MapAssetsEndpoints();
 app.MapAdminMailDiagnosticsEndpoints();
 app.MapMailMailboxEndpoints();
