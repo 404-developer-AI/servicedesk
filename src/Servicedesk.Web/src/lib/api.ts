@@ -3407,6 +3407,36 @@ export const preferencesApi = {
 
 export type PinnedFeaturesPreference = { paths: string[] };
 export type PinnedViewsPreference = { ids: string[] };
+
+// ---- Knowledge-base chat assistant (v0.0.86) ----------------------------
+
+export type KbChatStatus = { enabled: boolean; ready: boolean };
+
+export type KbChatCitation = {
+  articleId: string;
+  title: string;
+  slug: string;
+  sectionId: string;
+};
+
+export type KbChatReply = {
+  reply: string;
+  replyHtml: string;
+  citations: KbChatCitation[];
+  monthSpendMicroEur: number;
+  monthBudgetMicroEur: number;
+};
+
+export type KbChatHistoryMessage = { role: "user" | "assistant"; text: string };
+
+/// The agent-facing KB chat assistant. `status` decides whether the floating
+/// button is shown; `send` carries the prior visible transcript so the server
+/// can re-run authorized retrieval each turn (it never trusts client tool data).
+export const kbChatApi = {
+  status: () => request<KbChatStatus>("GET", "/api/ai/kb-chat/status"),
+  send: (history: KbChatHistoryMessage[], message: string) =>
+    request<KbChatReply>("POST", "/api/ai/kb-chat", { history, message }),
+};
 export type PostCloseRedirectPreference = { target: string };
 
 // ---- SLA ----

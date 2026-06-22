@@ -143,6 +143,184 @@ public sealed class ClaudeApiClient : IClaudeApiClient
         }
     }
 
+    public async Task<ClaudeChatResult> CreateChatTurnAsync(
+        string systemPrompt,
+        JsonArray messages,
+        JsonArray tools,
+        string model,
+        int maxTokens,
+        CancellationToken ct)
+    {
+        var apiKey = await _secrets.GetAsync(ProtectedSecretKeys.ClaudeApiKey, ct);
+        if (string.IsNullOrWhiteSpace(apiKey))
+            throw new ClaudeApiException("Claude API key is not configured.", httpStatus: null, upstreamErrorCode: "missing_api_key");
+
+        var baseUrl = (await _settings.GetAsync<string>(SettingKeys.Claude.ApiBaseUrl, ct) ?? string.Empty).Trim();
+        if (baseUrl.Length == 0) baseUrl = "https://api.anthropic.com";
+        baseUrl = baseUrl.TrimEnd('/');
+        var url = baseUrl + "/v1/messages";
+
+        var timeoutSeconds = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Claude.RequestTimeoutSeconds, ct), 10, 600);
+
+        var body = new JsonObject
+        {
+            ["model"] = model.Trim(),
+            ["max_tokens"] = Math.Clamp(maxTokens, 256, 8192),
+            ["system"] = systemPrompt,
+            // DeepClone: a JsonNode can have only one parent, and the caller
+            // keeps reusing/extending the same messages array across the
+            // tool-use loop, so the request body must take a detached copy.
+            ["messages"] = messages.DeepClone(),
+        };
+        // Tools are omitted on the forced final turn (the caller passes an
+        // empty array) so the model must answer with text instead of searching.
+        if (tools.Count > 0)
+            body["tools"] = tools.DeepClone();
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Add("x-api-key", apiKey);
+        request.Headers.Add("anthropic-version", AnthropicVersion);
+        request.Headers.Accept.ParseAdd("application/json");
+        request.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
+
+        var http = _httpClientFactory.CreateClient(HttpClientName);
+        http.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            var response = await http.SendAsync(request, ct);
+            stopwatch.Stop();
+
+            var status = (int)response.StatusCode;
+            var requestId = ReadRequestId(response);
+            var responseBody = await response.Content.ReadAsStringAsync(ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var (upstreamCode, upstreamMessage) = TryParseError(responseBody);
+                var outcome = status == 429 || status >= 500
+                    ? IntegrationAuditOutcome.Warn
+                    : IntegrationAuditOutcome.Error;
+                await _audit.LogAsync(new IntegrationAuditEvent(
+                    Integration: ClaudeEventTypes.Integration,
+                    EventType: ClaudeEventTypes.ChatCall,
+                    Outcome: outcome,
+                    Endpoint: url,
+                    HttpStatus: status,
+                    LatencyMs: (int)stopwatch.ElapsedMilliseconds,
+                    ErrorCode: upstreamCode ?? $"http_{status}",
+                    Payload: new { model, requestId, snippet = Truncate(upstreamMessage ?? responseBody, 256) }), ct);
+                throw new ClaudeApiException(
+                    upstreamMessage ?? $"Claude API returned HTTP {status}.",
+                    httpStatus: status,
+                    upstreamErrorCode: upstreamCode);
+            }
+
+            var parsed = ParseChatSuccess(responseBody, model, requestId);
+            await _audit.LogAsync(new IntegrationAuditEvent(
+                Integration: ClaudeEventTypes.Integration,
+                EventType: ClaudeEventTypes.ChatCall,
+                Outcome: IntegrationAuditOutcome.Ok,
+                Endpoint: url,
+                HttpStatus: status,
+                LatencyMs: (int)stopwatch.ElapsedMilliseconds,
+                Payload: new
+                {
+                    model = parsed.Model,
+                    requestId,
+                    stopReason = parsed.StopReason,
+                    inputTokens = parsed.InputTokens,
+                    outputTokens = parsed.OutputTokens,
+                    toolUses = parsed.ToolUses.Count,
+                }), ct);
+            return parsed;
+        }
+        catch (ClaudeApiException)
+        {
+            throw;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            await _audit.LogAsync(new IntegrationAuditEvent(
+                Integration: ClaudeEventTypes.Integration,
+                EventType: ClaudeEventTypes.ChatCall,
+                Outcome: IntegrationAuditOutcome.Warn,
+                Endpoint: url,
+                HttpStatus: null,
+                LatencyMs: (int)stopwatch.ElapsedMilliseconds,
+                ErrorCode: "transport_error",
+                Payload: new { model, message = ex.Message }), ct);
+            throw new ClaudeApiException("Transport error calling the Claude API: " + ex.Message, ex);
+        }
+    }
+
+    private static ClaudeChatResult ParseChatSuccess(string responseBody, string fallbackModel, string? requestId)
+    {
+        try
+        {
+            var node = JsonNode.Parse(responseBody) as JsonObject
+                ?? throw new ClaudeApiException("Claude API response was not a JSON object.");
+
+            var contentArray = node["content"] as JsonArray ?? new JsonArray();
+
+            var text = new StringBuilder();
+            var toolUses = new List<ClaudeToolUse>();
+            foreach (var block in contentArray)
+            {
+                if (block is not JsonObject obj) continue;
+                var type = obj["type"]?.GetValue<string>();
+                if (type == "text")
+                {
+                    text.Append(obj["text"]?.GetValue<string>() ?? string.Empty);
+                }
+                else if (type == "tool_use")
+                {
+                    var id = obj["id"]?.GetValue<string>() ?? string.Empty;
+                    var name = obj["name"]?.GetValue<string>() ?? string.Empty;
+                    var input = obj["input"] as JsonObject ?? new JsonObject();
+                    toolUses.Add(new ClaudeToolUse(id, name, (JsonObject)input.DeepClone()));
+                }
+            }
+
+            var model = node["model"]?.GetValue<string>() ?? fallbackModel;
+            var stopReason = node["stop_reason"]?.GetValue<string>();
+
+            var inputTokens = 0;
+            var outputTokens = 0;
+            if (node["usage"] is JsonObject usage)
+            {
+                inputTokens = usage["input_tokens"]?.GetValue<int>() ?? 0;
+                outputTokens = usage["output_tokens"]?.GetValue<int>() ?? 0;
+            }
+
+            // The raw content array is echoed back as the assistant turn; detach
+            // it from the parsed document so the caller can re-parent it.
+            return new ClaudeChatResult(
+                contentArray.DeepClone(),
+                text.ToString().Trim(),
+                toolUses,
+                stopReason,
+                inputTokens,
+                outputTokens,
+                model,
+                requestId);
+        }
+        catch (ClaudeApiException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new ClaudeApiException("Could not parse the Claude API response: " + ex.Message, ex);
+        }
+    }
+
     private static JsonObject BuildRequestBody(
         string model,
         string systemPrompt,

@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   DollarSign,
   KeyRound,
+  MessageCircleQuestion,
   Settings2,
   Trash2,
   Users,
@@ -339,6 +340,79 @@ export function ClaudeIntegrationPage() {
               queryKey={SETTINGS_QK}
               label="Max images per request"
               hint="Maximum number of screenshots an agent can attach to a single proposal request."
+            />
+          </>
+        )}
+      </section>
+
+      {/* ---- Knowledge-base chat ----------------------------- */}
+      <section className="space-y-1 rounded-xl border border-glass-strong bg-glass p-5">
+        <div className="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+          <MessageCircleQuestion className="h-4 w-4 text-muted-foreground" />
+          Knowledge-base chat
+        </div>
+        <p className="mb-3 max-w-2xl text-xs text-muted-foreground/70">
+          A floating chat button for agents that answers strictly from the knowledge
+          base each agent may already see, via a single auth-scoped search tool — no
+          internet, no other data. Shares the API key, ZDR gate and per-agent budget
+          above; uses its own model and prompt. Hidden unless this is on and the agent
+          has knowledge-base access.
+        </p>
+        {settingsList.isLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-10 w-full bg-glass" />
+            <Skeleton className="h-10 w-full bg-glass" />
+            <Skeleton className="h-10 w-full bg-glass" />
+          </div>
+        ) : (
+          <>
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Claude.KbChatEnabled")}
+              queryKey={SETTINGS_QK}
+              label="Enabled"
+              hint="Master on/off switch for the floating knowledge-base chat. Independent of the ticket-assist switch above. When off the button is hidden for all agents and the chat endpoint refuses."
+            />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Claude.KbChatModel")}
+              queryKey={SETTINGS_QK}
+              label="Model"
+              hint="Anthropic model ID used for chat turns. Separate from the proposal model so the higher-volume chat can run a cheaper model — a Haiku-class model is recommended."
+            />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Claude.KbChatMaxTokens")}
+              queryKey={SETTINGS_QK}
+              label="Max output tokens"
+              hint="Maximum tokens the assistant may generate per chat turn. The reply is meant to be short (point at the article), so this can stay low."
+            />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Claude.KbChatSystemPrompt")}
+              queryKey={SETTINGS_QK}
+              label="System prompt"
+              hint="Scopes the assistant to the knowledge base and enforces strict grounding (answer only from retrieved articles; otherwise say nothing was found). Edit for tone/format; the user's message and article text are always sent as data, never as instructions."
+            />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Claude.KbChatResultLimit")}
+              queryKey={SETTINGS_QK}
+              label="Search result limit"
+              hint="Maximum knowledge-base articles returned per search (top-K). Bounds the per-turn input cost. Clamped to 1–20."
+            />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Claude.KbChatMaxSearches")}
+              queryKey={SETTINGS_QK}
+              label="Max searches per turn"
+              hint="Hard ceiling on how many times the assistant may search the knowledge base in one turn — bounds per-turn calls and cost. Clamped to 1–8."
+            />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Claude.KbChatHistoryWindow")}
+              queryKey={SETTINGS_QK}
+              label="History window"
+              hint="How many prior messages are carried into a turn (the rolling window). Older messages are dropped to bound input cost. Clamped to 2–50."
+            />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Claude.KbChatSnippetChars")}
+              queryKey={SETTINGS_QK}
+              label="Snippet length (chars)"
+              hint="Maximum characters of an article's body included in a search result sent to the model. Bounds per-result input cost. Clamped to 200–8000."
             />
           </>
         )}
