@@ -1,8 +1,21 @@
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, Inbox, MessageSquare } from "lucide-react";
-import { timesheetCommentsApi, type BackofficeContext, type CommentInboxItem } from "@/lib/api";
+import { toast } from "sonner";
+import {
+  backofficeTimesheetApi,
+  timesheetCommentsApi,
+  type BackofficeContext,
+  type CommentInboxItem,
+} from "@/lib/api";
+import { useAuth } from "@/auth/authStore";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { openTicketInSharedWindow } from "@/lib/ticketWindow";
 import { cn } from "@/lib/utils";
 import { CommentThreadDrawer, type CommentTarget } from "@/pages/timesheet/CommentThreadDrawer";
@@ -31,10 +44,23 @@ function formatStamp(iso: string): string {
 /// BO-checked). Each row opens the shared chat drawer; the ticket number is a
 /// clickable control that opens the ticket in a separate window.
 export function TimesheetTabComments() {
+  const { user } = useAuth();
   const inbox = useQuery({
     queryKey: ["timesheet", "comments", "inbox"],
     queryFn: () => timesheetCommentsApi.inbox(),
   });
+
+  // v0.0.89 — who may BO-check straight from here, per the thread's origin
+  // context, reusing the very flags that gate the origin tab: the Adsolut flag
+  // for adsolut rows, the back-office flag for resolved/cwi. No new flag, and
+  // the check writes the same shared state the origin tab toggles.
+  const canBoCheck = React.useCallback(
+    (context: BackofficeContext): boolean =>
+      context === "adsolut"
+        ? !!user?.adsolutConnected && !!user?.adsolutTimesheetEnabled
+        : !!user?.timesheetBackofficeEnabled,
+    [user?.adsolutConnected, user?.adsolutTimesheetEnabled, user?.timesheetBackofficeEnabled],
+  );
 
   const [target, setTarget] = React.useState<CommentTarget | null>(null);
 
@@ -70,11 +96,11 @@ export function TimesheetTabComments() {
         ) : (
           <ul className="divide-y divide-glass">
             {items.map((item) => (
-              <li key={item.threadId}>
+              <li key={item.threadId} className="flex items-center">
                 <button
                   type="button"
                   onClick={() => openThread(item)}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-glass-hover"
+                  className="flex flex-1 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-glass-hover"
                 >
                   {/* unread dot */}
                   <span className="flex w-2 shrink-0 justify-center">
@@ -136,6 +162,7 @@ export function TimesheetTabComments() {
                     {formatStamp(item.lastMessageUtc)}
                   </span>
                 </button>
+                {canBoCheck(item.originContext) && <BoCheckCell item={item} />}
               </li>
             ))}
           </ul>
@@ -149,6 +176,51 @@ export function TimesheetTabComments() {
           target={target}
         />
       )}
+    </div>
+  );
+}
+
+/// Per-row "BO checked" control on the Comments tab. Rows in this inbox are
+/// always still-open (the inbox hides BO-checked threads), so ticking here
+/// marks the thread's origin row checked — the exact same
+/// timesheet_bo_checks(entity_id, context) row the Adsolut/Resolved/CWI tab
+/// toggles. Once ticked the thread drops out of the inbox (and shows checked on
+/// its origin tab); unticking is done from that origin tab. Self-contained,
+/// like the Adsolut tab's BoCheckedCell.
+function BoCheckCell({ item }: { item: CommentInboxItem }) {
+  const qc = useQueryClient();
+  const setCheck = useMutation({
+    mutationFn: (checked: boolean) =>
+      backofficeTimesheetApi.setChecks(item.originContext, [item.originEntityId], checked),
+    // Broad timesheet invalidation: the row leaves this inbox, the Comments
+    // badge recounts, and the origin tab (Adsolut/Resolved/CWI) reflects the
+    // tick — all live under the ["timesheet", …] key space.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["timesheet"] });
+      toast.success("Marked BO checked.");
+    },
+    onError: () => toast.error("Could not update BO check"),
+  });
+
+  return (
+    <div className="flex shrink-0 items-center justify-center px-4">
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <input
+              type="checkbox"
+              checked={false}
+              disabled={setCheck.isPending}
+              onChange={(e) => setCheck.mutate(e.target.checked)}
+              aria-label="Mark BO checked"
+              className="h-4 w-4 rounded border border-glass-strong bg-glass accent-emerald-400 disabled:opacity-50"
+            />
+          </TooltipTrigger>
+          <TooltipContent>
+            BO checked — also ticks it on the {CONTEXT_LABEL[item.originContext]} tab
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     </div>
   );
 }

@@ -40,6 +40,7 @@ public static class TimesheetCommentEndpoints
             ticketNumber = r.TicketNumber,
             ticketId = r.TicketId,
             originContext = r.OriginContext,
+            originEntityId = r.OriginEntityId,
             lastMessageUtc = r.LastMessageUtc,
             lastMessagePreview = r.LastMessagePreview,
             lastAuthorEmail = r.LastAuthorEmail,
