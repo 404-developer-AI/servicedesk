@@ -12,6 +12,7 @@ import {
   Palette,
   Sun,
   Moon,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +26,7 @@ import { cn } from "@/lib/utils";
 
 const APP_QUERY_KEY = ["settings", "list", "App"] as const;
 const UI_QUERY_KEY = ["settings", "list", "Ui"] as const;
+const COPILOT_QUERY_KEY = ["settings", "list", "Copilot"] as const;
 const DEFAULT_THEME_QUERY_KEY = ["system", "default-theme"] as const;
 const MAINTENANCE_QUERY_KEY = ["system", "maintenance"] as const;
 const LOGIN_BANNER_QUERY_KEY = ["system", "login-banner"] as const;
@@ -58,6 +60,10 @@ export function GeneralSettingsPage() {
   const uiSettings = useQuery({
     queryKey: UI_QUERY_KEY,
     queryFn: () => settingsApi.list("Ui"),
+  });
+  const copilotSettings = useQuery({
+    queryKey: COPILOT_QUERY_KEY,
+    queryFn: () => settingsApi.list("Copilot"),
   });
   const { time } = useServerTime();
 
@@ -147,7 +153,79 @@ export function GeneralSettingsPage() {
         entries={appSettings.data}
         loading={appSettings.isLoading}
       />
+
+      <CopilotLauncherSection
+        entries={copilotSettings.data}
+        loading={copilotSettings.isLoading}
+      />
     </div>
+  );
+}
+
+function CopilotLauncherSection({
+  entries,
+  loading,
+}: {
+  entries: SettingEntry[] | undefined;
+  loading: boolean;
+}) {
+  const enabledEntry = findEntry(entries, "Copilot.Enabled");
+  const urlEntry = findEntry(entries, "Copilot.Url");
+  const labelEntry = findEntry(entries, "Copilot.Label");
+  const popupEntry = findEntry(entries, "Copilot.OpenInPopup");
+
+  return (
+    <section className="glass-card p-6">
+      <div className="mb-4 flex items-start gap-3">
+        <div className="rounded-md bg-glass p-2 text-violet-300">
+          <Sparkles className="h-5 w-5" />
+        </div>
+        <div className="flex-1">
+          <h2 className="text-base font-semibold text-foreground">Copilot launcher</h2>
+          <p className="text-xs text-muted-foreground">
+            Adds a shortcut in the navigation (agents and admins only) that opens the real
+            Microsoft Copilot in a separate window — agents land there signed in with their
+            existing Microsoft 365 session. It is a pure launcher:{" "}
+            <span className="font-medium text-foreground">no API key, no data from this app
+            is ever sent to Copilot</span>. Copilot cannot be embedded inline because
+            Microsoft blocks framing its pages, so it opens as its own window.
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <Skeleton className="h-40 w-full" />
+      ) : enabledEntry && urlEntry && labelEntry && popupEntry ? (
+        <div>
+          <SettingField
+            entry={enabledEntry}
+            queryKey={COPILOT_QUERY_KEY}
+            label="Show Copilot button"
+            hint="Master switch. When off the navigation button is hidden for everyone."
+          />
+          <SettingField
+            entry={urlEntry}
+            queryKey={COPILOT_QUERY_KEY}
+            label="Copilot URL"
+            hint="The URL the button opens. Defaults to the Microsoft 365 Copilot Chat entry point. Paste the exact URL your browser shows while in Copilot to pin a specific surface."
+          />
+          <SettingField
+            entry={labelEntry}
+            queryKey={COPILOT_QUERY_KEY}
+            label="Button label"
+            hint="Text shown on the navigation button — e.g. Copilot, AI Chat, Microsoft Copilot."
+          />
+          <SettingField
+            entry={popupEntry}
+            queryKey={COPILOT_QUERY_KEY}
+            label="Open as side-panel popup"
+            hint="On: opens a focused, side-panel-sized popup window pinned to the right of the screen. Off: opens a normal new browser tab. Either way the same window is reused on later clicks."
+          />
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">Copilot settings not available.</p>
+      )}
+    </section>
   );
 }
 
