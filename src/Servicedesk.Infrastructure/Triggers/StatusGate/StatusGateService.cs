@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Domain.Companies;
 using Servicedesk.Infrastructure.Auth;
+using Servicedesk.Infrastructure.Integrations.Adsolut;
 using Servicedesk.Infrastructure.Persistence.Companies;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Triggers.Templating;
@@ -39,6 +40,7 @@ public sealed class StatusGateService : IStatusGateService
     private readonly ITriggerRenderContextFactory _renderFactory;
     private readonly ITriggerTemplateRenderer _renderer;
     private readonly IUserService _users;
+    private readonly IAdsolutOrderRepository _orders;
     private readonly ILogger<StatusGateService> _logger;
 
     public StatusGateService(
@@ -49,6 +51,7 @@ public sealed class StatusGateService : IStatusGateService
         ITriggerRenderContextFactory renderFactory,
         ITriggerTemplateRenderer renderer,
         IUserService users,
+        IAdsolutOrderRepository orders,
         ILogger<StatusGateService> logger)
     {
         _triggers = triggers;
@@ -58,6 +61,7 @@ public sealed class StatusGateService : IStatusGateService
         _renderFactory = renderFactory;
         _renderer = renderer;
         _users = users;
+        _orders = orders;
         _logger = logger;
     }
 
@@ -89,6 +93,16 @@ public sealed class StatusGateService : IStatusGateService
         Contact? cachedRequester = null;
         bool requesterLoaded = false;
         int? cachedLinkCount = null;
+
+        // Lazy linked-order existence — only queried when a gate's
+        // conditions actually reference ticket.has_linked_order, and shared
+        // across every such gate on this same status change.
+        bool? cachedHasOrder = null;
+        async Task<bool> GetHasLinkedOrderAsync()
+        {
+            cachedHasOrder ??= await _orders.HasLinkedOrderAsync(detail.Ticket.Id, ct);
+            return cachedHasOrder.Value;
+        }
 
         async Task<(Contact? Contact, int LinkCount)> GetRequesterAsync()
         {
@@ -135,6 +149,12 @@ public sealed class StatusGateService : IStatusGateService
 
             try
             {
+                bool hasLinkedOrder = false;
+                if (_matcher.ReferencedFields(condDoc.RootElement)
+                    .Contains(TriggerFieldKeys.TicketHasLinkedOrder))
+                {
+                    hasLinkedOrder = await GetHasLinkedOrderAsync();
+                }
                 var ctx = new TriggerEvaluationContext(
                     TicketId: ticketId,
                     Ticket: detail.Ticket,
@@ -145,7 +165,10 @@ public sealed class StatusGateService : IStatusGateService
                             TriggerFieldKeys.TicketStatusId,
                         },
                         ArticleAdded: false),
-                    UtcNow: DateTime.UtcNow);
+                    UtcNow: DateTime.UtcNow)
+                {
+                    HasLinkedOrder = hasLinkedOrder,
+                };
                 if (!_matcher.Matches(condDoc.RootElement, ctx)) continue;
             }
             finally { condDoc.Dispose(); }
@@ -400,14 +423,35 @@ public sealed class StatusGateService : IStatusGateService
         if (string.IsNullOrWhiteSpace(key)) return null;
         var label = TryStr(q, "label") ?? string.Empty;
         var type = TryStr(q, "type") ?? "text";
-        if (type != "text" && type != "yesno") return null;
+        if (type != "text" && type != "yesno" && type != "choice") return null;
         bool required = q.TryGetProperty("required", out var reqEl)
             && reqEl.ValueKind == JsonValueKind.True;
         string? yesLabel = type == "yesno" ? TryStr(q, "yes_label") : null;
         string? noLabel = type == "yesno" ? TryStr(q, "no_label") : null;
         if (string.IsNullOrWhiteSpace(yesLabel)) yesLabel = null;
         if (string.IsNullOrWhiteSpace(noLabel)) noLabel = null;
-        return new GateQuestion(key!, type, label, required, yesLabel, noLabel);
+        var options = type == "choice" ? ProjectChoiceOptions(q) : null;
+        return new GateQuestion(key!, type, label, required, yesLabel, noLabel, options);
+    }
+
+    /// Projects the <c>options</c> array of a choice question. Each option
+    /// carries a label and an outcome — anything other than the two known
+    /// outcomes is normalized to "allow" so a malformed row fails safe (the
+    /// status change proceeds rather than silently sticking).
+    private static IReadOnlyList<GateChoiceOption> ProjectChoiceOptions(JsonElement q)
+    {
+        var result = new List<GateChoiceOption>();
+        if (!q.TryGetProperty("options", out var arr) || arr.ValueKind != JsonValueKind.Array)
+            return result;
+        foreach (var opt in arr.EnumerateArray())
+        {
+            if (opt.ValueKind != JsonValueKind.Object) continue;
+            var label = TryStr(opt, "label");
+            if (string.IsNullOrWhiteSpace(label)) continue;
+            var outcome = TryStr(opt, "outcome") == "keep_open" ? "keep_open" : "allow";
+            result.Add(new GateChoiceOption(label!, outcome));
+        }
+        return result;
     }
 
     private static string? TryStr(JsonElement el, string name)

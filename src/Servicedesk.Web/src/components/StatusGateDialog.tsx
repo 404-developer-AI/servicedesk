@@ -41,19 +41,22 @@ type Props = {
 export function StatusGateDialog({ gate, onConfirm, onCancel }: Props) {
   const [textAnswers, setTextAnswers] = React.useState<Record<string, string>>({});
   const [yesnoAnswers, setYesnoAnswers] = React.useState<Record<string, string>>({});
+  // v0.0.89 — selected option index per choice question.
+  const [choiceAnswers, setChoiceAnswers] = React.useState<Record<string, number>>({});
 
-  // Reset both answer maps each time a new gate slot is opened so
+  // Reset every answer map each time a new gate slot is opened so
   // answers from gate #1 do not pre-fill gate #2.
   React.useEffect(() => {
     if (gate) {
       setTextAnswers({});
       setYesnoAnswers({});
+      setChoiceAnswers({});
     }
   }, [gate?.triggerId]);
 
   if (!gate) return null;
 
-  const canConfirm = isGateSatisfied(gate.questions, textAnswers, yesnoAnswers);
+  const canConfirm = isGateSatisfied(gate.questions, textAnswers, yesnoAnswers, choiceAnswers);
 
   function handleConfirm() {
     if (!gate) return;
@@ -62,9 +65,14 @@ export function StatusGateDialog({ gate, onConfirm, onCancel }: Props) {
       if (q.type === "text") {
         const v = (textAnswers[q.key] ?? "").trim();
         if (v.length > 0) merged[q.key] = v;
-      } else {
+      } else if (q.type === "yesno") {
         const v = yesnoAnswers[q.key];
         if (v) merged[q.key] = v;
+      } else {
+        // choice — send the picked option index; the server resolves it
+        // back to the option's label + outcome (never trusting the client).
+        const idx = choiceAnswers[q.key];
+        if (idx !== undefined) merged[q.key] = String(idx);
       }
     }
     onConfirm(merged);
@@ -94,6 +102,7 @@ export function StatusGateDialog({ gate, onConfirm, onCancel }: Props) {
                 question={q}
                 textValue={textAnswers[q.key] ?? ""}
                 yesnoValue={yesnoAnswers[q.key] ?? null}
+                choiceValue={choiceAnswers[q.key] ?? null}
                 onTextChange={(v) =>
                   setTextAnswers((prev) => ({ ...prev, [q.key]: v }))
                 }
@@ -101,6 +110,9 @@ export function StatusGateDialog({ gate, onConfirm, onCancel }: Props) {
                   setYesnoAnswers((prev) => ({ ...prev, [q.key]: label }))
                 }
                 onNoClick={onCancel}
+                onChoiceSelect={(idx) =>
+                  setChoiceAnswers((prev) => ({ ...prev, [q.key]: idx }))
+                }
               />
             ))}
           </div>
@@ -126,17 +138,56 @@ function QuestionRow({
   question,
   textValue,
   yesnoValue,
+  choiceValue,
   onTextChange,
   onYesClick,
   onNoClick,
+  onChoiceSelect,
 }: {
   question: GateQuestion;
   textValue: string;
   yesnoValue: string | null;
+  choiceValue: number | null;
   onTextChange: (v: string) => void;
   onYesClick: (label: string) => void;
   onNoClick: () => void;
+  onChoiceSelect: (idx: number) => void;
 }) {
+  if (question.type === "choice") {
+    return (
+      <div className="space-y-1.5">
+        <span className="text-xs font-medium text-muted-foreground">
+          {question.label}
+        </span>
+        <div className="flex flex-col gap-2">
+          {question.options.map((opt, idx) => {
+            const selected = choiceValue === idx;
+            const keepsOpen = opt.outcome === "keep_open";
+            return (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => onChoiceSelect(idx)}
+                className={cn(
+                  "flex items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                  selected
+                    ? keepsOpen
+                      ? "border-amber-400/60 bg-amber-500/15 text-amber-100 shadow-[0_0_12px_rgba(245,158,11,0.2)]"
+                      : "border-emerald-400/60 bg-emerald-500/15 text-emerald-100 shadow-[0_0_12px_rgba(16,185,129,0.2)]"
+                    : "border-glass bg-glass text-foreground/80 hover:border-foreground/20 hover:bg-glass-hover",
+                )}
+              >
+                <span>{opt.label}</span>
+                <span className="ml-3 shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+                  {keepsOpen ? "keeps open" : "allows"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
   if (question.type === "text") {
     return (
       <div className="space-y-1.5">
@@ -202,12 +253,16 @@ function isGateSatisfied(
   questions: GateQuestion[],
   textAnswers: Record<string, string>,
   yesnoAnswers: Record<string, string>,
+  choiceAnswers: Record<string, number>,
 ): boolean {
   for (const q of questions) {
     if (q.type === "text") {
       if (q.required && !(textAnswers[q.key] ?? "").trim()) return false;
-    } else {
+    } else if (q.type === "yesno") {
       if (q.yesLabel !== null && yesnoAnswers[q.key] !== q.yesLabel) return false;
+    } else {
+      // choice — the agent must pick one option before confirming.
+      if (choiceAnswers[q.key] === undefined) return false;
     }
   }
   return true;

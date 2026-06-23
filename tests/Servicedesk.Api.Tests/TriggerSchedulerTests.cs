@@ -233,6 +233,7 @@ public class TriggerSchedulerTests
             new FakeAudit(),
             new FakeRenderFactory(),
             new Servicedesk.Infrastructure.Realtime.NullTicketListNotifier(),
+            new TestInfrastructure.FakeAdsolutOrderRepository(),
             NullLogger<TriggerService>.Instance);
     }
 

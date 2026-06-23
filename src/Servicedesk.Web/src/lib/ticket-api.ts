@@ -511,6 +511,20 @@ export type GateQuestion =
       /// bottom Confirm button proceeds regardless of that question.
       yesLabel: string | null;
       noLabel: string | null;
+    }
+  | {
+      /// v0.0.89 — single-select list of options. The agent must pick
+      /// exactly one; the picked option's `outcome` (resolved server-side)
+      /// decides whether the status change proceeds (`allow`) or the ticket
+      /// is held in its current status (`keep_open`). Either way the choice
+      /// is logged as a StatusGateDecision timeline event.
+      key: string;
+      type: "choice";
+      label: string;
+      required: boolean;
+      yesLabel: null;
+      noLabel: null;
+      options: { label: string; outcome: "allow" | "keep_open" }[];
     };
 
 /// One per-trigger confirmation packet shipped back to the PATCH

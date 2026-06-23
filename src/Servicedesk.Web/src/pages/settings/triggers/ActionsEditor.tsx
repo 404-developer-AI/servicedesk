@@ -12,6 +12,7 @@ import {
   KNOWN_ACTION_KINDS,
   blankActionForKind,
   type KnownActionKind,
+  type PromptChoiceOption,
   type PromptQuestion,
   type TriggerAction,
 } from "./types";
@@ -1312,9 +1313,22 @@ function PromptQuestionsEditor({
   }
   function add(type: PromptQuestion["type"]) {
     const key = nextQuestionKey(value);
-    const blank: PromptQuestion = type === "text"
-      ? { key, type: "text", label: "", required: false }
-      : { key, type: "yesno", label: "", yes_label: "Yes", no_label: "No" };
+    let blank: PromptQuestion;
+    if (type === "text") {
+      blank = { key, type: "text", label: "", required: false };
+    } else if (type === "yesno") {
+      blank = { key, type: "yesno", label: "", yes_label: "Yes", no_label: "No" };
+    } else {
+      blank = {
+        key,
+        type: "choice",
+        label: "",
+        options: [
+          { label: "", outcome: "allow" },
+          { label: "", outcome: "keep_open" },
+        ],
+      };
+    }
     onChange([...value, blank]);
   }
   return (
@@ -1369,6 +1383,13 @@ function AddPromptQuestionMenu({
         >
           Yes / No buttons
         </button>
+        <button
+          type="button"
+          onClick={() => { onAdd("choice"); setOpen(false); }}
+          className="w-full text-left rounded px-2 py-1.5 text-xs text-foreground/80 hover:bg-glass-hover"
+        >
+          Choice (allow / keep open)
+        </button>
       </PopoverContent>
     </Popover>
   );
@@ -1397,9 +1418,11 @@ function PromptQuestionCard({
           "rounded-md border px-2 py-0.5 text-[11px] font-medium",
           question.type === "text"
             ? "border-sky-400/30 bg-sky-400/10 text-sky-200"
-            : "border-emerald-400/30 bg-emerald-400/10 text-emerald-200",
+            : question.type === "yesno"
+              ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
+              : "border-violet-400/30 bg-violet-400/10 text-violet-200",
         )}>
-          {idx + 1}. {question.type === "text" ? "Free text" : "Yes / No"}
+          {idx + 1}. {question.type === "text" ? "Free text" : question.type === "yesno" ? "Yes / No" : "Choice"}
         </span>
         <input
           type="text"
@@ -1442,7 +1465,9 @@ function PromptQuestionCard({
           onChange={(e) => onChange({ ...question, label: e.target.value })}
           placeholder={question.type === "yesno"
             ? "Sales receipt created?"
-            : "Add a short summary of what you did"}
+            : question.type === "choice"
+              ? "What do you want to do?"
+              : "Add a short summary of what you did"}
           className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
         />
       </FieldRow>
@@ -1457,7 +1482,7 @@ function PromptQuestionCard({
           />
           Must be filled in
         </label>
-      ) : (
+      ) : question.type === "yesno" ? (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <PromptYesNoButtonField
             label="Positive answer"
@@ -1474,7 +1499,75 @@ function PromptQuestionCard({
             onChange={(v) => onChange({ ...question, no_label: v })}
           />
         </div>
+      ) : (
+        <PromptChoiceOptionsEditor
+          options={question.options}
+          onChange={(opts) => onChange({ ...question, options: opts })}
+        />
       )}
+    </div>
+  );
+}
+
+/// Editor for a choice question's options. Each row carries an option
+/// label and an outcome (allow the status change vs keep the ticket open).
+/// At least two options is the natural shape; the editor enforces one
+/// minimum so an admin can't end up with an unselectable question.
+function PromptChoiceOptionsEditor({
+  options,
+  onChange,
+}: {
+  options: PromptChoiceOption[];
+  onChange: (next: PromptChoiceOption[]) => void;
+}) {
+  function update(idx: number, opt: PromptChoiceOption) {
+    const next = options.slice();
+    next[idx] = opt;
+    onChange(next);
+  }
+  function remove(idx: number) {
+    const next = options.slice();
+    next.splice(idx, 1);
+    onChange(next);
+  }
+  function add() {
+    onChange([...options, { label: "", outcome: "allow" }]);
+  }
+  return (
+    <div className="space-y-2">
+      <span className="text-xs font-medium text-muted-foreground">Options</span>
+      {options.map((opt, idx) => (
+        <div key={idx} className="flex items-center gap-2">
+          <input
+            type="text"
+            value={opt.label}
+            onChange={(e) => update(idx, { ...opt, label: e.target.value })}
+            placeholder="Close it — order delivered"
+            className="flex-1 rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <NativeSelect
+            value={opt.outcome}
+            onChange={(e) => update(idx, { ...opt, outcome: e.target.value === "keep_open" ? "keep_open" : "allow" })}
+            className="w-36"
+          >
+            <option value="allow">Allow close</option>
+            <option value="keep_open">Keep open</option>
+          </NativeSelect>
+          <Button
+            variant="ghost" size="sm"
+            className="h-7 text-destructive"
+            onClick={() => remove(idx)}
+            disabled={options.length <= 1}
+            title="Remove option"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ))}
+      <Button variant="ghost" size="sm" className="text-xs" onClick={add}>
+        <Plus className="h-3.5 w-3.5" />
+        Add option
+      </Button>
     </div>
   );
 }

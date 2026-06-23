@@ -63,6 +63,19 @@ public static class TriggerFieldKeys
 
     public const string TicketIsNew = "ticket.is_new";
 
+    /// True when the ticket references at least one Adsolut order — i.e. an
+    /// order pill (<c>data-order-id</c>) was inserted via the <c>::</c> picker
+    /// in the ticket body or any note/mail (see
+    /// <c>IAdsolutOrderRepository.HasLinkedOrderAsync</c>). Resolved off
+    /// <see cref="TriggerEvaluationContext.HasLinkedOrder"/>, which each
+    /// matching site pre-loads only when a trigger actually references this
+    /// key — see the <c>ReferencedFields</c> pre-scan in StatusGateService /
+    /// TriggerService / FirstOpenGateService. Not a ticket column, so it is
+    /// deliberately absent from <see cref="TriggerChangeSet.AllTicketFieldKeys"/>:
+    /// tagging an order is a content edit, not a ticket-field mutation, and
+    /// does not flow through the PATCH change-set.
+    public const string TicketHasLinkedOrder = "ticket.has_linked_order";
+
     public const string ArticleSender = "article.sender";
     public const string ArticleType = "article.type";
     public const string ArticleBodyText = "article.body_text";

@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure.Audit;
+using Servicedesk.Infrastructure.Integrations.Adsolut;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Triggers.Templating;
@@ -27,6 +28,7 @@ public sealed class TriggerService : ITriggerService
     private readonly IAuditLogger _audit;
     private readonly ITriggerRenderContextFactory _renderFactory;
     private readonly Realtime.ITicketListNotifier _listNotifier;
+    private readonly IAdsolutOrderRepository _orders;
     private readonly ILogger<TriggerService> _logger;
 
     public TriggerService(
@@ -40,6 +42,7 @@ public sealed class TriggerService : ITriggerService
         IAuditLogger audit,
         ITriggerRenderContextFactory renderFactory,
         Realtime.ITicketListNotifier listNotifier,
+        IAdsolutOrderRepository orders,
         ILogger<TriggerService> logger)
     {
         _repo = repo;
@@ -52,7 +55,19 @@ public sealed class TriggerService : ITriggerService
         _audit = audit;
         _renderFactory = renderFactory;
         _listNotifier = listNotifier;
+        _orders = orders;
         _logger = logger;
+    }
+
+    /// Resolves the <c>ticket.has_linked_order</c> condition value for a
+    /// matching pass — but only when the trigger's conditions actually
+    /// reference the field, so the cheap EXISTS query is skipped entirely
+    /// for the vast majority of triggers that never use it.
+    private async Task<bool> ResolveHasLinkedOrderAsync(JsonElement conditions, Guid ticketId, CancellationToken ct)
+    {
+        if (!_matcher.ReferencedFields(conditions).Contains(TriggerFieldKeys.TicketHasLinkedOrder))
+            return false;
+        return await _orders.HasLinkedOrderAsync(ticketId, ct);
     }
 
     public async Task EvaluateAsync(
@@ -417,7 +432,10 @@ public sealed class TriggerService : ITriggerService
                 TriggeringEvent: null,
                 TriggerChangeSet.Empty,
                 DateTime.UtcNow,
-                trigger.Id);
+                trigger.Id)
+            {
+                HasLinkedOrder = await ResolveHasLinkedOrderAsync(condDoc.RootElement, detail.Ticket.Id, ct),
+            };
 
             bool matched;
             try
@@ -503,7 +521,10 @@ public sealed class TriggerService : ITriggerService
                 triggeringEvent,
                 changeSet,
                 DateTime.UtcNow,
-                trigger.Id);
+                trigger.Id)
+            {
+                HasLinkedOrder = await ResolveHasLinkedOrderAsync(condDoc.RootElement, ticket.Id, ct),
+            };
 
             var matched = _matcher.Matches(condDoc.RootElement, ctx);
             if (!matched)

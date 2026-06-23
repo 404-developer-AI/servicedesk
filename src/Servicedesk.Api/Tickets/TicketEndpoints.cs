@@ -586,12 +586,15 @@ public static class TicketEndpoints
                             case "prompt_confirm":
                             {
                                 var answers = conf.Answers ?? new Dictionary<string, string>(StringComparer.Ordinal);
-                                if (!PromptAnswersSatisfyQuestions(gate, answers))
+                                var resolution = ResolvePromptConfirm(gate, answers);
+                                if (resolution is null)
                                 {
                                     missing.Add(gate);
                                     break;
                                 }
-                                confirmedGates.Add(new ConfirmedGate(gate, answers, Extras: null, PendingLink: null));
+                                confirmedGates.Add(new ConfirmedGate(
+                                    gate, resolution.Answers, Extras: null, PendingLink: null,
+                                    KeepOpen: resolution.KeepOpen, Decisions: resolution.Decisions));
                                 break;
                             }
                             case "contact_company_link":
@@ -661,9 +664,14 @@ public static class TicketEndpoints
                 }
             }
 
+            // v0.0.89 — a confirmed gate whose chosen option carries the
+            // keep_open outcome holds the ticket in its current status: we
+            // drop the status change from the update (other field edits in
+            // the same PATCH still apply) and the decision is logged below.
+            bool keepStatusOpen = confirmedGates.Any(c => c.KeepOpen);
             var update = new TicketFieldUpdate(
                 QueueId: req.QueueId,
-                StatusId: req.StatusId,
+                StatusId: keepStatusOpen ? null : req.StatusId,
                 PriorityId: req.PriorityId,
                 CategoryId: req.CategoryId,
                 AssigneeUserId: req.AssigneeUserId,
@@ -693,6 +701,35 @@ public static class TicketEndpoints
                     IsInternal: c.Gate.NoteVisibility != "public",
                     AuthorUserId: userId,
                     MetadataJson: $"{{\"gate_trigger_id\":\"{c.Gate.TriggerId}\"}}"), ct);
+            }
+
+            // v0.0.89 — log each choice decision (allow or keep-open) as a
+            // dedicated StatusGateDecision timeline event, so the agent's pick
+            // is auditable on its own regardless of whether the gate also
+            // appended a confirmation note.
+            foreach (var c in confirmedGates)
+            {
+                if (c.Decisions is not { Count: > 0 } decisions) continue;
+                foreach (var d in decisions)
+                {
+                    var keptOpen = d.Outcome == "keep_open";
+                    var metadata = JsonSerializer.Serialize(new
+                    {
+                        gate_trigger_id = c.Gate.TriggerId,
+                        gate_name = c.Gate.Name,
+                        question = d.QuestionLabel,
+                        choice = d.ChosenLabel,
+                        outcome = d.Outcome,
+                        to_status_id = c.Gate.ToStatusId,
+                    });
+                    await tickets.AddEventAsync(id, new NewTicketEvent(
+                        EventType: "StatusGateDecision",
+                        BodyText: null,
+                        BodyHtml: BuildGateDecisionHtml(c.Gate, d, keptOpen),
+                        IsInternal: true,
+                        AuthorUserId: userId,
+                        MetadataJson: metadata), ct);
+                }
             }
             if (confirmedGates.Count > 0)
             {
@@ -1883,47 +1920,80 @@ public static class TicketEndpoints
         return TicketReference.NormalizeSearchTerm(search, prefix);
     }
 
-    /// Checks that the agent supplied an acceptable value for every
-    /// prompt_confirm question that demands one. Rules:
-    ///   * Text question with required=true  → answers[key] must be
-    ///     non-whitespace.
-    ///   * Yes/No question with a yes_label  → answers[key] must be
-    ///     present (= agent clicked Yes; No clicks cancel the gate
-    ///     client-side and never reach the PATCH).
-    ///   * Yes/No question with only no_label → no positive answer
-    ///     possible; ignored here. The agent can still submit Confirm
-    ///     because the dialog short-circuits to cancel on the only
-    ///     visible button.
-    ///   * Text question with required=false → ignored if missing.
-    private static bool PromptAnswersSatisfyQuestions(
+    /// Validates a prompt_confirm gate's submitted answers and resolves the
+    /// outcome of any choice question. Returns null when the answers don't
+    /// satisfy the gate — the caller treats that as a missing confirmation
+    /// (409). On success the resolution carries:
+    ///   * <c>Answers</c> — the values to feed the note template's
+    ///     <c>#{prompt.&lt;key&gt;}</c> tokens; for a choice question the
+    ///     selected option's <em>label</em> (not its index) so the note
+    ///     reads naturally.
+    ///   * <c>KeepOpen</c> — true when any chosen option's outcome is
+    ///     keep_open, so the endpoint holds the ticket in its current status.
+    ///   * <c>Decisions</c> — one entry per choice question for the
+    ///     StatusGateDecision timeline event.
+    /// The outcome is read from the server-side gate definition, never from
+    /// the client — the client only sends the picked option index.
+    private static PromptConfirmResolution? ResolvePromptConfirm(
         MatchedStatusGate gate,
         IReadOnlyDictionary<string, string> answers)
     {
+        var resolved = new Dictionary<string, string>(StringComparer.Ordinal);
+        var decisions = new List<GateChoiceDecision>();
+        bool keepOpen = false;
+
         foreach (var q in gate.Questions)
         {
             switch (q.Type)
             {
                 case "text":
-                    if (q.Required
-                        && (!answers.TryGetValue(q.Key, out var txt)
-                            || string.IsNullOrWhiteSpace(txt)))
-                    {
-                        return false;
-                    }
+                    if (answers.TryGetValue(q.Key, out var txt) && !string.IsNullOrWhiteSpace(txt))
+                        resolved[q.Key] = txt;
+                    else if (q.Required)
+                        return null;
                     break;
                 case "yesno":
-                    if (q.YesLabel is not null)
+                    if (answers.TryGetValue(q.Key, out var yn) && !string.IsNullOrWhiteSpace(yn))
+                        resolved[q.Key] = yn;
+                    else if (q.YesLabel is not null)
+                        return null;
+                    break;
+                case "choice":
+                    var options = q.Options ?? Array.Empty<GateChoiceOption>();
+                    if (options.Count == 0) return null; // misconfigured — cannot satisfy
+                    if (!answers.TryGetValue(q.Key, out var pick)
+                        || !int.TryParse(pick, out var idx)
+                        || idx < 0 || idx >= options.Count)
                     {
-                        if (!answers.TryGetValue(q.Key, out var yn)
-                            || string.IsNullOrWhiteSpace(yn))
-                        {
-                            return false;
-                        }
+                        return null; // no valid selection
                     }
+                    var chosen = options[idx];
+                    resolved[q.Key] = chosen.Label;
+                    decisions.Add(new GateChoiceDecision(q.Label, chosen.Label, chosen.Outcome));
+                    if (chosen.Outcome == "keep_open") keepOpen = true;
                     break;
             }
         }
-        return true;
+        return new PromptConfirmResolution(resolved, keepOpen, decisions);
+    }
+
+    private sealed record PromptConfirmResolution(
+        IReadOnlyDictionary<string, string> Answers,
+        bool KeepOpen,
+        IReadOnlyList<GateChoiceDecision> Decisions);
+
+    /// One resolved choice-question pick, for the StatusGateDecision event.
+    private sealed record GateChoiceDecision(string QuestionLabel, string ChosenLabel, string Outcome);
+
+    /// Renders the internal timeline body for a StatusGateDecision event.
+    private static string BuildGateDecisionHtml(MatchedStatusGate gate, GateChoiceDecision d, bool keptOpen)
+    {
+        var title = global::System.Net.WebUtility.HtmlEncode(gate.Title);
+        var question = global::System.Net.WebUtility.HtmlEncode(d.QuestionLabel);
+        var choice = global::System.Net.WebUtility.HtmlEncode(d.ChosenLabel);
+        var outcomeText = keptOpen ? "ticket kept open" : "status change allowed";
+        return $"<p><strong>Status-change check — {title}</strong></p>"
+             + $"<p>{question}<br>Chosen: <strong>{choice}</strong> ({outcomeText})</p>";
     }
 
     /// Validates the role the agent picked in the contact-company-link
@@ -1965,6 +2035,10 @@ public static class TicketEndpoints
             required = q.Required,
             yesLabel = q.YesLabel,
             noLabel = q.NoLabel,
+            // v0.0.89 — only populated for choice questions; the outcome is
+            // surfaced so the dialog can hint what each option will do.
+            options = (q.Options ?? Array.Empty<GateChoiceOption>())
+                .Select(o => new { label = o.Label, outcome = o.Outcome }),
         }),
         requesterContactId = g.RequesterContactId,
         requesterDisplayName = g.RequesterDisplayName,
@@ -1999,7 +2073,11 @@ public static class TicketEndpoints
         MatchedStatusGate Gate,
         IReadOnlyDictionary<string, string>? Answers,
         IReadOnlyDictionary<string, string>? Extras,
-        PendingContactCompanyLink? PendingLink);
+        PendingContactCompanyLink? PendingLink,
+        // v0.0.89 — true when a chosen choice-option outcome is keep_open;
+        // Decisions carries each choice pick for the StatusGateDecision event.
+        bool KeepOpen = false,
+        IReadOnlyList<GateChoiceDecision>? Decisions = null);
 
     /// Pre-status-update side-effect carried by a confirmed
     /// <c>contact_company_link</c> gate: link <paramref name="ContactId"/>

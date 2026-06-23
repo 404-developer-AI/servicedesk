@@ -444,10 +444,18 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
 
   const updateMutation = useMutation({
     mutationFn: (fields: TicketFieldUpdate) => ticketApi.update(ticketId, fields),
-    onSuccess: (updated) => {
+    onSuccess: (updated, variables) => {
       queryClient.setQueryData(["ticket", ticketId], updated);
       queryClient.invalidateQueries({ queryKey: ["tickets"] });
-      toast.success("Ticket updated");
+      // v0.0.89 — a status-change gate whose chosen option keeps the ticket
+      // open returns the unchanged status, so the requested status differs
+      // from what came back. Surface that explicitly instead of the generic
+      // "Ticket updated".
+      const keptOpen =
+        !!variables.gateConfirmations?.length &&
+        !!variables.statusId &&
+        updated.ticket.statusId !== variables.statusId;
+      toast.success(keptOpen ? "Ticket kept open" : "Ticket updated");
     },
     onError: () => toast.error("Failed to update ticket"),
   });

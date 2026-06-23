@@ -50,8 +50,10 @@ public sealed record MatchedStatusGate(
 
 /// One question rendered inline in the confirmation dialog. <c>Key</c>
 /// drives the <c>#{prompt.&lt;key&gt;}</c> token in the note template.
-/// <c>Type</c> is either "text" (free-text textarea) or "yesno"
-/// (two button slots, either side can be hidden via null labels).
+/// <c>Type</c> is "text" (free-text textarea), "yesno" (two button slots,
+/// either side can be hidden via null labels), or "choice" (v0.0.89 — a
+/// single-select list of options, each tagged with an outcome that decides
+/// whether the status change may proceed).
 public sealed record GateQuestion(
     string Key,
     string Type,
@@ -67,4 +69,16 @@ public sealed record GateQuestion(
     /// "No" button label. Null = the button is hidden; the question
     /// then offers no cancel path through it (cancel via the dialog's
     /// own Cancel button or overlay/Esc).
-    string? NoLabel);
+    string? NoLabel,
+    /// Populated only when <c>Type == "choice"</c>. The agent must pick
+    /// exactly one option; the picked option's <see cref="GateChoiceOption.Outcome"/>
+    /// decides whether the status change proceeds (allow) or is held back
+    /// (keep_open). Null/empty for text + yesno questions.
+    IReadOnlyList<GateChoiceOption>? Options = null);
+
+/// One selectable option on a <c>choice</c> question. <see cref="Outcome"/>
+/// is the server-trusted effect of picking it — never read from the client:
+///   * <c>"allow"</c> — the status change proceeds.
+///   * <c>"keep_open"</c> — the status change is held back; the ticket
+///     keeps its current status. The decision is still logged.
+public sealed record GateChoiceOption(string Label, string Outcome);

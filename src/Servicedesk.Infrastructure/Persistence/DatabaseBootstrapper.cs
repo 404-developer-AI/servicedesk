@@ -5123,6 +5123,26 @@ public sealed class DatabaseBootstrapper : IHostedService
                                   'SurveySent','SurveySubmitted','SurveyExpired',
                                   'TimeLimitAlertDismissed','TimeLimitExtended',
                                   'TimeLimitTrackingDisabled')) NOT VALID;
+
+        -- ===================================================================
+        -- v0.0.89 Status-change gate decision event
+        -- ===================================================================
+        -- 'StatusGateDecision' records the agent's chosen option on a
+        -- prompt_confirm "choice" question (allow vs keep-open), logged on
+        -- both outcomes. Same NOT VALID drop+recreate pattern as the earlier
+        -- extensions — legacy rows are already compliant (append-only enum),
+        -- only new writes enforce the whitelist.
+        ALTER TABLE ticket_events DROP CONSTRAINT IF EXISTS chk_ticket_event_type;
+        ALTER TABLE ticket_events ADD CONSTRAINT chk_ticket_event_type
+            CHECK (event_type IN ('Created','Comment','Mail','Note','StatusChange',
+                                  'AssignmentChange','PriorityChange','QueueChange',
+                                  'CategoryChange','SystemNote','MailReceived',
+                                  'MailSent','CompanyAssignment','RequesterChange',
+                                  'IntakeFormSent','IntakeFormSubmitted','IntakeFormExpired',
+                                  'ParentLinked','ParentUnlinked',
+                                  'SurveySent','SurveySubmitted','SurveyExpired',
+                                  'TimeLimitAlertDismissed','TimeLimitExtended',
+                                  'TimeLimitTrackingDisabled','StatusGateDecision')) NOT VALID;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

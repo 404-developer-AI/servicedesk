@@ -19,6 +19,7 @@ public static class TriggerConditionFieldCatalog
         new(TriggerFieldKeys.TicketCompanyId,   "Ticket company",     "company"),
         new(TriggerFieldKeys.TicketSubject,     "Ticket subject",     "string"),
         new(TriggerFieldKeys.TicketIsNew,       "Ticket is new (first message)", "boolean"),
+        new(TriggerFieldKeys.TicketHasLinkedOrder, "Ticket has a linked order", "boolean"),
         new(TriggerFieldKeys.TicketTags,        "Ticket tags",        "tags"),
         new(TriggerFieldKeys.ArticleSender,     "Article sender",     "sender"),
         new(TriggerFieldKeys.ArticleType,       "Article type",       "article-type"),

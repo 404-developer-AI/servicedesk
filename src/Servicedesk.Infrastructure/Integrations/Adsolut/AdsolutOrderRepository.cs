@@ -157,6 +157,11 @@ public interface IAdsolutOrderRepository
     Task UnlinkFromTicketAsync(Guid ticketId, Guid orderId, CancellationToken ct = default);
     Task<IReadOnlyList<AdsolutOrderRow>> ListForTicketAsync(Guid ticketId, CancellationToken ct = default);
 
+    /// Cheap existence probe — true when the ticket has at least one linked
+    /// order. Backs the <c>ticket.has_linked_order</c> trigger condition;
+    /// indexed EXISTS so it stays fast on the trigger hot path.
+    Task<bool> HasLinkedOrderAsync(Guid ticketId, CancellationToken ct = default);
+
     // ---- supplier orders (bestellingen) --------------------------------
     /// Upsert one supplier order: replace its line-set wholesale (grouped by
     /// supplier_order_id), denormalising supplier + date onto each line.
@@ -572,6 +577,31 @@ public sealed class AdsolutOrderRepository : IAdsolutOrderRepository
         await conn.ExecuteAsync(new CommandDefinition(
             "DELETE FROM ticket_order_links WHERE ticket_id = @ticketId AND order_id = @orderId",
             new { ticketId, orderId }, cancellationToken: ct));
+    }
+
+    public async Task<bool> HasLinkedOrderAsync(Guid ticketId, CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        // "Has a linked order" = an order pill (`<span data-order-id="…">`,
+        // inserted via the `::` picker) anywhere in the ticket's description
+        // or its events (notes, comments, sent mail). That pill is the only
+        // way the UI references an order on a ticket today — it does NOT write
+        // to the dedicated ticket_order_links table — so the content scan is
+        // what actually matters. The links table is still honoured first for
+        // forward-compatibility should an explicit "link order" action ever be
+        // wired up. The regex requires a hex char right after the quote so an
+        // empty `data-order-id=""` placeholder does not count.
+        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
+            """
+            SELECT EXISTS (SELECT 1 FROM ticket_order_links WHERE ticket_id = @ticketId)
+                OR EXISTS (SELECT 1 FROM ticket_events
+                           WHERE ticket_id = @ticketId
+                             AND body_html ~ 'data-order-id="[0-9a-fA-F]')
+                OR EXISTS (SELECT 1 FROM ticket_bodies
+                           WHERE ticket_id = @ticketId
+                             AND body_html ~ 'data-order-id="[0-9a-fA-F]')
+            """,
+            new { ticketId }, cancellationToken: ct));
     }
 
     public async Task<IReadOnlyList<AdsolutOrderRow>> ListForTicketAsync(Guid ticketId, CancellationToken ct = default)

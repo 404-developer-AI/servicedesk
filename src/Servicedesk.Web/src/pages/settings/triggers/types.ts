@@ -73,6 +73,13 @@ export type CreateLinkedTicketAction = {
 // defined `key` referenced from `note_template` as `#{prompt.<key>}`.
 // The status change is gated until every required question is
 // satisfied and the agent clicks the confirm button.
+export type PromptChoiceOption = {
+  label: string;
+  // v0.0.89 — "allow" lets the status change proceed; "keep_open" holds the
+  // ticket in its current status. Either way the pick is logged.
+  outcome: "allow" | "keep_open";
+};
+
 export type PromptQuestion =
   | {
       key: string;
@@ -86,6 +93,14 @@ export type PromptQuestion =
       label: string;
       yes_label: string | null;
       no_label: string | null;
+    }
+  | {
+      // v0.0.89 — single-select list; each option decides whether the
+      // status change is allowed or the ticket is kept open.
+      key: string;
+      type: "choice";
+      label: string;
+      options: PromptChoiceOption[];
     };
 
 export type PromptConfirmAction = {
@@ -387,6 +402,18 @@ function normalizePromptConfirm(raw: any): PromptConfirmAction {
             yes_label: typeof q.yes_label === "string" ? q.yes_label : null,
             no_label: typeof q.no_label === "string" ? q.no_label : null,
           }];
+        }
+        if (q.type === "choice") {
+          const options: PromptChoiceOption[] = Array.isArray(q.options)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ? (q.options as any[]).flatMap((o): PromptChoiceOption[] => {
+                if (!o || typeof o !== "object") return [];
+                const label = typeof o.label === "string" ? o.label : "";
+                if (!label) return [];
+                return [{ label, outcome: o.outcome === "keep_open" ? "keep_open" : "allow" }];
+              })
+            : [];
+          return [{ key, type: "choice", label, options }];
         }
         return [{
           key,

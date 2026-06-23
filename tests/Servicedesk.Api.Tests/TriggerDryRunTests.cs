@@ -123,6 +123,7 @@ public class TriggerDryRunTests
             new ThrowingAudit(),
             new FakeRenderFactory(),
             new Servicedesk.Infrastructure.Realtime.NullTicketListNotifier(),
+            new TestInfrastructure.FakeAdsolutOrderRepository(),
             NullLogger<TriggerService>.Instance);
 
     private static TriggerRow MakeTrigger(string conditionsJson = "{\"op\":\"AND\",\"items\":[]}", string actionsJson = "[]")

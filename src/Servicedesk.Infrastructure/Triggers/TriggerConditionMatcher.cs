@@ -116,6 +116,7 @@ public sealed class TriggerConditionMatcher : ITriggerConditionMatcher
             // event (first inbound mail). Lets an auto-reply fire once, not on
             // every customer reply.
             TriggerFieldKeys.TicketIsNew => ctx.ChangeSet.IsTicketCreation,
+            TriggerFieldKeys.TicketHasLinkedOrder => ctx.HasLinkedOrder,
             TriggerFieldKeys.TicketTags => Array.Empty<string>(), // tags entity not introduced yet
             TriggerFieldKeys.ArticleSender => ResolveArticleSender(ctx.TriggeringEvent),
             TriggerFieldKeys.ArticleType => ctx.TriggeringEvent?.EventType,
