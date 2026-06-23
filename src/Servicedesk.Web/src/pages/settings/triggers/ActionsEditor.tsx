@@ -1545,14 +1545,15 @@ function PromptChoiceOptionsEditor({
             placeholder="Close it — order delivered"
             className="flex-1 rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
           />
-          <NativeSelect
-            value={opt.outcome}
-            onChange={(e) => update(idx, { ...opt, outcome: e.target.value === "keep_open" ? "keep_open" : "allow" })}
-            className="w-36"
-          >
-            <option value="allow">Allow close</option>
-            <option value="keep_open">Keep open</option>
-          </NativeSelect>
+          <div className="w-40 shrink-0">
+            <NativeSelect
+              value={opt.outcome}
+              onChange={(v) => update(idx, { ...opt, outcome: v === "keep_open" ? "keep_open" : "allow" })}
+            >
+              <option value="allow">Allow close</option>
+              <option value="keep_open">Keep open</option>
+            </NativeSelect>
+          </div>
           <Button
             variant="ghost" size="sm"
             className="h-7 text-destructive"
