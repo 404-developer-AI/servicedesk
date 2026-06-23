@@ -44,7 +44,10 @@ public interface ITicketTimeAlertService
 
     /// Logs that the agent dismissed the alert. The limit is unchanged, so
     /// the warning recurs the next time the ticket is opened while over limit.
-    Task DismissAsync(Guid ticketId, Guid actorUserId, CancellationToken ct = default);
+    /// When <paramref name="silent"/> is true the dismissal writes no timeline
+    /// event — an admin-only escape hatch the endpoint authorises (it only ever
+    /// forwards silent=true for the Admin role).
+    Task DismissAsync(Guid ticketId, Guid actorUserId, bool silent = false, CancellationToken ct = default);
 
     /// Raises the ticket's limit by <paramref name="addMinutes"/>. Requires the
     /// written-customer-confirmation tick; logs a TimeLimitExtended event. When

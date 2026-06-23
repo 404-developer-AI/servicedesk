@@ -55,14 +55,20 @@ public static class TicketTimesheetEndpoints
         .WithOpenApi();
 
         // Agent dismissed the warning: logged, limit unchanged, recurs on
-        // the next open while still over limit.
+        // the next open while still over limit. v0.0.89 — admins may pass
+        // ?silent=true to dismiss WITHOUT writing a timeline event. That is
+        // authorised here, never trusted from the client: a non-admin's
+        // silent=true is downgraded to a normal, logged dismissal.
         group.MapPost("/{ticketId:guid}/time-alert/dismiss", async (
             Guid ticketId,
+            bool? silent,
             HttpContext http,
             ITicketTimeAlertService svc,
             CancellationToken ct) =>
         {
-            await svc.DismissAsync(ticketId, ActorContext.GetUserId(http), ct);
+            var (_, role) = ActorContext.Resolve(http);
+            var effectiveSilent = silent == true && string.Equals(role, "Admin", StringComparison.Ordinal);
+            await svc.DismissAsync(ticketId, ActorContext.GetUserId(http), effectiveSilent, ct);
             return Results.NoContent();
         })
         .WithName("DismissTicketTimeAlert")
