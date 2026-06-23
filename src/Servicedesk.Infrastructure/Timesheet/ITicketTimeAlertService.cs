@@ -13,7 +13,9 @@ public sealed record TicketTimeAlertStatus(
     int RemainingMinutes,       // limit - total (negative once over)
     bool Exceeded,              // enabled && total > limit
     int DefaultExtraMinutes,    // "allow more time" dialog pre-fill
-    string ConfirmationText);   // mandatory-tick label
+    string ConfirmationText,    // mandatory-tick label
+    bool TrackingDisabled,      // v0.0.88 — tracking turned off for this ticket
+    string DisableReasonPrompt);// v0.0.88 — "disable tracking" reason prompt label
 
 /// Outcome of an attempt to raise a ticket's hour limit.
 public enum TicketTimeAlertExtendResult
@@ -22,6 +24,14 @@ public enum TicketTimeAlertExtendResult
     Disabled,        // the feature master-switch is off
     NotConfirmed,    // the mandatory customer-confirmation tick was not set
     InvalidMinutes,  // added minutes <= 0 or above the sanity cap
+    TicketNotFound,
+}
+
+/// v0.0.88 — outcome of an attempt to disable hour tracking for a ticket.
+public enum TicketTimeAlertDisableResult
+{
+    Ok,
+    ReasonRequired,  // the mandatory "why are you disabling" reason was blank
     TicketNotFound,
 }
 
@@ -37,8 +47,16 @@ public interface ITicketTimeAlertService
     Task DismissAsync(Guid ticketId, Guid actorUserId, CancellationToken ct = default);
 
     /// Raises the ticket's limit by <paramref name="addMinutes"/>. Requires the
-    /// written-customer-confirmation tick; logs a TimeLimitExtended event.
+    /// written-customer-confirmation tick; logs a TimeLimitExtended event. When
+    /// <paramref name="note"/> is non-blank it is also posted as an internal
+    /// note on the ticket (v0.0.88, optional).
     Task<TicketTimeAlertExtendResult> ExtendAsync(
         Guid ticketId, Guid actorUserId, int addMinutes, bool customerConfirmed,
-        CancellationToken ct = default);
+        string? note, CancellationToken ct = default);
+
+    /// v0.0.88 — disables the hour-limit alert for this ticket for good (from
+    /// the UI). Requires a non-blank <paramref name="reason"/>, which is posted
+    /// as an internal note; also logs a TimeLimitTrackingDisabled event.
+    Task<TicketTimeAlertDisableResult> DisableAsync(
+        Guid ticketId, Guid actorUserId, string reason, CancellationToken ct = default);
 }

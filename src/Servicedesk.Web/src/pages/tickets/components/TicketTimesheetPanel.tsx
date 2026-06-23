@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, Clock, AlertCircle, Check, Layers } from "lucide-react";
+import { ChevronDown, Clock, AlertCircle, Ban, Check, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Tooltip,
@@ -111,6 +111,7 @@ export function TicketTimesheetPanel({ ticketId, queueId }: Props) {
             </>
           )}
           {alert?.enabled && <RemainingPill alert={alert} />}
+          {alert?.trackingDisabled && <TrackingDisabledPill />}
           <ChevronDown
             className={cn(
               "h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform",
@@ -277,6 +278,21 @@ function RemainingPill({
       ) : (
         <>{formatDuration(magnitude)} left</>
       )}
+    </span>
+  );
+}
+
+/// v0.0.88 — shown in place of the remaining-time pill once an agent has
+/// disabled hour tracking for this ticket. The alert never fires here, so the
+/// pill makes the (otherwise invisible) disabled state explicit.
+function TrackingDisabledPill() {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1 rounded-md border border-muted-foreground/20 bg-muted-foreground/10 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+      title="Hour tracking has been disabled for this ticket"
+    >
+      <Ban className="h-3 w-3" />
+      Tracking off
     </span>
   );
 }

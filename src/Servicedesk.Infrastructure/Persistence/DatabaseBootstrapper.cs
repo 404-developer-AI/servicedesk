@@ -5083,6 +5083,14 @@ public sealed class DatabaseBootstrapper : IHostedService
         ALTER TABLE tickets
             ADD COLUMN IF NOT EXISTS time_alert_extra_minutes INT NOT NULL DEFAULT 0;
 
+        -- v0.0.88 — per-ticket "disable hour tracking" switch. When TRUE the
+        -- hour-limit alert never fires for this ticket, regardless of the
+        -- global setting or the queue override. Set once from the alert dialog
+        -- (with a mandatory reason logged as an internal note); there is no UI
+        -- to re-enable, so it is effectively one-way from the agent's side.
+        ALTER TABLE tickets
+            ADD COLUMN IF NOT EXISTS time_alert_tracking_disabled BOOLEAN NOT NULL DEFAULT FALSE;
+
         -- Per-queue override for the hour-limit alert. Mode 'inherit' uses the
         -- global Timesheet.TimeAlert* settings; 'on' forces the alert on for
         -- this queue even when globally off; 'off' disables it for this queue
@@ -5097,10 +5105,11 @@ public sealed class DatabaseBootstrapper : IHostedService
         ALTER TABLE queues ADD CONSTRAINT chk_queue_time_alert_mode
             CHECK (time_alert_mode IN ('inherit','on','off')) NOT VALID;
 
-        -- Two new timeline event types: the agent dismissed the alert
+        -- Hour-limit timeline event types: the agent dismissed the alert
         -- ('TimeLimitAlertDismissed', which recurs the next time the ticket
-        -- is opened while still over limit) or raised the limit
-        -- ('TimeLimitExtended'). Same NOT VALID drop+recreate pattern as the
+        -- is opened while still over limit), raised the limit
+        -- ('TimeLimitExtended'), or disabled tracking for this ticket
+        -- ('TimeLimitTrackingDisabled', v0.0.88). Same NOT VALID drop+recreate pattern as the
         -- earlier extensions — legacy rows are already compliant (the enum is
         -- append-only), only new writes enforce the whitelist.
         ALTER TABLE ticket_events DROP CONSTRAINT IF EXISTS chk_ticket_event_type;
@@ -5112,7 +5121,8 @@ public sealed class DatabaseBootstrapper : IHostedService
                                   'IntakeFormSent','IntakeFormSubmitted','IntakeFormExpired',
                                   'ParentLinked','ParentUnlinked',
                                   'SurveySent','SurveySubmitted','SurveyExpired',
-                                  'TimeLimitAlertDismissed','TimeLimitExtended')) NOT VALID;
+                                  'TimeLimitAlertDismissed','TimeLimitExtended',
+                                  'TimeLimitTrackingDisabled')) NOT VALID;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

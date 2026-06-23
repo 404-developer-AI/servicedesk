@@ -31,6 +31,7 @@ import {
   ChevronDown,
   AlertTriangle,
   TimerReset,
+  Ban,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ticketApi, ApiError, type TicketEvent, type OutboundMailKind } from "@/lib/ticket-api";
@@ -387,6 +388,11 @@ const EVENT_CONFIG: Record<string, EventConfig> = {
     dotColor: "bg-violet-500",
     label: "Hour limit raised",
   },
+  TimeLimitTrackingDisabled: {
+    icon: Ban,
+    dotColor: "bg-amber-500",
+    label: "Hour tracking disabled",
+  },
 };
 
 /// Event types that are system/audit noise rather than real
@@ -405,6 +411,7 @@ const SYSTEM_EVENT_TYPES = new Set<string>([
   "Created",
   "TimeLimitAlertDismissed",
   "TimeLimitExtended",
+  "TimeLimitTrackingDisabled",
 ]);
 
 export function isSystemEvent(event: TicketEvent): boolean {
@@ -589,6 +596,23 @@ function EventBody({ event }: { event: TicketEvent }) {
               ({formatDuration(total)} logged, limit {formatDuration(limit)})
             </span>
           )}
+        </span>
+      );
+    }
+
+    case "TimeLimitTrackingDisabled": {
+      const total = typeof meta.totalMinutes === "number" ? meta.totalMinutes : null;
+      const limit = typeof meta.limitMinutes === "number" ? meta.limitMinutes : null;
+      return (
+        <span className="text-sm text-muted-foreground">
+          Hour tracking disabled for this ticket
+          {total !== null && limit !== null && (
+            <span className="text-muted-foreground/70">
+              {" "}
+              ({formatDuration(total)} logged, limit {formatDuration(limit)})
+            </span>
+          )}
+          <span className="text-muted-foreground/70"> — see internal note for the reason</span>
         </span>
       );
     }
