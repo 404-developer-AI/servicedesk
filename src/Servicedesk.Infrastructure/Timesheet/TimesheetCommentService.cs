@@ -14,6 +14,11 @@ public sealed class CommentInboxRow
     public long TicketNumber { get; set; }
     public Guid? TicketId { get; set; }
     public string OriginContext { get; set; } = string.Empty;
+    // v0.0.89 — the exact origin row (sales-receipt id for 'adsolut', ticket id
+    // for 'resolved'/'cwi') so the Comments tab can BO-check it directly,
+    // writing the same timesheet_bo_checks(entity_id, context) row the origin
+    // tab uses (shared state → ticking from either place reflects in both).
+    public Guid OriginEntityId { get; set; }
     public DateTime LastMessageUtc { get; set; }
     public string? LastMessagePreview { get; set; }
     public string? LastAuthorEmail { get; set; }
@@ -108,6 +113,7 @@ public sealed class TimesheetCommentService : ITimesheetCommentService
                 th.ticket_number    AS TicketNumber,
                 th.ticket_id        AS TicketId,
                 th.origin_context   AS OriginContext,
+                th.origin_entity_id AS OriginEntityId,
                 th.last_message_utc AS LastMessageUtc,
                 LEFT(lm.body, 200)  AS LastMessagePreview,
                 lmu.email           AS LastAuthorEmail,

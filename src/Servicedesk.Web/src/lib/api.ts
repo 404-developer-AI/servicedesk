@@ -1610,6 +1610,10 @@ export type CommentInboxItem = {
   ticketNumber: number;
   ticketId: string | null;
   originContext: BackofficeContext;
+  /// The exact origin row id (sales-receipt for adsolut, ticket for
+  /// resolved/cwi). Used to BO-check the row straight from the Comments tab —
+  /// the same shared check the origin tab toggles.
+  originEntityId: string;
   lastMessageUtc: string;
   lastMessagePreview: string | null;
   lastAuthorEmail: string | null;
