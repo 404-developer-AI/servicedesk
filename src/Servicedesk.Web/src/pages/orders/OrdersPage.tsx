@@ -271,7 +271,7 @@ export function OrdersPage() {
                 setSearch(e.target.value);
                 setPage(1);
               }}
-              placeholder="Search relation, description, doc nr…"
+              placeholder="Search relation, description, doc nr, BL nr…"
               className="pl-9"
             />
           </div>

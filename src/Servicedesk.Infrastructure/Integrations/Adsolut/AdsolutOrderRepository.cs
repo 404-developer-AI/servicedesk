@@ -458,13 +458,24 @@ public sealed class AdsolutOrderRepository : IAdsolutOrderRepository
         };
         var dirSql = string.Equals(dir, "asc", StringComparison.OrdinalIgnoreCase) ? "ASC" : "DESC";
 
+        // The supplier "BL" number lives on the bestellingen rows
+        // (adsolut_supplier_order_lines), not the order header, so matching it
+        // needs an EXISTS against the linked supplier-order lines. concat_ws
+        // lets a search hit either the bare number ("5500106") or the rendered
+        // "BL 5500106" form, and skips a null book-code. The subquery rides the
+        // ix_adsolut_supplier_order_lines_linked_order index.
         const string whereClause = """
             WHERE (@Statuses::text[] IS NULL OR state_code = ANY(@Statuses::text[]))
               AND (@HasSearch = FALSE
                    OR customer_name ILIKE @Like
                    OR remark        ILIKE @Like
                    OR kluwer_ref    ILIKE @Like
-                   OR (@DocProbe IS NOT NULL AND doc_nr = @DocProbe))
+                   OR (@DocProbe IS NOT NULL AND doc_nr = @DocProbe)
+                   OR EXISTS (
+                       SELECT 1
+                       FROM adsolut_supplier_order_lines sol
+                       WHERE sol.linked_order_id = adsolut_orders.id
+                         AND concat_ws(' ', sol.bl_book_code, sol.bl_doc_nr::text) ILIKE @Like))
             """;
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
