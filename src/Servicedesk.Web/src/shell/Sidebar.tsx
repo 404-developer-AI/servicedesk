@@ -11,6 +11,7 @@ import {
   PinOff,
   Plus,
   Settings as SettingsIcon,
+  Sparkles,
   UserCircle2,
 } from "lucide-react";
 import ticksyMark from "@/assets/brand/ticksy.svg";
@@ -29,6 +30,7 @@ import {
 } from "@/hooks/useServerTime";
 import { viewApi, type View } from "@/lib/ticket-api";
 import { settingsApi, preferencesApi, timesheetCommentsApi } from "@/lib/api";
+import { openCopilotWindow } from "@/lib/copilotWindow";
 import { RecentTickets } from "@/shell/RecentTickets";
 import { NotificationsWidget } from "@/shell/NotificationsWidget";
 import { GlobalSearchBar } from "@/components/search/GlobalSearchBar";
@@ -53,6 +55,14 @@ import {
 // and inconsistent with the IANA names on the Linux host. The absolute server
 // time (UTC offset already applied) is what the user actually wants to see.
 
+// Sentinel "path" for the Copilot launcher feature row. It is not a real route
+// (it never renders a Link — the row is a button) but it identifies the
+// synthetic feature item for keys, pin persistence and the featureActions
+// lookup. It must start with "/" to satisfy the pinned-features API's path
+// guard (NormalizePinnedPaths rejects non-"/" entries), and "/copilot" is not
+// claimed by any actual route.
+const COPILOT_PATH = "/copilot";
+
 export function Sidebar() {
   const role = useCurrentRole();
   const allItems = visibleNavItems(role, "main");
@@ -71,6 +81,16 @@ export function Sidebar() {
   const { data: navSettings } = useQuery({
     queryKey: ["settings", "navigation"],
     queryFn: settingsApi.navigation,
+    staleTime: 60000,
+    enabled: role === "Agent" || role === "Admin",
+  });
+  // v0.0.89 — Copilot launcher. A global, admin-toggled shortcut that opens the
+  // real Microsoft Copilot in a separate window (agents land there via their
+  // M365 session). Agent/Admin only; never shown to Customers, and only when an
+  // admin has enabled it and set a URL.
+  const { data: copilotSettings } = useQuery({
+    queryKey: ["settings", "copilot"],
+    queryFn: settingsApi.copilot,
     staleTime: 60000,
     enabled: role === "Agent" || role === "Admin",
   });
@@ -205,7 +225,40 @@ export function Sidebar() {
   // more than two of them are active, so the rail never grows unwieldy.
   const PINNED_PATHS = new Set(["/", "/tickets"]);
   const corePinnedItems = items.filter((i) => PINNED_PATHS.has(i.to));
-  const featureItems = items.filter((i) => !PINNED_PATHS.has(i.to));
+
+  // v0.0.89 — the Copilot launcher rides the same feature pin/flyout machinery
+  // as the real pages, so it can be pinned inline or tucked into the flyout
+  // like everything else. It is not a route: instead of a `to` we carry an
+  // action in `featureActions`, and NavRow / FeaturesFlyout render it as a
+  // button. The synthetic NavItem uses the COPILOT_PATH sentinel as its key and
+  // pin id. Agent/Admin only, and only when an admin enabled it with a URL.
+  const copilotEnabled =
+    role !== "Customer" && !!copilotSettings?.enabled && !!copilotSettings.url;
+  const copilotItem: NavItem | null = copilotEnabled
+    ? {
+        label: copilotSettings!.label || "Copilot",
+        to: COPILOT_PATH,
+        icon: Sparkles,
+        roles: ["Agent", "Admin"],
+        comingIn: "",
+        description: "Open Microsoft Copilot in a separate window.",
+        section: "main",
+      }
+    : null;
+  const copilotUrl = copilotSettings?.url ?? "";
+  const copilotPopup = copilotSettings?.openInPopup ?? true;
+  const featureActions = React.useMemo(() => {
+    const map = new Map<string, () => void>();
+    if (copilotEnabled) {
+      map.set(COPILOT_PATH, () => openCopilotWindow(copilotUrl, copilotPopup));
+    }
+    return map;
+  }, [copilotEnabled, copilotUrl, copilotPopup]);
+
+  const featureItems = [
+    ...items.filter((i) => !PINNED_PATHS.has(i.to)),
+    ...(copilotItem ? [copilotItem] : []),
+  ];
   const collapseFeatures = featureItems.length > 2;
 
   // When collapsed, the user's pinned features stay inline; the rest move into
@@ -338,6 +391,7 @@ export function Sidebar() {
                 active={pathname === item.to}
                 collapsed={collapsed}
                 onUnpin={() => unpinFeature(item.to)}
+                onActivate={featureActions.get(item.to)}
                 badge={item.to === "/timesheet" && timesheetBadge}
               />
             ))}
@@ -347,6 +401,7 @@ export function Sidebar() {
                 collapsed={collapsed}
                 pathname={pathname}
                 onPin={pinFeature}
+                actions={featureActions}
                 badgedPaths={timesheetBadge ? ["/timesheet"] : []}
               />
             )}
@@ -358,6 +413,7 @@ export function Sidebar() {
               item={item}
               active={pathname === item.to}
               collapsed={collapsed}
+              onActivate={featureActions.get(item.to)}
               badge={item.to === "/timesheet" && timesheetBadge}
             />
           ))
@@ -590,33 +646,37 @@ export function Sidebar() {
 /// A single primary-nav row. Extracted so the pinned items and the inline
 /// (non-collapsed) feature items render identically. When `onUnpin` is given
 /// (a user-pinned feature, expanded rail), a pin-off button appears on hover.
+/// When `onActivate` is given the row is an action, not a route: it renders as
+/// a button that runs the handler (used by the Copilot launcher) instead of a
+/// navigating Link, and never shows an active state.
 function NavRow({
   item,
   active,
   collapsed,
   onUnpin,
+  onActivate,
   badge,
 }: {
   item: NavItem;
   active: boolean;
   collapsed: boolean;
   onUnpin?: () => void;
+  /// When set, the row is a button running this handler rather than a Link.
+  onActivate?: () => void;
   /// When true, a small red dot is shown on the icon (unread indicator).
   badge?: boolean;
 }) {
   const Icon = item.icon;
-  const link = (
-    <Link
-      to={item.to}
-      className={cn(
-        "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all",
-        active
-          ? "bg-glass-strong text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
-          : "text-muted-foreground hover:bg-glass-hover hover:text-foreground",
-        collapsed && "justify-center px-2",
-        onUnpin && !collapsed && "pr-9",
-      )}
-    >
+  const rowClass = cn(
+    "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all",
+    active
+      ? "bg-glass-strong text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+      : "text-muted-foreground hover:bg-glass-hover hover:text-foreground",
+    collapsed && "justify-center px-2",
+    onUnpin && !collapsed && "pr-9",
+  );
+  const inner = (
+    <>
       <span className="relative shrink-0">
         <Icon className={cn("h-4 w-4", active && "text-primary")} />
         {badge && (
@@ -624,6 +684,20 @@ function NavRow({
         )}
       </span>
       {!collapsed && <span className="truncate">{item.label}</span>}
+    </>
+  );
+  const link = onActivate ? (
+    <button
+      type="button"
+      onClick={onActivate}
+      title={collapsed ? item.label : item.description}
+      className={cn(rowClass, "w-full text-left")}
+    >
+      {inner}
+    </button>
+  ) : (
+    <Link to={item.to} className={rowClass}>
+      {inner}
     </Link>
   );
 
@@ -655,12 +729,16 @@ function FeaturesFlyout({
   collapsed,
   pathname,
   onPin,
+  actions,
   badgedPaths = [],
 }: {
   items: readonly NavItem[];
   collapsed: boolean;
   pathname: string;
   onPin: (path: string) => void;
+  /// Map of item path → action handler for action rows (e.g. the Copilot
+  /// launcher). An item present here renders as a button, not a Link.
+  actions?: Map<string, () => void>;
   /// Nav paths that should show a red unread dot (e.g. "/timesheet").
   badgedPaths?: string[];
 }) {
@@ -709,27 +787,43 @@ function FeaturesFlyout({
           {items.map((item) => {
             const Icon = item.icon;
             const active = isFeatureActive(item.to);
+            const onActivate = actions?.get(item.to);
+            const rowClass = cn(
+              "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
+              active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+            );
+            const rowInner = (
+              <>
+                <span className="relative shrink-0">
+                  <Icon className={cn("h-4 w-4", active && "text-primary")} />
+                  {badgedPaths.includes(item.to) && (
+                    <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500 shadow-[0_0_0_2px_hsl(var(--background))]" />
+                  )}
+                </span>
+                <span className="truncate">{item.label}</span>
+              </>
+            );
             return (
               <div
                 key={item.to}
                 className="group/feat flex items-center gap-1 rounded-md hover:bg-glass-hover"
               >
-                <Link
-                  to={item.to}
-                  onClick={() => setOpen(false)}
-                  className={cn(
-                    "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
-                    active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <span className="relative shrink-0">
-                    <Icon className={cn("h-4 w-4", active && "text-primary")} />
-                    {badgedPaths.includes(item.to) && (
-                      <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500 shadow-[0_0_0_2px_hsl(var(--background))]" />
-                    )}
-                  </span>
-                  <span className="truncate">{item.label}</span>
-                </Link>
+                {onActivate ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onActivate();
+                      setOpen(false);
+                    }}
+                    className={cn(rowClass, "text-left")}
+                  >
+                    {rowInner}
+                  </button>
+                ) : (
+                  <Link to={item.to} onClick={() => setOpen(false)} className={rowClass}>
+                    {rowInner}
+                  </Link>
+                )}
                 <button
                   type="button"
                   title={`Pin ${item.label} to sidebar`}

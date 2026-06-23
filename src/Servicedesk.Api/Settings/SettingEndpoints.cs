@@ -102,11 +102,32 @@ public static class SettingEndpoints
         .WithName("GetTicketGroupingSettings")
         .WithOpenApi();
 
+        // ---- Copilot launcher settings (v0.0.89, agent-readable) ----
+        // The nav button needs the enable flag, URL, label and open-mode on the
+        // client to render itself. None of these are secret (it is a public
+        // Microsoft URL), so the agent-safe projection lives here, off the
+        // admin-only `/api/settings` endpoint. Falls back to the registered
+        // defaults if a read returns empty.
+        app.MapGet("/api/settings/copilot", async (ISettingsService svc, CancellationToken ct) =>
+        {
+            var enabled = await svc.GetAsync<bool>(SettingKeys.Copilot.Enabled, ct);
+            var url = await svc.GetAsync<string>(SettingKeys.Copilot.Url, ct) ?? string.Empty;
+            var label = await svc.GetAsync<string>(SettingKeys.Copilot.Label, ct);
+            if (string.IsNullOrWhiteSpace(label)) label = "Copilot";
+            var openInPopup = await svc.GetAsync<bool>(SettingKeys.Copilot.OpenInPopup, ct);
+            return Results.Ok(new CopilotSettings(enabled, url, label, openInPopup));
+        })
+        .WithTags("Settings")
+        .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+        .WithName("GetCopilotSettings")
+        .WithOpenApi();
+
         return app;
     }
 
     public sealed record UpdateSettingRequest([property: Required] string Value);
     public sealed record NavigationSettings(bool ShowOpenTickets);
+    public sealed record CopilotSettings(bool Enabled, string Url, string Label, bool OpenInPopup);
     public sealed record NotificationsSettings(int PopupDurationSeconds);
     public sealed record MailComposeSettings(bool ForgottenAttachmentEnabled, string ForgottenAttachmentKeywords);
     public sealed record TicketGroupingSettings(

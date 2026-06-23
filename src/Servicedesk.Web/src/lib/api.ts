@@ -687,6 +687,17 @@ export type TicketGroupingSettings = {
   openNewDirection: "asc" | "desc";
 };
 
+export type CopilotSettings = {
+  /// Master switch — when false the nav launcher button is hidden.
+  enabled: boolean;
+  /// URL opened by the launcher (the real Microsoft Copilot).
+  url: string;
+  /// Label shown on the nav button.
+  label: string;
+  /// true = focused side-panel popup window; false = a normal new tab.
+  openInPopup: boolean;
+};
+
 export const settingsApi = {
   list: (category?: string) => {
     const params = category ? `?category=${encodeURIComponent(category)}` : "";
@@ -702,6 +713,8 @@ export const settingsApi = {
     request<MailComposeSettings>("GET", "/api/settings/mail-compose"),
   ticketGrouping: () =>
     request<TicketGroupingSettings>("GET", "/api/settings/ticket-grouping"),
+  copilot: () =>
+    request<CopilotSettings>("GET", "/api/settings/copilot"),
 };
 
 // ---- Microsoft Graph admin ----

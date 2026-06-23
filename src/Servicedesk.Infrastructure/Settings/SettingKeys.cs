@@ -1183,6 +1183,33 @@ public static class SettingKeys
         /// runaway content. Default 20000.
         public const string BodyMaxChars = "Feedback.BodyMaxChars";
     }
+
+    /// Copilot launcher (v0.0.89). A nav shortcut that opens Microsoft Copilot
+    /// in a separate browser window. It is a pure launcher — no API key, no
+    /// secret, no Servicedesk data ever flows to it; agents simply land in the
+    /// real Copilot signed in with their existing M365 session. All four knobs
+    /// are exposed (agent-readable projection) so the nav button can render
+    /// without the admin-only settings endpoint.
+    public static class Copilot
+    {
+        /// Master switch. When false the nav button is hidden for everyone.
+        /// Default off so a fresh install shows nothing until an admin opts in.
+        public const string Enabled = "Copilot.Enabled";
+
+        /// URL opened when an agent/admin clicks the launcher. Defaults to the
+        /// Microsoft 365 Copilot Chat entry point; paste whatever URL your
+        /// browser shows while in Copilot to pin a specific surface.
+        public const string Url = "Copilot.Url";
+
+        /// Text shown on the nav button. Editable so an install can call it
+        /// "Copilot", "AI Chat", "Microsoft Copilot", etc.
+        public const string Label = "Copilot.Label";
+
+        /// When true, the launcher opens a focused, side-panel-sized popup
+        /// window; when false it opens a normal new browser tab. Either way the
+        /// same fixed window is reused on subsequent clicks rather than stacked.
+        public const string OpenInPopup = "Copilot.OpenInPopup";
+    }
 }
 
 public sealed record SettingDefault(
@@ -1913,5 +1940,14 @@ public static class SettingDefaults
             "Maximum number of prior messages (rolling window) carried into a chat turn. Older messages are dropped to bound input cost. Clamped to [2, 50]."),
         new SettingDefault(SettingKeys.Claude.KbChatSnippetChars, "1200", "int", "Claude AI",
             "Maximum characters of an article's body included in a search result sent to the model. Bounds per-result input cost. Clamped to [200, 8000]."),
+
+        new SettingDefault(SettingKeys.Copilot.Enabled, "false", "bool", "Copilot",
+            "Master switch for the Copilot launcher button in the navigation. When off the button is hidden for everyone. It is a pure shortcut to Microsoft Copilot — no API key, no secret, and no Servicedesk data is sent."),
+        new SettingDefault(SettingKeys.Copilot.Url, "https://m365.cloud.microsoft/chat", "string", "Copilot",
+            "URL the launcher opens. Defaults to the Microsoft 365 Copilot Chat entry point; agents sign in with their existing M365 session. Paste the exact URL your browser shows while in Copilot to pin a specific surface."),
+        new SettingDefault(SettingKeys.Copilot.Label, "Copilot", "string", "Copilot",
+            "Text shown on the launcher button in the navigation."),
+        new SettingDefault(SettingKeys.Copilot.OpenInPopup, "true", "bool", "Copilot",
+            "When on, the launcher opens a focused, side-panel-sized popup window next to the app; when off it opens a normal new browser tab. Either way the same window is reused on later clicks."),
     };
 }
