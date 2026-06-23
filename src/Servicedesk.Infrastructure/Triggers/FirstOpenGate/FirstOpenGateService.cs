@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure.Auth;
+using Servicedesk.Infrastructure.Integrations.Adsolut;
 using Servicedesk.Infrastructure.Mail.Ingest;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Storage;
@@ -29,6 +30,7 @@ public sealed class FirstOpenGateService : IFirstOpenGateService
     private readonly IUserService _users;
     private readonly IMailMessageRepository _mail;
     private readonly IBlobStore _blobs;
+    private readonly IAdsolutOrderRepository _orders;
     private readonly ILogger<FirstOpenGateService> _logger;
 
     public FirstOpenGateService(
@@ -40,6 +42,7 @@ public sealed class FirstOpenGateService : IFirstOpenGateService
         IUserService users,
         IMailMessageRepository mail,
         IBlobStore blobs,
+        IAdsolutOrderRepository orders,
         ILogger<FirstOpenGateService> logger)
     {
         _triggers = triggers;
@@ -50,6 +53,7 @@ public sealed class FirstOpenGateService : IFirstOpenGateService
         _users = users;
         _mail = mail;
         _blobs = blobs;
+        _orders = orders;
         _logger = logger;
     }
 
@@ -111,6 +115,12 @@ public sealed class FirstOpenGateService : IFirstOpenGateService
 
             try
             {
+                bool hasLinkedOrder = false;
+                if (_matcher.ReferencedFields(condDoc.RootElement)
+                    .Contains(TriggerFieldKeys.TicketHasLinkedOrder))
+                {
+                    hasLinkedOrder = await _orders.HasLinkedOrderAsync(ticketId, ct);
+                }
                 var ctx = new TriggerEvaluationContext(
                     TicketId: ticketId,
                     Ticket: detail.Ticket,
@@ -118,7 +128,10 @@ public sealed class FirstOpenGateService : IFirstOpenGateService
                     ChangeSet: new TriggerChangeSet(
                         new HashSet<string>(StringComparer.OrdinalIgnoreCase), ArticleAdded: false),
                     UtcNow: DateTime.UtcNow,
-                    TriggerId: row.Id);
+                    TriggerId: row.Id)
+                {
+                    HasLinkedOrder = hasLinkedOrder,
+                };
                 if (!_matcher.Matches(condDoc.RootElement, ctx)) continue;
             }
             catch (Exception ex)

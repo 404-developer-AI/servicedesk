@@ -685,8 +685,38 @@ public static class TriggerValidator
                     return "'no_label' must be a string or null.";
                 }
                 return null;
+            case "choice":
+                // v0.0.89 — a single-select list of options, each tagged
+                // with an outcome that decides whether the status change
+                // proceeds. At least one option is required so the agent
+                // has something to pick.
+                if (!q.TryGetProperty("options", out var optsEl)
+                    || optsEl.ValueKind != JsonValueKind.Array)
+                {
+                    return "choice questions need an 'options' array.";
+                }
+                int oIdx = 0;
+                bool anyOption = false;
+                foreach (var opt in optsEl.EnumerateArray())
+                {
+                    if (opt.ValueKind != JsonValueKind.Object)
+                        return $"options[{oIdx}] must be an object.";
+                    if (!HasNonEmptyString(opt, "label"))
+                        return $"options[{oIdx}] requires a non-empty 'label'.";
+                    if (!opt.TryGetProperty("outcome", out var ocEl)
+                        || ocEl.ValueKind != JsonValueKind.String
+                        || (ocEl.GetString() != "allow" && ocEl.GetString() != "keep_open"))
+                    {
+                        return $"options[{oIdx}] 'outcome' must be 'allow' or 'keep_open'.";
+                    }
+                    anyOption = true;
+                    oIdx++;
+                }
+                if (!anyOption)
+                    return "choice questions need at least one option.";
+                return null;
             default:
-                return $"unknown type '{type}'. Allowed: text, yesno.";
+                return $"unknown type '{type}'. Allowed: text, yesno, choice.";
         }
     }
 

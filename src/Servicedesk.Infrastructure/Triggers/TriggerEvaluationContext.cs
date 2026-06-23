@@ -23,4 +23,11 @@ public sealed record TriggerEvaluationContext(
     Guid TriggerId = default)
 {
     internal TriggerRenderContext? RenderContext { get; init; }
+
+    /// Whether the ticket has at least one linked Adsolut order. Backs the
+    /// <see cref="TriggerFieldKeys.TicketHasLinkedOrder"/> condition. Defaults
+    /// false; each matching site sets it (only when a candidate trigger
+    /// references the field) so the cheap EXISTS query is skipped on the hot
+    /// path for the overwhelming majority of triggers that never use it.
+    public bool HasLinkedOrder { get; init; }
 }
