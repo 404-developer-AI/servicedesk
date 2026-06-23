@@ -462,7 +462,15 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
     enabled: !!data?.ticket,
     staleTime: 0,
   });
-  const openGate = openGatesQ.data?.gate ?? null;
+  // v0.0.89 — admins can silently dismiss the title-review gate. Unlike a
+  // confirm (which marks the title reviewed server-side), a dismiss leaves the
+  // server untouched, so we suppress the gate locally for this session; it
+  // re-evaluates and recurs the next time the ticket is opened.
+  const [titleGateDismissed, setTitleGateDismissed] = React.useState(false);
+  React.useEffect(() => {
+    setTitleGateDismissed(false);
+  }, [ticketId]);
+  const openGate = titleGateDismissed ? null : openGatesQ.data?.gate ?? null;
   const confirmOpenGateMutation = useMutation({
     mutationFn: (vars: { triggerId: string; subject: string }) =>
       ticketApi.confirmOpenGate(ticketId, vars.triggerId, vars.subject),
@@ -721,6 +729,10 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         onConfirm={(subject) =>
           confirmOpenGateMutation.mutate({ triggerId: openGate!.triggerId, subject })
         }
+        onDismiss={() => {
+          setTitleGateDismissed(true);
+          toast.success("Title review dismissed without logging.");
+        }}
       />
     </>
   );
