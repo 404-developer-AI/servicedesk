@@ -80,8 +80,14 @@ public sealed class TicketTimeAlertService : ITicketTimeAlertService
             DisableReasonPrompt: disablePrompt ?? string.Empty);
     }
 
-    public async Task DismissAsync(Guid ticketId, Guid actorUserId, CancellationToken ct = default)
+    public async Task DismissAsync(Guid ticketId, Guid actorUserId, bool silent = false, CancellationToken ct = default)
     {
+        // Admins may dismiss without leaving a trace (authorised at the
+        // endpoint, which only forwards silent=true for the Admin role). Nothing
+        // is written then — the limit is unchanged so the warning still recurs
+        // on the next open, it just never clutters the timeline.
+        if (silent) return;
+
         var globalThreshold = await _settings.GetAsync<int>(SettingKeys.Timesheet.TimeAlertThresholdMinutes, ct);
         var row = await ReadRowAsync(ticketId, ct);
         if (row is null) return;

@@ -54,6 +54,17 @@ public sealed class TicketTimeAlertServiceTests
         Assert.Equal(TicketTimeAlertDisableResult.ReasonRequired, result);
     }
 
+    [Fact]
+    public async Task Dismiss_silent_writes_nothing_and_never_touches_the_database()
+    {
+        var service = Build();
+
+        // The admin-only silent dismissal short-circuits before any settings
+        // read or connection open, so it completes against the never-connected
+        // data source. A logged dismissal would instead reach the database.
+        await service.DismissAsync(Guid.NewGuid(), Guid.NewGuid(), silent: true);
+    }
+
     private static TicketTimeAlertService Build()
     {
         // Lazy data source — never connected because every guarded path

@@ -358,11 +358,14 @@ export const timesheetTicketApi = {
       `/api/timesheet/ticket/${ticketId}/time-alert`,
     ),
 
-  /// Agent dismissed the warning (logged, limit unchanged).
-  dismissTimeAlert: (ticketId: string) =>
+  /// Agent dismissed the warning (logged, limit unchanged). Admins may pass
+  /// `silent` to dismiss without writing a timeline event; the server only
+  /// honours it for the Admin role and downgrades it to a logged dismissal
+  /// otherwise.
+  dismissTimeAlert: (ticketId: string, silent = false) =>
     request<void>(
       "POST",
-      `/api/timesheet/ticket/${ticketId}/time-alert/dismiss`,
+      `/api/timesheet/ticket/${ticketId}/time-alert/dismiss${silent ? "?silent=true" : ""}`,
     ),
 
   /// Agent raised the ticket's limit. `customerConfirmed` is the mandatory

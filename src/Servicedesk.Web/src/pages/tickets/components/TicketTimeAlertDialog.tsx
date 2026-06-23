@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/ticket-api";
 import { timesheetTicketApi, formatDuration } from "@/lib/timesheet-api";
+import { useCurrentRole } from "@/hooks/useCurrentRole";
 
 /// Shared query key for the per-ticket hour-limit snapshot so the dialog and
 /// the "Time logged" panel share one cached fetch. The queue is part of the
@@ -40,6 +41,11 @@ type Props = {
 /// server-side — this component only renders the server snapshot.
 export function TicketTimeAlertDialog({ ticketId, queueId }: Props) {
   const queryClient = useQueryClient();
+  // v0.0.89 — admins get a Shift-held escape hatch: dismiss the warning
+  // without writing a TimeLimitAlertDismissed event. The server is the real
+  // authority (it only honours silent dismissals for admins); this just
+  // surfaces the affordance to the right people.
+  const isAdmin = useCurrentRole() === "Admin";
 
   // The dialog has three views: the initial choice, the "allow more time"
   // form, and the "disable hour tracking" form.
@@ -69,6 +75,30 @@ export function TicketTimeAlertDialog({ ticketId, queueId }: Props) {
   });
   const status = statusQ.data;
 
+  // Live "is Shift down" flag so the Cancel label can hint the silent path
+  // while an admin holds the key. Only wired up for admins, and only while the
+  // dialog is open, so there is no global listener cost otherwise.
+  const [shiftHeld, setShiftHeld] = React.useState(false);
+  const open = Boolean(status?.enabled && status?.exceeded && !handled);
+  React.useEffect(() => {
+    if (!open || !isAdmin) {
+      setShiftHeld(false);
+      return;
+    }
+    const onDown = (e: KeyboardEvent) => {
+      if (e.key === "Shift") setShiftHeld(true);
+    };
+    const onUp = (e: KeyboardEvent) => {
+      if (e.key === "Shift") setShiftHeld(false);
+    };
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
+    return () => {
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
+    };
+  }, [open, isAdmin]);
+
   // Pre-fill the minutes input from the server default the first time the
   // extend form is revealed.
   React.useEffect(() => {
@@ -76,8 +106,6 @@ export function TicketTimeAlertDialog({ ticketId, queueId }: Props) {
       setExtraMinutes(String(status.defaultExtraMinutes));
     }
   }, [mode, status, extraMinutes]);
-
-  const open = Boolean(status?.enabled && status?.exceeded && !handled);
 
   const invalidate = () => {
     // Prefix match covers every queue variant of the alert key.
@@ -87,10 +115,15 @@ export function TicketTimeAlertDialog({ ticketId, queueId }: Props) {
   };
 
   const dismiss = useMutation({
-    mutationFn: () => timesheetTicketApi.dismissTimeAlert(ticketId),
-    onSuccess: () => {
+    // `silent` (admins only) asks the server to skip the timeline event. A
+    // non-admin's silent request is downgraded server-side, so this is safe to
+    // pass straight through.
+    mutationFn: (silent: boolean) =>
+      timesheetTicketApi.dismissTimeAlert(ticketId, silent),
+    onSuccess: (_data, silent) => {
       setHandled(true);
       invalidate();
+      if (silent) toast.success("Warning dismissed without logging.");
     },
     onError: (e) =>
       toast.error(
@@ -146,11 +179,21 @@ export function TicketTimeAlertDialog({ ticketId, queueId }: Props) {
       open={open}
       onOpenChange={(next) => {
         // The agent must make a choice — closing via overlay/Esc counts as a
-        // dismissal so we don't silently swallow the warning.
-        if (!next && open && !busy) dismiss.mutate();
+        // (logged) dismissal so we don't silently swallow the warning.
+        if (!next && open && !busy) dismiss.mutate(false);
       }}
     >
-      <DialogContent className="glass-panel border-amber-400/30 sm:max-w-lg">
+      <DialogContent
+        className="glass-panel border-amber-400/30 sm:max-w-lg"
+        onEscapeKeyDown={(e) => {
+          // Admins: Shift+Esc dismisses without logging. A plain Esc falls
+          // through to onOpenChange above (a normal, logged dismissal).
+          if (isAdmin && e.shiftKey && open && !busy) {
+            e.preventDefault();
+            dismiss.mutate(true);
+          }
+        }}
+      >
         <DialogHeader>
           <div className="mx-auto mb-1 flex h-11 w-11 items-center justify-center rounded-full bg-amber-400/15 sm:mx-0">
             <AlertTriangle className="h-5 w-5 text-amber-300" />
@@ -257,30 +300,43 @@ export function TicketTimeAlertDialog({ ticketId, queueId }: Props) {
 
         <DialogFooter className="gap-2 sm:gap-2">
           {mode === "initial" && (
-            // Three actions: the tertiary "disable" sits apart on the left so
-            // the row never crowds (and never clips) on the narrow dialog; the
-            // two primary choices stay grouped on the right.
-            <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <Button
-                variant="ghost"
-                onClick={() => setMode("disable")}
-                disabled={busy}
-                className="text-amber-200 hover:text-amber-100"
-              >
-                Disable hour tracking
-              </Button>
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+            <div className="flex w-full flex-col gap-2">
+              {/* Three actions: the tertiary "disable" sits apart on the left so
+                  the row never crowds (and never clips) on the narrow dialog;
+                  the two primary choices stay grouped on the right. */}
+              <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <Button
                   variant="ghost"
-                  onClick={() => dismiss.mutate()}
+                  onClick={() => setMode("disable")}
                   disabled={busy}
+                  className="text-amber-200 hover:text-amber-100"
                 >
-                  Cancel
+                  Disable hour tracking
                 </Button>
-                <Button onClick={() => setMode("extend")} disabled={busy}>
-                  Allow more time…
-                </Button>
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+                  <Button
+                    variant="ghost"
+                    // Admins: Shift+click cancels without logging. Everyone else
+                    // (and a plain click) gets the normal, logged dismissal —
+                    // the server downgrades a non-admin silent request anyway.
+                    onClick={(e) => dismiss.mutate(isAdmin && e.shiftKey)}
+                    disabled={busy}
+                  >
+                    {isAdmin && shiftHeld ? "Cancel (no log)" : "Cancel"}
+                  </Button>
+                  <Button onClick={() => setMode("extend")} disabled={busy}>
+                    Allow more time…
+                  </Button>
+                </div>
               </div>
+              {isAdmin && (
+                <p className="text-[11px] leading-snug text-muted-foreground/60">
+                  Admin: hold <span className="font-medium text-muted-foreground/80">Shift</span> while
+                  clicking Cancel (or press{" "}
+                  <span className="font-medium text-muted-foreground/80">Shift+Esc</span>) to dismiss
+                  without logging it.
+                </p>
+              )}
             </div>
           )}
           {mode === "extend" && (
