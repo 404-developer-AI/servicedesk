@@ -1078,6 +1078,12 @@ public static class SettingKeys
         /// "allow more time" dialog (the customer must be informed / has
         /// confirmed in writing before work continues). Admin-editable.
         public const string TimeAlertConfirmationText = "Timesheet.TimeAlertConfirmationText";
+
+        /// v0.0.88 — label/prompt shown above the mandatory reason field on the
+        /// "disable hour tracking" form of the alert dialog. The agent must
+        /// explain why tracking is being turned off for this ticket; the reason
+        /// is posted as an internal note and logged. Admin-editable.
+        public const string TimeAlertDisableReasonPrompt = "Timesheet.TimeAlertDisableReasonPrompt";
     }
 
     /// v0.0.69 — Statistics feature. Status-group definitions used by the
@@ -1769,6 +1775,10 @@ public static class SettingDefaults
             "The customer must be informed — or has already been informed and confirmed in writing — before we continue working on this ticket.",
             "string", "Timesheet",
             "Label shown next to the mandatory confirmation checkbox on the 'allow more time' dialog. The agent must tick it before a ticket's limit can be raised. Edit to match your house wording."),
+        new SettingDefault(SettingKeys.Timesheet.TimeAlertDisableReasonPrompt,
+            "Why are you disabling hour tracking for this ticket?",
+            "string", "Timesheet",
+            "Prompt shown above the mandatory reason field when an agent disables hour tracking for a ticket from the alert dialog. The reason is required and is posted as an internal note on the ticket. Edit to match your house wording."),
 
         // Statistics — v0.0.69. Status-group definitions for the "Hours by
         // status group" metric. Resolved/CWI reuse the back-office sets above;

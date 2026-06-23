@@ -335,6 +335,10 @@ export type TicketTimeAlertStatus = {
   exceeded: boolean;
   defaultExtraMinutes: number;
   confirmationText: string;
+  // v0.0.88 — tracking turned off for this ticket; alert never fires.
+  trackingDisabled: boolean;
+  // v0.0.88 — prompt above the mandatory reason field on the disable form.
+  disableReasonPrompt: string;
 };
 
 export const timesheetTicketApi = {
@@ -362,14 +366,24 @@ export const timesheetTicketApi = {
     ),
 
   /// Agent raised the ticket's limit. `customerConfirmed` is the mandatory
-  /// written-confirmation tick; the server re-checks it.
+  /// written-confirmation tick; the server re-checks it. `note` (v0.0.88) is
+  /// optional and, when present, posted as an internal note on the ticket.
   extendTimeAlert: (
     ticketId: string,
-    body: { addMinutes: number; customerConfirmed: boolean },
+    body: { addMinutes: number; customerConfirmed: boolean; note?: string },
   ) =>
     request<void>(
       "POST",
       `/api/timesheet/ticket/${ticketId}/time-alert/extend`,
+      body,
+    ),
+
+  /// v0.0.88 — agent disabled hour tracking for this ticket. `reason` is
+  /// mandatory (re-checked server-side) and posted as an internal note.
+  disableTimeAlert: (ticketId: string, body: { reason: string }) =>
+    request<void>(
+      "POST",
+      `/api/timesheet/ticket/${ticketId}/time-alert/disable`,
       body,
     ),
 };

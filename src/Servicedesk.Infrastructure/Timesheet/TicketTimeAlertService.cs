@@ -1,6 +1,9 @@
 using System.Text.Json;
 using Dapper;
+using Microsoft.Extensions.Logging;
 using Npgsql;
+using Servicedesk.Domain.Tickets;
+using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Timesheet;
@@ -25,11 +28,17 @@ public sealed class TicketTimeAlertService : ITicketTimeAlertService
 
     private readonly NpgsqlDataSource _dataSource;
     private readonly ISettingsService _settings;
+    private readonly ITicketRepository _tickets;
+    private readonly ILogger<TicketTimeAlertService> _logger;
 
-    public TicketTimeAlertService(NpgsqlDataSource dataSource, ISettingsService settings)
+    public TicketTimeAlertService(
+        NpgsqlDataSource dataSource, ISettingsService settings,
+        ITicketRepository tickets, ILogger<TicketTimeAlertService> logger)
     {
         _dataSource = dataSource;
         _settings = settings;
+        _tickets = tickets;
+        _logger = logger;
     }
 
     public async Task<TicketTimeAlertStatus> GetStatusAsync(Guid ticketId, CancellationToken ct = default)
@@ -38,6 +47,7 @@ public sealed class TicketTimeAlertService : ITicketTimeAlertService
         var globalThreshold = await _settings.GetAsync<int>(SettingKeys.Timesheet.TimeAlertThresholdMinutes, ct);
         var defaultExtra = await _settings.GetAsync<int>(SettingKeys.Timesheet.TimeAlertDefaultExtraMinutes, ct);
         var confirmationText = await _settings.GetAsync<string>(SettingKeys.Timesheet.TimeAlertConfirmationText, ct);
+        var disablePrompt = await _settings.GetAsync<string>(SettingKeys.Timesheet.TimeAlertDisableReasonPrompt, ct);
 
         var row = await ReadRowAsync(ticketId, ct);
         if (row is null)
@@ -45,10 +55,12 @@ public sealed class TicketTimeAlertService : ITicketTimeAlertService
             // Ticket gone — report a disabled, empty snapshot rather than throw.
             return new TicketTimeAlertStatus(
                 false, globalThreshold, 0, globalThreshold, 0, globalThreshold, false,
-                defaultExtra, confirmationText ?? string.Empty);
+                defaultExtra, confirmationText ?? string.Empty, false, disablePrompt ?? string.Empty);
         }
 
-        var enabled = ResolveEnabled(row.QueueMode, globalEnabled);
+        // A ticket whose tracking was explicitly disabled never warns, whatever
+        // the global/queue resolution says.
+        var enabled = !row.TrackingDisabled && ResolveEnabled(row.QueueMode, globalEnabled);
         var threshold = row.QueueThresholdMinutes ?? globalThreshold;
         var limit = threshold + row.ExtraMinutes;
         var remaining = limit - row.TotalMinutes;
@@ -63,7 +75,9 @@ public sealed class TicketTimeAlertService : ITicketTimeAlertService
             RemainingMinutes: remaining,
             Exceeded: exceeded,
             DefaultExtraMinutes: defaultExtra,
-            ConfirmationText: confirmationText ?? string.Empty);
+            ConfirmationText: confirmationText ?? string.Empty,
+            TrackingDisabled: row.TrackingDisabled,
+            DisableReasonPrompt: disablePrompt ?? string.Empty);
     }
 
     public async Task DismissAsync(Guid ticketId, Guid actorUserId, CancellationToken ct = default)
@@ -94,7 +108,7 @@ public sealed class TicketTimeAlertService : ITicketTimeAlertService
 
     public async Task<TicketTimeAlertExtendResult> ExtendAsync(
         Guid ticketId, Guid actorUserId, int addMinutes, bool customerConfirmed,
-        CancellationToken ct = default)
+        string? note, CancellationToken ct = default)
     {
         if (addMinutes <= 0 || addMinutes > MaxExtendMinutes)
             return TicketTimeAlertExtendResult.InvalidMinutes;
@@ -149,7 +163,111 @@ public sealed class TicketTimeAlertService : ITicketTimeAlertService
             new { ticketId, actorUserId, metadata }, tx, cancellationToken: ct));
 
         await tx.CommitAsync(ct);
+
+        // Optional free-text note (v0.0.88): posted as a normal internal note so
+        // it renders in the timeline with the agent as author. Best-effort and
+        // after commit — the limit raise stands even if the note insert fails.
+        await PostInternalNoteAsync(
+            ticketId, actorUserId, "Hour limit raised — note from the agent", note, ct);
+
         return TicketTimeAlertExtendResult.Ok;
+    }
+
+    public async Task<TicketTimeAlertDisableResult> DisableAsync(
+        Guid ticketId, Guid actorUserId, string reason, CancellationToken ct = default)
+    {
+        var trimmed = reason?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+            return TicketTimeAlertDisableResult.ReasonRequired;
+
+        var globalThreshold = await _settings.GetAsync<int>(SettingKeys.Timesheet.TimeAlertThresholdMinutes, ct);
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        // Flip the per-ticket switch and read back the live snapshot in one go.
+        // Returns null when the ticket does not exist.
+        var updated = await conn.ExecuteScalarAsync<int?>(new CommandDefinition(
+            """
+            UPDATE tickets
+            SET time_alert_tracking_disabled = TRUE
+            WHERE id = @ticketId
+            RETURNING 1
+            """,
+            new { ticketId }, tx, cancellationToken: ct));
+
+        if (updated is null)
+        {
+            await tx.RollbackAsync(ct);
+            return TicketTimeAlertDisableResult.TicketNotFound;
+        }
+
+        var row = await conn.QuerySingleAsync<AlertRow>(new CommandDefinition(
+            RowSql, new { ticketId }, tx, cancellationToken: ct));
+
+        var threshold = row.QueueThresholdMinutes ?? globalThreshold;
+        var limit = threshold + row.ExtraMinutes;
+
+        var metadata = JsonSerializer.Serialize(new
+        {
+            totalMinutes = row.TotalMinutes,
+            limitMinutes = limit,
+            reason = trimmed,
+        });
+
+        await conn.ExecuteAsync(new CommandDefinition(
+            """
+            INSERT INTO ticket_events (ticket_id, event_type, author_user_id, metadata, is_internal)
+            VALUES (@ticketId, 'TimeLimitTrackingDisabled', @actorUserId, @metadata::jsonb, TRUE)
+            """,
+            new { ticketId, actorUserId, metadata }, tx, cancellationToken: ct));
+
+        await tx.CommitAsync(ct);
+
+        // The mandatory reason is posted as an internal note (after commit, same
+        // best-effort rationale as the extend path).
+        await PostInternalNoteAsync(
+            ticketId, actorUserId, "Hour tracking disabled for this ticket", trimmed, ct);
+
+        return TicketTimeAlertDisableResult.Ok;
+    }
+
+    /// Posts <paramref name="body"/> as a normal internal note on the ticket,
+    /// led by a bold <paramref name="heading"/> so the timeline makes clear the
+    /// note came from an hour-tracking action (not a free-standing agent note).
+    /// No-op when the body is blank. The heading and the user-supplied body are
+    /// HTML-encoded before composing the markup; a plain-text fallback mirrors it.
+    private async Task PostInternalNoteAsync(
+        Guid ticketId, Guid actorUserId, string heading, string? body, CancellationToken ct)
+    {
+        var trimmed = body?.Trim();
+        if (string.IsNullOrEmpty(trimmed)) return;
+
+        var encodedBody = System.Net.WebUtility.HtmlEncode(trimmed)
+            .Replace("\r\n", "<br>").Replace("\n", "<br>");
+        var bodyHtml =
+            $"<p><strong>{System.Net.WebUtility.HtmlEncode(heading)}</strong></p><p>{encodedBody}</p>";
+        var bodyText = $"{heading}\n\n{trimmed}";
+
+        try
+        {
+            await _tickets.AddEventAsync(ticketId, new NewTicketEvent(
+                EventType: TicketEventType.Note.ToString(),
+                BodyText: bodyText,
+                BodyHtml: bodyHtml,
+                IsInternal: true,
+                AuthorUserId: actorUserId,
+                AuthorContactId: null,
+                MetadataJson: null), ct);
+        }
+        catch (Exception ex)
+        {
+            // The note is secondary — the limit raise / disable already
+            // committed and is logged as its own timeline event. Don't fail the
+            // whole action just because the note insert hiccupped.
+            _logger.LogWarning(ex,
+                "Failed to post the internal note for the hour-limit action on ticket {TicketId}", ticketId);
+        }
     }
 
     private static bool ResolveEnabled(string? queueMode, bool globalEnabled) => queueMode switch
@@ -171,6 +289,7 @@ public sealed class TicketTimeAlertService : ITicketTimeAlertService
         SELECT
             COALESCE((SELECT SUM(e.minutes) FROM timesheet_entries e WHERE e.ticket_id = t.id), 0)::int AS TotalMinutes,
             t.time_alert_extra_minutes      AS ExtraMinutes,
+            t.time_alert_tracking_disabled  AS TrackingDisabled,
             q.time_alert_mode               AS QueueMode,
             q.time_alert_threshold_minutes  AS QueueThresholdMinutes
         FROM tickets t
@@ -189,6 +308,7 @@ public sealed class TicketTimeAlertService : ITicketTimeAlertService
     {
         public int TotalMinutes { get; init; }
         public int ExtraMinutes { get; init; }
+        public bool TrackingDisabled { get; init; }
         public string QueueMode { get; init; } = "inherit";
         public int? QueueThresholdMinutes { get; init; }
     }

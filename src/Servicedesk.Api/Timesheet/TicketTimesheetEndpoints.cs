@@ -79,7 +79,7 @@ public static class TicketTimesheetEndpoints
         {
             var result = await svc.ExtendAsync(
                 ticketId, ActorContext.GetUserId(http),
-                req.AddMinutes, req.CustomerConfirmed, ct);
+                req.AddMinutes, req.CustomerConfirmed, req.Note, ct);
             return result switch
             {
                 TicketTimeAlertExtendResult.Ok => Results.NoContent(),
@@ -94,9 +94,38 @@ public static class TicketTimesheetEndpoints
         .WithName("ExtendTicketTimeAlert")
         .WithOpenApi();
 
+        // v0.0.88 — agent disabled hour tracking for this ticket. The reason is
+        // mandatory (re-checked server-side), posted as an internal note, and a
+        // TimeLimitTrackingDisabled event is logged. One-way from the UI.
+        group.MapPost("/{ticketId:guid}/time-alert/disable", async (
+            Guid ticketId,
+            [FromBody] DisableTimeAlertRequest req,
+            HttpContext http,
+            ITicketTimeAlertService svc,
+            CancellationToken ct) =>
+        {
+            var result = await svc.DisableAsync(
+                ticketId, ActorContext.GetUserId(http), req.Reason ?? string.Empty, ct);
+            return result switch
+            {
+                TicketTimeAlertDisableResult.Ok => Results.NoContent(),
+                TicketTimeAlertDisableResult.ReasonRequired =>
+                    Results.Problem("A reason is required to disable hour tracking.", statusCode: 422),
+                TicketTimeAlertDisableResult.TicketNotFound => Results.NotFound(),
+                _ => Results.Problem("Could not disable hour tracking.", statusCode: 409),
+            };
+        })
+        .WithName("DisableTicketTimeAlert")
+        .WithOpenApi();
+
         return app;
     }
 
-    /// Body of the "allow more time" action.
-    public sealed record ExtendTimeAlertRequest(int AddMinutes, bool CustomerConfirmed);
+    /// Body of the "allow more time" action. The optional note is posted as an
+    /// internal note on the ticket (v0.0.88).
+    public sealed record ExtendTimeAlertRequest(int AddMinutes, bool CustomerConfirmed, string? Note);
+
+    /// Body of the "disable hour tracking" action (v0.0.88). The reason is
+    /// mandatory and posted as an internal note.
+    public sealed record DisableTimeAlertRequest(string? Reason);
 }

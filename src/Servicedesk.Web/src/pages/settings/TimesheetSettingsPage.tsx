@@ -72,6 +72,7 @@ const KEY_TIME_ALERT_ENABLED = "Timesheet.TimeAlertEnabled";
 const KEY_TIME_ALERT_THRESHOLD = "Timesheet.TimeAlertThresholdMinutes";
 const KEY_TIME_ALERT_EXTRA = "Timesheet.TimeAlertDefaultExtraMinutes";
 const KEY_TIME_ALERT_CONFIRM = "Timesheet.TimeAlertConfirmationText";
+const KEY_TIME_ALERT_DISABLE_PROMPT = "Timesheet.TimeAlertDisableReasonPrompt";
 
 const WEEKDAYS: { iso: number; label: string }[] = [
   { iso: 1, label: "Mon" },
@@ -112,6 +113,7 @@ export function TimesheetSettingsPage() {
   const timeAlertThresholdEntry = findEntry(query.data, KEY_TIME_ALERT_THRESHOLD);
   const timeAlertExtraEntry = findEntry(query.data, KEY_TIME_ALERT_EXTRA);
   const timeAlertConfirmEntry = findEntry(query.data, KEY_TIME_ALERT_CONFIRM);
+  const timeAlertDisablePromptEntry = findEntry(query.data, KEY_TIME_ALERT_DISABLE_PROMPT);
 
   return (
     <div className="flex flex-col gap-6">
@@ -283,6 +285,15 @@ export function TimesheetSettingsPage() {
                 />
               ) : (
                 <MissingEntry keyName={KEY_TIME_ALERT_CONFIRM} />
+              )}
+              {timeAlertDisablePromptEntry ? (
+                <TextAreaField
+                  entry={timeAlertDisablePromptEntry}
+                  label="Disable-tracking reason prompt"
+                  hint="Prompt above the mandatory reason field when an agent disables hour tracking for a ticket. The reason is required and posted as an internal note."
+                />
+              ) : (
+                <MissingEntry keyName={KEY_TIME_ALERT_DISABLE_PROMPT} />
               )}
             </div>
           </section>
