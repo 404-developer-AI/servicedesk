@@ -166,6 +166,24 @@ public static class FeedbackEndpoints
             return Results.Ok(row);
         }).WithName("SetFeedbackEntryCompleted").WithOpenApi();
 
+        group.MapPost("/entries/{id:guid}/mgmt-reviewed", async (
+            Guid id, [FromBody] MgmtReviewedRequest req,
+            HttpContext http, IUserService users, IFeedbackEntryService svc,
+            IAuditLogger audit, CancellationToken ct) =>
+        {
+            var (userId, access, fail) = await GateAsync(http, users, ct);
+            if (fail is not null) return fail;
+            // "Mgmt reviewed" is a management field — restricted users cannot set it.
+            if (access == FeedbackAccess.OwnOnly) return Results.Forbid();
+
+            var row = await svc.SetMgmtReviewedAsync(id, userId, req.Reviewed, ct);
+            if (row is null) return Results.NotFound();
+
+            await FeedbackAudit.WriteAsync(audit, http, FeedbackAudit.EntryMgmtReviewed, id.ToString(),
+                new { mgmt_reviewed = row.MgmtReviewed, target_user_id = row.TargetUserId });
+            return Results.Ok(row);
+        }).WithName("SetFeedbackEntryMgmtReviewed").WithOpenApi();
+
         group.MapDelete("/entries/{id:guid}", async (
             Guid id, HttpContext http, IUserService users, IFeedbackEntryService svc,
             IAuditLogger audit, CancellationToken ct) =>
@@ -234,6 +252,7 @@ public static class FeedbackEndpoints
             ManagementRemarksHtml: req.ManagementRemarksHtml ?? "",
             WorkPointTypeId: req.WorkPointTypeId,
             IsCompleted: req.IsCompleted ?? false,
+            IsMgmtReviewed: req.IsMgmtReviewed ?? false,
             LinkedTicketNumber: req.LinkedTicketNumber);
         error = null;
         return true;
@@ -287,9 +306,12 @@ public static class FeedbackEndpoints
         string? ManagementRemarksHtml,
         Guid? WorkPointTypeId,
         bool? IsCompleted,
+        bool? IsMgmtReviewed,
         long? LinkedTicketNumber);
 
     public sealed record CompletedRequest(bool Completed);
+
+    public sealed record MgmtReviewedRequest(bool Reviewed);
 
     public sealed record LogEntryRequest(
         Guid? TargetUserId,
