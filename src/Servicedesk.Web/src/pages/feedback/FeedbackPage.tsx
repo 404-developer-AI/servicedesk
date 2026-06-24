@@ -410,7 +410,13 @@ export function FeedbackPage() {
             <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-glass">
               <tr>
                 {visibleColumns.map((col) => (
-                  <th key={col} className="px-3 py-2 font-medium whitespace-nowrap">
+                  <th
+                    key={col}
+                    className={cn(
+                      "px-3 py-2 font-medium whitespace-nowrap",
+                      col === "completed" && "text-center",
+                    )}
+                  >
                     {ALL_COLUMNS.find((c) => c.id === col)!.label}
                   </th>
                 ))}
@@ -707,6 +713,7 @@ function DisplayRow({
       <span className="text-muted-foreground italic text-xs">—</span>
     ),
     completed: (
+      <div className="flex justify-center">
       <input
         type="checkbox"
         checked={entry.isCompleted}
@@ -723,6 +730,7 @@ function DisplayRow({
               : "Mark as completed"
         }
       />
+      </div>
     ),
     ticket: entry.linkedTicketId ? (
       <a
@@ -999,13 +1007,15 @@ function EditableRow({
       </select>
     ),
     completed: (
-      <input
-        type="checkbox"
-        checked={isCompleted}
-        disabled={readOnlyManagement}
-        onChange={(e) => setIsCompleted(e.target.checked)}
-        className="rounded border-glass-strong bg-glass accent-primary disabled:opacity-60"
-      />
+      <div className="flex justify-center">
+        <input
+          type="checkbox"
+          checked={isCompleted}
+          disabled={readOnlyManagement}
+          onChange={(e) => setIsCompleted(e.target.checked)}
+          className="rounded border-glass-strong bg-glass accent-primary disabled:opacity-60"
+        />
+      </div>
     ),
     ticket: (
       <div className="min-w-[12rem]">
