@@ -89,7 +89,8 @@ public abstract record UpdateFeedbackEntryResult
 public sealed record FeedbackEntryFilter(
     Guid? TargetUserId,
     Guid? WorkPointTypeId,
-    bool? IsCompleted);
+    bool? IsCompleted,
+    bool? IsMgmtReviewed = null);
 
 /// Result of resolving a typed ticket number to a ticket. <see cref="Id"/>
 /// is null when no live ticket carries that number.

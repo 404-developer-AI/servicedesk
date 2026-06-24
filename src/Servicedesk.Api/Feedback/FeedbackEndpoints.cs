@@ -77,13 +77,13 @@ public static class FeedbackEndpoints
         }).WithName("ListFeedbackLoggedEvents").WithOpenApi();
 
         group.MapGet("/entries", async (
-            Guid? targetUserId, Guid? workPointTypeId, bool? completed,
+            Guid? targetUserId, Guid? workPointTypeId, bool? completed, bool? mgmtReviewed,
             HttpContext http, IUserService users, IFeedbackEntryService svc, CancellationToken ct) =>
         {
             var (userId, access, fail) = await GateAsync(http, users, ct);
             if (fail is not null) return fail;
 
-            var filter = new FeedbackEntryFilter(targetUserId, workPointTypeId, completed);
+            var filter = new FeedbackEntryFilter(targetUserId, workPointTypeId, completed, mgmtReviewed);
             var rows = await svc.ListAsync(filter, userId, access == FeedbackAccess.OwnOnly, ct);
             return Results.Ok(new { items = rows });
         }).WithName("ListFeedbackEntries").WithOpenApi();
