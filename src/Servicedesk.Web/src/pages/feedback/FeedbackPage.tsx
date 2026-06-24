@@ -56,6 +56,7 @@ import {
 } from "@/lib/api";
 import { SafeHtml } from "@/components/SafeHtml";
 import { RichTextEditor } from "@/components/RichTextEditor";
+import { useAuth } from "@/auth/authStore";
 import type { TicketAttachmentMeta } from "@/lib/ticket-api";
 import { ApiError } from "@/lib/ticket-api";
 
@@ -132,6 +133,11 @@ function stripHtml(html: string | null | undefined): string {
 export function FeedbackPage() {
   const qc = useQueryClient();
   const { time } = useServerTime();
+  const { user } = useAuth();
+  // Full access = the shared board (CRUD every row + management fields).
+  // Otherwise the user is in restricted "own-only" mode: they only see rows
+  // they logged, and the management fields (remarks + completed) are read-only.
+  const fullAccess = user?.feedbackEnabled ?? false;
 
   // Filter state
   const [filterEmployee, setFilterEmployee] = React.useState<string>("");
@@ -212,7 +218,12 @@ export function FeedbackPage() {
     saveWorkspace(order, hidden);
   };
 
-  const visibleColumns = columnOrder.filter((id) => !hiddenColumns.has(id));
+  // In own-only mode the "created by" column is always the current user, so it
+  // carries no information — drop it from the table and the column picker.
+  const orderForMode = fullAccess
+    ? columnOrder
+    : columnOrder.filter((id) => id !== "createdBy");
+  const visibleColumns = orderForMode.filter((id) => !hiddenColumns.has(id));
 
   // Drag-to-reorder columns. Headers are the drag handles; reordering acts on
   // the full canonical order so hidden columns keep their relative position.
@@ -318,12 +329,14 @@ export function FeedbackPage() {
           </div>
           <h1 className="text-display-md font-semibold text-foreground">Employee Feedback</h1>
           <p className="text-sm text-muted-foreground">
-            Inline-editable feedback entries per employee with work-point types and ticket links.
+            {fullAccess
+              ? "Inline-editable feedback entries per employee with work-point types and ticket links."
+              : "Feedback you logged. You only see your own entries; management fields are read-only."}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <ColumnSelectorDropdown
-            columnOrder={columnOrder}
+            columnOrder={orderForMode}
             hiddenColumns={hiddenColumns}
             onToggle={toggleColumn}
             onReset={resetColumns}
@@ -431,6 +444,7 @@ export function FeedbackPage() {
                       workPointTypes={workPointTypes}
                       visibleColumns={visibleColumns}
                       serverToday={serverDateToday(time)}
+                      readOnlyManagement={!fullAccess}
                       onCancel={() => setEditingId(null)}
                       onSaved={() => {
                         setEditingId(null);
@@ -442,6 +456,7 @@ export function FeedbackPage() {
                       key={entry.id}
                       entry={entry}
                       visibleColumns={visibleColumns}
+                      readOnlyManagement={!fullAccess}
                       onEdit={() => setEditingId(entry.id)}
                       onDeleted={() => invalidate()}
                       onCompletedToggled={() => invalidate()}
@@ -625,12 +640,14 @@ function ColumnPickerRow({
 function DisplayRow({
   entry,
   visibleColumns,
+  readOnlyManagement,
   onEdit,
   onDeleted,
   onCompletedToggled,
 }: {
   entry: FeedbackEntryRow;
   visibleColumns: ColumnId[];
+  readOnlyManagement: boolean;
   onEdit: () => void;
   onDeleted: () => void;
   onCompletedToggled: () => void;
@@ -693,10 +710,18 @@ function DisplayRow({
       <input
         type="checkbox"
         checked={entry.isCompleted}
-        disabled={completedMutation.isPending}
+        disabled={readOnlyManagement || completedMutation.isPending}
         onChange={() => completedMutation.mutate(!entry.isCompleted)}
-        className="rounded border-glass-strong bg-glass accent-primary"
-        title={entry.isCompleted ? `Completed by ${entry.completedByEmail ?? "?"}` : "Mark as completed"}
+        className="rounded border-glass-strong bg-glass accent-primary disabled:opacity-60"
+        title={
+          readOnlyManagement
+            ? entry.isCompleted
+              ? `Completed by ${entry.completedByEmail ?? "?"}`
+              : "Not completed (managed by reviewers)"
+            : entry.isCompleted
+              ? `Completed by ${entry.completedByEmail ?? "?"}`
+              : "Mark as completed"
+        }
       />
     ),
     ticket: entry.linkedTicketId ? (
@@ -803,6 +828,7 @@ function EditableRow({
   workPointTypes,
   visibleColumns,
   serverToday,
+  readOnlyManagement,
   onCancel,
   onSaved,
 }: {
@@ -811,6 +837,7 @@ function EditableRow({
   workPointTypes: FeedbackWorkPointType[];
   visibleColumns: ColumnId[];
   serverToday: string;
+  readOnlyManagement: boolean;
   onCancel: () => void;
   onSaved: () => void;
 }) {
@@ -940,7 +967,15 @@ function EditableRow({
         onUploadFile={makeUploadHandler()}
       />
     ),
-    managementRemarks: (
+    // Management remarks are read-only for restricted users — show the same
+    // preview the display row uses instead of the editor.
+    managementRemarks: readOnlyManagement ? (
+      <RichTextPreviewCell
+        html={managementRemarksHtml}
+        label="Management remarks"
+        dialogTitle="Management remarks"
+      />
+    ) : (
       <RichTextCellEditor
         label="Management remarks"
         html={managementRemarksHtml}
@@ -967,8 +1002,9 @@ function EditableRow({
       <input
         type="checkbox"
         checked={isCompleted}
+        disabled={readOnlyManagement}
         onChange={(e) => setIsCompleted(e.target.checked)}
-        className="rounded border-glass-strong bg-glass accent-primary"
+        className="rounded border-glass-strong bg-glass accent-primary disabled:opacity-60"
       />
     ),
     ticket: (

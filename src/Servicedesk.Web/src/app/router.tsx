@@ -476,15 +476,16 @@ const contractM365CompanyRoute = createRoute({
   },
 });
 
-// Employee Feedback board. Agent + Admin role gate plus the per-user
-// `feedback_enabled` flag, mirroring the contracts gate pattern.
-// The backend /api/feedback endpoints carry RequireAgent + the same flag check.
+// Employee Feedback board. Agent + Admin role gate plus either per-user
+// feedback flag (full `feedback_enabled` or restricted `feedback_own_only`).
+// The backend /api/feedback endpoints carry RequireAgent + the same scope check.
 const feedbackRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/feedback",
   beforeLoad: (args) => {
     authGate(["Agent", "Admin"])(args);
-    if (!authedUser()?.feedbackEnabled) {
+    const u = authedUser();
+    if (!u?.feedbackEnabled && !u?.feedbackOwnOnly) {
       throw redirect({ to: "/" });
     }
   },

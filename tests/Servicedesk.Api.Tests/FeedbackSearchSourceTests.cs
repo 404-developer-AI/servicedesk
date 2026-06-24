@@ -38,6 +38,18 @@ public sealed class FeedbackSearchSourceTests
     }
 
     [Fact]
+    public void Own_only_agent_is_available()
+    {
+        // v0.0.90 — a restricted (own-only) agent reaches the source; SearchAsync
+        // scopes its rows to created_by. Availability must not hide the source.
+        var src = new Infrastructure.Search.FeedbackSearchSource(null!);
+        var ownOnlyAgent = new SearchPrincipal(Guid.NewGuid(), "Agent", Array.Empty<Guid>(),
+            new HashSet<string> { SearchFeature.FeedbackOwnOnly });
+
+        Assert.True(src.IsAvailableFor(ownOnlyAgent));
+    }
+
+    [Fact]
     public async Task Customer_search_returns_empty_group_without_hitting_db()
     {
         // null! datasource: if the customer branch tried to open a connection it

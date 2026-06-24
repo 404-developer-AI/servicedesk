@@ -127,10 +127,20 @@ public interface IUserService
     /// Returns false on missing rows.
     Task<bool> GetContractsEnabledAsync(Guid userId, CancellationToken ct = default);
 
-    /// Per-user opt-in for the Employee Feedback board. Gates the page nav
-    /// entry and is the authorization boundary for the /api/feedback/*
-    /// endpoints. Returns false on missing rows.
+    /// Per-user opt-in for the Employee Feedback board. True only for FULL
+    /// access (feedback_enabled). Drives the /auth/me payload + the sidebar.
+    /// Returns false on missing rows. For the authorization boundary on the
+    /// /api/feedback/* endpoints use <see cref="GetFeedbackAccessAsync"/>,
+    /// which also accounts for the restricted own-only flag.
     Task<bool> GetFeedbackEnabledAsync(Guid userId, CancellationToken ct = default);
+
+    /// v0.0.90 — resolves the effective Employee Feedback access scope from
+    /// both per-user flags in one round-trip: <c>feedback_enabled</c> (full)
+    /// and <c>feedback_own_only</c> (restricted — log + see only own rows).
+    /// Full takes precedence when both are set. Returns
+    /// <see cref="FeedbackAccess.None"/> for a missing row. This is the
+    /// authorization boundary for the /api/feedback/* endpoints.
+    Task<FeedbackAccessInfo> GetFeedbackAccessAsync(Guid userId, CancellationToken ct = default);
 
     /// Loads the per-user feature flags that gate availability of
     /// feature-flagged global-search sources (Orders, Contracts family,
@@ -139,6 +149,28 @@ public interface IUserService
     /// empty for a missing row. Used to build the <c>SearchPrincipal</c> so
     /// the search dropdown only lists sources the user can actually use.
     Task<IReadOnlySet<string>> GetSearchFeatureFlagsAsync(Guid userId, CancellationToken ct = default);
+}
+
+/// Effective Employee Feedback access scope for a user. <c>Full</c> = the
+/// shared board (see + CRUD every row); <c>OwnOnly</c> = may log feedback but
+/// only see/edit rows they created; <c>None</c> = no access.
+public enum FeedbackAccess
+{
+    None = 0,
+    OwnOnly = 1,
+    Full = 2,
+}
+
+/// Raw Employee Feedback flags + the resolved <see cref="FeedbackAccess"/>.
+/// Full (feedback_enabled) takes precedence over OwnOnly (feedback_own_only)
+/// when both are set, so the own-only flag is purely additive — it can only
+/// grant access, never narrow a full user.
+public readonly record struct FeedbackAccessInfo(bool Enabled, bool OwnOnly)
+{
+    public FeedbackAccess Access =>
+        Enabled ? FeedbackAccess.Full
+        : OwnOnly ? FeedbackAccess.OwnOnly
+        : FeedbackAccess.None;
 }
 
 /// Per-user Timesheet feature flags. Empty struct-y record so the call
@@ -550,13 +582,33 @@ public sealed class UserService : IUserService
         return value ?? false;
     }
 
+    public async Task<FeedbackAccessInfo> GetFeedbackAccessAsync(Guid userId, CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT COALESCE(feedback_enabled, FALSE)  AS Enabled,
+                   COALESCE(feedback_own_only, FALSE) AS OwnOnly
+            FROM users WHERE id = @id
+            """;
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var row = await connection.QuerySingleOrDefaultAsync<FeedbackAccessRow>(
+            new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
+        return row is null ? default : new FeedbackAccessInfo(row.Enabled, row.OwnOnly);
+    }
+
+    private sealed class FeedbackAccessRow
+    {
+        public bool Enabled { get; set; }
+        public bool OwnOnly { get; set; }
+    }
+
     public async Task<IReadOnlySet<string>> GetSearchFeatureFlagsAsync(Guid userId, CancellationToken ct = default)
     {
         const string sql = """
             SELECT COALESCE(contracts_enabled, FALSE)        AS Contracts,
                    COALESCE(adsolut_orders_enabled, FALSE)   AS AdsolutOrders,
                    COALESCE(adsolut_timesheet_enabled, FALSE) AS AdsolutTimesheet,
-                   COALESCE(feedback_enabled, FALSE)         AS Feedback
+                   COALESCE(feedback_enabled, FALSE)         AS Feedback,
+                   COALESCE(feedback_own_only, FALSE)        AS FeedbackOwnOnly
             FROM users WHERE id = @id
             """;
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
@@ -568,7 +620,10 @@ public sealed class UserService : IUserService
         if (row.Contracts) set.Add(Domain.Search.SearchFeature.Contracts);
         if (row.AdsolutOrders) set.Add(Domain.Search.SearchFeature.AdsolutOrders);
         if (row.AdsolutTimesheet) set.Add(Domain.Search.SearchFeature.AdsolutTimesheet);
+        // Full feedback access wins over own-only; only one feedback feature is
+        // ever added so the search source can pick its scope unambiguously.
         if (row.Feedback) set.Add(Domain.Search.SearchFeature.Feedback);
+        else if (row.FeedbackOwnOnly) set.Add(Domain.Search.SearchFeature.FeedbackOwnOnly);
         return set;
     }
 
@@ -578,6 +633,7 @@ public sealed class UserService : IUserService
         public bool AdsolutOrders { get; set; }
         public bool AdsolutTimesheet { get; set; }
         public bool Feedback { get; set; }
+        public bool FeedbackOwnOnly { get; set; }
     }
 }
 

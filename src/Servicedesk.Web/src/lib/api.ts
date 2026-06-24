@@ -76,6 +76,7 @@ export type AuthUserPayload = {
   statisticsWrite: boolean;
   contractsEnabled: boolean;
   feedbackEnabled: boolean;
+  feedbackOwnOnly: boolean;
   adsolutConnected: boolean;
   dashboardTiles: string[];
   // v0.0.44 — server-resolved theme (user pref → admin default → 'light').

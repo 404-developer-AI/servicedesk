@@ -1356,8 +1356,10 @@ export type UserAdminRow = {
   statisticsWrite: boolean;
   // v0.0.76 — per-user opt-in for the Contracts page (tile hub).
   contractsEnabled: boolean;
-  // Per-user opt-in for the Employee Feedback feature.
+  // Per-user opt-in for the Employee Feedback feature (full access).
   feedbackEnabled: boolean;
+  // v0.0.90 — restricted Employee Feedback access (log + see own only).
+  feedbackOwnOnly: boolean;
   // Per-user Dashboard tile preferences. Empty array on insert
   // (admins opt the user in to specific tiles).
   dashboardTiles: string[];
@@ -1379,6 +1381,7 @@ export type FeatureFlagsUpdate = Partial<{
   statisticsWrite: boolean;
   contractsEnabled: boolean;
   feedbackEnabled: boolean;
+  feedbackOwnOnly: boolean;
 }>;
 
 export type M365PickerUser = {

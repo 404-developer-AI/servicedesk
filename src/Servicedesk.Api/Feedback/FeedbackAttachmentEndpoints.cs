@@ -12,8 +12,9 @@ namespace Servicedesk.Api.Feedback;
 /// Inline-image upload + download for Employee Feedback entries. Reuses the
 /// existing blob pipeline (content-addressed dedup, MIME-sniff, size cap, HTML
 /// rejection) from the ticket/KB endpoints; only the ownership
-/// (<c>owner_kind='FeedbackEntry'</c>) and authorization (feedback_enabled
-/// flag) differ. Mirrors <see cref="Servicedesk.Api.KnowledgeBase.KbAttachmentEndpoints"/>.
+/// (<c>owner_kind='FeedbackEntry'</c>) and authorization (effective feedback
+/// access — restricted users are scoped to their own entries) differ. Mirrors
+/// <see cref="Servicedesk.Api.KnowledgeBase.KbAttachmentEndpoints"/>.
 public static class FeedbackAttachmentEndpoints
 {
     public static IEndpointRouteBuilder MapFeedbackAttachmentEndpoints(this IEndpointRouteBuilder app)
@@ -30,11 +31,14 @@ public static class FeedbackAttachmentEndpoints
             ISettingsService settings, IAuditLogger audit,
             CancellationToken ct) =>
         {
-            var fail = await GateAsync(http, users, ct);
+            var (userId, access, fail) = await GateAsync(http, users, ct);
             if (fail is not null) return fail;
 
             var entry = await entries.GetAsync(id, ct);
             if (entry is null) return Results.NotFound();
+            // Restricted users may only attach to their own entries.
+            if (access == FeedbackAccess.OwnOnly && entry.CreatedByUserId != userId)
+                return Results.NotFound();
 
             if (!http.Request.HasFormContentType)
                 return Results.BadRequest(new { error = "multipart/form-data required." });
@@ -111,11 +115,14 @@ public static class FeedbackAttachmentEndpoints
             IAttachmentRepository attachments, IBlobStore blobs,
             CancellationToken ct) =>
         {
-            var fail = await GateAsync(http, users, ct);
+            var (userId, access, fail) = await GateAsync(http, users, ct);
             if (fail is not null) return fail;
 
             var entry = await entries.GetAsync(id, ct);
             if (entry is null) return Results.NotFound();
+            // Restricted users may only read attachments on their own entries.
+            if (access == FeedbackAccess.OwnOnly && entry.CreatedByUserId != userId)
+                return Results.NotFound();
 
             var att = await attachments.GetByIdAsync(attachmentId, ct);
             if (att is null) return Results.NotFound();
@@ -144,12 +151,14 @@ public static class FeedbackAttachmentEndpoints
         return app;
     }
 
-    private static async Task<IResult?> GateAsync(HttpContext http, IUserService users, CancellationToken ct)
+    private static async Task<(Guid UserId, FeedbackAccess Access, IResult? Fail)> GateAsync(
+        HttpContext http, IUserService users, CancellationToken ct)
     {
         var userId = ActorContext.GetUserId(http);
-        if (userId == Guid.Empty) return Results.Unauthorized();
-        if (!await users.GetFeedbackEnabledAsync(userId, ct)) return Results.Forbid();
-        return null;
+        if (userId == Guid.Empty) return (Guid.Empty, FeedbackAccess.None, Results.Unauthorized());
+        var access = (await users.GetFeedbackAccessAsync(userId, ct)).Access;
+        if (access == FeedbackAccess.None) return (Guid.Empty, FeedbackAccess.None, Results.Forbid());
+        return (userId, access, null);
     }
 
     private static async Task<int> ReadFullyAsync(Stream source, Memory<byte> dest, CancellationToken ct)

@@ -44,8 +44,16 @@ public static class SearchFeature
     /// Gates the Adsolut sales-receipts (mirrored timesheet) source.
     public const string AdsolutTimesheet = "adsolutTimesheet";
 
-    /// Gates the Employee Feedback board source.
+    /// Gates the Employee Feedback board source for FULL-access users
+    /// (feedback_enabled) — every row is searchable.
     public const string Feedback = "feedback";
+
+    /// v0.0.90 — gates the Employee Feedback source for RESTRICTED users
+    /// (feedback_own_only): the source is available but
+    /// <see cref="Servicedesk.Domain.Search"/> consumers scope results to the
+    /// user's own rows. Mutually exclusive with <see cref="Feedback"/> — a
+    /// principal never carries both (full wins at flag-resolution time).
+    public const string FeedbackOwnOnly = "feedbackOwnOnly";
 }
 
 /// A single request to the search façade. <see cref="Type"/> is null for

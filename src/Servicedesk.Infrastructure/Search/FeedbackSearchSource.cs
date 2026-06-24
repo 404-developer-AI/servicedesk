@@ -5,15 +5,18 @@ using Servicedesk.Domain.Search;
 
 namespace Servicedesk.Infrastructure.Search;
 
-/// Global-search source for the shared Employee Feedback board. Row-level
+/// Global-search source for the Employee Feedback board. Row-level
 /// authorization mirrors the board itself: a Customer never sees hits; an
 /// Agent/Admin sees hits only when allowed to open the board — Admins always,
-/// other agents only when their own user row has <c>feedback_enabled = TRUE</c>.
-/// The flag rides on the <see cref="SearchPrincipal"/> (resolved once when the
-/// principal is built), so <see cref="IsAvailableFor"/> can keep this source
-/// out of the search dropdown for users without it — no per-query DB lookup.
-/// Because the board is shared, an authorized user sees every entry — there is
-/// no per-row owner scope.
+/// other agents only when their own user row carries a feedback flag. The flags
+/// ride on the <see cref="SearchPrincipal"/> (resolved once when the principal
+/// is built), so <see cref="IsAvailableFor"/> can keep this source out of the
+/// search dropdown for users without it — no per-query DB lookup.
+///
+/// Two access scopes (v0.0.90): FULL users (<see cref="SearchFeature.Feedback"/>)
+/// and Admins search every entry; RESTRICTED users
+/// (<see cref="SearchFeature.FeedbackOwnOnly"/>) only ever match rows they
+/// created themselves, enforced with a <c>created_by_user_id</c> filter below.
 ///
 /// Matches against the feedback body (tags stripped), the employee email, and
 /// the work-point type name.
@@ -29,7 +32,17 @@ public sealed class FeedbackSearchSource : ISearchSource
     public string Kind => SearchSourceKind.EmployeeFeedback;
 
     public bool IsAvailableFor(SearchPrincipal principal) =>
-        principal.IsAdmin || (principal.IsAgent && principal.HasFeature(SearchFeature.Feedback));
+        principal.IsAdmin
+        || (principal.IsAgent
+            && (principal.HasFeature(SearchFeature.Feedback)
+                || principal.HasFeature(SearchFeature.FeedbackOwnOnly)));
+
+    /// True when this principal may only match its own rows: a restricted
+    /// (own-only) agent. Admins and full-access agents see everything.
+    private static bool IsOwnOnly(SearchPrincipal principal) =>
+        !principal.IsAdmin
+        && !principal.HasFeature(SearchFeature.Feedback)
+        && principal.HasFeature(SearchFeature.FeedbackOwnOnly);
 
     public async Task<SearchGroup> SearchAsync(
         SearchRequest request, SearchPrincipal principal, CancellationToken ct)
@@ -44,9 +57,11 @@ public sealed class FeedbackSearchSource : ISearchSource
         var limit = Math.Clamp(request.Limit, 1, 100);
         var offset = Math.Max(0, request.Offset);
 
-        // Feature-flag gate (feedback_enabled) is enforced by IsAvailableFor
-        // via the principal — checked at the top of this method and by the
-        // search façade before it ever queries this source.
+        // Feature-flag gate is enforced by IsAvailableFor via the principal —
+        // checked at the top of this method and by the search façade before it
+        // ever queries this source. Restricted (own-only) agents additionally
+        // scope to their own rows via @actor; null = no owner restriction.
+        Guid? actor = IsOwnOnly(principal) ? principal.UserId : null;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
 
         const string sql = """
@@ -66,9 +81,10 @@ public sealed class FeedbackSearchSource : ISearchSource
                   FROM feedback_entries e
                   JOIN users tu ON tu.id = e.target_user_id
                   LEFT JOIN feedback_work_point_types wt ON wt.id = e.work_point_type_id
-                 WHERE tu.email ILIKE @like
+                 WHERE (@actor IS NULL OR e.created_by_user_id = @actor)
+                   AND (tu.email ILIKE @like
                     OR wt.name   ILIKE @like
-                    OR regexp_replace(e.body_html, '<[^>]*>', ' ', 'g') ILIKE @like
+                    OR regexp_replace(e.body_html, '<[^>]*>', ' ', 'g') ILIKE @like)
             )
             SELECT  id           AS Id,
                     entry_date   AS EntryDate,
@@ -86,6 +102,7 @@ public sealed class FeedbackSearchSource : ISearchSource
             sql,
             new
             {
+                actor,
                 prefix = EscapeLike(normalized) + "%",
                 like = "%" + EscapeLike(normalized) + "%",
                 limit,
