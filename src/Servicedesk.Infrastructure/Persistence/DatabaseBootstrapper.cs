@@ -5065,6 +5065,15 @@ public sealed class DatabaseBootstrapper : IHostedService
         ALTER TABLE feedback_entries
             ADD COLUMN IF NOT EXISTS source                 TEXT   NOT NULL DEFAULT 'manual',
             ADD COLUMN IF NOT EXISTS linked_ticket_event_id BIGINT NULL;
+
+        -- v0.0.90 — second management status alongside is_completed:
+        -- "Mgmt reviewed" (management has reviewed/processed the entry). Mirrors
+        -- the completed_* trio: a boolean plus who ticked it and when (server
+        -- time). A management field — read-only for restricted (own-only) users.
+        ALTER TABLE feedback_entries
+            ADD COLUMN IF NOT EXISTS mgmt_reviewed             BOOLEAN     NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS mgmt_reviewed_by_user_id  UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            ADD COLUMN IF NOT EXISTS mgmt_reviewed_utc         TIMESTAMPTZ NULL;
         DO $feedback_entries_constraints$
         BEGIN
             IF NOT EXISTS (

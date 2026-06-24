@@ -3891,6 +3891,10 @@ export type FeedbackEntryRow = {
   completedByUserId: string | null;
   completedByEmail: string | null;
   completedUtc: string | null;
+  mgmtReviewed: boolean;
+  mgmtReviewedByUserId: string | null;
+  mgmtReviewedByEmail: string | null;
+  mgmtReviewedUtc: string | null;
   linkedTicketId: string | null;
   linkedTicketNumber: number | null;
   linkedTicketSubject: string | null;
@@ -3931,6 +3935,7 @@ export type FeedbackEntryUpdate = {
   managementRemarksHtml: string | null;
   workPointTypeId: string | null;
   isCompleted: boolean;
+  isMgmtReviewed: boolean;
   linkedTicketNumber: number | null;
 };
 
@@ -3997,6 +4002,9 @@ export const feedbackApi = {
 
   setCompleted: (id: string, completed: boolean) =>
     request<FeedbackEntryRow>("POST", `/api/feedback/entries/${id}/completed`, { completed }),
+
+  setMgmtReviewed: (id: string, reviewed: boolean) =>
+    request<FeedbackEntryRow>("POST", `/api/feedback/entries/${id}/mgmt-reviewed`, { reviewed }),
 
   deleteEntry: (id: string) =>
     request<void>("DELETE", `/api/feedback/entries/${id}`),

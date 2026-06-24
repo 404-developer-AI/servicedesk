@@ -69,6 +69,7 @@ type ColumnId =
   | "managementRemarks"
   | "workPointType"
   | "completed"
+  | "mgmtReviewed"
   | "ticket"
   | "source"
   | "createdBy"
@@ -81,11 +82,15 @@ const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
   { id: "managementRemarks", label: "Management remarks" },
   { id: "workPointType", label: "Work-point type" },
   { id: "completed", label: "Completed" },
+  { id: "mgmtReviewed", label: "Mgmt reviewed" },
   { id: "ticket", label: "Ticket" },
   { id: "source", label: "Source" },
   { id: "createdBy", label: "Created by" },
   { id: "actions", label: "Actions" },
 ];
+
+// Status columns whose cell + header are centered (a lone checkbox).
+const CENTERED_COLUMNS: ReadonlySet<ColumnId> = new Set(["completed", "mgmtReviewed"]);
 
 // Default left-to-right order (user-preferred). Differs from ALL_COLUMNS,
 // which is just the label registry. Users can drag-reorder in the column
@@ -98,6 +103,7 @@ const DEFAULT_COLUMN_ORDER: ColumnId[] = [
   "feedback",
   "managementRemarks",
   "completed",
+  "mgmtReviewed",
   "source",
   "createdBy",
   "actions",
@@ -126,6 +132,30 @@ function serverDateToday(time: ReturnType<typeof useServerTime>["time"]): string
 function stripHtml(html: string | null | undefined): string {
   if (!html) return "";
   return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+// Format a server-set UTC timestamp for a hover tooltip (local display only —
+// the value itself is server-authored). Falls back to the raw string.
+function formatStamp(utc: string | null | undefined): string {
+  if (!utc) return "";
+  const d = new Date(utc);
+  if (Number.isNaN(d.getTime())) return utc;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
+    d.getHours(),
+  )}:${pad(d.getMinutes())}`;
+}
+
+// "<Action> by <who> · <when>" tooltip for a status checkbox; falls back to
+// the unticked hint when there is no timestamp yet.
+function statusTooltip(
+  action: string,
+  by: string | null | undefined,
+  utc: string | null | undefined,
+  untickedHint: string,
+): string {
+  if (!utc) return untickedHint;
+  return `${action} by ${by ?? "?"} · ${formatStamp(utc)}`;
 }
 
 // ---- Main page ------------------------------------------------------------
@@ -414,7 +444,7 @@ export function FeedbackPage() {
                     key={col}
                     className={cn(
                       "px-3 py-2 font-medium whitespace-nowrap",
-                      col === "completed" && "text-center",
+                      CENTERED_COLUMNS.has(col) && "text-center",
                     )}
                   >
                     {ALL_COLUMNS.find((c) => c.id === col)!.label}
@@ -669,6 +699,15 @@ function DisplayRow({
     onError: () => toast.error("Could not update completion status."),
   });
 
+  const mgmtReviewedMutation = useMutation({
+    mutationFn: (reviewed: boolean) => feedbackApi.setMgmtReviewed(entry.id, reviewed),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["feedback", "entries"] });
+      onCompletedToggled();
+    },
+    onError: () => toast.error("Could not update review status."),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: () => feedbackApi.deleteEntry(entry.id),
     onSuccess: () => {
@@ -720,16 +759,30 @@ function DisplayRow({
         disabled={readOnlyManagement || completedMutation.isPending}
         onChange={() => completedMutation.mutate(!entry.isCompleted)}
         className="rounded border-glass-strong bg-glass accent-primary disabled:opacity-60"
-        title={
-          readOnlyManagement
-            ? entry.isCompleted
-              ? `Completed by ${entry.completedByEmail ?? "?"}`
-              : "Not completed (managed by reviewers)"
-            : entry.isCompleted
-              ? `Completed by ${entry.completedByEmail ?? "?"}`
-              : "Mark as completed"
-        }
+        title={statusTooltip(
+          "Completed",
+          entry.completedByEmail,
+          entry.completedUtc,
+          readOnlyManagement ? "Not completed" : "Mark as completed",
+        )}
       />
+      </div>
+    ),
+    mgmtReviewed: (
+      <div className="flex justify-center">
+        <input
+          type="checkbox"
+          checked={entry.mgmtReviewed}
+          disabled={readOnlyManagement || mgmtReviewedMutation.isPending}
+          onChange={() => mgmtReviewedMutation.mutate(!entry.mgmtReviewed)}
+          className="rounded border-glass-strong bg-glass accent-primary disabled:opacity-60"
+          title={statusTooltip(
+            "Reviewed",
+            entry.mgmtReviewedByEmail,
+            entry.mgmtReviewedUtc,
+            readOnlyManagement ? "Not reviewed" : "Mark as reviewed by management",
+          )}
+        />
       </div>
     ),
     ticket: entry.linkedTicketId ? (
@@ -874,6 +927,7 @@ function EditableRow({
       : null,
   );
   const [isCompleted, setIsCompleted] = React.useState(entry.isCompleted);
+  const [isMgmtReviewed, setIsMgmtReviewed] = React.useState(entry.mgmtReviewed);
 
   // Dialog open state for each rich-text field
   const [feedbackOpen, setFeedbackOpen] = React.useState(false);
@@ -892,6 +946,7 @@ function EditableRow({
       managementRemarksHtml: managementRemarksHtml || null,
       workPointTypeId: workPointTypeId || null,
       isCompleted,
+      isMgmtReviewed,
       linkedTicketNumber: ticket ? ticket.number : null,
     };
     try {
@@ -1014,6 +1069,29 @@ function EditableRow({
           disabled={readOnlyManagement}
           onChange={(e) => setIsCompleted(e.target.checked)}
           className="rounded border-glass-strong bg-glass accent-primary disabled:opacity-60"
+          title={statusTooltip(
+            "Completed",
+            entry.completedByEmail,
+            entry.completedUtc,
+            readOnlyManagement ? "Not completed" : "Mark as completed",
+          )}
+        />
+      </div>
+    ),
+    mgmtReviewed: (
+      <div className="flex justify-center">
+        <input
+          type="checkbox"
+          checked={isMgmtReviewed}
+          disabled={readOnlyManagement}
+          onChange={(e) => setIsMgmtReviewed(e.target.checked)}
+          className="rounded border-glass-strong bg-glass accent-primary disabled:opacity-60"
+          title={statusTooltip(
+            "Reviewed",
+            entry.mgmtReviewedByEmail,
+            entry.mgmtReviewedUtc,
+            readOnlyManagement ? "Not reviewed" : "Mark as reviewed by management",
+          )}
         />
       </div>
     ),

@@ -12,6 +12,7 @@ internal static class FeedbackAudit
     public const string EntryUpdated = "feedback.entry.updated";
     public const string EntryDeleted = "feedback.entry.deleted";
     public const string EntryCompleted = "feedback.entry.completed";
+    public const string EntryMgmtReviewed = "feedback.entry.mgmt_reviewed";
 
     public const string TypeCreated = "feedback.type.created";
     public const string TypeUpdated = "feedback.type.updated";

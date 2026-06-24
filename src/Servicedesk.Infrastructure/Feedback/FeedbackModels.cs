@@ -21,6 +21,12 @@ public sealed class FeedbackEntryRow
     public Guid? CompletedByUserId { get; set; }
     public string? CompletedByEmail { get; set; }
     public DateTime? CompletedUtc { get; set; }
+    /// "Mgmt reviewed" — second management status. Like completed, tracks who
+    /// ticked it and when (server time).
+    public bool MgmtReviewed { get; set; }
+    public Guid? MgmtReviewedByUserId { get; set; }
+    public string? MgmtReviewedByEmail { get; set; }
+    public DateTime? MgmtReviewedUtc { get; set; }
     public Guid? LinkedTicketId { get; set; }
     public long? LinkedTicketNumber { get; set; }
     public string? LinkedTicketSubject { get; set; }
@@ -46,6 +52,7 @@ public sealed record FeedbackEntryInput(
     string ManagementRemarksHtml,
     Guid? WorkPointTypeId,
     bool IsCompleted,
+    bool IsMgmtReviewed,
     long? LinkedTicketNumber);
 
 /// Field-level validation error so the UI can highlight the exact input.

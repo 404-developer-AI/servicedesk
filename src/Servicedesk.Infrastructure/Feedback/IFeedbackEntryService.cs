@@ -52,6 +52,13 @@ public interface IFeedbackEntryService
     Task<FeedbackEntryRow?> SetCompletedAsync(
         Guid id, Guid actorUserId, bool completed, CancellationToken ct = default);
 
+    /// Inline "Mgmt reviewed" toggle. Sets/clears mgmt_reviewed_by +
+    /// mgmt_reviewed_utc (server time). Returns null when the row does not
+    /// exist. A management action — restricted (own-only) users are blocked at
+    /// the endpoint layer.
+    Task<FeedbackEntryRow?> SetMgmtReviewedAsync(
+        Guid id, Guid actorUserId, bool reviewed, CancellationToken ct = default);
+
     /// Deletes a row. When <paramref name="ownOnly"/>, only a row created by
     /// <paramref name="actorUserId"/> is removed (others report not-found).
     Task<bool> DeleteAsync(Guid id, Guid actorUserId, bool ownOnly, CancellationToken ct = default);

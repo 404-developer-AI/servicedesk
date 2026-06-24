@@ -22,6 +22,10 @@ public sealed class FeedbackEntryService : IFeedbackEntryService
                 e.completed_by_user_id      AS CompletedByUserId,
                 cu.email                    AS CompletedByEmail,
                 e.completed_utc             AS CompletedUtc,
+                e.mgmt_reviewed             AS MgmtReviewed,
+                e.mgmt_reviewed_by_user_id  AS MgmtReviewedByUserId,
+                mr.email                    AS MgmtReviewedByEmail,
+                e.mgmt_reviewed_utc         AS MgmtReviewedUtc,
                 e.linked_ticket_id          AS LinkedTicketId,
                 e.linked_ticket_number      AS LinkedTicketNumber,
                 k.subject                   AS LinkedTicketSubject,
@@ -35,6 +39,7 @@ public sealed class FeedbackEntryService : IFeedbackEntryService
         JOIN users tu                       ON tu.id = e.target_user_id
         LEFT JOIN feedback_work_point_types wt ON wt.id = e.work_point_type_id
         LEFT JOIN users cu                  ON cu.id = e.completed_by_user_id
+        LEFT JOIN users mr                  ON mr.id = e.mgmt_reviewed_by_user_id
         LEFT JOIN users cb                  ON cb.id = e.created_by_user_id
         LEFT JOIN tickets k                 ON k.id = e.linked_ticket_id
         """;
@@ -224,6 +229,7 @@ public sealed class FeedbackEntryService : IFeedbackEntryService
             ? existing.ManagementRemarksHtml
             : _sanitizer.Sanitize(input.ManagementRemarksHtml);
         var isCompleted = ownOnly ? existing.IsCompleted : input.IsCompleted;
+        var isMgmtReviewed = ownOnly ? existing.MgmtReviewed : input.IsMgmtReviewed;
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
 
@@ -269,6 +275,11 @@ public sealed class FeedbackEntryService : IFeedbackEntryService
                                                THEN COALESCE(completed_by_user_id, @actor) END,
                 completed_utc           = CASE WHEN @isCompleted
                                                THEN COALESCE(completed_utc, now()) END,
+                mgmt_reviewed           = @isMgmtReviewed,
+                mgmt_reviewed_by_user_id = CASE WHEN @isMgmtReviewed
+                                               THEN COALESCE(mgmt_reviewed_by_user_id, @actor) END,
+                mgmt_reviewed_utc       = CASE WHEN @isMgmtReviewed
+                                               THEN COALESCE(mgmt_reviewed_utc, now()) END,
                 linked_ticket_id        = @ticketId,
                 linked_ticket_number    = @ticketNumber,
                 -- Drop the timeline deep-link if the ticket is changed away
@@ -288,6 +299,7 @@ public sealed class FeedbackEntryService : IFeedbackEntryService
                 remarksHtml,
                 workPointTypeId = input.WorkPointTypeId == Guid.Empty ? (Guid?)null : input.WorkPointTypeId,
                 isCompleted,
+                isMgmtReviewed,
                 ticketId,
                 ticketNumber = input.LinkedTicketNumber,
             },
@@ -312,6 +324,25 @@ public sealed class FeedbackEntryService : IFeedbackEntryService
             WHERE id = @id
             """,
             new { id, actor = actorUserId, completed },
+            cancellationToken: ct));
+        if (rows == 0) return null;
+        return await GetAsync(id, ct);
+    }
+
+    public async Task<FeedbackEntryRow?> SetMgmtReviewedAsync(
+        Guid id, Guid actorUserId, bool reviewed, CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE feedback_entries SET
+                mgmt_reviewed            = @reviewed,
+                mgmt_reviewed_by_user_id = CASE WHEN @reviewed THEN @actor END,
+                mgmt_reviewed_utc        = CASE WHEN @reviewed THEN now() END,
+                updated_utc              = now()
+            WHERE id = @id
+            """,
+            new { id, actor = actorUserId, reviewed },
             cancellationToken: ct));
         if (rows == 0) return null;
         return await GetAsync(id, ct);
