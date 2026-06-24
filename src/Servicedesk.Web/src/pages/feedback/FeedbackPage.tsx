@@ -109,9 +109,12 @@ const DEFAULT_COLUMN_ORDER: ColumnId[] = [
   "actions",
 ];
 
-const WORKSPACE_KEY_COLS = "feedback.columnOrder";
-const WORKSPACE_KEY_VIS = "feedback.columnVisibility";
-const WORKSPACE_KEY_FILTERS = "feedback.filters";
+// Keys MUST start with "workspace:" — the /api/preferences/workspace endpoint
+// only stores + returns keys with that prefix (PUT rejects others with 400,
+// GET filters on LIKE 'workspace:%'). Without it nothing persisted at all.
+const WORKSPACE_KEY_COLS = "workspace:feedback.columnOrder";
+const WORKSPACE_KEY_VIS = "workspace:feedback.columnVisibility";
+const WORKSPACE_KEY_FILTERS = "workspace:feedback.filters";
 
 // ---- Pagination defaults --------------------------------------------------
 
