@@ -51,9 +51,14 @@ export type AuthUser = {
   /// contract data model lands later). Gates the sidebar nav entry and
   /// the /contracts route.
   contractsEnabled: boolean;
-  /// Per-user opt-in for the Employee Feedback feature. Gates the sidebar
-  /// nav entry and the /feedback route.
+  /// Per-user opt-in for the Employee Feedback feature — FULL access (shared
+  /// board). Gates the sidebar nav entry and the /feedback route.
   feedbackEnabled: boolean;
+  /// v0.0.90 — RESTRICTED Employee Feedback access: may log feedback (manual +
+  /// from ticket activity) but only see/edit own rows; management fields are
+  /// read-only. Also opens the nav/route (in own-only mode). Ignored when
+  /// feedbackEnabled is true (full access wins).
+  feedbackOwnOnly: boolean;
   /// Whether the Adsolut integration is currently connected (server-
   /// resolved at /auth/me time). Tenant-global rather than per-user, but
   /// surfaced here so the Adsolut timesheet tab can gate without the

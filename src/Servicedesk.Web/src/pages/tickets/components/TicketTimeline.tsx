@@ -973,7 +973,9 @@ function TimelineEvent({
 }) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const feedbackEnabled = user?.feedbackEnabled ?? false;
+  // Either feedback flag (full or restricted own-only) may log feedback from
+  // the timeline; the backend scopes what each one can read back.
+  const feedbackEnabled = (user?.feedbackEnabled || user?.feedbackOwnOnly) ?? false;
   const [logFeedbackOpen, setLogFeedbackOpen] = React.useState(false);
   const { time: serverTime } = useServerTime();
   const offset = serverTime?.offsetMinutes ?? 0;
@@ -1402,10 +1404,11 @@ export function TicketTimeline({ ticketId, ticketNumber, events, pinnedEventIds 
     [],
   );
 
-  // For users with the feedback flag: which timeline events already have
+  // For users with either feedback flag: which timeline events already have
   // feedback logged (so the per-item "Log feedback" button can be marked).
+  // Restricted users only see their own loggings here (scoped server-side).
   const { user } = useAuth();
-  const feedbackEnabled = user?.feedbackEnabled ?? false;
+  const feedbackEnabled = (user?.feedbackEnabled || user?.feedbackOwnOnly) ?? false;
   const loggedEventsQuery = useQuery({
     queryKey: ["feedback", "logged-events", ticketId],
     queryFn: () => feedbackApi.listLoggedEvents(ticketId),

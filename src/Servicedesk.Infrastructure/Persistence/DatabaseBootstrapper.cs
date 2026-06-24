@@ -4974,10 +4974,20 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- flag (plus Admins) sees and edits all rows. Opt-in per user, like
         -- the Timesheet flags above.
         --
-        --   feedback_enabled — may open the Employee Feedback board and CRUD
-        --                       its rows. Default FALSE so an upgrade is
-        --                       silent; admins opt users in explicitly. The
-        --                       API rejects the mutation for Customers.
+        --   feedback_enabled — FULL access: may open the Employee Feedback
+        --                       board and CRUD every row (the shared board).
+        --                       Default FALSE so an upgrade is silent; admins
+        --                       opt users in explicitly. The API rejects the
+        --                       mutation for Customers.
+        --
+        --   feedback_own_only — RESTRICTED access (v0.0.90): may log feedback
+        --                       (manually + from ticket activity) and see/edit
+        --                       only the rows they created themselves — never a
+        --                       colleague's. Management fields (management
+        --                       remarks + the "afgewerkt" toggle) are read-only
+        --                       for them. feedback_enabled takes precedence: a
+        --                       user with both flags gets full access and this
+        --                       flag is ignored. Default FALSE.
         --
         -- feedback_work_point_types is an admin-managed catalogue (Settings →
         -- Employee Feedback). It starts EMPTY — there are no seed rows; the
@@ -4994,6 +5004,8 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- ===================================================================
         ALTER TABLE users
             ADD COLUMN IF NOT EXISTS feedback_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS feedback_own_only BOOLEAN NOT NULL DEFAULT FALSE;
 
         -- NOTE: the attachments owner_kind whitelist already includes
         -- 'FeedbackEntry' — it is declared at the single re-add point earlier in

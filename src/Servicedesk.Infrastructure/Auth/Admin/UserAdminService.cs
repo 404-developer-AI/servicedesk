@@ -56,7 +56,8 @@ public sealed class UserAdminService : IUserAdminService
                     u.statistics_read   AS StatisticsRead,
                     u.statistics_write  AS StatisticsWrite,
                     u.contracts_enabled AS ContractsEnabled,
-                    u.feedback_enabled  AS FeedbackEnabled
+                    u.feedback_enabled  AS FeedbackEnabled,
+                    u.feedback_own_only AS FeedbackOwnOnly
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             ORDER BY u.created_utc ASC
@@ -106,7 +107,8 @@ public sealed class UserAdminService : IUserAdminService
                     u.statistics_read   AS StatisticsRead,
                     u.statistics_write  AS StatisticsWrite,
                     u.contracts_enabled AS ContractsEnabled,
-                    u.feedback_enabled  AS FeedbackEnabled
+                    u.feedback_enabled  AS FeedbackEnabled,
+                    u.feedback_own_only AS FeedbackOwnOnly
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             WHERE u.id = @id
@@ -771,7 +773,8 @@ public sealed class UserAdminService : IUserAdminService
             && update.StatisticsRead is null
             && update.StatisticsWrite is null
             && update.ContractsEnabled is null
-            && update.FeedbackEnabled is null)
+            && update.FeedbackEnabled is null
+            && update.FeedbackOwnOnly is null)
         {
             return new UpdateFeatureFlagsResult.NoChange();
         }
@@ -818,7 +821,8 @@ public sealed class UserAdminService : IUserAdminService
                 statistics_read  = COALESCE(@statisticsRead,  statistics_read),
                 statistics_write = COALESCE(@statisticsWrite, statistics_write),
                 contracts_enabled = COALESCE(@contractsEnabled, contracts_enabled),
-                feedback_enabled = COALESCE(@feedbackEnabled, feedback_enabled)
+                feedback_enabled = COALESCE(@feedbackEnabled, feedback_enabled),
+                feedback_own_only = COALESCE(@feedbackOwnOnly, feedback_own_only)
             WHERE id = @id
             """,
             new
@@ -839,6 +843,7 @@ public sealed class UserAdminService : IUserAdminService
                 statisticsWrite = update.StatisticsWrite,
                 contractsEnabled = update.ContractsEnabled,
                 feedbackEnabled = update.FeedbackEnabled,
+                feedbackOwnOnly = update.FeedbackOwnOnly,
             },
             tx,
             cancellationToken: ct));

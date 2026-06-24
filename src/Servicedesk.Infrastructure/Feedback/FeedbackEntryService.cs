@@ -57,11 +57,12 @@ public sealed class FeedbackEntryService : IFeedbackEntryService
     }
 
     public async Task<IReadOnlyList<FeedbackEntryRow>> ListAsync(
-        FeedbackEntryFilter filter, CancellationToken ct = default)
+        FeedbackEntryFilter filter, Guid actorUserId, bool ownOnly, CancellationToken ct = default)
     {
         var sql = SelectFromJoin + """
 
-            WHERE (@targetUserId    IS NULL OR e.target_user_id    = @targetUserId)
+            WHERE (@actor           IS NULL OR e.created_by_user_id  = @actor)
+              AND (@targetUserId    IS NULL OR e.target_user_id    = @targetUserId)
               AND (@workPointTypeId IS NULL OR e.work_point_type_id = @workPointTypeId)
               AND (@isCompleted     IS NULL OR e.is_completed        = @isCompleted)
             ORDER BY e.entry_date DESC, e.created_utc DESC
@@ -72,6 +73,7 @@ public sealed class FeedbackEntryService : IFeedbackEntryService
             sql,
             new
             {
+                actor = ownOnly ? actorUserId : (Guid?)null,
                 targetUserId = filter.TargetUserId,
                 workPointTypeId = filter.WorkPointTypeId,
                 isCompleted = filter.IsCompleted,
@@ -95,7 +97,7 @@ public sealed class FeedbackEntryService : IFeedbackEntryService
     }
 
     public async Task<IReadOnlyList<FeedbackLoggedEvent>> ListLoggedEventsAsync(
-        Guid ticketId, CancellationToken ct = default)
+        Guid ticketId, Guid actorUserId, bool ownOnly, CancellationToken ct = default)
     {
         const string sql = """
             SELECT  e.linked_ticket_event_id                      AS EventId,
@@ -105,11 +107,15 @@ public sealed class FeedbackEntryService : IFeedbackEntryService
             LEFT JOIN users cb ON cb.id = e.created_by_user_id
             WHERE e.linked_ticket_id = @ticketId
               AND e.linked_ticket_event_id IS NOT NULL
+              AND (@actor IS NULL OR e.created_by_user_id = @actor)
             GROUP BY e.linked_ticket_event_id
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var rows = await conn.QueryAsync<FeedbackLoggedEvent>(
-            new CommandDefinition(sql, new { ticketId }, cancellationToken: ct));
+            new CommandDefinition(
+                sql,
+                new { ticketId, actor = ownOnly ? actorUserId : (Guid?)null },
+                cancellationToken: ct));
         return rows.ToList();
     }
 
@@ -201,13 +207,23 @@ public sealed class FeedbackEntryService : IFeedbackEntryService
     }
 
     public async Task<UpdateFeedbackEntryResult> UpdateAsync(
-        Guid id, Guid actorUserId, FeedbackEntryInput input, CancellationToken ct = default)
+        Guid id, Guid actorUserId, FeedbackEntryInput input, bool ownOnly, CancellationToken ct = default)
     {
         var existing = await GetAsync(id, ct);
         if (existing is null) return new UpdateFeedbackEntryResult.NotFound();
 
+        // Restricted users may only touch their own rows; report NotFound for
+        // anything else so the row's existence is not revealed.
+        if (ownOnly && existing.CreatedByUserId != actorUserId)
+            return new UpdateFeedbackEntryResult.NotFound();
+
         var bodyHtml = _sanitizer.Sanitize(input.BodyHtml);
-        var remarksHtml = _sanitizer.Sanitize(input.ManagementRemarksHtml);
+        // Management fields are read-only for restricted users — preserve the
+        // stored values regardless of what the client sent.
+        var remarksHtml = ownOnly
+            ? existing.ManagementRemarksHtml
+            : _sanitizer.Sanitize(input.ManagementRemarksHtml);
+        var isCompleted = ownOnly ? existing.IsCompleted : input.IsCompleted;
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
 
@@ -220,7 +236,8 @@ public sealed class FeedbackEntryService : IFeedbackEntryService
         if (maxChars <= 0) maxChars = 20000;
         if (bodyHtml.Length > maxChars)
             errors.Add(new FeedbackFieldError("bodyHtml", $"Feedback exceeds the {maxChars}-character limit."));
-        if (remarksHtml.Length > maxChars)
+        // Only validate remarks length when the caller can actually change them.
+        if (!ownOnly && remarksHtml.Length > maxChars)
             errors.Add(new FeedbackFieldError("managementRemarksHtml", $"Management remarks exceed the {maxChars}-character limit."));
 
         if (input.WorkPointTypeId is { } typeId && typeId != Guid.Empty)
@@ -270,7 +287,7 @@ public sealed class FeedbackEntryService : IFeedbackEntryService
                 bodyHtml,
                 remarksHtml,
                 workPointTypeId = input.WorkPointTypeId == Guid.Empty ? (Guid?)null : input.WorkPointTypeId,
-                isCompleted = input.IsCompleted,
+                isCompleted,
                 ticketId,
                 ticketNumber = input.LinkedTicketNumber,
             },
@@ -300,12 +317,17 @@ public sealed class FeedbackEntryService : IFeedbackEntryService
         return await GetAsync(id, ct);
     }
 
-    public async Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
+    public async Task<bool> DeleteAsync(Guid id, Guid actorUserId, bool ownOnly, CancellationToken ct = default)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var rows = await conn.ExecuteAsync(new CommandDefinition(
-            "DELETE FROM feedback_entries WHERE id = @id",
-            new { id }, cancellationToken: ct));
+            """
+            DELETE FROM feedback_entries
+            WHERE id = @id
+              AND (@actor IS NULL OR created_by_user_id = @actor)
+            """,
+            new { id, actor = ownOnly ? actorUserId : (Guid?)null },
+            cancellationToken: ct));
         return rows > 0;
     }
 

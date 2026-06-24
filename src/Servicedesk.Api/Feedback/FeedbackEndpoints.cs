@@ -7,11 +7,13 @@ using Servicedesk.Infrastructure.Feedback;
 
 namespace Servicedesk.Api.Feedback;
 
-/// Endpoints for the shared Employee Feedback board. Every route is gated by
-/// the per-user <c>feedback_enabled</c> flag (Admins always pass) — that flag
-/// IS the authorization boundary because the board is shared: any authorized
-/// user reads and writes every row. The flag check runs after the RequireAgent
-/// policy, so a customer never reaches it.
+/// Endpoints for the Employee Feedback board. Every route is gated by the
+/// caller's effective feedback access (Admins always pass). The check runs
+/// after the RequireAgent policy, so a customer never reaches it. Two scopes
+/// (v0.0.90): FULL (<c>feedback_enabled</c>) reads/writes every row — the
+/// shared board; RESTRICTED (<c>feedback_own_only</c>) may log feedback but the
+/// service scopes reads/writes to the caller's own rows, and the two
+/// management-only actions ("completed" toggle) reject them outright.
 public static class FeedbackEndpoints
 {
     public static IEndpointRouteBuilder MapFeedbackEndpoints(this IEndpointRouteBuilder app)
@@ -24,7 +26,7 @@ public static class FeedbackEndpoints
         group.MapGet("/employees", async (
             HttpContext http, IUserService users, IFeedbackEntryService svc, CancellationToken ct) =>
         {
-            var (_, fail) = await GateAsync(http, users, ct);
+            var (_, _, fail) = await GateAsync(http, users, ct);
             if (fail is not null) return fail;
             return Results.Ok(new { items = await svc.ListEmployeesAsync(ct) });
         }).WithName("ListFeedbackEmployees").WithOpenApi();
@@ -35,7 +37,7 @@ public static class FeedbackEndpoints
             HttpContext http, IUserService users,
             IFeedbackWorkPointTypeService types, CancellationToken ct) =>
         {
-            var (_, fail) = await GateAsync(http, users, ct);
+            var (_, _, fail) = await GateAsync(http, users, ct);
             if (fail is not null) return fail;
             return Results.Ok(new { items = await types.ListAsync(includeInactive: false, ct) });
         }).WithName("ListFeedbackWorkPointTypes").WithOpenApi();
@@ -46,7 +48,7 @@ public static class FeedbackEndpoints
             long? number, HttpContext http, IUserService users,
             IFeedbackEntryService svc, CancellationToken ct) =>
         {
-            var (_, fail) = await GateAsync(http, users, ct);
+            var (_, _, fail) = await GateAsync(http, users, ct);
             if (fail is not null) return fail;
             if (number is not { } n || n <= 0)
                 return Results.BadRequest(new { error = "Query parameter 'number' is required." });
@@ -63,22 +65,26 @@ public static class FeedbackEndpoints
             Guid? ticketId, HttpContext http, IUserService users,
             IFeedbackEntryService svc, CancellationToken ct) =>
         {
-            var (_, fail) = await GateAsync(http, users, ct);
+            var (userId, access, fail) = await GateAsync(http, users, ct);
             if (fail is not null) return fail;
             if (ticketId is not { } tid || tid == Guid.Empty)
                 return Results.BadRequest(new { error = "Query parameter 'ticketId' is required." });
-            return Results.Ok(new { items = await svc.ListLoggedEventsAsync(tid, ct) });
+            return Results.Ok(new
+            {
+                items = await svc.ListLoggedEventsAsync(
+                    tid, userId, access == FeedbackAccess.OwnOnly, ct),
+            });
         }).WithName("ListFeedbackLoggedEvents").WithOpenApi();
 
         group.MapGet("/entries", async (
             Guid? targetUserId, Guid? workPointTypeId, bool? completed,
             HttpContext http, IUserService users, IFeedbackEntryService svc, CancellationToken ct) =>
         {
-            var (_, fail) = await GateAsync(http, users, ct);
+            var (userId, access, fail) = await GateAsync(http, users, ct);
             if (fail is not null) return fail;
 
             var filter = new FeedbackEntryFilter(targetUserId, workPointTypeId, completed);
-            var rows = await svc.ListAsync(filter, ct);
+            var rows = await svc.ListAsync(filter, userId, access == FeedbackAccess.OwnOnly, ct);
             return Results.Ok(new { items = rows });
         }).WithName("ListFeedbackEntries").WithOpenApi();
 
@@ -87,7 +93,7 @@ public static class FeedbackEndpoints
             HttpContext http, IUserService users, IFeedbackEntryService svc,
             IAuditLogger audit, CancellationToken ct) =>
         {
-            var (userId, fail) = await GateAsync(http, users, ct);
+            var (userId, _, fail) = await GateAsync(http, users, ct);
             if (fail is not null) return fail;
 
             var result = await svc.CreateAsync(userId, req?.TargetUserId, ct);
@@ -106,7 +112,7 @@ public static class FeedbackEndpoints
             HttpContext http, IUserService users, IFeedbackEntryService svc,
             IAuditLogger audit, CancellationToken ct) =>
         {
-            var (userId, fail) = await GateAsync(http, users, ct);
+            var (userId, _, fail) = await GateAsync(http, users, ct);
             if (fail is not null) return fail;
             if (!TryBuildLogInput(req, out var input, out var error)) return error!;
 
@@ -126,11 +132,11 @@ public static class FeedbackEndpoints
             HttpContext http, IUserService users, IFeedbackEntryService svc,
             IAuditLogger audit, CancellationToken ct) =>
         {
-            var (userId, fail) = await GateAsync(http, users, ct);
+            var (userId, access, fail) = await GateAsync(http, users, ct);
             if (fail is not null) return fail;
             if (!TryBuildInput(req, out var input, out var error)) return error!;
 
-            var result = await svc.UpdateAsync(id, userId, input, ct);
+            var result = await svc.UpdateAsync(id, userId, input, access == FeedbackAccess.OwnOnly, ct);
             return result switch
             {
                 UpdateFeedbackEntryResult.Updated updated => await AuditAndReturn(audit, http,
@@ -147,8 +153,10 @@ public static class FeedbackEndpoints
             HttpContext http, IUserService users, IFeedbackEntryService svc,
             IAuditLogger audit, CancellationToken ct) =>
         {
-            var (userId, fail) = await GateAsync(http, users, ct);
+            var (userId, access, fail) = await GateAsync(http, users, ct);
             if (fail is not null) return fail;
+            // "Completed" is a management field — restricted users cannot set it.
+            if (access == FeedbackAccess.OwnOnly) return Results.Forbid();
 
             var row = await svc.SetCompletedAsync(id, userId, req.Completed, ct);
             if (row is null) return Results.NotFound();
@@ -162,10 +170,10 @@ public static class FeedbackEndpoints
             Guid id, HttpContext http, IUserService users, IFeedbackEntryService svc,
             IAuditLogger audit, CancellationToken ct) =>
         {
-            var (_, fail) = await GateAsync(http, users, ct);
+            var (userId, access, fail) = await GateAsync(http, users, ct);
             if (fail is not null) return fail;
 
-            var deleted = await svc.DeleteAsync(id, ct);
+            var deleted = await svc.DeleteAsync(id, userId, access == FeedbackAccess.OwnOnly, ct);
             if (!deleted) return Results.NotFound();
 
             await FeedbackAudit.WriteAsync(audit, http, FeedbackAudit.EntryDeleted, id.ToString(), new { });
@@ -175,15 +183,19 @@ public static class FeedbackEndpoints
         return app;
     }
 
-    /// Resolve the caller + verify the feedback_enabled flag. Returns
-    /// (userId, null) on success or (Guid.Empty, Unauthorized/Forbid) on miss.
-    private static async Task<(Guid UserId, IResult? Fail)> GateAsync(
+    /// Resolve the caller + their effective feedback access scope. Returns
+    /// (userId, access, null) on success or (Guid.Empty, None, Unauthorized/
+    /// Forbid) on miss. <see cref="FeedbackAccess.OwnOnly"/> callers reach the
+    /// endpoints but the service scopes their rows; the few management-only
+    /// actions reject them explicitly.
+    private static async Task<(Guid UserId, FeedbackAccess Access, IResult? Fail)> GateAsync(
         HttpContext http, IUserService users, CancellationToken ct)
     {
         var userId = ActorContext.GetUserId(http);
-        if (userId == Guid.Empty) return (Guid.Empty, Results.Unauthorized());
-        if (!await users.GetFeedbackEnabledAsync(userId, ct)) return (Guid.Empty, Results.Forbid());
-        return (userId, null);
+        if (userId == Guid.Empty) return (Guid.Empty, FeedbackAccess.None, Results.Unauthorized());
+        var access = (await users.GetFeedbackAccessAsync(userId, ct)).Access;
+        if (access == FeedbackAccess.None) return (Guid.Empty, FeedbackAccess.None, Results.Forbid());
+        return (userId, access, null);
     }
 
     private static async Task<IResult> AuditAndReturn(

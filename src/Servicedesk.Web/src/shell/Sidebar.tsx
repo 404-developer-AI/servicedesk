@@ -211,9 +211,10 @@ export function Sidebar() {
     if (item.to === "/contracts" && !user?.contractsEnabled) {
       return false;
     }
-    // Employee Feedback is per-user opt-in (feedback_enabled). Role gates
-    // Agent+Admin; the /feedback route gate enforces the same flag.
-    if (item.to === "/feedback" && !user?.feedbackEnabled) {
+    // Employee Feedback is per-user opt-in — either full (feedback_enabled) or
+    // restricted (feedback_own_only). Role gates Agent+Admin; the /feedback
+    // route gate enforces the same.
+    if (item.to === "/feedback" && !user?.feedbackEnabled && !user?.feedbackOwnOnly) {
       return false;
     }
     return true;

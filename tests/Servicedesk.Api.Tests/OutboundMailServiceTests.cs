@@ -587,6 +587,7 @@ public sealed class OutboundMailServiceTests
         public Task<bool> GetStatisticsWriteEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetContractsEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetFeedbackEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
+        public Task<FeedbackAccessInfo> GetFeedbackAccessAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(default(FeedbackAccessInfo));
         public Task<IReadOnlySet<string>> GetSearchFeatureFlagsAsync(Guid userId, CancellationToken ct = default) => Task.FromResult<IReadOnlySet<string>>(new HashSet<string>());
     }
 

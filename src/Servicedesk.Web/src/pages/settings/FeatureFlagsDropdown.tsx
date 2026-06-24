@@ -17,6 +17,7 @@ import {
   PencilRuler,
   FileSignature,
   MessageSquareText,
+  MessageSquareLock,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -83,7 +84,10 @@ const FLAG_GROUPS: Group[] = [
   },
   {
     title: "Employee Feedback",
-    flags: [{ key: "feedbackEnabled", label: "Employee Feedback", icon: MessageSquareText }],
+    flags: [
+      { key: "feedbackEnabled", label: "Employee Feedback (full)", icon: MessageSquareText },
+      { key: "feedbackOwnOnly", label: "Feedback — own only", icon: MessageSquareLock },
+    ],
   },
 ];
 
