@@ -102,8 +102,8 @@ const DEFAULT_COLUMN_ORDER: ColumnId[] = [
   "workPointType",
   "feedback",
   "managementRemarks",
-  "completed",
   "mgmtReviewed",
+  "completed",
   "source",
   "createdBy",
   "actions",
@@ -111,6 +111,7 @@ const DEFAULT_COLUMN_ORDER: ColumnId[] = [
 
 const WORKSPACE_KEY_COLS = "feedback.columnOrder";
 const WORKSPACE_KEY_VIS = "feedback.columnVisibility";
+const WORKSPACE_KEY_FILTERS = "feedback.filters";
 
 // ---- Pagination defaults --------------------------------------------------
 
@@ -169,10 +170,11 @@ export function FeedbackPage() {
   // they logged, and the management fields (remarks + completed) are read-only.
   const fullAccess = user?.feedbackEnabled ?? false;
 
-  // Filter state
+  // Filter state (persisted per user via workspace KV — see wsLoaded effect).
   const [filterEmployee, setFilterEmployee] = React.useState<string>("");
   const [filterType, setFilterType] = React.useState<string>("");
   const [filterCompleted, setFilterCompleted] = React.useState<string>("");
+  const [filterMgmtReviewed, setFilterMgmtReviewed] = React.useState<string>("");
 
   // Edit state
   const [editingId, setEditingId] = React.useState<string | null>(null);
@@ -210,10 +212,47 @@ export function FeedbackPage() {
           );
           setHiddenColumns(hidden);
         }
+        // Restore the saved filter selections.
+        const filtersRaw = ws[WORKSPACE_KEY_FILTERS];
+        if (filtersRaw) {
+          try {
+            const f = JSON.parse(filtersRaw) as Partial<{
+              employee: string;
+              type: string;
+              completed: string;
+              mgmtReviewed: string;
+            }>;
+            if (typeof f.employee === "string") setFilterEmployee(f.employee);
+            if (typeof f.type === "string") setFilterType(f.type);
+            if (typeof f.completed === "string") setFilterCompleted(f.completed);
+            if (typeof f.mgmtReviewed === "string") setFilterMgmtReviewed(f.mgmtReviewed);
+          } catch {
+            // Corrupt value — ignore and start from no filters.
+          }
+        }
       })
       .catch(() => {})
       .finally(() => setWsLoaded(true));
   }, []);
+
+  // Persist filter selections per user. Gated on wsLoaded so the first save
+  // can't clobber the stored value with the pre-load defaults.
+  React.useEffect(() => {
+    if (!wsLoaded) return;
+    preferencesApi
+      .saveWorkspace([
+        {
+          key: WORKSPACE_KEY_FILTERS,
+          value: JSON.stringify({
+            employee: filterEmployee,
+            type: filterType,
+            completed: filterCompleted,
+            mgmtReviewed: filterMgmtReviewed,
+          }),
+        },
+      ])
+      .catch(() => {});
+  }, [wsLoaded, filterEmployee, filterType, filterCompleted, filterMgmtReviewed]);
 
   const saveWorkspace = React.useCallback(
     (order: ColumnId[], hidden: Set<ColumnId>) => {
@@ -292,8 +331,10 @@ export function FeedbackPage() {
     if (filterType) f.workPointTypeId = filterType;
     if (filterCompleted === "true") f.completed = true;
     if (filterCompleted === "false") f.completed = false;
+    if (filterMgmtReviewed === "true") f.mgmtReviewed = true;
+    if (filterMgmtReviewed === "false") f.mgmtReviewed = false;
     return f;
-  }, [filterEmployee, filterType, filterCompleted]);
+  }, [filterEmployee, filterType, filterCompleted, filterMgmtReviewed]);
 
   const entriesQuery = useQuery({
     queryKey: ["feedback", "entries", filter],
@@ -334,11 +375,13 @@ export function FeedbackPage() {
     setFilterEmployee("");
     setFilterType("");
     setFilterCompleted("");
+    setFilterMgmtReviewed("");
     setPage(1);
     setEditingId(null);
   };
 
-  const hasFilters = filterEmployee || filterType || filterCompleted;
+  const hasFilters =
+    filterEmployee || filterType || filterCompleted || filterMgmtReviewed;
 
   if (!wsLoaded) {
     return (
@@ -420,6 +463,17 @@ export function FeedbackPage() {
             <option value="">All</option>
             <option value="false">Not completed</option>
             <option value="true">Completed</option>
+          </select>
+        </FieldGroup>
+        <FieldGroup label="Mgmt reviewed">
+          <select
+            value={filterMgmtReviewed}
+            onChange={(e) => { setFilterMgmtReviewed(e.target.value); setPage(1); setEditingId(null); }}
+            className={SELECT_CLASS}
+          >
+            <option value="">All</option>
+            <option value="false">Not reviewed</option>
+            <option value="true">Reviewed</option>
           </select>
         </FieldGroup>
         {hasFilters && (

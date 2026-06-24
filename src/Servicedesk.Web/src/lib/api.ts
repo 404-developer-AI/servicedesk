@@ -3926,6 +3926,7 @@ export type FeedbackEntryFilter = {
   targetUserId?: string;
   workPointTypeId?: string;
   completed?: boolean;
+  mgmtReviewed?: boolean;
 };
 
 export type FeedbackEntryUpdate = {
@@ -3978,6 +3979,7 @@ export const feedbackApi = {
     if (filter.targetUserId) qs.set("targetUserId", filter.targetUserId);
     if (filter.workPointTypeId) qs.set("workPointTypeId", filter.workPointTypeId);
     if (filter.completed !== undefined) qs.set("completed", String(filter.completed));
+    if (filter.mgmtReviewed !== undefined) qs.set("mgmtReviewed", String(filter.mgmtReviewed));
     const suffix = qs.toString();
     return request<{ items: FeedbackEntryRow[] }>(
       "GET",

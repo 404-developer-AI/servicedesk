@@ -70,6 +70,7 @@ public sealed class FeedbackEntryService : IFeedbackEntryService
               AND (@targetUserId    IS NULL OR e.target_user_id    = @targetUserId)
               AND (@workPointTypeId IS NULL OR e.work_point_type_id = @workPointTypeId)
               AND (@isCompleted     IS NULL OR e.is_completed        = @isCompleted)
+              AND (@isMgmtReviewed  IS NULL OR e.mgmt_reviewed       = @isMgmtReviewed)
             ORDER BY e.entry_date DESC, e.created_utc DESC
             """;
 
@@ -82,6 +83,7 @@ public sealed class FeedbackEntryService : IFeedbackEntryService
                 targetUserId = filter.TargetUserId,
                 workPointTypeId = filter.WorkPointTypeId,
                 isCompleted = filter.IsCompleted,
+                isMgmtReviewed = filter.IsMgmtReviewed,
             },
             cancellationToken: ct));
         return rows.ToList();
