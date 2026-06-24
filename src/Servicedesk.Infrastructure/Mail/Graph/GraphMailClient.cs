@@ -459,7 +459,15 @@ public sealed class GraphMailClient : IGraphMailClient
                 "Microsoft Graph is not fully configured. Set Graph.TenantId, Graph.ClientId, and the client secret via Settings.");
 
         var credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
-        return new GraphServiceClient(credential, Scopes);
+
+        // Opt the whole mail client into Graph immutable item IDs via a pipeline
+        // handler so EVERY request carries Prefer: IdType="ImmutableId" without
+        // per-call wiring. Mixing id formats across calls is not allowed, so
+        // this is deliberately all-or-nothing — see ImmutableIdHandler.
+        var handlers = GraphClientFactory.CreateDefaultHandlers();
+        handlers.Add(new ImmutableIdHandler());
+        var httpClient = GraphClientFactory.Create(handlers);
+        return new GraphServiceClient(httpClient, credential, Scopes);
     }
 
     private static Task<Microsoft.Graph.Users.Item.MailFolders.Item.Messages.Delta.DeltaGetResponse?> FetchPageAsync(

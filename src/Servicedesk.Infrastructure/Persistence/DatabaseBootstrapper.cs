@@ -4641,6 +4641,39 @@ public sealed class DatabaseBootstrapper : IHostedService
         END $do$;
 
         -- ===================================================================
+        -- v0.0.91 Mail — Graph immutable IDs cut-over.
+        --
+        -- The mail client now opts every Graph call into immutable item IDs
+        -- (Prefer: IdType="ImmutableId") to kill the mark-as-read 404 race at
+        -- its source: an id stored at ingest no longer goes stale when the
+        -- message moves folder. A delta token is bound to the id type it was
+        -- issued for, and any stored processed-folder id is in the old mutable
+        -- format — Graph rejects mixing formats in a request. So on the
+        -- cut-over we re-prime BOTH per inbound mailbox:
+        --   * delta_link -> NULL forces one full inbox re-scan; dedup on the
+        --     internet-message-id stops it from creating duplicate tickets, so
+        --     ticket volume is irrelevant (it only costs a little extra poll).
+        --   * processed_folder_id -> NULL forces the finalizer to re-resolve
+        --     the folder id in immutable format (find-or-create is idempotent).
+        -- One-shot behind a data_migrations marker. The deploy procedure has
+        -- the admin pause mail sync before updating, so nothing is mid-flight
+        -- with an old-format id at cut-over.
+        DO $do$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM data_migrations
+                WHERE name = 'v0_0_91_reprime_mail_for_immutable_ids'
+            ) THEN
+                UPDATE queue_inbound_mailboxes
+                SET delta_link = NULL,
+                    processed_folder_id = NULL,
+                    updated_utc = now();
+                INSERT INTO data_migrations (name)
+                    VALUES ('v0_0_91_reprime_mail_for_immutable_ids');
+            END IF;
+        END $do$;
+
+        -- ===================================================================
         -- Microsoft 365 per-customer connect (consent + Graph read).
         --
         -- The MSP owns one multi-tenant app (the M365.* settings + the
