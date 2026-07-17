@@ -357,7 +357,7 @@ public sealed class ContactLookupServiceTests
         public Task<IReadOnlyList<CompanyDomain>> ListDomainsAsync(Guid companyId, CancellationToken ct) => throw new NotImplementedException();
         public Task<CompanyDomain?> AddDomainAsync(Guid companyId, string domain, CancellationToken ct) => throw new NotImplementedException();
         public Task<bool> RemoveDomainAsync(Guid domainId, CancellationToken ct) => throw new NotImplementedException();
-        public Task<IReadOnlyList<Contact>> ListContactsAsync(Guid? companyId, string? search, CancellationToken ct) => throw new NotImplementedException();
+        public Task<IReadOnlyList<Contact>> ListContactsAsync(Guid? companyId, string? search, bool includeInactive, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<ContactPhoneLookupRow>> LookupContactsByPhoneE164Async(string phoneE164, int limit, CancellationToken ct) => throw new NotImplementedException();
         public Task<ContactOverviewPage> ListContactsOverviewAsync(string? search, Guid? companyId, string? role, bool includeInactive, string? sort, int page, int pageSize, CancellationToken ct) => throw new NotImplementedException();
         public Task<Contact?> GetContactAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();

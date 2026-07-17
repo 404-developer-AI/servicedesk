@@ -212,13 +212,22 @@ public sealed class CompanyRepository : ICompanyRepository
         return await conn.QueryFirstOrDefaultAsync<Company>(new CommandDefinition(sql, new { domain }, cancellationToken: ct));
     }
 
-    public async Task<IReadOnlyList<Contact>> ListContactsAsync(Guid? companyId, string? search, CancellationToken ct)
+    public async Task<IReadOnlyList<Contact>> ListContactsAsync(Guid? companyId, string? search, bool includeInactive, CancellationToken ct)
     {
-        // When a company filter is given we join through contact_companies so
-        // any role (primary/secondary/supplier) surfaces the contact. DISTINCT
-        // keeps the result set unique in the odd case a contact were somehow
-        // double-linked despite the pair-unique constraint.
-        var sql = companyId.HasValue
+        var sql = BuildListContactsSql(companyId.HasValue, !string.IsNullOrWhiteSpace(search), includeInactive);
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return (await conn.QueryAsync<Contact>(new CommandDefinition(sql,
+            new { companyId, search = $"%{search}%" }, cancellationToken: ct))).ToList();
+    }
+
+    // When a company filter is given we join through contact_companies so
+    // any role (primary/secondary/supplier) surfaces the contact. DISTINCT
+    // keeps the result set unique in the odd case a contact were somehow
+    // double-linked despite the pair-unique constraint. Internal so tests can
+    // assert the active-only guard stays on the picker path (v0.0.92).
+    internal static string BuildListContactsSql(bool hasCompanyFilter, bool hasSearch, bool includeInactive)
+    {
+        var sql = hasCompanyFilter
             ? $"""
                 SELECT DISTINCT {ContactCols}
                 FROM contacts
@@ -226,15 +235,14 @@ public sealed class CompanyRepository : ICompanyRepository
                 WHERE cc.company_id = @companyId
                 """
             : $"SELECT {ContactCols} FROM contacts WHERE 1=1";
-        if (!string.IsNullOrWhiteSpace(search))
+        if (!includeInactive) sql += " AND contacts.is_active = TRUE";
+        if (hasSearch)
         {
             sql += " AND (email ILIKE @search OR first_name ILIKE @search OR last_name ILIKE @search"
                 + " OR (coalesce(first_name,'') || ' ' || coalesce(last_name,'')) ILIKE @search)";
         }
         sql += " ORDER BY last_name, first_name LIMIT 500";
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        return (await conn.QueryAsync<Contact>(new CommandDefinition(sql,
-            new { companyId, search = $"%{search}%" }, cancellationToken: ct))).ToList();
+        return sql;
     }
 
     public async Task<IReadOnlyList<ContactPhoneLookupRow>> LookupContactsByPhoneE164Async(

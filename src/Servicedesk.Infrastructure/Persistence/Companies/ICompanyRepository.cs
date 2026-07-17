@@ -21,8 +21,12 @@ public interface ICompanyRepository
     Task<Company?> FindCompanyByDomainAsync(string domain, CancellationToken ct);
 
     /// Lists distinct contacts that have at least one link (any role) to the
-    /// given company, or — when companyId is null — every contact.
-    Task<IReadOnlyList<Contact>> ListContactsAsync(Guid? companyId, string? search, CancellationToken ct);
+    /// given company, or — when companyId is null — every contact. With
+    /// includeInactive false only active contacts are returned; pickers
+    /// (mail recipients, ticket requester, call-popup linking) must never
+    /// surface a deactivated contact, while the company detail page keeps
+    /// showing its inactive links.
+    Task<IReadOnlyList<Contact>> ListContactsAsync(Guid? companyId, string? search, bool includeInactive, CancellationToken ct);
     /// Phone-keyed lookup for the call-popup. Matches the given E.164 string
     /// against <c>phone_e164</c> OR <c>mobile_phone_e164</c>; both columns
     /// are indexed. Empty input returns no rows. Caller must pass an already-
