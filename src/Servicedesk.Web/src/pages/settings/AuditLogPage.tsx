@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
 
-const EVENT_TYPES = ["", "rate_limited", "csp_violation", "setting_changed"] as const;
+const EVENT_TYPES = ["", "rate_limited", "rate_limited_csp_report", "csp_violation", "setting_changed"] as const;
 
 export function AuditLogPage() {
   const [eventType, setEventType] = useState<string>("");

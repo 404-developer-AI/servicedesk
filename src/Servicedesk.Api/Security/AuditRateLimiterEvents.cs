@@ -8,6 +8,19 @@ namespace Servicedesk.Api.Security;
 /// via the ASP.NET rate limiter's <c>OnRejected</c> hook.
 public static class AuditRateLimiterEvents
 {
+    public const string EventTypeRateLimited = "rate_limited";
+
+    /// <summary>
+    /// Rejections on the CSP-report endpoint get their own audit event type
+    /// (v0.0.92). Browsers fire violation reports autonomously — a burst of
+    /// page refreshes can trip that endpoint's tight flood-protection limit
+    /// without any hostile intent, so counting those rejections toward the
+    /// generic "rate_limited" security-activity threshold produced false
+    /// alarms. The separate type feeds a separate category with a much higher
+    /// threshold, keeping a genuine report-flood visible without the noise.
+    /// </summary>
+    public const string EventTypeRateLimitedCspReport = "rate_limited_csp_report";
+
     public static async ValueTask OnRejected(OnRejectedContext context, CancellationToken cancellationToken)
     {
         var httpCtx = context.HttpContext;
@@ -17,7 +30,7 @@ public static class AuditRateLimiterEvents
             try
             {
                 await audit.LogAsync(new AuditEvent(
-                    EventType: "rate_limited",
+                    EventType: ResolveEventType(httpCtx.Request.Path),
                     Actor: httpCtx.Connection.RemoteIpAddress?.ToString() ?? "anon",
                     ActorRole: "anon",
                     Target: httpCtx.Request.Path.Value,
@@ -37,4 +50,9 @@ public static class AuditRateLimiterEvents
             httpCtx.Response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString(global::System.Globalization.CultureInfo.InvariantCulture);
         }
     }
+
+    internal static string ResolveEventType(PathString path)
+        => path.StartsWithSegments("/api/security/csp-report", StringComparison.OrdinalIgnoreCase)
+            ? EventTypeRateLimitedCspReport
+            : EventTypeRateLimited;
 }

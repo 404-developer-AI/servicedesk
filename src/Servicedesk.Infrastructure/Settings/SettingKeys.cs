@@ -10,8 +10,15 @@ public static class SettingKeys
         public const string RateLimitGlobalWindowSeconds = "Security.RateLimit.Global.WindowSeconds";
         public const string RateLimitAuthPermitPerWindow = "Security.RateLimit.Auth.PermitPerWindow";
         public const string RateLimitAuthWindowSeconds = "Security.RateLimit.Auth.WindowSeconds";
+        // v0.0.92 — flood protection on the CSP-report endpoint, previously a
+        // hardcoded 20/min. Like the other rate-limit knobs these are read
+        // from configuration at startup (SERVICEDESK_Security__RateLimit__…
+        // environment variables); a change requires an app restart.
+        public const string RateLimitCspReportPermitPerWindow = "Security.RateLimit.CspReport.PermitPerWindow";
+        public const string RateLimitCspReportWindowSeconds = "Security.RateLimit.CspReport.WindowSeconds";
         public const string HstsMaxAgeDays = "Security.Hsts.MaxAgeDays";
         public const string CspReportUri = "Security.Csp.ReportUri";
+        public const string CspReportDedupWindowSeconds = "Security.Csp.ReportDedupWindowSeconds";
 
         public const string PasswordArgon2MemoryKb = "Security.Password.Argon2.MemoryKb";
         public const string PasswordArgon2Iterations = "Security.Password.Argon2.Iterations";
@@ -1121,6 +1128,7 @@ public static class SettingKeys
         public const string SecurityActivityThresholdLoginLockedOut = "Health.SecurityActivity.Threshold.LoginLockedOut";
         public const string SecurityActivityThresholdCsrfRejected = "Health.SecurityActivity.Threshold.CsrfRejected";
         public const string SecurityActivityThresholdRateLimited = "Health.SecurityActivity.Threshold.RateLimited";
+        public const string SecurityActivityThresholdRateLimitedCspReport = "Health.SecurityActivity.Threshold.RateLimitedCspReport";
         public const string SecurityActivityThresholdMicrosoftLoginRejected = "Health.SecurityActivity.Threshold.MicrosoftLoginRejected";
     }
 
@@ -1233,8 +1241,14 @@ public static class SettingDefaults
             "Auth rate limit window length, in seconds."),
         new SettingDefault(SettingKeys.Security.HstsMaxAgeDays, "365", "int", "Security",
             "HSTS max-age sent in the Strict-Transport-Security header, in days."),
+        new SettingDefault(SettingKeys.Security.RateLimitCspReportPermitPerWindow, "60", "int", "Security",
+            "Maximum CSP violation reports accepted per IP within the CSP-report rate limit window. Flood protection for the audit log; read at startup, a change requires an app restart."),
+        new SettingDefault(SettingKeys.Security.RateLimitCspReportWindowSeconds, "60", "int", "Security",
+            "CSP-report rate limit window length, in seconds. Read at startup, a change requires an app restart."),
         new SettingDefault(SettingKeys.Security.CspReportUri, "/api/security/csp-report", "string", "Security",
             "Path the browser should POST CSP violation reports to."),
+        new SettingDefault(SettingKeys.Security.CspReportDedupWindowSeconds, "600", "int", "Security",
+            "Window (seconds) during which an identical CSP violation report (same directive + blocked resource) from the same IP is logged only once. 0 disables deduplication."),
 
         new SettingDefault(SettingKeys.Security.PasswordArgon2MemoryKb, "65536", "int", "Security",
             "Argon2id memory cost in kibibytes. 65536 = 64 MiB."),
@@ -1654,6 +1668,8 @@ public static class SettingDefaults
             "Number of CSRF-rejected requests within the window before raising a Warning. Counts the 'csrf_rejected' audit event — non-zero on a healthy install usually means an outdated browser tab; sustained activity indicates a real attempt."),
         new SettingDefault(SettingKeys.Health.SecurityActivityThresholdRateLimited, "50", "int", "Health",
             "Number of rate-limit rejections within the window before raising a Warning. Counts the 'rate_limited' audit event — set deliberately high because a single misbehaving client can hit this fast."),
+        new SettingDefault(SettingKeys.Health.SecurityActivityThresholdRateLimitedCspReport, "500", "int", "Health",
+            "Number of rate-limited CSP violation reports within the window before raising a Warning. Counts the 'rate_limited_csp_report' audit event. Browsers send these reports on their own, so ordinary refresh bursts can trip the report endpoint's flood limit — only a sustained flood should alert."),
         new SettingDefault(SettingKeys.Health.SecurityActivityThresholdMicrosoftLoginRejected, "5", "int", "Health",
             "Number of M365-login rejections within the window before raising a Warning. Sums all five reject reasons (unknown OID, disabled account, customer role, inactive, callback failure)."),
 

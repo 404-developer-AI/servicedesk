@@ -276,13 +276,19 @@ builder.Services.AddRateLimiter(options =>
         });
     });
 
+    // v0.0.92 — was a hardcoded 20/min; the default is now 60/min and tunable
+    // like the other policies. With inline-script hashes in the CSP and report
+    // dedup in place a healthy install sends almost no reports, so 60 is pure
+    // headroom for e.g. a misbehaving browser extension across many tabs.
+    var cspReportPermit = builder.Configuration.GetValue<int?>("Security:RateLimit:CspReport:PermitPerWindow") ?? 60;
+    var cspReportWindow = builder.Configuration.GetValue<int?>("Security:RateLimit:CspReport:WindowSeconds") ?? 60;
     options.AddPolicy("csp-report", ctx =>
     {
         var key = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
         return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
         {
-            PermitLimit = 20,
-            Window = TimeSpan.FromMinutes(1),
+            PermitLimit = cspReportPermit,
+            Window = TimeSpan.FromSeconds(cspReportWindow),
             QueueLimit = 0,
             AutoReplenishment = true,
         });

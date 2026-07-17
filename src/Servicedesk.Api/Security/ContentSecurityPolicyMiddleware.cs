@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Servicedesk.Api.Security;
 
@@ -9,10 +11,12 @@ namespace Servicedesk.Api.Security;
 /// <c>'unsafe-eval'</c> for the Vite client.
 /// </summary>
 /// <remarks>
-/// The nonce is placed in <c>HttpContext.Items["csp-nonce"]</c> so the (future)
-/// SPA host middleware can inject it into <c>index.html</c> when static files
-/// are served in production builds (v0.0.14+). For v0.0.3 the header itself is
-/// the contract; the placeholder wiring is scaffolded for later.
+/// The nonce is placed in <c>HttpContext.Items["csp-nonce"]</c> for anything
+/// rendered server-side. The SPA's <c>index.html</c> is served as a verbatim
+/// static file, so its inline scripts are allowed by SHA-256 hash instead
+/// (computed once at startup from the built file, v0.0.92) — nonce injection
+/// into the static HTML was scaffolded early on but never built, which left
+/// the inline theme bootstrap blocked in production.
 /// </remarks>
 public sealed class ContentSecurityPolicyMiddleware
 {
@@ -21,12 +25,14 @@ public sealed class ContentSecurityPolicyMiddleware
     private readonly RequestDelegate _next;
     private readonly bool _isDevelopment;
     private readonly string _reportUri;
+    private readonly IReadOnlyList<string> _inlineScriptHashes;
 
     public ContentSecurityPolicyMiddleware(RequestDelegate next, IWebHostEnvironment env, IConfiguration configuration)
     {
         _next = next;
         _isDevelopment = env.IsDevelopment();
         _reportUri = configuration["Security:Csp:ReportUri"] ?? "/api/security/csp-report";
+        _inlineScriptHashes = LoadIndexHtmlScriptHashes(env);
     }
 
     public Task InvokeAsync(HttpContext context)
@@ -37,7 +43,7 @@ public sealed class ContentSecurityPolicyMiddleware
         // Attachment downloads are framed by our own origin for the PDF
         // preview lightbox; everything else keeps the stricter 'none'.
         var allowSameOriginFrame = IsAttachmentDownload(context.Request.Path);
-        var policy = BuildPolicy(nonce, _isDevelopment, _reportUri, allowSameOriginFrame);
+        var policy = BuildPolicy(nonce, _isDevelopment, _reportUri, allowSameOriginFrame, _inlineScriptHashes);
         context.Response.OnStarting(state =>
         {
             var ctx = (HttpContext)state!;
@@ -71,14 +77,78 @@ public sealed class ContentSecurityPolicyMiddleware
         return Convert.ToBase64String(bytes);
     }
 
+    /// <summary>
+    /// Hashes the inline scripts of the SPA's served <c>index.html</c> so
+    /// script-src can allow exactly those scripts and nothing else. The SPA
+    /// host serves index.html as a verbatim static file (no per-request nonce
+    /// injection), so the anti-FOUC theme bootstrap in its head was blocked by
+    /// the nonce-only policy on every production page load — breaking the dark
+    /// theme's first paint and flooding /api/security/csp-report (v0.0.92).
+    /// Hashes are computed once at startup from the built file; the file only
+    /// changes on deploy, which restarts the app.
+    /// </summary>
+    private static IReadOnlyList<string> LoadIndexHtmlScriptHashes(IWebHostEnvironment env)
+    {
+        try
+        {
+            var webRoot = env.WebRootPath;
+            if (string.IsNullOrEmpty(webRoot)) return Array.Empty<string>();
+            var indexPath = Path.Combine(webRoot, "index.html");
+            if (!File.Exists(indexPath)) return Array.Empty<string>();
+            return ComputeInlineScriptHashes(File.ReadAllText(indexPath));
+        }
+        catch
+        {
+            // A missing/unreadable index.html (dev runs serve the SPA from the
+            // Vite dev server) simply means no inline scripts to allow.
+            return Array.Empty<string>();
+        }
+    }
+
+    /// Extracts every inline (src-less) script body and returns its CSP-3
+    /// source token: base64(SHA-256) over the raw UTF-8 text between the tags,
+    /// exactly as served — no trimming, per the CSP hashing spec.
+    internal static IReadOnlyList<string> ComputeInlineScriptHashes(string html)
+    {
+        var hashes = new List<string>();
+        foreach (Match m in InlineScriptRegex.Matches(html))
+        {
+            var body = m.Groups["body"].Value;
+            if (body.Length == 0) continue;
+            var digest = SHA256.HashData(Encoding.UTF8.GetBytes(body));
+            hashes.Add($"'sha256-{Convert.ToBase64String(digest)}'");
+        }
+
+        return hashes;
+    }
+
+    private static readonly Regex InlineScriptRegex = new(
+        @"<script\b(?![^>]*\bsrc\s*=)[^>]*>(?<body>.*?)</script>",
+        RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled,
+        TimeSpan.FromSeconds(5));
+
     internal static string BuildPolicy(string nonce, bool development, string reportUri)
         => BuildPolicy(nonce, development, reportUri, allowSameOriginFrame: false);
 
     internal static string BuildPolicy(string nonce, bool development, string reportUri, bool allowSameOriginFrame)
+        => BuildPolicy(nonce, development, reportUri, allowSameOriginFrame, Array.Empty<string>());
+
+    internal static string BuildPolicy(
+        string nonce,
+        bool development,
+        string reportUri,
+        bool allowSameOriginFrame,
+        IReadOnlyList<string> inlineScriptHashes)
     {
+        // The hash tokens ride next to the nonce: the nonce keeps covering
+        // anything stamped with it at runtime, the hashes cover the static
+        // inline scripts baked into index.html. Everything else stays blocked.
+        var hashPart = inlineScriptHashes.Count == 0
+            ? string.Empty
+            : " " + string.Join(' ', inlineScriptHashes);
         var scriptSrc = development
-            ? $"'self' 'nonce-{nonce}' 'unsafe-eval'"
-            : $"'self' 'nonce-{nonce}'";
+            ? $"'self' 'nonce-{nonce}'{hashPart} 'unsafe-eval'"
+            : $"'self' 'nonce-{nonce}'{hashPart}";
 
         // style-src allows 'unsafe-inline' in both dev and prod. Reason: Sonner,
         // Radix, Framer Motion, Vaul and other UI libs inject stylesheets at

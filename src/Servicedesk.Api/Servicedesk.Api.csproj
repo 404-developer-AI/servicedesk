@@ -27,4 +27,10 @@
     <ProjectReference Include="..\Servicedesk.Infrastructure\Servicedesk.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Same pattern as Servicedesk.Infrastructure: unit tests exercise the
+         internal static policy/classification helpers directly. -->
+    <InternalsVisibleTo Include="Servicedesk.Api.Tests" />
+  </ItemGroup>
+
 </Project>
