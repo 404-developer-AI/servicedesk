@@ -265,7 +265,110 @@ public sealed class OutboundMailServiceTests
         Assert.Equal(0, arr.GetArrayLength());
     }
 
+    [Fact]
+    public async Task Template_image_is_copied_to_ticket_and_cid_embedded()
+    {
+        // v0.0.92 — a mail-template body carries an <img> pointing at the
+        // agent-only template-image endpoint. Sending must copy the image
+        // onto the ticket, cid-embed it on the wire, and persist a timeline
+        // body that references the ticket-owned copy.
+        var templateImage = ReadyTemplateImage();
+        var (svc, graph, _, repo, tickets) = Build(attachments: new[] { templateImage });
+        var templateUrl = $"/api/compose-templates/images/{templateImage.Id}";
+
+        var result = await svc.SendAsync(new OutboundMailRequest(
+            TicketId, AuthorId, OutboundMailKind.New,
+            To: new[] { new GraphRecipient("dest@example.com", "D") },
+            Cc: Array.Empty<GraphRecipient>(),
+            Bcc: Array.Empty<GraphRecipient>(),
+            Subject: "Subj",
+            BodyHtml: $"<p>Hi,</p><img src=\"{templateUrl}\" alt=\"banner\">"), default);
+
+        Assert.Equal(OutboundMailStatus.Sent, result.Status);
+
+        // The copy is staged on this ticket with the same content hash.
+        var copy = Assert.Single(repo.UploadedCreates);
+        Assert.Equal(TicketId, copy.TicketId);
+        Assert.Equal(templateImage.ContentHash, copy.ContentHash);
+
+        // Wire body: template URL gone, replaced by a cid reference; the
+        // copy rides along as an inline attachment with a matching cid.
+        Assert.DoesNotContain(templateUrl, graph.LastMessage!.BodyHtml, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("cid:", graph.LastMessage.BodyHtml, StringComparison.OrdinalIgnoreCase);
+        var sentAtt = Assert.Single(graph.LastMessage.Attachments!);
+        Assert.True(sentAtt.IsInline);
+        Assert.False(string.IsNullOrWhiteSpace(sentAtt.ContentId));
+
+        var assignment = Assert.Single(repo.MailReassignments);
+        Assert.True(assignment.Item.IsInline);
+
+        // Timeline body: references the ticket-owned copy (renders via the
+        // authenticated ticket endpoint), never the deletable template image.
+        Assert.DoesNotContain(templateUrl, tickets.LastEventInput!.BodyHtml!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains($"/api/tickets/{TicketId}/attachments/", tickets.LastEventInput.BodyHtml!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Unresolvable_template_image_reference_is_left_untouched()
+    {
+        var (svc, graph, _, repo, _) = Build();
+        var missingUrl = $"/api/compose-templates/images/{Guid.NewGuid()}";
+
+        var result = await svc.SendAsync(new OutboundMailRequest(
+            TicketId, AuthorId, OutboundMailKind.New,
+            To: new[] { new GraphRecipient("dest@example.com", "D") },
+            Cc: Array.Empty<GraphRecipient>(),
+            Bcc: Array.Empty<GraphRecipient>(),
+            Subject: "Subj",
+            BodyHtml: $"<img src=\"{missingUrl}\">"), default);
+
+        // The send goes through — a stale template reference degrades to a
+        // broken image for the recipient instead of blocking the mail.
+        Assert.Equal(OutboundMailStatus.Sent, result.Status);
+        Assert.Contains(missingUrl, graph.LastMessage!.BodyHtml, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(repo.UploadedCreates);
+        Assert.Null(graph.LastMessage.Attachments);
+    }
+
+    [Fact]
+    public async Task Non_template_attachment_id_in_template_url_is_not_copied()
+    {
+        // Exfiltration guard: wrapping another ticket's attachment id in a
+        // template-image URL must not copy that attachment onto this ticket.
+        var foreign = ReadyAttachment("image/png", "secret.png", 1024) with
+        {
+            OwnerId = Guid.NewGuid(), // some other ticket
+        };
+        var (svc, graph, _, repo, _) = Build(attachments: new[] { foreign });
+        var smuggledUrl = $"/api/compose-templates/images/{foreign.Id}";
+
+        var result = await svc.SendAsync(new OutboundMailRequest(
+            TicketId, AuthorId, OutboundMailKind.New,
+            To: new[] { new GraphRecipient("dest@example.com", "D") },
+            Cc: Array.Empty<GraphRecipient>(),
+            Bcc: Array.Empty<GraphRecipient>(),
+            Subject: "Subj",
+            BodyHtml: $"<img src=\"{smuggledUrl}\">"), default);
+
+        Assert.Equal(OutboundMailStatus.Sent, result.Status);
+        Assert.Empty(repo.UploadedCreates);
+        Assert.Null(graph.LastMessage!.Attachments);
+        Assert.Contains(smuggledUrl, graph.LastMessage.BodyHtml, StringComparison.OrdinalIgnoreCase);
+    }
+
     // ---- helpers ----
+
+    private static AttachmentRow ReadyTemplateImage()
+    {
+        // Self-owned row, exactly as CreateForComposeTemplateImageAsync
+        // writes it: owner_kind='ComposeTemplateImage', owner_id = own id.
+        var id = Guid.NewGuid();
+        return new AttachmentRow(
+            Id: id, OwnerId: id, OwnerKind: "ComposeTemplateImage",
+            ContentHash: "hash-template-img", SizeBytes: 2048, MimeType: "image/png",
+            OriginalFilename: "banner.png", IsInline: false, ContentId: null,
+            ProcessingState: "Ready", EventId: null);
+    }
 
     private static AttachmentRow ReadyImage() =>
         new(Id: Guid.NewGuid(), OwnerId: TicketId, OwnerKind: "Ticket",
@@ -457,6 +560,10 @@ public sealed class OutboundMailServiceTests
         private readonly Dictionary<Guid, AttachmentRow> _rows;
         public List<(AttachmentReassignToMail Item, Guid TicketId, Guid MailMessageId, long EventId)> MailReassignments { get; } = new();
 
+        /// Every NewUploadedAttachment passed to CreateUploadedAsync — the
+        /// template-image tests read this to assert the ticket-side copy.
+        public List<NewUploadedAttachment> UploadedCreates { get; } = new();
+
         public StubAttachments(IReadOnlyList<AttachmentRow> rows)
         {
             _rows = rows.ToDictionary(r => r.Id);
@@ -471,7 +578,19 @@ public sealed class OutboundMailServiceTests
             => Task.FromResult<IReadOnlyList<AttachmentRow>>(Array.Empty<AttachmentRow>());
         public Task<bool> MarkReadyAsync(Guid id, string h, long s, string m, CancellationToken ct) => Task.FromResult(true);
         public Task MarkFailedAsync(Guid id, CancellationToken ct) => Task.CompletedTask;
-        public Task<Guid> CreateUploadedAsync(NewUploadedAttachment input, CancellationToken ct) => throw new NotImplementedException();
+        public Task<Guid> CreateUploadedAsync(NewUploadedAttachment input, CancellationToken ct)
+        {
+            // Behaves like the real repo: the copy lands as a Ready row staged
+            // on the ticket, resolvable through GetByIdAsync in the same send.
+            UploadedCreates.Add(input);
+            var id = Guid.NewGuid();
+            _rows[id] = new AttachmentRow(
+                Id: id, OwnerId: input.TicketId, OwnerKind: "Ticket",
+                ContentHash: input.ContentHash, SizeBytes: input.SizeBytes,
+                MimeType: input.MimeType, OriginalFilename: input.OriginalFilename,
+                IsInline: false, ContentId: null, ProcessingState: "Ready", EventId: null);
+            return Task.FromResult(id);
+        }
         public Task<int> ReassignToEventAsync(IReadOnlyList<Guid> ids, Guid ticketId, long eventId, CancellationToken ct) => Task.FromResult(0);
         public Task<int> ReassignToMailAsync(IReadOnlyList<AttachmentReassignToMail> assignments, Guid ticketId, Guid mailMessageId, long ticketEventId, CancellationToken ct)
         {
@@ -484,6 +603,7 @@ public sealed class OutboundMailServiceTests
         public Task<Guid> CreateForFeedbackEntryAsync(NewFeedbackEntryAttachment input, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<AttachmentRow>> ListByFeedbackEntryAsync(Guid entryId, CancellationToken ct) => throw new NotImplementedException();
         public Task<bool> DeleteFeedbackAttachmentAsync(Guid attachmentId, Guid entryId, CancellationToken ct) => throw new NotImplementedException();
+        public Task<Guid> CreateForComposeTemplateImageAsync(NewComposeTemplateImage input, CancellationToken ct) => throw new NotImplementedException();
     }
 
     private sealed class StubBlobs : IBlobStore

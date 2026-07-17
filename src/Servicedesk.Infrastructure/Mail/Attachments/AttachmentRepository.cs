@@ -180,6 +180,33 @@ public sealed class AttachmentRepository : IAttachmentRepository
         return affected > 0;
     }
 
+    public async Task<Guid> CreateForComposeTemplateImageAsync(NewComposeTemplateImage input, CancellationToken ct)
+    {
+        // Self-owned row: owner_id is NOT NULL but a template image has no
+        // parent (the template may not exist yet when the admin pastes), so
+        // the row points at itself. The id is generated here rather than by
+        // the DB default so both columns land in a single INSERT.
+        var id = Guid.NewGuid();
+        const string sql = """
+            INSERT INTO attachments
+                (id, content_hash, size_bytes, mime_type, original_filename,
+                 owner_kind, owner_id, is_inline, content_id, processing_state)
+            VALUES
+                (@Id, @ContentHash, @SizeBytes, @MimeType, @OriginalFilename,
+                 'ComposeTemplateImage', @Id, FALSE, NULL, 'Ready')
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            Id = id,
+            input.ContentHash,
+            input.SizeBytes,
+            input.MimeType,
+            input.OriginalFilename,
+        }, cancellationToken: ct));
+        return id;
+    }
+
     public async Task<int> ReassignToEventAsync(IReadOnlyList<Guid> attachmentIds, Guid ticketId, long eventId, CancellationToken ct)
     {
         if (attachmentIds.Count == 0) return 0;

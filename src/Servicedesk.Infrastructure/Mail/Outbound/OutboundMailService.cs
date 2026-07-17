@@ -114,21 +114,35 @@ public sealed class OutboundMailService : IOutboundMailService
         if (string.IsNullOrWhiteSpace(refPrefix)) refPrefix = TicketReference.DefaultPrefix;
         var subject = NormalizeSubject(request.Subject, detail.Ticket.Number, refPrefix);
 
+        // Compose-template inline images (v0.0.92). A template body can carry
+        // <img> tags pointing at the shared template-image endpoint
+        // (/api/compose-templates/images/{id}) — an URL only agents can read.
+        // Before the mail leaves, each referenced image is copied onto this
+        // ticket as a staged attachment row (content-addressed blob store, so
+        // no byte duplication) and the body is rewritten to the canonical
+        // ticket-attachment URL. The regular inline pipeline below then
+        // cid-embeds it exactly like a hand-pasted image, and the persisted
+        // timeline body references the ticket-owned copy — deleting the
+        // template or its image later can never break an already-sent mail.
+        var effectiveBody = await MaterializeTemplateImagesAsync(request, ct);
+        var attachmentIds = new List<Guid>(request.AttachmentIds ?? Array.Empty<Guid>());
+        attachmentIds.AddRange(effectiveBody.NewAttachmentIds);
+
         // Resolve attachments and prepare inline/cid-rewrite + Graph payload.
         // We accept any user-supplied id but only act on rows that *belong*
         // to this ticket and are still staged (owner_kind='Ticket', no
         // event_id) — everything else is silently dropped, treated identically
         // to "id not found".
-        var preparedBody = request.BodyHtml;
+        var preparedBody = effectiveBody.BodyHtml;
         var graphAttachments = new List<GraphOutboundAttachment>();
         var reassignments = new List<AttachmentReassignToMail>();
-        if (request.AttachmentIds is { Count: > 0 } incomingIds)
+        if (attachmentIds.Count > 0)
         {
             var totalCap = await _settings.GetAsync<long>(SettingKeys.Mail.MaxOutboundTotalBytes, ct);
             if (totalCap <= 0) totalCap = 25 * 1024 * 1024;
 
             long running = 0;
-            foreach (var attId in incomingIds.Distinct())
+            foreach (var attId in attachmentIds.Distinct())
             {
                 var row = await _attachments.GetByIdAsync(attId, ct);
                 if (row is null) continue;
@@ -269,7 +283,9 @@ public sealed class OutboundMailService : IOutboundMailService
         // The timeline event keeps the agent's message + quote but never the
         // signature block: strip the marker so a bare <div data-sd-signature>
         // never lingers in the persisted body (the signature is wire-only).
-        var persistedBodyHtml = SignaturePlacement.StripMarker(request.BodyHtml);
+        // Uses the template-image-rewritten body so the timeline references
+        // the ticket-owned image copies, not the deletable template images.
+        var persistedBodyHtml = SignaturePlacement.StripMarker(effectiveBody.BodyHtml);
         var bodyText = HtmlToText(persistedBodyHtml);
         var metadata = JsonSerializer.Serialize(new
         {
@@ -444,6 +460,89 @@ public sealed class OutboundMailService : IOutboundMailService
     {
         return body.Replace(url, $"cid:{contentId}", StringComparison.OrdinalIgnoreCase);
     }
+
+    // ============================================================
+    // Compose-template inline images (v0.0.92) helpers
+    // ============================================================
+
+    private sealed record MaterializedTemplateImages(
+        string BodyHtml,
+        IReadOnlyList<Guid> NewAttachmentIds);
+
+    private static readonly Regex ComposeTemplateImageUrlRegex = new(
+        @"/api/compose-templates/images/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// Copies every compose-template image referenced in the body onto the
+    /// ticket as a staged attachment row (same content hash — the blob store
+    /// is content-addressed, so only a metadata row is added) and rewrites
+    /// the body to the canonical ticket-attachment URL the inline/cid
+    /// pipeline understands. An id that doesn't resolve to a Ready
+    /// template-image row is left untouched: the recipient gets a broken
+    /// image instead of the whole send failing, and the warning below gives
+    /// the admin the trail. Only 'ComposeTemplateImage' rows qualify —
+    /// a guessed attachment id from another ticket can't be exfiltrated
+    /// through this path.
+    private async Task<MaterializedTemplateImages> MaterializeTemplateImagesAsync(
+        OutboundMailRequest request, CancellationToken ct)
+    {
+        var body = request.BodyHtml;
+        var imageIds = ExtractComposeTemplateImageIds(body);
+        if (imageIds.Count == 0)
+            return new MaterializedTemplateImages(body, Array.Empty<Guid>());
+
+        var newIds = new List<Guid>(imageIds.Count);
+        foreach (var imageId in imageIds)
+        {
+            var image = await _attachments.GetByIdAsync(imageId, ct);
+            if (image is null
+                || image.OwnerKind != "ComposeTemplateImage"
+                || image.ProcessingState != "Ready"
+                || string.IsNullOrWhiteSpace(image.ContentHash)
+                || !image.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning(
+                    "Compose-template image {ImageId} referenced in outbound mail for ticket {TicketId} did not resolve to a Ready template image; URL left as-is.",
+                    imageId, request.TicketId);
+                continue;
+            }
+
+            var copyId = await _attachments.CreateUploadedAsync(new NewUploadedAttachment(
+                TicketId: request.TicketId,
+                ContentHash: image.ContentHash!,
+                SizeBytes: image.SizeBytes,
+                MimeType: image.MimeType,
+                OriginalFilename: image.OriginalFilename), ct);
+
+            body = body.Replace(
+                ComposeTemplateImageUrl(imageId),
+                $"/api/tickets/{request.TicketId}/attachments/{copyId}",
+                StringComparison.OrdinalIgnoreCase);
+            newIds.Add(copyId);
+        }
+
+        return new MaterializedTemplateImages(body, newIds);
+    }
+
+    /// Distinct compose-template image ids referenced anywhere in the body,
+    /// in first-appearance order. Internal so tests can pin the URL contract
+    /// shared by the upload endpoint, the frontend editor, and this rewrite.
+    internal static IReadOnlyList<Guid> ExtractComposeTemplateImageIds(string bodyHtml)
+    {
+        if (string.IsNullOrEmpty(bodyHtml)) return Array.Empty<Guid>();
+        var ids = new List<Guid>();
+        foreach (Match m in ComposeTemplateImageUrlRegex.Matches(bodyHtml))
+        {
+            if (Guid.TryParse(m.Groups[1].Value, out var id) && !ids.Contains(id))
+                ids.Add(id);
+        }
+        return ids;
+    }
+
+    /// The canonical URL the upload endpoint returns and the template editor
+    /// embeds — the single string both sides of the rewrite agree on.
+    internal static string ComposeTemplateImageUrl(Guid imageId)
+        => $"/api/compose-templates/images/{imageId}";
 
     // ============================================================
     // Intake Forms (v0.0.19) helpers

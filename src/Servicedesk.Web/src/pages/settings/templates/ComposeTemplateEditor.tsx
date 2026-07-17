@@ -234,9 +234,18 @@ export function TemplateEditor({
           onEditorReady={(editor) => {
             editorRef.current = editor as unknown as EditorHandle | null;
           }}
+          onUploadFile={async (file) => {
+            try {
+              return await composeTemplatesApi.uploadImage(file);
+            } catch (e) {
+              const err = e as Error & { payload?: { error?: string } };
+              toast.error(err.payload?.error ?? "Image upload failed.");
+              return null;
+            }
+          }}
         />
         <p className="text-[11px] text-muted-foreground/70">
-          Placeholders such as <code className="font-mono">{"{{contact.firstName}}"}</code> are filled in when the template lands in a ticket. Empty values stay as the raw placeholder so the agent notices missing data.
+          Placeholders such as <code className="font-mono">{"{{contact.firstName}}"}</code> are filled in when the template lands in a ticket. Empty values stay as the raw placeholder so the agent notices missing data. Paste or drop images straight into the body — outgoing mail embeds them as real inline attachments.
         </p>
       </div>
 

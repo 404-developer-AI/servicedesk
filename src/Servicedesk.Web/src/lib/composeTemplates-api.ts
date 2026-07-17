@@ -94,6 +94,19 @@ export interface ComposeTokenInfo {
   label: string;
 }
 
+/// Upload result for an inline template image (v0.0.92). Shape matches
+/// TicketAttachmentMeta so the RichTextEditor's paste/drop pipeline can
+/// consume it unchanged; `url` is the agent-readable download endpoint the
+/// template body embeds. At send time the backend swaps it for a real
+/// inline mail attachment (cid), so recipients see the image too.
+export interface ComposeTemplateImageMeta {
+  id: string;
+  url: string;
+  mimeType: string;
+  size: number;
+  filename: string;
+}
+
 export interface ResolveTokenParams {
   ticketId?: string | null;
   contactId?: string | null;
@@ -146,6 +159,40 @@ export const composeTemplatesApi = {
         queueId,
       )}&statusId=${encodeURIComponent(statusId)}`,
     ),
+
+  /// Inline-image upload for the admin template editor (multipart, so it
+  /// bypasses the JSON `request` helper). Images only — the server sniffs
+  /// the real MIME type and rejects everything else.
+  uploadImage: async (file: File): Promise<ComposeTemplateImageMeta> => {
+    const csrf = document.cookie
+      .split("; ")
+      .find((c) => c.startsWith("XSRF-TOKEN="))
+      ?.split("=")[1];
+    const fd = new FormData();
+    fd.append("file", file, file.name);
+    const res = await fetch("/api/settings/compose-templates/images", {
+      method: "POST",
+      credentials: "include",
+      headers: csrf ? { "X-XSRF-TOKEN": decodeURIComponent(csrf) } : undefined,
+      body: fd,
+    });
+    if (!res.ok) {
+      let payload: unknown = null;
+      try {
+        payload = await res.json();
+      } catch {
+        /* ignore */
+      }
+      const err = new Error(`Upload failed: ${res.status}`) as Error & {
+        status?: number;
+        payload?: unknown;
+      };
+      err.status = res.status;
+      err.payload = payload;
+      throw err;
+    }
+    return res.json();
+  },
 
   /// Token picker metadata for the admin editor. Static list — fetched once
   /// per session and cached aggressively by React Query.
