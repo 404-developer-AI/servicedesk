@@ -49,9 +49,22 @@ public static class SecurityActivityCategories
             Label: "Rate-limit rejections",
             ThresholdSettingKey: SettingKeys.Health.SecurityActivityThresholdRateLimited,
             DefaultThreshold: 50,
-            // String literal mirrors AuditRateLimiterEvents — the rate-limit
-            // log path doesn't expose a public constant for it.
+            // String literal mirrors AuditRateLimiterEvents — Infrastructure
+            // can't reference the Api project's constants.
             EventTypes: new[] { "rate_limited" }),
+
+        // v0.0.92 — CSP-report rejections tracked apart from generic rate
+        // limiting. Browsers send violation reports on their own; a refresh
+        // burst can exceed that endpoint's flood-protection limit with zero
+        // hostile intent, and folding those into "rate_limited" (threshold 50)
+        // paged admins for normal browsing. Only a sustained flood — orders of
+        // magnitude above organic traffic — should alert here.
+        new SecurityActivityCategory(
+            Key: "rate_limited_csp_report",
+            Label: "Rate-limited CSP reports",
+            ThresholdSettingKey: SettingKeys.Health.SecurityActivityThresholdRateLimitedCspReport,
+            DefaultThreshold: 500,
+            EventTypes: new[] { "rate_limited_csp_report" }),
 
         new SecurityActivityCategory(
             Key: "microsoft_login_rejected",
