@@ -2129,12 +2129,15 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- KbArticle. Constraint is dropped + re-added so the SQL stays
         -- idempotent across upgrades from older schemas.
         -- Whitelist also covers 'FeedbackEntry' (Employee Feedback inline
-        -- images, added later). It is declared here — the single re-add point —
-        -- rather than in a second drop/re-add, so the batch never leaves a
-        -- narrower constraint that an existing FeedbackEntry row would violate.
+        -- images) and 'ComposeTemplateImage' (inline images in mail
+        -- templates, v0.0.92 — self-owned rows: owner_id = the row's own id
+        -- because a template can be edited before it is first saved), both
+        -- added later. They are declared here — the single re-add point —
+        -- rather than in second drop/re-adds, so the batch never leaves a
+        -- narrower constraint that an existing row would violate.
         ALTER TABLE attachments DROP CONSTRAINT IF EXISTS chk_attachments_owner_kind;
         ALTER TABLE attachments ADD CONSTRAINT chk_attachments_owner_kind
-            CHECK (owner_kind IN ('Mail','Ticket','User','KbArticle','FeedbackEntry'));
+            CHECK (owner_kind IN ('Mail','Ticket','User','KbArticle','FeedbackEntry','ComposeTemplateImage'));
 
         CREATE TABLE IF NOT EXISTS kb_locales (
             code            TEXT        PRIMARY KEY,

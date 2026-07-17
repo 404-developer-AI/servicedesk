@@ -74,6 +74,17 @@ public interface IAttachmentRepository
     /// inline images pasted into the feedback / management-remarks editors.
     Task<Guid> CreateForFeedbackEntryAsync(NewFeedbackEntryAttachment input, CancellationToken ct);
 
+    /// Insert a fully-stored inline image for the mail-templates feature
+    /// (v0.0.92). Unlike KB/feedback attachments there is no parent row to
+    /// point at — an admin can paste an image into a template that hasn't
+    /// been saved yet — so the row is self-owned:
+    /// <c>owner_kind='ComposeTemplateImage'</c>, <c>owner_id</c> = its own id.
+    /// Template bodies reference the image purely by URL; at send time the
+    /// outbound pipeline copies it onto the ticket via
+    /// <see cref="CreateUploadedAsync"/> so a later template/image delete
+    /// can never break an already-sent mail.
+    Task<Guid> CreateForComposeTemplateImageAsync(NewComposeTemplateImage input, CancellationToken ct);
+
     /// Every Ready attachment owned by a feedback entry, newest first.
     Task<IReadOnlyList<AttachmentRow>> ListByFeedbackEntryAsync(Guid entryId, CancellationToken ct);
 
@@ -112,6 +123,12 @@ public sealed record NewKbArticleAttachment(
 
 public sealed record NewFeedbackEntryAttachment(
     Guid EntryId,
+    string ContentHash,
+    long SizeBytes,
+    string MimeType,
+    string OriginalFilename);
+
+public sealed record NewComposeTemplateImage(
     string ContentHash,
     long SizeBytes,
     string MimeType,

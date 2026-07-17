@@ -644,6 +644,7 @@ app.MapTriggerGroupEndpoints();
 app.MapIsoEndpoints();
 app.MapIntakeFormEndpoints();
 app.MapComposeTemplateEndpoints();
+app.MapComposeTemplateImageEndpoints();
 app.MapTicketTemplateEndpoints();
 app.MapTaggingMailboxEndpoints();
 app.MapSignatureEndpoints();

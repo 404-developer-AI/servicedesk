@@ -95,4 +95,27 @@ public class KbHtmlSanitizerTests
         Assert.DoesNotContain("data-foo", output);
         Assert.DoesNotContain("data-bar", output);
     }
+
+    [Fact]
+    public void Keeps_relative_api_image_sources()
+    {
+        // KB, feedback, and mail-template bodies (v0.0.92) all embed inline
+        // images as relative URLs to their authenticated download endpoints.
+        // Those must survive the persist-time sanitize or every saved body
+        // silently loses its images.
+        var input = "<img src=\"/api/compose-templates/images/11111111-2222-3333-4444-555555555555\" alt=\"logo\">";
+        var output = Sanitizer.Sanitize(input);
+        Assert.Contains("/api/compose-templates/images/11111111-2222-3333-4444-555555555555", output);
+        Assert.Contains("alt=\"logo\"", output);
+    }
+
+    [Fact]
+    public void Strips_data_uri_image_sources()
+    {
+        // Base64 images are deliberately not supported (Outlook won't render
+        // them and they bloat the row); the upload endpoint is the only way
+        // to embed an image. Pin that a pasted data: URI never persists.
+        var output = Sanitizer.Sanitize("<img src=\"data:image/png;base64,iVBORw0KGgo=\">");
+        Assert.DoesNotContain("data:image", output);
+    }
 }
