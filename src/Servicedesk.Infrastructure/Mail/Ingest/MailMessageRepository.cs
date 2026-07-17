@@ -78,11 +78,11 @@ public sealed class MailMessageRepository : IMailMessageRepository
             INSERT INTO mail_messages
                 (message_id, in_reply_to, references_header, subject, from_address, from_name,
                  mailbox_address, received_utc, raw_eml_blob_hash, body_html_blob_hash, body_text,
-                 graph_message_id)
+                 graph_message_id, is_auto_submitted)
             VALUES
                 (@MessageId, @InReplyTo, @References, @Subject, @FromAddress, @FromName,
                  @MailboxAddress, @ReceivedUtc, @RawEmlBlobHash, @BodyHtmlBlobHash, @BodyText,
-                 @GraphMessageId)
+                 @GraphMessageId, @IsAutoSubmitted)
             RETURNING id
             """;
         const string insertRecipient = """

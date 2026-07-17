@@ -22,15 +22,103 @@ public sealed class MailIngestServiceTests
     private static readonly Guid QueueId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private const string QueueMailbox = "inbox@test";
 
+    // v0.0.92: an auto-reply is only skipped when NO existing ticket matches —
+    // it must never open a ticket, but a threadable one is ingested (flagged).
     [Fact]
-    public async Task Skips_auto_submitted_header_other_than_no()
+    public async Task Skips_auto_submitted_mail_without_thread_match()
     {
-        var (svc, graph, _, _, _) = Build();
+        var (svc, graph, mailRepo, tickets, _) = Build();
         graph.Message = NewMessage(autoSubmitted: "auto-replied");
 
         var result = await svc.IngestAsync(QueueId, QueueMailbox, "gid-1", default);
 
         Assert.Equal(MailIngestOutcome.SkippedAutoSubmitted, result.Outcome);
+        Assert.Empty(tickets.Created);
+        Assert.Empty(mailRepo.Inserts);
+    }
+
+    [Fact]
+    public async Task Auto_submitted_mail_with_thread_match_is_ingested_and_flagged()
+    {
+        var (svc, graph, mailRepo, tickets, _) = Build();
+        var existing = Guid.NewGuid();
+        tickets.NumberToId[1234] = existing;
+        graph.Message = NewMessage(
+            autoSubmitted: "auto-replied",
+            to: new[] { new GraphRecipient("servicedesk+TCK-1234@domain.com", "Desk") });
+
+        var result = await svc.IngestAsync(QueueId, QueueMailbox, "gid-1", default);
+
+        Assert.Equal(MailIngestOutcome.Appended, result.Outcome);
+        Assert.Equal(existing, result.TicketId);
+        Assert.Empty(tickets.Created);
+        var inserted = Assert.Single(mailRepo.Inserts);
+        Assert.True(inserted.IsAutoSubmitted);
+        var evt = Assert.Single(tickets.AddedEvents);
+        Assert.Contains("\"auto_reply\":true", evt.MetadataJson);
+        Assert.Contains("Auto-Submitted: auto-replied", evt.MetadataJson);
+    }
+
+    [Fact]
+    public async Task Normal_mail_is_not_flagged_auto_submitted()
+    {
+        var (svc, graph, mailRepo, tickets, _) = Build();
+        graph.Message = NewMessage(messageId: "plain@example");
+
+        var result = await svc.IngestAsync(QueueId, QueueMailbox, "gid-1", default);
+
+        Assert.Equal(MailIngestOutcome.Created, result.Outcome);
+        var inserted = Assert.Single(mailRepo.Inserts);
+        Assert.False(inserted.IsAutoSubmitted);
+        var evt = Assert.Single(tickets.AddedEvents);
+        Assert.DoesNotContain("auto_reply", evt.MetadataJson);
+    }
+
+    // v0.0.92 broadened detection: Exchange's X-Auto-Response-Suppress,
+    // the pre-RFC-3834 Precedence values, and X-Autoreply/X-Autorespond
+    // all count as auto-reply signals.
+    [Theory]
+    [InlineData("suppress", "All")]
+    [InlineData("precedence", "auto_reply")]
+    [InlineData("precedence", "bulk")]
+    [InlineData("precedence", "junk")]
+    [InlineData("xautoreply", "yes")]
+    public async Task Broadened_signals_classify_as_auto_reply(string kind, string value)
+    {
+        var (svc, graph, _, _, _) = Build();
+        graph.Message = NewMessage() with
+        {
+            AutoResponseSuppress = kind == "suppress" ? value : null,
+            Precedence = kind == "precedence" ? value : null,
+            XAutoReply = kind == "xautoreply" ? value : null,
+        };
+
+        var result = await svc.IngestAsync(QueueId, QueueMailbox, "gid-1", default);
+
+        Assert.Equal(MailIngestOutcome.SkippedAutoSubmitted, result.Outcome);
+    }
+
+    // Negative signals: "Auto-Submitted: no" and "X-Auto-Response-Suppress:
+    // None" explicitly mean "this is a human mail" — no flag, normal ingest.
+    // "Precedence: list" (mailing lists) is deliberately not treated as auto.
+    [Theory]
+    [InlineData("autosubmitted", "no")]
+    [InlineData("suppress", "None")]
+    [InlineData("precedence", "list")]
+    public async Task Negative_signals_do_not_classify_as_auto_reply(string kind, string value)
+    {
+        var (svc, graph, mailRepo, _, _) = Build();
+        graph.Message = NewMessage(autoSubmitted: kind == "autosubmitted" ? value : null) with
+        {
+            AutoResponseSuppress = kind == "suppress" ? value : null,
+            Precedence = kind == "precedence" ? value : null,
+        };
+
+        var result = await svc.IngestAsync(QueueId, QueueMailbox, "gid-1", default);
+
+        Assert.Equal(MailIngestOutcome.Created, result.Outcome);
+        var inserted = Assert.Single(mailRepo.Inserts);
+        Assert.False(inserted.IsAutoSubmitted);
     }
 
     [Fact]
@@ -352,8 +440,12 @@ public sealed class MailIngestServiceTests
                 input.Source, null, now, now, null, null, null, null, false));
         }
 
+        public List<NewTicketEvent> AddedEvents { get; } = new();
+
         public Task<TicketEvent?> AddEventAsync(Guid ticketId, NewTicketEvent input, CancellationToken ct)
-            => Task.FromResult<TicketEvent?>(new TicketEvent(
+        {
+            AddedEvents.Add(input);
+            return Task.FromResult<TicketEvent?>(new TicketEvent(
                 Id: Random.Shared.NextInt64(1, 1_000_000),
                 TicketId: ticketId,
                 EventType: input.EventType,
@@ -367,6 +459,7 @@ public sealed class MailIngestServiceTests
                 CreatedUtc: DateTime.UtcNow,
                 EditedUtc: null,
                 EditedByUserId: null));
+        }
 
         public Task<TicketPage> SearchAsync(TicketQuery q, VisibilityScope s, Guid? uid, Guid? cid, CancellationToken ct) => throw new NotImplementedException();
         public Task<TicketDetail?> GetByIdAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();

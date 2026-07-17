@@ -96,6 +96,24 @@ internal sealed class SendMailHandler : ITriggerActionHandler
             bodyHtml = _renderer.Render(bodyHtml, TemplateEscapeMode.Html, rc);
         }
 
+        // Hard loop-prevention gate (v0.0.92): when the article that fired
+        // this trigger is an auto-submitted inbound mail (out-of-office,
+        // bounce, autoresponder — flagged at ingest, see AutoReplyDetector),
+        // trigger mail toward the customer must NEVER go out: an
+        // autoresponder answering our automatic mail would otherwise
+        // ping-pong forever. Deliberately NOT a setting and NOT a trigger
+        // condition — no configuration may re-enable the loop. Agent-directed
+        // notifications (owner-agent / queue-agents) are unaffected.
+        var autoReplyOrigin = IsAutoSubmittedArticle(ctx.TriggeringEvent, out var autoReplyFrom);
+        if (autoReplyOrigin && string.Equals(toSpec.Trim(), "customer", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation(
+                "Trigger {TriggerId}: suppressed send_mail to customer on ticket {TicketId} — triggering article is an auto-submitted mail (loop prevention).",
+                ctx.TriggerId, ctx.TicketId);
+            return TriggerActionResult.NoOp(Kind,
+                new { reason = "Suppressed: triggering article is an auto-submitted mail (loop prevention)." });
+        }
+
         // Recipient resolution. An empty resolved list is a NoOp, not a
         // failure — e.g. owner-agent on a ticket with no assignee.
         var recipients = await ResolveRecipientsAsync(toSpec, ctx.Ticket, ct);
@@ -103,6 +121,27 @@ internal sealed class SendMailHandler : ITriggerActionHandler
             return TriggerActionResult.Failed(Kind, $"Unknown recipient spec '{toSpec}'.");
         if (recipients.Count == 0)
             return TriggerActionResult.NoOp(Kind, new { reason = $"No recipients resolved for '{toSpec}'." });
+
+        // Second half of the loop gate: even for non-customer specs (explicit
+        // address lists), never mail the auto-submitted article's own sender.
+        if (autoReplyOrigin && !string.IsNullOrWhiteSpace(autoReplyFrom))
+        {
+            var filtered = recipients
+                .Where(r => !string.Equals(r.Address.Trim(), autoReplyFrom.Trim(), StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (filtered.Count < recipients.Count)
+            {
+                _logger.LogInformation(
+                    "Trigger {TriggerId}: dropped auto-submitted sender {Address} from send_mail recipients on ticket {TicketId} (loop prevention).",
+                    ctx.TriggerId, autoReplyFrom, ctx.TicketId);
+            }
+            if (filtered.Count == 0)
+            {
+                return TriggerActionResult.NoOp(Kind,
+                    new { reason = "Suppressed: all recipients matched the auto-submitted sender (loop prevention)." });
+            }
+            recipients = filtered;
+        }
 
         var fingerprint = BuildFingerprint(recipients, rawSubject, bodyHtml);
         var allowed = await _dedup.ShouldSendAsync(ctx.TriggerId, ctx.TicketId, fingerprint, ct);
@@ -223,6 +262,42 @@ internal sealed class SendMailHandler : ITriggerActionHandler
             recipients = recipients.Select(r => r.Address),
             internetMessageId = sendResult.InternetMessageId,
         });
+    }
+
+    /// True when the trigger's originating article is an inbound mail that
+    /// the ingest pipeline flagged as auto-submitted (metadata key
+    /// <c>auto_reply</c>, stamped by MailIngestService v0.0.92).
+    /// <paramref name="fromAddress"/> carries the article's sender so the
+    /// caller can also strip it from explicit address lists. Malformed
+    /// metadata counts as not-auto — the flag is only ever written by us.
+    /// Internal for direct unit-testing of the classification edge cases.
+    internal static bool IsAutoSubmittedArticle(TicketEvent? evt, out string? fromAddress)
+    {
+        fromAddress = null;
+        if (evt is null
+            || !string.Equals(evt.EventType, TicketEventType.MailReceived.ToString(), StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(evt.MetadataJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(evt.MetadataJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object
+                || !doc.RootElement.TryGetProperty("auto_reply", out var flag)
+                || flag.ValueKind != JsonValueKind.True)
+            {
+                return false;
+            }
+            if (doc.RootElement.TryGetProperty("from", out var from) && from.ValueKind == JsonValueKind.String)
+                fromAddress = from.GetString();
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     /// Returns null if the spec is unrecognised; an empty list when the
