@@ -90,6 +90,10 @@ public sealed record MailMessageRow(
     string? GraphMessageId,
     DateTime? MailboxMovedUtc);
 
+/// <see cref="IsAutoSubmitted"/> (v0.0.92): the mail carried an auto-reply
+/// signal (RFC 3834 Auto-Submitted, X-Auto-Response-Suppress, Precedence,
+/// X-Autoreply — see <see cref="AutoReplyDetector"/>). Flagged mail only ever
+/// appends to an existing thread and never receives trigger-sent customer mail.
 public sealed record NewMailMessage(
     string MessageId,
     string? InReplyTo,
@@ -102,7 +106,8 @@ public sealed record NewMailMessage(
     string? RawEmlBlobHash,
     string? BodyHtmlBlobHash,
     string BodyText,
-    string GraphMessageId);
+    string GraphMessageId,
+    bool IsAutoSubmitted = false);
 
 /// A mail eligible for the mailbox-move finalizer step.
 public sealed record FinalizeCandidate(

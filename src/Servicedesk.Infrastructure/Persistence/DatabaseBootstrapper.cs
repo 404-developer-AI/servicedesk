@@ -4674,6 +4674,21 @@ public sealed class DatabaseBootstrapper : IHostedService
         END $do$;
 
         -- ===================================================================
+        -- v0.0.92 Mail — auto-replies are ingested instead of skipped.
+        --
+        -- Inbound mail carrying an auto-reply signal (RFC 3834 Auto-Submitted,
+        -- X-Auto-Response-Suppress, Precedence: auto_reply/bulk/junk,
+        -- X-Autoreply/X-Autorespond) now threads onto its existing ticket as a
+        -- normal customer article, flagged here. The flag is the loop breaker:
+        -- trigger-sent mail to the customer is hard-suppressed when the
+        -- triggering article is auto-submitted (see SendMailHandler). Auto
+        -- mail with no thread match is still skipped — it must not open a
+        -- ticket. Pre-existing rows are all agent/customer-authored real mail,
+        -- so the FALSE default is correct retroactively.
+        ALTER TABLE mail_messages
+            ADD COLUMN IF NOT EXISTS is_auto_submitted BOOLEAN NOT NULL DEFAULT FALSE;
+
+        -- ===================================================================
         -- Microsoft 365 per-customer connect (consent + Graph read).
         --
         -- The MSP owns one multi-tenant app (the M365.* settings + the

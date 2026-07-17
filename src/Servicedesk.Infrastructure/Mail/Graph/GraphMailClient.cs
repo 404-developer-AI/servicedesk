@@ -112,7 +112,14 @@ public sealed class GraphMailClient : IGraphMailClient
             // place of the bare RFC-3834 name. Treat both as equivalent
             // here so the ingest skip-check sees them.
             AutoSubmitted: header("Auto-Submitted") ?? header("X-Auto-Submitted"),
-            Attachments: attachments);
+            Attachments: attachments)
+        {
+            // Extra auto-reply signals (v0.0.92) — classification itself lives
+            // in AutoReplyDetector; this client only surfaces the raw headers.
+            AutoResponseSuppress = header("X-Auto-Response-Suppress"),
+            Precedence = header("Precedence") ?? header("X-Precedence"),
+            XAutoReply = header("X-Autoreply") ?? header("X-Autorespond"),
+        };
     }
 
     private static async Task<IReadOnlyList<GraphAttachmentInfo>> FetchAttachmentMetadataAsync(

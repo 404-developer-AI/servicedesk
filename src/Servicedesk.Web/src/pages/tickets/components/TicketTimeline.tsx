@@ -1007,6 +1007,16 @@ function TimelineEvent({
   const mergedFromNumber = typeof eventMetadata.mergedFromTicketNumber === "number"
     ? eventMetadata.mergedFromTicketNumber
     : null;
+
+  // v0.0.92: inbound mail flagged as auto-generated at ingest (out-of-office,
+  // bounce, autoresponder). Badged so agents know no reply is expected — the
+  // server also hard-suppresses trigger mail back to this sender. The signal
+  // (matched header) is surfaced via the badge tooltip.
+  const isAutoReply = eventMetadata.auto_reply === true;
+  const autoReplySignal =
+    typeof eventMetadata.auto_reply_signal === "string"
+      ? eventMetadata.auto_reply_signal
+      : null;
   const isSystemLike = isSystemEvent(event);
 
   // Mail-header strip (From / To / Cc / Bcc), collapsed by default and toggled
@@ -1177,6 +1187,14 @@ function TimelineEvent({
               {event.isInternal && event.eventType !== "Note" && (
                 <span className="rounded px-1.5 py-0.5 text-[10px] font-medium border border-amber-500/30 bg-amber-500/10 text-amber-300">
                   Internal
+                </span>
+              )}
+              {isAutoReply && (
+                <span
+                  className="rounded px-1.5 py-0.5 text-[10px] font-medium border border-sky-500/30 bg-sky-500/10 text-sky-300"
+                  title={autoReplySignal ?? "Detected as an automatic reply"}
+                >
+                  Auto-reply
                 </span>
               )}
               {event.editedUtc && (

@@ -80,13 +80,12 @@ public sealed class MailIngestService : IMailIngestService
                 "Graph returned not-found for this message id");
         }
 
-        // Auto-Submitted header — skip anything except "no" per RFC 3834.
-        if (!string.IsNullOrWhiteSpace(msg.AutoSubmitted)
-            && !string.Equals(msg.AutoSubmitted.Trim(), "no", StringComparison.OrdinalIgnoreCase))
-        {
-            return new MailIngestResult(MailIngestOutcome.SkippedAutoSubmitted, null, null, null,
-                $"Auto-Submitted: {msg.AutoSubmitted}");
-        }
+        // Auto-reply classification (v0.0.92). Detection alone no longer
+        // skips: a flagged mail that threads onto an existing ticket is
+        // ingested normally (the flag suppresses trigger mail back to the
+        // customer — see SendMailHandler). The no-thread-match case is
+        // decided after threading resolution below.
+        var isAutoReply = AutoReplyDetector.TryDetect(msg, out var autoReplySignal);
 
         // Loop prevention: ignore mail claiming to come from any of our own
         // mailboxes — every inbound source (across all queues) plus each queue's
@@ -121,6 +120,16 @@ public sealed class MailIngestService : IMailIngestService
         var refPrefix = await _settings.GetAsync<string>(SettingKeys.Tickets.ReferencePrefix, ct);
         if (string.IsNullOrWhiteSpace(refPrefix)) refPrefix = TicketReference.DefaultPrefix;
         var existingTicketId = await ResolveExistingTicketAsync(msg, token, refPrefix, ct);
+
+        // An auto-reply may only ride an existing thread — an unsolicited
+        // auto-mail (stray OOF, bounce to nowhere) must not open a ticket.
+        // Same outcome as the pre-v0.0.92 blanket skip, now scoped to the
+        // no-match case only.
+        if (isAutoReply && existingTicketId is null)
+        {
+            return new MailIngestResult(MailIngestOutcome.SkippedAutoSubmitted, null, null, null,
+                $"{autoReplySignal} (no existing ticket matched)");
+        }
 
         var bodyText = ExtractBodyText(msg);
         var snippet = Snippet(bodyText, 200);
@@ -213,18 +222,27 @@ public sealed class MailIngestService : IMailIngestService
                 RawEmlBlobHash: rawHash,
                 BodyHtmlBlobHash: htmlHash,
                 BodyText: bodyText,
-                GraphMessageId: msg.Id),
+                GraphMessageId: msg.Id,
+                IsAutoSubmitted: isAutoReply),
             allRecipients, newAttachments, ct);
 
-        // Append MailReceived event with metadata snippet.
-        var metadata = JsonSerializer.Serialize(new
+        // Append MailReceived event with metadata snippet. The auto_reply
+        // keys are only present on flagged mail: the frontend badge and the
+        // SendMailHandler loop-gate both key off auto_reply == true.
+        var metadataMap = new Dictionary<string, object?>
         {
-            from = msg.From.Address,
-            fromName = msg.From.Name,
-            subject = msg.Subject,
-            mail_message_id = mailId,
-            internet_message_id = msg.InternetMessageId,
-        });
+            ["from"] = msg.From.Address,
+            ["fromName"] = msg.From.Name,
+            ["subject"] = msg.Subject,
+            ["mail_message_id"] = mailId,
+            ["internet_message_id"] = msg.InternetMessageId,
+        };
+        if (isAutoReply)
+        {
+            metadataMap["auto_reply"] = true;
+            metadataMap["auto_reply_signal"] = autoReplySignal;
+        }
+        var metadata = JsonSerializer.Serialize(metadataMap);
         var evt = await _tickets.AddEventAsync(ticketId, new NewTicketEvent(
             EventType: TicketEventType.MailReceived.ToString(),
             BodyText: snippet,

@@ -87,7 +87,21 @@ public sealed record GraphFullMessage(
     string? BodyText,
     DateTimeOffset ReceivedUtc,
     string? AutoSubmitted,
-    IReadOnlyList<GraphAttachmentInfo> Attachments);
+    IReadOnlyList<GraphAttachmentInfo> Attachments)
+{
+    /// X-Auto-Response-Suppress (Microsoft/Exchange): the sender asks
+    /// receivers not to auto-respond. Any value other than "None" marks the
+    /// mail as auto-reply-suppressed for the ingest classifier (v0.0.92).
+    public string? AutoResponseSuppress { get; init; }
+
+    /// Precedence header — "auto_reply", "bulk" and "junk" are classic
+    /// auto-generated / mass-mail markers predating RFC 3834.
+    public string? Precedence { get; init; }
+
+    /// X-Autoreply / X-Autorespond — non-standard but widespread markers
+    /// stamped by various autoresponders; presence alone is the signal.
+    public string? XAutoReply { get; init; }
+}
 
 /// Metadata describing a single file-attachment on a Graph message. Bytes are
 /// downloaded asynchronously later via <see cref="IGraphMailClient.FetchAttachmentBytesAsync"/>;
