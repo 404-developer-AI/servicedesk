@@ -170,9 +170,14 @@ public static class CompanyEndpoints
             return Results.Ok(updated);
         }).WithName("UpdateCompany").WithOpenApi();
 
+        // includeInactive: this endpoint backs *display* lists (the company
+        // detail page and the ticket side-panel's linked-contacts card), where
+        // a deactivated contact must stay visible — hiding it there would make
+        // the link look lost. Pickers search via GET /api/contacts instead,
+        // which is active-only.
         agentGroup.MapGet("/{id:guid}/contacts", async (
             Guid id, string? search, ICompanyRepository repo, CancellationToken ct) =>
-            Results.Ok(await repo.ListContactsAsync(id, search, ct)))
+            Results.Ok(await repo.ListContactsAsync(id, search, includeInactive: true, ct)))
             .WithName("ListCompanyContacts").WithOpenApi();
 
         // Link a contact to a company with an explicit role. The body is
@@ -263,9 +268,15 @@ public static class CompanyEndpoints
             .WithTags("Contacts")
             .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
+        // Active contacts only, enforced server-side (v0.0.92): every caller
+        // of this endpoint is a typeahead picker (mail To/Cc/Bcc, ticket
+        // requester, call-popup linking, link-contact-to-company), and a
+        // deactivated contact must never be findable there. Browsing that
+        // deliberately includes inactive contacts goes through
+        // GET /api/contacts/browse?includeInactive=true.
         contactGroup.MapGet("/", async (Guid? companyId, string? search,
             ICompanyRepository repo, CancellationToken ct) =>
-            Results.Ok(await repo.ListContactsAsync(companyId, search, ct)))
+            Results.Ok(await repo.ListContactsAsync(companyId, search, includeInactive: false, ct)))
             .WithName("ListContacts").WithOpenApi();
 
         // v0.0.34 — phone-keyed lookup for the Telavox call-popup. The
