@@ -375,79 +375,83 @@
   background: hsl(160 84% 50% / 0.25);
 }
 
-/* Reader typography for KB article bodies (SafeHtml). Tailwind's preflight
-   strips list markers, heading sizes and margins from raw user-authored
-   HTML, so without these rules a Tiptap body renders as one flat block.
-   Covers everything the shared RichTextEditor can produce: StarterKit
-   (headings, lists, blockquote, code, hr) + Link + Image. */
-.kb-prose {
+/* Reader typography for user-authored rich-text bodies (KB articles via
+   SafeHtml, ticket timeline mail/note bodies, gate/revision dialogs).
+   Tailwind's preflight strips list markers, heading sizes, blockquote
+   indents and margins from raw user-authored HTML, so without these rules
+   a Tiptap body renders as one flat block — most painfully on sent-mail
+   events, where the quoted history blends into the typed reply. Covers
+   everything the shared RichTextEditor can produce: StarterKit (headings,
+   lists, blockquote, code, hr) + Link + Image. Inbound Outlook mail is
+   unaffected: it carries its formatting as inline styles, which win. */
+.rich-prose {
   font-size: 0.925rem;
   line-height: 1.65;
   color: hsl(var(--foreground) / 0.9);
 }
-.kb-prose p {
+.rich-prose p {
   margin: 0.6em 0;
 }
-.kb-prose p:first-child {
+.rich-prose p:first-child {
   margin-top: 0;
 }
-.kb-prose p:last-child {
+.rich-prose p:last-child {
   margin-bottom: 0;
 }
-.kb-prose h1,
-.kb-prose h2,
-.kb-prose h3,
-.kb-prose h4 {
+.rich-prose h1,
+.rich-prose h2,
+.rich-prose h3,
+.rich-prose h4 {
   font-weight: 600;
   letter-spacing: -0.01em;
   color: hsl(var(--foreground));
   margin: 1.4em 0 0.5em;
 }
-.kb-prose h1:first-child,
-.kb-prose h2:first-child,
-.kb-prose h3:first-child,
-.kb-prose h4:first-child {
+.rich-prose h1:first-child,
+.rich-prose h2:first-child,
+.rich-prose h3:first-child,
+.rich-prose h4:first-child {
   margin-top: 0;
 }
-.kb-prose h1 { font-size: 1.45em; }
-.kb-prose h2 { font-size: 1.25em; }
-.kb-prose h3 { font-size: 1.1em; }
-.kb-prose h4 { font-size: 1em; }
-.kb-prose strong {
+.rich-prose h1 { font-size: 1.45em; }
+.rich-prose h2 { font-size: 1.25em; }
+.rich-prose h3 { font-size: 1.1em; }
+.rich-prose h4 { font-size: 1em; }
+.rich-prose strong {
   font-weight: 600;
   color: hsl(var(--foreground));
 }
-.kb-prose ul,
-.kb-prose ol {
+.rich-prose ul,
+.rich-prose ol {
   margin: 0.6em 0;
   padding-left: 1.5em;
 }
-.kb-prose ul { list-style: disc outside; }
-.kb-prose ol { list-style: decimal outside; }
-.kb-prose ul ul { list-style-type: circle; }
-.kb-prose ul ul ul { list-style-type: square; }
-.kb-prose li {
+.rich-prose ul { list-style: disc outside; }
+.rich-prose ol { list-style: decimal outside; }
+.rich-prose ul ul { list-style-type: circle; }
+.rich-prose ul ul ul { list-style-type: square; }
+.rich-prose li {
   margin: 0.25em 0;
 }
-.kb-prose li > ul,
-.kb-prose li > ol {
+.rich-prose li > ul,
+.rich-prose li > ol {
   margin: 0.25em 0;
 }
-.kb-prose li::marker {
+.rich-prose li::marker {
   color: hsl(var(--muted-foreground));
 }
-.kb-prose a {
+.rich-prose a {
   color: hsl(var(--primary));
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.kb-prose blockquote {
+.rich-prose blockquote {
   margin: 0.8em 0;
   padding: 0.2em 0 0.2em 1em;
   border-left: 2px solid hsl(var(--primary) / 0.5);
   color: hsl(var(--muted-foreground));
 }
-.kb-prose code {
+.rich-prose code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.875em;
   background: hsl(var(--glass-bg-strong));
@@ -455,7 +459,7 @@
   border-radius: 0.3em;
   padding: 0.1em 0.35em;
 }
-.kb-prose pre {
+.rich-prose pre {
   margin: 0.8em 0;
   padding: 0.75em 1em;
   background: hsl(var(--glass-bg-strong));
@@ -463,20 +467,36 @@
   border-radius: 0.5rem;
   overflow-x: auto;
 }
-.kb-prose pre code {
+.rich-prose pre code {
   background: none;
   border: none;
   padding: 0;
   font-size: 0.85em;
 }
-.kb-prose hr {
+.rich-prose hr {
   margin: 1.5em 0;
   border: none;
   border-top: 1px solid hsl(var(--glass-border-strong));
 }
-.kb-prose img {
+.rich-prose img {
   max-width: 100%;
   height: auto;
   border-radius: 0.5rem;
   margin: 0.8em 0;
+}
+/* Compact modifier for message bodies (timeline mail/notes, dialogs) —
+   matches the compose editor's density so a sent mail reads the same in
+   the ticket as it did while typing. Declared after .rich-prose so the
+   overrides win the specificity tie; the p:first/last-child margin resets
+   above still apply (higher specificity). */
+.rich-prose-sm {
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.rich-prose-sm p {
+  margin: 0.5em 0;
+}
+/* Dimmed modifier for historical content (event revision snapshots). */
+.rich-prose-dim {
+  color: hsl(var(--foreground) / 0.7);
 }

@@ -194,7 +194,7 @@ function PublicSurveyForm({
         </h1>
         {view.introHtml && (
           <div
-            className="prose dark:prose-invert prose-sm max-w-none text-muted-foreground"
+            className="rich-prose rich-prose-sm rich-prose-dim max-w-none"
             // Server-sanitised admin-authored HTML. KbHtmlSanitizer ran on the
             // way in; we trust the round-trip rather than re-sanitising here.
             dangerouslySetInnerHTML={{ __html: view.introHtml }}
