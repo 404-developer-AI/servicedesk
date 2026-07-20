@@ -41,12 +41,22 @@ public sealed class ReportTemplateSearchSource : ISearchSource
         // search façade before it ever queries this source.
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
 
-        const string sql = """
+        // orderBy is a fixed switch over SearchSort — never user input — so
+        // interpolating it into the SQL below carries no injection risk.
+        var orderBy = request.Sort switch
+        {
+            SearchSort.Newest => "updated_utc DESC, id DESC",
+            SearchSort.Oldest => "updated_utc ASC, id ASC",
+            _ => "rank DESC, is_active DESC, lower(name)",
+        };
+
+        var sql = $"""
             WITH hits AS (
                 SELECT  id,
                         name,
                         description,
                         is_active,
+                        updated_utc,
                         CASE
                             WHEN name        ILIKE @prefix THEN 4.0
                             WHEN name        ILIKE @like   THEN 2.0
@@ -64,7 +74,7 @@ public sealed class ReportTemplateSearchSource : ISearchSource
                     rank::double precision AS Rank,
                     total_hits  AS TotalHits
               FROM hits
-             ORDER BY rank DESC, is_active DESC, lower(name)
+             ORDER BY {orderBy}
              LIMIT @limit OFFSET @offset;
             """;
 

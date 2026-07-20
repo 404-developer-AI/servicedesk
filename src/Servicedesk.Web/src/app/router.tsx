@@ -240,10 +240,16 @@ const searchRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/search",
   beforeLoad: authGate(["Agent", "Admin"]),
-  validateSearch: (raw: Record<string, unknown>) => ({
+  validateSearch: (raw: Record<string, unknown>): {
+    q?: string;
+    type?: string;
+    offset?: number;
+    sort?: string;
+  } => ({
     q: typeof raw.q === "string" ? raw.q : undefined,
     type: typeof raw.type === "string" ? raw.type : undefined,
     offset: typeof raw.offset === "string" ? Number(raw.offset) : (raw.offset as number | undefined),
+    sort: typeof raw.sort === "string" ? raw.sort : undefined,
   }),
   component: SearchPage,
 });

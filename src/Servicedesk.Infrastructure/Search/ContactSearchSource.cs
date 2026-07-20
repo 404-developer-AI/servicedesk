@@ -60,13 +60,22 @@ public sealed class ContactSearchSource : ISearchSource
         // ix_contacts_phone_e164 / ix_contacts_mobile_phone_e164 (partial
         // indices skipping empty strings) — it returns rank 1.0 so a phone
         // hit always tops any fuzzy email/name hit.
-        const string sql = """
+        // orderBy is a fixed switch over SearchSort — never user input — so
+        // interpolating it into the SQL below carries no injection risk.
+        var orderBy = request.Sort switch
+        {
+            SearchSort.Newest => "updated_utc DESC, id DESC",
+            SearchSort.Oldest => "updated_utc ASC, id ASC",
+            _ => "rank DESC, last_name, first_name",
+        };
+
+        var sql = $"""
             WITH q AS (
                 SELECT lower(@query)  AS norm,
                        @phoneE164::text AS phone_e164
             ),
             hits AS (
-                SELECT c.id, c.first_name, c.last_name, c.email,
+                SELECT c.id, c.first_name, c.last_name, c.email, c.updated_utc,
                        cc.company_id AS company_id,
                        GREATEST(
                            CASE
@@ -104,7 +113,7 @@ public sealed class ContactSearchSource : ISearchSource
                    rank::double precision AS "Rank",
                    total_hits  AS "TotalHits"
             FROM hits
-            ORDER BY rank DESC, last_name, first_name
+            ORDER BY {orderBy}
             LIMIT @limit OFFSET @offset;
             """;
 

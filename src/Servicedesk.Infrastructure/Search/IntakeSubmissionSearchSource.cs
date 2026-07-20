@@ -46,7 +46,16 @@ public sealed class IntakeSubmissionSearchSource : ISearchSource
         // blob without expanding the result set. Trigram operators (%)
         // work against the concatenated blob for fuzzy matches; LIKE is
         // the short-query fallback.
-        const string sql = """
+        // orderBy is a fixed switch over SearchSort — never user input — so
+        // interpolating it into the SQL below carries no injection risk.
+        var orderBy = request.Sort switch
+        {
+            SearchSort.Newest => "submitted_utc DESC NULLS LAST, instance_id DESC",
+            SearchSort.Oldest => "submitted_utc ASC NULLS FIRST, instance_id ASC",
+            _ => "rank DESC, submitted_utc DESC NULLS LAST",
+        };
+
+        var sql = $"""
             WITH q AS (SELECT lower(@query) AS norm),
             blob AS (
                 SELECT i.id AS instance_id,
@@ -82,7 +91,7 @@ public sealed class IntakeSubmissionSearchSource : ISearchSource
                    rank::double precision AS Rank,
                    total_hits           AS TotalHits
             FROM hits
-            ORDER BY rank DESC, submitted_utc DESC NULLS LAST
+            ORDER BY {orderBy}
             LIMIT @limit OFFSET @offset
             """;
 

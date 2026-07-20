@@ -1860,6 +1860,13 @@ public sealed class DatabaseBootstrapper : IHostedService
             ON adsolut_sales_receipts (sales_receipt_date DESC);
         CREATE INDEX IF NOT EXISTS ix_adsolut_sales_receipts_customer
             ON adsolut_sales_receipts (customer_adsolut_id);
+        -- v0.0.93 — trigram indexes backing the global-search ILIKE '%term%'
+        -- probes; without them every search fanned out into a sequential scan
+        -- of the whole mirror.
+        CREATE INDEX IF NOT EXISTS ix_adsolut_sales_receipts_customer_name_trgm
+            ON adsolut_sales_receipts USING GIN (customer_name gin_trgm_ops);
+        CREATE INDEX IF NOT EXISTS ix_adsolut_sales_receipts_description_trgm
+            ON adsolut_sales_receipts USING GIN (description gin_trgm_ops);
 
         CREATE TABLE IF NOT EXISTS adsolut_sales_receipt_lines (
             id                      UUID          PRIMARY KEY,
@@ -4127,6 +4134,13 @@ public sealed class DatabaseBootstrapper : IHostedService
             ON adsolut_orders (customer_adsolut_id);
         CREATE INDEX IF NOT EXISTS ix_adsolut_orders_ticket_number
             ON adsolut_orders (ticket_number) WHERE ticket_number IS NOT NULL;
+        -- v0.0.93 — trigram indexes for the global-search ILIKE probes.
+        CREATE INDEX IF NOT EXISTS ix_adsolut_orders_customer_name_trgm
+            ON adsolut_orders USING GIN (customer_name gin_trgm_ops);
+        CREATE INDEX IF NOT EXISTS ix_adsolut_orders_remark_trgm
+            ON adsolut_orders USING GIN (remark gin_trgm_ops);
+        CREATE INDEX IF NOT EXISTS ix_adsolut_orders_kluwer_ref_trgm
+            ON adsolut_orders USING GIN (kluwer_ref gin_trgm_ops);
 
         CREATE TABLE IF NOT EXISTS adsolut_order_lines (
             id                       UUID          PRIMARY KEY,
@@ -4437,6 +4451,13 @@ public sealed class DatabaseBootstrapper : IHostedService
             ON adsolut_articles (code);
         CREATE INDEX IF NOT EXISTS ix_adsolut_articles_active
             ON adsolut_articles (active);
+        -- v0.0.93 — trigram indexes for the global-search ILIKE probes.
+        CREATE INDEX IF NOT EXISTS ix_adsolut_articles_code_trgm
+            ON adsolut_articles USING GIN (code gin_trgm_ops);
+        CREATE INDEX IF NOT EXISTS ix_adsolut_articles_name_trgm
+            ON adsolut_articles USING GIN (name gin_trgm_ops);
+        CREATE INDEX IF NOT EXISTS ix_adsolut_articles_description_trgm
+            ON adsolut_articles USING GIN (description gin_trgm_ops);
 
         -- Singleton sync-state for the Articles mirror. Own cursor, separate
         -- from Orders/SalesReceipts/Companies so enabling/pausing one never
@@ -4763,6 +4784,13 @@ public sealed class DatabaseBootstrapper : IHostedService
         );
         CREATE INDEX IF NOT EXISTS ix_m365_mailboxes_company
             ON m365_mailboxes (company_id);
+        -- v0.0.93 — trigram indexes for the global-search ILIKE probes.
+        CREATE INDEX IF NOT EXISTS ix_m365_mailboxes_display_name_trgm
+            ON m365_mailboxes USING GIN (display_name gin_trgm_ops);
+        CREATE INDEX IF NOT EXISTS ix_m365_mailboxes_upn_trgm
+            ON m365_mailboxes USING GIN (upn gin_trgm_ops);
+        CREATE INDEX IF NOT EXISTS ix_m365_mailboxes_mail_trgm
+            ON m365_mailboxes USING GIN (mail gin_trgm_ops);
 
         -- ===================================================================
         -- Contract reports (v0.1.x). Agent-authored email templates plus a
@@ -4872,6 +4900,13 @@ public sealed class DatabaseBootstrapper : IHostedService
             ON sophos_tenants (company_code);
         CREATE INDEX IF NOT EXISTS ix_sophos_tenants_company
             ON sophos_tenants (company_id);
+        -- v0.0.93 — trigram indexes for the global-search ILIKE probes.
+        CREATE INDEX IF NOT EXISTS ix_sophos_tenants_show_as_trgm
+            ON sophos_tenants USING GIN (show_as gin_trgm_ops);
+        CREATE INDEX IF NOT EXISTS ix_sophos_tenants_name_trgm
+            ON sophos_tenants USING GIN (name gin_trgm_ops);
+        CREATE INDEX IF NOT EXISTS ix_sophos_tenants_company_code_trgm
+            ON sophos_tenants USING GIN (company_code gin_trgm_ops);
 
         -- Protected (spam-filtered) mailbox addresses for the M365-matched
         -- tenants. email is citext so the Protected/Unprotected match against
@@ -5125,6 +5160,15 @@ public sealed class DatabaseBootstrapper : IHostedService
             ADD COLUMN IF NOT EXISTS mgmt_reviewed             BOOLEAN     NOT NULL DEFAULT FALSE,
             ADD COLUMN IF NOT EXISTS mgmt_reviewed_by_user_id  UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
             ADD COLUMN IF NOT EXISTS mgmt_reviewed_utc         TIMESTAMPTZ NULL;
+
+        -- v0.0.93 — plain-text shadow of body_html for the global search.
+        -- The search source used to strip HTML with regexp_replace PER ROW on
+        -- every query, which was the single most expensive pattern in the
+        -- whole search fan-out. A STORED generated column moves that cost to
+        -- write time (and backfills existing rows during this ALTER).
+        ALTER TABLE feedback_entries
+            ADD COLUMN IF NOT EXISTS body_text TEXT
+                GENERATED ALWAYS AS (regexp_replace(body_html, '<[^>]*>', ' ', 'g')) STORED;
         DO $feedback_entries_constraints$
         BEGIN
             IF NOT EXISTS (

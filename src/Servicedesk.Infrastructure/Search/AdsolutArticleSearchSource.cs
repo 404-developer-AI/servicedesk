@@ -43,7 +43,16 @@ public sealed class AdsolutArticleSearchSource : ISearchSource
         // search façade before it ever queries this source.
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
 
-        const string sql = """
+        // orderBy is a fixed switch over SearchSort — never user input — so
+        // interpolating it into the SQL below carries no injection risk.
+        var orderBy = request.Sort switch
+        {
+            SearchSort.Newest => "synced_utc DESC, id DESC",
+            SearchSort.Oldest => "synced_utc ASC, id ASC",
+            _ => "rank DESC, code ASC NULLS LAST",
+        };
+
+        var sql = $"""
             WITH hits AS (
                 SELECT  a.id,
                         a.code,
@@ -51,6 +60,7 @@ public sealed class AdsolutArticleSearchSource : ISearchSource
                         a.description,
                         a.vat_rate,
                         a.active,
+                        a.synced_utc,
                         CASE
                             WHEN a.code ILIKE @prefix THEN 4.0
                             WHEN a.name ILIKE @prefix THEN 3.0
@@ -74,7 +84,7 @@ public sealed class AdsolutArticleSearchSource : ISearchSource
                     rank::double precision AS Rank,
                     total_hits  AS TotalHits
               FROM hits
-             ORDER BY rank DESC, code ASC NULLS LAST
+             ORDER BY {orderBy}
              LIMIT @limit OFFSET @offset;
             """;
 

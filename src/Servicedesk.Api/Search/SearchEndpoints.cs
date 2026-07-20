@@ -30,6 +30,7 @@ public static class SearchEndpoints
         {
             var principal = await BuildPrincipalAsync(http, queueAccess, users, ct);
             var minLen = await settings.GetAsync<int>(SettingKeys.Search.MinQueryLength, ct);
+            var debounceMs = await settings.GetAsync<int>(SettingKeys.Search.DebounceMs, ct);
             var capped = Math.Clamp(limit ?? 8, 1, 25);
 
             var query = (q ?? string.Empty).Trim();
@@ -41,11 +42,14 @@ public static class SearchEndpoints
                     totalHits = 0,
                     availableKinds = search.AvailableKindsFor(principal),
                     minQueryLength = minLen,
+                    debounceMs,
                 });
             }
 
+            var quickKinds = await GetQuickKindsAsync(settings, ct);
             var results = await search.SearchAsync(
-                new SearchRequest(query, Type: null, Limit: capped, Offset: 0),
+                new SearchRequest(query, Type: null, Limit: capped, Offset: 0,
+                    Kinds: quickKinds, QuickMode: true),
                 principal, ct);
 
             return Results.Ok(new
@@ -54,12 +58,13 @@ public static class SearchEndpoints
                 totalHits = results.TotalHits,
                 availableKinds = search.AvailableKindsFor(principal),
                 minQueryLength = minLen,
+                debounceMs,
             });
         }).WithName("GlobalSearch").WithOpenApi();
 
         // Full-page search: one source, paginated.
         group.MapGet("/full", async (
-            string? q, string? type, int? limit, int? offset,
+            string? q, string? type, int? limit, int? offset, string? sort,
             HttpContext http,
             ISearchService search,
             IQueueAccessService queueAccess,
@@ -89,9 +94,14 @@ public static class SearchEndpoints
 
             var capped = Math.Clamp(limit ?? 25, 1, 100);
             var safeOffset = Math.Max(0, offset ?? 0);
+            // Unknown sort values quietly fall back to relevance — the enum is
+            // the whitelist, sources never see the raw string.
+            var parsedSort = Enum.TryParse<SearchSort>(sort, ignoreCase: true, out var s)
+                ? s : SearchSort.Relevance;
 
             var results = await search.SearchAsync(
-                new SearchRequest(query, Type: type, Limit: capped, Offset: safeOffset),
+                new SearchRequest(query, Type: type, Limit: capped, Offset: safeOffset,
+                    Sort: parsedSort),
                 principal, ct);
 
             var firstGroup = results.Groups.Count > 0
@@ -107,6 +117,25 @@ public static class SearchEndpoints
         }).WithName("GlobalSearchFull").WithOpenApi();
 
         return app;
+    }
+
+    /// Parses Search.QuickSources into the dropdown's source scope. An empty
+    /// or whitespace-only value falls back to the default trio rather than
+    /// "all sources" — reintroducing the all-source fan-out silently is
+    /// exactly the slowness this setting exists to prevent.
+    private static async Task<IReadOnlyList<string>> GetQuickKindsAsync(
+        ISettingsService settings, CancellationToken ct)
+    {
+        var raw = await settings.GetAsync<string>(SettingKeys.Search.QuickSources, ct);
+        var kinds = (raw ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(k => k.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return kinds.Count > 0
+            ? kinds
+            : new[] { SearchSourceKind.Tickets, SearchSourceKind.Companies, SearchSourceKind.Contacts };
     }
 
     private static async Task<SearchPrincipal> BuildPrincipalAsync(

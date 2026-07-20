@@ -36,12 +36,21 @@ public sealed class CompanySearchSource : ISearchSource
         // uses the GIN trigram indexes; LIKE substring match is a safety net
         // so short / exact-code queries always hit even if similarity falls
         // below the default threshold.
-        const string sql = """
+        // orderBy is a fixed switch over SearchSort — never user input — so
+        // interpolating it into the SQL below carries no injection risk.
+        var orderBy = request.Sort switch
+        {
+            SearchSort.Newest => "updated_utc DESC, id DESC",
+            SearchSort.Oldest => "updated_utc ASC, id ASC",
+            _ => "rank DESC, name",
+        };
+
+        var sql = $"""
             WITH q AS (
                 SELECT lower(@query) AS norm
             ),
             hits AS (
-                SELECT c.id, c.name, c.short_name, c.code::text AS code, c.vat_number,
+                SELECT c.id, c.name, c.short_name, c.code::text AS code, c.vat_number, c.updated_utc,
                        GREATEST(
                            similarity(lower(coalesce(c.name, '')),        (SELECT norm FROM q)),
                            similarity(lower(coalesce(c.short_name, '')),  (SELECT norm FROM q)),
@@ -70,7 +79,7 @@ public sealed class CompanySearchSource : ISearchSource
                    rank::double precision AS "Rank",
                    total_hits  AS "TotalHits"
             FROM hits
-            ORDER BY rank DESC, name
+            ORDER BY {orderBy}
             LIMIT @limit OFFSET @offset;
             """;
 

@@ -10,7 +10,12 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/authStore";
 import { KIND_ORDER, labelForKind, hitHref } from "@/components/search/searchMeta";
 
-const DEBOUNCE_MS = 150;
+// Fallback until the first response carries the server-configured value
+// (Search.DebounceMs). Clamped so a bad setting can't freeze the box.
+const DEBOUNCE_FALLBACK_MS = 150;
+// Top-N per dropdown section: open tickets, closed tickets, and each other
+// quick source get this many hits; the rest lives on the full search page.
+const QUICK_LIMIT = 5;
 
 /// Sidebar search input + cmdk-powered dropdown. Hidden for Customer until
 /// the customer portal ships. Pressing Ctrl+K from anywhere opens it.
@@ -26,13 +31,16 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
   const [debounced, setDebounced] = useState("");
+  const [debounceMs, setDebounceMs] = useState(DEBOUNCE_FALLBACK_MS);
   const [anchorRect, setAnchorRect] = useState<{ left: number; top: number; width: number } | null>(null);
 
   // Debounce the query so we don't flood the backend on every keystroke.
+  // The interval comes from the Search.DebounceMs setting (carried on every
+  // dropdown response); the first keystrokes use the fallback until it lands.
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(value), DEBOUNCE_MS);
+    const t = setTimeout(() => setDebounced(value), debounceMs);
     return () => clearTimeout(t);
-  }, [value]);
+  }, [value, debounceMs]);
 
   // The dropdown lives in a portal so it can extend past the sidebar's
   // `overflow-hidden`, which would otherwise clip it to the sidebar width.
@@ -86,10 +94,16 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
 
   const { data, isFetching } = useQuery({
     queryKey: ["search", "quick", debounced],
-    queryFn: () => searchApi.quick(debounced, 6),
+    queryFn: () => searchApi.quick(debounced, QUICK_LIMIT),
     enabled: canSearch && debounced.trim().length > 0,
     staleTime: 10_000,
   });
+
+  useEffect(() => {
+    if (typeof data?.debounceMs === "number") {
+      setDebounceMs(Math.min(2000, Math.max(0, data.debounceMs)));
+    }
+  }, [data?.debounceMs]);
 
   const minLen = data?.minQueryLength ?? 3;
   const query = value.trim();
@@ -126,6 +140,29 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
   const groupsOrdered = (data?.groups ?? [])
     .slice()
     .sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind));
+
+  // The tickets group arrives partitioned (quick mode: top-N open + top-N
+  // closed, with per-partition totals) — render it as two sections. Every
+  // other group stays a single section.
+  type DisplaySection = { key: string; label: string; hits: SearchHit[]; more: number };
+  const sections: DisplaySection[] = groupsOrdered.flatMap((group): DisplaySection[] => {
+    if (group.kind === "tickets" && group.partitionTotals) {
+      const openHits = group.hits.filter((h) => h.meta?.isClosed !== "true");
+      const closedHits = group.hits.filter((h) => h.meta?.isClosed === "true");
+      const openTotal = group.partitionTotals["open"] ?? openHits.length;
+      const closedTotal = group.partitionTotals["closed"] ?? closedHits.length;
+      return [
+        { key: "tickets-open", label: "Open tickets", hits: openHits, more: Math.max(0, openTotal - openHits.length) },
+        { key: "tickets-closed", label: "Closed tickets", hits: closedHits, more: Math.max(0, closedTotal - closedHits.length) },
+      ].filter((s) => s.hits.length > 0);
+    }
+    return [{
+      key: group.kind,
+      label: labelForKind(group.kind),
+      hits: group.hits,
+      more: group.hasMore ? Math.max(0, group.totalInGroup - group.hits.length) : 0,
+    }];
+  });
 
   return (
     <div
@@ -173,7 +210,7 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
               onBlur={() => {
                 setTimeout(() => setOpen(false), 120);
               }}
-              placeholder="Zoeken…"
+              placeholder="Search…"
               className="flex-1 min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             />
             <kbd className="shrink-0 rounded border border-glass px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -210,7 +247,7 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
                     onBlur={() => {
                       setTimeout(() => setOpen(false), 120);
                     }}
-                    placeholder="Zoeken…"
+                    placeholder="Search…"
                     className="flex-1 min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                   />
                 </div>
@@ -219,7 +256,7 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
             <Command.List className="max-h-[70vh] overflow-y-auto p-1">
               {showHint && (
                 <div className="px-3 py-2 text-xs text-muted-foreground">
-                  Type nog {minLen - query.length} karakter{minLen - query.length === 1 ? "" : "s"}…
+                  Type {minLen - query.length} more character{minLen - query.length === 1 ? "" : "s"}…
                 </div>
               )}
 
@@ -230,36 +267,36 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
                     onSelect={goFullPage}
                     className="flex cursor-pointer items-center justify-between rounded-md px-3 py-2 text-sm font-medium aria-selected:bg-glass-strong"
                   >
-                    <span>Toon zoekdetails →</span>
-                    <span className="text-xs text-muted-foreground">alle resultaten</span>
+                    <span>Show all results →</span>
+                    <span className="text-xs text-muted-foreground">full search</span>
                   </Command.Item>
 
                   {isFetching && (
-                    <div className="px-3 py-2 text-xs text-muted-foreground">Zoeken…</div>
+                    <div className="px-3 py-2 text-xs text-muted-foreground">Searching…</div>
                   )}
 
-                  {!isFetching && groupsOrdered.every((g) => g.hits.length === 0) && (
+                  {!isFetching && sections.every((s) => s.hits.length === 0) && (
                     <div className="px-3 py-6 text-center text-sm text-muted-foreground">
-                      Niets gevonden voor "{query}".
+                      No results for "{query}".
                     </div>
                   )}
 
-                  {groupsOrdered.map((group) =>
-                    group.hits.length === 0 ? null : (
+                  {sections.map((section) =>
+                    section.hits.length === 0 ? null : (
                       <Command.Group
-                        key={group.kind}
+                        key={section.key}
                         heading={
                           <div className="px-3 pb-1 pt-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                            {labelForKind(group.kind)}
-                            {group.hasMore && (
+                            {section.label}
+                            {section.more > 0 && (
                               <span className="ml-2 text-muted-foreground/70">
-                                +{group.totalInGroup - group.hits.length} meer
+                                +{section.more} more
                               </span>
                             )}
                           </div>
                         }
                       >
-                        {group.hits.map((hit) => {
+                        {section.hits.map((hit) => {
                           const requester = hit.meta?.requester;
                           const company = hit.meta?.company;
                           const subtitle = [requester, company].filter(Boolean).join(" · ");

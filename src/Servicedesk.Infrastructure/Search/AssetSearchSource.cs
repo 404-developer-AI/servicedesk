@@ -49,7 +49,16 @@ public sealed class AssetSearchSource : ISearchSource
         // Rank is hostname-similarity + a flat 0.4 bump on substring
         // matches so "win 11" surfaces hosts whose hostname contains the
         // token even when no trigram match crosses the threshold.
-        const string sql = """
+        // orderBy is a fixed switch over SearchSort — never user input — so
+        // interpolating it into the SQL below carries no injection risk.
+        var orderBy = request.Sort switch
+        {
+            SearchSort.Newest => "last_seen_utc DESC NULLS LAST, id DESC",
+            SearchSort.Oldest => "last_seen_utc ASC NULLS FIRST, id ASC",
+            _ => "rank DESC, hostname",
+        };
+
+        var sql = $"""
             WITH q AS (
                 SELECT lower(@query) AS norm
             ),
@@ -60,6 +69,7 @@ public sealed class AssetSearchSource : ISearchSource
                        a.agent_type,
                        a.os_name,
                        a.os_build,
+                       a.last_seen_utc,
                        c.name        AS client_name,
                        c.code        AS client_code,
                        s.name        AS site_name,
@@ -104,7 +114,7 @@ public sealed class AssetSearchSource : ISearchSource
                    total_hits      AS TotalHits
               FROM hits
              WHERE rank > 0
-             ORDER BY rank DESC, hostname
+             ORDER BY {orderBy}
              LIMIT @limit OFFSET @offset
             """;
 

@@ -61,7 +61,16 @@ public sealed class TimesheetSearchSource : ISearchSource
             ? n
             : null;
 
-        const string sql = """
+        // orderBy is a fixed switch over SearchSort — never user input — so
+        // interpolating it into the SQL below carries no injection risk.
+        var orderBy = request.Sort switch
+        {
+            SearchSort.Newest => "entry_date DESC, start_minutes DESC",
+            SearchSort.Oldest => "entry_date ASC, start_minutes ASC",
+            _ => "rank DESC, entry_date DESC, start_minutes DESC",
+        };
+
+        var sql = $"""
             WITH hits AS (
                 SELECT  e.id,
                         e.user_id,
@@ -115,7 +124,7 @@ public sealed class TimesheetSearchSource : ISearchSource
                     rank::double precision AS Rank,
                     total_hits        AS TotalHits
               FROM hits
-             ORDER BY rank DESC, entry_date DESC, start_minutes DESC
+             ORDER BY {orderBy}
              LIMIT @limit OFFSET @offset;
             """;
 

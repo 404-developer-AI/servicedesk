@@ -28,8 +28,8 @@ export type SearchKind =
 export const KIND_LABELS: Record<string, string> = {
   tickets: "Tickets",
   "kb-articles": "Knowledge Base",
-  contacts: "Contacten",
-  companies: "Bedrijven",
+  contacts: "Contacts",
+  companies: "Companies",
   assets: "Assets",
   surveys: "Surveys",
   timesheet: "Timesheet",

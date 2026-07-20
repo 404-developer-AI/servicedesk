@@ -850,6 +850,18 @@ public static class SettingKeys
         public const string MinQueryLength = "Search.MinQueryLength";
         public const string DropdownLimit = "Search.DropdownLimit";
         public const string DebounceMs = "Search.DebounceMs";
+
+        /// v0.0.93 — CSV of source kinds the quick-search dropdown queries.
+        /// Sources outside this list are skipped entirely for the dropdown
+        /// (they remain reachable on the full search page). An empty or
+        /// unparsable value falls back to the default trio.
+        public const string QuickSources = "Search.QuickSources";
+
+        /// v0.0.93 — per-source time budget in milliseconds. A source that
+        /// exceeds it is cancelled and contributes zero hits for that request,
+        /// so one slow query can never stall the whole search. Clamped to
+        /// 250–30000 in code.
+        public const string SourceTimeoutMs = "Search.SourceTimeoutMs";
     }
 
     public static class App
@@ -1562,6 +1574,10 @@ public static class SettingDefaults
             "Maximum hits per source in the global-search dropdown."),
         new SettingDefault(SettingKeys.Search.DebounceMs, "150", "int", "Search",
             "Client-side debounce (milliseconds) between keystrokes and the dropdown query."),
+        new SettingDefault(SettingKeys.Search.QuickSources, "tickets,companies,contacts", "string", "Search",
+            "Comma-separated source kinds the quick-search dropdown queries. Keeping this to fast, indexed sources (tickets, companies, contacts) keeps the dropdown instant; every source stays available on the full search page. Empty falls back to the default."),
+        new SettingDefault(SettingKeys.Search.SourceTimeoutMs, "5000", "int", "Search",
+            "Time budget (milliseconds) per search source. A source that exceeds it is cancelled and returns no hits for that request instead of stalling the whole search. Clamped to 250-30000."),
 
         // Jobs — retention for the attachment job-queue and its history.
         new SettingDefault(SettingKeys.Jobs.CompletedRetentionDays, "7", "int", "Jobs",
