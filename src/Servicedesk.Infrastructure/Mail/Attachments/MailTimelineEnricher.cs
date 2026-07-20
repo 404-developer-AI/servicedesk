@@ -289,7 +289,9 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
         // Build a case-insensitive lookup from Content-ID → Ready attachment id.
         // Graph returns ContentId without the surrounding angle brackets typical
         // in MIME headers, so we compare plain strings. Failed/Pending rows are
-        // excluded — their cid: references stay as-is and simply won't render.
+        // excluded — their cid: references get the placeholder below (and a
+        // Pending one self-heals: enrichment runs at read time, so once the
+        // attachment worker finishes, the next load rewrites the real URL).
         var byCid = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
         foreach (var a in attachments)
         {
@@ -297,7 +299,6 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
             if (a.ProcessingState != "Ready") continue;
             byCid[a.ContentId] = a.Id;
         }
-        if (byCid.Count == 0) return html;
 
         // Match `cid:<anything up to closing quote / whitespace / angle>`.
         // The replacement rebuilds an absolute path — the browser sends it
@@ -313,12 +314,43 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
                 return $"/api/tickets/{ticketId}/mail/{mailId}/attachments/{attachmentId}";
             }
             u++;
-            return match.Value;
+            // A cid the ingest has no attachment for (not carried by the
+            // sender — common in forwarded/quoted threads — or not Ready
+            // yet). Left as-is the browser shows a broken-image icon AND
+            // logs a CSP violation per occurrence (cid: is not an allowed
+            // img-src scheme); swap in a neutral inline placeholder
+            // instead. Only when it is actually an image *source* — a
+            // literal "cid:…" in visible mail text must stay text.
+            return IsSrcAttributeValue(html, match.Index) ? CidPlaceholderDataUri : match.Value;
         });
         replaced = r;
         unmatched = u;
         return result;
     }
+
+    /// True when the match at <paramref name="index"/> is the value of a
+    /// src attribute (`src="cid:…`, `src='cid:…` or unquoted `src=cid:…`).
+    private static bool IsSrcAttributeValue(string html, int index)
+    {
+        var i = index;
+        if (i > 0 && (html[i - 1] == '"' || html[i - 1] == '\'')) i--;
+        return i >= 4 && string.Compare(html, i - 4, "src=", 0, 4, StringComparison.OrdinalIgnoreCase) == 0;
+    }
+
+    /// Neutral "image unavailable" placeholder: a dashed frame with a small
+    /// photo glyph, gray at ~50% so it reads on both themes. Served as a
+    /// data: URI because the CSP allows `img-src data:` while the raw cid:
+    /// scheme is blocked.
+    private static readonly string CidPlaceholderDataUri =
+        "data:image/svg+xml;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 72\">" +
+            "<rect x=\"2\" y=\"2\" width=\"92\" height=\"68\" rx=\"8\" fill=\"gray\" fill-opacity=\".08\" " +
+            "stroke=\"gray\" stroke-opacity=\".35\" stroke-width=\"2\" stroke-dasharray=\"5 5\"/>" +
+            "<g transform=\"translate(37,25)\" fill=\"none\" stroke=\"gray\" stroke-opacity=\".6\" " +
+            "stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">" +
+            "<rect x=\"0\" y=\"0\" width=\"22\" height=\"22\" rx=\"3\"/>" +
+            "<circle cx=\"6.5\" cy=\"6.5\" r=\"2\"/>" +
+            "<path d=\"m1 17 5.5-5.5 4 4 5-5L21 16\"/></g></svg>"));
 
     private static Guid? TryGetMailMessageId(string metadataJson)
     {
