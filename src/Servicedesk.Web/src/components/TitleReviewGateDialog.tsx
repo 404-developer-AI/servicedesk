@@ -147,7 +147,7 @@ export function TitleReviewGateDialog({ gate, onConfirm, onDismiss, submitting }
             <div className="relative max-h-48 overflow-y-auto rounded-md border border-glass bg-glass px-3 py-2">
               {requestDanger ? (
                 <div
-                  className="prose-sm text-sm text-foreground/90 [&_a]:text-primary [&_a]:underline [&_p]:my-1 [&_ul]:list-disc [&_ul]:list-outside [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:list-outside [&_ol]:pl-6 [&_img]:max-w-full"
+                  className="rich-prose rich-prose-sm"
                   dangerouslySetInnerHTML={requestDanger}
                 />
               ) : (

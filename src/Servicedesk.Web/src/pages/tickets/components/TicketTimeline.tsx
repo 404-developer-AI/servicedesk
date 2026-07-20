@@ -155,7 +155,7 @@ function SafeHtml({ html }: { html: string }) {
   return (
     <div
       onClick={onClick}
-      className="prose-sm text-foreground/90 [&_a]:text-primary [&_a]:underline [&_p]:my-1 [&_ul]:list-disc [&_ul]:list-outside [&_ul]:pl-6 [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:list-outside [&_ol]:pl-6 [&_ol]:ml-4 [&_img]:cursor-zoom-in"
+      className="rich-prose rich-prose-sm [&_img]:cursor-zoom-in"
       dangerouslySetInnerHTML={danger}
     />
   );

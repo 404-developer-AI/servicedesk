@@ -28,7 +28,7 @@ export function SafeHtml({ html, className }: SafeHtmlProps) {
 
   return (
     <div
-      className={cn("kb-prose", className)}
+      className={cn("rich-prose", className)}
       dangerouslySetInnerHTML={wrapper}
     />
   );
