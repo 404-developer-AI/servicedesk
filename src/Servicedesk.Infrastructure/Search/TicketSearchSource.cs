@@ -9,7 +9,8 @@ namespace Servicedesk.Infrastructure.Search;
 
 /// Ticket + event FTS. Matches against:
 ///   - tickets.search_vector (subject)
-///   - ticket_event_search.search_vector (body text, auto-filled by trigger)
+///   - ticket_event_search.search_vector (event body text, auto-filled by trigger)
+///   - ticket_bodies.body_search (the original description, v0.0.93)
 ///   - ticket number prefix (so "1042" finds ticket 1042)
 /// Row-level scoping: admin bypasses; agent restricted to
 /// <see cref="SearchPrincipal.AllowedQueueIds"/>. Customer is not
@@ -119,6 +120,23 @@ public sealed class TicketSearchSource : ISearchSource
                   AND (@skipQueueFilter OR t.queue_id = ANY(@allowedQueues))
                   AND (SELECT tsq FROM q) IS NOT NULL
                   AND tes.search_vector @@ (SELECT tsq FROM q)
+                UNION ALL
+                -- Description hits via ticket_bodies (v0.0.93). The
+                -- body_search vector + GIN index existed since the table was
+                -- created but was never queried, so a ticket whose match
+                -- lived only in its original description was unfindable.
+                SELECT t.id, t.number, t.subject, t.queue_id, t.updated_utc,
+                       t.requester_contact_id,
+                       ts_rank_cd(tb.body_search, (SELECT tsq FROM q)) AS rank,
+                       ts_headline('simple', tb.body_text,
+                                   (SELECT tsq FROM q),
+                                   'MaxFragments=1, MaxWords=18, MinWords=5, ShortWord=2') AS body_snippet
+                FROM ticket_bodies tb
+                JOIN tickets t ON t.id = tb.ticket_id
+                WHERE t.is_deleted = FALSE
+                  AND (@skipQueueFilter OR t.queue_id = ANY(@allowedQueues))
+                  AND (SELECT tsq FROM q) IS NOT NULL
+                  AND tb.body_search @@ (SELECT tsq FROM q)
             ),
             ranked AS (
                 SELECT id, number, subject, queue_id, updated_utc, requester_contact_id,
