@@ -1,35 +1,51 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { searchApi, type SearchHit } from "@/lib/api";
+import { searchApi, type SearchHit, type SearchSort } from "@/lib/api";
 import { sanitizeSnippet } from "@/lib/sanitize";
 import { KIND_ORDER, labelForKind, hitHref } from "@/components/search/searchMeta";
 import { useTheme } from "@/app/ThemeProvider";
 
 const PAGE_SIZE = 25;
 
+const SORT_OPTIONS: ReadonlyArray<{ value: SearchSort; label: string; ticketsOnly?: boolean }> = [
+  { value: "relevance", label: "Relevance" },
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+  { value: "status", label: "Open before closed", ticketsOnly: true },
+];
+
+function parseSort(raw: string | undefined, type: string): SearchSort {
+  const match = SORT_OPTIONS.find((o) => o.value === raw);
+  if (!match) return "relevance";
+  if (match.ticketsOnly && type !== "tickets") return "relevance";
+  return match.value;
+}
+
 /// Full-page search. Tabs are derived from the server-provided
 /// availableKinds so a non-admin never even sees the Settings tab. URL
-/// search params (q, type, offset) are the source of truth — deep links,
-/// back/forward, and refresh all work the natural way.
+/// search params (q, type, offset, sort) are the source of truth — deep
+/// links, back/forward, and refresh all work the natural way.
 export function SearchPage() {
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as {
     q?: string;
     type?: string;
     offset?: number;
+    sort?: string;
   };
 
   const q = (search.q ?? "").trim();
   const [input, setInput] = useState(q);
   const activeType = search.type ?? "tickets";
   const offset = Math.max(0, Number(search.offset ?? 0));
+  const activeSort = parseSort(search.sort, activeType);
 
   useEffect(() => setInput(q), [q]);
 
   const { data, isFetching } = useQuery({
-    queryKey: ["search", "full", q, activeType, offset],
-    queryFn: () => searchApi.full(q, activeType, PAGE_SIZE, offset),
+    queryKey: ["search", "full", q, activeType, offset, activeSort],
+    queryFn: () => searchApi.full(q, activeType, PAGE_SIZE, offset, activeSort),
     enabled: q.length > 0,
     staleTime: 10_000,
   });
@@ -45,13 +61,17 @@ export function SearchPage() {
     return kinds.length > 0 ? kinds : [activeType];
   }, [data?.availableKinds, activeType]);
 
-  function updateUrl(next: { q?: string; type?: string; offset?: number }) {
+  function updateUrl(next: { q?: string; type?: string; offset?: number; sort?: SearchSort }) {
+    const nextType = next.type ?? activeType;
+    // A tickets-only sort silently resets when the user switches category.
+    const nextSort = parseSort(next.sort ?? activeSort, nextType);
     navigate({
       to: "/search",
       search: {
         q: next.q ?? q,
-        type: next.type ?? activeType,
+        type: nextType,
         offset: next.offset,
+        sort: nextSort === "relevance" ? undefined : nextSort,
       },
     });
   }
@@ -63,7 +83,7 @@ export function SearchPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl py-6">
-      <h1 className="font-display text-display-sm font-semibold">Zoekresultaten</h1>
+      <h1 className="font-display text-display-sm font-semibold">Search results</h1>
 
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-stretch">
         <form
@@ -77,7 +97,7 @@ export function SearchPage() {
             autoFocus
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Waar zoek je naar?"
+            placeholder="What are you looking for?"
             className="w-full rounded-xl border border-glass bg-glass px-4 py-3 text-base outline-none ring-1 ring-inset ring-white/5 focus:ring-white/20"
           />
         </form>
@@ -85,7 +105,7 @@ export function SearchPage() {
         <select
           value={activeType}
           onChange={(e) => updateUrl({ type: e.target.value, offset: 0 })}
-          aria-label="Zoeken in"
+          aria-label="Search in"
           className="rounded-xl border border-glass bg-glass px-4 py-3 text-base text-foreground outline-none ring-1 ring-inset ring-white/5 focus:ring-white/20 cursor-pointer sm:w-56"
         >
           {typeOptions.map((t) => (
@@ -94,25 +114,38 @@ export function SearchPage() {
             </option>
           ))}
         </select>
+
+        <select
+          value={activeSort}
+          onChange={(e) => updateUrl({ sort: e.target.value as SearchSort, offset: 0 })}
+          aria-label="Sort by"
+          className="rounded-xl border border-glass bg-glass px-4 py-3 text-base text-foreground outline-none ring-1 ring-inset ring-white/5 focus:ring-white/20 cursor-pointer sm:w-48"
+        >
+          {SORT_OPTIONS.filter((o) => !o.ticketsOnly || activeType === "tickets").map((o) => (
+            <option key={o.value} value={o.value} className="bg-background">
+              {o.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="mt-4">
         {q.length === 0 && (
           <p className="py-12 text-center text-muted-foreground">
-            Type hierboven om te zoeken.
+            Type above to search.
           </p>
         )}
 
         {q.length > 0 && isFetching && !group && (
-          <p className="py-12 text-center text-muted-foreground">Zoeken…</p>
+          <p className="py-12 text-center text-muted-foreground">Searching…</p>
         )}
 
         {q.length > 0 && group && (
           <>
             <div className="mb-3 text-xs text-muted-foreground">
               {total === 0
-                ? `Geen resultaten voor "${q}".`
-                : `${pageStart}–${pageEnd} van ${total} resultaten`}
+                ? `No results for "${q}".`
+                : `${pageStart}–${pageEnd} of ${total} results`}
             </div>
 
             <ul className="divide-y divide-glass rounded-xl border border-glass bg-glass">
@@ -128,14 +161,14 @@ export function SearchPage() {
                   onClick={() => updateUrl({ offset: Math.max(0, offset - PAGE_SIZE) })}
                   className="rounded-md border border-glass px-3 py-1 disabled:opacity-40"
                 >
-                  ← Vorige
+                  ← Previous
                 </button>
                 <button
                   disabled={!group.hasMore}
                   onClick={() => updateUrl({ offset: offset + PAGE_SIZE })}
                   className="rounded-md border border-glass px-3 py-1 disabled:opacity-40"
                 >
-                  Volgende →
+                  Next →
                 </button>
               </div>
             )}

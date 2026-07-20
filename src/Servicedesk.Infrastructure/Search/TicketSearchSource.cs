@@ -123,32 +123,80 @@ public sealed class TicketSearchSource : ISearchSource
             ranked AS (
                 SELECT id, number, subject, queue_id, updated_utc, requester_contact_id,
                        MAX(rank) AS rank,
-                       MAX(body_snippet) AS body_snippet,
-                       COUNT(*) OVER () AS total_hits
+                       MAX(body_snippet) AS body_snippet
                 FROM hits
                 GROUP BY id, number, subject, queue_id, updated_utc, requester_contact_id
+            ),
+            enriched AS (
+                SELECT r.id, r.number, r.subject, r.queue_id, r.updated_utc,
+                       r.rank, r.body_snippet,
+                       COALESCE(s.state_category IN ('Resolved','Closed'), FALSE) AS is_closed,
+                       COALESCE(c.first_name || ' ' || c.last_name, c.email, '') AS requester_name,
+                       COALESCE(co.name, '')  AS company_name,
+                       COALESCE(s.name, '')   AS status_name,
+                       COALESCE(s.color, '')  AS status_color
+                FROM ranked r
+                JOIN tickets t2        ON t2.id = r.id
+                LEFT JOIN statuses s   ON s.id = t2.status_id
+                LEFT JOIN contacts c   ON c.id = r.requester_contact_id
+                LEFT JOIN companies co ON co.id = t2.company_id
+            ),
+            windowed AS (
+                SELECT e.*,
+                       ROW_NUMBER() OVER (PARTITION BY e.is_closed
+                                          ORDER BY e.rank DESC, e.updated_utc DESC, e.id DESC) AS rn,
+                       COUNT(*) OVER (PARTITION BY e.is_closed) AS partition_total,
+                       COUNT(*) OVER () AS total_hits
+                FROM enriched e
             )
-            SELECT r.id, r.number, r.subject,
-                   r.queue_id       AS "QueueId",
-                   r.updated_utc    AS "UpdatedUtc",
-                   r.rank::double precision AS "Rank",
-                   r.body_snippet   AS "BodySnippet",
-                   r.total_hits     AS "TotalHits",
-                   COALESCE(c.first_name || ' ' || c.last_name, c.email, '') AS "RequesterName",
-                   COALESCE(co.name, '')  AS "CompanyName",
-                   COALESCE(s.name, '')   AS "StatusName",
-                   COALESCE(s.color, '')  AS "StatusColor"
-            FROM ranked r
-            LEFT JOIN contacts c  ON c.id = r.requester_contact_id
-            LEFT JOIN tickets t2  ON t2.id = r.id
-            LEFT JOIN companies co ON co.id = t2.company_id
-            LEFT JOIN statuses s  ON s.id = t2.status_id
-            ORDER BY r.rank DESC, r.updated_utc DESC, r.id DESC
-            LIMIT @limit OFFSET @offset;
+            SELECT w.id             AS "Id",
+                   w.number         AS "Number",
+                   w.subject        AS "Subject",
+                   w.queue_id       AS "QueueId",
+                   w.updated_utc    AS "UpdatedUtc",
+                   w.rank::double precision AS "Rank",
+                   w.body_snippet   AS "BodySnippet",
+                   w.is_closed      AS "IsClosed",
+                   w.total_hits     AS "TotalHits",
+                   w.partition_total AS "PartitionTotal",
+                   w.requester_name AS "RequesterName",
+                   w.company_name   AS "CompanyName",
+                   w.status_name    AS "StatusName",
+                   w.status_color   AS "StatusColor"
+            FROM windowed w
             """;
 
+        // Tail is assembled from fixed constants only (quick split vs a
+        // whitelisted ORDER BY per SearchSort) — no user input is ever
+        // concatenated into the SQL.
+        string tail;
+        if (request.QuickMode)
+        {
+            // Dropdown: top-N open AND top-N closed, open section first.
+            tail = """
+
+                WHERE w.rn <= @limit
+                ORDER BY w.is_closed ASC, w.rn ASC;
+                """;
+        }
+        else
+        {
+            var orderBy = request.Sort switch
+            {
+                SearchSort.Newest => "w.updated_utc DESC, w.id DESC",
+                SearchSort.Oldest => "w.updated_utc ASC, w.id ASC",
+                SearchSort.Status => "w.is_closed ASC, w.rank DESC, w.updated_utc DESC, w.id DESC",
+                _ => "w.rank DESC, w.updated_utc DESC, w.id DESC",
+            };
+            tail = $"""
+
+                ORDER BY {orderBy}
+                LIMIT @limit OFFSET @offset;
+                """;
+        }
+
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        var rows = (await conn.QueryAsync<TicketHitRow>(new CommandDefinition(sql, new
+        var rows = (await conn.QueryAsync<TicketHitRow>(new CommandDefinition(sql + tail, new
         {
             tsqueryText,
             numberProbe,
@@ -174,11 +222,28 @@ public sealed class TicketSearchSource : ISearchSource
                 ["company"] = string.IsNullOrWhiteSpace(r.CompanyName) ? null : r.CompanyName,
                 ["statusName"] = string.IsNullOrWhiteSpace(r.StatusName) ? null : r.StatusName,
                 ["statusColor"] = string.IsNullOrWhiteSpace(r.StatusColor) ? null : r.StatusColor,
+                ["isClosed"] = r.IsClosed ? "true" : "false",
             })).ToList();
 
         var totalInGroup = rows.Count > 0 ? (int)rows[0].TotalHits : 0;
-        var hasMore = totalInGroup > offset + hits.Count;
 
+        if (request.QuickMode)
+        {
+            // Per-partition totals so the dropdown can show "+N more" under
+            // both the open and the closed section independently.
+            var openTotal = (int)(rows.FirstOrDefault(r => !r.IsClosed)?.PartitionTotal ?? 0);
+            var closedTotal = (int)(rows.FirstOrDefault(r => r.IsClosed)?.PartitionTotal ?? 0);
+            var hasMoreQuick = openTotal > rows.Count(r => !r.IsClosed)
+                            || closedTotal > rows.Count(r => r.IsClosed);
+            var partitionTotals = new Dictionary<string, int>
+            {
+                ["open"] = openTotal,
+                ["closed"] = closedTotal,
+            };
+            return new SearchGroup(Kind, hits, totalInGroup, hasMoreQuick, partitionTotals);
+        }
+
+        var hasMore = totalInGroup > offset + hits.Count;
         return new SearchGroup(Kind, hits, totalInGroup, hasMore);
     }
 
@@ -215,7 +280,9 @@ public sealed class TicketSearchSource : ISearchSource
         DateTime UpdatedUtc,
         double Rank,
         string? BodySnippet,
+        bool IsClosed,
         long TotalHits,
+        long PartitionTotal,
         string? RequesterName,
         string? CompanyName,
         string? StatusName,

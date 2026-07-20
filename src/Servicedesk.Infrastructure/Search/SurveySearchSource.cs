@@ -30,10 +30,19 @@ public sealed class SurveySearchSource : ISearchSource
         var limit = Math.Clamp(request.Limit, 1, 100);
         var offset = Math.Max(0, request.Offset);
 
-        const string sql = """
+        // orderBy is a fixed switch over SearchSort — never user input — so
+        // interpolating it into the SQL below carries no injection risk.
+        var orderBy = request.Sort switch
+        {
+            SearchSort.Newest => "updated_utc DESC, id DESC",
+            SearchSort.Oldest => "updated_utc ASC, id ASC",
+            _ => "rank DESC, name",
+        };
+
+        var sql = $"""
             WITH q AS (SELECT lower(@query) AS norm),
             hits AS (
-                SELECT id, name, description, is_active,
+                SELECT id, name, description, is_active, updated_utc,
                        GREATEST(
                            similarity(lower(name), (SELECT norm FROM q)),
                            similarity(lower(coalesce(description, '')), (SELECT norm FROM q))
@@ -51,7 +60,7 @@ public sealed class SurveySearchSource : ISearchSource
                    rank::double precision AS "Rank",
                    total_hits AS "TotalHits"
             FROM hits
-            ORDER BY rank DESC, name
+            ORDER BY {orderBy}
             LIMIT @limit OFFSET @offset
             """;
 

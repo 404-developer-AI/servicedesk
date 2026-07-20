@@ -37,10 +37,19 @@ public sealed class TriggerSearchSource : ISearchSource
         // Same trigram + ILIKE-fallback shape as IntakeTemplateSearchSource:
         // trigram catches typos / fuzzy matches, the literal substring
         // fallback rescues short queries below the 0.25 trigram cutoff.
-        const string sql = """
+        // orderBy is a fixed switch over SearchSort — never user input — so
+        // interpolating it into the SQL below carries no injection risk.
+        var orderBy = request.Sort switch
+        {
+            SearchSort.Newest => "updated_utc DESC, id DESC",
+            SearchSort.Oldest => "updated_utc ASC, id ASC",
+            _ => "rank DESC, name",
+        };
+
+        var sql = $"""
             WITH q AS (SELECT lower(@query) AS norm),
             hits AS (
-                SELECT id, name, description, is_active, activator_kind, activator_mode,
+                SELECT id, name, description, is_active, activator_kind, activator_mode, updated_utc,
                        GREATEST(
                            similarity(lower(name), (SELECT norm FROM q)),
                            similarity(lower(coalesce(description, '')), (SELECT norm FROM q))
@@ -62,7 +71,7 @@ public sealed class TriggerSearchSource : ISearchSource
                    rank::double precision          AS Rank,
                    total_hits                      AS TotalHits
             FROM hits
-            ORDER BY rank DESC, name
+            ORDER BY {orderBy}
             LIMIT @limit OFFSET @offset
             """;
 

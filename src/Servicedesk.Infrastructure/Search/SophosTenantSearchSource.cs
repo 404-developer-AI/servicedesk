@@ -44,13 +44,23 @@ public sealed class SophosTenantSearchSource : ISearchSource
         // search façade before it ever queries this source.
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
 
-        const string sql = """
+        // orderBy is a fixed switch over SearchSort — never user input — so
+        // interpolating it into the SQL below carries no injection risk.
+        var orderBy = request.Sort switch
+        {
+            SearchSort.Newest => "updated_utc DESC, tenant_id DESC",
+            SearchSort.Oldest => "updated_utc ASC, tenant_id ASC",
+            _ => "rank DESC, show_as ASC NULLS LAST",
+        };
+
+        var sql = $"""
             WITH hits AS (
                 SELECT  t.company_id,
                         t.tenant_id,
                         t.show_as,
                         t.company_code,
                         t.mailbox_count,
+                        t.updated_utc,
                         co.name AS company_name,
                         CASE
                             WHEN t.show_as      ILIKE @prefix THEN 4.0
@@ -77,7 +87,7 @@ public sealed class SophosTenantSearchSource : ISearchSource
                     rank::double precision AS Rank,
                     total_hits    AS TotalHits
               FROM hits
-             ORDER BY rank DESC, show_as ASC NULLS LAST
+             ORDER BY {orderBy}
              LIMIT @limit OFFSET @offset;
             """;
 

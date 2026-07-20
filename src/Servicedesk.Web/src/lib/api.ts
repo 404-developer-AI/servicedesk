@@ -3629,6 +3629,8 @@ export type SearchGroup = {
   hits: SearchHit[];
   totalInGroup: number;
   hasMore: boolean;
+  /** Tickets quick-mode only: total matches per partition ("open"/"closed"). */
+  partitionTotals: Record<string, number> | null;
 };
 
 export type SearchDropdownResponse = {
@@ -3636,7 +3638,10 @@ export type SearchDropdownResponse = {
   totalHits: number;
   availableKinds: string[];
   minQueryLength: number;
+  debounceMs: number;
 };
+
+export type SearchSort = "relevance" | "newest" | "oldest" | "status";
 
 export type SearchFullResponse = {
   group: SearchGroup;
@@ -3650,10 +3655,10 @@ export const searchApi = {
       "GET",
       `/api/search?q=${encodeURIComponent(q)}&limit=${limit}`,
     ),
-  full: (q: string, type: string, limit = 25, offset = 0) =>
+  full: (q: string, type: string, limit = 25, offset = 0, sort: SearchSort = "relevance") =>
     request<SearchFullResponse>(
       "GET",
-      `/api/search/full?q=${encodeURIComponent(q)}&type=${encodeURIComponent(type)}&limit=${limit}&offset=${offset}`,
+      `/api/search/full?q=${encodeURIComponent(q)}&type=${encodeURIComponent(type)}&limit=${limit}&offset=${offset}&sort=${sort}`,
     ),
 };
 

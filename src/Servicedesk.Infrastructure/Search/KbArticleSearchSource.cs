@@ -47,14 +47,23 @@ public sealed class KbArticleSearchSource : ISearchSource
         // trigram-only branch lands at rank 0 so FTS hits sort first.
         // Sections-path is built via a chain join so the result includes a
         // human-readable breadcrumb regardless of nesting depth.
-        const string sql = """
+        // orderBy is a fixed switch over SearchSort — never user input — so
+        // interpolating it into the SQL below carries no injection risk.
+        var orderBy = request.Sort switch
+        {
+            SearchSort.Newest => "updated_utc DESC, id DESC",
+            SearchSort.Oldest => "updated_utc ASC, id ASC",
+            _ => "(fts_rank + trgm_rank) DESC, title",
+        };
+
+        var sql = $"""
             WITH q AS (
                 SELECT @query AS raw,
                        plainto_tsquery('simple', lower(@query)) AS tsq,
                        lower(@query) AS norm
             ),
             hits AS (
-                SELECT a.id, a.section_id, a.slug, t.title, t.body_text,
+                SELECT a.id, a.section_id, a.slug, t.title, t.body_text, a.updated_utc,
                        CASE
                            WHEN t.search_vector @@ (SELECT tsq FROM q)
                                THEN ts_rank_cd(t.search_vector, (SELECT tsq FROM q))
@@ -86,7 +95,7 @@ public sealed class KbArticleSearchSource : ISearchSource
                    (fts_rank + trgm_rank)::double precision AS Rank,
                    total_hits         AS TotalHits
               FROM hits
-             ORDER BY (fts_rank + trgm_rank) DESC, title
+             ORDER BY {orderBy}
              LIMIT @limit OFFSET @offset;
             """;
 

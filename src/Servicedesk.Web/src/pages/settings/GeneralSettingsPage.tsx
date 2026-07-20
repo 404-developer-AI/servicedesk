@@ -13,6 +13,7 @@ import {
   Sun,
   Moon,
   Sparkles,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -21,12 +22,14 @@ import { SettingField } from "@/components/settings/SettingField";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { renderLoginBannerPreviewHtml } from "@/components/auth/LoginBanner";
 import { settingsApi, type SettingEntry, type LoginBannerType } from "@/lib/api";
+import { KIND_ORDER, labelForKind } from "@/components/search/searchMeta";
 import { useServerTime } from "@/hooks/useServerTime";
 import { cn } from "@/lib/utils";
 
 const APP_QUERY_KEY = ["settings", "list", "App"] as const;
 const UI_QUERY_KEY = ["settings", "list", "Ui"] as const;
 const COPILOT_QUERY_KEY = ["settings", "list", "Copilot"] as const;
+const SEARCH_QUERY_KEY = ["settings", "list", "Search"] as const;
 const DEFAULT_THEME_QUERY_KEY = ["system", "default-theme"] as const;
 const MAINTENANCE_QUERY_KEY = ["system", "maintenance"] as const;
 const LOGIN_BANNER_QUERY_KEY = ["system", "login-banner"] as const;
@@ -64,6 +67,10 @@ export function GeneralSettingsPage() {
   const copilotSettings = useQuery({
     queryKey: COPILOT_QUERY_KEY,
     queryFn: () => settingsApi.list("Copilot"),
+  });
+  const searchSettings = useQuery({
+    queryKey: SEARCH_QUERY_KEY,
+    queryFn: () => settingsApi.list("Search"),
   });
   const { time } = useServerTime();
 
@@ -154,11 +161,137 @@ export function GeneralSettingsPage() {
         loading={appSettings.isLoading}
       />
 
+      <GlobalSearchSection
+        entries={searchSettings.data}
+        loading={searchSettings.isLoading}
+      />
+
       <CopilotLauncherSection
         entries={copilotSettings.data}
         loading={copilotSettings.isLoading}
       />
     </div>
+  );
+}
+
+const QUICK_SOURCES_FALLBACK = ["tickets", "companies", "contacts"];
+
+function GlobalSearchSection({
+  entries,
+  loading,
+}: {
+  entries: SettingEntry[] | undefined;
+  loading: boolean;
+}) {
+  const qc = useQueryClient();
+
+  const quickSourcesEntry = findEntry(entries, "Search.QuickSources");
+  const minLenEntry = findEntry(entries, "Search.MinQueryLength");
+  const dropdownLimitEntry = findEntry(entries, "Search.DropdownLimit");
+  const debounceEntry = findEntry(entries, "Search.DebounceMs");
+  const timeoutEntry = findEntry(entries, "Search.SourceTimeoutMs");
+
+  const selected = useMemo(() => {
+    const raw = (quickSourcesEntry?.value ?? "")
+      .split(",")
+      .map((k) => k.trim())
+      .filter((k) => k.length > 0);
+    return new Set(raw.length > 0 ? raw : QUICK_SOURCES_FALLBACK);
+  }, [quickSourcesEntry?.value]);
+
+  const update = useMutation({
+    mutationFn: (value: string) => settingsApi.update("Search.QuickSources", value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: SEARCH_QUERY_KEY });
+      toast.success("Quick-search sources updated");
+    },
+    onError: () => {
+      toast.error("Failed to update quick-search sources");
+    },
+  });
+
+  const toggleKind = (kind: string) => {
+    const next = new Set(selected);
+    if (next.has(kind)) {
+      // Never allow zero sources — an empty value would fall back to the
+      // server default anyway, which is confusing to present in the UI.
+      if (next.size === 1) return;
+      next.delete(kind);
+    } else {
+      next.add(kind);
+    }
+    update.mutate(KIND_ORDER.filter((k) => next.has(k)).join(","));
+  };
+
+  return (
+    <section className="glass-card p-6">
+      <div className="mb-4 flex items-start gap-3">
+        <div className="rounded-md bg-glass p-2 text-primary">
+          <Search className="h-5 w-5" />
+        </div>
+        <div className="flex-1">
+          <h2 className="text-base font-semibold text-foreground">Global search</h2>
+          <p className="text-xs text-muted-foreground">
+            The quick-search dropdown (top-left, Ctrl+K) only queries the sources selected
+            below, so it stays instant — every source remains available on the full search
+            page. Each source also runs inside its own time budget: one slow source can
+            never stall the whole search.
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <Skeleton className="h-48 w-full" />
+      ) : (
+        <div>
+          <div className="mb-4">
+            <p className="text-sm font-medium text-foreground">Quick-search sources</p>
+            <p className="mb-2 text-[10px] uppercase tracking-wider text-muted-foreground/40 font-mono">
+              Search.QuickSources
+            </p>
+            <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+              {KIND_ORDER.map((kind) => {
+                const checked = selected.has(kind);
+                return (
+                  <label
+                    key={kind}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
+                      checked
+                        ? "border-primary/40 bg-primary/10 text-foreground"
+                        : "border-glass bg-glass text-muted-foreground hover:text-foreground",
+                      update.isPending && "cursor-not-allowed opacity-60",
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={update.isPending}
+                      onChange={() => toggleKind(kind)}
+                      className="h-3.5 w-3.5 accent-primary"
+                    />
+                    <span className="truncate">{labelForKind(kind)}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          {minLenEntry && (
+            <SettingField entry={minLenEntry} queryKey={SEARCH_QUERY_KEY} label="Minimum query length" />
+          )}
+          {dropdownLimitEntry && (
+            <SettingField entry={dropdownLimitEntry} queryKey={SEARCH_QUERY_KEY} label="Dropdown hits per source" />
+          )}
+          {debounceEntry && (
+            <SettingField entry={debounceEntry} queryKey={SEARCH_QUERY_KEY} label="Typing debounce (ms)" />
+          )}
+          {timeoutEntry && (
+            <SettingField entry={timeoutEntry} queryKey={SEARCH_QUERY_KEY} label="Per-source time budget (ms)" />
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

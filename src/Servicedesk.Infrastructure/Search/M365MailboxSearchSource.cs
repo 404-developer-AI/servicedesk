@@ -44,7 +44,16 @@ public sealed class M365MailboxSearchSource : ISearchSource
         // search façade before it ever queries this source.
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
 
-        const string sql = """
+        // orderBy is a fixed switch over SearchSort — never user input — so
+        // interpolating it into the SQL below carries no injection risk.
+        var orderBy = request.Sort switch
+        {
+            SearchSort.Newest => "synced_utc DESC, object_id DESC",
+            SearchSort.Oldest => "synced_utc ASC, object_id ASC",
+            _ => "rank DESC, display_name ASC NULLS LAST",
+        };
+
+        var sql = $"""
             WITH hits AS (
                 SELECT  m.company_id,
                         m.object_id,
@@ -52,6 +61,7 @@ public sealed class M365MailboxSearchSource : ISearchSource
                         m.upn,
                         m.mail,
                         m.mailbox_type,
+                        m.synced_utc,
                         co.name AS company_name,
                         CASE
                             WHEN m.display_name ILIKE @prefix THEN 4.0
@@ -78,7 +88,7 @@ public sealed class M365MailboxSearchSource : ISearchSource
                     rank::double precision AS Rank,
                     total_hits   AS TotalHits
               FROM hits
-             ORDER BY rank DESC, display_name ASC NULLS LAST
+             ORDER BY {orderBy}
              LIMIT @limit OFFSET @offset;
             """;
 

@@ -56,14 +56,36 @@ public static class SearchFeature
     public const string FeedbackOwnOnly = "feedbackOwnOnly";
 }
 
+/// Sort order for the full-page search. Parsed from the `sort` query param
+/// (Relevance is the fallback for unknown values). Every source maps it onto
+/// a fixed set of ORDER BY constants — never interpolated user input. Sources
+/// without a meaningful timestamp simply ignore non-Relevance values;
+/// <see cref="Status"/> is only meaningful for the tickets source (open
+/// before closed).
+public enum SearchSort
+{
+    Relevance,
+    Newest,
+    Oldest,
+    Status,
+}
+
 /// A single request to the search façade. <see cref="Type"/> is null for
-/// the dropdown query (all sources, top-N each); non-null for the full
-/// results page (single source, paginated).
+/// the dropdown query (top-N each); non-null for the full results page
+/// (single source, paginated).
+///
+/// <see cref="Kinds"/> scopes the dropdown to the sources configured in
+/// Search.QuickSources (null = no restriction). <see cref="QuickMode"/> tells
+/// a source it is serving the dropdown — the tickets source then partitions
+/// its top-N into open and closed tickets instead of one flat list.
 public sealed record SearchRequest(
     string Query,
     string? Type,
     int Limit,
-    int Offset);
+    int Offset,
+    IReadOnlyList<string>? Kinds = null,
+    bool QuickMode = false,
+    SearchSort Sort = SearchSort.Relevance);
 
 /// Results grouped by source. The dropdown consumes all groups; the full
 /// page consumes the single group matching <see cref="SearchRequest.Type"/>.
@@ -71,11 +93,15 @@ public sealed record SearchResults(
     IReadOnlyList<SearchGroup> Groups,
     int TotalHits);
 
+/// <see cref="PartitionTotals"/> is only set by the tickets source in quick
+/// mode: total match counts per partition ("open"/"closed") so the dropdown
+/// can render a "+N more" hint per section. Null everywhere else.
 public sealed record SearchGroup(
     string Kind,
     IReadOnlyList<SearchHit> Hits,
     int TotalInGroup,
-    bool HasMore);
+    bool HasMore,
+    IReadOnlyDictionary<string, int>? PartitionTotals = null);
 
 /// One hit in the result set. <see cref="Kind"/> lets the UI pick the
 /// right icon/route; <see cref="EntityId"/> is the clickable target.

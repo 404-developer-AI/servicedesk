@@ -62,7 +62,16 @@ public sealed class AdsolutContractSearchSource : ISearchSource
             ? dn
             : null;
 
-        const string sql = """
+        // orderBy is a fixed switch over SearchSort — never user input — so
+        // interpolating it into the SQL below carries no injection risk.
+        var orderBy = request.Sort switch
+        {
+            SearchSort.Newest => "end_date DESC NULLS LAST, doc_nr DESC NULLS LAST",
+            SearchSort.Oldest => "end_date ASC NULLS FIRST, doc_nr ASC NULLS FIRST",
+            _ => "rank DESC, end_date DESC NULLS LAST, doc_nr DESC NULLS LAST",
+        };
+
+        var sql = $"""
             WITH hits AS (
                 SELECT  c.id,
                         c.doc_nr,
@@ -114,7 +123,7 @@ public sealed class AdsolutContractSearchSource : ISearchSource
                     rank::double precision AS Rank,
                     total_hits        AS TotalHits
               FROM hits
-             ORDER BY rank DESC, end_date DESC NULLS LAST, doc_nr DESC NULLS LAST
+             ORDER BY {orderBy}
              LIMIT @limit OFFSET @offset;
             """;
 

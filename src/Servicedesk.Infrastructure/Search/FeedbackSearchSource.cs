@@ -64,17 +64,30 @@ public sealed class FeedbackSearchSource : ISearchSource
         Guid? actor = IsOwnOnly(principal) ? principal.UserId : null;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
 
-        const string sql = """
+        // orderBy is a fixed switch over SearchSort — never user input — so
+        // interpolating it into the SQL below carries no injection risk.
+        var orderBy = request.Sort switch
+        {
+            SearchSort.Newest => "entry_date DESC, id DESC",
+            SearchSort.Oldest => "entry_date ASC, id ASC",
+            _ => "rank DESC, entry_date DESC, id DESC",
+        };
+
+        var sql = $"""
             WITH hits AS (
+                -- body_text is a STORED generated column (v0.0.93) — the
+                -- HTML strip happens once at write time instead of per row
+                -- per query, which used to be the most expensive pattern in
+                -- the whole search fan-out.
                 SELECT  e.id,
                         e.entry_date,
                         tu.email           AS target_email,
                         wt.name            AS type_name,
-                        regexp_replace(e.body_html, '<[^>]*>', ' ', 'g') AS body_text,
+                        e.body_text,
                         CASE
-                            WHEN tu.email   ILIKE @prefix THEN 4.0
-                            WHEN wt.name    ILIKE @prefix THEN 3.0
-                            WHEN regexp_replace(e.body_html, '<[^>]*>', ' ', 'g') ILIKE @prefix THEN 2.0
+                            WHEN tu.email    ILIKE @prefix THEN 4.0
+                            WHEN wt.name     ILIKE @prefix THEN 3.0
+                            WHEN e.body_text ILIKE @prefix THEN 2.0
                             ELSE 1.0
                         END AS rank,
                         COUNT(*) OVER () AS total_hits
@@ -82,9 +95,9 @@ public sealed class FeedbackSearchSource : ISearchSource
                   JOIN users tu ON tu.id = e.target_user_id
                   LEFT JOIN feedback_work_point_types wt ON wt.id = e.work_point_type_id
                  WHERE (@actor IS NULL OR e.created_by_user_id = @actor)
-                   AND (tu.email ILIKE @like
-                    OR wt.name   ILIKE @like
-                    OR regexp_replace(e.body_html, '<[^>]*>', ' ', 'g') ILIKE @like)
+                   AND (tu.email    ILIKE @like
+                    OR wt.name      ILIKE @like
+                    OR e.body_text  ILIKE @like)
             )
             SELECT  id           AS Id,
                     entry_date   AS EntryDate,
@@ -94,7 +107,7 @@ public sealed class FeedbackSearchSource : ISearchSource
                     rank::double precision AS Rank,
                     total_hits   AS TotalHits
               FROM hits
-             ORDER BY rank DESC, entry_date DESC, id DESC
+             ORDER BY {orderBy}
              LIMIT @limit OFFSET @offset;
             """;
 
