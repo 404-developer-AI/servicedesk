@@ -112,11 +112,15 @@ export function TitleReviewGateDialog({ gate, onConfirm, onDismiss, submitting }
       >
         <DialogHeader>
           <DialogTitle>{gate.title}</DialogTitle>
-          {gate.message ? (
-            <DialogDescription className="whitespace-pre-wrap text-sm text-muted-foreground">
-              {gate.message}
-            </DialogDescription>
-          ) : null}
+          <DialogDescription
+            className={
+              gate.message
+                ? "whitespace-pre-wrap text-sm text-muted-foreground"
+                : "sr-only"
+            }
+          >
+            {gate.message || "Review the ticket title before continuing."}
+          </DialogDescription>
         </DialogHeader>
 
         {showRequestPanel && (

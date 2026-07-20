@@ -19,6 +19,7 @@ export function useTimesheetManagerRealtime(enabled: boolean) {
   React.useEffect(() => {
     if (!enabled) return;
     const hub = getConnection();
+    let active = true;
 
     const onChanged = () => {
       queryClient.invalidateQueries({ queryKey: ["timesheet", "manager", "entries"] });
@@ -27,20 +28,35 @@ export function useTimesheetManagerRealtime(enabled: boolean) {
 
     hub.on("TimesheetEntriesChanged", onChanged);
 
-    async function joinGroup() {
+    // Retry until connected (same pattern as AgentActivityTile) — the first
+    // mount can race the hub-start in usePresenceConnection, and waiting for
+    // a *re*connect alone would leave a hard refresh straight onto the
+    // timesheet page out of the group.
+    const join = () => {
+      if (!active) return;
       if (hub.state === HubConnectionState.Connected) {
-        await hub.invoke("JoinTimesheetManagers").catch(() => {});
+        hub.invoke("JoinTimesheetManagers").catch(() => {});
+      } else {
+        window.setTimeout(join, 500);
       }
-    }
-    // First mount might race the hub-start in usePresenceConnection; retry
-    // on reconnected so we end up in the group either way.
-    void joinGroup();
+    };
+    join();
+
+    // Group membership is per-connection, so re-join after a reconnect.
+    // SignalR has no offReconnected; the `active` guard neutralises this
+    // callback once the page unmounts.
     hub.onreconnected(() => {
-      void hub.invoke("JoinTimesheetManagers").catch(() => {});
+      if (active) void hub.invoke("JoinTimesheetManagers").catch(() => {});
     });
 
     return () => {
+      active = false;
       hub.off("TimesheetEntriesChanged", onChanged);
+      // Leave the group so pushes stop when the page closes — membership
+      // used to linger until disconnect, spamming handler-less broadcasts.
+      if (hub.state === HubConnectionState.Connected) {
+        hub.invoke("LeaveTimesheetManagers").catch(() => {});
+      }
     };
   }, [enabled, queryClient]);
 }

@@ -249,6 +249,15 @@ public sealed class TicketPresenceHub : Hub
         Groups.AddToGroupAsync(Context.ConnectionId, "timesheet-managers");
 
     /// <summary>
+    /// Counterpart of <see cref="JoinTimesheetManagers"/> — called when the
+    /// timesheet page unmounts. Without it a connection that visited the
+    /// timesheet page once kept receiving manager pings for the rest of the
+    /// session (the group was only cleaned up on disconnect).
+    /// </summary>
+    public Task LeaveTimesheetManagers() =>
+        Groups.RemoveFromGroupAsync(Context.ConnectionId, "timesheet-managers");
+
+    /// <summary>
     /// Client can request the full presence snapshot (e.g. on reconnect).
     /// Returns presence for all tickets that any connection is viewing or has recent.
     /// </summary>

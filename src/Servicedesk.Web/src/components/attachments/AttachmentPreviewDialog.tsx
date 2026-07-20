@@ -3,6 +3,7 @@ import { Download, ExternalLink } from "lucide-react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -126,6 +127,9 @@ export function AttachmentPreviewDialog({ preview, onOpenChange }: Props) {
               <DialogTitle className="truncate text-sm font-medium text-foreground">
                 {preview.filename}
               </DialogTitle>
+              <DialogDescription className="sr-only">
+                Preview of the selected attachment.
+              </DialogDescription>
               <div className="flex items-center gap-3 text-xs text-muted-foreground">
                 <span>{preview.mimeType}</span>
                 {preview.sizeLabel ? <span>·</span> : null}

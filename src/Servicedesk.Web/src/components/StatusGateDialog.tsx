@@ -88,11 +88,15 @@ export function StatusGateDialog({ gate, onConfirm, onCancel }: Props) {
       <DialogContent className="sm:max-w-lg border border-glass bg-popover/95 backdrop-blur-xl">
         <DialogHeader>
           <DialogTitle>{gate.title}</DialogTitle>
-          {gate.message ? (
-            <DialogDescription className="whitespace-pre-wrap text-sm text-muted-foreground">
-              {gate.message}
-            </DialogDescription>
-          ) : null}
+          <DialogDescription
+            className={
+              gate.message
+                ? "whitespace-pre-wrap text-sm text-muted-foreground"
+                : "sr-only"
+            }
+          >
+            {gate.message || "Confirm the details below before changing the ticket status."}
+          </DialogDescription>
         </DialogHeader>
         {gate.questions.length > 0 && (
           <div className="space-y-3.5">
