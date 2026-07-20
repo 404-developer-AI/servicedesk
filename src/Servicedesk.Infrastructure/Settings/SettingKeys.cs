@@ -19,6 +19,7 @@ public static class SettingKeys
         public const string HstsMaxAgeDays = "Security.Hsts.MaxAgeDays";
         public const string CspReportUri = "Security.Csp.ReportUri";
         public const string CspReportDedupWindowSeconds = "Security.Csp.ReportDedupWindowSeconds";
+        public const string CspIgnoredReportDirectives = "Security.Csp.IgnoredReportDirectives";
 
         public const string PasswordArgon2MemoryKb = "Security.Password.Argon2.MemoryKb";
         public const string PasswordArgon2Iterations = "Security.Password.Argon2.Iterations";
@@ -1261,6 +1262,8 @@ public static class SettingDefaults
             "Path the browser should POST CSP violation reports to."),
         new SettingDefault(SettingKeys.Security.CspReportDedupWindowSeconds, "600", "int", "Security",
             "Window (seconds) during which an identical CSP violation report (same directive + blocked resource) from the same IP is logged only once. 0 disables deduplication."),
+        new SettingDefault(SettingKeys.Security.CspIgnoredReportDirectives, "img-src", "string", "Security",
+            "Comma-separated CSP directives whose violation reports are acknowledged but not audit-logged. External images in inbound mail are blocked by design (img-src 'self'), so their reports carry no attack signal and would only flood the audit log. Empty logs everything."),
 
         new SettingDefault(SettingKeys.Security.PasswordArgon2MemoryKb, "65536", "int", "Security",
             "Argon2id memory cost in kibibytes. 65536 = 64 MiB."),

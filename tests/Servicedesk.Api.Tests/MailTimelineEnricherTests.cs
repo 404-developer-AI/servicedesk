@@ -35,8 +35,12 @@ public sealed class MailTimelineEnricherTests
     }
 
     [Fact]
-    public async Task Leaves_cid_intact_when_attachment_not_ready()
+    public async Task Replaces_not_ready_attachment_cid_with_placeholder()
     {
+        // A Pending cid gets the placeholder instead of a broken image (and a
+        // CSP console violation — cid: is not an allowed img-src scheme). It
+        // self-heals: enrichment runs at read time, so the next load after the
+        // attachment worker finishes rewrites the real URL.
         const string html = "<img src=\"cid:img-001\"/>";
         var enricher = Build(html, new[]
         {
@@ -46,7 +50,52 @@ public sealed class MailTimelineEnricherTests
 
         var result = await enricher.EnrichAsync(detail, default);
 
-        Assert.Contains("cid:img-001", result.Events.Single().BodyHtml);
+        var body = result.Events.Single().BodyHtml;
+        Assert.DoesNotContain("cid:img-001", body);
+        Assert.Contains("src=\"data:image/svg+xml;base64,", body);
+    }
+
+    [Fact]
+    public async Task Replaces_unknown_cid_with_placeholder_even_without_any_attachments()
+    {
+        // The mail references inline images that never made it into the ingest
+        // (typical for forwarded/quoted threads). No attachment rows at all —
+        // the rewrite must still run and swap in the placeholder.
+        const string html = "<img src=\"cid:ii_19f034a6552d53f12686\"/><img src='cid:other'/>";
+        var enricher = Build(html, Array.Empty<AttachmentRow>());
+        var detail = MakeDetailWithMailReceivedEvent();
+
+        var result = await enricher.EnrichAsync(detail, default);
+
+        var body = result.Events.Single().BodyHtml;
+        Assert.DoesNotContain("cid:", body);
+        Assert.Equal(2, CountOccurrences(body!, "data:image/svg+xml;base64,"));
+    }
+
+    [Fact]
+    public async Task Leaves_cid_text_outside_src_attributes_untouched()
+    {
+        // A literal "cid:…" in visible mail text is not an image source and
+        // must stay text — swapping in a data: URI would garble the body.
+        const string html = "<p>the part cid:some-part was missing</p>";
+        var enricher = Build(html, Array.Empty<AttachmentRow>());
+        var detail = MakeDetailWithMailReceivedEvent();
+
+        var result = await enricher.EnrichAsync(detail, default);
+
+        Assert.Contains("cid:some-part", result.Events.Single().BodyHtml);
+        Assert.DoesNotContain("data:image/svg+xml", result.Events.Single().BodyHtml);
+    }
+
+    private static int CountOccurrences(string haystack, string needle)
+    {
+        int count = 0, idx = 0;
+        while ((idx = haystack.IndexOf(needle, idx, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            idx += needle.Length;
+        }
+        return count;
     }
 
     [Fact]

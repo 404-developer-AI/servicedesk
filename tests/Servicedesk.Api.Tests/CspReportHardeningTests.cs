@@ -215,7 +215,7 @@ public sealed class CspReportHardeningTests
         await client.PostAsJsonAsync("/api/security/csp-report",
             ReportEnvelope(Report("script-src-elem", "inline", "https://sd.example/")));
         await client.PostAsJsonAsync("/api/security/csp-report",
-            ReportEnvelope(Report("img-src", "https://elsewhere.example/pixel.gif", "https://sd.example/")));
+            ReportEnvelope(Report("connect-src", "https://elsewhere.example/beacon", "https://sd.example/")));
 
         Assert.Equal(2, factory.Audit.Events.Count(e => e.EventType == "csp_violation"));
     }
@@ -234,13 +234,77 @@ public sealed class CspReportHardeningTests
         await client.PostAsJsonAsync("/api/security/csp-report",
             ReportEnvelope(Report("script-src-elem", "inline", "https://sd.example/")));
         var rejected = await client.PostAsJsonAsync("/api/security/csp-report",
-            ReportEnvelope(Report("img-src", "https://elsewhere.example/pixel.gif", "https://sd.example/")));
+            ReportEnvelope(Report("connect-src", "https://elsewhere.example/beacon", "https://sd.example/")));
 
         Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
         Assert.Contains(factory.Audit.Events,
             e => e.EventType == AuditRateLimiterEvents.EventTypeRateLimitedCspReport);
         Assert.DoesNotContain(factory.Audit.Events,
             e => e.EventType == AuditRateLimiterEvents.EventTypeRateLimited);
+    }
+
+    // ----- Ignored directives (expected noise, e.g. blocked mail images) -----
+
+    [Fact]
+    public async Task CspReportEndpoint_ImgSrcReport_IsAcknowledgedButNotLogged()
+    {
+        using var factory = new SecurityBaselineFactory();
+        var client = factory.CreateClient();
+
+        // External images in inbound mail bodies are blocked by design; their
+        // reports must not reach the audit log (default ignore list: img-src).
+        var response = await client.PostAsJsonAsync("/api/security/csp-report",
+            ReportEnvelope(Report("img-src", "https://elsewhere.example/logo.png", "https://sd.example/tickets/1")));
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.DoesNotContain(factory.Audit.Events, e => e.EventType == "csp_violation");
+    }
+
+    [Fact]
+    public async Task CspReportEndpoint_ScriptSrcReport_IsStillLogged()
+    {
+        using var factory = new SecurityBaselineFactory();
+        var client = factory.CreateClient();
+
+        await client.PostAsJsonAsync("/api/security/csp-report",
+            ReportEnvelope(Report("script-src-elem", "https://evil.example/x.js", "https://sd.example/")));
+
+        Assert.Single(factory.Audit.Events, e => e.EventType == "csp_violation");
+    }
+
+    [Fact]
+    public void ExtractEffectiveDirective_PrefersEffective_FallsBackToViolatedFirstToken()
+    {
+        // effective-directive is already bare.
+        Assert.Equal("img-src", CspReportEndpoint.ExtractEffectiveDirective(
+            ReportEnvelopeElement(Report("img-src", "https://x/", "https://sd.example/"))));
+
+        // Legacy report-uri payloads may only carry violated-directive with
+        // the full directive value; the bare name is its first token.
+        var legacy = JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(
+            new Dictionary<string, JsonElement>
+            {
+                ["csp-report"] = JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(
+                    new Dictionary<string, string>
+                    {
+                        ["violated-directive"] = "img-src 'self' data: blob:",
+                        ["blocked-uri"] = "https://x/",
+                    })),
+            }));
+        Assert.Equal("img-src", CspReportEndpoint.ExtractEffectiveDirective(legacy));
+
+        // Malformed → null → the report takes the logging path.
+        Assert.Null(CspReportEndpoint.ExtractEffectiveDirective(null));
+    }
+
+    [Fact]
+    public void IsIgnoredDirective_MatchesCsvEntriesCaseInsensitively()
+    {
+        Assert.True(CspReportEndpoint.IsIgnoredDirective("img-src", "img-src"));
+        Assert.True(CspReportEndpoint.IsIgnoredDirective("IMG-SRC", " img-src , media-src "));
+        Assert.False(CspReportEndpoint.IsIgnoredDirective("script-src-elem", "img-src"));
+        Assert.False(CspReportEndpoint.IsIgnoredDirective("img-src", ""));
+        Assert.False(CspReportEndpoint.IsIgnoredDirective("img-src", null));
     }
 
     // ----- helpers -----

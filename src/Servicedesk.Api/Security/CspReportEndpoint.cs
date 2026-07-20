@@ -39,6 +39,22 @@ public static class CspReportEndpoint
                 report = new { malformed = true };
             }
 
+            // Expected-noise filter. Inbound mail bodies routinely reference
+            // external images that `img-src 'self'` blocks BY DESIGN (privacy
+            // default, like mail clients blocking remote content) — every
+            // blocked logo or tracking pixel would otherwise write a
+            // csp_violation audit row that says nothing about XSS. Directives
+            // on the ignore list are acknowledged but never logged; script/
+            // style/connect violations — the actual attack signal — always
+            // land in the audit log.
+            var ignoredDirectives = await settings.GetAsync<string>(
+                SettingKeys.Security.CspIgnoredReportDirectives, ct);
+            var directive = ExtractEffectiveDirective(parsed);
+            if (directive is not null && IsIgnoredDirective(directive, ignoredDirectives))
+            {
+                return Results.NoContent();
+            }
+
             // v0.0.92 — one violation, one audit row. A single root cause
             // (e.g. a browser extension injecting the same inline script into
             // every page) repeats the exact same report on every page load;
@@ -102,6 +118,39 @@ public static class CspReportEndpoint
 
         var digest = SHA256.HashData(Encoding.UTF8.GetBytes(clientIp + "|" + discriminator));
         return Convert.ToHexString(digest);
+    }
+
+    /// <summary>
+    /// The directive that fired, normalized to its bare name. Prefers
+    /// `effective-directive` (already bare, e.g. "img-src"); falls back to
+    /// the first token of `violated-directive`, which legacy report-uri
+    /// payloads send as the full directive value ("img-src 'self' data:").
+    /// Null when the report is malformed or carries neither field — those
+    /// always take the logging path so unknowns stay visible.
+    /// </summary>
+    internal static string? ExtractEffectiveDirective(JsonElement? parsed)
+    {
+        if (parsed is not { } root || !TryGetReportBody(root, out var body)) return null;
+
+        var effective = GetString(body, "effective-directive");
+        if (!string.IsNullOrWhiteSpace(effective)) return effective.Trim();
+
+        var violated = GetString(body, "violated-directive");
+        if (string.IsNullOrWhiteSpace(violated)) return null;
+        violated = violated.Trim();
+        var space = violated.IndexOf(' ');
+        return space > 0 ? violated[..space] : violated;
+    }
+
+    internal static bool IsIgnoredDirective(string directive, string? ignoredCsv)
+    {
+        if (string.IsNullOrWhiteSpace(ignoredCsv)) return false;
+        foreach (var entry in ignoredCsv.Split(',',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (string.Equals(entry, directive, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
     }
 
     private static bool TryGetReportBody(JsonElement root, out JsonElement body)
