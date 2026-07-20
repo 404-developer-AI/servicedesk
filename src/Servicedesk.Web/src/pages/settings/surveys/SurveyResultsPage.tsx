@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -414,6 +415,9 @@ function ResponseDetailDialog({
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Survey response</DialogTitle>
+          <DialogDescription className="sr-only">
+            Details of the customer's survey response.
+          </DialogDescription>
         </DialogHeader>
         {detailQ.isLoading && (
           <div className="flex items-center gap-2 py-4 text-muted-foreground">

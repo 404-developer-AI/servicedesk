@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -212,6 +213,9 @@ export function SendReportModal({
           <DialogTitle className="text-base font-semibold text-foreground">
             Send report — {companyName}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Choose a template and recipients to send this report.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto">

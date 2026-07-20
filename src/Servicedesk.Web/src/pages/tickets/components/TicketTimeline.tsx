@@ -47,6 +47,7 @@ import { RichTextEditor } from "@/components/RichTextEditor";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -1371,6 +1372,9 @@ function TimelineEvent({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Pin event</DialogTitle>
+            <DialogDescription className="sr-only">
+              Add an optional remark and pin this timeline event.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>
@@ -1574,6 +1578,9 @@ function LogFeedbackDialog({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Log employee feedback</DialogTitle>
+          <DialogDescription className="sr-only">
+            Log employee feedback linked to this ticket event.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="text-xs text-muted-foreground">

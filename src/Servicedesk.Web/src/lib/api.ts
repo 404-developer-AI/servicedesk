@@ -3609,8 +3609,12 @@ export const slaApi = {
       `/api/sla/dashboard/avg-pickup?days=${days}`,
     ),
 
+  // "No SLA" arrives as a 200 with a JSON null body (not a 404). Normalize a
+  // missing body to null too — React Query rejects undefined cache values.
   ticketState: (ticketId: string) =>
-    request<TicketSlaState | null>("GET", `/api/sla/tickets/${ticketId}`),
+    request<TicketSlaState | null>("GET", `/api/sla/tickets/${ticketId}`).then(
+      (state) => state ?? null,
+    ),
 };
 
 // ---- Global Search ----

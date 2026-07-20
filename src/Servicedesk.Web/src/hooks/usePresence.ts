@@ -26,6 +26,24 @@ export function getConnection(): HubConnection {
       .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
       .configureLogging(LogLevel.Warning)
       .build();
+
+    // The connection stays open for the whole session, but the real handlers
+    // for these server pushes only exist while their page/tile is mounted.
+    // Permanent no-op fallbacks keep SignalR from logging "No client method
+    // with the name '…' found" for every push outside that window.
+    // AssetsChanged has no client handler at all (the TRMM sync worker pings
+    // it after every sync); the others are page-scoped.
+    const noop = () => {};
+    for (const event of [
+      "TicketListUpdated",
+      "TicketUpdated",
+      "TicketTimesheetUpdated",
+      "AgentActivity",
+      "TimesheetEntriesChanged",
+      "AssetsChanged",
+    ]) {
+      connection.on(event, noop);
+    }
   }
   return connection;
 }

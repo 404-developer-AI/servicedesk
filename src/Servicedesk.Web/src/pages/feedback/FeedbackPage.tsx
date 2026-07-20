@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -1243,6 +1244,9 @@ function RichTextPreviewCell({
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{dialogTitle}</DialogTitle>
+            <DialogDescription className="sr-only">
+              Preview of the {label.toLowerCase()} content.
+            </DialogDescription>
           </DialogHeader>
           <SafeHtml html={html ?? ""} />
         </DialogContent>
@@ -1288,6 +1292,9 @@ function RichTextCellEditor({
         <DialogContent className="max-w-3xl w-full">
           <DialogHeader>
             <DialogTitle>{label}</DialogTitle>
+            <DialogDescription className="sr-only">
+              Edit the {label.toLowerCase()} content.
+            </DialogDescription>
           </DialogHeader>
           {/* Resizable: drag the bottom-right handle to grow/shrink the typing
               area. The wrapper owns the height + scroll; the editor's own cap is

@@ -29,7 +29,11 @@ public static class SlaEndpoints
         app.MapGet("/api/sla/tickets/{ticketId:guid}", async (Guid ticketId, ISlaRepository repo, CancellationToken ct) =>
         {
             var state = await repo.GetStateAsync(ticketId, ct);
-            return state is null ? Results.NotFound() : Results.Ok(state);
+            // "No SLA state" (no policy applies) is a normal answer, not an
+            // error — Results.Json so a null state serializes as a JSON null
+            // body with 200 instead of a 404 that reddens the browser console
+            // and makes React Query retry every poll.
+            return Results.Json(state);
         })
         .WithTags("Sla")
         .RequireAuthorization(AuthorizationPolicies.RequireAgent)
