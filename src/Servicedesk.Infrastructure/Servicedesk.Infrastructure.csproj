@@ -36,7 +36,7 @@
     <!-- Pulled in transitively by Microsoft.IdentityModel.* and Microsoft.Graph.
          Pinning 8.0.3 (last on the 8.x track that patches GHSA-37gx-xxp4-5rgx
          and GHSA-w3x6-4m5h-cxqf — both fixed there). -->
-    <PackageReference Include="System.Security.Cryptography.Xml" Version="8.0.3" />
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="9.0.18" />
     <PackageReference Include="QuestPDF" Version="2024.12.2" />
     <PackageReference Include="Serilog" Version="4.0.2" />
   </ItemGroup>
