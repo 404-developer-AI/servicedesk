@@ -86,8 +86,10 @@ public interface ITimesheetCommentService
     Task MarkThreadReadAsync(Guid threadId, Guid viewerId, CancellationToken ct = default);
     Task<PostCommentResult> PostMessageAsync(PostCommentInput input, Guid authorId, CancellationToken ct = default);
 
-    /// Timesheet-active users (the recipient pool), excluding <paramref name="excludeUserId"/>.
-    Task<IReadOnlyList<CommentUser>> GetRecipientOptionsAsync(Guid excludeUserId, CancellationToken ct = default);
+    /// Timesheet-active users (the recipient pool). Since v0.0.94 the caller
+    /// is included — tagging yourself pins the thread in your own inbox as a
+    /// reminder (own message auto-read, so it never lights the red dots).
+    Task<IReadOnlyList<CommentUser>> GetRecipientOptionsAsync(CancellationToken ct = default);
 }
 
 public sealed class TimesheetCommentService : ITimesheetCommentService
@@ -247,8 +249,12 @@ public sealed class TimesheetCommentService : ITimesheetCommentService
         if (body.Length > 8000)
             body = body[..8000];
 
+        // Tagging yourself is allowed (v0.0.94, also as the only recipient):
+        // it pins the thread in your own Comments inbox as a reminder until
+        // the origin row is BO-checked. The author's own row is inserted
+        // pre-read below so their own words never light the red dots.
         var recipientIds = (input.RecipientIds ?? Array.Empty<Guid>())
-            .Where(id => id != Guid.Empty && id != authorId)
+            .Where(id => id != Guid.Empty)
             .Distinct()
             .ToArray();
         if (recipientIds.Length == 0)
@@ -314,12 +320,14 @@ public sealed class TimesheetCommentService : ITimesheetCommentService
             transaction: tx, cancellationToken: ct));
 
         // Insert recipient rows, keeping only ids that are real timesheet-active
-        // users — a stale/forged id is silently dropped. The set we actually
-        // linked is returned for the SignalR fan-out.
-        var notify = (await conn.QueryAsync<Guid>(new CommandDefinition(
+        // users — a stale/forged id is silently dropped. A self-tag row starts
+        // read (the author has obviously seen their own message), so it keeps
+        // the thread in their inbox without a false unread signal. The set we
+        // actually linked drives the SignalR fan-out.
+        var linked = (await conn.QueryAsync<Guid>(new CommandDefinition(
             """
-            INSERT INTO timesheet_comment_recipients (comment_id, user_id)
-            SELECT @MessageId, x.id
+            INSERT INTO timesheet_comment_recipients (comment_id, user_id, read_utc)
+            SELECT @MessageId, x.id, CASE WHEN x.id = @AuthorId THEN now() END
             FROM unnest(@RecipientIds) AS x(id)
             WHERE EXISTS (
                 SELECT 1 FROM users u
@@ -330,16 +338,20 @@ public sealed class TimesheetCommentService : ITimesheetCommentService
             )
             RETURNING user_id
             """,
-            new { MessageId = messageId, RecipientIds = recipientIds },
+            new { MessageId = messageId, AuthorId = authorId, RecipientIds = recipientIds },
             transaction: tx, cancellationToken: ct))).ToList();
 
-        if (notify.Count == 0)
+        if (linked.Count == 0)
         {
             // No id resolved to a valid recipient — abort rather than leave a
             // message nobody is linked to (linking is mandatory).
             await tx.RollbackAsync(ct);
             return Fail("no_valid_recipients");
         }
+
+        // Never push a "you commented" signal (with toast) at the author —
+        // their own client refreshes via the post mutation's invalidation.
+        var notify = linked.Where(id => id != authorId).ToList();
 
         await conn.ExecuteAsync(new CommandDefinition(
             "UPDATE timesheet_comment_threads SET last_message_utc = now() WHERE id = @ThreadId",
@@ -360,7 +372,7 @@ public sealed class TimesheetCommentService : ITimesheetCommentService
     private static PostCommentResult Fail(string error)
         => new(false, error, Guid.Empty, 0, 0, string.Empty, Array.Empty<Guid>());
 
-    public async Task<IReadOnlyList<CommentUser>> GetRecipientOptionsAsync(Guid excludeUserId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<CommentUser>> GetRecipientOptionsAsync(CancellationToken ct = default)
     {
         const string sql = """
             SELECT id AS Id, email AS Email
@@ -368,12 +380,11 @@ public sealed class TimesheetCommentService : ITimesheetCommentService
             WHERE (timesheet_enabled = TRUE OR timesheet_manager = TRUE)
               AND role_name IN ('Agent','Admin')
               AND is_active = TRUE
-              AND id <> @ExcludeUserId
             ORDER BY email
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var rows = await conn.QueryAsync<CommentUser>(new CommandDefinition(
-            sql, new { ExcludeUserId = excludeUserId }, cancellationToken: ct));
+            sql, cancellationToken: ct));
         return rows.ToList();
     }
 }

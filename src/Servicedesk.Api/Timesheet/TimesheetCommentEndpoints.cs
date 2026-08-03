@@ -57,10 +57,9 @@ public static class TimesheetCommentEndpoints
     }
 
     private static async Task<IResult> GetRecipients(
-        HttpContext http, ITimesheetCommentService svc, CancellationToken ct)
+        ITimesheetCommentService svc, CancellationToken ct)
     {
-        var userId = ActorContext.GetUserId(http);
-        var users = await svc.GetRecipientOptionsAsync(userId, ct);
+        var users = await svc.GetRecipientOptionsAsync(ct);
         return Results.Ok(users.Select(u => new { id = u.Id, email = u.Email }));
     }
 

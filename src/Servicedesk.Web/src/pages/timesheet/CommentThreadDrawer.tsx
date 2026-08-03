@@ -224,6 +224,7 @@ export function CommentThreadDrawer({
           <RecipientPicker
             options={options}
             selected={recipientIds}
+            selfId={myId}
             onChange={(ids) => {
               recipientsTouched.current = true;
               setRecipientIds(ids);
@@ -312,10 +313,12 @@ function MessageBubble({ message, mine }: { message: CommentMessage; mine: boole
 function RecipientPicker({
   options,
   selected,
+  selfId,
   onChange,
 }: {
   options: { id: string; email: string }[];
   selected: string[];
+  selfId: string;
   onChange: (ids: string[]) => void;
 }) {
   const [open, setOpen] = React.useState(false);
@@ -326,7 +329,10 @@ function RecipientPicker({
     else next.add(id);
     onChange([...next]);
   };
-  const labelFor = (id: string) => options.find((o) => o.id === id)?.email.split("@")[0] ?? "…";
+  const labelFor = (id: string) => {
+    const name = options.find((o) => o.id === id)?.email.split("@")[0] ?? "…";
+    return id === selfId ? `${name} (you)` : name;
+  };
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -360,6 +366,9 @@ function RecipientPicker({
                   >
                     <span className={cn("truncate", on ? "text-foreground" : "text-muted-foreground")}>
                       {o.email}
+                      {o.id === selfId && (
+                        <span className="ml-1 text-[10px] text-muted-foreground/70">(you)</span>
+                      )}
                     </span>
                     {on && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
                   </button>
