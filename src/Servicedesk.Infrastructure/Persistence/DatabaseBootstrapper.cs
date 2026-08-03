@@ -5259,6 +5259,28 @@ public sealed class DatabaseBootstrapper : IHostedService
                                   'SurveySent','SurveySubmitted','SurveyExpired',
                                   'TimeLimitAlertDismissed','TimeLimitExtended',
                                   'TimeLimitTrackingDisabled','StatusGateDecision')) NOT VALID;
+
+        -- ===================================================================
+        -- v0.0.94 Backfill: full body text on text-only MailReceived events
+        -- ===================================================================
+        -- MailReceived events used to store a 200-char snippet in body_text
+        -- next to the full HTML body. For mails without an HTML part
+        -- (plain-text senders) body_html is NULL and the timeline falls back
+        -- to body_text — so the ticket showed only the snippet, typically
+        -- eaten whole by an Exchange/Sophos "you don't often get email
+        -- from…" banner at the top of the body. Ingest now stores the full
+        -- text for text-only mails; this repairs events written before the
+        -- fix from the untruncated copy in mail_messages.body_text.
+        -- Idempotent: once the event carries the full text the length guard
+        -- no longer selects the row. The ticket_event_search trigger fires
+        -- on UPDATE OF body_text, refreshing the search sidecar per row.
+        UPDATE ticket_events e
+        SET    body_text = m.body_text
+        FROM   mail_messages m
+        WHERE  m.ticket_event_id = e.id
+          AND  e.event_type = 'MailReceived'
+          AND  coalesce(e.body_html, '') = ''
+          AND  length(m.body_text) > length(coalesce(e.body_text, ''));
         """;
 
     private readonly NpgsqlDataSource _dataSource;
