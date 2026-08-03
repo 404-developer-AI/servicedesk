@@ -16,6 +16,7 @@ import {
   timesheetManagerApi,
   timesheetPreferencesApi,
   formatDuration,
+  formatHHMM,
   type MonthDayRollup,
   type TimesheetPreferences,
   type TimesheetUser,
@@ -144,11 +145,14 @@ export function TimesheetTab3() {
 
       <section className="glass-card overflow-hidden">
         <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] text-left text-sm">
+        <table className="w-full min-w-[1100px] text-left text-sm">
           <thead className="text-xs uppercase tracking-wide text-muted-foreground [&_th]:border-b [&_th]:border-glass">
             <tr>
               <th className="w-28 px-3 py-2 font-medium">Date</th>
               <th className="w-24 px-3 py-2 font-medium">Day</th>
+              <th className="w-20 px-3 py-2 font-medium">Login</th>
+              <th className="w-24 px-3 py-2 font-medium">First clock</th>
+              <th className="w-24 px-3 py-2 font-medium">Last clock</th>
               <th className="px-3 py-2 font-medium">Tasks</th>
               <th className="w-28 px-3 py-2 font-medium">Absence</th>
               <th className="w-28 px-3 py-2 font-medium">Work</th>
@@ -158,7 +162,7 @@ export function TimesheetTab3() {
           <tbody>
             {monthQuery.isLoading && (
               <tr>
-                <td colSpan={6} className="px-3 py-3">
+                <td colSpan={9} className="px-3 py-3">
                   <Skeleton className="h-6 w-full" />
                 </td>
               </tr>
@@ -171,6 +175,9 @@ export function TimesheetTab3() {
                 <td className="px-3 py-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Month
                 </td>
+                <td />
+                <td />
+                <td />
                 <td />
                 <td />
                 <td className="px-3 py-2 font-mono text-xs text-amber-200">
@@ -226,7 +233,7 @@ function renderWeeks(
         )}
       >
         <td
-          colSpan={3}
+          colSpan={6}
           className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground"
         >
           Week {currentWeek} subtotal
@@ -341,6 +348,43 @@ function DayRow({
         {WEEKDAY_LABEL[wd]}
         {!isWorkingDay && (
           <span className="ml-1 text-[10px] text-muted-foreground/60">·</span>
+        )}
+      </td>
+      <td
+        className="px-3 py-2 font-mono text-xs text-foreground/80"
+        title={
+          day.firstLoginKind === "microsoft"
+            ? "First login of the day (Microsoft 365)"
+            : day.firstLoginKind === "password"
+              ? "First login of the day (standard)"
+              : undefined
+        }
+      >
+        {day.firstLoginMinutes !== null ? (
+          <span className="inline-flex items-center gap-1">
+            {formatHHMM(day.firstLoginMinutes)}
+            {day.firstLoginKind === "microsoft" && (
+              <span className="text-[9px] font-sans uppercase tracking-wide text-muted-foreground/70">
+                M365
+              </span>
+            )}
+          </span>
+        ) : (
+          <span className="text-muted-foreground/50">—</span>
+        )}
+      </td>
+      <td className="px-3 py-2 font-mono text-xs text-foreground/80">
+        {day.firstClockMinutes !== null ? (
+          formatHHMM(day.firstClockMinutes)
+        ) : (
+          <span className="text-muted-foreground/50">—</span>
+        )}
+      </td>
+      <td className="px-3 py-2 font-mono text-xs text-foreground/80">
+        {day.lastClockMinutes !== null ? (
+          formatHHMM(day.lastClockMinutes)
+        ) : (
+          <span className="text-muted-foreground/50">—</span>
         )}
       </td>
       <td className="px-3 py-2">

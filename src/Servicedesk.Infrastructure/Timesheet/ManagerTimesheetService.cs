@@ -1,6 +1,8 @@
 using System.Text;
 using Dapper;
 using Npgsql;
+using Servicedesk.Infrastructure.Auth;
+using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Timesheet;
 
@@ -46,11 +48,14 @@ public sealed class ManagerTimesheetService : IManagerTimesheetService
 
     private readonly NpgsqlDataSource _dataSource;
     private readonly ITimesheetTaskService _tasks;
+    private readonly ISettingsService _settings;
 
-    public ManagerTimesheetService(NpgsqlDataSource dataSource, ITimesheetTaskService tasks)
+    public ManagerTimesheetService(
+        NpgsqlDataSource dataSource, ITimesheetTaskService tasks, ISettingsService settings)
     {
         _dataSource = dataSource;
         _tasks = tasks;
+        _settings = settings;
     }
 
     /// Page sizes the UI offers. Any other value is clamped into this range
@@ -278,9 +283,70 @@ public sealed class ManagerTimesheetService : IManagerTimesheetService
             .GroupBy(r => DateOnly.FromDateTime(r.EntryDate))
             .ToDictionary(g => g.Key, g => g.ToList());
 
+        // First/last clock per day: MIN(start)/MAX(end) over every entry —
+        // absence entries included by design (the columns answer "when was
+        // the first/last line of the day typed in", not "when did work
+        // start"). Separate query because the breakdown query groups by
+        // task and cannot carry a per-day extreme.
+        const string clockSql = """
+            SELECT  e.entry_date            AS EntryDate,
+                    MIN(e.start_minutes)    AS FirstClockMinutes,
+                    MAX(e.end_minutes)      AS LastClockMinutes
+            FROM timesheet_entries e
+            WHERE e.user_id = @userId
+              AND e.entry_date BETWEEN @from AND @to
+            GROUP BY e.entry_date
+            """;
+        var clockRows = await conn.QueryAsync<DayClockRow>(
+            new CommandDefinition(clockSql,
+                new
+                {
+                    userId,
+                    from = first.ToDateTime(TimeOnly.MinValue),
+                    to = last.ToDateTime(TimeOnly.MinValue),
+                },
+                cancellationToken: ct));
+        var clockByDate = clockRows.ToDictionary(r => DateOnly.FromDateTime(r.EntryDate));
+
+        // First login per day, from the audit log (password + M365 login
+        // events; the password event fires at the password step, before
+        // TOTP, which is the true "first login" moment). Audit stamps are
+        // UTC — the local month window and the per-day bucketing both use
+        // the configured app timezone so a 23:30 UTC login lands on the
+        // right local day.
+        var tzId = await _settings.GetAsync<string>(SettingKeys.App.TimeZone, ct);
+        var tz = ResolveTimeZone(tzId);
+        var fromUtc = TimeZoneInfo.ConvertTimeToUtc(
+            DateTime.SpecifyKind(first.ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified), tz);
+        var toUtc = TimeZoneInfo.ConvertTimeToUtc(
+            DateTime.SpecifyKind(last.AddDays(1).ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified), tz);
+
+        const string loginSql = """
+            SELECT  utc         AS Utc,
+                    event_type  AS EventType
+            FROM audit_log
+            WHERE event_type = ANY(@types)
+              AND target = @target
+              AND utc >= @fromUtc AND utc < @toUtc
+            """;
+        var loginRows = await conn.QueryAsync<LoginStampRow>(
+            new CommandDefinition(loginSql,
+                new
+                {
+                    types = new[] { AuthEventTypes.LoginSuccess, AuthEventTypes.MicrosoftLoginSuccess },
+                    target = userId.ToString(),
+                    fromUtc,
+                    toUtc,
+                },
+                cancellationToken: ct));
+        var loginByDate = BucketFirstLogins(
+            loginRows.Select(r => (r.Utc, r.EventType)), tz);
+
         var days = new List<MonthDayRollup>(DateTime.DaysInMonth(year, month));
         for (var d = first; d <= last; d = d.AddDays(1))
         {
+            var clock = clockByDate.TryGetValue(d, out var c) ? c : null;
+            var login = loginByDate.TryGetValue(d, out var l) ? l : ((int, string)?)null;
             if (byDate.TryGetValue(d, out var list))
             {
                 var work = list.Where(r => !r.IsAbsence).Sum(r => r.Minutes);
@@ -288,15 +354,53 @@ public sealed class ManagerTimesheetService : IManagerTimesheetService
                 var breakdown = list
                     .Select(r => new MonthDayBreakdown(r.TaskId, r.TaskName, r.IsAbsence, r.Minutes))
                     .ToList();
-                days.Add(new MonthDayRollup(d, work, absence, list.Count, breakdown));
+                days.Add(new MonthDayRollup(d, work, absence, list.Count, breakdown,
+                    login?.Item1, login?.Item2, clock?.FirstClockMinutes, clock?.LastClockMinutes));
             }
             else
             {
-                days.Add(new MonthDayRollup(d, 0, 0, 0, Array.Empty<MonthDayBreakdown>()));
+                days.Add(new MonthDayRollup(d, 0, 0, 0, Array.Empty<MonthDayBreakdown>(),
+                    login?.Item1, login?.Item2, clock?.FirstClockMinutes, clock?.LastClockMinutes));
             }
         }
 
         return new MonthRollup(userId, email, year, month, days);
+    }
+
+    /// Buckets successful-login audit stamps (UTC) into local days and
+    /// keeps the earliest per day. Returns minutes-since-midnight in the
+    /// given timezone plus the login kind ("microsoft" for the M365 OIDC
+    /// event, "password" otherwise). Public + static so the day-boundary
+    /// behaviour is unit-testable without a database.
+    public static Dictionary<DateOnly, (int Minutes, string Kind)> BucketFirstLogins(
+        IEnumerable<(DateTime Utc, string EventType)> logins, TimeZoneInfo tz)
+    {
+        var result = new Dictionary<DateOnly, (int Minutes, string Kind)>();
+        foreach (var (utc, eventType) in logins)
+        {
+            var local = TimeZoneInfo.ConvertTimeFromUtc(
+                DateTime.SpecifyKind(utc, DateTimeKind.Utc), tz);
+            var day = DateOnly.FromDateTime(local);
+            var minutes = local.Hour * 60 + local.Minute;
+            if (!result.TryGetValue(day, out var existing) || minutes < existing.Minutes)
+            {
+                var kind = eventType == AuthEventTypes.MicrosoftLoginSuccess ? "microsoft" : "password";
+                result[day] = (minutes, kind);
+            }
+        }
+        return result;
+    }
+
+    /// Mirrors the resolver used by statistics/SLA so every surface agrees
+    /// on what "the local day" means: configured IANA id, else server-local.
+    private static TimeZoneInfo ResolveTimeZone(string id)
+    {
+        if (!string.IsNullOrWhiteSpace(id))
+        {
+            try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
+            catch { /* Invalid IANA id — fall through. */ }
+        }
+        return TimeZoneInfo.Local;
     }
 
     private async Task<List<TimesheetFieldError>> ValidateAsync(
@@ -398,5 +502,18 @@ public sealed class ManagerTimesheetService : IManagerTimesheetService
         public string TaskName { get; set; } = "";
         public bool IsAbsence { get; set; }
         public int Minutes { get; set; }
+    }
+
+    private sealed class DayClockRow
+    {
+        public DateTime EntryDate { get; set; }
+        public int FirstClockMinutes { get; set; }
+        public int LastClockMinutes { get; set; }
+    }
+
+    private sealed class LoginStampRow
+    {
+        public DateTime Utc { get; set; }
+        public string EventType { get; set; } = "";
     }
 }

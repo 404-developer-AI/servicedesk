@@ -256,6 +256,13 @@ export type MonthDayRollup = {
   absenceMinutes: number;
   entryCount: number;
   breakdown: MonthDayBreakdown[];
+  // v0.0.94 presence columns — minutes since midnight in the app timezone,
+  // null when the day has no login / no entries. firstLoginKind tells the
+  // tooltip whether the first login was a standard or an M365 one.
+  firstLoginMinutes: number | null;
+  firstLoginKind: "password" | "microsoft" | null;
+  firstClockMinutes: number | null;
+  lastClockMinutes: number | null;
 };
 
 export type MonthRollup = {

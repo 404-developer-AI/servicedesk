@@ -307,7 +307,7 @@ public static class TimesheetManagerEndpoints
     private static string BuildMonthCsv(MonthRollup r)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("date,weekday,work_minutes,work_hours,absence_minutes,absence_hours,entry_count,breakdown");
+        sb.AppendLine("date,weekday,login_time,first_clock,last_clock,work_minutes,work_hours,absence_minutes,absence_hours,entry_count,breakdown");
         var inv = CultureInfo.InvariantCulture;
         foreach (var d in r.Days)
         {
@@ -317,6 +317,9 @@ public static class TimesheetManagerEndpoints
                 d.Breakdown.Select(b => $"{b.TaskName}={(b.Minutes / 60.0).ToString("0.##", inv)}h"));
             sb.Append(date).Append(',')
               .Append(weekday).Append(',')
+              .Append(Hhmm(d.FirstLoginMinutes)).Append(',')
+              .Append(Hhmm(d.FirstClockMinutes)).Append(',')
+              .Append(Hhmm(d.LastClockMinutes)).Append(',')
               .Append(d.WorkMinutes).Append(',')
               .Append((d.WorkMinutes / 60.0).ToString("0.##", inv)).Append(',')
               .Append(d.AbsenceMinutes).Append(',')
@@ -329,7 +332,7 @@ public static class TimesheetManagerEndpoints
         // even without manually summing the column.
         var totalWork = r.Days.Sum(x => x.WorkMinutes);
         var totalAbs = r.Days.Sum(x => x.AbsenceMinutes);
-        sb.Append("TOTAL,,")
+        sb.Append("TOTAL,,,,,")
           .Append(totalWork).Append(',')
           .Append((totalWork / 60.0).ToString("0.##", inv)).Append(',')
           .Append(totalAbs).Append(',')
@@ -337,6 +340,9 @@ public static class TimesheetManagerEndpoints
           .AppendLine();
         return sb.ToString();
     }
+
+    private static string Hhmm(int? minutes) =>
+        minutes is int m ? $"{m / 60:D2}:{m % 60:D2}" : "";
 
     private static string CsvQuote(string s)
     {
