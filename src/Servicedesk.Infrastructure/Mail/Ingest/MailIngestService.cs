@@ -243,9 +243,16 @@ public sealed class MailIngestService : IMailIngestService
             metadataMap["auto_reply_signal"] = autoReplySignal;
         }
         var metadata = JsonSerializer.Serialize(metadataMap);
+        // Text-only mails (no HTML part) have nothing but body_text to render
+        // in the timeline, so the event must carry the full text — the
+        // 200-char snippet is only safe as a preview when the full HTML body
+        // rides alongside it. A Sophos/Exchange "you don't often get email
+        // from…" banner at the top of the body otherwise eats the whole
+        // snippet and the mail looks half-ingested.
+        var eventBodyText = string.IsNullOrWhiteSpace(msg.BodyHtml) ? bodyText : snippet;
         var evt = await _tickets.AddEventAsync(ticketId, new NewTicketEvent(
             EventType: TicketEventType.MailReceived.ToString(),
-            BodyText: snippet,
+            BodyText: eventBodyText,
             BodyHtml: msg.BodyHtml,
             IsInternal: false,
             AuthorUserId: null,

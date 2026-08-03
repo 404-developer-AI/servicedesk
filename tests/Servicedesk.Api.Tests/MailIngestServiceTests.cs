@@ -74,6 +74,52 @@ public sealed class MailIngestServiceTests
         Assert.DoesNotContain("auto_reply", evt.MetadataJson);
     }
 
+    // Text-only mails (no HTML part) render the event's body_text directly
+    // in the timeline, so it must carry the full text — not the 200-char
+    // preview snippet, which an Exchange/Sophos "you don't often get email
+    // from…" banner otherwise fills entirely, making the mail look
+    // half-ingested.
+    [Fact]
+    public async Task Text_only_mail_stores_full_body_text_on_event()
+    {
+        var (svc, graph, mailRepo, tickets, _) = Build();
+        var longBody = "[External sender banner] " + new string('x', 400);
+        graph.Message = NewMessage(messageId: "textonly@example") with
+        {
+            BodyHtml = null,
+            BodyText = longBody,
+        };
+
+        var result = await svc.IngestAsync(QueueId, QueueMailbox, "gid-1", default);
+
+        Assert.Equal(MailIngestOutcome.Created, result.Outcome);
+        var evt = Assert.Single(tickets.AddedEvents);
+        Assert.Null(evt.BodyHtml);
+        Assert.Equal(longBody, evt.BodyText);
+        var inserted = Assert.Single(mailRepo.Inserts);
+        Assert.Equal(longBody, inserted.BodyText);
+    }
+
+    [Fact]
+    public async Task Html_mail_keeps_snippet_body_text_on_event()
+    {
+        var (svc, graph, _, tickets, _) = Build();
+        var longText = new string('y', 400);
+        graph.Message = NewMessage(messageId: "htmlmail@example") with
+        {
+            BodyHtml = "<p>" + longText + "</p>",
+            BodyText = longText,
+        };
+
+        var result = await svc.IngestAsync(QueueId, QueueMailbox, "gid-1", default);
+
+        Assert.Equal(MailIngestOutcome.Created, result.Outcome);
+        var evt = Assert.Single(tickets.AddedEvents);
+        Assert.NotNull(evt.BodyHtml);
+        Assert.EndsWith("…", evt.BodyText);
+        Assert.True(evt.BodyText!.Length <= 201);
+    }
+
     // v0.0.92 broadened detection: Exchange's X-Auto-Response-Suppress,
     // the pre-RFC-3834 Precedence values, and X-Autoreply/X-Autorespond
     // all count as auto-reply signals.
