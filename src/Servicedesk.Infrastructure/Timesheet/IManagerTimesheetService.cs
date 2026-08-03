@@ -81,12 +81,22 @@ public sealed record MonthRollup(
     int Month,
     IReadOnlyList<MonthDayRollup> Days);
 
+/// Per-day presence columns (v0.0.94): FirstLogin* comes from the audit
+/// log (earliest successful password or M365 login, bucketed into local
+/// days via App.TimeZone); FirstClock/LastClock are MIN(start)/MAX(end)
+/// over every entry of the day — absence entries included by design. All
+/// three are minutes-since-midnight in the app timezone, null when the
+/// day has no data.
 public sealed record MonthDayRollup(
     DateOnly Date,
     int WorkMinutes,
     int AbsenceMinutes,
     int EntryCount,
-    IReadOnlyList<MonthDayBreakdown> Breakdown);
+    IReadOnlyList<MonthDayBreakdown> Breakdown,
+    int? FirstLoginMinutes = null,
+    string? FirstLoginKind = null,
+    int? FirstClockMinutes = null,
+    int? LastClockMinutes = null);
 
 /// Per-task breakdown of a single day, so the UI can hover-reveal "3h
 /// Servicedesk + 2h Project" without a second fetch.
