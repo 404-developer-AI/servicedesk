@@ -26,6 +26,11 @@ public sealed record TicketQuery(
     string? Search = null,
     bool OpenOnly = false,
     bool OpenFirst = false,
+    // v0.0.95 — per-view "Open tickets first": prepend a state-category
+    // bucket (New/Open → Pending → Resolved/Closed) so open tickets sort
+    // above pending ones regardless of the secondary sort. Finer-grained
+    // than OpenFirst, which only pushes Resolved/Closed below the rest.
+    bool StateBucketSort = false,
     string? SortField = null,
     string? SortDirection = null,
     bool PriorityFloat = false,

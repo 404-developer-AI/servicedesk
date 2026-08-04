@@ -48,6 +48,7 @@ public static class TicketEndpoints
         group.MapGet("/", async (
             Guid? queueId, Guid? statusId, Guid? priorityId, Guid? assigneeUserId,
             Guid? requesterContactId, Guid? companyId, string? search, bool? openOnly, bool? openFirst,
+            bool? stateBucketSort,
             string? sortField, string? sortDirection, bool? priorityFloat, int? offset,
             DateTime? cursorUpdatedUtc, Guid? cursorId, int? limit,
             // v0.0.40 polish — multi-select filters from saved views. Comma-
@@ -87,6 +88,7 @@ public static class TicketEndpoints
                 AssigneeUserId: assigneeUserId, RequesterContactId: requesterContactId,
                 RequesterCompanyId: companyId,
                 Search: normalizedSearch, OpenOnly: openOnly ?? false, OpenFirst: openFirst ?? false,
+                StateBucketSort: stateBucketSort ?? false,
                 SortField: sortField, SortDirection: sortDirection,
                 PriorityFloat: priorityFloat ?? false, Offset: offset,
                 CursorUpdatedUtc: cursorUpdatedUtc, CursorId: cursorId,

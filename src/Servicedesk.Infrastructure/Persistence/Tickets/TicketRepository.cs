@@ -213,7 +213,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         // (updated_utc, id) keyset cursor since the bucket key splits the order).
         var hasDynamicSort = query.SortField is not null
             && !string.Equals(query.SortField, "updatedUtc", StringComparison.OrdinalIgnoreCase);
-        var useOffset = hasDynamicSort || query.PriorityFloat || query.OpenFirst;
+        var useOffset = hasDynamicSort || query.PriorityFloat || query.OpenFirst || query.StateBucketSort;
 
         if (useOffset)
         {
@@ -233,6 +233,14 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         var orderClauses = new List<string>();
         if (query.OpenFirst)
             orderClauses.Add("(CASE WHEN s.state_category IN ('Resolved','Closed') THEN 1 ELSE 0 END) ASC");
+        if (query.StateBucketSort)
+        {
+            // Per-view "Open tickets first" (v0.0.95): New/Open above Pending
+            // above Resolved/Closed; the secondary sort applies within each
+            // bucket. Client-side grouping preserves row order per group, so
+            // every group inherits this bucketing without extra work there.
+            orderClauses.Add("(CASE WHEN s.state_category = 'Pending' THEN 1 WHEN s.state_category IN ('Resolved','Closed') THEN 2 ELSE 0 END) ASC");
+        }
         if (query.PriorityFloat)
         {
             // Only float non-default-priority tickets that are still New or Open.
