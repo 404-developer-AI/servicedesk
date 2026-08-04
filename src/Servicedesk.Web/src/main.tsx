@@ -6,6 +6,12 @@ import "./index.css";
 import { router } from "@/app/router";
 import { ThemeProvider } from "@/app/ThemeProvider";
 import { bootstrapAuth } from "@/auth/bootstrap";
+import { installClientVersionFetch } from "@/lib/clientVersion";
+
+// Must run before the first fetch (bootstrapAuth below) so every API call —
+// central helper, feature-local helpers, uploads, SignalR negotiate — carries
+// the X-Client-Version header and 426 responses surface as an update event.
+installClientVersionFetch();
 
 const queryClient = new QueryClient({
   defaultOptions: {

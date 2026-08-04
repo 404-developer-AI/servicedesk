@@ -13,6 +13,7 @@ import { useTimesheetCommentsSignalR } from "@/hooks/useTimesheetCommentsSignalR
 import { useIntegrationsSignalR } from "@/hooks/useIntegrationsSignalR";
 import { useTelavoxCallStream } from "@/hooks/useTelavoxCallStream";
 import { useWorkspaceAutoSave } from "@/hooks/useWorkspaceAutoSave";
+import { useUpdateCheck } from "@/hooks/useUpdateCheck";
 import { settingsApi } from "@/lib/api";
 import { useAuth } from "@/auth/authStore";
 import { OrderPillHost } from "@/pages/orders/OrderPillHost";
@@ -30,6 +31,9 @@ export function AppShell() {
   // the same policy server-side.
   useTelavoxCallStream();
   useWorkspaceAutoSave();
+  // v0.0.96 — detect a deployed update (SignalR reconnect / tab focus) and
+  // reload or show the "new version" toast per App.UpdateRefresh.Mode.
+  useUpdateCheck();
 
   // Pull the popup-duration from settings so the toast-duration is admin-
   // tunable without a client rebuild. Falls back to 10s while the query

@@ -230,7 +230,8 @@ builder.Services.AddRateLimiter(options =>
         // surface worth limiting. Without this, a burst elsewhere on the same
         // IP (e.g. a content-heavy ticket) exhausts the window and freezes the
         // whole UI's clock/status. /api/system/version is deliberately NOT
-        // exempt — it's fetched once per load, not on a timer.
+        // exempt — it's fetched once per load plus event-driven re-checks
+        // (SignalR reconnect / tab focus, client-throttled), never on a timer.
         var path = ctx.Request.Path.Value ?? string.Empty;
         if (path.StartsWith("/api/system/time", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("/api/system/health", StringComparison.OrdinalIgnoreCase))
@@ -394,6 +395,8 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
+var systemInfo = SystemInfo.Capture(Assembly.GetExecutingAssembly());
+
 app.UseForwardedHeaders();
 app.UseSerilogRequestLogging();
 
@@ -418,13 +421,25 @@ app.UseServicedeskContentSecurityPolicy();
 // UseStaticFiles moves routing past the static-file check, so real files on
 // disk are served before the fallback endpoint is considered.
 app.UseDefaultFiles();
-app.UseStaticFiles();
+// index.html must always be revalidated: after a deploy the hashed asset
+// files it references are gone, so a browser-cached copy would boot a
+// broken shell. no-cache means "revalidate before use" (ETag round-trip,
+// 304 when unchanged) — hashed assets keep their default behavior.
+var indexNoCache = new Action<Microsoft.AspNetCore.StaticFiles.StaticFileResponseContext>(ctx =>
+{
+    if (string.Equals(ctx.File.Name, "index.html", StringComparison.OrdinalIgnoreCase))
+    {
+        ctx.Context.Response.Headers.CacheControl = "no-cache";
+    }
+});
+app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = indexNoCache });
 app.UseRouting();
 
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<DoubleSubmitCsrfMiddleware>();
+app.UseMiddleware<ClientVersionGateMiddleware>(systemInfo);
 
 if (app.Environment.IsDevelopment())
 {
@@ -432,14 +447,34 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-var systemInfo = SystemInfo.Capture(Assembly.GetExecutingAssembly());
-
-app.MapGet("/api/system/version", () => Results.Ok(new
+// Besides identifying the build, this endpoint carries the update-refresh
+// behavior settings so every client (customers included — the endpoint is
+// anonymous) learns in the same fetch how to react to a version mismatch.
+// Setting reads are served from the settings cache and fall back to safe
+// defaults so the endpoint never 500s — CI's boot probe depends on it.
+app.MapGet("/api/system/version", async (ISettingsService settings, CancellationToken ct) =>
 {
-    version = systemInfo.Version,
-    commit = systemInfo.Commit,
-    buildTime = systemInfo.BuildTime
-}))
+    var refreshMode = "auto";
+    var checkOnFocus = true;
+    try
+    {
+        refreshMode = await settings.GetAsync<string>(SettingKeys.App.UpdateRefreshMode, ct);
+        checkOnFocus = await settings.GetAsync<bool>(SettingKeys.App.UpdateCheckOnFocus, ct);
+    }
+    catch
+    {
+        // Settings store unreachable — report the defaults above.
+    }
+
+    return Results.Ok(new
+    {
+        version = systemInfo.Version,
+        commit = systemInfo.Commit,
+        buildTime = systemInfo.BuildTime,
+        updateRefreshMode = refreshMode,
+        updateCheckOnFocus = checkOnFocus
+    });
+})
 .WithName("GetSystemVersion")
 .WithOpenApi();
 
@@ -712,7 +747,8 @@ app.MapHub<Servicedesk.Api.Activity.ActivityFeedHub>("/hubs/activity");
 
 // Deep-link fallback for the SPA. The regex excludes /api/* and /hubs/* so an
 // unknown API route still returns 404 (JSON client) instead of HTML.
-app.MapFallbackToFile("{*path:regex(^(?!api/|hubs/).*$)}", "index.html");
+app.MapFallbackToFile("{*path:regex(^(?!api/|hubs/).*$)}", "index.html",
+    new StaticFileOptions { OnPrepareResponse = indexNoCache });
 
 app.Run();
 

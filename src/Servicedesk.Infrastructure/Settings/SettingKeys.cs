@@ -910,6 +910,21 @@ public static class SettingKeys
         public const string LoginBannerType = "App.LoginBanner.Type";
 
         public const string LoginBannerMessage = "App.LoginBanner.Message";
+
+        /// v0.0.96 — how an already-open browser session reacts when it
+        /// detects the server runs a newer version (checked on SignalR
+        /// reconnect — which fires right after every deploy restart — and
+        /// optionally on tab focus). "auto" reloads the page at a safe
+        /// moment (no open dialog, no active rich-text edit); "banner"
+        /// only shows a persistent toast with a Reload button. Reloads are
+        /// painless: sessions live server-side, the user stays logged in.
+        public const string UpdateRefreshMode = "App.UpdateRefresh.Mode";
+
+        /// When true, the client also re-checks the server version when the
+        /// browser tab regains focus (throttled client-side). Covers the
+        /// laptop-was-asleep case where the SignalR reconnect check may have
+        /// been missed.
+        public const string UpdateCheckOnFocus = "App.UpdateRefresh.CheckOnFocus";
     }
 
     public static class Notifications
@@ -1647,6 +1662,11 @@ public static class SettingDefaults
             "Visual style of the login banner. One of 'info' (blue, neutral notice), 'warning' (amber, attention needed) or 'error' (red, operational issue). Unknown values silently fall back to 'info'."),
         new SettingDefault(SettingKeys.App.LoginBannerMessage, "", "string", "App",
             "Body text of the login banner. Supports a constrained Markdown subset (bold, italic, links) which is sanitized to HTML on the client. Empty or whitespace-only messages suppress rendering even when the toggle is on."),
+
+        new SettingDefault(SettingKeys.App.UpdateRefreshMode, "auto", "string", "App",
+            "How open browser sessions react when they detect a newer server version after an update. 'auto' reloads the page at a safe moment (no open dialog or active editor; falls back to a banner otherwise); 'banner' never reloads automatically and only shows a persistent 'new version' toast with a Reload button. Users stay logged in across reloads."),
+        new SettingDefault(SettingKeys.App.UpdateCheckOnFocus, "true", "bool", "App",
+            "Also re-check the server version when a browser tab regains focus (throttled to at most once per 30 seconds). Catches sessions that slept through the update, e.g. a laptop lid that was closed during the deploy."),
 
         // Notifications — v0.0.12 stap 4. Mention-trigger notification
         // raamwerk (@@-tag pipeline). Per-user preferences are out of scope

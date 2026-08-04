@@ -7,6 +7,7 @@ import {
 } from "@microsoft/signalr";
 import { usePresenceStore, type PresenceUser } from "@/stores/usePresenceStore";
 import { useRecentTicketsStore } from "@/stores/useRecentTicketsStore";
+import { SERVER_RECONNECTED_EVENT } from "@/lib/appUpdate";
 
 let connection: HubConnection | null = null;
 
@@ -44,6 +45,17 @@ export function getConnection(): HubConnection {
     ]) {
       connection.on(event, noop);
     }
+
+    // A deploy restarts the server, dropping this connection; the moment it
+    // comes back is the earliest reliable "the server may have changed"
+    // signal. Broadcast it as a window event so useUpdateCheck can re-check
+    // /api/system/version without coupling to this hook. Registered here
+    // (once per connection object) — onreconnected registrations are
+    // additive and cannot be removed, so the per-mount effect is the wrong
+    // place for it.
+    connection.onreconnected(() => {
+      window.dispatchEvent(new Event(SERVER_RECONNECTED_EVENT));
+    });
   }
   return connection;
 }

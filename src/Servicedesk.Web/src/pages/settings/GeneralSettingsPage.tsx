@@ -14,6 +14,7 @@ import {
   Moon,
   Sparkles,
   Search,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -152,6 +153,11 @@ export function GeneralSettingsPage() {
       </section>
 
       <MaintenanceWindowSection
+        entries={appSettings.data}
+        loading={appSettings.isLoading}
+      />
+
+      <UpdateRolloutSection
         entries={appSettings.data}
         loading={appSettings.isLoading}
       />
@@ -726,6 +732,130 @@ function LoginBannerSection({
         </div>
       )}
     </section>
+  );
+}
+
+function UpdateRolloutSection({
+  entries,
+  loading,
+}: {
+  entries: SettingEntry[] | undefined;
+  loading: boolean;
+}) {
+  const qc = useQueryClient();
+
+  const modeEntry = findEntry(entries, "App.UpdateRefresh.Mode");
+  const focusEntry = findEntry(entries, "App.UpdateRefresh.CheckOnFocus");
+  const mode = modeEntry?.value === "banner" ? "banner" : "auto";
+
+  const update = useMutation({
+    mutationFn: (value: string) => settingsApi.update("App.UpdateRefresh.Mode", value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: APP_QUERY_KEY });
+    },
+    onError: () => {
+      toast.error("Failed to update App.UpdateRefresh.Mode");
+    },
+  });
+
+  return (
+    <section className="glass-card p-6">
+      <div className="mb-4 flex items-start gap-3">
+        <div className="rounded-md bg-glass p-2 text-emerald-300">
+          <RefreshCw className="h-5 w-5" />
+        </div>
+        <div className="flex-1">
+          <h2 className="text-base font-semibold text-foreground">Update rollout</h2>
+          <p className="text-xs text-muted-foreground">
+            How already-open sessions pick up a deployed update. Sessions notice a new
+            server version seconds after the deploy (their realtime connection drops and
+            reconnects) and either reload themselves or show a persistent "new version"
+            toast. Reloading is painless: users stay logged in, and a reload is skipped
+            while a dialog is open or someone is typing. Either way the server refuses
+            writes from outdated sessions, so a missed reload can never corrupt data.
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <Skeleton className="h-24 w-full" />
+      ) : (
+        <div className="space-y-4">
+          <FieldShell label="When a new version is detected">
+            <div className="flex flex-wrap gap-2" role="radiogroup">
+              <UpdateModeButton
+                value="auto"
+                label="Reload automatically"
+                selected={mode === "auto"}
+                disabled={update.isPending}
+                onSelect={(v) => update.mutate(v)}
+              />
+              <UpdateModeButton
+                value="banner"
+                label="Banner only"
+                selected={mode === "banner"}
+                disabled={update.isPending}
+                onSelect={(v) => update.mutate(v)}
+              />
+            </div>
+            <p className="mt-1 text-[10px] text-muted-foreground/70">
+              Automatic reloads that would interrupt (open dialog, active editor) fall
+              back to the banner for that session.
+            </p>
+          </FieldShell>
+
+          {focusEntry ? (
+            <SettingField
+              entry={focusEntry}
+              queryKey={APP_QUERY_KEY}
+              label="Also re-check when a tab regains focus"
+              hint="Catches sessions that slept through the deploy, e.g. a laptop that was closed. Throttled to at most one check per 30 seconds."
+            />
+          ) : null}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function UpdateModeButton({
+  value,
+  label,
+  selected,
+  disabled,
+  onSelect,
+}: {
+  value: "auto" | "banner";
+  label: string;
+  selected: boolean;
+  disabled?: boolean;
+  onSelect: (next: "auto" | "banner") => void;
+}) {
+  const Icon = value === "auto" ? RefreshCw : Megaphone;
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      disabled={disabled}
+      onClick={() => onSelect(value)}
+      className={cn(
+        "inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
+        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        "disabled:cursor-not-allowed disabled:opacity-50",
+        selected
+          ? "border-emerald-400/60 bg-emerald-100 text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-500/[0.12] dark:text-emerald-100"
+          : "border-glass bg-glass text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <Icon
+        className={cn(
+          "h-3.5 w-3.5",
+          selected ? "text-emerald-600 dark:text-emerald-300" : "opacity-70",
+        )}
+      />
+      {label}
+    </button>
   );
 }
 

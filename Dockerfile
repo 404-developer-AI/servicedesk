@@ -17,7 +17,14 @@ COPY src/Servicedesk.Web/package.json src/Servicedesk.Web/package-lock.json* ./
 RUN npm ci
 
 COPY src/Servicedesk.Web/ ./
-RUN npm run build
+
+# Stamp the SPA with the same version the backend gets via MinVerVersionOverride
+# below. The bundle sends it as X-Client-Version on every API call and compares
+# it against /api/system/version to detect that a newer server was deployed.
+# Unset (dev, ad-hoc builds) → the bundle falls back to "dev" and the
+# version gate stays inert.
+ARG APP_VERSION
+RUN APP_VERSION="${APP_VERSION}" npm run build
 
 # -----------------------------------------------------------------------------
 # Stage 2 — restore + publish the .NET app.
