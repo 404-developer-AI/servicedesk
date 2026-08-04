@@ -28,6 +28,35 @@ public sealed class SystemEndpointsTests : IClassFixture<SecurityBaselineFactory
         Assert.NotNull(payload);
         Assert.False(string.IsNullOrWhiteSpace(payload!.Version));
         Assert.False(string.IsNullOrWhiteSpace(payload.Commit));
+        // Exact default values are asserted against SettingDefaults below;
+        // the shared factory means another test may have overridden them here.
+        Assert.Contains(payload.UpdateRefreshMode, new[] { "auto", "banner" });
+    }
+
+    [Fact]
+    public async Task SystemVersionEndpoint_HonorsUpdateRefreshSettings()
+    {
+        _factory.Settings.Set(SettingKeys.App.UpdateRefreshMode, "banner");
+        _factory.Settings.Set(SettingKeys.App.UpdateCheckOnFocus, "false");
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/system/version");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var payload = await response.Content.ReadFromJsonAsync<VersionPayload>();
+        Assert.NotNull(payload);
+        Assert.Equal("banner", payload!.UpdateRefreshMode);
+        Assert.False(payload.UpdateCheckOnFocus);
+    }
+
+    [Fact]
+    public void UpdateRefreshSettings_HaveRegisteredDefaults()
+    {
+        var mode = SettingDefaults.All.Single(d => d.Key == SettingKeys.App.UpdateRefreshMode);
+        Assert.Equal("auto", mode.Value);
+
+        var focus = SettingDefaults.All.Single(d => d.Key == SettingKeys.App.UpdateCheckOnFocus);
+        Assert.Equal("true", focus.Value);
     }
 
     [Fact]
@@ -76,6 +105,8 @@ public sealed class SystemEndpointsTests : IClassFixture<SecurityBaselineFactory
         Assert.InRange(payload.OffsetMinutes, -14 * 60, 14 * 60);
     }
 
-    private sealed record VersionPayload(string Version, string Commit, DateTimeOffset BuildTime);
+    private sealed record VersionPayload(
+        string Version, string Commit, DateTimeOffset BuildTime,
+        string UpdateRefreshMode, bool UpdateCheckOnFocus);
     private sealed record TimePayload(DateTimeOffset Utc, string Timezone, int OffsetMinutes);
 }

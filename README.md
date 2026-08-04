@@ -59,6 +59,8 @@ Same one-liner pattern. Always offers a pre-update backup, and auto-rolls-back i
 bash <(curl -sSL https://raw.githubusercontent.com/404-developer-AI/servicedesk/main/deploy/update.sh)
 ```
 
+Users who have the app open during an update don't need to do anything: open sessions detect the new version within seconds and refresh themselves at a safe moment (or show a "new version" banner — admin's choice), staying logged in throughout. The server also refuses writes from an outdated session, so a missed refresh can never corrupt data.
+
 ## Backup and restore
 
 ```bash

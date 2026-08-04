@@ -5,6 +5,8 @@ export type SystemVersion = {
   version: string;
   commit: string;
   buildTime: string;
+  updateRefreshMode: "auto" | "banner";
+  updateCheckOnFocus: boolean;
 };
 
 export type SystemTime = {
