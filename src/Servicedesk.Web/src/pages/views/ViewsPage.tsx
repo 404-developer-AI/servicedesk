@@ -422,6 +422,7 @@ function ViewDialog({
 
   // Display config state
   const [priorityFloat, setPriorityFloat] = React.useState(initialDc.priorityFloat ?? false);
+  const [stateBucketSort, setStateBucketSort] = React.useState(initialDc.stateBucketSort ?? false);
   const [groupBy, setGroupBy] = React.useState(initialDc.groupBy ?? "");
   const [groupOrder, setGroupOrder] = React.useState<string[]>(initialDc.groupOrder ?? []);
   const [sortField, setSortField] = React.useState(initialDc.sort?.field ?? "");
@@ -444,6 +445,7 @@ function ViewDialog({
     mutationFn: async () => {
       const dc: DisplayConfig = {};
       if (priorityFloat) dc.priorityFloat = true;
+      if (stateBucketSort) dc.stateBucketSort = true;
       if (groupBy) dc.groupBy = groupBy;
       if (groupOrder.length > 0) dc.groupOrder = groupOrder;
       if (sortField) dc.sort = { field: sortField, direction: sortDirection };
@@ -605,6 +607,15 @@ function ViewDialog({
                   <option value="asc">Ascending (oldest/lowest first)</option>
                 </NativeSelect>
               </Field>
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <div className="space-y-0.5">
+                <span className="text-xs font-medium text-muted-foreground">Open tickets first</span>
+                <p className="text-[10px] text-muted-foreground/60 leading-tight">
+                  Sort open tickets above pending (and resolved/closed last) within each group
+                </p>
+              </div>
+              <Switch checked={stateBucketSort} onCheckedChange={setStateBucketSort} />
             </div>
           </div>
 

@@ -166,6 +166,7 @@ export function TicketListPage() {
         sortField: displayConfig.sort?.field,
         sortDirection: displayConfig.sort?.direction,
         priorityFloat: displayConfig.priorityFloat,
+        stateBucketSort: displayConfig.stateBucketSort,
       };
       return ticketApi.list(query);
     },

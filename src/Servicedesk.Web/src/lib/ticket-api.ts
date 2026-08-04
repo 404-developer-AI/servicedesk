@@ -332,6 +332,9 @@ export type TicketListQuery = {
   search?: string;
   openOnly?: boolean;
   openFirst?: boolean;
+  /// v0.0.95 — per-view "Open tickets first": server buckets New/Open above
+  /// Pending above Resolved/Closed before applying the sort field.
+  stateBucketSort?: boolean;
   sortField?: string;
   sortDirection?: string;
   priorityFloat?: boolean;
@@ -643,6 +646,9 @@ export type SendOutboundMailRequest = {
 
 export type DisplayConfig = {
   priorityFloat?: boolean;
+  /// v0.0.95 — "Open tickets first": sort New/Open above Pending above
+  /// Resolved/Closed within the chosen sort (and thus within each group).
+  stateBucketSort?: boolean;
   groupBy?: string | null;
   groupOrder?: string[] | null;
   sort?: { field: string; direction: "asc" | "desc" } | null;
@@ -945,6 +951,7 @@ export const ticketApi = {
     if (query.search) params.set("search", query.search);
     if (query.openOnly) params.set("openOnly", "true");
     if (query.openFirst) params.set("openFirst", "true");
+    if (query.stateBucketSort) params.set("stateBucketSort", "true");
     if (query.sortField) params.set("sortField", query.sortField);
     if (query.sortDirection) params.set("sortDirection", query.sortDirection);
     if (query.priorityFloat) params.set("priorityFloat", "true");
