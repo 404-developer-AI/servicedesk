@@ -20,14 +20,16 @@ public sealed class ReportingApiEndpointsTests
     private const string ApiKey = "test-reporting-key-1234567890-abc";
     private const string Url = "/api/reporting/tickets?from=2026-08-01&to=2026-09-01";
 
-    [Fact]
-    public async Task Public_surface_is_404_when_disabled()
+    [Theory]
+    [InlineData(Url)]
+    [InlineData("/api/reporting/companies")]
+    public async Task Public_surface_is_404_when_disabled(string url)
     {
         using var factory = new SecurityBaselineFactory();
         // Reporting.Enabled defaults to false (seeded from SettingDefaults).
         using var client = factory.CreateClient();
 
-        var res = await client.GetAsync(Url);
+        var res = await client.GetAsync(url);
 
         Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
     }
@@ -44,15 +46,17 @@ public sealed class ReportingApiEndpointsTests
         Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
     }
 
-    [Fact]
-    public async Task Public_surface_is_401_without_key_header()
+    [Theory]
+    [InlineData(Url)]
+    [InlineData("/api/reporting/companies")]
+    public async Task Public_surface_is_401_without_key_header(string url)
     {
         using var factory = new SecurityBaselineFactory();
         factory.Settings.Set(SettingKeys.Reporting.Enabled, "true");
         factory.Secrets.Set(ProtectedSecretKeys.ReportingApiKey, ApiKey);
         using var client = factory.CreateClient();
 
-        var res = await client.GetAsync(Url);
+        var res = await client.GetAsync(url);
 
         Assert.Equal(HttpStatusCode.Unauthorized, res.StatusCode);
     }
@@ -111,11 +115,46 @@ public sealed class ReportingApiEndpointsTests
         Assert.NotNull(body.OpenNow);
     }
 
+    [Fact]
+    public async Task Companies_list_allows_correct_key()
+    {
+        using var factory = new SecurityBaselineFactory();
+        factory.Settings.Set(SettingKeys.Reporting.Enabled, "true");
+        factory.Secrets.Set(ProtectedSecretKeys.ReportingApiKey, ApiKey);
+        using var client = factory.CreateClient();
+
+        using var req = new HttpRequestMessage(HttpMethod.Get, "/api/reporting/companies");
+        req.Headers.Add(KeyHeader, ApiKey);
+        var res = await client.SendAsync(req);
+
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        var body = await res.Content.ReadFromJsonAsync<CompaniesShape>();
+        Assert.NotNull(body);
+        Assert.NotNull(body!.Companies);
+    }
+
+    [Fact]
+    public async Task Tickets_accepts_company_filter()
+    {
+        using var factory = new SecurityBaselineFactory();
+        factory.Settings.Set(SettingKeys.Reporting.Enabled, "true");
+        factory.Secrets.Set(ProtectedSecretKeys.ReportingApiKey, ApiKey);
+        using var client = factory.CreateClient();
+
+        using var req = new HttpRequestMessage(HttpMethod.Get,
+            Url + "&companyId=" + Guid.NewGuid());
+        req.Headers.Add(KeyHeader, ApiKey);
+        var res = await client.SendAsync(req);
+
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+    }
+
     [Theory]
     [InlineData("/api/reporting/tickets")]
     [InlineData("/api/reporting/tickets?from=2026-08-01")]
     [InlineData("/api/reporting/tickets?from=not-a-date&to=2026-09-01")]
     [InlineData("/api/reporting/tickets?from=2026-09-01&to=2026-08-01")]
+    [InlineData(Url + "&companyId=not-a-uuid")]
     public async Task Public_surface_rejects_invalid_period(string url)
     {
         using var factory = new SecurityBaselineFactory();
@@ -143,4 +182,6 @@ public sealed class ReportingApiEndpointsTests
 
     private sealed record ReportShape(SectionShape? Opened, SectionShape? Closed, SectionShape? OpenNow);
     private sealed record SectionShape(int Count, int Returned, int Offset, bool Truncated);
+    private sealed record CompaniesShape(int Count, int Returned, bool Truncated, List<CompanyShape>? Companies);
+    private sealed record CompanyShape(Guid Id, string Name, string? Code, bool IsActive);
 }

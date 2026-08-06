@@ -19,11 +19,14 @@ namespace Servicedesk.Api.Reporting;
 ///    is ever reported, never the value). The IP allow-list and list cap are
 ///    plain settings edited via the generic settings surface.
 ///
-/// 2. Public surface — <c>GET /api/reporting/tickets?from=…&amp;to=…</c>,
-///    key-gated (no session), read-only. Returns for the period: tickets
-///    opened, tickets closed (Resolved+Closed combined), and a snapshot of
-///    all currently-open tickets — each as a count plus a capped
-///    number/subject list with per-section offset paging.
+/// 2. Public surface — key-gated (no session), read-only:
+///    <c>GET /api/reporting/tickets?from=…&amp;to=…[&amp;companyId=…]</c>
+///    returns for the period: tickets opened, tickets closed
+///    (Resolved+Closed combined), and a snapshot of all currently-open
+///    tickets — each as a count plus a capped number/subject list with
+///    per-section offset paging, optionally narrowed to one company.
+///    <c>GET /api/reporting/companies</c> lists all companies
+///    (id/name/code/active) so a consumer can resolve the ids to filter by.
 ///
 /// The public surface is invisible (404) unless the admin both enabled it
 /// AND configured the key; the same 404 answers callers outside the
@@ -93,13 +96,14 @@ public static class ReportingApiEndpoints
         pub.MapGet("/tickets", async (
             [FromQuery] string? from,
             [FromQuery] string? to,
+            [FromQuery] string? companyId,
             [FromQuery] int? openedOffset,
             [FromQuery] int? closedOffset,
             [FromQuery] int? openOffset,
             HttpContext http, ISettingsService settings, IProtectedSecretStore secrets,
             ITicketReportService reports, IAuditLogger audit, CancellationToken ct) =>
         {
-            var deny = await CheckReportingAuthAsync(http, settings, secrets, audit, ct);
+            var deny = await CheckReportingAuthAsync(http, settings, secrets, audit, "tickets", ct);
             if (deny is not null) return deny;
 
             if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to))
@@ -111,17 +115,26 @@ public static class ReportingApiEndpoints
             if (fromUtc >= toUtc)
                 return Results.BadRequest(new { error = "invalid_period", message = "'from' must be before 'to'. The period is interpreted as [from, to)." });
 
+            Guid? companyGuid = null;
+            if (!string.IsNullOrWhiteSpace(companyId))
+            {
+                if (!Guid.TryParse(companyId, out var parsed))
+                    return Results.BadRequest(new { error = "invalid_company_id", message = "'companyId' is not a valid UUID. Resolve ids via GET /api/reporting/companies." });
+                companyGuid = parsed;
+            }
+
             var maxItems = Math.Clamp(
                 await settings.GetAsync<int>(SettingKeys.Reporting.MaxListItems, ct), 0, 10_000);
 
             var report = await reports.GetPeriodReportAsync(
                 fromUtc, toUtc, maxItems,
-                openedOffset ?? 0, closedOffset ?? 0, openOffset ?? 0, ct);
+                openedOffset ?? 0, closedOffset ?? 0, openOffset ?? 0, companyGuid, ct);
 
             await ReportingAudit.WriteMachineAsync(audit, http, ReportingAudit.Read, "tickets", new
             {
                 from = fromUtc,
                 to = toUtc,
+                companyId = companyGuid,
                 opened = report.Opened.Count,
                 closed = report.Closed.Count,
                 openNow = report.OpenNow.Count,
@@ -131,6 +144,7 @@ public static class ReportingApiEndpoints
             {
                 from = fromUtc,
                 to = toUtc,
+                companyId = companyGuid,
                 generatedUtc = DateTimeOffset.UtcNow,
                 maxListItems = maxItems,
                 opened = ShapeSection(report.Opened),
@@ -138,6 +152,43 @@ public static class ReportingApiEndpoints
                 openNow = ShapeSection(report.OpenNow),
             });
         }).WithName("GetReportingTickets").WithOpenApi();
+
+        pub.MapGet("/companies", async (
+            [FromQuery] int? offset,
+            HttpContext http, ISettingsService settings, IProtectedSecretStore secrets,
+            ITicketReportService reports, IAuditLogger audit, CancellationToken ct) =>
+        {
+            var deny = await CheckReportingAuthAsync(http, settings, secrets, audit, "companies", ct);
+            if (deny is not null) return deny;
+
+            var maxItems = Math.Clamp(
+                await settings.GetAsync<int>(SettingKeys.Reporting.MaxListItems, ct), 0, 10_000);
+
+            var list = await reports.ListCompaniesAsync(maxItems, offset ?? 0, ct);
+
+            await ReportingAudit.WriteMachineAsync(audit, http, ReportingAudit.Read, "companies", new
+            {
+                count = list.Count,
+                offset = list.Offset,
+            }, ct);
+
+            return Results.Ok(new
+            {
+                generatedUtc = DateTimeOffset.UtcNow,
+                maxListItems = maxItems,
+                count = list.Count,
+                returned = list.Items.Count,
+                offset = list.Offset,
+                truncated = list.Truncated,
+                companies = list.Items.Select(c => new
+                {
+                    id = c.Id,
+                    name = c.Name,
+                    code = c.Code,
+                    isActive = c.IsActive,
+                }),
+            });
+        }).WithName("GetReportingCompanies").WithOpenApi();
 
         return app;
     }
@@ -167,7 +218,7 @@ public static class ReportingApiEndpoints
     /// presenting a wrong key learns the surface exists (401).
     private static async Task<IResult?> CheckReportingAuthAsync(
         HttpContext http, ISettingsService settings, IProtectedSecretStore secrets,
-        IAuditLogger audit, CancellationToken ct)
+        IAuditLogger audit, string target, CancellationToken ct)
     {
         // Master switch first so the disabled path never touches the secret
         // store. "Off" and "no key" both collapse to 404.
@@ -182,7 +233,7 @@ public static class ReportingApiEndpoints
         if (!ReportingIpAllowList.IsAllowed(allowList, http.Connection.RemoteIpAddress))
         {
             await ReportingAudit.WriteMachineAsync(audit, http, ReportingAudit.Denied,
-                "tickets", new { reason = "ip_not_allowed" }, ct);
+                target, new { reason = "ip_not_allowed" }, ct);
             return Results.NotFound();
         }
 
@@ -190,7 +241,7 @@ public static class ReportingApiEndpoints
         if (string.IsNullOrEmpty(provided) || !FixedTimeEquals(provided, key))
         {
             await ReportingAudit.WriteMachineAsync(audit, http, ReportingAudit.Denied,
-                "tickets", new { reason = "invalid_key" }, ct);
+                target, new { reason = "invalid_key" }, ct);
             return Results.Json(new { error = "unauthorized" }, statusCode: StatusCodes.Status401Unauthorized);
         }
 

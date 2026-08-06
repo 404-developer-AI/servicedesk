@@ -15,7 +15,9 @@ public interface ITicketReportService
     ///   regardless of when it was created.
     /// Soft-deleted tickets never count. Each section's item list is capped
     /// at maxItems (0 = counts only) with its own offset for paging; Count
-    /// always reflects the full total.
+    /// always reflects the full total. A non-null companyId narrows every
+    /// section to tickets linked to that company; an unknown id simply
+    /// yields empty sections (no existence probe).
     Task<TicketPeriodReport> GetPeriodReportAsync(
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
@@ -23,8 +25,25 @@ public interface ITicketReportService
         int openedOffset,
         int closedOffset,
         int openOffset,
+        Guid? companyId,
+        CancellationToken ct = default);
+
+    /// All companies (active and inactive — tickets stay linked to
+    /// deactivated companies, so consumers need both), ordered by name.
+    /// Same cap/offset/truncated contract as the ticket sections.
+    Task<CompanyReportList> ListCompaniesAsync(
+        int maxItems,
+        int offset,
         CancellationToken ct = default);
 }
+
+public sealed record CompanyReportItem(Guid Id, string Name, string? Code, bool IsActive);
+
+public sealed record CompanyReportList(
+    int Count,
+    IReadOnlyList<CompanyReportItem> Items,
+    int Offset,
+    bool Truncated);
 
 public sealed record TicketReportItem(long Number, string Subject);
 

@@ -243,11 +243,16 @@ public sealed class FakeTicketReportService : ITicketReportService
 {
     public Task<TicketPeriodReport> GetPeriodReportAsync(
         DateTimeOffset fromUtc, DateTimeOffset toUtc, int maxItems,
-        int openedOffset, int closedOffset, int openOffset, CancellationToken ct = default)
+        int openedOffset, int closedOffset, int openOffset, Guid? companyId,
+        CancellationToken ct = default)
     {
         var empty = new TicketReportSection(0, Array.Empty<TicketReportItem>(), 0, false);
         return Task.FromResult(new TicketPeriodReport(empty, empty, empty));
     }
+
+    public Task<CompanyReportList> ListCompaniesAsync(
+        int maxItems, int offset, CancellationToken ct = default) =>
+        Task.FromResult(new CompanyReportList(0, Array.Empty<CompanyReportItem>(), 0, false));
 }
 
 public sealed class FakeUserService : IUserService
