@@ -1,5 +1,6 @@
 import {
   Activity,
+  BarChart3,
   BookOpen,
   Building2,
   ClipboardList,
@@ -99,6 +100,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: "Integrations",
     description: "Microsoft 365, webhooks, outbound connectors and API tokens.",
     icon: Plug,
+  },
+  {
+    slug: "reporting",
+    label: "Reporting API",
+    description:
+      "Key-gated read-only endpoint external tooling can poll for ticket statistics — opened, closed and currently-open counts with ticket number + subject lists.",
+    icon: BarChart3,
   },
   {
     slug: "users",

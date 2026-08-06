@@ -5281,6 +5281,17 @@ public sealed class DatabaseBootstrapper : IHostedService
           AND  e.event_type = 'MailReceived'
           AND  coalesce(e.body_html, '') = ''
           AND  length(m.body_text) > length(coalesce(e.body_text, ''));
+
+        -- ===================================================================
+        -- v0.0.96 Reporting API — closed-moment index
+        -- ===================================================================
+        -- The Reporting API filters tickets on their close moment: closed_utc,
+        -- falling back to resolved_utc for tickets that stopped at Resolved.
+        -- Expression index so the period filter stays an index range scan at
+        -- the 1M-ticket target. Partial on is_deleted to match the queries.
+        CREATE INDEX IF NOT EXISTS ix_tickets_closed_moment
+            ON tickets ((COALESCE(closed_utc, resolved_utc)))
+            WHERE is_deleted = FALSE;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

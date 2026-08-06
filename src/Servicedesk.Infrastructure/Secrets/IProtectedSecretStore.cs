@@ -72,6 +72,13 @@ public static class ProtectedSecretKeys
     /// clearable from the same panel; clearing it disables the surface.
     public const string TimesheetImportToken = "Timesheet.ImportToken";
 
+    /// Reporting API (machine-to-machine ticket statistics). One install-wide
+    /// pre-shared key minted by an admin under Settings → Reporting API. An
+    /// external caller sends it on every request via the
+    /// <c>X-Reporting-Api-Key</c> header. Rotatable and clearable from the
+    /// same panel; clearing it disables the surface.
+    public const string ReportingApiKey = "Reporting.ApiKey";
+
     /// Claude AI assist integration. The Anthropic API key used for the
     /// "AI proposal" feature inside a ticket. One install-wide key, sent on
     /// every Messages API call via the <c>x-api-key</c> header. Write-only:

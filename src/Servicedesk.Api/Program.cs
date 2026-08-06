@@ -22,6 +22,7 @@ using Servicedesk.Api.Feedback;
 using Servicedesk.Api.Integrations;
 using Servicedesk.Api.KnowledgeBase;
 using Servicedesk.Api.Orders;
+using Servicedesk.Api.Reporting;
 using Servicedesk.Api.Timesheet;
 using Servicedesk.Api.Security;
 using Servicedesk.Api.System;
@@ -391,6 +392,24 @@ builder.Services.AddRateLimiter(options =>
             AutoReplenishment = true,
         });
     });
+
+    // v0.0.96 — Reporting API (key-gated machine-to-machine statistics).
+    // Per-IP: the caller is one external tool, not a browser fanning out
+    // requests, so a tight budget costs nothing and bounds both key
+    // guessing and audit-log noise from denied probes.
+    var reportingPermit = builder.Configuration.GetValue<int?>("Security:RateLimit:Reporting:PermitPerWindow") ?? 30;
+    var reportingWindow = builder.Configuration.GetValue<int?>("Security:RateLimit:Reporting:WindowSeconds") ?? 60;
+    options.AddPolicy("reporting", ctx =>
+    {
+        var key = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = reportingPermit,
+            Window = TimeSpan.FromSeconds(reportingWindow),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        });
+    });
 });
 
 var app = builder.Build();
@@ -713,6 +732,7 @@ app.MapTimesheetEntryEndpoints();
 app.MapTimesheetManagerEndpoints();
 app.MapTicketTimesheetEndpoints();
 app.MapTimesheetImportEndpoints();
+app.MapReportingApiEndpoints();
 app.MapAdsolutTimesheetEndpoints();
 app.MapAdsolutCatalogueProductsEndpoints();
 app.MapBackofficeTimesheetEndpoints();

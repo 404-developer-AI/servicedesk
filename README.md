@@ -13,6 +13,7 @@ Self-hosted helpdesk for small and mid-size teams. One install per organisation,
 - **Reverse proxy** — Nginx (in Docker) with TLS via Let's Encrypt (Certbot).
 - **UI** — Tailwind + shadcn/ui + Framer Motion. Dark glassmorphism by default, light theme opt-in. Inter variable font.
 - **Search** — PostgreSQL `tsvector` + GIN with `pg_trgm` and `unaccent` for fuzzy matching; global Ctrl/Cmd+K palette across tickets, contacts, companies, and settings.
+- **Reporting API** — opt-in, key-gated read-only endpoint for external tooling: ticket counts (opened / closed / currently open) plus ticket number + subject lists over any period, with an optional IP allow-list. Off by default; configured from Settings → Reporting API.
 
 ## Requirements
 
