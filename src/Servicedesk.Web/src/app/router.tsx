@@ -73,6 +73,7 @@ import { KbArticlePage } from "@/pages/kb/KbArticlePage";
 import { KbArticleEditPage } from "@/pages/kb/KbArticleEditPage";
 import { KnowledgeBaseSettingsPage } from "@/pages/settings/KnowledgeBaseSettingsPage";
 import { TimesheetPage } from "@/pages/timesheet/TimesheetPage";
+import { ReportingSettingsPage } from "@/pages/settings/ReportingSettingsPage";
 import { TimesheetSettingsPage } from "@/pages/settings/TimesheetSettingsPage";
 import { ActivityFeedPage } from "@/pages/activity/ActivityFeedPage";
 import { SignaturesSettingsPage } from "@/pages/settings/SignaturesSettingsPage";
@@ -616,6 +617,13 @@ const settingsTimesheetRoute = createRoute({
   component: TimesheetSettingsPage,
 });
 
+// v0.0.96 — Reporting API (key-gated machine-to-machine statistics)
+const settingsReportingRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "reporting",
+  component: ReportingSettingsPage,
+});
+
 // Deep-link from global search and run-history "edit" button. Renders the
 // list page with the editor pre-opened on the requested trigger.
 const settingsTriggerDetailRoute = createRoute({
@@ -917,6 +925,7 @@ const routeTree = rootRoute.addChildren([
     settingsTriggerRunsRoute,
     settingsKnowledgeBaseRoute,
     settingsTimesheetRoute,
+    settingsReportingRoute,
     settingsFeedbackRoute,
     settingsIntegrationsRoute,
     settingsAdsolutIntegrationRoute,

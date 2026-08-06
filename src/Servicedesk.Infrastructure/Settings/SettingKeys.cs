@@ -16,6 +16,12 @@ public static class SettingKeys
         // environment variables); a change requires an app restart.
         public const string RateLimitCspReportPermitPerWindow = "Security.RateLimit.CspReport.PermitPerWindow";
         public const string RateLimitCspReportWindowSeconds = "Security.RateLimit.CspReport.WindowSeconds";
+        // v0.0.96 — Reporting API (machine-to-machine ticket statistics).
+        // Same startup-read model as the other rate-limit knobs: configure
+        // via SERVICEDESK_Security__RateLimit__… environment variables; a
+        // change requires an app restart.
+        public const string RateLimitReportingPermitPerWindow = "Security.RateLimit.Reporting.PermitPerWindow";
+        public const string RateLimitReportingWindowSeconds = "Security.RateLimit.Reporting.WindowSeconds";
         public const string HstsMaxAgeDays = "Security.Hsts.MaxAgeDays";
         public const string CspReportUri = "Security.Csp.ReportUri";
         public const string CspReportDedupWindowSeconds = "Security.Csp.ReportDedupWindowSeconds";
@@ -1246,6 +1252,34 @@ public static class SettingKeys
         /// same fixed window is reused on subsequent clicks rather than stacked.
         public const string OpenInPopup = "Copilot.OpenInPopup";
     }
+
+    /// v0.0.96 — Reporting API. A secret-gated, read-only machine-to-machine
+    /// surface (<c>GET /api/reporting/tickets</c>) external tooling can poll
+    /// for ticket statistics over a period: opened, closed (resolved+closed
+    /// combined) and currently-open counts plus number/subject lists. Auth is
+    /// a pre-shared key (<c>Reporting.ApiKey</c> protected-secret, sent via
+    /// the <c>X-Reporting-Api-Key</c> header) optionally narrowed by an IP
+    /// allow-list. The surface answers 404 unless Enabled is true AND the key
+    /// is configured, so its existence is never leaked.
+    public static class Reporting
+    {
+        /// Master switch, default OFF. A fresh install exposes nothing until
+        /// an admin explicitly opts in AND configures the API key.
+        public const string Enabled = "Reporting.Enabled";
+
+        /// Optional IP allow-list: comma/space/newline-separated plain IPs
+        /// and/or CIDR ranges (IPv4 and IPv6). Empty = no IP restriction
+        /// (the API key alone gates access). A caller outside the list gets
+        /// the same 404 as a disabled surface. Entries that fail to parse
+        /// are ignored (they can never widen access).
+        public const string IpAllowList = "Reporting.IpAllowList";
+
+        /// Per-section cap on the number of ticket rows (number + subject)
+        /// returned in one response. Counts always reflect the full totals;
+        /// callers page through longer lists with the per-section offset
+        /// query parameters. 0 = counts only, no lists.
+        public const string MaxListItems = "Reporting.MaxListItems";
+    }
 }
 
 public sealed record SettingDefault(
@@ -2004,5 +2038,17 @@ public static class SettingDefaults
             "Text shown on the launcher button in the navigation."),
         new SettingDefault(SettingKeys.Copilot.OpenInPopup, "true", "bool", "Copilot",
             "When on, the launcher opens a focused, side-panel-sized popup window next to the app; when off it opens a normal new browser tab. Either way the same window is reused on later clicks."),
+
+        new SettingDefault(SettingKeys.Reporting.Enabled, "false", "bool", "Reporting",
+            "Master switch for the Reporting API (GET /api/reporting/tickets). When off, the endpoint answers 404 regardless of the API key. The surface is only live when this is on AND an API key is configured under Settings → Reporting API."),
+        new SettingDefault(SettingKeys.Reporting.IpAllowList, "", "string", "Reporting",
+            "Optional IP allow-list for the Reporting API: comma/space/newline-separated plain IPs and/or CIDR ranges (IPv4 and IPv6), e.g. 203.0.113.10, 198.51.100.0/24. Empty = no IP restriction (the API key alone gates access). Callers outside the list get a 404."),
+        new SettingDefault(SettingKeys.Reporting.MaxListItems, "500", "int", "Reporting",
+            "Maximum ticket rows (number + subject) returned per section (opened / closed / open) in one Reporting API response. Counts always reflect full totals; callers page longer lists via the offset query parameters. 0 = counts only."),
+
+        new SettingDefault(SettingKeys.Security.RateLimitReportingPermitPerWindow, "30", "int", "Security",
+            "Maximum Reporting API requests per IP within the reporting rate limit window. Read at startup, a change requires an app restart."),
+        new SettingDefault(SettingKeys.Security.RateLimitReportingWindowSeconds, "60", "int", "Security",
+            "Reporting API rate limit window length, in seconds. Read at startup, a change requires an app restart."),
     };
 }

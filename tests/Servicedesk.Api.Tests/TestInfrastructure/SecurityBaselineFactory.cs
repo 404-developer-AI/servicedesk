@@ -18,6 +18,7 @@ using Servicedesk.Infrastructure.Auth.Totp;
 using Servicedesk.Infrastructure.Dashboard;
 using Servicedesk.Infrastructure.DataProtection;
 using Servicedesk.Infrastructure.Persistence;
+using Servicedesk.Infrastructure.Reporting;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Timesheet;
@@ -93,6 +94,13 @@ public sealed class SecurityBaselineFactory : WebApplicationFactory<Program>
             // even for requests the auth gate rejects. No-op fake.
             services.RemoveAll<ITimesheetImportService>();
             services.AddSingleton<ITimesheetImportService, FakeTimesheetImportService>();
+
+            // Ticket report service (Reporting API) is Npgsql-backed and is
+            // injected as a handler parameter on the public reporting
+            // endpoint, so it must resolve even for requests the auth gate
+            // rejects. Empty fake.
+            services.RemoveAll<ITicketReportService>();
+            services.AddSingleton<ITicketReportService, FakeTicketReportService>();
 
             // Auth services: swap out the DB-backed impls for in-memory fakes.
             // Tests that exercise login/session flow poke these directly; tests
@@ -226,6 +234,20 @@ public sealed class FakeTimesheetImportService : ITimesheetImportService
         string importSource, IReadOnlyList<TimesheetImportRow> rows, CancellationToken ct = default) =>
         Task.FromResult(new TimesheetImportBatchResult(
             rows.Count, rows.Count, 0, Array.Empty<TimesheetImportSkip>()));
+}
+
+/// Empty <see cref="ITicketReportService"/> so the Reporting API endpoint's
+/// handler parameters resolve without a database. The auth-gate tests never
+/// reach it; the happy-path test only asserts the empty shape.
+public sealed class FakeTicketReportService : ITicketReportService
+{
+    public Task<TicketPeriodReport> GetPeriodReportAsync(
+        DateTimeOffset fromUtc, DateTimeOffset toUtc, int maxItems,
+        int openedOffset, int closedOffset, int openOffset, CancellationToken ct = default)
+    {
+        var empty = new TicketReportSection(0, Array.Empty<TicketReportItem>(), 0, false);
+        return Task.FromResult(new TicketPeriodReport(empty, empty, empty));
+    }
 }
 
 public sealed class FakeUserService : IUserService
