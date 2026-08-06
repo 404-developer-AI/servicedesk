@@ -271,6 +271,8 @@ function UsageSection() {
       <div className="space-y-3 text-sm text-muted-foreground">
         <pre className="overflow-x-auto rounded-lg border border-glass bg-glass p-4 font-mono text-xs leading-relaxed text-foreground/90">
 {`GET /api/reporting/tickets?from=2026-08-01&to=2026-09-01
+GET /api/reporting/tickets?from=2026-08-01&to=2026-09-01&companyId=<uuid>
+GET /api/reporting/companies
 X-Reporting-Api-Key: <your key>`}
         </pre>
         <ul className="list-disc space-y-1 pl-5 text-xs">
@@ -279,6 +281,14 @@ X-Reporting-Api-Key: <your key>`}
             <code className="font-mono text-foreground/80">to</code> — required,
             ISO 8601 date or date-time; the period is interpreted as{" "}
             <code className="font-mono text-foreground/80">[from, to)</code>.
+          </li>
+          <li>
+            <code className="font-mono text-foreground/80">companyId</code> —
+            optional; narrows all three sections to tickets linked to that
+            company. Resolve ids via{" "}
+            <code className="font-mono text-foreground/80">/api/reporting/companies</code>{" "}
+            (id, name, code, active — paged with{" "}
+            <code className="font-mono text-foreground/80">offset</code>).
           </li>
           <li>
             The response contains three sections — <code className="font-mono text-foreground/80">opened</code>{" "}
