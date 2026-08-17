@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import {
   Zap, Plus, Pencil, Trash2, Activity,
   Clock, AlertTriangle, CheckCircle2, MinusCircle, History,
-  GripVertical, ChevronRight, FolderPlus,
+  GripVertical, ChevronRight, FolderPlus, Timer,
 } from "lucide-react";
 import {
   triggerApi, triggerGroupApi,
@@ -37,7 +37,18 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { TriggerEditorSheet } from "./triggers/TriggerEditorSheet";
+import { CollapsibleSettingsCard } from "@/components/settings/CollapsibleSettingsCard";
 import { cn } from "@/lib/utils";
+
+// v0.0.100 — engine knobs (Triggers.* category) surfaced on this page; the
+// scheduler-side ones existed since v0.0.24 but had no UI until now.
+const ENGINE_SETTINGS: ReadonlyArray<{ key: string; label: string }> = [
+  { key: "Triggers.SchedulerIntervalSeconds", label: "Scheduler interval (seconds)" },
+  { key: "Triggers.EscalationWarningMinutes", label: "Escalation warning lead time (minutes)" },
+  { key: "Triggers.SkippedRunRetentionDays", label: "Keep skipped run rows (days)" },
+  { key: "Triggers.MaxChainPerMutation", label: "Max trigger chain per mutation" },
+  { key: "Triggers.MailDedupWindowMinutes", label: "Mail-action dedup window (minutes)" },
+];
 
 const UNGROUPED_ID = "__ungrouped__";
 const COLLAPSE_STORAGE_KEY = "settings.triggers.collapsed-groups";
@@ -362,6 +373,14 @@ export function TriggersSettingsPage({ initialEditId }: { initialEditId?: string
           </DragOverlay>
         </DndContext>
       )}
+
+      <CollapsibleSettingsCard
+        icon={<Timer className="h-5 w-5" />}
+        category="Triggers"
+        title="Scheduler & run history"
+        description="How often the time-based scheduler ticks (reminders, SLA escalations, escalation warnings), the escalation-warning lead time, chain/mail-loop caps, and how long skipped run rows are kept before being swept. Applied and failed runs are never swept."
+        keys={ENGINE_SETTINGS}
+      />
 
       {metaQ.data && (
         <TriggerEditorSheet

@@ -257,6 +257,8 @@ public class TriggerSchedulerTests
             => Task.FromResult<IReadOnlyList<TriggerScheduleCandidate>>(Array.Empty<TriggerScheduleCandidate>());
         public Task<IReadOnlyList<TriggerScheduleCandidate>> ListEscalationWarningCandidatesAsync(int warningMinutes, int limit, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<TriggerScheduleCandidate>>(Array.Empty<TriggerScheduleCandidate>());
+        public Task<int> DeleteSkippedRunsOlderThanAsync(DateTime cutoffUtc, int batchSize, CancellationToken ct)
+            => Task.FromResult(0);
         public Task<IReadOnlyList<TriggerRow>> ListAllAsync(CancellationToken ct)
             => Task.FromResult<IReadOnlyList<TriggerRow>>(new[] { _row });
         public Task<TriggerRow> CreateAsync(NewTrigger row, CancellationToken ct)

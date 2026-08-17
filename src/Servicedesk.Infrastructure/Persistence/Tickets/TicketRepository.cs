@@ -1505,6 +1505,12 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                    merged_by_user_id     = @actorUserId,
                    resolved_utc          = COALESCE(resolved_utc, now()),
                    closed_utc            = COALESCE(closed_utc, now()),
+                   -- v0.0.100: Merged is a Closed-category status, so the
+                   -- reminder must go with it (same invariant as every
+                   -- other status writer) — a merged source with a stale
+                   -- pending_till_utc was an eternal scheduler candidate.
+                   pending_till_utc      = NULL,
+                   pending_till_next_trigger_id = NULL,
                    updated_utc           = now()
              WHERE id = @source
             """, new

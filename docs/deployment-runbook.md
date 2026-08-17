@@ -252,6 +252,15 @@ ORDER BY 4 DESC;
 
 Since v0.0.99 the budget is `max_connections = 200` (managed block in `postgresql.conf`, retrofitted by `update.sh`) against an app pool of 80 (`Maximum Pool Size`, override via `SERVICEDESK_Database__MaxPoolSize` in `secrets.env` — restart the app after changing). Verify with `sudo -u postgres psql -tAc "SHOW max_connections"`; if it still says 100 the update step was skipped (remote DB, or `psql` unavailable) — add `max_connections = 200` to `postgresql.conf` by hand and `systemctl restart postgresql`. If the app is the culprit at steady state, lower the health poll pressure first: Settings → Health → *Polling & report cache* (`Health.ReportCacheSeconds` up, `Health.PollIntervalSeconds` up) and Settings → General → Global search (`Search.MaxConcurrentSources` down).
 
+### `trigger_runs` is huge / the DB dashboard shows a big spike every minute
+Pre-v0.0.100 installs could accumulate one `skipped_no_match` row per minute per ticket whose reminder timer had elapsed but could never match (tickets that left Pending via merge or a trigger action). Since v0.0.100 the scheduler clears such elapsed timers and sweeps `skipped_*` rows older than `Triggers.SkippedRunRetentionDays` (default 30) in batches — a multi-million-row backlog drains within minutes of the first tick after the update (watch for `Trigger run retention: swept …` in the app log). Postgres reuses the freed pages after autovacuum but the table file does not shrink by itself; to hand the disk back, during a quiet moment:
+
+```bash
+sudo -u postgres psql -d servicedesk -c "VACUUM (FULL, ANALYZE) trigger_runs;"
+```
+
+`VACUUM FULL` takes an exclusive lock on the table for its duration (seconds to a minute at 1–2 GB) — trigger evaluation and the run-history page wait, tickets keep working. Verify with `SELECT pg_size_pretty(pg_total_relation_size('trigger_runs'));`.
+
 ---
 
 ## 5. TLS certificate renewal

@@ -1692,6 +1692,18 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_trigger_runs_trigger
             ON trigger_runs (trigger_id, fired_utc DESC);
 
+        -- v0.0.100 — the scheduler's dedup anti-join only cares about
+        -- applied/failed rows past a boundary; a partial index keeps that
+        -- probe tiny regardless of how many skipped_* rows the table holds.
+        CREATE INDEX IF NOT EXISTS ix_trigger_runs_dedup
+            ON trigger_runs (trigger_id, ticket_id, fired_utc DESC)
+            WHERE outcome IN ('applied', 'failed');
+
+        -- v0.0.100 — retention sweep over skipped_* rows (Triggers.SkippedRunRetentionDays).
+        CREATE INDEX IF NOT EXISTS ix_trigger_runs_skipped_fired
+            ON trigger_runs (fired_utc)
+            WHERE outcome IN ('skipped_no_match', 'skipped_loop');
+
         -- v0.0.24 (post-feature) — chained pending-till. When a trigger's
         -- set_pending_till action carries a `nextTriggerId`, the handler
         -- writes that GUID here. The scheduler's reminder scan checks this
