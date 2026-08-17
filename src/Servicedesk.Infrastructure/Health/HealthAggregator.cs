@@ -106,7 +106,8 @@ public sealed class HealthAggregator : IHealthAggregator
                 ? "nothing to prune"
                 : string.Join(", ", snap.LastDeletedPerTable.Where(kv => kv.Value > 0).Select(kv => $"{kv.Key}: {kv.Value}"));
             if (string.IsNullOrEmpty(pruned)) pruned = "nothing to prune";
-            details.Add(new HealthDetail("Last sweep", $"{last:u} ({snap.LastDuration?.TotalSeconds:0.#} s) — {pruned}."));
+            var secs = (snap.LastDuration?.TotalSeconds ?? 0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+            details.Add(new HealthDetail("Last sweep", $"{last:u} ({secs} s) — {pruned}."));
             details.Add(new HealthDetail("Rows pruned since start", snap.TotalDeletedSinceStart.ToString()));
         }
         else
