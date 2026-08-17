@@ -95,6 +95,45 @@ public sealed class ClientVersionGateMiddlewareTests
         Assert.Equal(ServerVersion, body.RootElement.GetProperty("serverVersion").GetString());
     }
 
+    // Inputs are built from char codes on purpose: CR/LF/ESC are exactly the
+    // characters the sanitizer must drop (CodeQL cs/log-forging — header +
+    // path are attacker-controlled and end up in a warning log line and the
+    // 426 body).
+    private static readonly string Crlf = new string(new[] { (char)13, (char)10 });
+    private static readonly string Esc = ((char)27).ToString();
+
+    [Fact]
+    public void SanitizeForLog_strips_control_characters()
+    {
+        Assert.Equal("0.0.1FAKE LOG LINE", ClientVersionGateMiddleware.SanitizeForLog("0.0.1" + Crlf + "FAKE LOG LINE"));
+        Assert.Equal("1.2.3[31mred", ClientVersionGateMiddleware.SanitizeForLog("1.2.3" + Esc + "[31mred"));
+        Assert.Equal("plain", ClientVersionGateMiddleware.SanitizeForLog("plain"));
+        Assert.Equal("", ClientVersionGateMiddleware.SanitizeForLog(""));
+    }
+
+    [Fact]
+    public void SanitizeForLog_truncates_long_values()
+    {
+        var input = new string('a', 500);
+        var result = ClientVersionGateMiddleware.SanitizeForLog(input);
+        Assert.Equal(129, result.Length); // 128 chars + ellipsis
+        Assert.EndsWith("…", result);
+    }
+
+    [Fact]
+    public async Task Outdated_Version_Echo_Is_Sanitized()
+    {
+        var ctx = BuildContext("POST", "/api/tickets", "0.0.1" + Crlf + "Injected");
+        var middleware = CreateMiddleware(_ => { });
+
+        await Invoke(middleware, ctx);
+
+        Assert.Equal(StatusCodes.Status426UpgradeRequired, ctx.Response.StatusCode);
+        ctx.Response.Body.Position = 0;
+        using var body = await JsonDocument.ParseAsync(ctx.Response.Body);
+        Assert.Equal("0.0.1Injected", body.RootElement.GetProperty("clientVersion").GetString());
+    }
+
     [Fact]
     public async Task Hub_Negotiate_With_Outdated_Version_Passes()
     {
