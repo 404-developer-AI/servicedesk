@@ -5,7 +5,7 @@ namespace Servicedesk.Infrastructure.Mail.Ingest;
 
 public sealed class MailMessageRepository : IMailMessageRepository
 {
-    private const string SelectColumns = """
+    internal const string SelectColumns = """
         SELECT id                   AS Id,
                message_id            AS MessageId,
                in_reply_to           AS InReplyTo,

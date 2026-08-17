@@ -190,61 +190,95 @@ public sealed class MailTimelineEnricherTests
 
     private static MailTimelineEnricher Build(
         string html, IReadOnlyList<AttachmentRow> attachments,
-        IReadOnlyList<MailRecipientRow>? recipients = null)
+        IReadOnlyList<MailRecipientRow>? recipients = null,
+        StubLookup? lookup = null)
     {
-        var mailRepo = new StubMailRepo(MailId, bodyHtmlHash: "hash-html", recipients);
+        lookup ??= new StubLookup(MailId, bodyHtmlHash: "hash-html", attachments, recipients);
         var blobs = new StubBlobStore(new Dictionary<string, string> { ["hash-html"] = html });
-        var attRepo = new StubAttachmentRepo(attachments);
-        return new MailTimelineEnricher(mailRepo, attRepo, blobs, NullLogger<MailTimelineEnricher>.Instance);
+        return new MailTimelineEnricher(lookup, blobs, NullLogger<MailTimelineEnricher>.Instance);
     }
 
-    private sealed class StubMailRepo : IMailMessageRepository
+    /// v0.0.101 — the enricher must issue ONE batched lookup regardless of
+    /// how many mail / note / sent-mail events the timeline has (it used to
+    /// be 2–3 queries per inbound mail and 1–3 per note/comment/sent mail).
+    [Fact]
+    public async Task Batch_lookup_is_called_once_regardless_of_timeline_length()
+    {
+        var lookup = new StubLookup(MailId, bodyHtmlHash: "hash-html", Array.Empty<AttachmentRow>(), null);
+        var enricher = Build("<p>hi</p>", Array.Empty<AttachmentRow>(), lookup: lookup);
+
+        var mailMeta = JsonSerializer.Serialize(new { mail_message_id = MailId.ToString() });
+        var events = new List<TicketEvent>();
+        for (var i = 1; i <= 40; i++)
+        {
+            var type = (i % 4) switch { 0 => "MailReceived", 1 => "Note", 2 => "MailSent", _ => "Comment" };
+            events.Add(new TicketEvent(i, TicketId, type, null, null, "x", "t", "<p/>",
+                type == "MailReceived" ? mailMeta : "{}", false, DateTime.UtcNow, null, null));
+        }
+        var detail = new TicketDetail(MakeTicket(), new TicketBody(TicketId, "", null), events, Array.Empty<TicketEventPin>());
+
+        var result = await enricher.EnrichAsync(detail, default);
+
+        Assert.Equal(1, lookup.LoadCalls);
+        Assert.Equal(40, result.Events.Count);
+        // The id sets handed to the lookup are exactly the ones the timeline needs.
+        Assert.Equal(10, lookup.LastMailIds!.Count);        // MailReceived events (all point at MailId)
+        Assert.Equal(30, lookup.LastEventIds!.Count);       // Note + MailSent + Comment
+        Assert.Equal(10, lookup.LastSentEventIds!.Count);   // MailSent only
+    }
+
+    [Fact]
+    public async Task Timeline_without_enrichable_events_skips_the_lookup_entirely()
+    {
+        var lookup = new StubLookup(MailId, bodyHtmlHash: "hash-html", Array.Empty<AttachmentRow>(), null);
+        var enricher = Build("<p>hi</p>", Array.Empty<AttachmentRow>(), lookup: lookup);
+        var detail = new TicketDetail(MakeTicket(), new TicketBody(TicketId, "", null), new[]
+        {
+            new TicketEvent(1, TicketId, "StatusChange", null, null, null, "t", null, "{}", false, DateTime.UtcNow, null, null),
+        }, Array.Empty<TicketEventPin>());
+
+        await enricher.EnrichAsync(detail, default);
+
+        Assert.Equal(0, lookup.LoadCalls);
+    }
+
+    /// Stub for the batched lookup: every inbound mail id resolves to the one
+    /// stub mail row (with the given body-html hash), attachments are served
+    /// by owner (mail) or event id, recipients belong to the stub mail.
+    private sealed class StubLookup : IMailTimelineLookup
     {
         private readonly MailMessageRow _row;
+        private readonly IReadOnlyList<AttachmentRow> _attachments;
         private readonly IReadOnlyList<MailRecipientRow> _recipients;
-        public StubMailRepo(Guid id, string bodyHtmlHash, IReadOnlyList<MailRecipientRow>? recipients = null)
+        public int LoadCalls { get; private set; }
+        public IReadOnlyCollection<Guid>? LastMailIds { get; private set; }
+        public IReadOnlyCollection<long>? LastEventIds { get; private set; }
+        public IReadOnlyCollection<long>? LastSentEventIds { get; private set; }
+
+        public StubLookup(Guid mailId, string bodyHtmlHash, IReadOnlyList<AttachmentRow> attachments, IReadOnlyList<MailRecipientRow>? recipients)
         {
-            _row = new MailMessageRow(id, "mid", null, "s", "from@x", "", "box@x",
+            _row = new MailMessageRow(mailId, "mid", null, "s", "from@x", "", "box@x",
                 DateTime.UtcNow, null, bodyHtmlHash, "", null, null, null, null);
+            _attachments = attachments;
             _recipients = recipients ?? Array.Empty<MailRecipientRow>();
         }
-        public Task<MailMessageRow?> GetByIdAsync(Guid id, CancellationToken ct) => Task.FromResult<MailMessageRow?>(_row);
-        public Task<MailMessageRow?> GetByTicketEventIdAsync(long ticketEventId, CancellationToken ct) => Task.FromResult<MailMessageRow?>(_row);
-        public Task<MailMessageRow?> GetByMessageIdAsync(string messageId, CancellationToken ct) => Task.FromResult<MailMessageRow?>(null);
-        public Task<Guid?> FindTicketIdByReferencesAsync(IReadOnlyList<string> ids, CancellationToken ct) => Task.FromResult<Guid?>(null);
-        public Task<Guid> InsertAsync(NewMailMessage row, IReadOnlyList<NewMailRecipient> r, IReadOnlyList<NewMailAttachment> a, CancellationToken ct) => Task.FromResult(Guid.NewGuid());
-        public Task AttachToTicketAsync(Guid mailId, Guid ticketId, long eventId, CancellationToken ct) => Task.CompletedTask;
-        public Task MarkMailboxMovedAsync(Guid mailId, DateTime utc, CancellationToken ct) => Task.CompletedTask;
-        public Task<IReadOnlyList<FinalizeCandidate>> ListReadyForFinalizeAsync(int limit, CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<FinalizeCandidate>>(Array.Empty<FinalizeCandidate>());
-        public Task<FinalizeCandidate?> GetIfReadyForFinalizeAsync(Guid mailId, CancellationToken ct)
-            => Task.FromResult<FinalizeCandidate?>(null);
-        public Task<Guid> InsertOutboundAsync(NewOutboundMailMessage row, IReadOnlyList<NewMailRecipient> r, CancellationToken ct) => Task.FromResult(Guid.NewGuid());
-        public Task<MailThreadAnchor?> GetLatestThreadAnchorAsync(Guid ticketId, CancellationToken ct) => Task.FromResult<MailThreadAnchor?>(null);
-        public Task<IReadOnlyList<MailRecipientRow>> ListRecipientsAsync(Guid mailId, CancellationToken ct) => Task.FromResult(_recipients);
-        public Task<MailMessageRow?> GetFirstInboundForTicketAsync(Guid ticketId, CancellationToken ct) => Task.FromResult<MailMessageRow?>(null);
-    }
 
-    private sealed class StubAttachmentRepo : IAttachmentRepository
-    {
-        private readonly IReadOnlyList<AttachmentRow> _rows;
-        public StubAttachmentRepo(IReadOnlyList<AttachmentRow> rows) => _rows = rows;
-        public Task<AttachmentRow?> GetByIdAsync(Guid id, CancellationToken ct) => Task.FromResult<AttachmentRow?>(_rows.FirstOrDefault(r => r.Id == id));
-        public Task<IReadOnlyList<AttachmentRow>> ListByMailAsync(Guid mailId, CancellationToken ct) => Task.FromResult(_rows);
-        public Task<IReadOnlyList<AttachmentRow>> ListByEventAsync(long eventId, CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<AttachmentRow>>(_rows.Where(r => r.EventId == eventId).ToList());
-        public Task<bool> MarkReadyAsync(Guid id, string h, long s, string m, CancellationToken ct) => Task.FromResult(true);
-        public Task MarkFailedAsync(Guid id, CancellationToken ct) => Task.CompletedTask;
-        public Task<Guid> CreateUploadedAsync(NewUploadedAttachment input, CancellationToken ct) => throw new NotImplementedException();
-        public Task<int> ReassignToEventAsync(IReadOnlyList<Guid> ids, Guid ticketId, long eventId, CancellationToken ct) => throw new NotImplementedException();
-        public Task<int> ReassignToMailAsync(IReadOnlyList<AttachmentReassignToMail> assignments, Guid ticketId, Guid mailMessageId, long ticketEventId, CancellationToken ct) => throw new NotImplementedException();
-        public Task<Guid> CreateForKbArticleAsync(NewKbArticleAttachment input, CancellationToken ct) => throw new NotImplementedException();
-        public Task<IReadOnlyList<AttachmentRow>> ListByKbArticleAsync(Guid articleId, CancellationToken ct) => throw new NotImplementedException();
-        public Task<bool> DeleteKbAttachmentAsync(Guid attachmentId, Guid articleId, CancellationToken ct) => throw new NotImplementedException();
-        public Task<Guid> CreateForFeedbackEntryAsync(NewFeedbackEntryAttachment input, CancellationToken ct) => throw new NotImplementedException();
-        public Task<IReadOnlyList<AttachmentRow>> ListByFeedbackEntryAsync(Guid entryId, CancellationToken ct) => throw new NotImplementedException();
-        public Task<bool> DeleteFeedbackAttachmentAsync(Guid attachmentId, Guid entryId, CancellationToken ct) => throw new NotImplementedException();
-        public Task<Guid> CreateForComposeTemplateImageAsync(NewComposeTemplateImage input, CancellationToken ct) => throw new NotImplementedException();
+        public Task<MailTimelineBatch> LoadAsync(
+            IReadOnlyCollection<Guid> mailIds, IReadOnlyCollection<long> eventIds,
+            IReadOnlyCollection<long> sentMailEventIds, CancellationToken ct)
+        {
+            LoadCalls++;
+            LastMailIds = mailIds; LastEventIds = eventIds; LastSentEventIds = sentMailEventIds;
+            var mailsById = mailIds.Distinct().ToDictionary(id => id, _ => _row);
+            var bySent = sentMailEventIds.Distinct().ToDictionary(id => id, _ => _row);
+            var batch = new MailTimelineBatch(
+                mailsById,
+                bySent,
+                _attachments.Where(a => a.OwnerKind == "Mail").ToLookup(a => a.OwnerId),
+                _attachments.Where(a => a.EventId.HasValue).ToLookup(a => a.EventId!.Value),
+                _recipients.Select(r => (MailId: _row.Id, Row: r)).ToLookup(x => x.MailId, x => x.Row));
+            return Task.FromResult(batch);
+        }
     }
 
     private sealed class StubBlobStore : IBlobStore

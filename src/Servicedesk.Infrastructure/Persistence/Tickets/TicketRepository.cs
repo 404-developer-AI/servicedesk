@@ -146,6 +146,23 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         _dataSource = dataSource;
     }
 
+    /// v0.0.101 — "1234" or "#1234" (surrounding whitespace ignored) is a
+    /// ticket-number probe; anything else (empty, mixed, too long for a
+    /// bigint) is not. Kept strict on purpose: the number arm of the search
+    /// hit-set compares against the indexed `tickets.number` column with a
+    /// typed parameter, so the input must be a clean integer.
+    internal static long? TryParseTicketNumber(string? search)
+    {
+        if (string.IsNullOrWhiteSpace(search)) return null;
+        var span = search.AsSpan().Trim();
+        if (span.Length > 0 && span[0] == '#') span = span[1..];
+        if (span.Length is 0 or > 18) return null;
+        foreach (var c in span)
+            if (c is < '0' or > '9') return null;
+        return long.TryParse(span, System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out var n) && n > 0 ? n : null;
+    }
+
     public async Task<TicketPage> SearchAsync(
         TicketQuery query, VisibilityScope scope, Guid? viewerUserId, Guid? viewerCompanyId, CancellationToken ct)
     {
@@ -172,17 +189,26 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         if (query.AccessibleQueueIds is not null)
             sql.Append(" AND t.queue_id = ANY(@AccessibleQueueIds)");
 
+        var searchNumber = TryParseTicketNumber(query.Search);
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
             // Subject (tickets.search_vector) OR exact ticket number OR body
             // (ticket_event_search.search_vector — sidecar fed by trigger).
-            // The body-EXISTS rides the GIN index on tes.search_vector so it
-            // stays fast even on large datasets.
-            sql.Append(" AND (");
-            sql.Append("t.search_vector @@ plainto_tsquery('simple', @Search)");
-            sql.Append(" OR t.number::text = @SearchRaw");
-            sql.Append(" OR EXISTS (SELECT 1 FROM ticket_event_search tes");
-            sql.Append(" WHERE tes.ticket_id = t.id AND tes.search_vector @@ plainto_tsquery('simple', @Search))");
+            //
+            // v0.0.101: the three sources are unioned into one hit-set the
+            // main query semi-joins on, instead of `A OR B OR EXISTS(...)`.
+            // The OR form could not be planned as one index path — a
+            // correlated EXISTS inside an OR is evaluated per candidate row
+            // and `number::text = @x` casts the indexed column away — so a
+            // bare search word fell back to a seq scan of tickets. Now each
+            // arm is its own GIN / btree lookup and the number arm is only
+            // emitted when the term actually parses as a ticket number
+            // (parameter typed bigint, column untouched).
+            sql.Append(" AND t.id IN (");
+            sql.Append("SELECT id FROM tickets WHERE search_vector @@ plainto_tsquery('simple', @Search)");
+            if (searchNumber is not null)
+                sql.Append(" UNION SELECT id FROM tickets WHERE number = @SearchNumber");
+            sql.Append(" UNION SELECT ticket_id FROM ticket_event_search WHERE search_vector @@ plainto_tsquery('simple', @Search)");
             sql.Append(")");
         }
 
@@ -280,7 +306,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             query.RequesterContactId,
             query.RequesterCompanyId,
             Search = query.Search ?? "",
-            SearchRaw = query.Search ?? "",
+            SearchNumber = searchNumber,
             ViewerContactId = viewerUserId ?? Guid.Empty,
             ViewerCompanyId = viewerCompanyId ?? Guid.Empty,
             query.CursorUpdatedUtc,
@@ -365,18 +391,6 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             WHERE e.ticket_id = @id ORDER BY e.created_utc, e.id
             """;
 
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        var ticket = await conn.QueryFirstOrDefaultAsync<Ticket>(
-            new CommandDefinition(ticketSql, new { id }, cancellationToken: ct));
-        if (ticket is null) return null;
-
-        var body = await conn.QueryFirstOrDefaultAsync<TicketBody>(
-            new CommandDefinition(bodySql, new { id }, cancellationToken: ct))
-            ?? new TicketBody(id, string.Empty, null);
-
-        var events = (await conn.QueryAsync<TicketEvent>(
-            new CommandDefinition(eventsSql, new { id }, cancellationToken: ct))).ToList();
-
         const string pinsSql = """
             SELECT p.id AS Id, p.event_id AS EventId, p.ticket_id AS TicketId,
                    p.pinned_by_user_id AS PinnedByUserId,
@@ -388,10 +402,120 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             WHERE p.ticket_id = @id
             ORDER BY p.created_utc
             """;
-        var pins = (await conn.QueryAsync<TicketEventPin>(
-            new CommandDefinition(pinsSql, new { id }, cancellationToken: ct))).ToList();
+
+        // v0.0.101 — one round-trip: the four statements go out as a single
+        // batch and the result sets are read back in order. Ticket open is
+        // the hottest read path in the app; before this it was four
+        // sequential awaits on the same connection.
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var grid = await conn.QueryMultipleAsync(new CommandDefinition(
+            ticketSql + ";\n" + bodySql + ";\n" + eventsSql + ";\n" + pinsSql,
+            new { id }, cancellationToken: ct));
+
+        var ticket = await grid.ReadFirstOrDefaultAsync<Ticket>();
+        var body = await grid.ReadFirstOrDefaultAsync<TicketBody>()
+            ?? new TicketBody(id, string.Empty, null);
+        var events = (await grid.ReadAsync<TicketEvent>()).ToList();
+        var pins = (await grid.ReadAsync<TicketEventPin>()).ToList();
+        if (ticket is null) return null;
 
         return new TicketDetail(ticket, body, events, pins);
+    }
+
+    public async Task<TicketDetailRelations?> GetDetailRelationsAsync(Guid ticketId, CancellationToken ct)
+    {
+        // Seven statements, one batch, one connection. Every branch is an
+        // indexed point lookup or a sparse-index scan (ix_tickets_merged_into,
+        // ix_tickets_split_from, ix_tickets_parent), so the cost is dominated
+        // by the round-trip we are saving, not by the queries.
+        const string sql = """
+            -- 0: existence + merge/split actors and counterpart numbers
+            SELECT mu.email  AS MergedByUserName,
+                   mt.number AS MergedIntoNumber,
+                   st.number AS SplitFromNumber,
+                   su.email  AS SplitFromUserName
+            FROM tickets t
+            LEFT JOIN users   mu ON mu.id = t.merged_by_user_id
+            LEFT JOIN tickets mt ON mt.id = t.merged_into_ticket_id
+            LEFT JOIN tickets st ON st.id = t.split_from_ticket_id
+            LEFT JOIN users   su ON su.id = t.split_from_user_id
+            WHERE t.id = @ticketId AND t.is_deleted = FALSE;
+
+            -- 1: "Merged from #A, #B" (chronological)
+            SELECT number FROM tickets
+            WHERE merged_into_ticket_id = @ticketId
+            ORDER BY merged_utc NULLS LAST, number;
+
+            -- 2: "Split into #A, #B" (chronological)
+            SELECT id AS Id, number AS Number FROM tickets
+            WHERE split_from_ticket_id = @ticketId AND is_deleted = FALSE
+            ORDER BY split_from_utc NULLS LAST, number;
+
+            -- 3: linked parent summary (null when no parent)
+            SELECT p.id                AS ParentTicketId,
+                   p.number            AS ParentNumber,
+                   u.email             AS LinkedByName,
+                   t.parent_linked_utc AS LinkedUtc
+            FROM tickets t
+            JOIN tickets p ON p.id = t.parent_ticket_id
+            LEFT JOIN users u ON u.id = t.parent_linked_by_user_id
+            WHERE t.id = @ticketId AND t.parent_ticket_id IS NOT NULL;
+
+            -- 4: linked child tickets
+            SELECT id AS Id, number AS Number FROM tickets
+            WHERE parent_ticket_id = @ticketId AND is_deleted = FALSE
+            ORDER BY number;
+
+            -- 5: company-alert source: the ticket's own frozen company first,
+            --    else the requester's *active* primary company (v0.0.66 rule).
+            SELECT c.id                AS CompanyId,
+                   c.name              AS CompanyName,
+                   c.code              AS Code,
+                   c.alert_text        AS AlertText,
+                   c.alert_on_create   AS AlertOnCreate,
+                   c.alert_on_open     AS AlertOnOpen,
+                   c.alert_on_open_mode AS AlertOnOpenMode
+            FROM tickets t
+            JOIN companies c ON c.id = COALESCE(
+                t.company_id,
+                (SELECT cc.company_id
+                   FROM contact_companies cc
+                   JOIN companies pc ON pc.id = cc.company_id AND pc.is_active = TRUE
+                  WHERE cc.contact_id = t.requester_contact_id AND cc.role = 'primary'
+                  LIMIT 1))
+            WHERE t.id = @ticketId;
+            """;
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var grid = await conn.QueryMultipleAsync(
+            new CommandDefinition(sql, new { ticketId }, cancellationToken: ct));
+
+        var head = await grid.ReadFirstOrDefaultAsync<RelationsHeadRow>();
+        var mergedSources = (await grid.ReadAsync<long>()).ToList();
+        var splitChildren = (await grid.ReadAsync<SplitChildTicket>()).ToList();
+        var parent = await grid.ReadFirstOrDefaultAsync<ParentTicketSummary>();
+        var children = (await grid.ReadAsync<LinkedChildTicket>()).ToList();
+        var companyAlert = await grid.ReadFirstOrDefaultAsync<TicketCompanyAlertSource>();
+        if (head is null) return null;
+
+        return new TicketDetailRelations(
+            MergedSourceTicketNumbers: mergedSources,
+            MergedByUserName: head.MergedByUserName,
+            MergedIntoTicketNumber: head.MergedIntoNumber?.ToString(),
+            SplitFromTicketNumber: head.SplitFromNumber?.ToString(),
+            SplitFromUserName: head.SplitFromUserName,
+            SplitChildren: splitChildren,
+            Parent: parent,
+            ChildTickets: children,
+            CompanyAlert: companyAlert);
+    }
+
+    private sealed class RelationsHeadRow
+    {
+        public string? MergedByUserName { get; set; }
+        public long? MergedIntoNumber { get; set; }
+        public long? SplitFromNumber { get; set; }
+        public string? SplitFromUserName { get; set; }
     }
 
     public async Task<Ticket> CreateAsync(NewTicket input, CancellationToken ct)
@@ -1272,8 +1396,13 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
               AND t.id <> @excludeTicketId
             """);
         sql.Append(queueFilter);
+        // v0.0.101: number arm only when the term parses as a ticket number,
+        // compared as a typed bigint (indexed) instead of casting the column.
+        var pickerNumber = TryParseTicketNumber(search);
         if (hasSearch)
-            sql.Append(" AND (t.search_vector @@ plainto_tsquery('simple', @Search) OR t.number::text = @SearchRaw)");
+            sql.Append(pickerNumber is not null
+                ? " AND (t.search_vector @@ plainto_tsquery('simple', @Search) OR t.number = @SearchNumber)"
+                : " AND t.search_vector @@ plainto_tsquery('simple', @Search)");
         sql.Append(" ORDER BY t.updated_utc DESC, t.id DESC LIMIT @Limit");
 
         var rows = await conn.QueryAsync<TicketPickerHit>(new CommandDefinition(sql.ToString(), new
@@ -1281,25 +1410,9 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             excludeTicketId,
             AccessibleQueueIds = queueParam,
             Search = search ?? string.Empty,
-            SearchRaw = search ?? string.Empty,
+            SearchNumber = pickerNumber,
             Limit = clampedLimit,
         }, cancellationToken: ct));
-        return rows.ToList();
-    }
-
-    public async Task<IReadOnlyList<long>> GetMergedSourceTicketNumbersAsync(Guid targetTicketId, CancellationToken ct)
-    {
-        // Sparse index ix_tickets_merged_into makes this an index-only scan even
-        // at scale. Order by merged_utc ASC so the "Merged from #A, #B" strip
-        // reads chronologically.
-        const string sql = """
-            SELECT number FROM tickets
-            WHERE merged_into_ticket_id = @targetTicketId
-            ORDER BY merged_utc NULLS LAST, number
-            """;
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        var rows = await conn.QueryAsync<long>(
-            new CommandDefinition(sql, new { targetTicketId }, cancellationToken: ct));
         return rows.ToList();
     }
 
@@ -1577,24 +1690,6 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         public Guid? MergedIntoTicketId { get; set; }
     }
 
-    public async Task<IReadOnlyList<SplitChildTicket>> GetSplitChildrenAsync(Guid parentTicketId, CancellationToken ct)
-    {
-        // Sparse index ix_tickets_split_from makes this an index-only scan.
-        // Returns id+number pairs so the banner can render clickable links to
-        // the children. Order by split_from_utc so the "Split into #A, #B"
-        // strip reads in the chronological order the agent created them.
-        const string sql = """
-            SELECT id AS Id, number AS Number FROM tickets
-            WHERE split_from_ticket_id = @parentTicketId
-              AND is_deleted = FALSE
-            ORDER BY split_from_utc NULLS LAST, number
-            """;
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        var rows = await conn.QueryAsync<SplitChildTicket>(
-            new CommandDefinition(sql, new { parentTicketId }, cancellationToken: ct));
-        return rows.ToList();
-    }
-
     public async Task<SplitResult?> SplitAsync(
         Guid sourceTicketId,
         long sourceMailEventId,
@@ -1852,42 +1947,6 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             new CommandDefinition(ensureContact, cancellationToken: ct));
         return await conn.ExecuteAsync(
             new CommandDefinition(insertTickets, new { contactId, count }, cancellationToken: ct, commandTimeout: 600));
-    }
-
-    public async Task<IReadOnlyList<LinkedChildTicket>> GetChildTicketsAsync(Guid parentTicketId, CancellationToken ct)
-    {
-        const string sql = """
-            SELECT id AS Id, number AS Number
-            FROM tickets
-            WHERE parent_ticket_id = @parentTicketId
-              AND is_deleted = FALSE
-            ORDER BY number
-            """;
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        var rows = await conn.QueryAsync<LinkedChildTicket>(
-            new CommandDefinition(sql, new { parentTicketId }, cancellationToken: ct));
-        return rows.ToList();
-    }
-
-    public async Task<ParentTicketSummary?> GetParentSummaryAsync(Guid ticketId, CancellationToken ct)
-    {
-        // Joins the parent row + the user that ran the link so the UI can
-        // render "Main ticket #X (linked by alice@…)" without a second
-        // round-trip. Returns null when this ticket has no parent.
-        const string sql = """
-            SELECT p.id           AS ParentTicketId,
-                   p.number       AS ParentNumber,
-                   u.email        AS LinkedByName,
-                   t.parent_linked_utc AS LinkedUtc
-            FROM tickets t
-            JOIN tickets p ON p.id = t.parent_ticket_id
-            LEFT JOIN users u ON u.id = t.parent_linked_by_user_id
-            WHERE t.id = @ticketId
-              AND t.parent_ticket_id IS NOT NULL
-            """;
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        return await conn.QueryFirstOrDefaultAsync<ParentTicketSummary>(
-            new CommandDefinition(sql, new { ticketId }, cancellationToken: ct));
     }
 
     public async Task<LinkParentResult> LinkParentAsync(

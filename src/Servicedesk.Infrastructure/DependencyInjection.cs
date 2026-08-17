@@ -430,6 +430,7 @@ public static class DependencyInjection
         services.AddSingleton<Realtime.ITimesheetEntryNotifier, Realtime.NullTimesheetEntryNotifier>();
         services.AddSingleton<Realtime.ITimesheetCommentNotifier, Realtime.NullTimesheetCommentNotifier>();
         services.AddSingleton<IMailAttachmentDiagnostics, MailAttachmentDiagnostics>();
+        services.AddSingleton<IMailTimelineLookup, MailTimelineLookup>();
         services.AddSingleton<IMailTimelineEnricher, MailTimelineEnricher>();
         services.AddSingleton<IMailFinalizer, MailFinalizer>();
         services.AddSingleton<IContactLookupService, ContactLookupService>();

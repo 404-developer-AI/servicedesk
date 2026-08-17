@@ -247,12 +247,9 @@ public class TriggerDryRunTests
         public Task<bool> IsTitleReviewedAsync(Guid ticketId, CancellationToken ct) => throw new NotImplementedException();
         public Task<bool> MarkTitleReviewedAsync(Guid ticketId, Guid actorUserId, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<TicketPickerHit>> SearchPickerAsync(string? search, Guid excludeTicketId, IReadOnlyCollection<Guid>? accessibleQueueIds, Guid? recentForUserId, int limit, CancellationToken ct) => throw new NotImplementedException();
-        public Task<IReadOnlyList<long>> GetMergedSourceTicketNumbersAsync(Guid targetTicketId, CancellationToken ct) => throw new NotImplementedException();
         public Task<MergeResult?> MergeAsync(Guid sourceTicketId, Guid targetTicketId, Guid actorUserId, bool acknowledgedCrossCustomer, CancellationToken ct) => throw new NotImplementedException();
-        public Task<IReadOnlyList<SplitChildTicket>> GetSplitChildrenAsync(Guid parentTicketId, CancellationToken ct) => throw new NotImplementedException();
         public Task<SplitResult?> SplitAsync(Guid sourceTicketId, long sourceMailEventId, string newSubject, Guid actorUserId, string? overrideBodyHtml, string? overrideBodyText, CancellationToken ct) => throw new NotImplementedException();
-        public Task<IReadOnlyList<LinkedChildTicket>> GetChildTicketsAsync(Guid parentTicketId, CancellationToken ct) => throw new NotImplementedException();
-        public Task<ParentTicketSummary?> GetParentSummaryAsync(Guid ticketId, CancellationToken ct) => throw new NotImplementedException();
+        public Task<TicketDetailRelations?> GetDetailRelationsAsync(Guid ticketId, CancellationToken ct) => throw new NotImplementedException();
         public Task<LinkParentResult> LinkParentAsync(Guid ticketId, Guid parentTicketId, Guid actorUserId, CancellationToken ct) => throw new NotImplementedException();
         public Task<bool> UnlinkParentAsync(Guid ticketId, Guid actorUserId, CancellationToken ct) => throw new NotImplementedException();
     }
