@@ -1014,6 +1014,13 @@ public static class SettingKeys
         // (escalation_warning).
         public const string SchedulerIntervalSeconds = "Triggers.SchedulerIntervalSeconds";
         public const string EscalationWarningMinutes = "Triggers.EscalationWarningMinutes";
+
+        /// v0.0.100 — retention (days) for `skipped_*` rows in trigger_runs.
+        /// Applied/failed rows are never swept (they are the audit trail
+        /// and the scheduler's dedup basis); skipped rows are pure
+        /// diagnostics and used to accumulate unbounded (one per ticket
+        /// per tick while a candidate re-evaluated). 0 = keep forever.
+        public const string SkippedRunRetentionDays = "Triggers.SkippedRunRetentionDays";
     }
 
     /// v0.0.35-E — Timesheet globals. Default start-tijd / dag-target /
@@ -1856,6 +1863,8 @@ public static class SettingDefaults
             "How often (seconds) the time-trigger scheduler scans for tickets whose pending-till or SLA deadline has elapsed. Lower values reduce latency but raise DB load; the floor is 15 seconds. The default of 60 mirrors a 1-minute tick which is fine-grained enough for any helpdesk SLA."),
         new SettingDefault(SettingKeys.Triggers.EscalationWarningMinutes, "30", "int", "Triggers",
             "How many minutes before the SLA deadline an 'escalation_warning' trigger fires (e.g. 30 = warn 30 minutes before breach). Has no effect on triggers using the 'reminder' or 'escalation' modes."),
+        new SettingDefault(SettingKeys.Triggers.SkippedRunRetentionDays, "30", "int", "Triggers",
+            "How many days 'skipped' trigger-run rows (skipped_no_match / skipped_loop) are kept in the run history before the scheduler sweeps them. Applied and failed runs are never swept - they are the audit trail. Skipped rows are diagnostics only and can pile up quickly on busy installs. 0 = keep forever. Clamped to 0-3650."),
 
         // Timesheet — v0.0.35-E. Global defaults that drive the Tab-1
         // start-prefill and the Tab-3 target colour-coding. Every Timesheet

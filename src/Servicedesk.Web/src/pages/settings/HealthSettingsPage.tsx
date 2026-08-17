@@ -5,22 +5,19 @@ import { toast } from "sonner";
 import {
   ApiError,
   healthApi,
-  settingsApi,
   type HealthStatus,
   type IncidentRow,
-  type SettingEntry,
   type SubsystemHealth,
 } from "@/lib/api";
 import { pollIntervalMs } from "@/lib/healthPolling";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { SettingField } from "@/components/settings/SettingField";
+import { CollapsibleSettingsCard } from "@/components/settings/CollapsibleSettingsCard";
 
 const HEALTH_QUERY_KEY = ["admin", "health"] as const;
 const INCIDENTS_QUERY_KEY = ["admin", "health", "incidents"] as const;
 const ARCHIVE_QUERY_KEY = ["admin", "health", "incidents", "archive"] as const;
-const HEALTH_SETTINGS_QUERY_KEY = ["settings", "list", "Health"] as const;
 // Re-using the dashboard pill's key so resetting refreshes both views.
 const PILL_QUERY_KEY = ["system", "health"] as const;
 
@@ -152,13 +149,15 @@ export function HealthSettingsPage() {
         ) : null}
       </header>
 
-      <HealthSettingsCard
+      <CollapsibleSettingsCard
+        category="Health"
         icon={<RadioTower className="h-5 w-5" />}
         title="Polling & report cache"
         description="How often open tabs re-poll the health status, and how long the server reuses a computed report so simultaneous polls from many tabs share one evaluation instead of each running dozens of queries. Admin actions on this page always refresh immediately."
         keys={POLLING_SETTINGS}
       />
-      <HealthSettingsCard
+      <CollapsibleSettingsCard
+        category="Health"
         icon={<ShieldAlert className="h-5 w-5" />}
         title="Security activity monitoring"
         description="Thresholds and timing for the security-activity subsystem. Counts are sampled from the audit log on a rolling window; breaching a threshold raises a Health incident and pushes a notification to every active Admin."
@@ -192,76 +191,6 @@ export function HealthSettingsPage() {
         </div>
       ) : null}
     </div>
-  );
-}
-
-function HealthSettingsCard({
-  icon,
-  title,
-  description,
-  keys,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  keys: ReadonlyArray<{ key: string; label: string }>;
-}) {
-  const [open, setOpen] = React.useState(false);
-  const settings = useQuery({
-    queryKey: HEALTH_SETTINGS_QUERY_KEY,
-    queryFn: () => settingsApi.list("Health"),
-    enabled: open,
-  });
-
-  const entriesByKey = React.useMemo(() => {
-    const m = new Map<string, SettingEntry>();
-    for (const e of settings.data ?? []) m.set(e.key, e);
-    return m;
-  }, [settings.data]);
-
-  return (
-    <section className="rounded-lg border border-glass-strong bg-glass">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-3 px-5 py-4 text-left"
-      >
-        <div className="rounded-md bg-glass p-2 text-primary">{icon}</div>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-          <p className="text-xs text-muted-foreground">{description}</p>
-        </div>
-        {open ? (
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-        )}
-      </button>
-      {open ? (
-        <div className="border-t border-glass px-5 py-4">
-          {settings.isLoading ? (
-            <Skeleton className="h-24 w-full" />
-          ) : settings.isError ? (
-            <p className="text-sm text-muted-foreground">Failed to load settings.</p>
-          ) : (
-            <div className="flex flex-col">
-              {keys.map(({ key, label }) => {
-                const entry = entriesByKey.get(key);
-                if (!entry) return null;
-                return (
-                  <SettingField
-                    key={key}
-                    entry={entry}
-                    queryKey={HEALTH_SETTINGS_QUERY_KEY}
-                    label={label}
-                  />
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ) : null}
-    </section>
   );
 }
 

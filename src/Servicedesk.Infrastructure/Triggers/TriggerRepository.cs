@@ -382,13 +382,38 @@ public sealed class TriggerRepository : ITriggerRepository
                       AND tre.fired_utc >= t.pending_till_utc
                   )
             )
-            ORDER BY BoundaryUtc
+            -- v0.0.100: TicketId as tie-break keeps one ticket's pairs
+            -- adjacent, so the scheduler's per-ticket "nothing applied →
+            -- clear pending_till" bookkeeping sees a whole ticket per
+            -- batch (only the last ticket of a full batch can be split).
+            ORDER BY BoundaryUtc, TicketId
             LIMIT @limit
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var rows = await conn.QueryAsync<TriggerScheduleCandidate>(new CommandDefinition(
             sql, new { limit }, cancellationToken: ct));
         return rows.ToList();
+    }
+
+    public async Task<int> DeleteSkippedRunsOlderThanAsync(DateTime cutoffUtc, int batchSize, CancellationToken ct)
+    {
+        // Batched by primary key so a multi-million-row backlog (the
+        // pre-v0.0.100 eternal-candidate leak) is swept in short
+        // transactions instead of one table-locking DELETE. The partial
+        // index ix_trigger_runs_skipped_fired makes the inner SELECT an
+        // index range scan.
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.ExecuteAsync(new CommandDefinition(
+            """
+            DELETE FROM trigger_runs
+             WHERE id IN (
+                 SELECT id FROM trigger_runs
+                  WHERE outcome IN ('skipped_no_match', 'skipped_loop')
+                    AND fired_utc < @cutoffUtc
+                  LIMIT @batchSize
+             )
+            """,
+            new { cutoffUtc, batchSize }, cancellationToken: ct));
     }
 
     public async Task<IReadOnlyList<TriggerScheduleCandidate>> ListEscalationCandidatesAsync(

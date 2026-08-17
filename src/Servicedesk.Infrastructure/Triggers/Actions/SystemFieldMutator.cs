@@ -122,12 +122,17 @@ internal sealed class SystemFieldMutator
         };
         if (toCategory == "Resolved") sets.Add("resolved_utc = COALESCE(resolved_utc, now())");
         if (toCategory == "Closed") sets.Add("closed_utc = COALESCE(closed_utc, now())");
-        // Leaving Pending wipes the reminder (and its chained trigger
-        // pointer), mirroring the manual-edit auto-clear in
-        // TicketRepository.UpdateFieldsAsync. A trigger that flips a
-        // pending ticket back to Open (e.g. on customer reply) must not
-        // leave a stale pending_till_utc behind.
-        if (fromCategory == "Pending" && toCategory != "Pending")
+        // Any non-Pending target wipes the reminder (and its chained
+        // trigger pointer), mirroring the manual-edit auto-clear in
+        // TicketRepository.UpdateFieldsAsync. v0.0.100: this used to be
+        // gated on *leaving* Pending (fromCategory == "Pending"), which
+        // leaked a stale pending_till_utc whenever a `set_pending_till`
+        // action had armed a timer on a non-Pending ticket and a later
+        // trigger closed/resolved it — the scheduler then re-evaluated
+        // that ticket every tick forever (86K trigger_runs rows per
+        // ticket in production). Invariant now: pending_till_utc is only
+        // ever non-null on a Pending-category ticket.
+        if (toCategory != "Pending")
         {
             sets.Add("pending_till_utc = NULL");
             sets.Add("pending_till_next_trigger_id = NULL");
@@ -249,6 +254,34 @@ internal sealed class SystemFieldMutator
                AND pending_till_utc = @boundaryUtc
             """,
             new { ticketId, triggerId, boundaryUtc }, cancellationToken: ct));
+    }
+
+    /// v0.0.100 — wide-branch counterpart of
+    /// <see cref="ClearChainedReminderStateAsync"/>: once a tick has
+    /// evaluated every reminder trigger against an elapsed ticket and
+    /// none of them applied, the elapsed <c>pending_till_utc</c> is
+    /// wiped so the ticket stops being a candidate. Before this the
+    /// scheduler re-loaded and re-evaluated such tickets every tick
+    /// indefinitely (a "skipped_no_match" run row per minute per ticket
+    /// — 1.5 GB of trigger_runs on one install). The optimistic
+    /// <c>pending_till_utc = @boundaryUtc</c> guard preserves any re-arm
+    /// that happened in between (agent or trigger set a new value).
+    /// Returns true when the row was actually cleared.
+    public async Task<bool> ClearElapsedReminderAsync(
+        Guid ticketId, DateTime boundaryUtc, CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var affected = await conn.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE tickets
+               SET pending_till_utc = NULL,
+                   pending_till_next_trigger_id = NULL,
+                   updated_utc = now()
+             WHERE id = @ticketId
+               AND pending_till_utc = @boundaryUtc
+            """,
+            new { ticketId, boundaryUtc }, cancellationToken: ct));
+        return affected > 0;
     }
 }
 

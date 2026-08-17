@@ -74,6 +74,12 @@ public interface ITriggerRepository
     /// row only when the new warning moment also lands in the past.
     Task<IReadOnlyList<TriggerScheduleCandidate>> ListEscalationWarningCandidatesAsync(
         int warningMinutes, int limit, CancellationToken ct);
+
+    /// v0.0.100 — retention sweep: deletes up to <paramref name="batchSize"/>
+    /// <c>skipped_*</c> run rows fired before <paramref name="cutoffUtc"/>.
+    /// Applied/failed rows are never touched. Returns rows deleted; the
+    /// caller loops until 0 (or its per-tick budget is spent).
+    Task<int> DeleteSkippedRunsOlderThanAsync(DateTime cutoffUtc, int batchSize, CancellationToken ct);
 }
 
 /// What the evaluator persists to the <c>trigger_runs</c> append-only

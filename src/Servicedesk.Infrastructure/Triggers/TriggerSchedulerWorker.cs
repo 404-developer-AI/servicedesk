@@ -18,9 +18,29 @@ namespace Servicedesk.Infrastructure.Triggers;
 /// run row past the relevant boundary. Skipped_no_match runs do not
 /// dedup — a trigger whose conditions weren't met yet should re-evaluate
 /// when the ticket changes shape.
+/// <para>
+/// v0.0.100 — reminders no longer re-evaluate forever: once a tick has
+/// run every reminder trigger against an elapsed ticket and none applied,
+/// the elapsed <c>pending_till_utc</c> is cleared (optimistically guarded
+/// on the boundary so a re-arm wins). Before this a ticket whose reminder
+/// could never match (e.g. closed via a path that leaked the timer) was
+/// reloaded, evaluated and logged every single tick — 86K
+/// <c>skipped_no_match</c> rows per ticket and 1.5 GB of trigger_runs on
+/// one install. The same tick also runs the skipped-run retention sweep
+/// (<c>Triggers.SkippedRunRetentionDays</c>).
+/// </para>
 public sealed class TriggerSchedulerWorker : BackgroundService
 {
     private const int CandidateLimit = 500;
+
+    // Retention sweep budget: 25 batches × 20K rows per pass. A pass
+    // that hits the cap re-runs on the next tick (drains a multi-million
+    // backlog in minutes without one long-lived DELETE); an idle pass
+    // re-checks hourly.
+    private const int SweepBatchSize = 20_000;
+    private const int SweepMaxBatchesPerPass = 25;
+    private static readonly TimeSpan SweepIdleInterval = TimeSpan.FromHours(1);
+    internal DateTime NextSweepUtc { get; private set; } = DateTime.MinValue;
 
     private readonly IServiceProvider _sp;
     private readonly ILogger<TriggerSchedulerWorker> _logger;
@@ -91,24 +111,35 @@ public sealed class TriggerSchedulerWorker : BackgroundService
         }
     }
 
-    private static async Task TickAsync(IServiceProvider sp, CancellationToken ct)
+    private async Task TickAsync(IServiceProvider sp, CancellationToken ct)
     {
         var repo = sp.GetRequiredService<ITriggerRepository>();
         var triggerService = sp.GetRequiredService<ITriggerService>();
         var settings = sp.GetRequiredService<ISettingsService>();
         var mutator = sp.GetRequiredService<SystemFieldMutator>();
 
-        // Reminder candidates: pending-till elapsed. The repository
-        // returns chained candidates (`IsChainedReminder = true`) ahead
-        // of wide-scan ones for ergonomics. Chained-pointer state is
-        // cleared only on Applied/Failed — a SkippedNoMatch keeps the
-        // pointer + pending_till in place so the next tick can re-
-        // evaluate against possibly-changed ticket state. The clear
-        // method also wipes pending_till_utc (under an optimistic guard
-        // so a chained re-arm via set_pending_till is preserved),
-        // which prevents the wide branch from picking the ticket back
-        // up after the chain is consumed.
+        await RunRemindersAsync(repo, triggerService, mutator, ct);
+        await RunEscalationsAsync(repo, triggerService, settings, ct);
+        await SweepSkippedRunsAsync(repo, settings, ct);
+    }
+
+    /// Reminder candidates: pending-till elapsed. Candidates arrive ordered
+    /// by (boundary, ticket) so one ticket's (ticket, trigger) pairs are
+    /// adjacent; we track per ticket whether anything applied and clear
+    /// the elapsed pending_till_utc when nothing did. The last ticket of a
+    /// *full* batch may have been cut off by the LIMIT (its remaining
+    /// pairs come next tick), so it is deliberately not cleared yet.
+    /// Chained candidates keep their own clear path (pointer + boundary).
+    private static async Task RunRemindersAsync(
+        ITriggerRepository repo, ITriggerService triggerService, SystemFieldMutator mutator, CancellationToken ct)
+    {
         var reminders = await repo.ListReminderCandidatesAsync(CandidateLimit, ct);
+        if (reminders.Count == 0) return;
+
+        var batchIsFull = reminders.Count >= CandidateLimit;
+        var lastTicketId = reminders[^1].TicketId;
+
+        var evaluated = new List<ReminderEvaluation>(reminders.Count);
         foreach (var c in reminders)
         {
             if (ct.IsCancellationRequested) return;
@@ -119,7 +150,53 @@ public sealed class TriggerSchedulerWorker : BackgroundService
                 await mutator.ClearChainedReminderStateAsync(
                     c.TicketId, c.TriggerId, c.BoundaryUtc, ct);
             }
+            evaluated.Add(new ReminderEvaluation(c.TicketId, c.BoundaryUtc, result.Outcome));
         }
+
+        foreach (var (ticketId, boundary) in ResolveElapsedClears(evaluated, batchIsFull, lastTicketId))
+        {
+            if (ct.IsCancellationRequested) return;
+            await mutator.ClearElapsedReminderAsync(ticketId, boundary, ct);
+        }
+    }
+
+    internal readonly record struct ReminderEvaluation(Guid TicketId, DateTime BoundaryUtc, TriggerRunOutcome? Outcome);
+
+    /// Pure decision: which tickets get their elapsed pending_till_utc
+    /// cleared after a reminder pass. A ticket is cleared when none of its
+    /// evaluated pairs applied; the last ticket of a full batch is skipped
+    /// (its remaining pairs may be in the next batch). Order-preserving.
+    internal static IReadOnlyList<(Guid TicketId, DateTime BoundaryUtc)> ResolveElapsedClears(
+        IReadOnlyList<ReminderEvaluation> evaluated, bool batchIsFull, Guid lastTicketId)
+    {
+        var order = new List<Guid>();
+        var perTicket = new Dictionary<Guid, (DateTime Boundary, bool Applied)>();
+        foreach (var e in evaluated)
+        {
+            var applied = e.Outcome == TriggerRunOutcome.Applied;
+            if (perTicket.TryGetValue(e.TicketId, out var seen))
+                perTicket[e.TicketId] = (seen.Boundary, seen.Applied || applied);
+            else
+            {
+                perTicket[e.TicketId] = (e.BoundaryUtc, applied);
+                order.Add(e.TicketId);
+            }
+        }
+
+        var clears = new List<(Guid, DateTime)>();
+        foreach (var ticketId in order)
+        {
+            var state = perTicket[ticketId];
+            if (state.Applied) continue;
+            if (batchIsFull && ticketId == lastTicketId) continue;
+            clears.Add((ticketId, state.Boundary));
+        }
+        return clears;
+    }
+
+    private static async Task RunEscalationsAsync(
+        ITriggerRepository repo, ITriggerService triggerService, ISettingsService settings, CancellationToken ct)
+    {
 
         // Escalation candidates: SLA deadline elapsed.
         var escalations = await repo.ListEscalationCandidatesAsync(CandidateLimit, ct);
@@ -140,6 +217,43 @@ public sealed class TriggerSchedulerWorker : BackgroundService
             if (ct.IsCancellationRequested) return;
             await triggerService.EvaluateScheduledAsync(
                 c.TriggerId, c.TicketId, c.BoundaryUtc, "escalation_warning", ct);
+        }
+    }
+
+    /// v0.0.100 — sweeps skipped_* run rows older than the retention
+    /// window in bounded batches. Runs hourly when idle; a pass that
+    /// exhausts its batch budget re-runs on the very next tick so a
+    /// large backlog drains quickly without a single long DELETE.
+    internal async Task SweepSkippedRunsAsync(ITriggerRepository repo, ISettingsService settings, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        if (now < NextSweepUtc) return;
+
+        var days = Math.Clamp(await settings.GetAsync<int>(SettingKeys.Triggers.SkippedRunRetentionDays, ct), 0, 3650);
+        if (days == 0)
+        {
+            NextSweepUtc = now + SweepIdleInterval;
+            return;
+        }
+
+        var cutoff = now.AddDays(-days);
+        var deleted = 0;
+        var batches = 0;
+        while (batches < SweepMaxBatchesPerPass && !ct.IsCancellationRequested)
+        {
+            var n = await repo.DeleteSkippedRunsOlderThanAsync(cutoff, SweepBatchSize, ct);
+            deleted += n;
+            batches++;
+            if (n < SweepBatchSize) break;
+        }
+
+        var hitCap = batches >= SweepMaxBatchesPerPass && deleted >= SweepBatchSize * SweepMaxBatchesPerPass;
+        NextSweepUtc = hitCap ? DateTime.MinValue : now + SweepIdleInterval;
+        if (deleted > 0)
+        {
+            _logger.LogInformation(
+                "Trigger run retention: swept {Deleted} skipped run rows older than {Days} days{More}.",
+                deleted, days, hitCap ? " (backlog remains, continuing next tick)" : string.Empty);
         }
     }
 }
