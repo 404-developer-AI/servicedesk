@@ -410,7 +410,8 @@ public sealed class HealthAggregatorTests
             tlsCert ?? new StubTlsCertReader(null),
             certRenewal ?? new StubCertRenewalTrigger(null),
             Options.Create(tlsOptions ?? new TlsCertHealthOptions()),
-            securityActivity ?? new InMemorySecurityActivitySnapshot());
+            securityActivity ?? new InMemorySecurityActivitySnapshot(),
+            new Servicedesk.Infrastructure.Retention.RetentionHealth());
 
     private sealed class StubIncidentLog : IIncidentLog
     {

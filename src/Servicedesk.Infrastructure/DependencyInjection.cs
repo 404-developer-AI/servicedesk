@@ -16,6 +16,7 @@ using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Activity;
+using Servicedesk.Infrastructure.Retention;
 using Servicedesk.Infrastructure.Persistence.ViewGroups;
 using Servicedesk.Infrastructure.Persistence.Views;
 using Servicedesk.Infrastructure.Health;
@@ -123,6 +124,8 @@ public static class DependencyInjection
         services.AddSingleton<IActivityFeedQuery, ActivityFeedQuery>();
         services.AddHostedService<ActivityListenerWorker>();
         services.AddHostedService<ActivityRetentionWorker>();
+        services.AddSingleton<IRetentionHealth, RetentionHealth>();
+        services.AddHostedService<RetentionWorker>();
         // IAgentActivityBroadcaster is registered in the API project
         // (Program.cs) because the implementation lives there — it needs
         // IHubContext<TicketPresenceHub> and the hub's static presence

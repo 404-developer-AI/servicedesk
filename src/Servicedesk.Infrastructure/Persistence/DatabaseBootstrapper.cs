@@ -313,9 +313,15 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- exist yet on first read, but there are no historical tickets to
         -- backfill either — so we skip the UPDATE until a subsequent run
         -- (when contact_companies is present) picks it up.
+        -- v0.0.101: settings-sentinel so the UPDATE (a full scan of tickets —
+        -- IS NULL is not indexable) runs once, not on every boot. The marker
+        -- is only written once the UPDATE has actually run (contact_companies
+        -- present), so a fresh install picks the backfill up on its second
+        -- start and then stops as well.
         DO $$ BEGIN
-            IF EXISTS (SELECT 1 FROM information_schema.tables
-                       WHERE table_schema = 'public' AND table_name = 'contact_companies') THEN
+            IF NOT EXISTS (SELECT 1 FROM settings WHERE key = 'Bootstrap.TicketCompanyBackfilled')
+               AND EXISTS (SELECT 1 FROM information_schema.tables
+                           WHERE table_schema = 'public' AND table_name = 'contact_companies') THEN
                 UPDATE tickets t
                 SET company_id = cc.company_id,
                     company_resolved_via = 'primary'
@@ -323,6 +329,11 @@ public sealed class DatabaseBootstrapper : IHostedService
                 WHERE cc.contact_id = t.requester_contact_id
                   AND cc.role = 'primary'
                   AND t.company_id IS NULL;
+                INSERT INTO settings (key, value, value_type, category, description, default_value, updated_utc)
+                    VALUES ('Bootstrap.TicketCompanyBackfilled', 'true', 'bool', 'Bootstrap',
+                            'Internal marker: tickets.company_id was backfilled from the requester''s primary company (v0.0.9). Delete the row to re-run the backfill on the next start.',
+                            'true', now())
+                    ON CONFLICT (key) DO NOTHING;
             END IF;
         END $$;
 
@@ -744,9 +755,13 @@ public sealed class DatabaseBootstrapper : IHostedService
         ALTER TABLE attachments
             ADD COLUMN IF NOT EXISTS processing_state TEXT NOT NULL DEFAULT 'Ready';
 
+        -- v0.0.101: NOT VALID — the drop+recreate runs on every boot and a
+        -- validating ADD CONSTRAINT scans the whole table each time; existing
+        -- rows have been validated by every previous boot, new writes are
+        -- still enforced. Same for the other recreated CHECKs below.
         ALTER TABLE attachments DROP CONSTRAINT IF EXISTS chk_attachments_processing_state;
         ALTER TABLE attachments ADD CONSTRAINT chk_attachments_processing_state
-            CHECK (processing_state IN ('Pending','Stored','Ready','Failed'));
+            CHECK (processing_state IN ('Pending','Stored','Ready','Failed')) NOT VALID;
 
         -- Hot path for the worker: find pending attachments by age.
         CREATE INDEX IF NOT EXISTS ix_attachments_pending
@@ -772,7 +787,7 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- attempt history (attempts stay; the job row flips to terminal state).
         ALTER TABLE attachment_jobs DROP CONSTRAINT IF EXISTS chk_attachment_jobs_state;
         ALTER TABLE attachment_jobs ADD CONSTRAINT chk_attachment_jobs_state
-            CHECK (state IN ('Pending','Running','Succeeded','Failed','DeadLettered','Cancelled'));
+            CHECK (state IN ('Pending','Running','Succeeded','Failed','DeadLettered','Cancelled')) NOT VALID;
 
         -- ===================================================================
         -- Observability — incident log (Warning/Critical events captured from
@@ -933,16 +948,28 @@ public sealed class DatabaseBootstrapper : IHostedService
             AFTER INSERT OR UPDATE OF body_text, body_html ON ticket_events
             FOR EACH ROW EXECUTE FUNCTION ticket_event_search_fill();
 
-        -- Backfill events that predate this trigger. Safe to re-run.
-        INSERT INTO ticket_event_search (event_id, ticket_id, normalized_text)
-        SELECT e.id, e.ticket_id,
-               lower(
-                   coalesce(e.body_text, '') || ' ' ||
-                   regexp_replace(coalesce(e.body_html, ''), '<[^>]*>', ' ', 'g')
-               )
-        FROM ticket_events e
-        LEFT JOIN ticket_event_search s ON s.event_id = e.id
-        WHERE s.event_id IS NULL;
+        -- Backfill events that predate this trigger. Safe to re-run — but
+        -- v0.0.101 gates it behind a settings-sentinel: once done it was a
+        -- permanent anti-join over all of ticket_events (10M rows at the
+        -- design target) on every boot. Delete the marker row to re-run.
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM settings WHERE key = 'Bootstrap.TicketEventSearchBackfilled') THEN
+                INSERT INTO ticket_event_search (event_id, ticket_id, normalized_text)
+                SELECT e.id, e.ticket_id,
+                       lower(
+                           coalesce(e.body_text, '') || ' ' ||
+                           regexp_replace(coalesce(e.body_html, ''), '<[^>]*>', ' ', 'g')
+                       )
+                FROM ticket_events e
+                LEFT JOIN ticket_event_search s ON s.event_id = e.id
+                WHERE s.event_id IS NULL;
+                INSERT INTO settings (key, value, value_type, category, description, default_value, updated_utc)
+                    VALUES ('Bootstrap.TicketEventSearchBackfilled', 'true', 'bool', 'Bootstrap',
+                            'Internal marker: ticket_event_search was backfilled for events predating the fill trigger. Delete the row to re-run the backfill on the next start.',
+                            'true', now())
+                    ON CONFLICT (key) DO NOTHING;
+            END IF;
+        END $$;
 
         -- Mail-scoped FTS: subject + body_text + sender identity.
         ALTER TABLE mail_messages
@@ -1074,7 +1101,7 @@ public sealed class DatabaseBootstrapper : IHostedService
 
         ALTER TABLE companies DROP CONSTRAINT IF EXISTS chk_companies_alert_mode;
         ALTER TABLE companies ADD CONSTRAINT chk_companies_alert_mode
-            CHECK (alert_on_open_mode IN ('session','every'));
+            CHECK (alert_on_open_mode IN ('session','every')) NOT VALID;
 
         CREATE UNIQUE INDEX IF NOT EXISTS ux_companies_code ON companies (code);
 
@@ -1571,7 +1598,7 @@ public sealed class DatabaseBootstrapper : IHostedService
 
         ALTER TABLE tickets DROP CONSTRAINT IF EXISTS chk_ticket_source;
         ALTER TABLE tickets ADD CONSTRAINT chk_ticket_source
-            CHECK (source IN ('Web','Mail','Api','System','Split','Zammad'));
+            CHECK (source IN ('Web','Mail','Api','System','Split','Zammad')) NOT VALID;
 
         -- v0.0.24 triggers Blok 3: per-ticket pending-till timestamp written by
         -- the set_pending_till action and consumed by the Blok 5 scheduler
@@ -2156,7 +2183,7 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- narrower constraint that an existing row would violate.
         ALTER TABLE attachments DROP CONSTRAINT IF EXISTS chk_attachments_owner_kind;
         ALTER TABLE attachments ADD CONSTRAINT chk_attachments_owner_kind
-            CHECK (owner_kind IN ('Mail','Ticket','User','KbArticle','FeedbackEntry','ComposeTemplateImage'));
+            CHECK (owner_kind IN ('Mail','Ticket','User','KbArticle','FeedbackEntry','ComposeTemplateImage')) NOT VALID;
 
         CREATE TABLE IF NOT EXISTS kb_locales (
             code            TEXT        PRIMARY KEY,
@@ -3040,10 +3067,22 @@ public sealed class DatabaseBootstrapper : IHostedService
             ADD COLUMN IF NOT EXISTS ticket_type_id UUID NULL
                 REFERENCES ticket_types(id) ON DELETE RESTRICT;
 
-        UPDATE tickets t
-        SET ticket_type_id = tt.id
-        FROM ticket_types tt
-        WHERE t.ticket_type_id IS NULL AND tt.code = 'support';
+        -- v0.0.101: sentinel-gated — after the first run the column is NOT
+        -- NULL so the UPDATE matched nothing, but still scanned all tickets
+        -- on every boot (IS NULL is not indexable).
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM settings WHERE key = 'Bootstrap.TicketTypeBackfilled') THEN
+                UPDATE tickets t
+                SET ticket_type_id = tt.id
+                FROM ticket_types tt
+                WHERE t.ticket_type_id IS NULL AND tt.code = 'support';
+                INSERT INTO settings (key, value, value_type, category, description, default_value, updated_utc)
+                    VALUES ('Bootstrap.TicketTypeBackfilled', 'true', 'bool', 'Bootstrap',
+                            'Internal marker: tickets.ticket_type_id was backfilled to the support type (v0.0.39). Delete the row to re-run the backfill on the next start.',
+                            'true', now())
+                    ON CONFLICT (key) DO NOTHING;
+            END IF;
+        END $$;
 
         ALTER TABLE tickets ALTER COLUMN ticket_type_id SET NOT NULL;
 
@@ -3943,7 +3982,7 @@ public sealed class DatabaseBootstrapper : IHostedService
         ALTER TABLE timesheet_bo_checks DROP CONSTRAINT IF EXISTS timesheet_bo_checks_ticket_id_fkey;
         ALTER TABLE timesheet_bo_checks DROP CONSTRAINT IF EXISTS chk_timesheet_bo_checks_context;
         ALTER TABLE timesheet_bo_checks ADD CONSTRAINT chk_timesheet_bo_checks_context
-            CHECK (context IN ('resolved','cwi','adsolut'));
+            CHECK (context IN ('resolved','cwi','adsolut')) NOT VALID;
         CREATE INDEX IF NOT EXISTS ix_timesheet_bo_checks_context
             ON timesheet_bo_checks (context, entity_id);
 
@@ -5286,13 +5325,24 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- Idempotent: once the event carries the full text the length guard
         -- no longer selects the row. The ticket_event_search trigger fires
         -- on UPDATE OF body_text, refreshing the search sidecar per row.
-        UPDATE ticket_events e
-        SET    body_text = m.body_text
-        FROM   mail_messages m
-        WHERE  m.ticket_event_id = e.id
-          AND  e.event_type = 'MailReceived'
-          AND  coalesce(e.body_html, '') = ''
-          AND  length(m.body_text) > length(coalesce(e.body_text, ''));
+        -- v0.0.101: sentinel-gated — the join scanned ticket_events ×
+        -- mail_messages on every boot once it had nothing left to repair.
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM settings WHERE key = 'Bootstrap.MailBodyTextRepaired') THEN
+                UPDATE ticket_events e
+                SET    body_text = m.body_text
+                FROM   mail_messages m
+                WHERE  m.ticket_event_id = e.id
+                  AND  e.event_type = 'MailReceived'
+                  AND  coalesce(e.body_html, '') = ''
+                  AND  length(m.body_text) > length(coalesce(e.body_text, ''));
+                INSERT INTO settings (key, value, value_type, category, description, default_value, updated_utc)
+                    VALUES ('Bootstrap.MailBodyTextRepaired', 'true', 'bool', 'Bootstrap',
+                            'Internal marker: text-only MailReceived events were repaired from mail_messages.body_text (v0.0.94). Delete the row to re-run the repair on the next start.',
+                            'true', now())
+                    ON CONFLICT (key) DO NOTHING;
+            END IF;
+        END $$;
 
         -- ===================================================================
         -- v0.0.96 Reporting API — closed-moment index

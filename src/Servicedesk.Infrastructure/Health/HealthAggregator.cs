@@ -39,6 +39,7 @@ public sealed class HealthAggregator : IHealthAggregator
     private readonly ICertRenewalTrigger _certRenewal;
     private readonly IOptions<TlsCertHealthOptions> _tlsOptions;
     private readonly ISecurityActivitySnapshot _securityActivity;
+    private readonly Retention.IRetentionHealth _retention;
 
     public HealthAggregator(
         IQueueInboundMailboxRepository sources,
@@ -50,8 +51,10 @@ public sealed class HealthAggregator : IHealthAggregator
         ITlsCertReader tlsCert,
         ICertRenewalTrigger certRenewal,
         IOptions<TlsCertHealthOptions> tlsOptions,
-        ISecurityActivitySnapshot securityActivity)
+        ISecurityActivitySnapshot securityActivity,
+        Retention.IRetentionHealth retention)
     {
+        _retention = retention;
         _sources = sources;
         _taxonomy = taxonomy;
         _secrets = secrets;
@@ -80,11 +83,58 @@ public sealed class HealthAggregator : IHealthAggregator
             ApplyIncidents(BuildBlobStore(), openIncidents),
             ApplyIncidents(BuildTlsCert(), openIncidents),
             ApplyIncidents(BuildSecurityActivity(), openIncidents),
+            ApplyIncidents(BuildDataRetention(), openIncidents),
         };
 
         var rollup = subsystems.Aggregate(HealthStatus.Ok,
             (acc, s) => s.Status > acc ? s.Status : acc);
         return new HealthReport(rollup, subsystems);
+    }
+
+    /// v0.0.101 — the generic housekeeping sweep (RetentionWorker). Warning
+    /// when the last sweep threw; otherwise informational (last run, rows
+    /// pruned per table, next run). Settings live under Settings → Health →
+    /// Data retention.
+    private SubsystemHealth BuildDataRetention()
+    {
+        var snap = _retention.Snapshot();
+        var details = new List<HealthDetail>();
+
+        if (snap.LastRunUtc is { } last)
+        {
+            var pruned = snap.LastDeletedPerTable.Count == 0
+                ? "nothing to prune"
+                : string.Join(", ", snap.LastDeletedPerTable.Where(kv => kv.Value > 0).Select(kv => $"{kv.Key}: {kv.Value}"));
+            if (string.IsNullOrEmpty(pruned)) pruned = "nothing to prune";
+            details.Add(new HealthDetail("Last sweep", $"{last:u} ({snap.LastDuration?.TotalSeconds:0.#} s) — {pruned}."));
+            details.Add(new HealthDetail("Rows pruned since start", snap.TotalDeletedSinceStart.ToString()));
+        }
+        else
+        {
+            details.Add(new HealthDetail("Last sweep", "Not run yet (first sweep 2 minutes after start)."));
+        }
+        if (snap.NextRunUtc is { } next)
+            details.Add(new HealthDetail("Next sweep", next.ToString("u")));
+
+        if (snap.LastError is not null)
+        {
+            details.Add(new HealthDetail("Last error", $"{snap.LastErrorUtc:u}: {snap.LastError}"));
+            return new SubsystemHealth(
+                Key: "data-retention",
+                Label: "Data retention",
+                Status: HealthStatus.Warning,
+                Summary: "The last retention sweep failed — housekeeping tables keep growing until it succeeds.",
+                Details: details,
+                Actions: Array.Empty<HealthAction>());
+        }
+
+        return new SubsystemHealth(
+            Key: "data-retention",
+            Label: "Data retention",
+            Status: HealthStatus.Ok,
+            Summary: "Housekeeping sweep healthy.",
+            Details: details,
+            Actions: Array.Empty<HealthAction>());
     }
 
     private static SubsystemHealth ApplyIncidents(
