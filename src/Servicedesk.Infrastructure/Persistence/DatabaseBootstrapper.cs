@@ -384,8 +384,8 @@ public sealed class DatabaseBootstrapper : IHostedService
             CONSTRAINT uq_event_revision UNIQUE (event_id, revision_number)
         );
 
-        CREATE INDEX IF NOT EXISTS ix_event_revisions_event_id
-            ON ticket_event_revisions (event_id, revision_number);
+        -- (ix_event_revisions_event_id used to live here — identical to the
+        -- uq_event_revision backing index; dropped in v0.0.101.)
 
         -- ===================================================================
         -- v0.0.6 saved views
@@ -846,8 +846,8 @@ public sealed class DatabaseBootstrapper : IHostedService
             CONSTRAINT uq_holidays_schema_date UNIQUE (schema_id, holiday_date)
         );
 
-        CREATE INDEX IF NOT EXISTS ix_holidays_schema_date
-            ON holidays (schema_id, holiday_date);
+        -- (ix_holidays_schema_date used to live here — identical to the
+        -- uq_holidays_schema_date backing index; dropped in v0.0.101.)
 
         CREATE TABLE IF NOT EXISTS sla_policies (
             id                          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2237,8 +2237,8 @@ public sealed class DatabaseBootstrapper : IHostedService
                 UNIQUE (section_id, locale_code)
         );
 
-        CREATE INDEX IF NOT EXISTS ix_kb_section_translations_section
-            ON kb_section_translations (section_id);
+        -- (ix_kb_section_translations_section used to live here — a prefix
+        -- of ux_kb_section_translations_section_locale; dropped in v0.0.101.)
 
         CREATE TABLE IF NOT EXISTS kb_articles (
             id                              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2308,8 +2308,8 @@ public sealed class DatabaseBootstrapper : IHostedService
             ON kb_article_translations USING GIN (search_vector);
         CREATE INDEX IF NOT EXISTS ix_kb_article_translations_title_trgm
             ON kb_article_translations USING GIN ((lower(title)) gin_trgm_ops);
-        CREATE INDEX IF NOT EXISTS ix_kb_article_translations_article
-            ON kb_article_translations (article_id);
+        -- (ix_kb_article_translations_article used to live here — a prefix
+        -- of ux_kb_article_translations_article_locale; dropped in v0.0.101.)
 
         -- Seed a single root section "General" so a fresh install lands on
         -- a non-empty /kb landing page. Admin renames or deletes as needed.
@@ -4794,8 +4794,8 @@ public sealed class DatabaseBootstrapper : IHostedService
             synced_utc   TIMESTAMPTZ NOT NULL DEFAULT now(),
             PRIMARY KEY (company_id, object_id)
         );
-        CREATE INDEX IF NOT EXISTS ix_m365_mailboxes_company
-            ON m365_mailboxes (company_id);
+        -- (ix_m365_mailboxes_company used to live here — a prefix of the PK;
+        -- dropped in v0.0.101.)
         -- v0.0.93 — trigram indexes for the global-search ILIKE probes.
         CREATE INDEX IF NOT EXISTS ix_m365_mailboxes_display_name_trgm
             ON m365_mailboxes USING GIN (display_name gin_trgm_ops);
@@ -4989,8 +4989,8 @@ public sealed class DatabaseBootstrapper : IHostedService
             synced_utc               TIMESTAMPTZ NOT NULL DEFAULT now(),
             PRIMARY KEY (company_id, match_key)
         );
-        CREATE INDEX IF NOT EXISTS ix_veeam_backups_company
-            ON veeam_backups (company_id);
+        -- (ix_veeam_backups_company used to live here — a prefix of the PK;
+        -- dropped in v0.0.101.)
 
         -- Singleton global sync state (one row, id = 1). content_hash lets a
         -- tick cheaply detect "nothing changed" and record last_checked without
@@ -5063,8 +5063,8 @@ public sealed class DatabaseBootstrapper : IHostedService
             created_by        UUID        NULL,
             PRIMARY KEY (parent_company_id, vspc_company_uid)
         );
-        CREATE INDEX IF NOT EXISTS ix_veeam_company_links_parent
-            ON veeam_company_links (parent_company_id);
+        -- (ix_veeam_company_links_parent used to live here — a prefix of the
+        -- PK; dropped in v0.0.101.)
 
         -- ===================================================================
         -- Employee Feedback ("Points of attention & successes"). A shared,
@@ -5304,6 +5304,70 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_tickets_closed_moment
             ON tickets ((COALESCE(closed_utc, resolved_utc)))
             WHERE is_deleted = FALSE;
+
+        -- ===================================================================
+        -- v0.0.101 DB optimisation pass — index hygiene
+        -- ===================================================================
+        -- Missing indexes on columns the app actually filters/joins on. All
+        -- partial or narrow, so the one-off blocking build on an existing
+        -- install is short; documented in the release notes.
+
+        -- Ticket list: saved views that filter on priority / category / status
+        -- alone (no queue or assignee prefix) had no usable index.
+        CREATE INDEX IF NOT EXISTS ix_tickets_priority
+            ON tickets (priority_id) WHERE is_deleted = FALSE;
+        CREATE INDEX IF NOT EXISTS ix_tickets_category
+            ON tickets (category_id) WHERE is_deleted = FALSE AND category_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS ix_tickets_status
+            ON tickets (status_id) WHERE is_deleted = FALSE;
+
+        -- Timeline enrichment resolves the mail behind every MailSent event by
+        -- ticket_event_id — previously a seq scan of mail_messages per event.
+        CREATE INDEX IF NOT EXISTS ix_mail_messages_ticket_event
+            ON mail_messages (ticket_event_id) WHERE ticket_event_id IS NOT NULL;
+
+        -- User deactivate/delete checks count the user's authored events.
+        CREATE INDEX IF NOT EXISTS ix_ticket_events_author_user
+            ON ticket_events (author_user_id) WHERE author_user_id IS NOT NULL;
+
+        -- Contact audit-trail tab: target = X OR payload->>'contactId' = X.
+        -- Both branches indexed so the planner can BitmapOr instead of
+        -- scanning the whole (append-only, ever-growing) audit_log.
+        CREATE INDEX IF NOT EXISTS ix_audit_log_target
+            ON audit_log (target) WHERE target IS NOT NULL;
+        -- Predicate is the IS NOT NULL form on purpose: the planner can prove
+        -- "expr = const" implies "expr IS NOT NULL" (so the OR arm can use the
+        -- index in a BitmapOr) but cannot prove it implies "payload ? 'key'".
+        CREATE INDEX IF NOT EXISTS ix_audit_log_payload_contact
+            ON audit_log ((payload->>'contactId')) WHERE (payload->>'contactId') IS NOT NULL;
+
+        -- trigger_runs.ticket_event_id is ON DELETE SET NULL; a ticket delete /
+        -- merge cascades through ticket_events and needs this to stay cheap.
+        CREATE INDEX IF NOT EXISTS ix_trigger_runs_ticket_event
+            ON trigger_runs (ticket_event_id) WHERE ticket_event_id IS NOT NULL;
+
+        -- Global search probes adsolut_contracts with ILIKE like its sibling
+        -- mirrors (orders / sales receipts / articles) — same trigram coverage.
+        CREATE INDEX IF NOT EXISTS ix_adsolut_contracts_description_trgm
+            ON adsolut_contracts USING GIN (description gin_trgm_ops);
+        CREATE INDEX IF NOT EXISTS ix_adsolut_contracts_customer_name_trgm
+            ON adsolut_contracts USING GIN (customer_name gin_trgm_ops);
+
+        -- Redundant indexes: byte-identical to (or a strict prefix of) the
+        -- unique constraint / primary key on the same table. Pure write cost.
+        DROP INDEX IF EXISTS ix_event_revisions_event_id;
+        DROP INDEX IF EXISTS ix_holidays_schema_date;
+        DROP INDEX IF EXISTS ix_kb_section_translations_section;
+        DROP INDEX IF EXISTS ix_kb_article_translations_article;
+        DROP INDEX IF EXISTS ix_m365_mailboxes_company;
+        DROP INDEX IF EXISTS ix_veeam_backups_company;
+        DROP INDEX IF EXISTS ix_veeam_company_links_parent;
+
+        -- Update-heavy tables: leave 10% slack per page so same-page (HOT)
+        -- updates stay possible. Applies to newly written pages only — no
+        -- rewrite of existing data, the effect grows in over time.
+        ALTER TABLE tickets SET (fillfactor = 90);
+        ALTER TABLE ticket_sla_state SET (fillfactor = 90);
         """;
 
     private readonly NpgsqlDataSource _dataSource;

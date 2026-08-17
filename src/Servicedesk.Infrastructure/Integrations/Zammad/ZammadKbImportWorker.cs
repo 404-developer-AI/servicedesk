@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using Servicedesk.Infrastructure.KnowledgeBase;
 using Servicedesk.Infrastructure.Mail.Attachments;
+using Servicedesk.Infrastructure.Persistence;
 using Servicedesk.Infrastructure.Persistence.KnowledgeBase;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Storage;
@@ -197,6 +198,8 @@ public sealed class ZammadKbImportWorker : BackgroundService
 
             await FlushTotalsAsync(ds, runId, totals, ct);
             await SetStatusAsync(ds, runId, "completed", ct);
+            await PostgresStatistics.AnalyzeAsync(ds, _logger, ct,
+                "kb_sections", "kb_section_translations", "kb_articles", "kb_article_translations", "attachments");
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

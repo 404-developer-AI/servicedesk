@@ -43,11 +43,13 @@ CONFIRM=Y \
 bash <(curl -sSL https://raw.githubusercontent.com/404-developer-AI/servicedesk/main/deploy/install.sh)
 ```
 
+Optional Postgres tuning overrides (v0.0.101), same env-var style: `PG_SHARED_BUFFERS`, `PG_EFFECTIVE_CACHE_SIZE`, `PG_WORK_MEM`, `PG_MAINTENANCE_WORK_MEM`, `PG_RANDOM_PAGE_COST` (set `4` for spinning disks), `PG_EFFECTIVE_IO_CONCURRENCY`, `PG_LOG_MIN_DURATION_MS` (slow-query log threshold, default 500). Unset = derived from host RAM (see step 3 below). The same variables are honoured by `update.sh`.
+
 ### What the script does
 
 1. Verifies Ubuntu 22.04/24.04 + root.
 2. Installs Docker + compose-plugin if absent.
-3. Installs PostgreSQL 16 if absent, configures `listen_addresses` for the docker-gateway IP (172.17.0.1) and `max_connections = 200` (v0.0.99 — the app pins its Npgsql pool to 80, so the budget leaves room for pgAdmin/backups/update overlap), adds a `pg_hba.conf` line for the 172.17.0.0/16 bridge (scram-sha-256).
+3. Installs PostgreSQL 16 if absent, configures `listen_addresses` for the docker-gateway IP (172.17.0.1) and `max_connections = 200` (v0.0.99 — the app pins its Npgsql pool to 80, so the budget leaves room for pgAdmin/backups/update overlap), adds a `pg_hba.conf` line for the 172.17.0.0/16 bridge (scram-sha-256). Since v0.0.101 the same managed block also carries RAM-derived memory/planner tuning (`shared_buffers` 25 % of RAM capped at 8 GB, `effective_cache_size` 75 %, `work_mem` 16 MB, `maintenance_work_mem` RAM/16, SSD planner costs, `wal_compression`), preloads `pg_stat_statements` and sets `log_min_duration_statement` (default 500 ms); step 4 then creates the `pg_stat_statements` extension in the app database as superuser.
 4. Creates the Postgres role + `servicedesk` database (idempotent — separate psql calls because `CREATE DATABASE` can't run in a transaction).
 5. Generates `/etc/servicedesk/secrets.env` (mode 600 root:root) with the three required `SERVICEDESK_` env-vars. Skips this if the file already exists.
 6. Clones the repo into `/opt/servicedesk` (override via `INSTALL_DIR`).
@@ -115,6 +117,7 @@ bash <(curl -sSL https://raw.githubusercontent.com/404-developer-AI/servicedesk/
 4. `git fetch --tags` + checkout the latest `v*` tag (or `REPO_REF=…` override).
 5. Diffs `.env.example` against `secrets.env` for new `SERVICEDESK_*` vars; prompts for each one.
 5b. Ensures Postgres `max_connections >= 200` (v0.0.99): if the effective value is lower, writes it into the servicedesk-managed `postgresql.conf` block and restarts Postgres (~2 s, restart-only parameter) while the old app is still running — Npgsql re-opens its pooled connections transparently. Skipped when the value is already ≥ 200 or no local Postgres is reachable via `psql`.
+5c. Postgres server tuning (v0.0.101): the same step writes the RAM-derived memory/planner values, `wal_compression`, the slow-query threshold and `pg_stat_statements` (appended to any existing `shared_preload_libraries`) into the managed block — but **only for keys that are still at the Postgres default and not already in the block**, so a hand-tuned host is left alone. `max_connections` is only ever raised. Postgres is restarted once, only if the file changed, then `CREATE EXTENSION IF NOT EXISTS pg_stat_statements` runs in the app database. Both 5b/5c are skipped when no local Postgres is reachable via `psql`.
 6. `docker compose build app` + stop/start.
 7. Waits 120 s for the new container to become healthy.
 8. **On health-fail → automatic rollback**: checks out the previous SHA, rebuilds, starts. You end up back on the version you started from; the failing version's container is gone.
@@ -260,6 +263,17 @@ sudo -u postgres psql -d servicedesk -c "VACUUM (FULL, ANALYZE) trigger_runs;"
 ```
 
 `VACUUM FULL` takes an exclusive lock on the table for its duration (seconds to a minute at 1–2 GB) — trigger evaluation and the run-history page wait, tickets keep working. Verify with `SELECT pg_size_pretty(pg_total_relation_size('trigger_runs'));`.
+
+### Which queries are slow? (`pg_stat_statements`, v0.0.101)
+`install.sh`/`update.sh` preload `pg_stat_statements` and create the extension in the app database. Top offenders by total time:
+
+```bash
+sudo -u postgres psql -d servicedesk -c "SELECT calls, round(total_exec_time::numeric/1000,1) AS total_s, round(mean_exec_time::numeric,1) AS mean_ms, rows, left(query,120) AS query FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 20;"
+```
+
+Reset the counters with `SELECT pg_stat_statements_reset();` to measure a fresh window. Individual statements slower than `log_min_duration_statement` (default 500 ms, `PG_LOG_MIN_DURATION_MS` at install/update time) also land in `journalctl -u postgresql` / `/var/log/postgresql/`. If the extension is missing (`relation "pg_stat_statements" does not exist`), the update step was skipped (remote DB / no `psql`) — add `shared_preload_libraries = 'pg_stat_statements'` to `postgresql.conf`, restart, and run `CREATE EXTENSION pg_stat_statements;` in the `servicedesk` database as superuser.
+
+Verify the memory tuning landed with `sudo -u postgres psql -tAc "SHOW shared_buffers"` (expected ≈ 25 % of RAM, not `128MB`).
 
 ---
 
