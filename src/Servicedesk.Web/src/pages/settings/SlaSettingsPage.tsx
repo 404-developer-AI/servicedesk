@@ -1,18 +1,20 @@
 import { useState } from "react";
-import { Clock, Flag, Globe2, Timer } from "lucide-react";
+import { Clock, Flag, Globe2, RefreshCw, Timer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BusinessHoursTab } from "./sla/BusinessHoursTab";
 import { HolidaysTab } from "./sla/HolidaysTab";
 import { PoliciesTab } from "./sla/PoliciesTab";
 import { FirstContactTab } from "./sla/FirstContactTab";
+import { RecalcTab } from "./sla/RecalcTab";
 
-type Tab = "hours" | "holidays" | "policies" | "first-contact";
+type Tab = "hours" | "holidays" | "policies" | "first-contact" | "recalc";
 
 const TABS: { id: Tab; label: string; icon: typeof Timer; description: string }[] = [
   { id: "hours", label: "Business hours", icon: Clock, description: "Weekly work schedule + timezone" },
   { id: "holidays", label: "Holidays", icon: Globe2, description: "Country-based auto-sync + overrides" },
   { id: "policies", label: "Policies", icon: Flag, description: "First-response + resolution targets per queue × priority" },
   { id: "first-contact", label: "First contact", icon: Timer, description: "Which events stop the first-response timer" },
+  { id: "recalc", label: "Recalc worker", icon: RefreshCw, description: "Sweep cadence, batch size and policy cache" },
 ];
 
 export function SlaSettingsPage() {
@@ -66,6 +68,7 @@ export function SlaSettingsPage() {
         {tab === "holidays" && <HolidaysTab />}
         {tab === "policies" && <PoliciesTab />}
         {tab === "first-contact" && <FirstContactTab />}
+        {tab === "recalc" && <RecalcTab />}
       </section>
     </div>
   );

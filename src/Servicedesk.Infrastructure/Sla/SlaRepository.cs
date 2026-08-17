@@ -8,9 +8,70 @@ public sealed class SlaRepository : ISlaRepository
 {
     private readonly NpgsqlDataSource _dataSource;
 
+    // v0.0.101 — in-process snapshot of the SLA configuration. Registered as
+    // a singleton, so every writer below invalidates the same instance;
+    // maxAge (setting-driven, passed by the caller) covers a second app
+    // instance writing during an update rollout.
+    private readonly SemaphoreSlim _configGate = new(1, 1);
+    private volatile SlaConfigSnapshot? _config;
+
     public SlaRepository(NpgsqlDataSource dataSource)
     {
         _dataSource = dataSource;
+    }
+
+    private sealed class SlaConfigSnapshot
+    {
+        public required IReadOnlyList<SlaPolicy> Policies { get; init; }
+        public required IReadOnlyDictionary<Guid, BusinessHoursSchema> Schemas { get; init; }
+        public required DateTime LoadedUtc { get; init; }
+    }
+
+    private void InvalidateConfigCache() => _config = null;
+
+    public async Task<SlaResolvedPolicy?> ResolvePolicyAsync(Guid? queueId, Guid priorityId, TimeSpan maxAge, CancellationToken ct)
+    {
+        var snap = _config;
+        if (snap is null || DateTime.UtcNow - snap.LoadedUtc > maxAge)
+        {
+            await _configGate.WaitAsync(ct);
+            try
+            {
+                snap = _config;
+                if (snap is null || DateTime.UtcNow - snap.LoadedUtc > maxAge)
+                {
+                    var policies = await ListPoliciesAsync(ct);
+                    var schemas = await ListSchemasAsync(ct);
+                    snap = new SlaConfigSnapshot
+                    {
+                        Policies = policies,
+                        Schemas = schemas.ToDictionary(x => x.Id),
+                        LoadedUtc = DateTime.UtcNow,
+                    };
+                    _config = snap;
+                }
+            }
+            finally { _configGate.Release(); }
+        }
+
+        var policy = SelectPolicy(snap.Policies, queueId, priorityId);
+        if (policy is null) return null;
+        snap.Schemas.TryGetValue(policy.BusinessHoursSchemaId, out var schema);
+        return new SlaResolvedPolicy(policy, schema);
+    }
+
+    /// Same rule as FindPolicyAsync's SQL: the queue-specific policy for the
+    /// priority wins over the queue-less fallback; nothing else matches.
+    internal static SlaPolicy? SelectPolicy(IReadOnlyList<SlaPolicy> policies, Guid? queueId, Guid priorityId)
+    {
+        SlaPolicy? fallback = null;
+        foreach (var p in policies)
+        {
+            if (p.PriorityId != priorityId) continue;
+            if (queueId is not null && p.QueueId == queueId) return p;
+            if (p.QueueId is null) fallback ??= p;
+        }
+        return fallback;
     }
 
     // ---------- Schemas ----------
@@ -71,6 +132,7 @@ public sealed class SlaRepository : ISlaRepository
             "INSERT INTO business_hours_schemas (name, timezone, country_code, is_default) VALUES (@name, @timezone, @countryCode, @isDefault) RETURNING id",
             new { name, timezone, countryCode, isDefault }, transaction: tx, cancellationToken: ct));
         await tx.CommitAsync(ct);
+        InvalidateConfigCache();
         return id;
     }
 
@@ -88,12 +150,14 @@ public sealed class SlaRepository : ISlaRepository
             "UPDATE business_hours_schemas SET name = @name, timezone = @timezone, country_code = @countryCode, is_default = @isDefault, updated_utc = now() WHERE id = @id",
             new { id, name, timezone, countryCode, isDefault }, transaction: tx, cancellationToken: ct));
         await tx.CommitAsync(ct);
+        InvalidateConfigCache();
     }
 
     public async Task DeleteSchemaAsync(Guid id, CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition("DELETE FROM business_hours_schemas WHERE id = @id", new { id }, cancellationToken: ct));
+        InvalidateConfigCache();
     }
 
     public async Task SetSlotsAsync(Guid schemaId, IReadOnlyList<(int Day, int Start, int End)> slots, CancellationToken ct)
@@ -109,6 +173,7 @@ public sealed class SlaRepository : ISlaRepository
                 new { schemaId, day = s.Day, start = s.Start, end = s.End }, transaction: tx, cancellationToken: ct));
         }
         await tx.CommitAsync(ct);
+        InvalidateConfigCache();
     }
 
     private static async Task<Dictionary<Guid, List<BusinessHoursSlot>>> LoadSlotsAsync(NpgsqlConnection conn, Guid[] ids, CancellationToken ct)
@@ -158,12 +223,14 @@ public sealed class SlaRepository : ISlaRepository
             VALUES (@schemaId, @date, @name, @source, @countryCode)
             ON CONFLICT (schema_id, holiday_date) DO UPDATE SET name = EXCLUDED.name, source = EXCLUDED.source, country_code = EXCLUDED.country_code
             """, new { schemaId, date = date.ToDateTime(TimeOnly.MinValue), name, source, countryCode }, cancellationToken: ct));
+        InvalidateConfigCache();
     }
 
     public async Task DeleteHolidayAsync(long id, CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition("DELETE FROM holidays WHERE id = @id", new { id }, cancellationToken: ct));
+        InvalidateConfigCache();
     }
 
     public async Task ReplaceNagerHolidaysAsync(Guid schemaId, int year, string countryCode, IReadOnlyList<(DateOnly Date, string Name)> holidays, CancellationToken ct)
@@ -182,6 +249,7 @@ public sealed class SlaRepository : ISlaRepository
                 """, new { schemaId, date = h.Date.ToDateTime(TimeOnly.MinValue), name = h.Name, countryCode }, transaction: tx, cancellationToken: ct));
         }
         await tx.CommitAsync(ct);
+        InvalidateConfigCache();
     }
 
     // ---------- Policies ----------
@@ -237,15 +305,18 @@ public sealed class SlaRepository : ISlaRepository
             RETURNING id
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        return await conn.ExecuteScalarAsync<Guid>(new CommandDefinition(sql,
+        var id = await conn.ExecuteScalarAsync<Guid>(new CommandDefinition(sql,
             new { queueId, priorityId, schemaId, firstResponseMinutes, resolutionMinutes, pauseOnPending },
             cancellationToken: ct));
+        InvalidateConfigCache();
+        return id;
     }
 
     public async Task DeletePolicyAsync(Guid id, CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition("DELETE FROM sla_policies WHERE id = @id", new { id }, cancellationToken: ct));
+        InvalidateConfigCache();
     }
 
     // ---------- Ticket SLA state ----------
@@ -269,8 +340,14 @@ public sealed class SlaRepository : ISlaRepository
         return await conn.QueryFirstOrDefaultAsync<TicketSlaState>(new CommandDefinition(sql, new { ticketId }, cancellationToken: ct));
     }
 
-    public async Task UpsertStateAsync(TicketSlaState s, CancellationToken ct)
+    public async Task<bool> UpsertStateAsync(TicketSlaState s, CancellationToken ct)
     {
+        // v0.0.101: the DO UPDATE only fires when a value other than the two
+        // recalc timestamps differs (row-wise IS DISTINCT FROM handles NULLs).
+        // The periodic sweep re-derives identical state for most tickets;
+        // rewriting the row anyway was pure dead-tuple churn on a table that
+        // every ticket open reads. last_recalc_utc/updated_utc therefore mean
+        // "last time the SLA state actually changed".
         const string sql = """
             INSERT INTO ticket_sla_state
                 (ticket_id, policy_id, first_response_deadline_utc, resolution_deadline_utc,
@@ -294,18 +371,47 @@ public sealed class SlaRepository : ISlaRepository
                 paused_accum_minutes = EXCLUDED.paused_accum_minutes,
                 last_recalc_utc = EXCLUDED.last_recalc_utc,
                 updated_utc = now()
+            WHERE (ticket_sla_state.policy_id, ticket_sla_state.first_response_deadline_utc,
+                   ticket_sla_state.resolution_deadline_utc, ticket_sla_state.first_response_met_utc,
+                   ticket_sla_state.resolution_met_utc, ticket_sla_state.first_response_business_minutes,
+                   ticket_sla_state.resolution_business_minutes, ticket_sla_state.is_paused,
+                   ticket_sla_state.paused_since_utc, ticket_sla_state.paused_accum_minutes)
+                  IS DISTINCT FROM
+                  (EXCLUDED.policy_id, EXCLUDED.first_response_deadline_utc,
+                   EXCLUDED.resolution_deadline_utc, EXCLUDED.first_response_met_utc,
+                   EXCLUDED.resolution_met_utc, EXCLUDED.first_response_business_minutes,
+                   EXCLUDED.resolution_business_minutes, EXCLUDED.is_paused,
+                   EXCLUDED.paused_since_utc, EXCLUDED.paused_accum_minutes)
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        await conn.ExecuteAsync(new CommandDefinition(sql, s, cancellationToken: ct));
+        return await conn.ExecuteAsync(new CommandDefinition(sql, s, cancellationToken: ct)) > 0;
     }
 
-    public async Task<IReadOnlyList<Guid>> ListActiveTicketIdsAsync(int limit, CancellationToken ct)
+    public async Task<IReadOnlyList<SlaRecalcCandidate>> ListRecalcCandidatesAsync(int limit, SlaRecalcCursor? after, CancellationToken ct)
+    {
+        // Predicate == ix_tickets_open_updated's WHERE; the (updated_utc, id)
+        // row comparison + ASC order is a backward scan of that DESC index.
+        var sql = """
+            SELECT t.id AS Id, t.updated_utc AS UpdatedUtc
+            FROM tickets t
+            WHERE t.is_deleted = FALSE AND t.closed_utc IS NULL AND t.resolved_utc IS NULL
+            """;
+        if (after is not null)
+            sql += " AND (t.updated_utc, t.id) > (@AfterUpdatedUtc, @AfterId)";
+        sql += " ORDER BY t.updated_utc ASC, t.id ASC LIMIT @limit";
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<SlaRecalcCandidate>(new CommandDefinition(sql,
+            new { limit, AfterUpdatedUtc = after?.UpdatedUtc, AfterId = after?.Id }, cancellationToken: ct));
+        return rows.ToList();
+    }
+
+    public async Task<IReadOnlyList<Guid>> ListResolvedWithoutStateAsync(int limit, CancellationToken ct)
     {
         const string sql = """
             SELECT t.id FROM tickets t
             LEFT JOIN ticket_sla_state s ON s.ticket_id = t.id
-            WHERE t.is_deleted = FALSE AND t.closed_utc IS NULL
-              AND (s.first_response_met_utc IS NULL OR s.resolution_met_utc IS NULL)
+            WHERE t.is_deleted = FALSE AND t.closed_utc IS NULL AND t.resolved_utc IS NOT NULL
+              AND s.ticket_id IS NULL
             ORDER BY t.updated_utc ASC
             LIMIT @limit
             """;

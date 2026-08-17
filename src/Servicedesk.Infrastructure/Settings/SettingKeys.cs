@@ -850,6 +850,14 @@ public static class SettingKeys
         public const string HolidaysAutoSync = "Sla.Holidays.AutoSync";
         public const string DashboardShowAvgPickup = "Sla.Dashboard.ShowAvgPickupTile";
         public const string RecalcIntervalSeconds = "Sla.RecalcIntervalSeconds";
+        /// v0.0.101 — tickets per sweep cycle; the worker walks the open set
+        /// with a cursor across cycles, so a full pass takes
+        /// ceil(open / batch) cycles.
+        public const string RecalcBatchSize = "Sla.RecalcBatchSize";
+        /// v0.0.101 — max age of the in-process policy/schema snapshot the
+        /// engine resolves from (writes invalidate immediately; this only
+        /// bounds staleness across app instances).
+        public const string ConfigCacheSeconds = "Sla.ConfigCacheSeconds";
     }
 
     public static class Search
@@ -1693,7 +1701,11 @@ public static class SettingDefaults
         new SettingDefault(SettingKeys.Sla.DashboardShowAvgPickup, "true", "bool", "Sla",
             "Show the 'Average first-response per queue' tile on the dashboard."),
         new SettingDefault(SettingKeys.Sla.RecalcIntervalSeconds, "60", "int", "Sla",
-            "How often (seconds) the SLA recalc worker refreshes deadlines for open tickets."),
+            "How often (seconds) the SLA recalc worker runs one sweep cycle over open tickets (minimum 15)."),
+        new SettingDefault(SettingKeys.Sla.RecalcBatchSize, "500", "int", "Sla",
+            "Open tickets recalculated per sweep cycle. The worker walks the whole open set across cycles, so a full pass takes ceil(open tickets / batch) cycles. Raise it (or lower the interval) when many tickets are open (10–5000)."),
+        new SettingDefault(SettingKeys.Sla.ConfigCacheSeconds, "300", "int", "Sla",
+            "How long (seconds) the SLA engine keeps policies, business hours and holidays in memory before re-reading them. Edits in Settings → SLA apply immediately on this instance; this only bounds staleness for a second app instance (0–3600)."),
 
         // App — v0.0.12 stap 4. Absolute public URL is empty out-of-the-box;
         // the one-link installer (v0.0.15) will set it at provisioning time.
