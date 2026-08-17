@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using Servicedesk.Infrastructure.Audit;
+using Servicedesk.Infrastructure.Persistence;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Storage;
 
@@ -415,6 +416,10 @@ public sealed class ZammadDryRunWorker : BackgroundService
         }
 
         await CompleteRunAsync(ds, runId, totals, ct);
+        // Bulk load done — refresh planner statistics so the admin's first
+        // clicks through the imported tickets don't run on stale estimates.
+        await PostgresStatistics.AnalyzeAsync(ds, _logger, ct,
+            "tickets", "ticket_bodies", "ticket_events", "ticket_event_search", "attachments");
         await LogLifecycleAsync(audit, ZammadEventTypes.ImportFinished, runId, new
         {
             runId,

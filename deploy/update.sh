@@ -34,6 +34,7 @@ readonly PG_APP_DB="servicedesk"
 readonly CERT_RENEW_DIR="/var/lib/servicedesk/cert-renew"
 # Connection budget (v0.0.99) — must match install.sh.
 readonly PG_MAX_CONNECTIONS="200"
+readonly PG_LOG_MIN_DURATION_MS_DEFAULT="500"
 
 # --- colors + log helpers (identical to install.sh) ----------------------
 if [[ -t 1 ]]; then
@@ -410,60 +411,134 @@ reload_nginx_if_config_changed() {
 }
 
 # ===========================================================================
-# 5b. ensure Postgres max_connections >= PG_MAX_CONNECTIONS (v0.0.99)
-#     Pre-v0.0.99 installs run the Postgres default (100, minus 3 reserved
-#     for superusers) which equals Npgsql's default pool size, so a busy
-#     morning could hit "53300 remaining connection slots are reserved".
-#     install.sh now writes max_connections into its servicedesk-managed
-#     block; here we retrofit it for existing installs.
-#     - Effective value already >= target (operator tuned it) → skip.
-#     - Managed block present without max_connections → insert before the
-#       end marker (keeps listen_addresses intact).
-#     - No managed block (unusual, hand-configured host) → append a tiny
-#       managed block with only max_connections.
-#     max_connections is restart-only. Runs BEFORE the app is rebuilt, so
-#     the ~2 s Postgres restart lands while the old app is still up; Npgsql
-#     re-opens broken pooled connections transparently.
+# 5b. ensure Postgres connection budget + server tuning (v0.0.99 / v0.0.101)
+#     Pre-v0.0.99 installs run the Postgres default max_connections (100,
+#     minus 3 reserved for superusers) which equals Npgsql's default pool
+#     size, so a busy morning could hit "53300 remaining connection slots are
+#     reserved". v0.0.101 adds the memory/planner tuning + pg_stat_statements
+#     that install.sh now writes for fresh installs.
+#     Rules, so we never fight an operator who tuned Postgres by hand:
+#     - max_connections: only raised, never lowered.
+#     - every other key: written into the managed block only when it is not
+#       already there AND the effective value is still the Postgres default
+#       (i.e. nobody tuned it anywhere). Values already in our block are
+#       left alone (idempotent, no restart churn on every update).
+#     - shared_preload_libraries: pg_stat_statements is appended to whatever
+#       is loaded today, never replaces it.
+#     Restart happens once, only if the file changed. Runs BEFORE the app is
+#     rebuilt, so the ~2 s Postgres restart lands while the old app is still
+#     up; Npgsql re-opens broken pooled connections transparently.
 # ===========================================================================
-ensure_postgres_max_connections() {
+compute_pg_tuning() {
+    local mem_mb
+    mem_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 2048)
+    [[ "$mem_mb" =~ ^[0-9]+$ ]] && (( mem_mb > 0 )) || mem_mb=2048
+    local sb=$(( mem_mb / 4 ));    (( sb < 128 )) && sb=128;  (( sb > 8192 )) && sb=8192
+    local ec=$(( mem_mb * 3 / 4 )); (( ec < 512 )) && ec=512
+    local mw=$(( mem_mb / 16 ));   (( mw < 64 ))  && mw=64;   (( mw > 1024 )) && mw=1024
+    PG_SHARED_BUFFERS="${PG_SHARED_BUFFERS:-${sb}MB}"
+    PG_EFFECTIVE_CACHE_SIZE="${PG_EFFECTIVE_CACHE_SIZE:-${ec}MB}"
+    PG_WORK_MEM="${PG_WORK_MEM:-16MB}"
+    PG_MAINTENANCE_WORK_MEM="${PG_MAINTENANCE_WORK_MEM:-${mw}MB}"
+    PG_RANDOM_PAGE_COST="${PG_RANDOM_PAGE_COST:-1.1}"
+    PG_EFFECTIVE_IO_CONCURRENCY="${PG_EFFECTIVE_IO_CONCURRENCY:-200}"
+    PG_LOG_MIN_DURATION_MS="${PG_LOG_MIN_DURATION_MS:-${PG_LOG_MIN_DURATION_MS_DEFAULT}}"
+}
+
+ensure_postgres_tuning() {
     if ! command -v psql >/dev/null 2>&1 || ! sudo -u postgres psql -tAc "SELECT 1" >/dev/null 2>&1; then
-        warn "Local Postgres not reachable via psql — skipping max_connections check (remote/managed DB?)."
+        warn "Local Postgres not reachable via psql — skipping Postgres tuning (remote/managed DB?)."
         return 0
     fi
-    local current pg_conf
-    current="$(sudo -u postgres psql -tAc "SHOW max_connections" 2>/dev/null || echo 0)"
-    if [[ "${current}" =~ ^[0-9]+$ ]] && (( current >= PG_MAX_CONNECTIONS )); then
-        ok "Postgres max_connections=${current} (>= ${PG_MAX_CONNECTIONS}) — nothing to do."
-        return 0
-    fi
+    local pg_conf
     pg_conf="$(sudo -u postgres psql -tAc "SHOW config_file")"
-    [[ -f "$pg_conf" ]] || { warn "postgresql.conf not found at '${pg_conf}' — skipping max_connections."; return 0; }
+    [[ -f "$pg_conf" ]] || { warn "postgresql.conf not found at '${pg_conf}' — skipping Postgres tuning."; return 0; }
 
     local begin="# >>> servicedesk-managed — do not edit between these markers"
     local end="# <<< servicedesk-managed"
-    local line="max_connections = ${PG_MAX_CONNECTIONS}"
-    if grep -qF "$begin" "$pg_conf"; then
-        # Replace an older managed value or insert a fresh line before the end marker.
-        if sed -n "/${begin}/,/${end}/p" "$pg_conf" | grep -qE '^max_connections\s*='; then
-            sed -i "/${begin}/,/${end}/s/^max_connections\s*=.*/${line}/" "$pg_conf"
-        else
-            sed -i "/${end}/i ${line}" "$pg_conf"
-        fi
-    else
-        cat >> "$pg_conf" <<EOF
+    if ! grep -qF "$begin" "$pg_conf"; then
+        # Unusual (hand-configured host): create an empty managed block so the
+        # helpers below have somewhere to write.
+        printf '\n%s\n# Connection budget + tuning — see deploy/install.sh for the rationale.\n%s\n' "$begin" "$end" >> "$pg_conf"
+    fi
+    local before_hash
+    before_hash="$(md5sum "$pg_conf" | cut -d' ' -f1)"
 
-${begin}
-# Connection budget (v0.0.99) — see deploy/install.sh for the rationale.
-${line}
-${end}
-EOF
+    # in_block KEY → 0 if the managed block already sets KEY
+    in_block() { sed -n "/${begin}/,/${end}/p" "$pg_conf" | grep -qE "^${1}\s*="; }
+    # set_in_block KEY VALUE → replace inside the block, or insert before the end marker
+    set_in_block() {
+        local key=$1 value=$2
+        if in_block "$key"; then
+            sed -i "/${begin}/,/${end}/s|^${key}\s*=.*|${key} = ${value}|" "$pg_conf"
+        else
+            sed -i "/${end}/i ${key} = ${value}" "$pg_conf"
+        fi
+    }
+    # tune_if_untouched KEY VALUE DEFAULT… → write only when not in our block
+    # and the effective value still equals one of the Postgres defaults given.
+    tune_if_untouched() {
+        local key=$1 value=$2; shift 2
+        in_block "$key" && return 0
+        local current d
+        current="$(sudo -u postgres psql -tAc "SHOW ${key}" 2>/dev/null | tr -d ' ')"
+        for d in "$@"; do
+            if [[ "$current" == "$d" ]]; then set_in_block "$key" "$value"; log "  ${key}: ${current:-<unset>} → ${value}"; return 0; fi
+        done
+        ok "  ${key}=${current} already tuned (not by us) — leaving as is."
+    }
+
+    # --- connection budget (v0.0.99): only ever raise ---
+    local current_mc
+    current_mc="$(sudo -u postgres psql -tAc "SHOW max_connections" 2>/dev/null || echo 0)"
+    if [[ "${current_mc}" =~ ^[0-9]+$ ]] && (( current_mc >= PG_MAX_CONNECTIONS )); then
+        ok "Postgres max_connections=${current_mc} (>= ${PG_MAX_CONNECTIONS}) — nothing to do."
+    else
+        set_in_block "max_connections" "${PG_MAX_CONNECTIONS}"
+        log "  max_connections: ${current_mc} → ${PG_MAX_CONNECTIONS}"
     fi
-    log "Raising Postgres max_connections ${current} → ${PG_MAX_CONNECTIONS} (restart-only parameter) …"
-    systemctl restart postgresql
-    if ! pg_isready -h 127.0.0.1 -p 5432 -t 10 >/dev/null 2>&1; then
-        die "Postgres did not come back after the max_connections change — inspect 'journalctl -u postgresql' before continuing."
+
+    # --- memory / planner tuning (v0.0.101) ---
+    compute_pg_tuning
+    log "Postgres tuning check (host RAM-derived; only untouched defaults are changed) …"
+    tune_if_untouched shared_buffers             "${PG_SHARED_BUFFERS}"           "128MB"
+    tune_if_untouched effective_cache_size       "${PG_EFFECTIVE_CACHE_SIZE}"     "4GB"
+    tune_if_untouched work_mem                   "${PG_WORK_MEM}"                 "4MB"
+    tune_if_untouched maintenance_work_mem       "${PG_MAINTENANCE_WORK_MEM}"     "64MB"
+    tune_if_untouched random_page_cost           "${PG_RANDOM_PAGE_COST}"         "4"
+    tune_if_untouched effective_io_concurrency   "${PG_EFFECTIVE_IO_CONCURRENCY}" "1" "0" "16"
+    tune_if_untouched wal_compression            "on"                             "off"
+    tune_if_untouched log_min_duration_statement "${PG_LOG_MIN_DURATION_MS}"      "-1"
+
+    # --- pg_stat_statements: append to whatever is preloaded today ---
+    local existing_preload
+    existing_preload="$(sudo -u postgres psql -tAc "SHOW shared_preload_libraries" 2>/dev/null | tr -d ' ')"
+    if [[ ",${existing_preload}," != *",pg_stat_statements,"* ]]; then
+        local preload="pg_stat_statements"
+        [[ -n "$existing_preload" ]] && preload="${existing_preload},pg_stat_statements"
+        set_in_block "shared_preload_libraries" "'${preload}'"
+        in_block "pg_stat_statements.track" || set_in_block "pg_stat_statements.track" "top"
+        log "  shared_preload_libraries: '${existing_preload}' → '${preload}'"
     fi
-    ok "Postgres max_connections=$(sudo -u postgres psql -tAc "SHOW max_connections")."
+
+    local after_hash
+    after_hash="$(md5sum "$pg_conf" | cut -d' ' -f1)"
+    if [[ "$before_hash" != "$after_hash" ]]; then
+        log "Restarting Postgres to apply the tuning (restart-only parameters) …"
+        systemctl restart postgresql
+        if ! pg_isready -h 127.0.0.1 -p 5432 -t 10 >/dev/null 2>&1; then
+            die "Postgres did not come back after the tuning change — inspect 'journalctl -u postgresql' before continuing."
+        fi
+        ok "Postgres restarted: max_connections=$(sudo -u postgres psql -tAc "SHOW max_connections"), shared_buffers=$(sudo -u postgres psql -tAc "SHOW shared_buffers")."
+    else
+        ok "Postgres tuning already in place — no restart needed."
+    fi
+
+    # Extension needs the library loaded (restart above) and superuser; the app
+    # role is deliberately neither, so it is created here, not in the bootstrapper.
+    sudo -u postgres psql -d "${PG_APP_DB}" -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;" >/dev/null 2>&1 \
+        && ok "pg_stat_statements available in ${PG_APP_DB}." \
+        || warn "pg_stat_statements could not be created in ${PG_APP_DB} (non-fatal — slow-query inspection unavailable)."
 }
 
 # ===========================================================================
@@ -528,7 +603,7 @@ main() {
     ensure_env_conf
     ensure_cert_renew_bridge
     relax_letsencrypt_perms
-    ensure_postgres_max_connections
+    ensure_postgres_tuning
     rebuild_and_restart_app
     if ! wait_for_health_or_rollback; then
         exit 1

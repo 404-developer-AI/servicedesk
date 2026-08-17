@@ -443,12 +443,20 @@ app.UseDefaultFiles();
 // index.html must always be revalidated: after a deploy the hashed asset
 // files it references are gone, so a browser-cached copy would boot a
 // broken shell. no-cache means "revalidate before use" (ETag round-trip,
-// 304 when unchanged) — hashed assets keep their default behavior.
+// 304 when unchanged).
+// Everything under /assets/ is content-hashed by Vite (name-<hash>.ext), so
+// a URL never changes meaning: cache it for a year and mark it immutable
+// (v0.0.101) — no conditional requests on every reload/tab. Other root files
+// (favicon etc.) keep the default heuristic caching.
 var indexNoCache = new Action<Microsoft.AspNetCore.StaticFiles.StaticFileResponseContext>(ctx =>
 {
     if (string.Equals(ctx.File.Name, "index.html", StringComparison.OrdinalIgnoreCase))
     {
         ctx.Context.Response.Headers.CacheControl = "no-cache";
+    }
+    else if (ctx.Context.Request.Path.StartsWithSegments("/assets", StringComparison.OrdinalIgnoreCase))
+    {
+        ctx.Context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
     }
 });
 app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = indexNoCache });

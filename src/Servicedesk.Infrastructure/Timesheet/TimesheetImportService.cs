@@ -1,5 +1,7 @@
 using Dapper;
+using Microsoft.Extensions.Logging;
 using Npgsql;
+using Servicedesk.Infrastructure.Persistence;
 
 namespace Servicedesk.Infrastructure.Timesheet;
 
@@ -12,11 +14,13 @@ public sealed class TimesheetImportService : ITimesheetImportService
 
     private readonly NpgsqlDataSource _dataSource;
     private readonly ITimesheetTaskService _tasks;
+    private readonly ILogger<TimesheetImportService> _logger;
 
-    public TimesheetImportService(NpgsqlDataSource dataSource, ITimesheetTaskService tasks)
+    public TimesheetImportService(NpgsqlDataSource dataSource, ITimesheetTaskService tasks, ILogger<TimesheetImportService> logger)
     {
         _dataSource = dataSource;
         _tasks = tasks;
+        _logger = logger;
     }
 
     public Task<IReadOnlyList<TimesheetTask>> ListTasksAsync(CancellationToken ct = default) =>
@@ -121,6 +125,12 @@ public sealed class TimesheetImportService : ITimesheetImportService
                     skipped.Add(new TimesheetImportSkip(r.ImportRef, $"db_error:{ex.SqlState}"));
             }
         }
+
+        // Migration batches arrive back-to-back; a per-batch ANALYZE on this
+        // one table is milliseconds and keeps the timesheet views fast while
+        // the import is still streaming in.
+        if (imported > 0)
+            await PostgresStatistics.AnalyzeAsync(_dataSource, _logger, ct, "timesheet_entries");
 
         return new TimesheetImportBatchResult(rows.Count, imported, withoutTicketMatch, skipped);
     }

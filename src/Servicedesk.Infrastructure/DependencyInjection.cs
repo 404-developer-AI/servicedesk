@@ -72,7 +72,8 @@ public static class DependencyInjection
             var connectionString = configuration.GetConnectionString("Postgres")
                 ?? throw new InvalidOperationException(
                     "ConnectionStrings:Postgres is not configured. Set it via environment variable or user-secrets.");
-            return new NpgsqlDataSourceBuilder(ApplyPoolLimits(connectionString, configuration)).Build();
+            return new NpgsqlDataSourceBuilder(
+                ApplyAutoPrepare(ApplyPoolLimits(connectionString, configuration), configuration)).Build();
         });
 
         // v0.0.42 — IAuditLogger is decorated so every whitelisted audit
@@ -737,6 +738,51 @@ public static class DependencyInjection
         var configured = configuration.GetValue<int?>("Database:MaxPoolSize");
         var size = configured is > 0 ? configured.Value : DefaultMaxPoolSize;
         builder.MaxPoolSize = Math.Clamp(size, 1, 1000);
+        return builder.ConnectionString;
+    }
+
+    /// v0.0.101 — server-side prepared statements via Npgsql auto-prepare.
+    ///
+    /// The whole data layer is Dapper with hand-written parameterized SQL, so
+    /// the same statement text is sent thousands of times (session validate,
+    /// ticket lookups, settings, presence). Npgsql defaults to
+    /// `Max Auto Prepare=0` (off); enabling it makes each pooled connection
+    /// keep the N most-used statements prepared once a statement has been seen
+    /// `Auto Prepare Min Usages` times, which removes the parse/plan step from
+    /// every subsequent execution. Values explicitly present in the connection
+    /// string win; otherwise `Database:MaxAutoPrepare` (0 disables) and
+    /// `Database:AutoPrepareMinUsages` override the defaults. Like the pool
+    /// size these are deliberately not DB-backed settings — they must be known
+    /// before the first connection opens.
+    internal const int DefaultMaxAutoPrepare = 64;
+    internal const int DefaultAutoPrepareMinUsages = 2;
+
+    internal static string ApplyAutoPrepare(string connectionString, IConfiguration configuration)
+    {
+        var supplied = new System.Data.Common.DbConnectionStringBuilder { ConnectionString = connectionString };
+        var hasMax = false;
+        var hasMin = false;
+        foreach (string key in supplied.Keys)
+        {
+            var normalized = key.Replace(" ", string.Empty);
+            if (normalized.Equals("MaxAutoPrepare", StringComparison.OrdinalIgnoreCase)) hasMax = true;
+            if (normalized.Equals("AutoPrepareMinUsages", StringComparison.OrdinalIgnoreCase)) hasMin = true;
+        }
+        if (hasMax && hasMin) return connectionString;
+
+        var builder = new NpgsqlConnectionStringBuilder(connectionString);
+        if (!hasMax)
+        {
+            var configured = configuration.GetValue<int?>("Database:MaxAutoPrepare");
+            var max = configured is >= 0 ? configured.Value : DefaultMaxAutoPrepare;
+            builder.MaxAutoPrepare = Math.Clamp(max, 0, 1000);
+        }
+        if (!hasMin)
+        {
+            var configured = configuration.GetValue<int?>("Database:AutoPrepareMinUsages");
+            var min = configured is > 0 ? configured.Value : DefaultAutoPrepareMinUsages;
+            builder.AutoPrepareMinUsages = Math.Clamp(min, 1, 100);
+        }
         return builder.ConnectionString;
     }
 }

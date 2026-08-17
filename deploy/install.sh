@@ -52,6 +52,13 @@ readonly PG_VERSION_TARGET="16"
 # it (DependencyInjection.ApplyPoolLimits) so the two numbers stay in view.
 readonly PG_MAX_CONNECTIONS="200"
 readonly PG_APP_MAX_POOL_SIZE="80"
+# Server tuning (v0.0.101): memory/planner values are derived from host RAM
+# by compute_pg_tuning() (Postgres ships spinning-disk, 128 MB defaults). Any
+# of them can be pinned via env: PG_SHARED_BUFFERS, PG_EFFECTIVE_CACHE_SIZE,
+# PG_WORK_MEM, PG_MAINTENANCE_WORK_MEM, PG_RANDOM_PAGE_COST,
+# PG_EFFECTIVE_IO_CONCURRENCY, PG_LOG_MIN_DURATION_MS. pg_stat_statements is
+# preloaded so slow queries can be inspected on the host (see runbook).
+readonly PG_LOG_MIN_DURATION_MS_DEFAULT="500"
 # Must match the subnet pinned in deploy/docker-compose.yml. Hardcoded in both
 # places because install.sh writes the pg_hba rule BEFORE the compose network
 # exists — we cannot query docker for it yet.
@@ -254,6 +261,33 @@ install_postgres() {
 }
 
 # ===========================================================================
+# 4b. derive Postgres memory/planner tuning from host RAM (v0.0.101)
+#     Postgres shares the host with the app container, so the shares are
+#     conservative: shared_buffers 25% (cap 8 GB), effective_cache_size 75%,
+#     maintenance_work_mem RAM/16 (64 MB–1 GB), work_mem 16 MB. SSD-class
+#     storage is assumed (random_page_cost 1.1, effective_io_concurrency
+#     200); pin PG_RANDOM_PAGE_COST=4 for spinning disks.
+# ===========================================================================
+compute_pg_tuning() {
+    local mem_mb
+    mem_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 2048)
+    [[ "$mem_mb" =~ ^[0-9]+$ ]] && (( mem_mb > 0 )) || mem_mb=2048
+
+    local sb=$(( mem_mb / 4 ));    (( sb < 128 )) && sb=128;  (( sb > 8192 )) && sb=8192
+    local ec=$(( mem_mb * 3 / 4 )); (( ec < 512 )) && ec=512
+    local mw=$(( mem_mb / 16 ));   (( mw < 64 ))  && mw=64;   (( mw > 1024 )) && mw=1024
+
+    PG_SHARED_BUFFERS="${PG_SHARED_BUFFERS:-${sb}MB}"
+    PG_EFFECTIVE_CACHE_SIZE="${PG_EFFECTIVE_CACHE_SIZE:-${ec}MB}"
+    PG_WORK_MEM="${PG_WORK_MEM:-16MB}"
+    PG_MAINTENANCE_WORK_MEM="${PG_MAINTENANCE_WORK_MEM:-${mw}MB}"
+    PG_RANDOM_PAGE_COST="${PG_RANDOM_PAGE_COST:-1.1}"
+    PG_EFFECTIVE_IO_CONCURRENCY="${PG_EFFECTIVE_IO_CONCURRENCY:-200}"
+    PG_LOG_MIN_DURATION_MS="${PG_LOG_MIN_DURATION_MS:-${PG_LOG_MIN_DURATION_MS_DEFAULT}}"
+    log "Postgres tuning for ${mem_mb} MB RAM: shared_buffers=${PG_SHARED_BUFFERS} effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE} work_mem=${PG_WORK_MEM} maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM} random_page_cost=${PG_RANDOM_PAGE_COST}"
+}
+
+# ===========================================================================
 # 5. configure listen_addresses + pg_hba for the docker bridge
 # ===========================================================================
 configure_postgres_listen() {
@@ -281,6 +315,19 @@ configure_postgres_listen() {
     # binds to*, not *who can authenticate*. External firewalls (UFW, cloud
     # provider security groups) should still block 5432 from the WAN — the
     # runbook covers this.
+    # Any preload libraries the operator already configured must be kept —
+    # shared_preload_libraries is a single list, last occurrence wins.
+    local preload existing_preload
+    existing_preload=$(sudo -u postgres psql -tAc "SHOW shared_preload_libraries" 2>/dev/null | tr -d ' ')
+    if [[ -z "$existing_preload" ]]; then
+        preload="pg_stat_statements"
+    elif [[ ",${existing_preload}," == *",pg_stat_statements,"* ]]; then
+        preload="$existing_preload"
+    else
+        preload="${existing_preload},pg_stat_statements"
+    fi
+
+    compute_pg_tuning
     log "Writing postgresql.conf servicedesk-managed block …"
     cat >> "$pg_conf" <<EOF
 
@@ -295,6 +342,21 @@ listen_addresses = '*'
 # ${PG_APP_MAX_POOL_SIZE} (override: SERVICEDESK_Database__MaxPoolSize); ${PG_MAX_CONNECTIONS} leaves
 # headroom for pgAdmin, backups and a second app instance during an update.
 max_connections = ${PG_MAX_CONNECTIONS}
+# Memory / planner tuning (v0.0.101), derived from host RAM by install.sh
+# (env overrides: PG_SHARED_BUFFERS, PG_EFFECTIVE_CACHE_SIZE, PG_WORK_MEM,
+# PG_MAINTENANCE_WORK_MEM, PG_RANDOM_PAGE_COST, PG_EFFECTIVE_IO_CONCURRENCY).
+shared_buffers = ${PG_SHARED_BUFFERS}
+effective_cache_size = ${PG_EFFECTIVE_CACHE_SIZE}
+work_mem = ${PG_WORK_MEM}
+maintenance_work_mem = ${PG_MAINTENANCE_WORK_MEM}
+random_page_cost = ${PG_RANDOM_PAGE_COST}
+effective_io_concurrency = ${PG_EFFECTIVE_IO_CONCURRENCY}
+wal_compression = on
+# Observability (v0.0.101): pg_stat_statements for "which queries are slow",
+# plus statements slower than PG_LOG_MIN_DURATION_MS ms in the Postgres log.
+shared_preload_libraries = '${preload}'
+pg_stat_statements.track = top
+log_min_duration_statement = ${PG_LOG_MIN_DURATION_MS}
 ${end}
 EOF
 
@@ -308,9 +370,10 @@ host    ${PG_APP_DB}   ${DB_USER}   ${COMPOSE_SUBNET}   scram-sha-256
 ${end}
 EOF
 
-    # listen_addresses and max_connections are *restart-only* parameters —
-    # reload does NOT apply them. Always restart after we've (re)written the block.
-    log "Restarting postgresql to apply listen_addresses + hba …"
+    # listen_addresses, max_connections, shared_buffers and
+    # shared_preload_libraries are *restart-only* parameters — reload does NOT
+    # apply them. Always restart after we've (re)written the block.
+    log "Restarting postgresql to apply listen_addresses + hba + tuning …"
     systemctl restart postgresql
 
     # Verify Postgres is accepting TCP connections from a bridge-local address.
@@ -351,6 +414,12 @@ setup_postgres_role_and_db() {
     log "Locking down schema public …"
     sudo -u postgres psql -d "${PG_APP_DB}" -c "REVOKE ALL ON SCHEMA public FROM PUBLIC;" >/dev/null
     sudo -u postgres psql -d "${PG_APP_DB}" -c "GRANT USAGE, CREATE ON SCHEMA public TO \"${DB_USER}\";" >/dev/null
+
+    # pg_stat_statements needs superuser to install; the app role deliberately
+    # is not one, so it lives here instead of in DatabaseBootstrapper. The
+    # library was preloaded in configure_postgres_listen (restart done there).
+    log "Enabling pg_stat_statements in ${PG_APP_DB} …"
+    sudo -u postgres psql -d "${PG_APP_DB}" -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;" >/dev/null         || warn "pg_stat_statements could not be created — slow-query inspection unavailable (non-fatal)."
 
     ok "Postgres role + database ready."
 }
