@@ -60,51 +60,75 @@ public sealed class SlaEngine : ISlaEngine
     {
         try
         {
+            // Settings are in-memory (SettingsService primes once); read them
+            // first so the DB batch below can carry the trigger list.
+            var triggersJson = await _settings.GetAsync<string>(SettingKeys.Sla.FirstContactTriggers, ct);
+            var triggers = ParseTriggers(triggersJson);
+            var pauseOnPendingSetting = await _settings.GetAsync<bool>(SettingKeys.Sla.PauseOnPending, ct);
+            var cacheSeconds = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Sla.ConfigCacheSeconds, ct), 0, 3600);
+
             await using var conn = await _dataSource.OpenConnectionAsync(ct);
 
-            // Load ticket basics + status category + current agent-touch events.
-            var ticket = await conn.QueryFirstOrDefaultAsync<TicketCore>(new CommandDefinition("""
+            // v0.0.101 — one round-trip for everything per-ticket the engine
+            // reads: ticket core + status category, earliest agent touch of a
+            // trigger type (first response), and the StatusChange stream the
+            // pause windows are rebuilt from. Policy + schema come from the
+            // repository's in-process config snapshot, not from the DB.
+            const string batchSql = """
                 SELECT t.id AS Id, t.queue_id AS QueueId, t.priority_id AS PriorityId, t.status_id AS StatusId,
                        t.created_utc AS CreatedUtc, t.resolved_utc AS ResolvedUtc, t.closed_utc AS ClosedUtc,
+                       t.due_utc AS DueUtc, t.first_response_utc AS FirstResponseUtc,
                        s.state_category AS StateCategory
                 FROM tickets t
                 JOIN statuses s ON s.id = t.status_id
-                WHERE t.id = @ticketId AND t.is_deleted = FALSE
-                """, new { ticketId }, cancellationToken: ct));
+                WHERE t.id = @ticketId AND t.is_deleted = FALSE;
+
+                SELECT MIN(created_utc) FROM ticket_events
+                WHERE ticket_id = @ticketId
+                  AND author_user_id IS NOT NULL
+                  AND event_type = ANY(@triggers);
+
+                SELECT e.created_utc AS CreatedUtc, e.metadata AS Metadata
+                FROM ticket_events e
+                WHERE e.ticket_id = @ticketId AND e.event_type = 'StatusChange'
+                ORDER BY e.created_utc, e.id
+                """;
+            TicketCore? ticket;
+            DateTime? firstResponse;
+            IReadOnlyList<(DateTime Start, DateTime? End)> pendingPeriods;
+            await using (var grid = await conn.QueryMultipleAsync(new CommandDefinition(
+                batchSql, new { ticketId, triggers = triggers.ToArray() }, cancellationToken: ct)))
+            {
+                ticket = await grid.ReadFirstOrDefaultAsync<TicketCore>();
+                firstResponse = await grid.ReadFirstOrDefaultAsync<DateTime?>();
+                var statusRows = (await grid.ReadAsync<(DateTime CreatedUtc, string Metadata)>()).ToList();
+                pendingPeriods = BuildPendingPeriods(statusRows);
+            }
             if (ticket is null) return;
 
-            var policy = await _repo.FindPolicyAsync(ticket.QueueId, ticket.PriorityId, ct);
-            if (policy is null)
+            var resolved = await _repo.ResolvePolicyAsync(ticket.QueueId, ticket.PriorityId, TimeSpan.FromSeconds(cacheSeconds), ct);
+            if (resolved is null)
             {
                 await _repo.UpsertStateAsync(new TicketSlaState(
                     ticketId, null, null, null, null, null, null, null, false, null, 0,
                     DateTime.UtcNow, DateTime.UtcNow), ct);
+                if (ticket.DueUtc is not null)
+                {
+                    await conn.ExecuteAsync(new CommandDefinition(
+                        "UPDATE tickets SET due_utc = NULL WHERE id = @ticketId AND due_utc IS NOT NULL",
+                        new { ticketId }, cancellationToken: ct));
+                }
                 return;
             }
-
-            var schema = await _repo.GetSchemaAsync(policy.BusinessHoursSchemaId, ct);
+            var policy = resolved.Policy;
+            var schema = resolved.Schema;
             if (schema is null)
             {
                 _logger.LogWarning("SLA policy {PolicyId} references missing schema {SchemaId}", policy.Id, policy.BusinessHoursSchemaId);
                 return;
             }
 
-            // First-response triggers from settings.
-            var triggersJson = await _settings.GetAsync<string>(SettingKeys.Sla.FirstContactTriggers, ct);
-            var triggers = ParseTriggers(triggersJson);
-            var pauseOnPendingSetting = await _settings.GetAsync<bool>(SettingKeys.Sla.PauseOnPending, ct);
             var pauseOnPending = policy.PauseOnPending && pauseOnPendingSetting;
-
-            // First-response detection: earliest agent event with a trigger type.
-            var firstResponse = await conn.QueryFirstOrDefaultAsync<DateTime?>(new CommandDefinition("""
-                SELECT MIN(created_utc) FROM ticket_events
-                WHERE ticket_id = @ticketId
-                  AND author_user_id IS NOT NULL
-                  AND event_type = ANY(@triggers)
-                """, new { ticketId, triggers = triggers.ToArray() }, cancellationToken: ct));
-
-            // Pause bookkeeping: sum business-minutes spent in Pending up to now.
-            var pendingPeriods = await LoadPendingPeriodsAsync(conn, ticketId, ct);
             var isCurrentlyPending = pauseOnPending && string.Equals(ticket.StateCategory, "Pending", StringComparison.OrdinalIgnoreCase);
             var pausedAccumMinutes = 0;
             DateTime? pausedSince = null;
@@ -156,16 +180,23 @@ public sealed class SlaEngine : ISlaEngine
             await _repo.UpsertStateAsync(state, ct);
 
             // Mirror first_response_utc onto tickets for backwards compat with legacy queries.
-            if (firstResponse.HasValue)
+            if (firstResponse.HasValue && ticket.FirstResponseUtc is null)
             {
                 await conn.ExecuteAsync(new CommandDefinition(
                     "UPDATE tickets SET first_response_utc = @firstResponse WHERE id = @ticketId AND first_response_utc IS NULL",
                     new { firstResponse, ticketId }, cancellationToken: ct));
             }
-            // Mirror deadline onto due_utc so existing dashboards/indexes keep working.
-            await conn.ExecuteAsync(new CommandDefinition(
-                "UPDATE tickets SET due_utc = @due WHERE id = @ticketId",
-                new { due = resDeadline, ticketId }, cancellationToken: ct));
+            // Mirror deadline onto due_utc so existing dashboards/indexes keep
+            // working — v0.0.101: only when it actually moved. `tickets` is
+            // the widest, most-indexed table in the schema; an unconditional
+            // UPDATE per ticket per sweep cycle was the single biggest source
+            // of dead tuples on it.
+            if (!SameInstant(ticket.DueUtc, resDeadline))
+            {
+                await conn.ExecuteAsync(new CommandDefinition(
+                    "UPDATE tickets SET due_utc = @due WHERE id = @ticketId AND due_utc IS DISTINCT FROM @due",
+                    new { due = resDeadline, ticketId }, cancellationToken: ct));
+            }
         }
         catch (Exception ex)
         {
@@ -173,19 +204,20 @@ public sealed class SlaEngine : ISlaEngine
         }
     }
 
-    private static async Task<IReadOnlyList<(DateTime Start, DateTime? End)>> LoadPendingPeriodsAsync(NpgsqlConnection conn, Guid ticketId, CancellationToken ct)
+    // Postgres timestamptz carries microseconds; .NET DateTime ticks are
+    // 100 ns. Compare at the precision that survives the round-trip so an
+    // unchanged deadline is recognised as unchanged.
+    private static bool SameInstant(DateTime? a, DateTime? b)
+    {
+        if (a is null || b is null) return a is null && b is null;
+        return Math.Abs((a.Value - b.Value).Ticks) < TimeSpan.TicksPerMillisecond;
+    }
+
+    private static IReadOnlyList<(DateTime Start, DateTime? End)> BuildPendingPeriods(
+        IReadOnlyList<(DateTime CreatedUtc, string Metadata)> rows)
     {
         // StatusChange events carry metadata with the new status category. We
         // reconstruct pending-windows from the event stream.
-        const string sql = """
-            SELECT e.created_utc AS CreatedUtc, e.metadata AS Metadata
-            FROM ticket_events e
-            WHERE e.ticket_id = @ticketId AND e.event_type = 'StatusChange'
-            ORDER BY e.created_utc, e.id
-            """;
-        var rows = (await conn.QueryAsync<(DateTime CreatedUtc, string Metadata)>(
-            new CommandDefinition(sql, new { ticketId }, cancellationToken: ct))).ToList();
-
         var result = new List<(DateTime Start, DateTime? End)>();
         DateTime? openStart = null;
         foreach (var row in rows)
@@ -238,6 +270,8 @@ public sealed class SlaEngine : ISlaEngine
         public DateTime CreatedUtc { get; set; }
         public DateTime? ResolvedUtc { get; set; }
         public DateTime? ClosedUtc { get; set; }
+        public DateTime? DueUtc { get; set; }
+        public DateTime? FirstResponseUtc { get; set; }
         public string StateCategory { get; set; } = "";
     }
 }
