@@ -57,9 +57,13 @@ public sealed class ClientVersionGateMiddleware
             return;
         }
 
+        // Both values are attacker-controlled request data. Serilog writes
+        // them as structured properties (no template interpolation), but we
+        // still strip control characters and cap the length so a forged
+        // header can never inject fake lines into a plain-text log sink.
         logger.LogWarning(
             "Rejected write from outdated client bundle {ClientVersion} (server {ServerVersion}) on {Method} {Path}",
-            clientVersion, _serverVersion, context.Request.Method, path);
+            SanitizeForLog(clientVersion), _serverVersion, context.Request.Method, SanitizeForLog(path));
 
         context.Response.StatusCode = StatusCodes.Status426UpgradeRequired;
         await context.Response.WriteAsJsonAsync(new
@@ -67,7 +71,28 @@ public sealed class ClientVersionGateMiddleware
             error = "client_version_outdated",
             message = "A newer version of the application has been deployed. Reload the page to continue.",
             serverVersion = _serverVersion,
-            clientVersion,
+            clientVersion = SanitizeForLog(clientVersion),
         });
+    }
+
+    private const int MaxLoggedLength = 128;
+
+    /// Drops control characters (CR/LF/ESC/…) and truncates, so untrusted
+    /// request values can be logged/echoed without log-forging or terminal
+    /// escape tricks. Header values are short by contract; paths that
+    /// exceed the cap are cut with an ellipsis.
+    internal static string SanitizeForLog(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return string.Empty;
+        var buffer = new char[Math.Min(value.Length, MaxLoggedLength)];
+        var n = 0;
+        foreach (var c in value)
+        {
+            if (char.IsControl(c)) continue;
+            buffer[n++] = c;
+            if (n == buffer.Length) break;
+        }
+        var result = new string(buffer, 0, n);
+        return value.Length > MaxLoggedLength ? result + "…" : result;
     }
 }
