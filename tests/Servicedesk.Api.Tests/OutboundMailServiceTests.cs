@@ -506,18 +506,12 @@ public sealed class OutboundMailServiceTests
         public Task<bool> MarkTitleReviewedAsync(Guid ticketId, Guid actorUserId, CancellationToken ct) => throw new NotImplementedException();
         public Task<IReadOnlyList<TicketPickerHit>> SearchPickerAsync(string? s, Guid e, IReadOnlyCollection<Guid>? q, Guid? r, int l, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<TicketPickerHit>>(Array.Empty<TicketPickerHit>());
-        public Task<IReadOnlyList<long>> GetMergedSourceTicketNumbersAsync(Guid t, CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<long>>(Array.Empty<long>());
         public Task<MergeResult?> MergeAsync(Guid s, Guid t, Guid a, bool ack, CancellationToken ct)
             => Task.FromResult<MergeResult?>(null);
-        public Task<IReadOnlyList<SplitChildTicket>> GetSplitChildrenAsync(Guid p, CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<SplitChildTicket>>(Array.Empty<SplitChildTicket>());
         public Task<SplitResult?> SplitAsync(Guid s, long e, string subj, Guid a, string? oh, string? ot, CancellationToken ct)
             => Task.FromResult<SplitResult?>(null);
-        public Task<IReadOnlyList<LinkedChildTicket>> GetChildTicketsAsync(Guid p, CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<LinkedChildTicket>>(Array.Empty<LinkedChildTicket>());
-        public Task<ParentTicketSummary?> GetParentSummaryAsync(Guid t, CancellationToken ct)
-            => Task.FromResult<ParentTicketSummary?>(null);
+        public Task<TicketDetailRelations?> GetDetailRelationsAsync(Guid t, CancellationToken ct)
+            => Task.FromResult<TicketDetailRelations?>(null);
         public Task<LinkParentResult> LinkParentAsync(Guid t, Guid p, Guid a, CancellationToken ct) => throw new NotImplementedException();
         public Task<bool> UnlinkParentAsync(Guid t, Guid a, CancellationToken ct) => throw new NotImplementedException();
 

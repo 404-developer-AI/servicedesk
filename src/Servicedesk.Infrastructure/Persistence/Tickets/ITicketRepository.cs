@@ -69,10 +69,15 @@ public interface ITicketRepository
         int limit,
         CancellationToken ct);
 
-    /// Returns the ticket numbers that have been merged INTO this ticket so the
-    /// detail view can render the "Merged from #1234, #5678" strip without a
-    /// second round-trip.
-    Task<IReadOnlyList<long>> GetMergedSourceTicketNumbersAsync(Guid targetTicketId, CancellationToken ct);
+    /// v0.0.101 — everything the detail view needs *around* the ticket, in one
+    /// round-trip: merge sources ("Merged from #A, #B"), merge target + actor,
+    /// split parent + actor, split children ("Split into #A, #B"), linked
+    /// parent summary, linked child tickets, and the company-alert source
+    /// (ticket's own frozen company, else the requester's active primary
+    /// company). Replaces six single-purpose lookups that each opened their
+    /// own connection on every ticket open. Returns null when the ticket does
+    /// not exist (or is deleted).
+    Task<TicketDetailRelations?> GetDetailRelationsAsync(Guid ticketId, CancellationToken ct);
 
     /// Performs the merge in a single transaction. Re-points all events,
     /// mail messages, pinned events, mention notifications and intake forms
@@ -88,10 +93,6 @@ public interface ITicketRepository
         bool acknowledgedCrossCustomer,
         CancellationToken ct);
 
-    /// Returns the (id, number) pairs of tickets that were split off from this
-    /// ticket so the detail view can render a clickable "Split into #1234,
-    /// #5678" strip without a second round-trip.
-    Task<IReadOnlyList<SplitChildTicket>> GetSplitChildrenAsync(Guid parentTicketId, CancellationToken ct);
 
     /// Splits a multi-question mail off into a fresh ticket. Looks up the
     /// source mail event on <paramref name="sourceTicketId"/>, creates a new
@@ -113,16 +114,6 @@ public interface ITicketRepository
         string? overrideBodyText,
         CancellationToken ct);
 
-    /// Returns the child tickets (id + number) directly linked to this
-    /// parent via `parent_ticket_id`. Used by the detail view to render
-    /// the "Sub tickets" strip. Order: ticket number ascending.
-    Task<IReadOnlyList<LinkedChildTicket>> GetChildTicketsAsync(Guid parentTicketId, CancellationToken ct);
-
-    /// Returns the (number, name-of-linker) summary for the parent ticket,
-    /// or null if this ticket has no parent. The linker name is the email
-    /// of the user that ran the link; falls back to null when the link
-    /// pre-dates the user-attribution column.
-    Task<ParentTicketSummary?> GetParentSummaryAsync(Guid ticketId, CancellationToken ct);
 
     /// Links <paramref name="ticketId"/> as a sub-ticket of
     /// <paramref name="parentTicketId"/>. Writes a ParentLinked timeline
@@ -152,6 +143,32 @@ public sealed record ParentTicketSummary(
     long ParentNumber,
     string? LinkedByName,
     DateTime LinkedUtc);
+
+/// v0.0.101 — one-round-trip bundle for the ticket detail endpoint (see
+/// ITicketRepository.GetDetailRelationsAsync). Numbers are pre-stringified
+/// where the API contract already returns strings.
+public sealed record TicketDetailRelations(
+    IReadOnlyList<long> MergedSourceTicketNumbers,
+    string? MergedByUserName,
+    string? MergedIntoTicketNumber,
+    string? SplitFromTicketNumber,
+    string? SplitFromUserName,
+    IReadOnlyList<SplitChildTicket> SplitChildren,
+    ParentTicketSummary? Parent,
+    IReadOnlyList<LinkedChildTicket> ChildTickets,
+    TicketCompanyAlertSource? CompanyAlert);
+
+/// The company row the on-open / on-create alert is rendered from.
+public sealed class TicketCompanyAlertSource
+{
+    public Guid CompanyId { get; set; }
+    public string CompanyName { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
+    public string AlertText { get; set; } = string.Empty;
+    public bool AlertOnCreate { get; set; }
+    public bool AlertOnOpen { get; set; }
+    public string AlertOnOpenMode { get; set; } = string.Empty;
+}
 
 public enum LinkParentFailureReason
 {

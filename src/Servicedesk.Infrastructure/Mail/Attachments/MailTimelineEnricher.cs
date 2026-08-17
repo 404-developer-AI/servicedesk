@@ -10,19 +10,16 @@ namespace Servicedesk.Infrastructure.Mail.Attachments;
 
 public sealed class MailTimelineEnricher : IMailTimelineEnricher
 {
-    private readonly IMailMessageRepository _mail;
-    private readonly IAttachmentRepository _attachments;
+    private readonly IMailTimelineLookup _lookup;
     private readonly IBlobStore _blobs;
     private readonly ILogger<MailTimelineEnricher> _logger;
 
     public MailTimelineEnricher(
-        IMailMessageRepository mail,
-        IAttachmentRepository attachments,
+        IMailTimelineLookup lookup,
         IBlobStore blobs,
         ILogger<MailTimelineEnricher> logger)
     {
-        _mail = mail;
-        _attachments = attachments;
+        _lookup = lookup;
         _blobs = blobs;
         _logger = logger;
     }
@@ -31,6 +28,47 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
     {
         if (detail.Events.Count == 0) return detail;
 
+        // v0.0.101 — pass 1: collect every id the timeline needs, then load
+        // them in ONE batched round-trip. Before this the loop below issued
+        // 2–3 queries per inbound mail and 1–3 per note/comment/sent mail, so
+        // opening a long-running ticket cost O(events) round-trips.
+        var mailIds = new List<Guid>();
+        var eventIds = new List<long>();
+        var sentEventIds = new List<long>();
+        foreach (var evt in detail.Events)
+        {
+            switch (evt.EventType)
+            {
+                case "MailReceived":
+                    if (TryGetMailMessageId(evt.MetadataJson) is { } mid) mailIds.Add(mid);
+                    break;
+                case "MailSent":
+                    eventIds.Add(evt.Id);
+                    sentEventIds.Add(evt.Id);
+                    break;
+                case "Note":
+                case "Comment":
+                    eventIds.Add(evt.Id);
+                    break;
+            }
+        }
+        if (mailIds.Count == 0 && eventIds.Count == 0) return detail;
+
+        MailTimelineBatch batch;
+        try
+        {
+            batch = await _lookup.LoadAsync(mailIds, eventIds, sentEventIds, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Enrichment is a read-time nicety; the timeline must still render.
+            _logger.LogWarning(ex,
+                "MailTimelineEnricher batch load failed for ticket {TicketId} — rendering timeline unenriched.",
+                detail.Ticket.Id);
+            return detail;
+        }
+
+        // pass 2: same per-event enrichment as before, now from in-memory lookups.
         var enriched = new List<TicketEvent>(detail.Events.Count);
         foreach (var evt in detail.Events)
         {
@@ -42,7 +80,7 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
                 var mailId = TryGetMailMessageId(evt.MetadataJson);
                 enriched.Add(mailId is null
                     ? evt
-                    : await TryEnrichMailReceivedAsync(detail.Ticket.Id, mailId.Value, evt, ct));
+                    : await TryEnrichMailReceivedAsync(detail.Ticket.Id, mailId.Value, evt, batch, ct));
                 continue;
             }
 
@@ -53,13 +91,13 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
             // non-inline rows in metadata for the timeline-strip.
             if (evt.EventType == "Note" || evt.EventType == "Comment" || evt.EventType == "MailSent")
             {
-                var e = await TryAppendEventAttachmentsAsync(detail.Ticket.Id, evt, ct);
+                var e = TryAppendEventAttachments(detail.Ticket.Id, evt, batch);
                 // Outbound mail also gets the From/To/Cc/Bcc header surfaced.
                 // Its metadata carries no mail_message_id (unlike inbound), so
                 // the mail row is found via ticket_event_id. Runs after the
                 // attachment step and preserves whatever it injected.
                 if (evt.EventType == "MailSent")
-                    e = await TryAppendMailSentHeadersAsync(e, ct);
+                    e = TryAppendMailSentHeaders(e, batch);
                 enriched.Add(e);
                 continue;
             }
@@ -71,18 +109,18 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
     }
 
     private async Task<TicketEvent> TryEnrichMailReceivedAsync(
-        Guid ticketId, Guid mailId, TicketEvent evt, CancellationToken ct)
+        Guid ticketId, Guid mailId, TicketEvent evt, MailTimelineBatch batch, CancellationToken ct)
     {
         try
         {
-            var attachments = await _attachments.ListByMailAsync(mailId, ct);
+            var attachments = batch.AttachmentsByMailId[mailId].ToList();
             var readyCount = attachments.Count(a => a.ProcessingState == "Ready");
             var pendingCount = attachments.Count(a => a.ProcessingState == "Pending");
             var failedCount = attachments.Count(a => a.ProcessingState == "Failed");
 
             string? rewrittenHtml = null;
             int cidReplaced = 0, cidUnmatched = 0;
-            var mail = await _mail.GetByIdAsync(mailId, ct);
+            batch.MailsById.TryGetValue(mailId, out var mail);
             if (mail is not null && !string.IsNullOrWhiteSpace(mail.BodyHtmlBlobHash))
             {
                 await using var stream = await _blobs.OpenReadAsync(mail.BodyHtmlBlobHash, ct);
@@ -101,7 +139,7 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
                 "[MailEnrich] ticket={TicketId} mail={MailId} attachments total={Total} ready={Ready} pending={Pending} failed={Failed} cid replaced={Replaced} unmatched={Unmatched}",
                 ticketId, mailId, attachments.Count, readyCount, pendingCount, failedCount, cidReplaced, cidUnmatched);
 
-            var recipients = await _mail.ListRecipientsAsync(mailId, ct);
+            var recipients = batch.RecipientsByMailId[mailId].ToList();
             var newMetadata = InjectMailAttachmentsAndRecipients(
                 evt.MetadataJson, ticketId, mailId,
                 mail?.FromAddress, mail?.FromName, attachments, recipients);
@@ -120,13 +158,12 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
         }
     }
 
-    private async Task<TicketEvent> TryAppendMailSentHeadersAsync(TicketEvent evt, CancellationToken ct)
+    private TicketEvent TryAppendMailSentHeaders(TicketEvent evt, MailTimelineBatch batch)
     {
         try
         {
-            var mail = await _mail.GetByTicketEventIdAsync(evt.Id, ct);
-            if (mail is null) return evt;
-            var recipients = await _mail.ListRecipientsAsync(mail.Id, ct);
+            if (!batch.MailsBySentEventId.TryGetValue(evt.Id, out var mail)) return evt;
+            var recipients = batch.RecipientsByMailId[mail.Id].ToList();
             var newMetadata = InjectMailHeaders(evt.MetadataJson, mail.FromAddress, mail.FromName, recipients);
             return evt with { MetadataJson = newMetadata };
         }
@@ -139,12 +176,12 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
         }
     }
 
-    private async Task<TicketEvent> TryAppendEventAttachmentsAsync(
-        Guid ticketId, TicketEvent evt, CancellationToken ct)
+    private TicketEvent TryAppendEventAttachments(
+        Guid ticketId, TicketEvent evt, MailTimelineBatch batch)
     {
         try
         {
-            var attachments = await _attachments.ListByEventAsync(evt.Id, ct);
+            var attachments = batch.AttachmentsByEventId[evt.Id].ToList();
             if (attachments.Count == 0) return evt;
             // Inline rows are already embedded in bodyHtml via the original
             // /api/.../attachments/{id} URL the editor produced — surfacing

@@ -110,7 +110,7 @@ public static class TicketEndpoints
 
         group.MapGet("/{id:guid}", async (
             Guid id, HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess,
-            ICompanyRepository companies, IMailTimelineEnricher mailEnricher,
+            IMailTimelineEnricher mailEnricher,
             [FromServices] Npgsql.NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
             var detail = await repo.GetByIdAsync(id, ct);
@@ -122,56 +122,25 @@ public static class TicketEndpoints
                 return Results.NotFound(); // 404 to prevent existence leaking
 
             detail = await mailEnricher.EnrichAsync(detail, ct);
-            var companyAlert = await BuildCompanyAlertAsync(companies, detail.Ticket.CompanyId, detail.Ticket.RequesterContactId, ct);
 
-            // v0.0.23: surface merge metadata so the UI can render the banners
-            // ("Merged into #X" on the source, "Merged from #A, #B" on the
-            // target). One round-trip each — both index-only at scale.
-            var mergedSourceNumbers = await repo.GetMergedSourceTicketNumbersAsync(id, ct);
-            var splitChildren = await repo.GetSplitChildrenAsync(id, ct);
-            var childTickets = await repo.GetChildTicketsAsync(id, ct);
-            var parentSummary = await repo.GetParentSummaryAsync(id, ct);
-            string? mergedByUserName = null;
-            string? mergedIntoTicketNumber = null;
-            string? splitFromTicketNumber = null;
-            string? splitFromUserName = null;
-            if (detail.Ticket.MergedByUserId is not null
-                || detail.Ticket.MergedIntoTicketId is not null
-                || detail.Ticket.SplitFromTicketId is not null
-                || detail.Ticket.SplitFromUserId is not null)
-            {
-                await using var conn = await dataSource.OpenConnectionAsync(ct);
-                if (detail.Ticket.MergedByUserId is { } actorId)
-                {
-                    mergedByUserName = await Dapper.SqlMapper.ExecuteScalarAsync<string?>(conn,
-                        new Dapper.CommandDefinition(
-                            "SELECT email FROM users WHERE id = @id",
-                            new { id = actorId }, cancellationToken: ct));
-                }
-                if (detail.Ticket.MergedIntoTicketId is { } targetId)
-                {
-                    var targetNumber = await Dapper.SqlMapper.ExecuteScalarAsync<long?>(conn,
-                        new Dapper.CommandDefinition(
-                            "SELECT number FROM tickets WHERE id = @id",
-                            new { id = targetId }, cancellationToken: ct));
-                    if (targetNumber is { } n) mergedIntoTicketNumber = n.ToString();
-                }
-                if (detail.Ticket.SplitFromTicketId is { } parentId)
-                {
-                    var parentNumber = await Dapper.SqlMapper.ExecuteScalarAsync<long?>(conn,
-                        new Dapper.CommandDefinition(
-                            "SELECT number FROM tickets WHERE id = @id",
-                            new { id = parentId }, cancellationToken: ct));
-                    if (parentNumber is { } n) splitFromTicketNumber = n.ToString();
-                }
-                if (detail.Ticket.SplitFromUserId is { } splitActorId)
-                {
-                    splitFromUserName = await Dapper.SqlMapper.ExecuteScalarAsync<string?>(conn,
-                        new Dapper.CommandDefinition(
-                            "SELECT email FROM users WHERE id = @id",
-                            new { id = splitActorId }, cancellationToken: ct));
-                }
-            }
+            // v0.0.101: merge/split banners, linked parent/children and the
+            // company-alert source used to be six sequential lookups, each on
+            // its own pooled connection, plus up to four actor/number probes.
+            // Now one batched round-trip (see GetDetailRelationsAsync).
+            var rel = await repo.GetDetailRelationsAsync(id, ct)
+                ?? new TicketDetailRelations(
+                    Array.Empty<long>(), null, null, null, null,
+                    Array.Empty<SplitChildTicket>(), null, Array.Empty<LinkedChildTicket>(), null);
+            var companyAlert = rel.CompanyAlert is { } ca
+                ? new TicketCompanyAlert(
+                    CompanyId: ca.CompanyId,
+                    CompanyName: ca.CompanyName,
+                    Code: ca.Code,
+                    AlertText: ca.AlertText,
+                    AlertOnCreate: ca.AlertOnCreate,
+                    AlertOnOpen: ca.AlertOnOpen,
+                    AlertOnOpenMode: ca.AlertOnOpenMode)
+                : null;
 
             // For tickets created via split, surface the source-mail's non-inline
             // attachments so the description block can render download chips.
@@ -188,16 +157,16 @@ public static class TicketEndpoints
                 events = FilterTimelineEventsForRole(detail.Events, role),
                 pinnedEvents = detail.PinnedEvents,
                 companyAlert,
-                mergedSourceTicketNumbers = mergedSourceNumbers,
-                mergedByUserName,
-                mergedIntoTicketNumber,
-                splitFromTicketNumber,
-                splitFromUserName,
-                splitChildren = splitChildren.Select(c => new { id = c.Id, number = c.Number }),
+                mergedSourceTicketNumbers = rel.MergedSourceTicketNumbers,
+                mergedByUserName = rel.MergedByUserName,
+                mergedIntoTicketNumber = rel.MergedIntoTicketNumber,
+                splitFromTicketNumber = rel.SplitFromTicketNumber,
+                splitFromUserName = rel.SplitFromUserName,
+                splitChildren = rel.SplitChildren.Select(c => new { id = c.Id, number = c.Number }),
                 descriptionAttachments,
-                parentTicketNumber = parentSummary?.ParentNumber.ToString(),
-                parentLinkedByUserName = parentSummary?.LinkedByName,
-                childTickets = childTickets.Select(c => new { id = c.Id, number = c.Number.ToString() }),
+                parentTicketNumber = rel.Parent?.ParentNumber.ToString(),
+                parentLinkedByUserName = rel.Parent?.LinkedByName,
+                childTickets = rel.ChildTickets.Select(c => new { id = c.Id, number = c.Number.ToString() }),
             });
         }).WithName("GetTicket").WithOpenApi();
 

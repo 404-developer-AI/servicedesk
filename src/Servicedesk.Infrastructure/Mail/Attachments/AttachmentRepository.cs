@@ -5,7 +5,7 @@ namespace Servicedesk.Infrastructure.Mail.Attachments;
 
 public sealed class AttachmentRepository : IAttachmentRepository
 {
-    private const string SelectColumns = """
+    internal const string SelectColumns = """
         SELECT id                AS Id,
                owner_id          AS OwnerId,
                owner_kind        AS OwnerKind,
