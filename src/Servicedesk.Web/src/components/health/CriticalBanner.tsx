@@ -2,18 +2,20 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { AlertTriangle } from "lucide-react";
 import { systemApi } from "@/lib/api";
+import { pollIntervalMs } from "@/lib/healthPolling";
 import { authStore } from "@/auth/authStore";
 
 const HEALTH_QUERY_KEY = ["system", "health"] as const;
 
 /// Red shell banner, admin-only, shows on any Critical subsystem. Shares
-/// the HealthPill's query key so both update on the same 30s cadence.
+/// the HealthPill's query key so both update on the same server-dictated
+/// cadence (Health.PollIntervalSeconds).
 export function CriticalBanner() {
   const role = authStore.get().user?.role;
   const { data } = useQuery({
     queryKey: HEALTH_QUERY_KEY,
     queryFn: () => systemApi.health(),
-    refetchInterval: 30_000,
+    refetchInterval: (q) => pollIntervalMs(q.state.data),
     enabled: role === "Admin",
   });
 

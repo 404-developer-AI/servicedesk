@@ -32,6 +32,8 @@ readonly ENV_CONF_FILE="${SECRETS_DIR}/env.conf"
 readonly INSTALL_DIR_DEFAULT="/opt/servicedesk"
 readonly PG_APP_DB="servicedesk"
 readonly CERT_RENEW_DIR="/var/lib/servicedesk/cert-renew"
+# Connection budget (v0.0.99) — must match install.sh.
+readonly PG_MAX_CONNECTIONS="200"
 
 # --- colors + log helpers (identical to install.sh) ----------------------
 if [[ -t 1 ]]; then
@@ -408,6 +410,63 @@ reload_nginx_if_config_changed() {
 }
 
 # ===========================================================================
+# 5b. ensure Postgres max_connections >= PG_MAX_CONNECTIONS (v0.0.99)
+#     Pre-v0.0.99 installs run the Postgres default (100, minus 3 reserved
+#     for superusers) which equals Npgsql's default pool size, so a busy
+#     morning could hit "53300 remaining connection slots are reserved".
+#     install.sh now writes max_connections into its servicedesk-managed
+#     block; here we retrofit it for existing installs.
+#     - Effective value already >= target (operator tuned it) → skip.
+#     - Managed block present without max_connections → insert before the
+#       end marker (keeps listen_addresses intact).
+#     - No managed block (unusual, hand-configured host) → append a tiny
+#       managed block with only max_connections.
+#     max_connections is restart-only. Runs BEFORE the app is rebuilt, so
+#     the ~2 s Postgres restart lands while the old app is still up; Npgsql
+#     re-opens broken pooled connections transparently.
+# ===========================================================================
+ensure_postgres_max_connections() {
+    if ! command -v psql >/dev/null 2>&1 || ! sudo -u postgres psql -tAc "SELECT 1" >/dev/null 2>&1; then
+        warn "Local Postgres not reachable via psql — skipping max_connections check (remote/managed DB?)."
+        return 0
+    fi
+    local current pg_conf
+    current="$(sudo -u postgres psql -tAc "SHOW max_connections" 2>/dev/null || echo 0)"
+    if [[ "${current}" =~ ^[0-9]+$ ]] && (( current >= PG_MAX_CONNECTIONS )); then
+        ok "Postgres max_connections=${current} (>= ${PG_MAX_CONNECTIONS}) — nothing to do."
+        return 0
+    fi
+    pg_conf="$(sudo -u postgres psql -tAc "SHOW config_file")"
+    [[ -f "$pg_conf" ]] || { warn "postgresql.conf not found at '${pg_conf}' — skipping max_connections."; return 0; }
+
+    local begin="# >>> servicedesk-managed — do not edit between these markers"
+    local end="# <<< servicedesk-managed"
+    local line="max_connections = ${PG_MAX_CONNECTIONS}"
+    if grep -qF "$begin" "$pg_conf"; then
+        # Replace an older managed value or insert a fresh line before the end marker.
+        if sed -n "/${begin}/,/${end}/p" "$pg_conf" | grep -qE '^max_connections\s*='; then
+            sed -i "/${begin}/,/${end}/s/^max_connections\s*=.*/${line}/" "$pg_conf"
+        else
+            sed -i "/${end}/i ${line}" "$pg_conf"
+        fi
+    else
+        cat >> "$pg_conf" <<EOF
+
+${begin}
+# Connection budget (v0.0.99) — see deploy/install.sh for the rationale.
+${line}
+${end}
+EOF
+    fi
+    log "Raising Postgres max_connections ${current} → ${PG_MAX_CONNECTIONS} (restart-only parameter) …"
+    systemctl restart postgresql
+    if ! pg_isready -h 127.0.0.1 -p 5432 -t 10 >/dev/null 2>&1; then
+        die "Postgres did not come back after the max_connections change — inspect 'journalctl -u postgresql' before continuing."
+    fi
+    ok "Postgres max_connections=$(sudo -u postgres psql -tAc "SHOW max_connections")."
+}
+
+# ===========================================================================
 # 8. ensure REVOKE on audit_log stays in place after potential pg_restore
 # ===========================================================================
 reapply_audit_log_revoke() {
@@ -469,6 +528,7 @@ main() {
     ensure_env_conf
     ensure_cert_renew_bridge
     relax_letsencrypt_perms
+    ensure_postgres_max_connections
     rebuild_and_restart_app
     if ! wait_for_health_or_rollback; then
         exit 1

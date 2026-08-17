@@ -196,6 +196,7 @@ function GlobalSearchSection({
   const dropdownLimitEntry = findEntry(entries, "Search.DropdownLimit");
   const debounceEntry = findEntry(entries, "Search.DebounceMs");
   const timeoutEntry = findEntry(entries, "Search.SourceTimeoutMs");
+  const concurrencyEntry = findEntry(entries, "Search.MaxConcurrentSources");
 
   const selected = useMemo(() => {
     const raw = (quickSourcesEntry?.value ?? "")
@@ -294,6 +295,9 @@ function GlobalSearchSection({
           )}
           {timeoutEntry && (
             <SettingField entry={timeoutEntry} queryKey={SEARCH_QUERY_KEY} label="Per-source time budget (ms)" />
+          )}
+          {concurrencyEntry && (
+            <SettingField entry={concurrencyEntry} queryKey={SEARCH_QUERY_KEY} label="Max concurrent sources per search" />
           )}
         </div>
       )}

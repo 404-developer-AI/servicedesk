@@ -47,6 +47,11 @@ readonly REPO_URL_DEFAULT="https://github.com/404-developer-AI/servicedesk.git"
 readonly REPO_REF_DEFAULT="main"
 readonly PG_APP_DB="servicedesk"
 readonly PG_VERSION_TARGET="16"
+# Connection budget (v0.0.99): max_connections written into the managed
+# postgresql.conf block; the app's Npgsql pool default is documented next to
+# it (DependencyInjection.ApplyPoolLimits) so the two numbers stay in view.
+readonly PG_MAX_CONNECTIONS="200"
+readonly PG_APP_MAX_POOL_SIZE="80"
 # Must match the subnet pinned in deploy/docker-compose.yml. Hardcoded in both
 # places because install.sh writes the pg_hba rule BEFORE the compose network
 # exists — we cannot query docker for it yet.
@@ -284,6 +289,12 @@ ${begin}
 # deploy/docker-compose.yml to ${COMPOSE_SUBNET}) can reach us. Auth is enforced
 # by the host-rule below in pg_hba.conf.
 listen_addresses = '*'
+# Connection budget (v0.0.99). The Postgres default (100, minus 3 reserved for
+# superusers) equals Npgsql's default pool size, so a busy app alone could hit
+# "53300 remaining connection slots are reserved". The app pins its pool to
+# ${PG_APP_MAX_POOL_SIZE} (override: SERVICEDESK_Database__MaxPoolSize); ${PG_MAX_CONNECTIONS} leaves
+# headroom for pgAdmin, backups and a second app instance during an update.
+max_connections = ${PG_MAX_CONNECTIONS}
 ${end}
 EOF
 
@@ -297,8 +308,8 @@ host    ${PG_APP_DB}   ${DB_USER}   ${COMPOSE_SUBNET}   scram-sha-256
 ${end}
 EOF
 
-    # listen_addresses is a *restart-only* parameter — reload does NOT apply
-    # it. Always restart after we've (re)written the block.
+    # listen_addresses and max_connections are *restart-only* parameters —
+    # reload does NOT apply them. Always restart after we've (re)written the block.
     log "Restarting postgresql to apply listen_addresses + hba …"
     systemctl restart postgresql
 

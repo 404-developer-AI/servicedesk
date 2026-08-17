@@ -7,6 +7,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { healthApi, type HealthStatus, type SubsystemHealth } from "@/lib/api";
+import { pollIntervalMs } from "@/lib/healthPolling";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -51,7 +52,7 @@ export function SystemHealthTile() {
   const query = useQuery({
     queryKey: HEALTH_QUERY_KEY,
     queryFn: () => healthApi.get(),
-    refetchInterval: 30_000,
+    refetchInterval: (q) => pollIntervalMs(q.state.data),
   });
 
   const rollup = query.data?.status ?? "Ok";

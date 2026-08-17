@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Activity, AlertTriangle, Archive, CheckCircle2, ChevronDown, ChevronRight, ShieldAlert } from "lucide-react";
+import { Activity, AlertTriangle, Archive, CheckCircle2, ChevronDown, ChevronRight, RadioTower, ShieldAlert } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -11,6 +11,7 @@ import {
   type SettingEntry,
   type SubsystemHealth,
 } from "@/lib/api";
+import { pollIntervalMs } from "@/lib/healthPolling";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,6 +23,15 @@ const ARCHIVE_QUERY_KEY = ["admin", "health", "incidents", "archive"] as const;
 const HEALTH_SETTINGS_QUERY_KEY = ["settings", "list", "Health"] as const;
 // Re-using the dashboard pill's key so resetting refreshes both views.
 const PILL_QUERY_KEY = ["system", "health"] as const;
+
+// v0.0.99 — client poll cadence + server-side report cache. Both exist
+// because every open tab polls the health endpoints and each uncached
+// evaluation runs dozens of queries; on a busy morning that alone can
+// exhaust the Postgres connection slots.
+const POLLING_SETTINGS: ReadonlyArray<{ key: string; label: string }> = [
+  { key: "Health.PollIntervalSeconds", label: "Client poll interval (seconds)" },
+  { key: "Health.ReportCacheSeconds", label: "Server report cache (seconds)" },
+];
 
 // Ordered list of the security-activity keys surfaced in the settings
 // card. Defined once here so the card stays tidy even if new thresholds
@@ -66,12 +76,13 @@ export function HealthSettingsPage() {
   const query = useQuery({
     queryKey: HEALTH_QUERY_KEY,
     queryFn: () => healthApi.get(),
-    refetchInterval: 30_000,
+    refetchInterval: (q) => pollIntervalMs(q.state.data),
   });
   const incidentsQuery = useQuery({
     queryKey: INCIDENTS_QUERY_KEY,
     queryFn: () => healthApi.listIncidents(200),
-    refetchInterval: 30_000,
+    // Incidents ride the same cadence as the report they annotate.
+    refetchInterval: () => pollIntervalMs(query.data),
   });
 
   const invalidateAll = () => {
@@ -141,7 +152,18 @@ export function HealthSettingsPage() {
         ) : null}
       </header>
 
-      <SecurityActivitySettingsCard />
+      <HealthSettingsCard
+        icon={<RadioTower className="h-5 w-5" />}
+        title="Polling & report cache"
+        description="How often open tabs re-poll the health status, and how long the server reuses a computed report so simultaneous polls from many tabs share one evaluation instead of each running dozens of queries. Admin actions on this page always refresh immediately."
+        keys={POLLING_SETTINGS}
+      />
+      <HealthSettingsCard
+        icon={<ShieldAlert className="h-5 w-5" />}
+        title="Security activity monitoring"
+        description="Thresholds and timing for the security-activity subsystem. Counts are sampled from the audit log on a rolling window; breaching a threshold raises a Health incident and pushes a notification to every active Admin."
+        keys={SECURITY_ACTIVITY_SETTINGS}
+      />
 
       {query.isLoading ? (
         <div className="space-y-3">
@@ -173,7 +195,17 @@ export function HealthSettingsPage() {
   );
 }
 
-function SecurityActivitySettingsCard() {
+function HealthSettingsCard({
+  icon,
+  title,
+  description,
+  keys,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  keys: ReadonlyArray<{ key: string; label: string }>;
+}) {
   const [open, setOpen] = React.useState(false);
   const settings = useQuery({
     queryKey: HEALTH_SETTINGS_QUERY_KEY,
@@ -194,16 +226,10 @@ function SecurityActivitySettingsCard() {
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-3 px-5 py-4 text-left"
       >
-        <div className="rounded-md bg-glass p-2 text-primary">
-          <ShieldAlert className="h-5 w-5" />
-        </div>
+        <div className="rounded-md bg-glass p-2 text-primary">{icon}</div>
         <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold text-foreground">Security activity monitoring</h2>
-          <p className="text-xs text-muted-foreground">
-            Thresholds and timing for the security-activity subsystem. Counts are
-            sampled from the audit log on a rolling window; breaching a threshold
-            raises a Health incident and pushes a notification to every active Admin.
-          </p>
+          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+          <p className="text-xs text-muted-foreground">{description}</p>
         </div>
         {open ? (
           <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -219,7 +245,7 @@ function SecurityActivitySettingsCard() {
             <p className="text-sm text-muted-foreground">Failed to load settings.</p>
           ) : (
             <div className="flex flex-col">
-              {SECURITY_ACTIVITY_SETTINGS.map(({ key, label }) => {
+              {keys.map(({ key, label }) => {
                 const entry = entriesByKey.get(key);
                 if (!entry) return null;
                 return (

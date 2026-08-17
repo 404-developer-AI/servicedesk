@@ -7,6 +7,7 @@ using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Polling;
 using Servicedesk.Infrastructure.Observability;
 using Servicedesk.Infrastructure.Realtime;
+using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Storage;
 
 namespace Servicedesk.Api.Health;
@@ -16,24 +17,35 @@ namespace Servicedesk.Api.Health;
 ///   • GET  /api/admin/health             — full per-subsystem detail (admin page)
 ///   • POST /api/admin/health/mail-polling/sources/{id}/reset — retry action
 /// Non-admins never see error messages — only the rollup colour.
+///
+/// v0.0.99: all reads go through <see cref="IHealthReportCache"/> (TTL +
+/// single-flight, `Health.ReportCacheSeconds`) instead of the aggregators
+/// directly, and every response carries `pollIntervalSeconds`
+/// (`Health.PollIntervalSeconds`) so the SPA follows the server's cadence.
+/// Every POST on the admin group invalidates the cache via an endpoint
+/// filter, so acknowledge/reset/requeue reflect on the very next poll.
 public static class HealthEndpoints
 {
     public static IEndpointRouteBuilder MapHealthEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/system/health", async (
-            IHealthAggregator agg,
-            IIntegrationsHealthAggregator integrations,
+            IHealthReportCache cache,
+            ISettingsService settings,
             CancellationToken ct) =>
         {
-            var report = await agg.CollectAsync(ct);
-            var integrationsReport = await integrations.CollectAsync(ct);
+            var report = await cache.GetSystemReportAsync(ct);
+            var integrationsReport = await cache.GetIntegrationsReportAsync(ct);
             // Roll the integrations rollup into the public pill so that a
             // sync-failing integration also flips the dashboard header from
             // "All systems OK" to "Attention needed".
             var rollup = report.Status > integrationsReport.Rollup
                 ? report.Status
                 : integrationsReport.Rollup;
-            return Results.Ok(new { status = rollup.ToString() });
+            return Results.Ok(new
+            {
+                status = rollup.ToString(),
+                pollIntervalSeconds = await ResolvePollIntervalAsync(settings, ct),
+            });
         })
         .WithName("GetSystemHealth").WithOpenApi();
 
@@ -41,12 +53,24 @@ public static class HealthEndpoints
             .WithTags("Health")
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
-        admin.MapGet("", async (IHealthAggregator agg, CancellationToken ct) =>
+        // Every mutation on this group changes what the aggregators would
+        // report — drop the cached reports once the handler has run so the
+        // admin sees the effect on the next poll instead of after the TTL.
+        admin.AddEndpointFilter(async (ctx, next) =>
         {
-            var report = await agg.CollectAsync(ct);
+            var result = await next(ctx);
+            if (HttpMethods.IsPost(ctx.HttpContext.Request.Method))
+                ctx.HttpContext.RequestServices.GetRequiredService<IHealthReportCache>().Invalidate();
+            return result;
+        });
+
+        admin.MapGet("", async (IHealthReportCache cache, ISettingsService settings, CancellationToken ct) =>
+        {
+            var report = await cache.GetSystemReportAsync(ct);
             return Results.Ok(new
             {
                 status = report.Status.ToString(),
+                pollIntervalSeconds = await ResolvePollIntervalAsync(settings, ct),
                 subsystems = report.Subsystems.Select(s => new
                 {
                     key = s.Key,
@@ -67,13 +91,15 @@ public static class HealthEndpoints
         .WithName("GetAdminHealth").WithOpenApi();
 
         admin.MapGet("/integrations", async (
-            IIntegrationsHealthAggregator integrations,
+            IHealthReportCache cache,
+            ISettingsService settings,
             CancellationToken ct) =>
         {
-            var report = await integrations.CollectAsync(ct);
+            var report = await cache.GetIntegrationsReportAsync(ct);
             return Results.Ok(new
             {
                 status = report.Rollup.ToString(),
+                pollIntervalSeconds = await ResolvePollIntervalAsync(settings, ct),
                 integrations = report.Integrations.Select(i => new
                 {
                     key = i.Key,
@@ -111,7 +137,7 @@ public static class HealthEndpoints
             HttpContext http,
             IAdsolutSyncStateStore syncState,
             IAdsolutConnectionStore connections,
-            Servicedesk.Infrastructure.Settings.ISettingsService settings,
+            ISettingsService settings,
             Servicedesk.Infrastructure.Secrets.IProtectedSecretStore secrets,
             IIntegrationStatusNotifier statusNotifier,
             IAuditLogger audit,
@@ -318,6 +344,25 @@ public static class HealthEndpoints
         .WithName("AcknowledgeIncidentsBySubsystem").WithOpenApi();
 
         return app;
+    }
+
+    private const int PollFloorSeconds = 5;
+    private const int PollCeilingSeconds = 600;
+    private const int PollFallbackSeconds = 30;
+
+    /// Client poll cadence, clamped. Falls back to 30 s if the setting is
+    /// unreadable so a settings hiccup never turns into a hammering client.
+    private static async Task<int> ResolvePollIntervalAsync(ISettingsService settings, CancellationToken ct)
+    {
+        try
+        {
+            var raw = await settings.GetAsync<int>(SettingKeys.Health.PollIntervalSeconds, ct);
+            return Math.Clamp(raw, PollFloorSeconds, PollCeilingSeconds);
+        }
+        catch
+        {
+            return PollFallbackSeconds;
+        }
     }
 
     private static object ToDto(IncidentRow r) => new

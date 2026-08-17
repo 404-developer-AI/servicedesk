@@ -23,6 +23,7 @@ import {
   type AdsolutErpSalesReceiptsState,
   type AdsolutErpOrdersState,
 } from "@/lib/api";
+import { pollIntervalMs } from "@/lib/healthPolling";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -94,7 +95,7 @@ export function IntegrationsHealthTile() {
   const query = useQuery({
     queryKey: QUERY_KEY,
     queryFn: () => integrationsHealthApi.get(),
-    refetchInterval: 30_000,
+    refetchInterval: (q) => pollIntervalMs(q.state.data),
   });
 
   if (query.isLoading) {

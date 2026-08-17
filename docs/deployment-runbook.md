@@ -47,7 +47,7 @@ bash <(curl -sSL https://raw.githubusercontent.com/404-developer-AI/servicedesk/
 
 1. Verifies Ubuntu 22.04/24.04 + root.
 2. Installs Docker + compose-plugin if absent.
-3. Installs PostgreSQL 16 if absent, configures `listen_addresses` for the docker-gateway IP (172.17.0.1), adds a `pg_hba.conf` line for the 172.17.0.0/16 bridge (scram-sha-256).
+3. Installs PostgreSQL 16 if absent, configures `listen_addresses` for the docker-gateway IP (172.17.0.1) and `max_connections = 200` (v0.0.99 — the app pins its Npgsql pool to 80, so the budget leaves room for pgAdmin/backups/update overlap), adds a `pg_hba.conf` line for the 172.17.0.0/16 bridge (scram-sha-256).
 4. Creates the Postgres role + `servicedesk` database (idempotent — separate psql calls because `CREATE DATABASE` can't run in a transaction).
 5. Generates `/etc/servicedesk/secrets.env` (mode 600 root:root) with the three required `SERVICEDESK_` env-vars. Skips this if the file already exists.
 6. Clones the repo into `/opt/servicedesk` (override via `INSTALL_DIR`).
@@ -114,6 +114,7 @@ bash <(curl -sSL https://raw.githubusercontent.com/404-developer-AI/servicedesk/
 3. Snapshots the current git SHA for rollback.
 4. `git fetch --tags` + checkout the latest `v*` tag (or `REPO_REF=…` override).
 5. Diffs `.env.example` against `secrets.env` for new `SERVICEDESK_*` vars; prompts for each one.
+5b. Ensures Postgres `max_connections >= 200` (v0.0.99): if the effective value is lower, writes it into the servicedesk-managed `postgresql.conf` block and restarts Postgres (~2 s, restart-only parameter) while the old app is still running — Npgsql re-opens its pooled connections transparently. Skipped when the value is already ≥ 200 or no local Postgres is reachable via `psql`.
 6. `docker compose build app` + stop/start.
 7. Waits 120 s for the new container to become healthy.
 8. **On health-fail → automatic rollback**: checks out the previous SHA, rebuilds, starts. You end up back on the version you started from; the failing version's container is gone.
@@ -238,6 +239,18 @@ GROUP BY event_type;
 ```
 
 Raise the matching threshold at `/settings/health` → Security activity monitoring until the baseline sits comfortably below it. No restart needed — the monitor re-reads settings each tick.
+
+### `53300: remaining connection slots are reserved for roles with the SUPERUSER attribute`
+Postgres ran out of connection slots; the error lands in whichever worker opened next (typically `MailPollingService cycle crashed — will retry`) and API calls fail at the same moment. Check who holds the slots:
+
+```sql
+SELECT usename, application_name, state, count(*)
+FROM pg_stat_activity
+GROUP BY 1, 2, 3
+ORDER BY 4 DESC;
+```
+
+Since v0.0.99 the budget is `max_connections = 200` (managed block in `postgresql.conf`, retrofitted by `update.sh`) against an app pool of 80 (`Maximum Pool Size`, override via `SERVICEDESK_Database__MaxPoolSize` in `secrets.env` — restart the app after changing). Verify with `sudo -u postgres psql -tAc "SHOW max_connections"`; if it still says 100 the update step was skipped (remote DB, or `psql` unavailable) — add `max_connections = 200` to `postgresql.conf` by hand and `systemctl restart postgresql`. If the app is the culprit at steady state, lower the health poll pressure first: Settings → Health → *Polling & report cache* (`Health.ReportCacheSeconds` up, `Health.PollIntervalSeconds` up) and Settings → General → Global search (`Search.MaxConcurrentSources` down).
 
 ---
 

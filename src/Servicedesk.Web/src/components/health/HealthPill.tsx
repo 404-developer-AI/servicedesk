@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { systemApi, type HealthStatus } from "@/lib/api";
+import { pollIntervalMs } from "@/lib/healthPolling";
 import { authStore } from "@/auth/authStore";
 
 const HEALTH_QUERY_KEY = ["system", "health"] as const;
-const REFETCH_MS = 30_000;
 
 // Light mode reads the dot+label as deeper jewel tones (700) for contrast on
 // a near-white pill; dark mode keeps the existing pale-300 glow palette.
@@ -31,8 +31,9 @@ export function HealthPill() {
   const { data, isLoading } = useQuery({
     queryKey: HEALTH_QUERY_KEY,
     queryFn: () => systemApi.health(),
-    refetchInterval: REFETCH_MS,
-    staleTime: REFETCH_MS / 2,
+    // Cadence is server-dictated (Health.PollIntervalSeconds), see healthPolling.ts.
+    refetchInterval: (q) => pollIntervalMs(q.state.data),
+    staleTime: (q) => pollIntervalMs(q.state.data) / 2,
   });
   const role = authStore.get().user?.role;
   const isAdmin = role === "Admin";

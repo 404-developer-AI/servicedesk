@@ -72,7 +72,7 @@ public static class DependencyInjection
             var connectionString = configuration.GetConnectionString("Postgres")
                 ?? throw new InvalidOperationException(
                     "ConnectionStrings:Postgres is not configured. Set it via environment variable or user-secrets.");
-            return new NpgsqlDataSourceBuilder(connectionString).Build();
+            return new NpgsqlDataSourceBuilder(ApplyPoolLimits(connectionString, configuration)).Build();
         });
 
         // v0.0.42 — IAuditLogger is decorated so every whitelisted audit
@@ -379,6 +379,9 @@ public static class DependencyInjection
         services.AddSingleton<ISecurityActivitySnapshot, InMemorySecurityActivitySnapshot>();
         services.AddSingleton<IHealthAggregator, HealthAggregator>();
         services.AddSingleton<IIntegrationsHealthAggregator, IntegrationsHealthAggregator>();
+        // v0.0.99 — read-through cache + single-flight in front of both
+        // aggregators; endpoints go through this, never the aggregators.
+        services.AddSingleton<IHealthReportCache, HealthReportCache>();
         services.AddSingleton<IHealthSubsystemReset, HealthSubsystemReset>();
         // Default to the no-op notifiers; the Api project overrides these
         // with the SignalR-backed implementations.
@@ -699,5 +702,41 @@ public static class DependencyInjection
         services.AddHostedService<SurveyExpiryWorker>();
 
         return services;
+    }
+
+    /// v0.0.99 — pin the Npgsql pool below the Postgres connection budget.
+    ///
+    /// Npgsql defaults to `Maximum Pool Size=100`, which is exactly the
+    /// Postgres default `max_connections` (minus 3 superuser-reserved slots),
+    /// so a full pool alone triggers 53300 "remaining connection slots are
+    /// reserved" — and that error surfaces as random crashes in whichever
+    /// worker happens to open next. install.sh/update.sh raise
+    /// max_connections to 200; the pool default here (80) leaves headroom for
+    /// pgAdmin, backups and a second app instance during an update. A pool
+    /// size explicitly present in the connection string always wins; the
+    /// default can also be overridden with `Database:MaxPoolSize`
+    /// (env `SERVICEDESK_Database__MaxPoolSize`). Not a DB-backed setting on
+    /// purpose: it must be known before the first connection is opened.
+    internal const int DefaultMaxPoolSize = 80;
+
+    internal static string ApplyPoolLimits(string connectionString, IConfiguration configuration)
+    {
+        // NpgsqlConnectionStringBuilder.ContainsKey answers "is this a known
+        // keyword", not "was it supplied" — parse the raw string to see what
+        // the operator actually wrote (all three Npgsql spellings).
+        var supplied = new System.Data.Common.DbConnectionStringBuilder { ConnectionString = connectionString };
+        foreach (string key in supplied.Keys)
+        {
+            var normalized = key.Replace(" ", string.Empty);
+            if (normalized.Equals("MaximumPoolSize", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("MaxPoolSize", StringComparison.OrdinalIgnoreCase))
+                return connectionString;
+        }
+
+        var builder = new NpgsqlConnectionStringBuilder(connectionString);
+        var configured = configuration.GetValue<int?>("Database:MaxPoolSize");
+        var size = configured is > 0 ? configured.Value : DefaultMaxPoolSize;
+        builder.MaxPoolSize = Math.Clamp(size, 1, 1000);
+        return builder.ConnectionString;
     }
 }
