@@ -201,6 +201,16 @@ export type SubsystemHealth = {
 export type HealthReport = {
   status: HealthStatus;
   subsystems: SubsystemHealth[];
+  /// v0.0.99 — server-dictated client poll cadence (Health.PollIntervalSeconds).
+  pollIntervalSeconds: number;
+};
+
+/// v0.0.99 — the public pill payload; `pollIntervalSeconds` is what every
+/// health poller feeds into react-query's refetchInterval, see
+/// `healthRefetchInterval` in `lib/healthPolling.ts`.
+export type SystemHealth = {
+  status: HealthStatus;
+  pollIntervalSeconds: number;
 };
 
 export type IntegrationHealth = {
@@ -217,12 +227,13 @@ export type IntegrationHealth = {
 export type IntegrationsHealthReport = {
   status: HealthStatus;
   integrations: IntegrationHealth[];
+  pollIntervalSeconds: number;
 };
 
 export const systemApi = {
   version: () => request<SystemVersion>("GET", "/api/system/version"),
   time: () => request<SystemTime>("GET", "/api/system/time"),
-  health: () => request<{ status: HealthStatus }>("GET", "/api/system/health"),
+  health: () => request<SystemHealth>("GET", "/api/system/health"),
   maintenance: () => request<MaintenanceState>("GET", "/api/system/maintenance"),
   loginBanner: () => request<LoginBannerState>("GET", "/api/system/login-banner"),
   // v0.0.44 — anonymous read of the admin-wide default theme so the login

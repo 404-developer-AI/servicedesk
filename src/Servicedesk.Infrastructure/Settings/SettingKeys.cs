@@ -869,6 +869,13 @@ public static class SettingKeys
         /// so one slow query can never stall the whole search. Clamped to
         /// 250–30000 in code.
         public const string SourceTimeoutMs = "Search.SourceTimeoutMs";
+
+        /// v0.0.99 — upper bound on how many search sources run concurrently
+        /// within one request. Every source opens its own DB connection, so
+        /// an unbounded fan-out across ~20 sources multiplied by a handful of
+        /// simultaneous searches could exhaust the connection pool. Clamped
+        /// to 1–64 in code.
+        public const string MaxConcurrentSources = "Search.MaxConcurrentSources";
     }
 
     public static class App
@@ -1149,6 +1156,21 @@ public static class SettingKeys
 
     public static class Health
     {
+        /// v0.0.99 — server-side TTL (seconds) for the computed health
+        /// reports (system + integrations). Every open browser tab polls the
+        /// health endpoints, and each uncached evaluation runs dozens of
+        /// queries; the cache collapses simultaneous polls into a single
+        /// evaluation (single-flight). Admin actions (ack, reset, requeue)
+        /// invalidate it immediately. 0 disables caching. Clamped 0–300.
+        public const string ReportCacheSeconds = "Health.ReportCacheSeconds";
+
+        /// v0.0.99 — how often (seconds) the SPA re-polls the health
+        /// endpoints (dashboard pill, critical banner, health tiles + page).
+        /// Served back inside every health response so all clients follow
+        /// the same cadence without a separate settings round-trip. Clamped
+        /// 5–600.
+        public const string PollIntervalSeconds = "Health.PollIntervalSeconds";
+
         // Security-activity subsystem (v0.0.18). Samples the audit_log over a
         // rolling window and raises an incident + admin push when one of the
         // categories exceeds its threshold. Categories collapse semantically
@@ -1630,6 +1652,8 @@ public static class SettingDefaults
             "Comma-separated source kinds the quick-search dropdown queries. Keeping this to fast, indexed sources (tickets, companies, contacts) keeps the dropdown instant; every source stays available on the full search page. Empty falls back to the default."),
         new SettingDefault(SettingKeys.Search.SourceTimeoutMs, "5000", "int", "Search",
             "Time budget (milliseconds) per search source. A source that exceeds it is cancelled and returns no hits for that request instead of stalling the whole search. Clamped to 250-30000."),
+        new SettingDefault(SettingKeys.Search.MaxConcurrentSources, "8", "int", "Search",
+            "Maximum number of search sources queried concurrently within one search request. Each source uses its own database connection, so this caps the connection burst of a full-page search. Lower it on busy installs if the connection pool runs hot; raise it for faster full-page results. Clamped to 1-64."),
 
         // Jobs — retention for the attachment job-queue and its history.
         new SettingDefault(SettingKeys.Jobs.CompletedRetentionDays, "7", "int", "Jobs",
@@ -1725,6 +1749,15 @@ public static class SettingDefaults
         // higher bar than rare ones (csrf_rejected, locked_out, M365 reject).
         // Critical multiplier applies on top of every threshold — set to 1
         // to disable the Warning→Critical escalation entirely.
+        // Health — v0.0.99 report cache + poll cadence. Both exist because
+        // the health endpoints are polled by every open tab and each
+        // uncached evaluation runs dozens of queries; on a busy morning the
+        // synchronized polls alone could exhaust the Postgres connection
+        // slots (53300 "remaining connection slots are reserved").
+        new SettingDefault(SettingKeys.Health.ReportCacheSeconds, "10", "int", "Health",
+            "How long (seconds) the server reuses a computed health report (system + integrations) before re-evaluating. Simultaneous polls from many tabs share one evaluation instead of each running dozens of queries. Admin actions (acknowledge, reset, requeue) refresh it immediately. 0 disables the cache. Clamped to 0-300."),
+        new SettingDefault(SettingKeys.Health.PollIntervalSeconds, "30", "int", "Health",
+            "How often (seconds) open browser tabs re-poll the health status (dashboard pill, critical banner, health tiles and the Health page). Applies to every client on its next poll. Clamped to 5-600."),
         new SettingDefault(SettingKeys.Health.SecurityActivityEnabled, "true", "bool", "Health",
             "When true, the security-activity subsystem samples the audit log on a rolling window and raises Health incidents + admin notifications when thresholds are exceeded."),
         new SettingDefault(SettingKeys.Health.SecurityActivityWindowSeconds, "3600", "int", "Health",

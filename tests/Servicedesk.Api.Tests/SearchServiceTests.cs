@@ -100,6 +100,30 @@ public sealed class SearchServiceTests
                 Admin, cts.Token));
     }
 
+    [Fact]
+    public async Task Fanout_never_exceeds_MaxConcurrentSources()
+    {
+        // v0.0.99 — the concurrency cap keeps one search's connection burst
+        // bounded. Twelve sources, cap 3: the peak in-flight count must stay
+        // at 3 while every source still gets its turn.
+        var tracker = new ConcurrencyTracker();
+        var sources = Enumerable.Range(0, 12)
+            .Select(i => new FakeSource($"kind-{i}") { Delay = TimeSpan.FromMilliseconds(40), Tracker = tracker })
+            .ToArray();
+        var settings = new InMemorySettingsService();
+        settings.Set(SettingKeys.Search.MaxConcurrentSources, "3");
+        var service = BuildService(settings, sources);
+
+        var results = await service.SearchAsync(
+            new SearchRequest("datawolk", Type: null, Limit: 5, Offset: 0),
+            Admin, default);
+
+        Assert.Equal(12, results.Groups.Count);
+        Assert.All(sources, s => Assert.True(s.WasCalled));
+        Assert.True(tracker.Peak <= 3, $"peak concurrency was {tracker.Peak}");
+        Assert.True(tracker.Peak >= 2, $"expected some parallelism, peak was {tracker.Peak}");
+    }
+
     private static SearchService BuildService(params ISearchSource[] sources) =>
         BuildService(new InMemorySettingsService(), sources);
 
@@ -116,16 +140,44 @@ public sealed class SearchServiceTests
         public TimeSpan Delay { get; init; } = TimeSpan.Zero;
         public bool Throws { get; init; }
 
+        public ConcurrencyTracker? Tracker { get; init; }
+
         public bool IsAvailableFor(SearchPrincipal principal) => true;
 
         public async Task<SearchGroup> SearchAsync(
             SearchRequest request, SearchPrincipal principal, CancellationToken ct)
         {
             WasCalled = true;
-            if (Throws) throw new InvalidOperationException("boom");
-            if (Delay > TimeSpan.Zero) await Task.Delay(Delay, ct);
-            var hit = new SearchHit(Kind, Guid.NewGuid().ToString(), "hit", null, 1.0);
-            return new SearchGroup(Kind, new[] { hit }, 1, false);
+            Tracker?.Enter();
+            try
+            {
+                if (Throws) throw new InvalidOperationException("boom");
+                if (Delay > TimeSpan.Zero) await Task.Delay(Delay, ct);
+                var hit = new SearchHit(Kind, Guid.NewGuid().ToString(), "hit", null, 1.0);
+                return new SearchGroup(Kind, new[] { hit }, 1, false);
+            }
+            finally
+            {
+                Tracker?.Exit();
+            }
         }
+    }
+
+    private sealed class ConcurrencyTracker
+    {
+        private int _current;
+        private int _peak;
+
+        public int Peak => Volatile.Read(ref _peak);
+
+        public void Enter()
+        {
+            var now = Interlocked.Increment(ref _current);
+            int seen;
+            while (now > (seen = Volatile.Read(ref _peak)))
+                Interlocked.CompareExchange(ref _peak, now, seen);
+        }
+
+        public void Exit() => Interlocked.Decrement(ref _current);
     }
 }
