@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Activity, AlertTriangle, Archive, CheckCircle2, ChevronDown, ChevronRight, RadioTower, ShieldAlert } from "lucide-react";
+import { Activity, AlertTriangle, Archive, CheckCircle2, ChevronDown, ChevronRight, RadioTower, ShieldAlert, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -43,6 +43,20 @@ const SECURITY_ACTIVITY_SETTINGS: ReadonlyArray<{ key: string; label: string }> 
   { key: "Health.SecurityActivity.Threshold.CsrfRejected", label: "Threshold — CSRF rejections" },
   { key: "Health.SecurityActivity.Threshold.RateLimited", label: "Threshold — rate-limit rejections" },
   { key: "Health.SecurityActivity.Threshold.MicrosoftLoginRejected", label: "Threshold — M365 login rejections" },
+];
+
+// v0.0.101 — generic data-retention sweep (RetentionWorker). Days = 0
+// keeps a table forever; the worker reports on the Health page as the
+// "Data retention" subsystem.
+const RETENTION_SETTINGS: ReadonlyArray<{ key: string; label: string }> = [
+  { key: "Retention.RunIntervalHours", label: "Sweep interval (hours)" },
+  { key: "Retention.BatchSize", label: "Rows per delete statement" },
+  { key: "Retention.UserSessionsDays", label: "Expired / revoked sessions (days)" },
+  { key: "Retention.NotificationsReadDays", label: "Read notifications (days)" },
+  { key: "Retention.NotificationsUnreadDays", label: "Unread notifications (days)" },
+  { key: "Retention.AttachmentJobsDays", label: "Finished attachment jobs (days)" },
+  { key: "Retention.IncidentsDays", label: "Acknowledged incidents (days)" },
+  { key: "Retention.BlobDiskSamplesDays", label: "Disk-usage samples (days)" },
 ];
 
 const STATUS_BADGE: Record<HealthStatus, { label: string; className: string; icon: React.ReactNode }> = {
@@ -155,6 +169,13 @@ export function HealthSettingsPage() {
         title="Polling & report cache"
         description="How often open tabs re-poll the health status, and how long the server reuses a computed report so simultaneous polls from many tabs share one evaluation instead of each running dozens of queries. Admin actions on this page always refresh immediately."
         keys={POLLING_SETTINGS}
+      />
+      <CollapsibleSettingsCard
+        category="Retention"
+        icon={<Trash2 className="h-5 w-5" />}
+        title="Data retention"
+        description="Housekeeping tables that only ever grew: dead sessions, old notifications, finished attachment jobs, acknowledged incidents and disk samples are pruned in batches on this schedule. 0 days keeps a table forever. Tickets, mail, attachments and the audit log are never touched."
+        keys={RETENTION_SETTINGS}
       />
       <CollapsibleSettingsCard
         category="Health"

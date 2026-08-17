@@ -1169,6 +1169,20 @@ public static class SettingKeys
         public const string PruneIntervalHours = "ActivityFeed.PruneIntervalHours";
     }
 
+    /// v0.0.101 — generic data-retention sweep (RetentionWorker). Days = 0
+    /// keeps a table forever. Settings → Health → Data retention.
+    public static class Retention
+    {
+        public const string RunIntervalHours = "Retention.RunIntervalHours";
+        public const string BatchSize = "Retention.BatchSize";
+        public const string UserSessionsDays = "Retention.UserSessionsDays";
+        public const string NotificationsReadDays = "Retention.NotificationsReadDays";
+        public const string NotificationsUnreadDays = "Retention.NotificationsUnreadDays";
+        public const string AttachmentJobsDays = "Retention.AttachmentJobsDays";
+        public const string IncidentsDays = "Retention.IncidentsDays";
+        public const string BlobDiskSamplesDays = "Retention.BlobDiskSamplesDays";
+    }
+
     public static class Health
     {
         /// v0.0.99 — server-side TTL (seconds) for the computed health
@@ -1761,6 +1775,24 @@ public static class SettingDefaults
             "How long (days) rows in agent_activity_events are kept before the prune worker hard-deletes them. Default 365 = one year. Clamped to [7, 3650] on read; values below 7 days defeat the purpose of an audit trail, values above ~10 years bloat the table without practical benefit."),
         new SettingDefault(SettingKeys.ActivityFeed.PruneIntervalHours, "24", "int", "ActivityFeed",
             "How often (hours) the prune worker runs the retention sweep. Default 24 = once per day. Clamped to [1, 168]."),
+
+        // Retention — v0.0.101 generic housekeeping sweep. 0 days = keep forever.
+        new SettingDefault(SettingKeys.Retention.RunIntervalHours, "6", "int", "Retention",
+            "How often (hours) the data-retention worker sweeps the housekeeping tables below. Clamped to [1, 168]."),
+        new SettingDefault(SettingKeys.Retention.BatchSize, "5000", "int", "Retention",
+            "Rows deleted per statement during a sweep; the worker loops until a table is clean. Keeps a first-time backlog from holding long locks. Clamped to [100, 50000]."),
+        new SettingDefault(SettingKeys.Retention.UserSessionsDays, "30", "int", "Retention",
+            "Days to keep sessions after they were revoked or expired (they can no longer authenticate either way). Active sessions are never touched. 0 = keep forever."),
+        new SettingDefault(SettingKeys.Retention.NotificationsReadDays, "90", "int", "Retention",
+            "Days to keep in-app notifications the user has already viewed or acknowledged. 0 = keep forever."),
+        new SettingDefault(SettingKeys.Retention.NotificationsUnreadDays, "365", "int", "Retention",
+            "Days to keep in-app notifications nobody ever opened. Longer than the read window on purpose — but a badge untouched for a year is noise, not a to-do. 0 = keep forever."),
+        new SettingDefault(SettingKeys.Retention.AttachmentJobsDays, "30", "int", "Retention",
+            "Days to keep finished attachment download jobs (Succeeded / Failed / Cancelled) and their attempt history. Dead-lettered jobs are kept until an admin requeues or cancels them on the Health page. 0 = keep forever."),
+        new SettingDefault(SettingKeys.Retention.IncidentsDays, "365", "int", "Retention",
+            "Days to keep acknowledged Health incidents (the incident archive). Open incidents are never touched. 0 = keep forever."),
+        new SettingDefault(SettingKeys.Retention.BlobDiskSamplesDays, "90", "int", "Retention",
+            "Days to keep blob-storage disk-usage samples (one row per sampler tick). 0 = keep forever."),
 
         // Health — Security activity monitor (v0.0.18). Replaces "watch the
         // logs yourself". Defaults are tuned for a single-tenant install with
