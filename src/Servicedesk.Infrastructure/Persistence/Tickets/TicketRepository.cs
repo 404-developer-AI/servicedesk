@@ -128,7 +128,9 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             t.pending_till_utc              AS PendingTillUtc,
             t.awaiting_company_assignment   AS AwaitingCompanyAssignment,
             t.company_resolved_via          AS CompanyResolvedVia,
-            t.ticket_type_id                AS TicketTypeId
+            t.ticket_type_id                AS TicketTypeId,
+            t.checklist_required_total      AS ChecklistRequiredTotal,
+            t.checklist_required_done       AS ChecklistRequiredDone
         FROM tickets t
         JOIN queues     q ON q.id = t.queue_id
         JOIN statuses   s ON s.id = t.status_id

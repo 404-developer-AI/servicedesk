@@ -11,7 +11,7 @@ export type UserNotification = {
   sourceUserId: string | null;
   sourceUserEmail: string | null;
   eventId: number;
-  eventType: "Note" | "Comment" | "MailSent" | string;
+  eventType: "Note" | "Comment" | "MailSent" | "ChecklistCloseBlocked" | string;
   previewText: string;
   createdUtc: string;
   viewedUtc: string | null;

@@ -503,6 +503,17 @@ public static class DependencyInjection
                            Servicedesk.Infrastructure.Tickets.TicketMutationService>();
         services.AddScoped<Servicedesk.Infrastructure.Tickets.ITicketBulkActionService,
                            Servicedesk.Infrastructure.Tickets.TicketBulkActionService>();
+        // v0.0.103 — ticket checklists: templates, attached checklists, the
+        // close guard the mutation service consults, and the settings reader.
+        // Repositories / guard / settings reader are singletons (they only
+        // hold the data source + other singletons) because the trigger
+        // action handlers that consult the close guard are singletons too.
+        services.AddSingleton<Checklists.IChecklistTemplateRepository, Checklists.ChecklistTemplateRepository>();
+        services.AddSingleton<Checklists.ITicketChecklistRepository, Checklists.TicketChecklistRepository>();
+        services.AddSingleton<Checklists.IChecklistSettingsReader, Checklists.ChecklistSettingsReader>();
+        services.AddSingleton<Checklists.IChecklistCloseGuard, Checklists.ChecklistCloseGuard>();
+        services.AddSingleton<Checklists.IChecklistCloseBlockReporter, Checklists.ChecklistCloseBlockReporter>();
+        services.AddScoped<Checklists.ITicketChecklistService, Checklists.TicketChecklistService>();
         // First-open title-review gate matcher + confirmation runner. Called
         // by the ticket detail page's open-gate probe and the confirmation
         // endpoint. Singleton for the same reason as the status-gate service.
@@ -629,6 +640,12 @@ public static class DependencyInjection
         // ScopedSearchSource decorator.
         services.AddSingleton<SignatureSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<SignatureSearchSource>()));
+        // v0.0.103 — checklists: items on tickets (queue-scoped like tickets)
+        // + admin template catalogue.
+        services.AddSingleton<TicketChecklistItemSearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<TicketChecklistItemSearchSource>()));
+        services.AddSingleton<ChecklistTemplateSearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<ChecklistTemplateSearchSource>()));
 
         // Timesheet search-source (v0.0.35 commit H). Customer sees zero
         // hits; Agent/Admin see entries scoped by the timesheet_manager

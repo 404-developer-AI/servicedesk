@@ -98,6 +98,10 @@ export type TicketListItem = {
   // v0.0.39 — first-class ticket type. Always set after the migration
   // (NOT NULL at the DB layer); legacy rows are 'support' after backfill.
   ticketTypeId: string;
+  /// v0.0.103 — denormalized checklist progress (required items over all
+  /// attached checklists); 0/0 = no checklist.
+  checklistRequiredTotal: number;
+  checklistRequiredDone: number;
 };
 
 export type TicketPage = {

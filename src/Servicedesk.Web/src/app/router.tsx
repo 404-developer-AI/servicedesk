@@ -65,6 +65,7 @@ import { ContactDetailPage } from "@/pages/contacts/ContactDetailPage";
 import { TicketListPage } from "@/pages/tickets/TicketListPage";
 import { TicketDetailPage } from "@/pages/tickets/TicketDetailPage";
 import { TicketComposePage } from "@/pages/tickets/TicketComposePage";
+import { TicketChecklistPopoutPage } from "@/pages/tickets/TicketChecklistPopoutPage";
 import { SlaLogPage } from "@/pages/sla/SlaLogPage";
 import { SearchPage } from "@/pages/search/SearchPage";
 import { KbHomePage } from "@/pages/kb/KbHomePage";
@@ -137,6 +138,8 @@ function isPublicPath(path: string): boolean {
 function isBareRoute(path: string): boolean {
   if (UNAUTHENTICATED_PATHS.has(path)) return true;
   if (path.endsWith("/compose")) return true;
+  // v0.0.103 — checklist pop-out window (same second-screen workflow).
+  if (/^\/tickets\/[^/]+\/checklists$/.test(path)) return true;
   if (path.startsWith("/intake/")) return true;
   if (path.startsWith("/surveys/")) return true;
   if (path.startsWith("/kb/public/")) return true;
@@ -234,6 +237,19 @@ const ticketComposeRoute = createRoute({
   component: function TicketComposeRoute() {
     const { ticketId } = ticketComposeRoute.useParams();
     return <TicketComposePage ticketId={ticketId} />;
+  },
+});
+
+// v0.0.103 — pop-out checklist window. Rendered outside AppShell (see
+// RootLayout) so the agent can park it on a second screen while working
+// the ticket in the main tab.
+const ticketChecklistPopoutRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tickets/$ticketId/checklists",
+  beforeLoad: authGate(["Agent", "Admin"]),
+  component: function TicketChecklistPopoutRoute() {
+    const { ticketId } = ticketChecklistPopoutRoute.useParams();
+    return <TicketChecklistPopoutPage ticketId={ticketId} />;
   },
 });
 
@@ -885,6 +901,7 @@ const routeTree = rootRoute.addChildren([
   ticketsRoute,
   ticketDetailRoute,
   ticketComposeRoute,
+  ticketChecklistPopoutRoute,
   companyDetailRoute,
   contactDetailRoute,
   searchRoute,

@@ -26,6 +26,25 @@ function getConnection(): HubConnection {
 }
 
 /// Minimal push-payload shape (matches UserNotificationPush on the server).
+/// v0.0.103 — "a trigger tried to resolve/close this ticket but a
+/// checklist blocked it". On the ticket page this becomes the same dialog
+/// as a manual change (via a window event the page listens to); anywhere
+/// else a toast with an "Open ticket" action. The bell row is created
+/// server-side; we only refresh the pending list here.
+export type ChecklistCloseBlockedPush = {
+  notificationId: string;
+  ticketId: string;
+  ticketNumber: number;
+  ticketSubject: string;
+  triggerName: string;
+  targetStatusName: string;
+  checklists: { checklistId: string; name: string; openRequired: number }[];
+  eventId: number;
+  createdUtc: string;
+};
+
+export const CHECKLIST_CLOSE_BLOCKED_EVENT = "sd:checklist-close-blocked";
+
 type NotificationPush = {
   id: string;
   ticketId: string;
@@ -116,6 +135,42 @@ export function useNotificationSignalR(toastDurationMs: number) {
 
     hub.on("NotificationReceived", handleNotification);
 
+    const handleChecklistBlocked = (payload: ChecklistCloseBlockedPush) => {
+      queryClient.invalidateQueries({ queryKey: ["notifications", "pending"] });
+      const onTicket = window.location.pathname === `/tickets/${payload.ticketId}`;
+      if (onTicket) {
+        // The ticket page owns the dialog; it also marks the bell row viewed.
+        window.dispatchEvent(new CustomEvent(CHECKLIST_CLOSE_BLOCKED_EVENT, { detail: payload }));
+        return;
+      }
+      const first = payload.checklists[0];
+      const summary = payload.checklists.length === 1 && first
+        ? `“${first.name}” still has ${first.openRequired} required item${first.openRequired === 1 ? "" : "s"} open.`
+        : `${payload.checklists.length} checklists still have required items open.`;
+      toast.warning(`#${payload.ticketNumber} not set to ${payload.targetStatusName}`, {
+        description: `Trigger “${payload.triggerName}” was blocked by a checklist. ${summary}`,
+        duration: Math.max(durationRef.current, 8000),
+        action: {
+          label: "Open ticket",
+          onClick: () => {
+            if (payload.notificationId && payload.notificationId !== "00000000-0000-0000-0000-000000000000") {
+              queryClient.setQueryData<UserNotification[]>(
+                ["notifications", "pending"],
+                (old) => old?.filter((n) => n.id !== payload.notificationId) ?? [],
+              );
+              notificationApi.markViewed(payload.notificationId).catch(() => {});
+            }
+            void navigateRef.current({
+              to: "/tickets/$ticketId",
+              params: { ticketId: payload.ticketId },
+              search: first ? ({ checklist: first.checklistId } as never) : undefined,
+            });
+          },
+        },
+      });
+    };
+    hub.on("ChecklistCloseBlocked", handleChecklistBlocked);
+
     const handleSecurityAlert = (payload: SecurityAlertPush) => {
       // Invalidate the health + incidents queries so the card and pill on
       // /settings/health update when the admin is already on the page.
@@ -167,6 +222,7 @@ export function useNotificationSignalR(toastDurationMs: number) {
 
     return () => {
       hub.off("NotificationReceived", handleNotification);
+      hub.off("ChecklistCloseBlocked", handleChecklistBlocked);
       hub.off("SecurityAlertReceived", handleSecurityAlert);
       hub.off("RecentTicketsUpdated", handleRecentTicketsUpdated);
     };

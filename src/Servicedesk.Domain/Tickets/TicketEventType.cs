@@ -27,4 +27,13 @@ public enum TicketEventType
     // a prompt_confirm choice question, logged whether the ticket was
     // allowed to change status or kept open).
     StatusGateDecision,
+    // v0.0.103 — ticket checklists: attach / detach / all required items
+    // done / reopened after completion, and the opt-in per-item change.
+    ChecklistAttached,
+    ChecklistDetached,
+    ChecklistCompleted,
+    ChecklistReopened,
+    ChecklistItemChanged,
+    // A trigger's set-status action was refused by the checklist close block.
+    ChecklistCloseBlocked,
 }

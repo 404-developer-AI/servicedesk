@@ -2,11 +2,19 @@ import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Check, Copy, Download, FileDown, GitBranch, PanelRightClose, PanelRightOpen, Pencil, X } from "lucide-react";
+import { Check, Copy, Download, FileDown, GitBranch, ListChecks, PanelRightClose, PanelRightOpen, Pencil, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatTicketRef } from "@/lib/ticketRef";
 import { useTicketReferencePrefix } from "@/hooks/useTicketReferencePrefix";
-import { ticketApi, contactApi, type ContactCompanyRole, type GateConfirmation, type StatusGateMatch, type Ticket, type TicketFieldUpdate } from "@/lib/ticket-api";
+import { ticketApi, contactApi, ApiError, type ContactCompanyRole, type GateConfirmation, type StatusGateMatch, type Ticket, type TicketFieldUpdate } from "@/lib/ticket-api";
+import { checklistErrorCode, type ChecklistSettings, type TicketChecklist } from "@/lib/checklist-api";
+import { useChecklistSettings, useTicketChecklists, summarizeChecklists } from "./components/checklists/useTicketChecklists";
+import { TicketChecklistBar } from "./components/checklists/TicketChecklistBar";
+import { TicketChecklistPanel } from "./components/checklists/TicketChecklistPanel";
+import { ChecklistHeaderButton } from "./components/checklists/ChecklistHeaderButton";
+import { ChecklistBlockedDialog, type ChecklistBlocker } from "./components/checklists/ChecklistBlockedDialog";
+import { CHECKLIST_CLOSE_BLOCKED_EVENT, type ChecklistCloseBlockedPush } from "@/hooks/useNotificationSignalR";
+import { notificationApi } from "@/lib/notification-api";
 import { StatusGateDialog } from "@/components/StatusGateDialog";
 import { TitleReviewGateDialog } from "@/components/TitleReviewGateDialog";
 import { ContactCompanyGateDialog } from "@/components/ContactCompanyGateDialog";
@@ -406,6 +414,51 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
     [statuses, data?.ticket?.statusId],
   );
 
+  // v0.0.103 — ticket checklists. Settings gate the whole surface; the list
+  // key sits under ["ticket", id] so realtime pushes refresh it. The docked
+  // panel state lives here (not in the body) because the close-block dialog
+  // and the ?checklist= deep link both need to open it.
+  const checklistSettingsQ = useChecklistSettings();
+  const checklistSettings: ChecklistSettings | null = checklistSettingsQ.data ?? null;
+  const checklistsEnabled = checklistSettings?.enabled ?? false;
+  const { checklists } = useTicketChecklists(ticketId, checklistsEnabled && !!data?.ticket);
+  const [checklistOpen, setChecklistOpen] = React.useState(false);
+  const [activeChecklistId, setActiveChecklistId] = React.useState<string | null>(null);
+  const [checklistBlock, setChecklistBlock] = React.useState<{ blockers: ChecklistBlocker[]; statusName: string | null; triggerName?: string | null } | null>(null);
+  // A trigger's set-status action was refused by the close block while this
+  // agent has the ticket open: show the same dialog a manual change gets,
+  // and mark the matching bell row viewed so it doesn't nag afterwards.
+  React.useEffect(() => {
+    const onBlocked = (e: Event) => {
+      const payload = (e as CustomEvent<ChecklistCloseBlockedPush>).detail;
+      if (!payload || payload.ticketId !== ticketId) return;
+      setChecklistBlock({
+        blockers: payload.checklists.map((c) => ({ checklistId: c.checklistId, name: c.name, openRequired: c.openRequired })),
+        statusName: payload.targetStatusName,
+        triggerName: payload.triggerName,
+      });
+      if (payload.notificationId && payload.notificationId !== "00000000-0000-0000-0000-000000000000") {
+        notificationApi.markViewed(payload.notificationId).catch(() => {});
+        queryClient.invalidateQueries({ queryKey: ["notifications", "pending"] });
+      }
+    };
+    window.addEventListener(CHECKLIST_CLOSE_BLOCKED_EVENT, onBlocked);
+    return () => window.removeEventListener(CHECKLIST_CLOSE_BLOCKED_EVENT, onBlocked);
+  }, [ticketId, queryClient]);
+  React.useEffect(() => {
+    // Deep link from global search ("checklist-items" hits): open the panel
+    // on that checklist. Read once per ticket.
+    const wanted = new URLSearchParams(window.location.search).get("checklist");
+    setChecklistOpen(!!wanted);
+    setActiveChecklistId(wanted);
+    setChecklistBlock(null);
+  }, [ticketId]);
+  const openChecklistPanel = React.useCallback((checklistId?: string | null) => {
+    if (checklistId) setActiveChecklistId(checklistId);
+    setChecklistOpen(true);
+    setChecklistBlock(null);
+  }, []);
+
   React.useEffect(() => {
     if (data?.ticket) {
       addTicket({
@@ -457,7 +510,12 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         updated.ticket.statusId !== variables.statusId;
       toast.success(keptOpen ? "Ticket kept open" : "Ticket updated");
     },
-    onError: () => toast.error("Failed to update ticket"),
+    onError: (err) => {
+      // v0.0.103 — the checklist close block has its own dialog (see
+      // handleSidePanelUpdate); a generic toast on top would be noise.
+      if (err instanceof ApiError && err.status === 409 && checklistErrorCode(err) === "checklist_incomplete") return;
+      toast.error("Failed to update ticket");
+    },
   });
 
   // First-open title-review gate. Probed once the ticket has loaded; a
@@ -502,6 +560,14 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
 
   const currentStatusId = data?.ticket?.statusId ?? null;
 
+  const readChecklistBlock = React.useCallback((err: unknown): boolean => {
+    if (!(err instanceof ApiError) || err.status !== 409 || checklistErrorCode(err) !== "checklist_incomplete") return false;
+    const body = err.body as { checklists?: Array<{ checklistId: string; name: string; openRequired: number }> } | null;
+    const blockers = (body?.checklists ?? []).map((b) => ({ checklistId: b.checklistId, name: b.name, openRequired: b.openRequired }));
+    setChecklistBlock({ blockers, statusName: null });
+    return true;
+  }, []);
+
   const handleSidePanelUpdate = React.useCallback(async (fields: TicketFieldUpdate) => {
     // Non-status updates and same-value status PATCHes skip the gate
     // probe entirely — listStatusGates would return [] anyway and the
@@ -509,6 +575,22 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
     if (!fields.statusId || fields.statusId === currentStatusId) {
       await updateMutation.mutateAsync(fields);
       return;
+    }
+    // v0.0.103 — checklist close block, client-side pre-check from the
+    // loaded checklists so the agent gets the dialog without a round-trip.
+    // The server enforces the same rule (409 checklist_incomplete), which
+    // the catch below also renders — this is only the fast path.
+    if (checklistsEnabled && checklistSettings) {
+      const target = statuses?.find((s) => s.id === fields.statusId);
+      if (target && checklistSettings.blockingStateCategories.includes(target.stateCategory)) {
+        const blockers = checklists
+          .filter((c) => c.blockClose && c.completedUtc === null)
+          .map((c) => ({ checklistId: c.id, name: c.name, openRequired: c.requiredTotal - c.requiredDone }));
+        if (blockers.length > 0) {
+          setChecklistBlock({ blockers, statusName: target.name });
+          return;
+        }
+      }
     }
     let matches: StatusGateMatch[];
     try {
@@ -518,18 +600,26 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
       // Network/auth failure on the probe must not block the user; fall
       // through to the PATCH and let the server return 409 if a gate
       // actually applies. The PATCH then surfaces the gate via ApiError.
-      await updateMutation.mutateAsync(fields);
+      try {
+        await updateMutation.mutateAsync(fields);
+      } catch (err) {
+        if (!readChecklistBlock(err)) throw err;
+      }
       return;
     }
     if (matches.length === 0) {
-      await updateMutation.mutateAsync(fields);
+      try {
+        await updateMutation.mutateAsync(fields);
+      } catch (err) {
+        if (!readChecklistBlock(err)) throw err;
+      }
       return;
     }
     setGateQueue(matches);
     setGateConfirmations([]);
     setGatePendingFields(fields);
     setGateTargetStatusId(fields.statusId);
-  }, [currentStatusId, ticketId, updateMutation]);
+  }, [currentStatusId, ticketId, updateMutation, checklistsEnabled, checklistSettings, checklists, statuses, readChecklistBlock]);
 
   const closeGateDialog = React.useCallback(() => {
     setGateQueue([]);
@@ -559,10 +649,12 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
     closeGateDialog();
     try {
       await updateMutation.mutateAsync({ ...fields, gateConfirmations: nextConfirmations });
-    } catch {
-      // updateMutation.onError already surfaced the toast.
+    } catch (err) {
+      // updateMutation.onError already surfaced the toast — except for the
+      // checklist close block, which gets its dialog here.
+      readChecklistBlock(err);
     }
-  }, [gateQueue, gateConfirmations, gatePendingFields, updateMutation, closeGateDialog]);
+  }, [gateQueue, gateConfirmations, gatePendingFields, updateMutation, closeGateDialog, readChecklistBlock]);
 
   const onPromptGateConfirm = React.useCallback((answers: Record<string, string>) => {
     const head = gateQueue[0];
@@ -705,6 +797,22 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         parentTicketNumber={parentTicketNumber}
         parentLinkedByUserName={parentLinkedByUserName}
         childTickets={childTickets}
+        checklistsEnabled={checklistsEnabled}
+        checklistSettings={checklistSettings}
+        checklists={checklists}
+        checklistOpen={checklistOpen}
+        onChecklistOpenChange={setChecklistOpen}
+        activeChecklistId={activeChecklistId}
+        onActiveChecklistChange={setActiveChecklistId}
+        onOpenChecklist={openChecklistPanel}
+      />
+      <ChecklistBlockedDialog
+        open={checklistBlock !== null}
+        blockers={checklistBlock?.blockers ?? []}
+        targetStatusName={checklistBlock?.statusName ?? null}
+        triggerName={checklistBlock?.triggerName ?? null}
+        onOpenChecklist={(id) => openChecklistPanel(id)}
+        onClose={() => setChecklistBlock(null)}
       />
       {companyAlert && (
         <CompanyAlertDialog
@@ -762,6 +870,14 @@ function TicketDetailBody({
   parentTicketNumber,
   parentLinkedByUserName,
   childTickets,
+  checklistsEnabled,
+  checklistSettings,
+  checklists,
+  checklistOpen,
+  onChecklistOpenChange,
+  activeChecklistId,
+  onActiveChecklistChange,
+  onOpenChecklist,
 }: {
   ticketId: string;
   ticket: any;
@@ -789,8 +905,18 @@ function TicketDetailBody({
   parentTicketNumber: string | null;
   parentLinkedByUserName: string | null;
   childTickets: { id: string; number: string }[];
+  /// v0.0.103 — checklists (settings-gated). The page owns the panel state.
+  checklistsEnabled: boolean;
+  checklistSettings: ChecklistSettings | null;
+  checklists: TicketChecklist[];
+  checklistOpen: boolean;
+  onChecklistOpenChange: (open: boolean) => void;
+  activeChecklistId: string | null;
+  onActiveChecklistChange: (id: string) => void;
+  onOpenChecklist: (checklistId?: string | null) => void;
 }) {
   const { matchesEvent, mode, query, registerScope } = useInTicketSearch();
+  const checklistSummary = React.useMemo(() => summarizeChecklists(checklists), [checklists]);
 
   // System/audit events (status, assignment, priority, …) are hidden from
   // the feed by default so the timeline shows only real communication. An
@@ -883,6 +1009,15 @@ function TicketDetailBody({
               />
             </div>
             <IsoClassificationActions ticket={ticket} />
+            {checklistsEnabled && checklistSettings && (
+              <ChecklistHeaderButton
+                ticketId={ticketId}
+                checklists={checklists}
+                maxPerTicket={checklistSettings.maxPerTicket}
+                onOpen={() => onOpenChecklist(activeChecklistId)}
+                onAttached={(c) => onOpenChecklist(c.id)}
+              />
+            )}
             <SlaPill ticketId={ticket.id} className="shrink-0 justify-end" />
             <ExportPdfButton ticketId={ticketId} />
           </div>
@@ -936,6 +1071,18 @@ function TicketDetailBody({
         <div className="shrink-0 pb-3">
           <TicketTimesheetPanel ticketId={ticketId} queueId={ticket.queueId} />
         </div>
+
+        {/* v0.0.103 — always-visible checklist progress (one row per
+            attached checklist); clicking opens the docked panel. */}
+        {checklistsEnabled && checklists.length > 0 && (
+          <div className="shrink-0 pb-3">
+            <TicketChecklistBar
+              checklists={checklists}
+              activeChecklistId={checklistOpen ? activeChecklistId : null}
+              onOpen={(id) => onOpenChecklist(id)}
+            />
+          </div>
+        )}
 
         {/* v0.0.87 — per-ticket hour-limit warning (self-gating: only opens
             when the feature is on and the ticket is over its limit). The queue
@@ -996,19 +1143,67 @@ function TicketDetailBody({
           stays between the activity feed and this whole assembly. When the
           panel is collapsed, only the rail remains visible. */}
       <div className="flex shrink-0 items-stretch gap-2">
-        <div className="flex flex-col items-center pt-1">
+        <div className="flex flex-col items-center gap-1 pt-1">
           <button
             type="button"
-            onClick={() => setSidePanelExpanded((v) => !v)}
-            title={sidePanelExpanded ? "Collapse side panel" : "Expand side panel"}
-            aria-label={sidePanelExpanded ? "Collapse side panel" : "Expand side panel"}
-            className="p-1.5 rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-glass-hover transition-colors"
+            onClick={() => {
+              if (checklistOpen) {
+                // Switching back from the checklist: show details.
+                onChecklistOpenChange(false);
+                setSidePanelExpanded(true);
+              } else {
+                setSidePanelExpanded((v) => !v);
+              }
+            }}
+            title={checklistOpen ? "Show ticket details" : sidePanelExpanded ? "Collapse side panel" : "Expand side panel"}
+            aria-label={checklistOpen ? "Show ticket details" : sidePanelExpanded ? "Collapse side panel" : "Expand side panel"}
+            className={cn(
+              "p-1.5 rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-glass-hover transition-colors",
+              !checklistOpen && sidePanelExpanded && "text-foreground",
+            )}
           >
-            {sidePanelExpanded
+            {sidePanelExpanded && !checklistOpen
               ? <PanelRightClose className="h-4 w-4" />
               : <PanelRightOpen className="h-4 w-4" />}
           </button>
+          {checklistsEnabled && (
+            <button
+              type="button"
+              onClick={() => onChecklistOpenChange(!checklistOpen)}
+              title={checklistOpen ? "Hide checklist panel" : "Show checklist panel"}
+              aria-label={checklistOpen ? "Hide checklist panel" : "Show checklist panel"}
+              className={cn(
+                "relative p-1.5 rounded-md transition-colors hover:bg-glass-hover",
+                checklistOpen
+                  ? "text-violet-200 bg-violet-400/15"
+                  : checklistSummary.count > 0 && !checklistSummary.allComplete
+                    ? "text-amber-300/90 hover:text-amber-200"
+                    : "text-muted-foreground/60 hover:text-foreground",
+              )}
+            >
+              <ListChecks className="h-4 w-4" />
+              {checklistSummary.count > 0 && !checklistSummary.allComplete && (
+                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-amber-400 ring-2 ring-background" aria-hidden />
+              )}
+            </button>
+          )}
         </div>
+        {checklistsEnabled && checklistOpen && checklistSettings ? (
+          <div className="w-[440px] min-h-0 overflow-hidden">
+            <TicketChecklistPanel
+              ticketId={ticketId}
+              checklists={checklists}
+              settings={checklistSettings}
+              activeChecklistId={activeChecklistId}
+              onActiveChange={onActiveChecklistChange}
+              onClose={() => {
+                onChecklistOpenChange(false);
+                setSidePanelExpanded(true);
+              }}
+              mode="docked"
+            />
+          </div>
+        ) : (
         <div
           className={cn(
             "overflow-hidden transition-[width,opacity] duration-200 ease-out",
@@ -1037,6 +1232,7 @@ function TicketDetailBody({
             }}
           />
         </div>
+        )}
       </div>
     </div>
   );

@@ -563,6 +563,17 @@ public static class TicketEndpoints
                         error = "This status is not allowed for the target queue.",
                         code = "status_not_in_queue_scope",
                     });
+                case TicketMutationCheck.ChecklistIncomplete:
+                    // v0.0.103 — hard block: no confirmation payload can
+                    // satisfy it. The body names the checklists so the FE
+                    // can offer "Open checklist".
+                    return Results.Json(new
+                    {
+                        error = "Finish the checklist before resolving or closing this ticket.",
+                        code = "checklist_incomplete",
+                        checklists = (pre.ChecklistBlockers ?? Array.Empty<Servicedesk.Infrastructure.Checklists.ChecklistBlocker>())
+                            .Select(b => new { checklistId = b.ChecklistId, name = b.Name, openRequired = b.OpenRequired }),
+                    }, statusCode: 409);
             }
             var current = pre.Ticket!;
 

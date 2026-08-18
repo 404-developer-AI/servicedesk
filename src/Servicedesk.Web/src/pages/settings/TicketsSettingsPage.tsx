@@ -42,8 +42,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { ChecklistsSettingsTab } from "./checklists/ChecklistsSettingsTab";
 
-type TabKey = "queues" | "priorities" | "statuses" | "categories" | "types" | "iso27001" | "warnings" | "grouping" | "general";
+type TabKey = "queues" | "priorities" | "statuses" | "categories" | "types" | "iso27001" | "warnings" | "grouping" | "checklists" | "general";
 
 const TABS: { key: TabKey; label: string; description: string }[] = [
   {
@@ -95,6 +96,12 @@ const TABS: { key: TabKey; label: string; description: string }[] = [
       "How the ticket list orders rows inside each group when it is grouped by Status. Pending groups and Open/New groups each get their own sort; Resolved/Closed keep the view's global sort.",
   },
   {
+    key: "checklists",
+    label: "Checklists",
+    description:
+      "Checklist templates agents attach to tickets (queue-scoped, snapshot on attach) and the close-block rule: a blocking checklist with required open items stops the ticket from being resolved or closed.",
+  },
+  {
     key: "general",
     label: "General",
     description:
@@ -103,7 +110,17 @@ const TABS: { key: TabKey; label: string; description: string }[] = [
 ];
 
 export function TicketsSettingsPage() {
-  const [tab, setTab] = useState<TabKey>("queues");
+  // Deep link support (global search → checklist template hit):
+  // /settings/tickets?tab=checklists&template=<id>. Read once on mount.
+  const initial = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("tab");
+    return {
+      tab: (TABS.some((x) => x.key === t) ? (t as TabKey) : "queues") as TabKey,
+      templateId: params.get("template"),
+    };
+  }, []);
+  const [tab, setTab] = useState<TabKey>(initial.tab);
   const active = TABS.find((t) => t.key === tab)!;
 
   return (
@@ -151,6 +168,7 @@ export function TicketsSettingsPage() {
         {tab === "iso27001" && <Iso27001Tab />}
         {tab === "warnings" && <WarningsTab />}
         {tab === "grouping" && <GroupingTab />}
+        {tab === "checklists" && <ChecklistsSettingsTab initialTemplateId={initial.templateId} />}
         {tab === "general" && <GeneralTab />}
       </div>
     </div>

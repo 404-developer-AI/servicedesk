@@ -124,6 +124,24 @@ public static class SettingEndpoints
         .WithName("GetBulkActionsSettings")
         .WithOpenApi();
 
+        // ---- Checklist settings (v0.0.103, agent-readable) ----
+        // The ticket page needs the enable flag (render the bar/header/panel
+        // at all), the blocking categories (client-side pre-check before the
+        // PATCH so the agent gets the "finish the checklist" dialog without a
+        // round-trip) and the caps (disable "add" buttons at the limit). The
+        // server re-enforces every one of them.
+        app.MapGet("/api/settings/checklists", async (
+            Servicedesk.Infrastructure.Checklists.IChecklistSettingsReader reader, CancellationToken ct) =>
+        {
+            var s = await reader.GetAsync(ct);
+            return Results.Ok(new ChecklistSettingsDto(
+                s.Enabled, s.BlockingStateCategories, s.LogItemChangesToTimeline, s.MaxPerTicket, s.MaxItemsPerChecklist));
+        })
+        .WithTags("Settings")
+        .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+        .WithName("GetChecklistSettings")
+        .WithOpenApi();
+
         // ---- Copilot launcher settings (v0.0.89, agent-readable) ----
         // The nav button needs the enable flag, URL, label and open-mode on the
         // client to render itself. None of these are secret (it is a public
@@ -153,6 +171,13 @@ public static class SettingEndpoints
     public sealed record NotificationsSettings(int PopupDurationSeconds);
     public sealed record MailComposeSettings(bool ForgottenAttachmentEnabled, string ForgottenAttachmentKeywords);
     public sealed record BulkActionsSettings(bool Enabled, int MaxSelection);
+
+    public sealed record ChecklistSettingsDto(
+        bool Enabled,
+        IReadOnlyList<string> BlockingStateCategories,
+        bool LogItemChangesToTimeline,
+        int MaxPerTicket,
+        int MaxItemsPerChecklist);
     public sealed record TicketGroupingSettings(
         bool Enabled,
         string PendingField,

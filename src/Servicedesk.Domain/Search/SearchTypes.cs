@@ -25,6 +25,10 @@ public static class SearchSourceKind
     public const string Signatures = "signatures";
     public const string ReportTemplates = "report-templates";
     public const string EmployeeFeedback = "employee-feedback";
+    // v0.0.103 - checklist items on tickets (hit -> the ticket) and the
+    // admin template catalogue.
+    public const string ChecklistItems = "checklist-items";
+    public const string ChecklistTemplates = "checklist-templates";
 }
 
 /// Per-user feature flags that gate availability of certain search sources.

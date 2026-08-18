@@ -1,6 +1,7 @@
 using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Audit;
+using Servicedesk.Infrastructure.Checklists;
 using Servicedesk.Infrastructure.KnowledgeBase;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
@@ -37,6 +38,10 @@ public enum TicketMutationCheck
     TargetQueueNoAccess,
     /// Explicit status is outside the (target) queue's allowed-status list.
     StatusNotInQueueScope,
+    /// v0.0.103 — the status change would resolve/close the ticket while an
+    /// attached checklist that blocks closing still has required open items.
+    /// <see cref="FieldUpdatePrecheck.ChecklistBlockers"/> names them.
+    ChecklistIncomplete,
 }
 
 /// Result of <see cref="ITicketMutationService.PrecheckFieldUpdateAsync"/>.
@@ -46,10 +51,14 @@ public enum TicketMutationCheck
 public sealed record FieldUpdatePrecheck(
     TicketMutationCheck Check,
     TicketDetail? Ticket,
-    IReadOnlyList<MatchedStatusGate> Gates)
+    IReadOnlyList<MatchedStatusGate> Gates,
+    IReadOnlyList<ChecklistBlocker>? ChecklistBlockers = null)
 {
     public static FieldUpdatePrecheck Fail(TicketMutationCheck check) =>
         new(check, null, Array.Empty<MatchedStatusGate>());
+
+    public static FieldUpdatePrecheck Blocked(IReadOnlyList<ChecklistBlocker> blockers) =>
+        new(TicketMutationCheck.ChecklistIncomplete, null, Array.Empty<MatchedStatusGate>(), blockers);
 }
 
 /// Result of <see cref="ITicketMutationService.PrecheckAccessAsync"/>.
@@ -117,6 +126,7 @@ public sealed class TicketMutationService : ITicketMutationService
     private readonly ITicketListNotifier _notifier;
     private readonly ISlaEngine _sla;
     private readonly ITriggerService _triggers;
+    private readonly IChecklistCloseGuard _checklistGuard;
 
     public TicketMutationService(
         ITicketRepository tickets,
@@ -126,7 +136,8 @@ public sealed class TicketMutationService : ITicketMutationService
         IAuditLogger audit,
         ITicketListNotifier notifier,
         ISlaEngine sla,
-        ITriggerService triggers)
+        ITriggerService triggers,
+        IChecklistCloseGuard checklistGuard)
     {
         _tickets = tickets;
         _queueAccess = queueAccess;
@@ -136,6 +147,7 @@ public sealed class TicketMutationService : ITicketMutationService
         _notifier = notifier;
         _sla = sla;
         _triggers = triggers;
+        _checklistGuard = checklistGuard;
     }
 
     public async Task<AccessPrecheck> PrecheckAccessAsync(TicketMutationActor actor, Guid ticketId, CancellationToken ct)
@@ -176,6 +188,16 @@ public sealed class TicketMutationService : ITicketMutationService
             {
                 return FieldUpdatePrecheck.Fail(TicketMutationCheck.StatusNotInQueueScope);
             }
+        }
+
+        // v0.0.103 — checklist close block. A hard rule, not a gate: no
+        // confirmation can satisfy it, the agent has to finish (or n/a) the
+        // required items first. Only when the status actually changes.
+        if (update.StatusId.HasValue && update.StatusId.Value != current.Ticket.StatusId)
+        {
+            var blockers = await _checklistGuard.FindBlockersAsync(ticketId, update.StatusId.Value, ct);
+            if (blockers.Count > 0)
+                return FieldUpdatePrecheck.Blocked(blockers);
         }
 
         // v0.0.42 — status-gate probe. Only when the status actually changes;

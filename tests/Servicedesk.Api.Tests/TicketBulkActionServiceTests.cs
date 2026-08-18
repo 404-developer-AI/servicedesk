@@ -32,6 +32,7 @@ public sealed class TicketBulkActionServiceTests
         var scopeId = Guid.NewGuid();
         var gateId = Guid.NewGuid();
         var missingId = Guid.NewGuid();
+        var checklistId = Guid.NewGuid();
 
         var mutations = new FakeMutations();
         mutations.Verdicts[okId] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(okId, 1), Array.Empty<MatchedStatusGate>());
@@ -39,15 +40,20 @@ public sealed class TicketBulkActionServiceTests
         mutations.Verdicts[scopeId] = FieldUpdatePrecheck.Fail(TicketMutationCheck.StatusNotInQueueScope);
         mutations.Verdicts[gateId] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(gateId, 4), new[] { Gate() });
         mutations.Verdicts[missingId] = FieldUpdatePrecheck.Fail(TicketMutationCheck.NotFound);
+        mutations.Verdicts[checklistId] = FieldUpdatePrecheck.Blocked(new[]
+        {
+            new Servicedesk.Infrastructure.Checklists.ChecklistBlocker(Guid.NewGuid(), "Onboarding", 3),
+        });
 
         var audit = new RecordingAudit();
         var svc = Build(mutations, audit);
 
-        var result = await svc.ExecuteAsync(Actor, Request(new[] { okId, noAccessId, scopeId, gateId, missingId }, statusId: StatusId), default);
+        var result = await svc.ExecuteAsync(Actor, Request(new[] { okId, noAccessId, scopeId, gateId, missingId, checklistId }, statusId: StatusId), default);
 
-        Assert.Equal(5, result.Total);
+        Assert.Equal(6, result.Total);
         Assert.Equal(1, result.Succeeded);
-        Assert.Equal(4, result.Skipped.Count);
+        Assert.Equal(5, result.Skipped.Count);
+        Assert.Equal(TicketBulkSkipReason.ChecklistIncomplete, result.Skipped.Single(s => s.TicketId == checklistId).Reason);
         Assert.Equal(TicketBulkSkipReason.NoAccess, result.Skipped.Single(s => s.TicketId == noAccessId).Reason);
         Assert.Equal(TicketBulkSkipReason.StatusNotInQueueScope, result.Skipped.Single(s => s.TicketId == scopeId).Reason);
         Assert.Equal(TicketBulkSkipReason.GateRequired, result.Skipped.Single(s => s.TicketId == gateId).Reason);

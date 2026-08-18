@@ -23,6 +23,8 @@ export type SearchKind =
   | "m365-mailboxes"
   | "sophos-tenants"
   | "employee-feedback"
+  | "checklist-items"
+  | "checklist-templates"
   | (string & {});
 
 export const KIND_LABELS: Record<string, string> = {
@@ -44,6 +46,8 @@ export const KIND_LABELS: Record<string, string> = {
   "m365-mailboxes": "Microsoft 365 mailboxes",
   "sophos-tenants": "Sophos spam filter",
   "employee-feedback": "Employee Feedback",
+  "checklist-items": "Checklist items",
+  "checklist-templates": "Checklist templates",
 };
 
 export const KIND_ORDER: string[] = [
@@ -65,6 +69,8 @@ export const KIND_ORDER: string[] = [
   "m365-mailboxes",
   "sophos-tenants",
   "employee-feedback",
+  "checklist-items",
+  "checklist-templates",
 ];
 
 export function labelForKind(kind: string): string {
@@ -122,6 +128,12 @@ export function hitHref(hit: SearchHit): string {
       return `/contracts/m365-matching/${hit.entityId}`;
     case "employee-feedback":
       return "/feedback";
+    case "checklist-items":
+      // The item lives on a ticket; open the ticket with the checklist
+      // panel focused on that checklist.
+      return `/tickets/${hit.entityId}?checklist=${hit.meta?.checklistId ?? ""}`;
+    case "checklist-templates":
+      return `/settings/tickets?tab=checklists&template=${hit.entityId}`;
     default:
       return "#";
   }

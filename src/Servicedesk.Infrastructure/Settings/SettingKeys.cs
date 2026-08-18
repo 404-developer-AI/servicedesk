@@ -100,6 +100,19 @@ public static class SettingKeys
         public const string BulkActionsMaxSelection = "Tickets.BulkActionsMaxSelection";
     }
 
+    /// v0.0.103 — ticket checklists (admin templates attached to tickets as
+    /// snapshots; per-item log; optional hard block on resolving/closing).
+    public static class Checklists
+    {
+        public const string Enabled = "Checklists.Enabled";
+        /// Comma-separated status state categories that count as "closing"
+        /// for the block rule (subset of Resolved, Closed).
+        public const string BlockingStateCategories = "Checklists.BlockingStateCategories";
+        public const string LogItemChangesToTimeline = "Checklists.LogItemChangesToTimeline";
+        public const string MaxPerTicket = "Checklists.MaxPerTicket";
+        public const string MaxItemsPerChecklist = "Checklists.MaxItemsPerChecklist";
+    }
+
     public static class Storage
     {
         public const string BlobRoot = "Storage.BlobRoot";
@@ -1446,6 +1459,16 @@ public static class SettingDefaults
             "Show row checkboxes and the bulk-edit bar on the ticket list so agents can post a note and/or change status, queue, assignee or priority on many tickets at once. Every selected ticket still runs the normal single-ticket rules (queue access, allowed statuses, status gates, triggers, SLA, audit); tickets that fail a rule are skipped and reported. Turn off to hide the selection entirely."),
         new SettingDefault(SettingKeys.Tickets.BulkActionsMaxSelection, "100", "int", "Tickets",
             "Maximum number of tickets one bulk action may touch. The list disables the bulk-edit button above this count and the server rejects larger requests. Bulk actions run synchronously per ticket, so keep this at a size that finishes within a normal request (100 is comfortable; 500 is the hard ceiling)."),
+        new SettingDefault(SettingKeys.Checklists.Enabled, "true", "bool", "Tickets",
+            "Ticket checklists: admins build checklist templates (Settings → Tickets → Checklists), agents attach them to tickets and tick items off inside the ticket, with a per-item log. Turn off to hide every checklist surface; attached checklists are kept and the close block is not enforced while off."),
+        new SettingDefault(SettingKeys.Checklists.BlockingStateCategories, "Resolved,Closed", "string", "Tickets",
+            "Which status categories count as 'closing' for checklists that block closing: a comma-separated subset of Resolved and Closed. A status change into one of these categories is refused while an attached blocking checklist still has required open items."),
+        new SettingDefault(SettingKeys.Checklists.LogItemChangesToTimeline, "false", "bool", "Tickets",
+            "Also write every checklist item tick / untick / not-applicable to the ticket timeline as a system event. Off by default: item changes always land in the checklist's own per-item log; only attach, detach, completed and reopened reach the timeline."),
+        new SettingDefault(SettingKeys.Checklists.MaxPerTicket, "10", "int", "Tickets",
+            "Maximum number of checklists that can be attached to one ticket."),
+        new SettingDefault(SettingKeys.Checklists.MaxItemsPerChecklist, "300", "int", "Tickets",
+            "Maximum number of items in one checklist template and on one attached checklist (template items plus items added on the ticket)."),
 
         // Storage — ADR-001 (v0.0.8). Keys only; runtime consumers land in later steps.
         new SettingDefault(SettingKeys.Storage.BlobRoot, "/var/lib/servicedesk/blobs", "string", "Storage",

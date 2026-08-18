@@ -5418,6 +5418,149 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- rewrite of existing data, the effect grows in over time.
         ALTER TABLE tickets SET (fillfactor = 90);
         ALTER TABLE ticket_sla_state SET (fillfactor = 90);
+
+        -- ===================================================================
+        -- v0.0.103 Ticket checklists
+        -- ===================================================================
+        -- Admin-managed templates (content as one JSON document: sections →
+        -- items) that agents attach to a ticket as a *snapshot*: the attached
+        -- checklist gets its own normalized rows so items can be ticked,
+        -- commented and extended independently of later template edits.
+        -- queue_ids empty = usable in every queue. search_text is a flattened
+        -- copy of name + description + item titles for the admin search source.
+        CREATE TABLE IF NOT EXISTS checklist_templates (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            name                TEXT        NOT NULL,
+            description         TEXT        NOT NULL DEFAULT '',
+            is_active           BOOLEAN     NOT NULL DEFAULT TRUE,
+            block_close         BOOLEAN     NOT NULL DEFAULT TRUE,
+            queue_ids           UUID[]      NOT NULL DEFAULT '{}',
+            definition          JSONB       NOT NULL DEFAULT '{"sections":[]}'::jsonb,
+            item_count          INT         NOT NULL DEFAULT 0,
+            search_text         TEXT        NOT NULL DEFAULT '',
+            created_by_user_id  UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS ix_checklist_templates_active
+            ON checklist_templates (is_active, name);
+        CREATE INDEX IF NOT EXISTS ix_checklist_templates_search_trgm
+            ON checklist_templates USING GIN (search_text gin_trgm_ops);
+
+        -- One attached checklist per row. required_* / *_items are maintained
+        -- counters (recomputed from the items after every mutation) so the
+        -- ticket header, bar and list never aggregate on read. completed_utc
+        -- flips when every required item is done or n/a and clears again when
+        -- one is reopened. touched = any progress/comment/ad-hoc item, which
+        -- decides whether an agent may still detach it (untouched only).
+        CREATE TABLE IF NOT EXISTS ticket_checklists (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            ticket_id           UUID        NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            template_id         UUID        NULL REFERENCES checklist_templates(id) ON DELETE SET NULL,
+            name                TEXT        NOT NULL,
+            description         TEXT        NOT NULL DEFAULT '',
+            block_close         BOOLEAN     NOT NULL DEFAULT TRUE,
+            sort_order          INT         NOT NULL DEFAULT 0,
+            attached_by_user_id UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            attached_utc        TIMESTAMPTZ NOT NULL DEFAULT now(),
+            completed_utc       TIMESTAMPTZ NULL,
+            required_total      INT         NOT NULL DEFAULT 0,
+            required_done       INT         NOT NULL DEFAULT 0,
+            total_items         INT         NOT NULL DEFAULT 0,
+            done_items          INT         NOT NULL DEFAULT 0,
+            touched             BOOLEAN     NOT NULL DEFAULT FALSE
+        );
+        CREATE INDEX IF NOT EXISTS ix_ticket_checklists_ticket
+            ON ticket_checklists (ticket_id, sort_order);
+
+        CREATE TABLE IF NOT EXISTS ticket_checklist_sections (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            checklist_id        UUID        NOT NULL REFERENCES ticket_checklists(id) ON DELETE CASCADE,
+            title               TEXT        NOT NULL DEFAULT '',
+            sort_order          INT         NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS ix_ticket_checklist_sections_checklist
+            ON ticket_checklist_sections (checklist_id, sort_order);
+
+        -- state: 'open' | 'done' | 'na' (not applicable, reason mandatory).
+        -- is_ad_hoc = added on the ticket by an agent (removable while open by
+        -- its author or an admin); template items can only go n/a.
+        CREATE TABLE IF NOT EXISTS ticket_checklist_items (
+            id                      UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            checklist_id            UUID        NOT NULL REFERENCES ticket_checklists(id) ON DELETE CASCADE,
+            section_id              UUID        NULL REFERENCES ticket_checklist_sections(id) ON DELETE SET NULL,
+            title                   TEXT        NOT NULL,
+            description             TEXT        NOT NULL DEFAULT '',
+            team_label              TEXT        NOT NULL DEFAULT '',
+            timing_label            TEXT        NOT NULL DEFAULT '',
+            link_url                TEXT        NOT NULL DEFAULT '',
+            link_label              TEXT        NOT NULL DEFAULT '',
+            is_required             BOOLEAN     NOT NULL DEFAULT TRUE,
+            sort_order              INT         NOT NULL DEFAULT 0,
+            is_ad_hoc               BOOLEAN     NOT NULL DEFAULT FALSE,
+            added_by_user_id        UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            state                   TEXT        NOT NULL DEFAULT 'open',
+            state_changed_utc       TIMESTAMPTZ NULL,
+            state_changed_by_user_id UUID       NULL REFERENCES users(id) ON DELETE SET NULL,
+            na_reason               TEXT        NOT NULL DEFAULT '',
+            comment_count           INT         NOT NULL DEFAULT 0,
+            created_utc             TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT chk_ticket_checklist_item_state
+                CHECK (state IN ('open','done','na'))
+        );
+        CREATE INDEX IF NOT EXISTS ix_ticket_checklist_items_checklist
+            ON ticket_checklist_items (checklist_id, sort_order);
+        CREATE INDEX IF NOT EXISTS ix_ticket_checklist_items_title_trgm
+            ON ticket_checklist_items USING GIN (title gin_trgm_ops);
+
+        -- Per-item log: every state change (from → to, optional comment) and
+        -- every stand-alone comment, plus add/edit/remove of ad-hoc items.
+        CREATE TABLE IF NOT EXISTS ticket_checklist_item_events (
+            id              BIGSERIAL   PRIMARY KEY,
+            item_id         UUID        NOT NULL REFERENCES ticket_checklist_items(id) ON DELETE CASCADE,
+            checklist_id    UUID        NOT NULL REFERENCES ticket_checklists(id) ON DELETE CASCADE,
+            ticket_id       UUID        NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            user_id         UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            kind            TEXT        NOT NULL,
+            from_state      TEXT        NULL,
+            to_state        TEXT        NULL,
+            comment         TEXT        NOT NULL DEFAULT '',
+            created_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT chk_ticket_checklist_item_event_kind
+                CHECK (kind IN ('state_change','comment','item_added','item_edited','item_removed'))
+        );
+        CREATE INDEX IF NOT EXISTS ix_ticket_checklist_item_events_item
+            ON ticket_checklist_item_events (item_id, created_utc, id);
+
+        -- Denormalized per-ticket counters (sum over its checklists) so the
+        -- ticket list can render the progress chip straight from the row.
+        ALTER TABLE tickets
+            ADD COLUMN IF NOT EXISTS checklist_required_total INT NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS checklist_required_done  INT NOT NULL DEFAULT 0;
+
+        -- Checklist timeline event types (attach / detach / completed /
+        -- reopened, and the opt-in per-item change). Same NOT VALID
+        -- drop+recreate pattern as the earlier extensions.
+        ALTER TABLE ticket_events DROP CONSTRAINT IF EXISTS chk_ticket_event_type;
+        ALTER TABLE ticket_events ADD CONSTRAINT chk_ticket_event_type
+            CHECK (event_type IN ('Created','Comment','Mail','Note','StatusChange',
+                                  'AssignmentChange','PriorityChange','QueueChange',
+                                  'CategoryChange','SystemNote','MailReceived',
+                                  'MailSent','CompanyAssignment','RequesterChange',
+                                  'IntakeFormSent','IntakeFormSubmitted','IntakeFormExpired',
+                                  'ParentLinked','ParentUnlinked',
+                                  'SurveySent','SurveySubmitted','SurveyExpired',
+                                  'TimeLimitAlertDismissed','TimeLimitExtended',
+                                  'TimeLimitTrackingDisabled','StatusGateDecision',
+                                  'ChecklistAttached','ChecklistDetached','ChecklistCompleted',
+                                  'ChecklistReopened','ChecklistItemChanged','ChecklistCloseBlocked')) NOT VALID;
+
+        -- Bell notification for "a trigger tried to resolve/close this ticket
+        -- but a checklist blocked it" (v0.0.103), sent to the agent whose
+        -- article fired the trigger (or the assignee for scheduled runs).
+        ALTER TABLE user_notifications DROP CONSTRAINT IF EXISTS chk_user_notifications_type;
+        ALTER TABLE user_notifications ADD CONSTRAINT chk_user_notifications_type
+            CHECK (notification_type IN ('mention','survey_submitted','checklist_blocked')) NOT VALID;
         """;
 
     private readonly NpgsqlDataSource _dataSource;
