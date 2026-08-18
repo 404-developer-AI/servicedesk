@@ -1,13 +1,16 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { Eye, ShieldAlert, Ticket } from "lucide-react";
+import { Eye, Layers, ShieldAlert, Ticket, X } from "lucide-react";
 import { ColumnSelector } from "@/components/ColumnSelector";
+import { Button } from "@/components/ui/button";
 import { TicketTableSkeleton } from "./components/TicketTable";
-import { GroupedTicketList } from "./components/GroupedTicketList";
+import { GroupedTicketList, type TicketSelection } from "./components/GroupedTicketList";
+import { BulkActionDialog } from "./components/BulkActionDialog";
 import { ticketApi, viewApi } from "@/lib/ticket-api";
 import { agentQueueApi, settingsApi } from "@/lib/api";
 import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
+import { cn } from "@/lib/utils";
 import { useTicketListRealtime } from "@/hooks/useTicketRealtime";
 import type { TicketListQuery, TicketListItem, DisplayConfig } from "@/lib/ticket-api";
 
@@ -183,6 +186,69 @@ export function TicketListPage() {
   const isLoading = ticketsLoading || (!!viewId && !viewApplied);
   const allItems: TicketListItem[] = data?.items ?? [];
 
+  // ---- v0.0.102 — bulk selection ----
+  // Agent-readable knobs: hide the whole selection UI when the admin turned
+  // bulk actions off; the cap only disables the button (server re-enforces).
+  const { data: bulkSettings } = useQuery({
+    queryKey: ["settings", "bulk-actions"],
+    queryFn: settingsApi.bulkActions,
+    staleTime: 60_000,
+  });
+  const bulkEnabled = bulkSettings?.enabled !== false;
+  const bulkMax = bulkSettings?.maxSelection ?? 100;
+
+  const [selected, setSelected] = React.useState<Set<string>>(() => new Set());
+  const [bulkOpen, setBulkOpen] = React.useState(false);
+
+  // A different view/filter is a different working set: start clean.
+  React.useEffect(() => {
+    setSelected(new Set());
+  }, [filters, viewId]);
+
+  // Prune ids that left the loaded list (resolved away, moved out of the
+  // filter by a realtime refresh) so the count and the dialog never include
+  // tickets the agent can no longer see.
+  React.useEffect(() => {
+    if (selected.size === 0) return;
+    const present = new Set(allItems.map((t) => t.id));
+    let changed = false;
+    for (const id of selected) if (!present.has(id)) { changed = true; break; }
+    if (!changed) return;
+    setSelected((cur) => new Set([...cur].filter((id) => present.has(id))));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allItems]);
+
+  const selection: TicketSelection | undefined = React.useMemo(
+    () =>
+      bulkEnabled
+        ? {
+            selected,
+            onToggle: (id) =>
+              setSelected((cur) => {
+                const next = new Set(cur);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+              }),
+            onSetMany: (ids, checked) =>
+              setSelected((cur) => {
+                const next = new Set(cur);
+                for (const id of ids) {
+                  if (checked) next.add(id);
+                  else next.delete(id);
+                }
+                return next;
+              }),
+          }
+        : undefined,
+    [bulkEnabled, selected],
+  );
+  const selectedItems = React.useMemo(
+    () => (selected.size === 0 ? [] : allItems.filter((t) => selected.has(t.id))),
+    [allItems, selected],
+  );
+  const overCap = selectedItems.length > bulkMax;
+
   const pageTitle = viewData?.name ?? "Tickets";
   const PageIcon = viewId ? Eye : Ticket;
 
@@ -226,6 +292,52 @@ export function TicketListPage() {
         <ColumnSelector />
       </header>
 
+      {selection && selectedItems.length > 0 && (
+        <div
+          className={cn(
+            "glass-panel flex shrink-0 items-center justify-between gap-3 px-3 py-2 ring-1 transition-colors",
+            overCap ? "ring-amber-500/40" : "ring-primary/30",
+          )}
+          role="toolbar"
+          aria-label="Bulk actions"
+        >
+          <div className="flex min-w-0 items-center gap-2 text-xs">
+            <span className="rounded-md bg-primary/15 px-2 py-0.5 font-semibold text-primary">
+              {selectedItems.length} selected
+            </span>
+            {overCap ? (
+              <span className="truncate text-amber-300">
+                Bulk actions are limited to {bulkMax} tickets at a time — deselect some to continue.
+              </span>
+            ) : (
+              <span className="truncate text-muted-foreground">
+                Shift-click a checkbox to select a range.
+              </span>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button
+              size="sm"
+              className="h-8 gap-1.5"
+              disabled={overCap}
+              onClick={() => setBulkOpen(true)}
+            >
+              <Layers className="h-3.5 w-3.5" />
+              Bulk edit…
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 gap-1 px-2 text-xs text-muted-foreground"
+              onClick={() => setSelected(new Set())}
+            >
+              <X className="h-3.5 w-3.5" />
+              Clear
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 min-h-0">
         {isLoading ? (
           <TicketTableSkeleton />
@@ -238,6 +350,7 @@ export function TicketListPage() {
             items={allItems}
             displayConfig={displayConfig}
             onRowClick={handleRowClick}
+            selection={selection}
             footer={
               truncated ? (
                 <div className="px-4 py-3 text-center text-xs text-muted-foreground">
@@ -259,6 +372,15 @@ export function TicketListPage() {
           </div>
         )}
       </div>
+
+      {selection && (
+        <BulkActionDialog
+          open={bulkOpen}
+          onOpenChange={setBulkOpen}
+          selected={selectedItems}
+          onCompleted={() => setSelected(new Set())}
+        />
+      )}
     </div>
   );
 }

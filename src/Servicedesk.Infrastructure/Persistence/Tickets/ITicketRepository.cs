@@ -304,7 +304,12 @@ public sealed record TicketFieldUpdate(
     // this value), the caller never needs an explicit "clear" flag for
     // the agent flow. Trigger-driven clears go through
     // `SetPendingTillHandler` / `SystemFieldMutator` instead.
-    DateTime? PendingTillUtc = null);
+    DateTime? PendingTillUtc = null,
+    // v0.0.102 — set when the update is one leg of a bulk action. The
+    // repository stamps `bulk_batch_id` into the metadata of every change
+    // event it writes (StatusChange/QueueChange/…) so the timeline can
+    // badge them and the audit trail can correlate the whole batch.
+    Guid? BulkBatchId = null);
 
 public sealed record NewTicketEvent(
     string EventType,

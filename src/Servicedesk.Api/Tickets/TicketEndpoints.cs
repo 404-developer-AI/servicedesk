@@ -25,6 +25,7 @@ using Servicedesk.Infrastructure.Signatures;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Surveys;
 using Servicedesk.Infrastructure.TaggingMailboxes;
+using Servicedesk.Infrastructure.Tickets;
 using Servicedesk.Infrastructure.Triggers;
 using Servicedesk.Infrastructure.Triggers.StatusGate;
 using Servicedesk.Infrastructure.Triggers.FirstOpenGate;
@@ -479,51 +480,91 @@ public static class TicketEndpoints
             });
         }).WithName("ConfirmOpenGate").WithOpenApi();
 
+        // v0.0.102 — bulk action: post a note/comment and/or change status,
+        // queue, assignee, priority on many tickets in one request. Each
+        // ticket runs the full single-ticket rule set through the shared
+        // mutation service (queue access, status-in-queue, status gates,
+        // triggers, SLA, audit, realtime); tickets that fail a rule are
+        // skipped and reported, the batch never stops on one ticket. The
+        // "bulk" rate-limit policy bounds abuse; the max-selection setting
+        // bounds one request's work.
+        group.MapPost("/bulk", async (
+            [FromBody] BulkTicketActionRequest req, HttpContext http,
+            ITicketBulkActionService bulk, CancellationToken ct) =>
+        {
+            if (req.TicketIds is null || req.TicketIds.Count == 0)
+                return Results.BadRequest(new { error = "ticketIds is required.", code = "no_tickets" });
+            if (req.TicketIds.Count > TicketBulkActionService.HardMaxSelection)
+                return Results.BadRequest(new
+                {
+                    error = $"A bulk action may touch at most {TicketBulkActionService.HardMaxSelection} tickets.",
+                    code = "too_many",
+                });
+            if (req.MessageHtml is { Length: > 200_000 })
+                return Results.BadRequest(new { error = "Message is too long.", code = "message_too_long" });
+
+            var actor = ResolveMutationActor(http);
+            try
+            {
+                var result = await bulk.ExecuteAsync(actor, new TicketBulkActionRequest(
+                    TicketIds: req.TicketIds,
+                    MessageHtml: string.IsNullOrWhiteSpace(req.MessageHtml) ? null : req.MessageHtml,
+                    MessageIsInternal: req.MessageIsInternal ?? true,
+                    StatusId: req.StatusId,
+                    QueueId: req.QueueId,
+                    PriorityId: req.PriorityId,
+                    AssigneeUserId: req.AssigneeUserId,
+                    UnassignAssignee: req.UnassignAssignee), ct);
+                return Results.Ok(result);
+            }
+            catch (TicketBulkActionRejectedException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message, code = ex.Code });
+            }
+        }).WithName("BulkTicketAction").RequireRateLimiting("bulk").WithOpenApi();
+
         group.MapPatch("/{id:guid}", async (
             Guid id, [FromBody] UpdateTicketRequest req, HttpContext http,
-            ITicketRepository tickets, ICompanyRepository companies, IQueueAccessService queueAccess,
-            ITaxonomyRepository taxonomy,
-            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla,
-            ITriggerService triggerService, IStatusGateService gateService, CancellationToken ct) =>
+            ITicketRepository tickets, ICompanyRepository companies,
+            ITicketMutationService mutations, IStatusGateService gateService, CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var actor = ResolveMutationActor(http);
 
-            // Verify the agent can access the ticket's current queue
-            var current = await tickets.GetByIdAsync(id, ct);
-            if (current is null) return Results.NotFound();
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, current.Ticket.QueueId, ct))
-                return Results.NotFound();
-
-            // If moving to a different queue, verify access to the target queue too
-            if (req.QueueId.HasValue && req.QueueId != current.Ticket.QueueId)
+            // v0.0.102 — the rule set (queue access on current + target
+            // queue, status-in-queue-scope, status-gate probe) lives in the
+            // shared mutation service so the bulk action runs the very same
+            // checks per ticket. The endpoint only maps verdicts to HTTP.
+            var requested = new TicketFieldUpdate(
+                QueueId: req.QueueId,
+                StatusId: req.StatusId,
+                PriorityId: req.PriorityId,
+                CategoryId: req.CategoryId,
+                AssigneeUserId: req.AssigneeUserId,
+                ClearAssignee: req.UnassignAssignee,
+                Subject: req.Subject?.Trim(),
+                BodyText: req.BodyText,
+                BodyHtml: req.BodyHtml,
+                PendingTillUtc: req.PendingTillUtc);
+            var pre = await mutations.PrecheckFieldUpdateAsync(actor, id, requested, ct);
+            switch (pre.Check)
             {
-                if (!await queueAccess.HasQueueAccessAsync(userId, userRole, req.QueueId.Value, ct))
+                case TicketMutationCheck.NotFound:
+                case TicketMutationCheck.NoAccess:
+                    return Results.NotFound();
+                case TicketMutationCheck.TargetQueueNoAccess:
                     return Results.Json(new { error = "You do not have access to the target queue." }, statusCode: 403);
-            }
-
-            // v0.0.40 polish — if the caller is explicitly setting a
-            // status, validate that it sits in the target queue's
-            // allowed-list. Skipped when StatusId is unset (the
-            // repository's auto-flip handles queue-only changes). When
-            // the queue isn't changing we validate against the current
-            // queue. This catches the rare case where a stale client
-            // form posts a status the dropdown filter would have hidden.
-            if (req.StatusId.HasValue)
-            {
-                var targetQueueId = req.QueueId ?? current.Ticket.QueueId;
-                var targetQueue = await taxonomy.GetQueueAsync(targetQueueId, ct);
-                if (targetQueue is not null
-                    && targetQueue.AllowedStatusIds is { Count: > 0 } allowed
-                    && !allowed.Contains(req.StatusId.Value))
-                {
+                case TicketMutationCheck.StatusNotInQueueScope:
+                    // v0.0.40 polish — catches the rare case where a stale
+                    // client form posts a status the dropdown filter would
+                    // have hidden.
                     return Results.BadRequest(new
                     {
                         error = "This status is not allowed for the target queue.",
                         code = "status_not_in_queue_scope",
                     });
-                }
             }
+            var current = pre.Ticket!;
 
             // v0.0.42 — status-change gate enforcement. Only runs when
             // the agent actually changes the status (a same-value PATCH
@@ -533,11 +574,10 @@ public static class TicketEndpoints
             // automation bypasses by construction. Missing or incomplete
             // confirmations yield 409 + the unsatisfied gates so the FE
             // can re-open the dialog without retrying the matching probe.
-            IReadOnlyList<MatchedStatusGate> matchedGates = Array.Empty<MatchedStatusGate>();
+            IReadOnlyList<MatchedStatusGate> matchedGates = pre.Gates;
             var confirmedGates = new List<ConfirmedGate>();
             if (req.StatusId.HasValue && req.StatusId.Value != current.Ticket.StatusId)
             {
-                matchedGates = await gateService.FindMatchingAsync(id, req.StatusId.Value, ct);
                 if (matchedGates.Count > 0)
                 {
                     var confirmationsByTrigger = (req.GateConfirmations ?? Array.Empty<GateConfirmationInput>())
@@ -640,18 +680,8 @@ public static class TicketEndpoints
             // drop the status change from the update (other field edits in
             // the same PATCH still apply) and the decision is logged below.
             bool keepStatusOpen = confirmedGates.Any(c => c.KeepOpen);
-            var update = new TicketFieldUpdate(
-                QueueId: req.QueueId,
-                StatusId: keepStatusOpen ? null : req.StatusId,
-                PriorityId: req.PriorityId,
-                CategoryId: req.CategoryId,
-                AssigneeUserId: req.AssigneeUserId,
-                ClearAssignee: req.UnassignAssignee,
-                Subject: req.Subject?.Trim(),
-                BodyText: req.BodyText,
-                BodyHtml: req.BodyHtml,
-                PendingTillUtc: req.PendingTillUtc);
-            var detail = await tickets.UpdateFieldsAsync(id, update, userId, ct);
+            var update = keepStatusOpen ? requested with { StatusId = null } : requested;
+            var detail = await mutations.ApplyFieldUpdateAsync(id, update, userId, ct);
             if (detail is null) return Results.NotFound();
 
             // v0.0.42 — append a Note event per confirmed gate. Rendered
@@ -711,48 +741,23 @@ public static class TicketEndpoints
                 detail = await tickets.GetByIdAsync(id, ct) ?? detail;
             }
 
-            var (actor, role) = ActorContext.Resolve(http);
-            await audit.LogAsync(new AuditEvent(
-                EventType: "ticket.updated",
-                Actor: actor,
-                ActorRole: role,
-                Target: id.ToString(),
-                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
-                UserAgent: http.Request.Headers.UserAgent.ToString(),
-                Payload: req));
-
-            // Notify viewers of this ticket + the ticket list
-            var ticketIdStr = id.ToString();
-            await hub.Clients.Group($"ticket:{ticketIdStr}").SendAsync("TicketUpdated", ticketIdStr, ct);
-            await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", ticketIdStr, ct);
-
-            await sla.OnTicketFieldsChangedAsync(id, ct);
-
-            // Trigger evaluator (v0.0.24 Blok 2). Build a ChangeSet from
-            // the PATCH request: any non-null field counts as "changed"
-            // (a no-op same-value PATCH still trips the Selective check,
-            // refining that costs an extra pre-update fetch we don't pay
-            // for elsewhere).
-            var changedFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (req.QueueId.HasValue) changedFields.Add(TriggerFieldKeys.TicketQueueId);
-            if (req.StatusId.HasValue) changedFields.Add(TriggerFieldKeys.TicketStatusId);
-            if (req.PriorityId.HasValue) changedFields.Add(TriggerFieldKeys.TicketPriorityId);
-            if (req.CategoryId.HasValue) changedFields.Add(TriggerFieldKeys.TicketCategoryId);
-            if (req.AssigneeUserId.HasValue || req.UnassignAssignee) changedFields.Add(TriggerFieldKeys.TicketOwnerId);
-            if (req.Subject is not null) changedFields.Add(TriggerFieldKeys.TicketSubject);
-            await triggerService.EvaluateAsync(
-                ticketId: id,
-                ticketEventId: null,
-                activatorKind: TriggerActivatorKind.Action,
-                changeSet: new TriggerChangeSet(changedFields, ArticleAdded: false),
-                ct: ct);
+            // Audit → realtime → SLA → triggers, shared with the bulk path.
+            // The trigger ChangeSet is built from the raw request (any
+            // non-null field counts as "changed", incl. a status the
+            // keep-open gate just dropped) — same as before the extraction.
+            await mutations.PublishFieldUpdateAsync(
+                actor, id, update,
+                auditPayload: req,
+                changeSet: new TriggerChangeSet(
+                    TicketMutationService.DeriveChangedFields(requested), ArticleAdded: false),
+                ct);
 
             var companyAlert = await BuildCompanyAlertAsync(companies, detail.Ticket.CompanyId, detail.Ticket.RequesterContactId, ct);
             return Results.Ok(new
             {
                 ticket = detail.Ticket,
                 body = detail.Body,
-                events = FilterTimelineEventsForRole(detail.Events, role),
+                events = FilterTimelineEventsForRole(detail.Events, actor.AuditRole),
                 pinnedEvents = detail.PinnedEvents,
                 companyAlert,
             });
@@ -923,12 +928,10 @@ public static class TicketEndpoints
 
         group.MapPost("/{id:guid}/events", async (
             Guid id, [FromBody] AddEventRequest req, HttpContext http,
-            ITicketRepository tickets, IQueueAccessService queueAccess,
+            ITicketMutationService mutations,
             IAttachmentRepository attachmentsRepo, IUserService users,
             ITaggingMailboxRepository taggingMailboxes,
             IMentionNotificationService mentionService,
-            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla,
-            ITriggerService triggerService,
             IComposeTemplateSurveyDispatcher surveyTemplateDispatcher,
             CancellationToken ct) =>
         {
@@ -938,13 +941,12 @@ public static class TicketEndpoints
                 return Results.BadRequest(new { error = "eventType must be 'Comment' or 'Note'." });
 
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var actor = ResolveMutationActor(http);
 
-            // Queue-access check via parent ticket
-            var ticket = await tickets.GetByIdAsync(id, ct);
-            if (ticket is null) return Results.NotFound();
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.Ticket.QueueId, ct))
-                return Results.NotFound();
+            // Queue-access check via parent ticket (shared rule, v0.0.102)
+            var access = await mutations.PrecheckAccessAsync(actor, id, ct);
+            if (access.Check != TicketMutationCheck.Ok || access.Ticket is null) return Results.NotFound();
+            var ticket = access.Ticket;
 
             // @@-mention filtering (v0.0.12 stap 3): unknown ids, customer ids,
             // or deleted-user ids are silently dropped. Same soft-drop semantics
@@ -967,28 +969,17 @@ public static class TicketEndpoints
                 ? JsonSerializer.Serialize(new { mentionedUserIds = mentionedIds, mentionedMailboxIds })
                 : null;
 
-            // The agent UI only sends bodyHtml (the rich-text composer's
-            // output). Without a plain-text version, downstream consumers
-            // that index or match against body_text (full-text search,
-            // trigger `article.body` conditions, mention notifications)
-            // silently see null and skip the event. Strip the HTML server-
-            // side so the DB row carries both representations and stays
-            // consistent regardless of which caller submitted it.
-            var derivedBodyText = req.BodyText;
-            if (string.IsNullOrWhiteSpace(derivedBodyText) && !string.IsNullOrWhiteSpace(req.BodyHtml))
-            {
-                var stripped = KbBodyStripper.HtmlToText(req.BodyHtml);
-                if (!string.IsNullOrWhiteSpace(stripped)) derivedBodyText = stripped;
-            }
-
+            // Plain-text body derivation (HTML → text when only HTML was
+            // sent) happens inside the mutation service so every caller —
+            // this endpoint and the bulk action — writes both representations.
             var input = new NewTicketEvent(
                 EventType: req.EventType,
-                BodyText: derivedBodyText,
+                BodyText: req.BodyText,
                 BodyHtml: req.BodyHtml,
                 IsInternal: req.IsInternal ?? (req.EventType == "Note"),
                 AuthorUserId: userId,
                 MetadataJson: metadataJson);
-            var evt = await tickets.AddEventAsync(id, input, ct);
+            var evt = await mutations.AddEventAsync(id, input, ct);
             if (evt is null) return Results.NotFound();
 
             // Re-link any user-uploaded attachments to the freshly-created
@@ -1007,39 +998,15 @@ public static class TicketEndpoints
                 }
             }
 
-            var (actor, role) = ActorContext.Resolve(http);
-            await audit.LogAsync(new AuditEvent(
-                EventType: "ticket.event.added",
-                Actor: actor,
-                ActorRole: role,
-                Target: id.ToString(),
-                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
-                UserAgent: http.Request.Headers.UserAgent.ToString(),
-                Payload: new
-                {
-                    evt.EventType,
-                    evt.IsInternal,
-                    attachmentCount = req.AttachmentIds?.Count ?? 0,
-                    mentionedUserCount = mentionedIds.Count,
-                    mentionedMailboxCount = mentionedMailboxIds.Count,
-                }));
-
-            // Notify viewers of this ticket + the ticket list
-            var ticketIdStr = id.ToString();
-            await hub.Clients.Group($"ticket:{ticketIdStr}").SendAsync("TicketUpdated", ticketIdStr, ct);
-            await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", ticketIdStr, ct);
-
-            await sla.OnTicketEventAsync(id, evt.EventType, ct);
-
-            // Trigger evaluator (v0.0.24 Blok 2). A new article was just
-            // added — that satisfies the Selective short-circuit by
-            // itself, so no per-field changedFields tracking needed here.
-            await triggerService.EvaluateAsync(
-                ticketId: id,
-                ticketEventId: evt.Id,
-                activatorKind: TriggerActivatorKind.Action,
-                changeSet: TriggerChangeSet.ArticleOnly(),
-                ct: ct);
+            // Audit → realtime → SLA → triggers, shared with the bulk path.
+            await mutations.PublishEventAsync(actor, id, evt, new
+            {
+                evt.EventType,
+                evt.IsInternal,
+                attachmentCount = req.AttachmentIds?.Count ?? 0,
+                mentionedUserCount = mentionedIds.Count,
+                mentionedMailboxCount = mentionedMailboxIds.Count,
+            }, ct);
 
             // @@-mention notification raamwerk (v0.0.12 stap 4). Fire-and-forget
             // semantics: the service logs + swallows everything. The request
@@ -2101,6 +2068,35 @@ public static class TicketEndpoints
         string? NewLinkRole = null);
 
     public sealed record InitialNoteRequest(string BodyHtml, bool IsInternal);
+
+    /// v0.0.102 — one actor object for the shared mutation service: the
+    /// authorization identity (user id + role claim) plus the audit identity
+    /// the endpoints already derived via <see cref="ActorContext.Resolve"/>.
+    internal static TicketMutationActor ResolveMutationActor(HttpContext http)
+    {
+        var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+        var (actor, role) = ActorContext.Resolve(http);
+        return new TicketMutationActor(
+            userId, userRole, actor, role,
+            http.Connection.RemoteIpAddress?.ToString(),
+            http.Request.Headers.UserAgent.ToString());
+    }
+
+    /// v0.0.102 — bulk action payload. Everything but <c>TicketIds</c> is
+    /// optional; the service rejects a request that changes nothing.
+    /// <c>MessageIsInternal</c> defaults to true (internal note) so a
+    /// caller that forgets the flag can never accidentally post a public
+    /// comment on N tickets.
+    public sealed record BulkTicketActionRequest(
+        IReadOnlyList<Guid> TicketIds,
+        string? MessageHtml = null,
+        bool? MessageIsInternal = null,
+        Guid? StatusId = null,
+        Guid? QueueId = null,
+        Guid? PriorityId = null,
+        Guid? AssigneeUserId = null,
+        bool UnassignAssignee = false);
 
     public sealed record UpdateTicketRequest(
         Guid? QueueId,

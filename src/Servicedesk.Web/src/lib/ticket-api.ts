@@ -931,7 +931,50 @@ export type AssignTicketCompanyRequest = {
 
 // ---- API functions ----
 
+// ---- Bulk actions (v0.0.102) ----
+
+/// One bulk action over N tickets. Every change is optional; the server
+/// rejects a request that changes nothing. `messageIsInternal` defaults to
+/// true server-side, so always send it explicitly.
+export type BulkTicketActionRequest = {
+  ticketIds: string[];
+  messageHtml?: string;
+  messageIsInternal?: boolean;
+  statusId?: string;
+  queueId?: string;
+  priorityId?: string;
+  assigneeUserId?: string;
+  unassignAssignee?: boolean;
+};
+
+/// Stable skip codes — mirrored from the server's TicketBulkSkipReason.
+export type BulkSkipReason =
+  | "not_found"
+  | "no_access"
+  | "target_queue_no_access"
+  | "status_not_in_queue_scope"
+  | "status_gate_required"
+  | "failed";
+
+export type BulkSkippedTicket = {
+  ticketId: string;
+  number: number | null;
+  reason: BulkSkipReason | string;
+};
+
+export type BulkTicketActionResult = {
+  batchId: string;
+  total: number;
+  succeeded: number;
+  skipped: BulkSkippedTicket[];
+};
+
 export const ticketApi = {
+  /// v0.0.102 — apply one change-set to many tickets. Per-ticket rules run
+  /// server-side; skipped tickets come back with a reason instead of failing
+  /// the whole call.
+  bulkAction: (payload: BulkTicketActionRequest) =>
+    request<BulkTicketActionResult>("POST", "/api/tickets/bulk", payload),
   list: (query: TicketListQuery = {}) => {
     const params = new URLSearchParams();
     if (query.queueId) params.set("queueId", query.queueId);

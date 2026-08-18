@@ -197,23 +197,79 @@ function useTaxonomySortMap(groupBy: string | null | undefined): Map<string, num
 
 // ---- Main component ----
 
+/// v0.0.102 — row selection for bulk actions. The page owns the selected
+/// set; the list owns the shift-click range anchor because only the list
+/// knows the displayed order (groups, float, per-group sort).
+export type TicketSelection = {
+  selected: Set<string>;
+  onToggle: (id: string) => void;
+  onSetMany: (ids: string[], checked: boolean) => void;
+};
+
 type GroupedTicketListProps = {
   items: TicketListItem[];
   displayConfig: DisplayConfig;
   onRowClick: (id: string) => void;
   footer?: React.ReactNode;
+  selection?: TicketSelection;
 };
+
+const CHECKBOX_CLASS =
+  "h-3.5 w-3.5 cursor-pointer rounded border border-glass-strong bg-glass accent-primary";
+
+/// Native checkbox that also renders the indeterminate state (only settable
+/// through the DOM property, not an attribute).
+function TriStateCheckbox({
+  checked,
+  indeterminate,
+  onClick,
+  ariaLabel,
+}: {
+  checked: boolean;
+  indeterminate?: boolean;
+  onClick: (e: React.MouseEvent<HTMLInputElement>) => void;
+  ariaLabel: string;
+}) {
+  const ref = React.useRef<HTMLInputElement>(null);
+  React.useEffect(() => {
+    if (ref.current) ref.current.indeterminate = !!indeterminate && !checked;
+  }, [indeterminate, checked]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={checked}
+      // Selection logic lives in onClick so we can read shiftKey for range
+      // selection; onChange is a no-op to keep the input controlled.
+      onChange={() => {}}
+      onMouseDown={(e) => {
+        // Stop shift-click from extending a native text selection.
+        if (e.shiftKey) e.preventDefault();
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick(e);
+      }}
+      aria-label={ariaLabel}
+      className={CHECKBOX_CLASS}
+    />
+  );
+}
 
 export function GroupedTicketList({
   items,
   displayConfig,
   onRowClick,
   footer,
+  selection,
 }: GroupedTicketListProps) {
   const { theme } = useTheme();
   const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(
     new Set(),
   );
+  // Anchor for shift-click range selection: the id of the last plain-clicked
+  // row checkbox. Ref, not state — it never needs to re-render anything.
+  const anchorRef = React.useRef<string | null>(null);
 
   const groupBy = displayConfig.groupBy as GroupByField | null | undefined;
   const hasGrouping = !!groupBy && groupBy in GROUP_BY_FIELD_MAP;
@@ -276,7 +332,36 @@ export function GroupedTicketList({
   }, [items, hasGrouping, hasPriorityFloat, groupBy, displayConfig.groupOrder, taxonomySortMap, groupingCfg]);
 
   const showGroupHeaders = hasGrouping || hasPriorityFloat;
-  const colCount = columns.length;
+
+  // Displayed order across all groups (collapsed groups included, so a
+  // shift-range spanning a collapsed group still selects it — that matches
+  // what "from here to there" means visually in the header rows).
+  const displayedIds = React.useMemo(
+    () => orderedGroups.flatMap((g) => g.items.map((t) => t.id)),
+    [orderedGroups],
+  );
+
+  // A plain click toggles the row and moves the anchor; a shift-click selects
+  // the whole range from the anchor to the clicked row (additive), following
+  // the displayed order so it respects grouping + sort. Same semantics as
+  // the timesheet back-office tabs.
+  const handleRowCheck = (id: string, shift: boolean) => {
+    if (!selection) return;
+    if (shift && anchorRef.current !== null) {
+      const a = displayedIds.indexOf(anchorRef.current);
+      const b = displayedIds.indexOf(id);
+      if (a >= 0 && b >= 0) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        selection.onSetMany(displayedIds.slice(lo, hi + 1), true);
+        return;
+      }
+    }
+    selection.onToggle(id);
+    anchorRef.current = id;
+  };
+
+  const allSelected = !!selection && items.length > 0 && items.every((t) => selection.selected.has(t.id));
+  const anySelected = !!selection && items.some((t) => selection.selected.has(t.id));
 
   // Build a lookup from item id to react-table row for rendering
   const rowById = React.useMemo(() => {
@@ -302,6 +387,19 @@ export function GroupedTicketList({
           <thead className="sticky top-0 z-10 bg-[hsl(256deg_28.3%_89.61%)] dark:bg-[hsl(240_10%_8%)]">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
+                {selection && (
+                  <th className="w-10 px-3 py-3 border-b border-glass">
+                    <TriStateCheckbox
+                      checked={allSelected}
+                      indeterminate={anySelected}
+                      ariaLabel={allSelected ? "Deselect all tickets" : "Select all tickets"}
+                      onClick={() => {
+                        selection.onSetMany(items.map((t) => t.id), !allSelected);
+                        anchorRef.current = null;
+                      }}
+                    />
+                  </th>
+                )}
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
@@ -319,6 +417,10 @@ export function GroupedTicketList({
             {orderedGroups.map((group) => {
               const isCollapsed = collapsedGroups.has(group.key);
               const color = group.color ?? "#6b7280";
+              const groupAllSelected =
+                !!selection && group.items.length > 0 && group.items.every((t) => selection.selected.has(t.id));
+              const groupAnySelected =
+                !!selection && group.items.some((t) => selection.selected.has(t.id));
 
               return (
                 <React.Fragment key={group.key}>
@@ -327,7 +429,20 @@ export function GroupedTicketList({
                       className="border-b border-glass-strong bg-glass hover:bg-glass-hover transition-colors cursor-pointer"
                       onClick={() => toggleCollapse(group.key)}
                     >
-                      <td colSpan={colCount} className="px-4 py-2">
+                      {selection && (
+                        <td className="w-10 px-3 py-2">
+                          <TriStateCheckbox
+                            checked={groupAllSelected}
+                            indeterminate={groupAnySelected}
+                            ariaLabel={`${groupAllSelected ? "Deselect" : "Select"} all tickets in ${group.label || "this group"}`}
+                            onClick={() => {
+                              selection.onSetMany(group.items.map((t) => t.id), !groupAllSelected);
+                              anchorRef.current = null;
+                            }}
+                          />
+                        </td>
+                      )}
+                      <td colSpan={columns.length} className="px-4 py-2">
                         <div className="flex items-center gap-3">
                           <ChevronDown
                             className={cn(
@@ -371,13 +486,28 @@ export function GroupedTicketList({
                           : {}),
                       };
 
+                      const isSelected = !!selection && selection.selected.has(item.id);
+
                       return (
                         <tr
                           key={row.id}
-                          className="border-b border-glass hover:bg-glass-hover cursor-pointer transition-colors"
+                          className={cn(
+                            "border-b border-glass hover:bg-glass-hover cursor-pointer transition-colors",
+                            isSelected && "bg-primary/[0.07] hover:bg-primary/[0.1]",
+                          )}
                           style={rowStyle}
                           onClick={() => onRowClick(item.id)}
+                          aria-selected={selection ? isSelected : undefined}
                         >
+                          {selection && (
+                            <td className="w-10 px-3 py-3">
+                              <TriStateCheckbox
+                                checked={isSelected}
+                                ariaLabel={`Select ticket #${item.number}`}
+                                onClick={(e) => handleRowCheck(item.id, e.shiftKey)}
+                              />
+                            </td>
+                          )}
                           {row.getVisibleCells().map((cell) => (
                             <td key={cell.id} className="px-4 py-3 text-sm">
                               {flexRender(cell.column.columnDef.cell, cell.getContext())}

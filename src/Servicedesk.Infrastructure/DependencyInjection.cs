@@ -495,6 +495,14 @@ public static class DependencyInjection
         // long-lived; no per-request state lives on the service.
         services.AddSingleton<Servicedesk.Infrastructure.Triggers.StatusGate.IStatusGateService,
                               Servicedesk.Infrastructure.Triggers.StatusGate.StatusGateService>();
+
+        // v0.0.102 — the shared agent-side ticket mutation rules (precheck /
+        // apply / publish) used by the single-ticket endpoints and the bulk
+        // action service alike, so both paths enforce one rule set.
+        services.AddScoped<Servicedesk.Infrastructure.Tickets.ITicketMutationService,
+                           Servicedesk.Infrastructure.Tickets.TicketMutationService>();
+        services.AddScoped<Servicedesk.Infrastructure.Tickets.ITicketBulkActionService,
+                           Servicedesk.Infrastructure.Tickets.TicketBulkActionService>();
         // First-open title-review gate matcher + confirmation runner. Called
         // by the ticket detail page's open-gate probe and the confirmation
         // endpoint. Singleton for the same reason as the status-gate service.
