@@ -297,6 +297,33 @@ public static class OrdersEndpoints
         syncedUtc = o.SyncedUtc,
     };
 
+    private static decimal? CostTotal(AdsolutOrderLineRow l)
+        => l.CostUnitPrice is decimal c && l.Quantity is decimal q ? decimal.Round(c * q, 4) : null;
+
+    private static decimal? MarginAmount(AdsolutOrderLineRow l)
+        => CostTotal(l) is decimal ct && l.PriceExclVat is decimal total ? decimal.Round(total - ct, 4) : null;
+
+    /// Margin on cost (Adsolut's definition): (total − cost) / cost × 100.
+    /// Null when there is no cost or the cost is zero (division by zero).
+    private static decimal? MarginPercent(AdsolutOrderLineRow l)
+        => CostTotal(l) is decimal ct && ct > 0 && MarginAmount(l) is decimal m
+            ? decimal.Round(m / ct * 100m, 2)
+            : null;
+
+    private static string? CostSource(AdsolutOrderLineRow l)
+    {
+        if (l.CostUnitPrice is null) return null;
+        var docs = string.IsNullOrWhiteSpace(l.CostSourceDocNrs) ? null : "BL " + l.CostSourceDocNrs;
+        var sup = string.IsNullOrWhiteSpace(l.CostSourceSuppliers) ? null : l.CostSourceSuppliers;
+        return (docs, sup) switch
+        {
+            (null, null) => null,
+            (not null, null) => docs,
+            (null, not null) => sup,
+            _ => $"{docs} · {sup}",
+        };
+    }
+
     private static object ToDetailDto(
         AdsolutOrderDetail d,
         IReadOnlyList<AdsolutSupplierOrderLineRow> supplierLines,
@@ -321,6 +348,14 @@ public static class OrdersEndpoints
             priceInclVat = l.PriceInclVat,
             vatCode = l.VatCode,
             vatDescription = l.VatDescription,
+            // v0.0.102 — cost + margin, computed the way Adsolut shows them
+            // on the order: total cost = KP × qty, margin = line total
+            // (excl. VAT) − total cost, margin % = margin / total cost.
+            costUnitPrice = l.CostUnitPrice,
+            costTotal = CostTotal(l),
+            marginAmount = MarginAmount(l),
+            marginPercent = MarginPercent(l),
+            costSource = CostSource(l),
         }),
         // Supplier orders ("bestellingen") linked to this order (header-level
         // join). Each line carries the REAL procurement status + supplier +

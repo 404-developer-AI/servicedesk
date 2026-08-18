@@ -1,6 +1,6 @@
 import type { AdsolutOrderDetail, AdsolutSupplierOrderLine } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { formatDate, formatDateTime, formatDiscount, formatMoney, formatNumber } from "./orderFormat";
+import { formatDate, formatDateTime, formatMarginPercent, formatMoney, formatNumber } from "./orderFormat";
 
 /// Coloured "Bestelling status" chip. The colour comes from the admin's
 /// status→hex map; a missing/empty status falls back to the special NO_STATUS
@@ -93,7 +93,7 @@ export function OrderDetail({ data, dense = false }: { data: AdsolutOrderDetail;
 
       {lines.length > 0 ? (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[56rem] text-xs">
+          <table className="w-full min-w-[64rem] text-xs">
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground/60">
                 <th className="py-1.5 pr-3 font-medium">Article</th>
@@ -102,27 +102,70 @@ export function OrderDetail({ data, dense = false }: { data: AdsolutOrderDetail;
                 <th className="py-1.5 pr-3 font-medium">Unit</th>
                 <th className="py-1.5 pr-3 text-right font-medium">Delivered</th>
                 <th className="py-1.5 pr-3 text-right font-medium">Gross</th>
-                <th className="py-1.5 pr-3 text-right font-medium">Disc. 1</th>
                 <th className="py-1.5 pr-3 text-right font-medium">Unit price</th>
-                <th className="py-1.5 text-right font-medium">Total</th>
+                <th
+                  className="py-1.5 pr-3 text-right font-medium"
+                  title="Cost price per unit (Adsolut “KP. Art”) — the purchase price on the supplier order (BL) linked to this order for the same article"
+                >
+                  Cost
+                </th>
+                <th className="py-1.5 pr-3 text-right font-medium">Total</th>
+                <th
+                  className="py-1.5 pr-3 text-right font-medium"
+                  title="Line total (excl. VAT) minus total cost"
+                >
+                  Margin
+                </th>
+                <th
+                  className="py-1.5 text-right font-medium"
+                  title="Margin on cost, as Adsolut shows it: (total − cost) / cost"
+                >
+                  Margin %
+                </th>
               </tr>
             </thead>
             <tbody>
-              {lines.map((l) => (
-                <tr key={l.id} className="border-t border-glass align-top">
-                  <td className="py-1.5 pr-3 font-mono text-muted-foreground">{l.productCode ?? "—"}</td>
-                  <td className="max-w-[22rem] py-1.5 pr-3 text-foreground">
-                    <span className="block whitespace-pre-line">{l.description || "—"}</span>
-                  </td>
-                  <td className="py-1.5 pr-3 text-right tabular-nums">{formatNumber(l.quantity)}</td>
-                  <td className="py-1.5 pr-3 text-muted-foreground">{l.unitDescription ?? l.unitCode ?? "—"}</td>
-                  <td className="py-1.5 pr-3 text-right tabular-nums">{formatNumber(l.delivered)}</td>
-                  <td className="py-1.5 pr-3 text-right tabular-nums">{formatMoney(l.grossUnitPrice, currency)}</td>
-                  <td className="py-1.5 pr-3 text-right tabular-nums text-muted-foreground">{formatDiscount(l.discount1)}</td>
-                  <td className="py-1.5 pr-3 text-right tabular-nums">{formatMoney(l.unitPrice, currency)}</td>
-                  <td className="py-1.5 text-right tabular-nums text-foreground">{formatMoney(l.priceExclVat, currency)}</td>
-                </tr>
-              ))}
+              {lines.map((l) => {
+                const hasCost = l.costUnitPrice !== null && l.costUnitPrice !== undefined;
+                const marginTone =
+                  l.marginAmount === null || l.marginAmount === undefined
+                    ? "text-muted-foreground/60"
+                    : l.marginAmount < 0
+                      ? "text-red-400"
+                      : l.marginAmount > 0
+                        ? "text-emerald-400"
+                        : "text-muted-foreground";
+                return (
+                  <tr key={l.id} className="border-t border-glass align-top">
+                    <td className="py-1.5 pr-3 font-mono text-muted-foreground">{l.productCode ?? "—"}</td>
+                    <td className="max-w-[22rem] py-1.5 pr-3 text-foreground">
+                      <span className="block whitespace-pre-line">{l.description || "—"}</span>
+                    </td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums">{formatNumber(l.quantity)}</td>
+                    <td className="py-1.5 pr-3 text-muted-foreground">{l.unitDescription ?? l.unitCode ?? "—"}</td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums">{formatNumber(l.delivered)}</td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums">{formatMoney(l.grossUnitPrice, currency)}</td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums">{formatMoney(l.unitPrice, currency)}</td>
+                    <td
+                      className={cn("py-1.5 pr-3 text-right tabular-nums", hasCost ? "text-foreground" : "text-muted-foreground/60")}
+                      title={
+                        hasCost
+                          ? `Source: ${l.costSource ?? "supplier order"}${
+                              l.costTotal !== null && l.costTotal !== undefined
+                                ? ` · total cost ${formatMoney(l.costTotal, currency)}`
+                                : ""
+                            }`
+                          : "No priced supplier-order line for this article on this order"
+                      }
+                    >
+                      {formatMoney(l.costUnitPrice, currency)}
+                    </td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums text-foreground">{formatMoney(l.priceExclVat, currency)}</td>
+                    <td className={cn("py-1.5 pr-3 text-right tabular-nums", marginTone)}>{formatMoney(l.marginAmount, currency)}</td>
+                    <td className={cn("py-1.5 text-right tabular-nums font-medium", marginTone)}>{formatMarginPercent(l.marginPercent)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

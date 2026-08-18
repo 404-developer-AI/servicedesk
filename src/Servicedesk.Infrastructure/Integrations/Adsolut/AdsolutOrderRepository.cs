@@ -107,6 +107,16 @@ public sealed class AdsolutOrderLineRow
     public string? VatDescription { get; set; }
     public string? StateCode { get; set; }
     public string? StateDescription { get; set; }
+    /// v0.0.102 — cost price ("KP. Art") derived from the linked supplier
+    /// order (BL) lines of the same order + same product: quantity-weighted
+    /// average of the net unit price (unit_price, falling back to
+    /// gross_unit_price), zero/absent prices excluded. Null = no priced BL
+    /// line for this article on this order (services, stock deliveries).
+    public decimal? CostUnitPrice { get; set; }
+    /// "5500101" / "5500101, 5500102" — the BL doc numbers the cost came from.
+    public string? CostSourceDocNrs { get; set; }
+    /// Distinct supplier names behind the cost, comma-joined.
+    public string? CostSourceSuppliers { get; set; }
 }
 
 public sealed record AdsolutOrderDetail(
@@ -511,18 +521,46 @@ public sealed class AdsolutOrderRepository : IAdsolutOrderRepository
             new { id }, cancellationToken: ct));
         if (header is null) return null;
 
+        // v0.0.102 — cost price per line. OrderInfos carries no cost field and
+        // neither does Products, but Adsolut's "KP. Art" on an order line is
+        // the purchase price on the linked supplier order (BL) — verified on a
+        // real dossier (OR4400102 / BL5500101, HARD-009 = 31.53 both sides).
+        // The BL mirror links at order-header level + product id, so a line's
+        // cost is the quantity-weighted net unit price over the BL lines of
+        // the same order + article. Computed at read time (no schema, no sync
+        // change): the moment the BL lands or changes, the cost follows.
         var lines = await conn.QueryAsync<AdsolutOrderLineRow>(new CommandDefinition(
             """
-            SELECT id AS Id, line_nr AS LineNr, product_code AS ProductCode, description AS Description,
-                   quantity AS Quantity, unit_code AS UnitCode, unit_description AS UnitDescription,
-                   delivered AS Delivered, gross_unit_price AS GrossUnitPrice, unit_price AS UnitPrice,
-                   discount1 AS Discount1, discount2 AS Discount2,
-                   price_excl_vat AS PriceExclVat, price_incl_vat AS PriceInclVat,
-                   vat_code AS VatCode, vat_description AS VatDescription,
-                   state_code AS StateCode, state_description AS StateDescription
-            FROM adsolut_order_lines
-            WHERE order_id = @id
-            ORDER BY line_nr NULLS LAST
+            SELECT l.id AS Id, l.line_nr AS LineNr, l.product_code AS ProductCode, l.description AS Description,
+                   l.quantity AS Quantity, l.unit_code AS UnitCode, l.unit_description AS UnitDescription,
+                   l.delivered AS Delivered, l.gross_unit_price AS GrossUnitPrice, l.unit_price AS UnitPrice,
+                   l.discount1 AS Discount1, l.discount2 AS Discount2,
+                   l.price_excl_vat AS PriceExclVat, l.price_incl_vat AS PriceInclVat,
+                   l.vat_code AS VatCode, l.vat_description AS VatDescription,
+                   l.state_code AS StateCode, l.state_description AS StateDescription,
+                   c.cost_unit_price AS CostUnitPrice,
+                   c.doc_nrs AS CostSourceDocNrs,
+                   c.suppliers AS CostSourceSuppliers
+            FROM adsolut_order_lines l
+            LEFT JOIN LATERAL (
+                SELECT
+                    CASE WHEN COALESCE(SUM(p.qty) FILTER (WHERE p.qty > 0), 0) > 0
+                         THEN SUM(p.price * p.qty) FILTER (WHERE p.qty > 0) / SUM(p.qty) FILTER (WHERE p.qty > 0)
+                         ELSE AVG(p.price) END AS cost_unit_price,
+                    STRING_AGG(DISTINCT p.bl_doc_nr::text, ', ' ORDER BY p.bl_doc_nr::text) AS doc_nrs,
+                    STRING_AGG(DISTINCT p.supplier_name, ', ' ORDER BY p.supplier_name) AS suppliers
+                FROM (
+                    SELECT COALESCE(s.unit_price, s.gross_unit_price) AS price,
+                           COALESCE(s.quantity, 0) AS qty,
+                           s.bl_doc_nr, s.supplier_name
+                    FROM adsolut_supplier_order_lines s
+                    WHERE s.linked_order_id = l.order_id
+                      AND s.product_id = l.product_id
+                      AND COALESCE(s.unit_price, s.gross_unit_price) > 0
+                ) p
+            ) c ON TRUE
+            WHERE l.order_id = @id
+            ORDER BY l.line_nr NULLS LAST
             """,
             new { id }, cancellationToken: ct));
 
