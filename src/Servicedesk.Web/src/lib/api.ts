@@ -1215,6 +1215,16 @@ export type AdsolutOrderLine = {
   priceInclVat: number | null;
   vatCode: string | null;
   vatDescription: string | null;
+  /// v0.0.102 — cost price ("KP. Art") from the linked supplier order (BL)
+  /// lines of the same order + article; null when no priced BL line exists.
+  costUnitPrice: number | null;
+  costTotal: number | null;
+  /// Line total (excl. VAT) − total cost.
+  marginAmount: number | null;
+  /// Margin on cost, Adsolut's definition: margin / total cost × 100.
+  marginPercent: number | null;
+  /// "BL 5500101 · Telavox/AlloCloud" — where the cost came from.
+  costSource: string | null;
 };
 
 /// A supplier-order ("bestelling") line linked to this order — carries the REAL
