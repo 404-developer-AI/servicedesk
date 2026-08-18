@@ -85,7 +85,11 @@ public sealed record TicketListItem(
     string? CompanyResolvedVia = null,
     // v0.0.39 — surfaced so the list row can render the type-badge
     // alongside the priority/category pills.
-    Guid TicketTypeId = default);
+    Guid TicketTypeId = default,
+    // v0.0.103 - denormalized checklist progress (sum over the ticket's
+    // attached checklists, required items only) for the list chip.
+    int ChecklistRequiredTotal = 0,
+    int ChecklistRequiredDone = 0);
 
 public sealed record TicketPage(
     IReadOnlyList<TicketListItem> Items,

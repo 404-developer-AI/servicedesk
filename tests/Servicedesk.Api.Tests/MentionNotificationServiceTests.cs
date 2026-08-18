@@ -265,6 +265,9 @@ public sealed class MentionNotificationServiceTests
             Pushed.Add((userId, payload));
             return Task.CompletedTask;
         }
+
+        public Task NotifyChecklistCloseBlockedAsync(Guid userId, ChecklistCloseBlockedPush payload, CancellationToken ct)
+            => Task.CompletedTask;
     }
 
     private sealed class StubUsers : IUserService

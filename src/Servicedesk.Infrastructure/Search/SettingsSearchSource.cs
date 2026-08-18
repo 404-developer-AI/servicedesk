@@ -22,6 +22,8 @@ public sealed class SettingsSearchSource : ISearchSource
             "blob root attachments retention inline image disk warn critical mailbox cap"),
         new("tickets", "Tickets", "/settings/tickets",
             "tickets default priority page size notification queue column layout"),
+        new("checklists", "Checklists", "/settings/tickets?tab=checklists",
+            "checklist checklists template templates onboarding steps items block close resolve required not applicable"),
         new("sla", "SLA", "/settings/sla",
             "sla business hours holidays first response resolution policy pause pending dashboard recalc"),
         new("jobs", "Jobs & retentie", "/settings/jobs",

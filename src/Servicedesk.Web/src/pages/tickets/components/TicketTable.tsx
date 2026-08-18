@@ -9,8 +9,28 @@ import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
 import { useTheme } from "@/app/ThemeProvider";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TicketTypeBadge } from "@/components/TicketTypeBadge";
+import { ListChecks } from "lucide-react";
 import type { TicketListItem } from "@/lib/ticket-api";
 import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
+
+/// v0.0.103 — compact checklist progress next to the subject; amber while
+/// required items are open, emerald once everything is done.
+function ChecklistChip({ done, total }: { done: number; total: number }) {
+  const complete = done >= total;
+  return (
+    <span
+      className={
+        complete
+          ? "inline-flex shrink-0 items-center gap-1 rounded border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-[1px] text-[10px] font-medium tabular-nums text-emerald-200"
+          : "inline-flex shrink-0 items-center gap-1 rounded border border-amber-400/30 bg-amber-400/10 px-1.5 py-[1px] text-[10px] font-medium tabular-nums text-amber-200"
+      }
+      title={complete ? "Checklist complete" : `Checklist: ${total - done} required item${total - done === 1 ? "" : "s"} open`}
+    >
+      <ListChecks className="h-3 w-3" />
+      {done}/{total}
+    </span>
+  );
+}
 
 function relativeTime(utc: string): string {
   const diff = Date.now() - new Date(utc).getTime();
@@ -87,6 +107,9 @@ export const ALL_COLUMNS = [
           <span title={val} className="truncate">
             {val.length > 60 ? `${val.slice(0, 60)}…` : val}
           </span>
+          {row.checklistRequiredTotal > 0 && (
+            <ChecklistChip done={row.checklistRequiredDone} total={row.checklistRequiredTotal} />
+          )}
         </span>
       );
     },

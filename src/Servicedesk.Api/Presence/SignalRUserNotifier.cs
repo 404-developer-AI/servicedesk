@@ -18,4 +18,8 @@ public sealed class SignalRUserNotifier : IUserNotifier
     public Task NotifyMentionAsync(Guid userId, UserNotificationPush payload, CancellationToken ct)
         => _hub.Clients.Group($"user:{userId}")
             .SendAsync("NotificationReceived", payload, ct);
+
+    public Task NotifyChecklistCloseBlockedAsync(Guid userId, ChecklistCloseBlockedPush payload, CancellationToken ct)
+        => _hub.Clients.Group($"user:{userId}")
+            .SendAsync("ChecklistCloseBlocked", payload, ct);
 }

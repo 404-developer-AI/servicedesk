@@ -35,6 +35,8 @@ public static class TicketBulkSkipReason
     public const string TargetQueueNoAccess = "target_queue_no_access";
     public const string StatusNotInQueueScope = "status_not_in_queue_scope";
     public const string GateRequired = "status_gate_required";
+    /// v0.0.103 — a checklist that blocks closing still has required open items.
+    public const string ChecklistIncomplete = "checklist_incomplete";
     public const string Failed = "failed";
 }
 
@@ -155,6 +157,7 @@ public sealed class TicketBulkActionService : ITicketBulkActionService
                     TicketMutationCheck.NoAccess => TicketBulkSkipReason.NoAccess,
                     TicketMutationCheck.TargetQueueNoAccess => TicketBulkSkipReason.TargetQueueNoAccess,
                     TicketMutationCheck.StatusNotInQueueScope => TicketBulkSkipReason.StatusNotInQueueScope,
+                    TicketMutationCheck.ChecklistIncomplete => TicketBulkSkipReason.ChecklistIncomplete,
                     _ => TicketBulkSkipReason.Failed,
                 };
                 if (reason is not null)

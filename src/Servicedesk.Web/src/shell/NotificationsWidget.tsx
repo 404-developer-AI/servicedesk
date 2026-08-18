@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { Bell, X, AtSign, CheckCheck, ExternalLink } from "lucide-react";
+import { Bell, X, AtSign, CheckCheck, ExternalLink, ListChecks } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -159,6 +159,7 @@ function NotificationPanel({
         {items.map((n) => {
           const localPart = n.sourceUserEmail?.split("@")[0] ?? "agent";
           const when = toServerLocal(n.createdUtc, offsetMinutes);
+          const isChecklistBlock = n.eventType === "ChecklistCloseBlocked";
           return (
             <div
               key={n.id}
@@ -169,11 +170,21 @@ function NotificationPanel({
                 onClick={() => handleJump(n)}
                 className="flex min-w-0 flex-1 items-start gap-2 text-left"
               >
-                <AtSign className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-300" />
+                {isChecklistBlock ? (
+                  <ListChecks className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300" />
+                ) : (
+                  <AtSign className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-300" />
+                )}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1 text-xs">
-                    <span className="font-medium text-foreground">@{localPart}</span>
-                    <span className="text-muted-foreground">in</span>
+                    {isChecklistBlock ? (
+                      <span className="font-medium text-amber-200">Checklist blocked a trigger</span>
+                    ) : (
+                      <>
+                        <span className="font-medium text-foreground">@{localPart}</span>
+                        <span className="text-muted-foreground">in</span>
+                      </>
+                    )}
                     <span className="font-mono text-[11px] text-muted-foreground">#{n.ticketNumber}</span>
                   </div>
                   <div className="mt-0.5 truncate text-[11px] text-muted-foreground/90">

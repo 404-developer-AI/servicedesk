@@ -32,6 +32,7 @@ import {
   AlertTriangle,
   TimerReset,
   Ban,
+  ListChecks,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ticketApi, ApiError, type TicketEvent, type OutboundMailKind } from "@/lib/ticket-api";
@@ -394,6 +395,13 @@ const EVENT_CONFIG: Record<string, EventConfig> = {
     dotColor: "bg-amber-500",
     label: "Hour tracking disabled",
   },
+  // v0.0.103 — ticket checklists.
+  ChecklistAttached: { icon: ListChecks, dotColor: "bg-violet-500", label: "Checklist added" },
+  ChecklistDetached: { icon: ListChecks, dotColor: "bg-glass-strong", label: "Checklist removed" },
+  ChecklistCompleted: { icon: ListChecks, dotColor: "bg-emerald-500", label: "Checklist completed" },
+  ChecklistReopened: { icon: ListChecks, dotColor: "bg-amber-500", label: "Checklist reopened" },
+  ChecklistItemChanged: { icon: ListChecks, dotColor: "bg-violet-400", label: "Checklist item changed" },
+  ChecklistCloseBlocked: { icon: ListChecks, dotColor: "bg-amber-500", label: "Trigger blocked by checklist" },
 };
 
 /// Event types that are system/audit noise rather than real
@@ -413,6 +421,12 @@ const SYSTEM_EVENT_TYPES = new Set<string>([
   "TimeLimitAlertDismissed",
   "TimeLimitExtended",
   "TimeLimitTrackingDisabled",
+  "ChecklistAttached",
+  "ChecklistDetached",
+  "ChecklistCompleted",
+  "ChecklistReopened",
+  "ChecklistItemChanged",
+  "ChecklistCloseBlocked",
 ]);
 
 export function isSystemEvent(event: TicketEvent): boolean {
@@ -633,6 +647,81 @@ function EventBody({ event }: { event: TicketEvent }) {
             </span>
           )}
           <span className="text-muted-foreground/70"> — customer confirmation recorded</span>
+        </span>
+      );
+    }
+
+    case "ChecklistAttached":
+    case "ChecklistDetached":
+    case "ChecklistCompleted":
+    case "ChecklistReopened":
+    case "ChecklistItemChanged": {
+      const name = typeof meta.checklistName === "string" ? meta.checklistName : "Checklist";
+      const itemCount = typeof meta.itemCount === "number" ? meta.itemCount : null;
+      const done = typeof meta.requiredDone === "number" ? meta.requiredDone : null;
+      const total = typeof meta.requiredTotal === "number" ? meta.requiredTotal : null;
+      const itemTitle = typeof meta.itemTitle === "string" ? meta.itemTitle : null;
+      const toState = typeof meta.toState === "string" ? meta.toState : null;
+      const reason = typeof meta.reason === "string" && meta.reason ? meta.reason : null;
+      const stateLabel =
+        toState === "done" ? "ticked" : toState === "na" ? "marked not applicable" : toState === "open" ? "reopened" : "changed";
+      return (
+        <span className="text-sm text-muted-foreground">
+          {event.eventType === "ChecklistAttached" && (
+            <>
+              Checklist <span className="text-foreground/80">“{name}”</span> added
+              {itemCount !== null && <span className="text-muted-foreground/70"> ({itemCount} item{itemCount === 1 ? "" : "s"})</span>}
+            </>
+          )}
+          {event.eventType === "ChecklistDetached" && (
+            <>
+              Checklist <span className="text-foreground/80">“{name}”</span> removed
+              {done !== null && total !== null && total > 0 && (
+                <span className="text-muted-foreground/70"> ({done}/{total} required done)</span>
+              )}
+            </>
+          )}
+          {event.eventType === "ChecklistCompleted" && (
+            <>Checklist <span className="text-foreground/80">“{name}”</span> completed — every required item is done or not applicable</>
+          )}
+          {event.eventType === "ChecklistReopened" && (
+            <>Checklist <span className="text-foreground/80">“{name}”</span> reopened — a required item was set back to open</>
+          )}
+          {event.eventType === "ChecklistItemChanged" && (
+            <>
+              <span className="text-foreground/80">“{itemTitle ?? "Item"}”</span> {stateLabel}
+              <span className="text-muted-foreground/70"> · {name}</span>
+              {reason && <span className="text-muted-foreground/70"> — {reason}</span>}
+            </>
+          )}
+        </span>
+      );
+    }
+
+    case "ChecklistCloseBlocked": {
+      const triggerName = typeof meta.triggerName === "string" ? meta.triggerName : "Trigger";
+      const statusName = typeof meta.targetStatusName === "string" ? meta.targetStatusName : "a closing status";
+      const lists = Array.isArray(meta.checklists)
+        ? (meta.checklists as Array<{ name?: string; openRequired?: number }>)
+        : [];
+      return (
+        <span className="text-sm text-muted-foreground">
+          Trigger <span className="text-foreground/80">“{triggerName}”</span> tried to set the ticket to{" "}
+          <span className="text-foreground/80">{statusName}</span> — blocked by{" "}
+          {lists.length === 0 ? (
+            <>an unfinished checklist</>
+          ) : (
+            lists.map((l, i) => (
+              <span key={i}>
+                {i > 0 && ", "}
+                checklist <span className="text-foreground/80">“{l.name ?? "?"}”</span>
+                {typeof l.openRequired === "number" && (
+                  <span className="text-muted-foreground/70"> ({l.openRequired} required item{l.openRequired === 1 ? "" : "s"} open)</span>
+                )}
+              </span>
+            ))
+          )}
+          . Status unchanged.
         </span>
       );
     }

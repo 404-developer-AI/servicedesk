@@ -14,7 +14,25 @@ namespace Servicedesk.Infrastructure.Realtime;
 public interface IUserNotifier
 {
     Task NotifyMentionAsync(Guid userId, UserNotificationPush payload, CancellationToken ct);
+
+    /// v0.0.103 — "a trigger tried to resolve/close ticket X but checklist Y
+    /// blocked it": the ticket page shows the same dialog as for a manual
+    /// change, elsewhere it becomes a toast + bell entry.
+    Task NotifyChecklistCloseBlockedAsync(Guid userId, ChecklistCloseBlockedPush payload, CancellationToken ct);
 }
+
+public sealed record ChecklistCloseBlockedPush(
+    Guid NotificationId,
+    Guid TicketId,
+    long TicketNumber,
+    string TicketSubject,
+    string TriggerName,
+    string TargetStatusName,
+    IReadOnlyList<ChecklistCloseBlockedItem> Checklists,
+    long EventId,
+    DateTime CreatedUtc);
+
+public sealed record ChecklistCloseBlockedItem(Guid ChecklistId, string Name, int OpenRequired);
 
 public sealed record UserNotificationPush(
     Guid Id,
@@ -31,5 +49,8 @@ public sealed record UserNotificationPush(
 public sealed class NullUserNotifier : IUserNotifier
 {
     public Task NotifyMentionAsync(Guid userId, UserNotificationPush payload, CancellationToken ct)
+        => Task.CompletedTask;
+
+    public Task NotifyChecklistCloseBlockedAsync(Guid userId, ChecklistCloseBlockedPush payload, CancellationToken ct)
         => Task.CompletedTask;
 }
