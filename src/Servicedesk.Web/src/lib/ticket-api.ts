@@ -949,6 +949,8 @@ export type BulkTicketActionRequest = {
   priorityId?: string;
   assigneeUserId?: string;
   unassignAssignee?: boolean;
+  /// v0.0.103 — only meaningful together with a Pending-category statusId.
+  pendingTillUtc?: string | null;
 };
 
 /// Stable skip codes — mirrored from the server's TicketBulkSkipReason.

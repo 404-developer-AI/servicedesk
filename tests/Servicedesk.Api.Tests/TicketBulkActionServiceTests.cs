@@ -170,8 +170,27 @@ public sealed class TicketBulkActionServiceTests
         => new(mutations, new StubSettings(enabled, maxSelection), audit, NullLogger<TicketBulkActionService>.Instance);
 
     private static TicketBulkActionRequest Request(
-        IReadOnlyList<Guid> ids, Guid? statusId = null, string? message = null, bool isInternal = true)
-        => new(ids, message, isInternal, statusId, null, null, null, false);
+        IReadOnlyList<Guid> ids, Guid? statusId = null, string? message = null, bool isInternal = true, DateTime? pendingTillUtc = null)
+        => new(ids, message, isInternal, statusId, null, null, null, false, pendingTillUtc);
+
+    [Fact]
+    public async Task Pending_till_travels_with_a_status_change_and_is_dropped_without_one()
+    {
+        var withStatus = Guid.NewGuid();
+        var mutations = new FakeMutations();
+        mutations.Verdicts[withStatus] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(withStatus, 1), Array.Empty<MatchedStatusGate>());
+        var svc = Build(mutations, new RecordingAudit());
+        var till = new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc);
+
+        await svc.ExecuteAsync(Actor, Request(new[] { withStatus }, statusId: StatusId, pendingTillUtc: till), default);
+        Assert.Equal(till, Assert.Single(mutations.Applied).Update.PendingTillUtc);
+
+        // Without a status the value is meaningless for a bulk edit: it is
+        // dropped and, with nothing else, the request is rejected as empty.
+        var ex = await Assert.ThrowsAsync<TicketBulkActionRejectedException>(() =>
+            svc.ExecuteAsync(Actor, Request(new[] { withStatus }, pendingTillUtc: till), default));
+        Assert.Equal("nothing_to_change", ex.Code);
+    }
 
     private static TicketDetail Detail(Guid id, long number)
     {

@@ -24,6 +24,8 @@ import {
   type TicketListItem,
 } from "@/lib/ticket-api";
 import { cn } from "@/lib/utils";
+import { PendingTillField } from "@/components/PendingTillField";
+import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
 
 /// Sentinel option id for "clear the assignee" — never collides with a user id.
 const UNASSIGN = "__unassign__";
@@ -124,6 +126,19 @@ export function BulkActionDialog({ open, onOpenChange, selected, onCompleted }: 
     return target ? queues?.find((q) => q.id === target) ?? null : null;
   }, [queueId, commonQueueId, queues]);
 
+  // v0.0.103 — a Pending-category status gets a "pending till" field, like
+  // the side panel. Cleared when the status changes to a non-Pending one.
+  const selectedStatusIsPending = React.useMemo(
+    () => !!statusId && statuses?.find((s) => s.id === statusId)?.stateCategory === "Pending",
+    [statusId, statuses],
+  );
+  const [pendingTillUtc, setPendingTillUtc] = React.useState<string | null>(null);
+  const { time: serverTime } = useServerTime();
+  const offsetMinutes = serverTime?.offsetMinutes ?? 0;
+  React.useEffect(() => {
+    if (!selectedStatusIsPending) setPendingTillUtc(null);
+  }, [selectedStatusIsPending]);
+
   const statusOptions: TaxonomyOption[] = React.useMemo(() => {
     const allowed = scopeQueue?.allowedStatusIds ?? [];
     return (statuses ?? [])
@@ -158,6 +173,7 @@ export function BulkActionDialog({ open, onOpenChange, selected, onCompleted }: 
 
   const summary: string[] = [];
   if (statusId) summary.push(`Status → ${statusOptions.find((o) => o.id === statusId)?.name ?? "…"}`);
+  if (selectedStatusIsPending && pendingTillUtc) summary.push(`Pending till ${toServerLocal(pendingTillUtc, offsetMinutes)}`);
   if (queueId) summary.push(`Queue → ${queueOptions.find((o) => o.id === queueId)?.name ?? "…"}`);
   if (priorityId) summary.push(`Priority → ${priorityOptions.find((o) => o.id === priorityId)?.name ?? "…"}`);
   if (assignee) summary.push(assignee === UNASSIGN ? "Unassign" : `Assign → ${assigneeOptions.find((o) => o.id === assignee)?.name ?? "…"}`);
@@ -171,6 +187,7 @@ export function BulkActionDialog({ open, onOpenChange, selected, onCompleted }: 
       };
       if (messageFilled) payload.messageHtml = messageHtml;
       if (statusId) payload.statusId = statusId;
+      if (statusId && selectedStatusIsPending && pendingTillUtc) payload.pendingTillUtc = pendingTillUtc;
       if (queueId) payload.queueId = queueId;
       if (priorityId) payload.priorityId = priorityId;
       if (assignee === UNASSIGN) payload.unassignAssignee = true;
@@ -223,6 +240,18 @@ export function BulkActionDialog({ open, onOpenChange, selected, onCompleted }: 
                   disabled={run.isPending}
                 />
               </Field>
+              {selectedStatusIsPending && (
+                <Field label="Pending till">
+                  <PendingTillField
+                    value={pendingTillUtc}
+                    onCommit={setPendingTillUtc}
+                    commitOnChange
+                  />
+                  <p className="mt-1 text-[11px] text-muted-foreground/70">
+                    Applied to every ticket that gets the status; leave empty to set no reminder.
+                  </p>
+                </Field>
+              )}
               <Field label="Queue">
                 <TaxonomySelect
                   value={queueId}
