@@ -19,7 +19,11 @@ public sealed record TicketBulkActionRequest(
     Guid? QueueId,
     Guid? PriorityId,
     Guid? AssigneeUserId,
-    bool UnassignAssignee)
+    bool UnassignAssignee,
+    /// v0.0.103 — "pending till" that accompanies a status change into a
+    /// Pending-category status. Ignored without StatusId; the repository
+    /// itself refuses to store it for a non-Pending target status.
+    DateTime? PendingTillUtc = null)
 {
     public bool HasMessage => !string.IsNullOrWhiteSpace(MessageHtml);
     public bool HasFieldChanges =>
@@ -133,6 +137,7 @@ public sealed class TicketBulkActionService : ITicketBulkActionService
                 PriorityId: request.PriorityId,
                 AssigneeUserId: request.AssigneeUserId,
                 ClearAssignee: request.UnassignAssignee,
+                PendingTillUtc: request.StatusId.HasValue ? request.PendingTillUtc : null,
                 BulkBatchId: batchId)
             : null;
 

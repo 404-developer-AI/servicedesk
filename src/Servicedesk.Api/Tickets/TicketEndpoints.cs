@@ -514,7 +514,8 @@ public static class TicketEndpoints
                     QueueId: req.QueueId,
                     PriorityId: req.PriorityId,
                     AssigneeUserId: req.AssigneeUserId,
-                    UnassignAssignee: req.UnassignAssignee), ct);
+                    UnassignAssignee: req.UnassignAssignee,
+                    PendingTillUtc: req.PendingTillUtc), ct);
                 return Results.Ok(result);
             }
             catch (TicketBulkActionRejectedException ex)
@@ -2107,7 +2108,8 @@ public static class TicketEndpoints
         Guid? QueueId = null,
         Guid? PriorityId = null,
         Guid? AssigneeUserId = null,
-        bool UnassignAssignee = false);
+        bool UnassignAssignee = false,
+        DateTime? PendingTillUtc = null);
 
     public sealed record UpdateTicketRequest(
         Guid? QueueId,
