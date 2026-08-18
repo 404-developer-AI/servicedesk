@@ -102,6 +102,28 @@ public static class SettingEndpoints
         .WithName("GetTicketGroupingSettings")
         .WithOpenApi();
 
+        // ---- Bulk actions settings (v0.0.102, agent-readable) ----
+        // The ticket list needs the enable flag (show row checkboxes at all)
+        // and the selection cap (disable the bulk-edit button above it).
+        // Neither is sensitive; the server re-enforces both on the bulk
+        // endpoint regardless of what the client read.
+        app.MapGet("/api/settings/bulk-actions", async (ISettingsService svc, CancellationToken ct) =>
+        {
+            bool enabled;
+            int max;
+            try { enabled = await svc.GetAsync<bool>(SettingKeys.Tickets.BulkActionsEnabled, ct); }
+            catch { enabled = true; }
+            try { max = await svc.GetAsync<int>(SettingKeys.Tickets.BulkActionsMaxSelection, ct); }
+            catch { max = 100; }
+            if (max <= 0) max = 100;
+            max = Math.Min(max, Servicedesk.Infrastructure.Tickets.TicketBulkActionService.HardMaxSelection);
+            return Results.Ok(new BulkActionsSettings(enabled, max));
+        })
+        .WithTags("Settings")
+        .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+        .WithName("GetBulkActionsSettings")
+        .WithOpenApi();
+
         // ---- Copilot launcher settings (v0.0.89, agent-readable) ----
         // The nav button needs the enable flag, URL, label and open-mode on the
         // client to render itself. None of these are secret (it is a public
@@ -130,6 +152,7 @@ public static class SettingEndpoints
     public sealed record CopilotSettings(bool Enabled, string Url, string Label, bool OpenInPopup);
     public sealed record NotificationsSettings(int PopupDurationSeconds);
     public sealed record MailComposeSettings(bool ForgottenAttachmentEnabled, string ForgottenAttachmentKeywords);
+    public sealed record BulkActionsSettings(bool Enabled, int MaxSelection);
     public sealed record TicketGroupingSettings(
         bool Enabled,
         string PendingField,

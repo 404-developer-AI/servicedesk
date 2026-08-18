@@ -397,6 +397,25 @@ builder.Services.AddRateLimiter(options =>
     // Per-IP: the caller is one external tool, not a browser fanning out
     // requests, so a tight budget costs nothing and bounds both key
     // guessing and audit-log noise from denied probes.
+    // v0.0.102 — Bulk ticket actions. Per authenticated user (falls back to
+    // IP): one bulk call is N single-ticket mutations, so a tight budget
+    // stops a runaway client from hammering triggers/mail through the
+    // ticket API in a way the global per-IP limit would never notice.
+    var bulkPermit = builder.Configuration.GetValue<int?>("Security:RateLimit:Bulk:PermitPerWindow") ?? 20;
+    var bulkWindow = builder.Configuration.GetValue<int?>("Security:RateLimit:Bulk:WindowSeconds") ?? 60;
+    options.AddPolicy("bulk", ctx =>
+    {
+        var key = ctx.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                  ?? ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = bulkPermit,
+            Window = TimeSpan.FromSeconds(bulkWindow),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        });
+    });
+
     var reportingPermit = builder.Configuration.GetValue<int?>("Security:RateLimit:Reporting:PermitPerWindow") ?? 30;
     var reportingWindow = builder.Configuration.GetValue<int?>("Security:RateLimit:Reporting:WindowSeconds") ?? 60;
     options.AddPolicy("reporting", ctx =>

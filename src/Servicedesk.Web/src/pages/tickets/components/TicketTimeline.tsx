@@ -1018,6 +1018,11 @@ function TimelineEvent({
     typeof eventMetadata.auto_reply_signal === "string"
       ? eventMetadata.auto_reply_signal
       : null;
+  // v0.0.102: written as one leg of a bulk action (note/comment or a
+  // status/queue/priority/assignment change). Badged so an agent reading
+  // the timeline knows this was "N tickets at once", not a hand-picked
+  // change on this ticket alone.
+  const isBulk = typeof eventMetadata.bulk_batch_id === "string";
   const isSystemLike = isSystemEvent(event);
 
   // Mail-header strip (From / To / Cc / Bcc), collapsed by default and toggled
@@ -1134,6 +1139,14 @@ function TimelineEvent({
               return author ? <>{author} · </> : null;
             })()}
             {fmtDate(event.createdUtc)}
+            {isBulk && (
+              <span
+                className="ml-2 rounded px-1.5 py-0.5 text-[10px] font-medium border border-violet-500/30 bg-violet-500/10 text-violet-300"
+                title="Applied as part of a bulk action"
+              >
+                Bulk
+              </span>
+            )}
           </span>
         </div>
       ) : (
@@ -1196,6 +1209,14 @@ function TimelineEvent({
                   title={autoReplySignal ?? "Detected as an automatic reply"}
                 >
                   Auto-reply
+                </span>
+              )}
+              {isBulk && (
+                <span
+                  className="rounded px-1.5 py-0.5 text-[10px] font-medium border border-violet-500/30 bg-violet-500/10 text-violet-300"
+                  title="Posted as part of a bulk action"
+                >
+                  Bulk
                 </span>
               )}
               {event.editedUtc && (

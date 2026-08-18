@@ -428,6 +428,35 @@ function GeneralTab() {
     onError: () => toast.error("Could not update setting"),
   });
 
+  // v0.0.102 — bulk actions on the ticket list. The enable flag hides the
+  // selection UI entirely; the cap bounds one request's worth of work and is
+  // re-enforced server-side (hard ceiling 500).
+  const bulkEnabled = useMemo(
+    () => (entries?.find((e) => e.key === "Tickets.BulkActionsEnabled")?.value ?? "true") === "true",
+    [entries],
+  );
+  const savedBulkMax = useMemo(
+    () => entries?.find((e) => e.key === "Tickets.BulkActionsMaxSelection")?.value ?? "100",
+    [entries],
+  );
+  const [bulkMax, setBulkMax] = useState<string | null>(null);
+  const bulkMaxValue = bulkMax ?? savedBulkMax;
+  const bulkMaxNum = Number.parseInt(bulkMaxValue, 10);
+  const bulkMaxValid = Number.isFinite(bulkMaxNum) && bulkMaxNum >= 1 && bulkMaxNum <= 500;
+  const bulkMaxDirty = bulkMax !== null && bulkMax !== savedBulkMax;
+
+  const updateBulk = useMutation({
+    mutationFn: ({ key, value }: { key: string; value: string }) => settingsApi.update(key, value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "tickets-general"] });
+      // The ticket list reads the agent-safe projection — refresh it too.
+      qc.invalidateQueries({ queryKey: ["settings", "bulk-actions"] });
+      setBulkMax(null);
+      toast.success("Setting updated");
+    },
+    onError: () => toast.error("Could not update setting"),
+  });
+
   return (
     <div className="space-y-6">
       <section className="glass-card p-5">
@@ -510,6 +539,66 @@ function GeneralTab() {
             Enter a whole number between 1 and 5000.
           </p>
         )}
+      </section>
+
+      <section className="glass-card p-5">
+        <div className="space-y-1">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            Bulk actions
+          </h2>
+          <p className="text-xs text-muted-foreground/70">
+            Lets agents select several tickets in the list and, in one go, post
+            an internal note or public comment and/or change status, queue,
+            assignee or priority. Every selected ticket still runs its normal
+            rules — queue access, allowed statuses, status gates, triggers, SLA,
+            audit — and is skipped (with a reason) rather than forced when a
+            rule doesn't allow the change. Bulk actions never send customer
+            mail directly; trigger mail behaves exactly as for a manual change.
+          </p>
+        </div>
+        <div className="mt-4 space-y-3">
+          <ToggleRow
+            label="Enable bulk actions"
+            description="Shows row checkboxes and the bulk-edit bar on the ticket list for agents and admins."
+            checked={bulkEnabled}
+            disabled={isLoading || updateBulk.isPending}
+            onCheckedChange={(v) =>
+              updateBulk.mutate({ key: "Tickets.BulkActionsEnabled", value: v ? "true" : "false" })
+            }
+          />
+          <div className="flex items-end gap-3">
+            <label className="min-w-0 flex-1 space-y-1.5">
+              <span className="text-sm font-medium text-foreground">Maximum tickets per bulk action</span>
+              <Input
+                type="number"
+                min={1}
+                max={500}
+                value={bulkMaxValue}
+                disabled={isLoading || updateBulk.isPending}
+                onChange={(e) => setBulkMax(e.target.value)}
+                placeholder="100"
+                className="max-w-xs"
+              />
+            </label>
+            <Button
+              type="button"
+              disabled={!bulkMaxDirty || !bulkMaxValid || updateBulk.isPending}
+              onClick={() =>
+                updateBulk.mutate({ key: "Tickets.BulkActionsMaxSelection", value: String(bulkMaxNum) })
+              }
+            >
+              Save
+            </Button>
+          </div>
+          {!bulkMaxValid && (
+            <p className="text-xs text-destructive">Enter a whole number between 1 and 500.</p>
+          )}
+          <p className="text-xs text-muted-foreground/70">
+            Bulk actions run synchronously, ticket by ticket, inside one request —
+            keep this at a size that comfortably finishes (100 is a good default;
+            500 is the hard ceiling).
+          </p>
+        </div>
       </section>
     </div>
   );

@@ -811,14 +811,21 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             }
         }
 
+        // v0.0.102 — bulk legs carry their batch id on every change event
+        // (merged into the per-event metadata JSON) so the timeline can
+        // badge them and forensics can group a whole batch.
+        var bulkBatchId = update.BulkBatchId?.ToString();
         foreach (var (eventType, metadata) in events)
         {
             await conn.ExecuteAsync(new CommandDefinition(
                 """
                 INSERT INTO ticket_events (ticket_id, event_type, author_user_id, metadata, is_internal)
-                VALUES (@ticketId, @eventType, @actorUserId, @metadata::jsonb, FALSE)
+                VALUES (@ticketId, @eventType, @actorUserId,
+                        CASE WHEN @bulkBatchId IS NULL THEN @metadata::jsonb
+                             ELSE @metadata::jsonb || jsonb_build_object('bulk_batch_id', @bulkBatchId::text) END,
+                        FALSE)
                 """,
-                new { ticketId, eventType, actorUserId, metadata },
+                new { ticketId, eventType, actorUserId, metadata, bulkBatchId },
                 tx, cancellationToken: ct));
         }
 

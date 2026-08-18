@@ -12,6 +12,7 @@ Self-hosted helpdesk for small and mid-size teams. One install per organisation,
 - **Auth** — custom session auth (Argon2id, optional TOTP 2FA, encrypted recovery codes) plus single-tenant Microsoft 365 OIDC for agents/admins. Customer-portal login is a separate flow.
 - **Reverse proxy** — Nginx (in Docker) with TLS via Let's Encrypt (Certbot).
 - **UI** — Tailwind + shadcn/ui + Framer Motion. Dark glassmorphism by default, light theme opt-in. Inter variable font.
+- **Bulk actions** — select tickets in the list (shift-click ranges, per-group select-all) and post a note or change status / queue / assignee / priority on all of them in one go. Every ticket still runs its normal rules; the ones that don't allow the change are skipped and reported, never forced.
 - **Search** — PostgreSQL `tsvector` + GIN with `pg_trgm` and `unaccent` for fuzzy matching; global Ctrl/Cmd+K palette across tickets, contacts, companies, and settings.
 - **Reporting API** — opt-in, key-gated read-only endpoint for external tooling: ticket counts (opened / closed / currently open) plus ticket number + subject lists over any period, with an optional IP allow-list. Off by default; configured from Settings → Reporting API.
 

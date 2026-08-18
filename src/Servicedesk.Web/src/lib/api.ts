@@ -689,6 +689,14 @@ export type MailComposeSettings = {
   forgottenAttachmentKeywords: string;
 };
 
+/// v0.0.102 — agent-readable bulk-action knobs (Settings → Tickets → General).
+export type BulkActionsSettings = {
+  /// When false the ticket list hides row checkboxes and the bulk bar.
+  enabled: boolean;
+  /// Server-enforced cap on tickets per bulk action.
+  maxSelection: number;
+};
+
 export type TicketGroupingSettings = {
   /// When true and the ticket list is grouped by Status, each group is sorted by
   /// its semantic state category instead of the view's global sort.
@@ -727,6 +735,8 @@ export const settingsApi = {
     request<MailComposeSettings>("GET", "/api/settings/mail-compose"),
   ticketGrouping: () =>
     request<TicketGroupingSettings>("GET", "/api/settings/ticket-grouping"),
+  bulkActions: () =>
+    request<BulkActionsSettings>("GET", "/api/settings/bulk-actions"),
   copilot: () =>
     request<CopilotSettings>("GET", "/api/settings/copilot"),
 };

@@ -91,6 +91,13 @@ public static class SettingKeys
         public const string GroupSortPendingDirection = "Tickets.GroupSortPendingDirection";
         public const string GroupSortOpenNewField = "Tickets.GroupSortOpenNewField";
         public const string GroupSortOpenNewDirection = "Tickets.GroupSortOpenNewDirection";
+
+        // v0.0.102 — bulk actions on the ticket list (multi-select + one
+        // dialog that posts a note and/or changes status/queue/assignee/
+        // priority on every selected ticket). The cap bounds one request's
+        // work; each ticket still runs the full single-ticket rule set.
+        public const string BulkActionsEnabled = "Tickets.BulkActionsEnabled";
+        public const string BulkActionsMaxSelection = "Tickets.BulkActionsMaxSelection";
     }
 
     public static class Storage
@@ -1435,6 +1442,10 @@ public static class SettingDefaults
             "Sort field for status groups in the Open or New state category. One of: updatedUtc, createdUtc, pendingTillUtc, dueUtc, priorityLevel, number."),
         new SettingDefault(SettingKeys.Tickets.GroupSortOpenNewDirection, "asc", "string", "Tickets",
             "Sort direction for Open/New groups: 'asc' (oldest first) or 'desc'. Default 'asc' surfaces the least recently updated first."),
+        new SettingDefault(SettingKeys.Tickets.BulkActionsEnabled, "true", "bool", "Tickets",
+            "Show row checkboxes and the bulk-edit bar on the ticket list so agents can post a note and/or change status, queue, assignee or priority on many tickets at once. Every selected ticket still runs the normal single-ticket rules (queue access, allowed statuses, status gates, triggers, SLA, audit); tickets that fail a rule are skipped and reported. Turn off to hide the selection entirely."),
+        new SettingDefault(SettingKeys.Tickets.BulkActionsMaxSelection, "100", "int", "Tickets",
+            "Maximum number of tickets one bulk action may touch. The list disables the bulk-edit button above this count and the server rejects larger requests. Bulk actions run synchronously per ticket, so keep this at a size that finishes within a normal request (100 is comfortable; 500 is the hard ceiling)."),
 
         // Storage — ADR-001 (v0.0.8). Keys only; runtime consumers land in later steps.
         new SettingDefault(SettingKeys.Storage.BlobRoot, "/var/lib/servicedesk/blobs", "string", "Storage",
