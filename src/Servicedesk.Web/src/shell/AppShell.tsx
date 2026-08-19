@@ -16,6 +16,7 @@ import { useWorkspaceAutoSave } from "@/hooks/useWorkspaceAutoSave";
 import { useUpdateCheck } from "@/hooks/useUpdateCheck";
 import { settingsApi } from "@/lib/api";
 import { useAuth } from "@/auth/authStore";
+import { useTheme } from "@/app/ThemeProvider";
 import { OrderPillHost } from "@/pages/orders/OrderPillHost";
 
 export function AppShell() {
@@ -50,6 +51,11 @@ export function AppShell() {
 
   const secondarySidebar = useSecondarySidebarStore((s) => s.content);
   const { user } = useAuth();
+  // Sonner palette: Nebula keeps its dark toasts in both modes (they sit on
+  // the glass canvas either way); Steaan's flat light surfaces get light
+  // toasts so the stack doesn't read as a foreign dark block.
+  const { family } = useTheme();
+  const toasterTheme = family === "steaan" ? "light" : "dark";
 
   return (
     <div className="app-background relative flex h-screen overflow-hidden" data-testid="app-shell">
@@ -62,7 +68,7 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
-      <Toaster theme="dark" position="bottom-right" />
+      <Toaster theme={toasterTheme} position="bottom-right" />
       <IncomingCallPopup />
       <KbChatWidget />
       {user?.adsolutOrdersEnabled && <OrderPillHost />}

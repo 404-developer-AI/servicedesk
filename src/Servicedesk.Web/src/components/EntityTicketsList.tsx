@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/app/ThemeProvider";
+import { colorPillStyle } from "@/lib/colorPill";
 
 const PAGE_SIZE = 25;
 const DEBOUNCE_MS = 200;
@@ -275,14 +276,8 @@ function TicketRow({
 }
 
 function ColoredPill({ label, color }: { label: string; color: string }) {
-  const { theme } = useTheme();
-  const style =
-    theme === "light"
-      ? {
-          backgroundColor: `color-mix(in srgb, ${color} 22%, transparent)`,
-          color: `color-mix(in srgb, ${color}, black 45%)`,
-        }
-      : { backgroundColor: `${color}20`, color };
+  const theme = useTheme();
+  const style = colorPillStyle(color, theme);
   return (
     <span
       className="shrink-0 rounded px-2 py-0.5 text-[11px] font-medium"

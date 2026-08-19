@@ -7,6 +7,7 @@ import { KIND_ORDER, labelForKind, hitHref } from "@/components/search/searchMet
 import { useTheme } from "@/app/ThemeProvider";
 import { ContactHoverCard } from "@/components/ContactHoverCard";
 import { useServerTime, toServerLocalDate } from "@/hooks/useServerTime";
+import { colorPillStyle } from "@/lib/colorPill";
 
 const PAGE_SIZE = 25;
 
@@ -183,7 +184,7 @@ export function SearchPage() {
 
 function HitRow({ hit, query }: { hit: SearchHit; query: string }) {
   const navigate = useNavigate();
-  const { theme } = useTheme();
+  const theme = useTheme();
   // Server offset for the created/closed dates on ticket hits — display
   // only, the timestamps themselves are server-provided.
   const { time: serverTime } = useServerTime();
@@ -193,20 +194,7 @@ function HitRow({ hit, query }: { hit: SearchHit; query: string }) {
   const subtitle = [requester, company].filter(Boolean).join(" · ");
   const statusName = hit.meta?.statusName;
   const statusColor = hit.meta?.statusColor;
-  const statusPillStyle =
-    statusColor
-      ? theme === "light"
-        ? {
-            backgroundColor: `color-mix(in srgb, ${statusColor} 22%, transparent)`,
-            color: `color-mix(in srgb, ${statusColor}, black 45%)`,
-            borderColor: `color-mix(in srgb, ${statusColor} 40%, transparent)`,
-          }
-        : {
-            backgroundColor: `${statusColor}20`,
-            color: statusColor,
-            borderColor: `${statusColor}55`,
-          }
-      : undefined;
+  const statusPillStyle = statusColor ? colorPillStyle(statusColor, theme) : undefined;
 
   function go() {
     if (hit.kind === "tickets") {

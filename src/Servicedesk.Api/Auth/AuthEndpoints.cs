@@ -406,10 +406,10 @@ public static class AuthEndpoints
         // size — the order returned here is the saved order.
         var tiles = await dashboardTiles.GetForUserAsync(userId, ct);
 
-        // v0.0.44 — Effective light/dark theme resolved server-side so the
-        // first paint after login agrees with the saved preference (or the
-        // admin default when the user has not yet picked). Cascade: user
-        // pref → Ui.DefaultTheme → 'light'. The NpgsqlDataSource is
+        // v0.0.44 — Effective theme (steaan | light | dark, v0.0.108)
+        // resolved server-side so the first paint after login agrees with
+        // the saved preference (or the admin default when the user has not
+        // yet picked). Cascade: user pref → Ui.DefaultTheme → UiThemes.Factory. The NpgsqlDataSource is
         // resolved lazily off `RequestServices` so test fixtures that
         // don't register it (the anonymous-/me round-trip never reaches
         // this branch) still build the endpoint without a DI failure.
@@ -486,30 +486,22 @@ public static class AuthEndpoints
         {
             // Tests can run without a real Postgres registered — in that
             // case the per-user override lookup is skipped and we fall
-            // straight through to the admin default → 'light' floor.
+            // straight through to the admin default → factory floor.
             if (dataSource is not null)
             {
                 await using var conn = await dataSource.OpenConnectionAsync(ct);
                 var raw = await Dapper.SqlMapper.ExecuteScalarAsync<string?>(conn, new Dapper.CommandDefinition(
                     "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'ui:theme'",
                     new { userId }, cancellationToken: ct));
-                var user = Normalize(raw);
+                var user = UiThemes.Normalize(raw);
                 if (user is not null) return user;
             }
 
-            var adminDefault = Normalize(await settings.GetAsync<string>(SettingKeys.Ui.DefaultTheme, ct));
-            return adminDefault ?? "light";
+            return UiThemes.NormalizeOrFactory(await settings.GetAsync<string>(SettingKeys.Ui.DefaultTheme, ct));
         }
         catch
         {
-            return "light";
-        }
-
-        static string? Normalize(string? raw)
-        {
-            if (string.IsNullOrWhiteSpace(raw)) return null;
-            var v = raw.Trim().ToLowerInvariant();
-            return v is "light" or "dark" ? v : null;
+            return UiThemes.Factory;
         }
     }
 

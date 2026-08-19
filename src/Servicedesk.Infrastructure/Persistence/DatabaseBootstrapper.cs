@@ -5603,6 +5603,59 @@ public sealed class DatabaseBootstrapper : IHostedService
                                   'ChecklistReopened','ChecklistItemChanged','ChecklistCloseBlocked',
                                   'ProjectConverted','ProjectReverted',
                                   'ProjectLinked','ProjectUnlinked')) NOT VALID;
+
+        -- ===================================================================
+        -- v0.0.108 Steaan theme — becomes the instance default.
+        --
+        -- Ui.DefaultTheme drives the theme for new users and for users who
+        -- never made an explicit choice on their Profile page. Existing
+        -- installs carry the v0.0.44 seeded value 'light' (Nebula light);
+        -- EnsureDefaultsAsync only refreshes default_value, never value, so
+        -- the flip to the new factory default has to be a one-shot here.
+        -- An admin who deliberately switched the instance to 'dark' keeps
+        -- that choice. Per-user preferences (user_preferences.ui:theme) are
+        -- untouched: an explicit Light/Dark pick stays Nebula Light/Dark.
+        -- On a fresh install the settings row doesn't exist yet when this
+        -- runs — the UPDATE matches nothing and EnsureDefaultsAsync seeds
+        -- 'steaan' directly.
+        DO $do$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM data_migrations
+                WHERE name = 'v0_0_108_steaan_default_theme'
+            ) THEN
+                UPDATE settings
+                SET value = 'steaan',
+                    updated_utc = now()
+                WHERE key = 'Ui.DefaultTheme'
+                  AND value = 'light';
+                INSERT INTO data_migrations (name)
+                    VALUES ('v0_0_108_steaan_default_theme');
+            END IF;
+        END $do$;
+
+        -- v0.0.108 — every existing user starts on Steaan after the upgrade.
+        --
+        -- Explicit per-user theme picks made under v0.0.44-v0.0.107 (the
+        -- old Light/Dark toggle) would otherwise pin those users to Nebula
+        -- while everyone else lands on the new house style. Decision
+        -- 2026-08-19: clear the saved picks once so *everyone* resolves to
+        -- the instance default (Steaan) on their next login; Nebula stays a
+        -- click away on Profile -> Appearance and a fresh pick is saved as
+        -- usual from then on. One-shot behind its own marker so a later
+        -- restart never wipes the new choices.
+        DO $do$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM data_migrations
+                WHERE name = 'v0_0_108_reset_user_theme_prefs'
+            ) THEN
+                DELETE FROM user_preferences
+                WHERE pref_key = 'ui:theme';
+                INSERT INTO data_migrations (name)
+                    VALUES ('v0_0_108_reset_user_theme_prefs');
+            END IF;
+        END $do$;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

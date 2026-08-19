@@ -10,8 +10,6 @@ import {
   Info,
   AlertCircle,
   Palette,
-  Sun,
-  Moon,
   Sparkles,
   Search,
   RefreshCw,
@@ -26,6 +24,8 @@ import { settingsApi, type SettingEntry, type LoginBannerType } from "@/lib/api"
 import { KIND_ORDER, labelForKind } from "@/components/search/searchMeta";
 import { useServerTime } from "@/hooks/useServerTime";
 import { cn } from "@/lib/utils";
+import { ThemePicker } from "@/components/ThemePicker";
+import { FACTORY_THEME, isUiTheme, type UiTheme } from "@/lib/theme";
 
 const APP_QUERY_KEY = ["settings", "list", "App"] as const;
 const UI_QUERY_KEY = ["settings", "list", "Ui"] as const;
@@ -380,11 +380,10 @@ function DefaultThemeSection({
   loading: boolean;
 }) {
   const qc = useQueryClient();
-  const value = (entry?.value === "dark" ? "dark" : "light") as "light" | "dark";
+  const value: UiTheme = isUiTheme(entry?.value) ? entry.value : FACTORY_THEME;
 
   const update = useMutation({
-    mutationFn: (next: "light" | "dark") =>
-      settingsApi.update("Ui.DefaultTheme", next),
+    mutationFn: (next: UiTheme) => settingsApi.update("Ui.DefaultTheme", next),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: UI_QUERY_KEY });
       qc.invalidateQueries({ queryKey: DEFAULT_THEME_QUERY_KEY });
@@ -406,53 +405,22 @@ function DefaultThemeSection({
           <p className="text-xs text-muted-foreground">
             Applies to new users and to existing users who have not yet picked a theme on
             their Profile page. Once a user makes an explicit choice, their preference
-            follows them across devices and overrides this default.
+            follows them across devices and overrides this default. Steaan is the factory
+            default; Nebula is the original glass theme in light or dark.
           </p>
         </div>
       </div>
 
       {loading ? (
-        <Skeleton className="h-12 w-48" />
+        <Skeleton className="h-24 w-full max-w-md" />
       ) : (
-        <div
-          role="radiogroup"
-          aria-label="Default theme"
-          className="inline-flex rounded-lg border border-glass bg-glass p-1"
-        >
-          <button
-            type="button"
-            role="radio"
-            aria-checked={value === "light"}
+        <div className="max-w-xl">
+          <ThemePicker
+            value={value}
+            onChange={(next) => update.mutate(next)}
             disabled={update.isPending}
-            onClick={() => update.mutate("light")}
-            className={cn(
-              "flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              "disabled:cursor-not-allowed disabled:opacity-50",
-              value === "light"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <Sun className="h-3.5 w-3.5" />
-            Light
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={value === "dark"}
-            disabled={update.isPending}
-            onClick={() => update.mutate("dark")}
-            className={cn(
-              "flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              "disabled:cursor-not-allowed disabled:opacity-50",
-              value === "dark"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <Moon className="h-3.5 w-3.5" />
-            Dark
-          </button>
+            label="Default theme"
+          />
         </div>
       )}
     </section>

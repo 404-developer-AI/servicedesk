@@ -6,9 +6,7 @@ import { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { LockKeyhole, Mail, ShieldCheck, AlertTriangle } from "lucide-react";
-import ticksyWordmarkDark from "@/assets/brand/ticksy-dark.svg";
-import ticksyWordmarkLight from "@/assets/brand/ticksy-light.svg";
-import { useTheme } from "@/app/ThemeProvider";
+import { BrandWordmark } from "@/components/BrandMark";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +32,6 @@ type Stage = "credentials" | "two-factor";
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const { theme } = useTheme();
   const [stage, setStage] = useState<Stage>("credentials");
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -124,7 +121,7 @@ export function LoginPage() {
   };
 
   return (
-    <div className="app-background relative flex min-h-screen flex-col items-center justify-center px-4 py-10">
+    <div className="app-background auth-surface relative flex min-h-screen flex-col items-center justify-center px-4 py-10">
       <LoginBanner />
       <MaintenanceBanner variant="auth" />
       <motion.div
@@ -134,12 +131,7 @@ export function LoginPage() {
         className="glass-card w-full max-w-[420px] overflow-hidden"
       >
         <div className="flex items-center justify-center border-b border-glass px-7 py-3">
-          <img
-            src={theme === "dark" ? ticksyWordmarkDark : ticksyWordmarkLight}
-            alt="Ticksy"
-            draggable={false}
-            className="h-24 w-auto select-none"
-          />
+          <BrandWordmark />
         </div>
 
         <div className="space-y-5 px-7 py-6">

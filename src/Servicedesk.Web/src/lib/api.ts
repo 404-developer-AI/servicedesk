@@ -1,4 +1,5 @@
 import { csrfHeader } from "@/lib/csrf";
+import type { UiTheme } from "@/lib/theme";
 import type { Role } from "@/lib/roles";
 
 export type SystemVersion = {
@@ -81,9 +82,10 @@ export type AuthUserPayload = {
   feedbackOwnOnly: boolean;
   adsolutConnected: boolean;
   dashboardTiles: string[];
-  // v0.0.44 — server-resolved theme (user pref → admin default → 'light').
-  // ThemeProvider on the client uses this as the source of truth on bootstrap.
-  effectiveTheme: "light" | "dark";
+  // v0.0.44 — server-resolved theme (user pref → admin default → factory
+  // 'steaan' since v0.0.108). ThemeProvider uses this as the source of truth
+  // on bootstrap.
+  effectiveTheme: UiTheme;
 };
 
 export type MeResponse = {
@@ -239,7 +241,7 @@ export const systemApi = {
   // v0.0.44 — anonymous read of the admin-wide default theme so the login
   // page can paint with the right palette on first visit (no localStorage yet).
   defaultTheme: () =>
-    request<{ theme: "light" | "dark" }>("GET", "/api/system/default-theme"),
+    request<{ theme: UiTheme }>("GET", "/api/system/default-theme"),
   // v0.0.57 — admin-configurable human-facing ticket reference prefix, e.g.
   // "Ticket#". Drives the copy-to-clipboard value so a pasted reference
   // resolves back to the ticket in search / pickers / timesheet links.
@@ -3452,15 +3454,16 @@ export const preferencesApi = {
       body: JSON.stringify({ entries }),
     });
   },
-  // v0.0.44 — user-level light/dark theme override. Source = "user" when the
-  // value comes from the user_preferences row, "default" when it falls back
-  // to the admin-wide Ui.DefaultTheme setting.
+  // v0.0.44 — user-level theme override (steaan | light | dark since
+  // v0.0.108). Source = "user" when the value comes from the
+  // user_preferences row, "default" when it falls back to the admin-wide
+  // Ui.DefaultTheme setting.
   getUiTheme: () =>
-    request<{ theme: "light" | "dark"; source: "user" | "default" }>(
+    request<{ theme: UiTheme; source: "user" | "default" }>(
       "GET",
       "/api/preferences/ui-theme",
     ),
-  setUiTheme: (theme: "light" | "dark") =>
+  setUiTheme: (theme: UiTheme) =>
     request<void>("PUT", "/api/preferences/ui-theme", { theme }),
   resetUiTheme: () => request<void>("DELETE", "/api/preferences/ui-theme"),
   // v0.0.60 — feature pages the user pinned out of the sidebar "Features"

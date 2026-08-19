@@ -172,7 +172,8 @@ public static class UserPreferencesEndpoints
         // ── UI theme preference (v0.0.44) ──
         //
         // Cascade on GET: user override (user_preferences.ui:theme) →
-        // admin default (Ui.DefaultTheme) → factory 'light'. The source
+        // admin default (Ui.DefaultTheme) → UiThemes.Factory. Values:
+        // 'steaan' | 'light' | 'dark' (light/dark = Nebula, v0.0.108). The source
         // field lets the SPA show the right tooltip ("inherited from
         // organisation default" vs "your choice").
         //
@@ -189,20 +190,20 @@ public static class UserPreferencesEndpoints
             var userPref = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
                 "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'ui:theme'",
                 new { userId }, cancellationToken: ct));
-            if (NormalizeTheme(userPref) is { } user)
+            if (UiThemes.Normalize(userPref) is { } user)
                 return Results.Ok(new ThemePreference(user, "user"));
 
-            var adminDefault = NormalizeTheme(await settings.GetAsync<string>(SettingKeys.Ui.DefaultTheme, ct));
-            return Results.Ok(new ThemePreference(adminDefault ?? "light", "default"));
+            var adminDefault = UiThemes.NormalizeOrFactory(await settings.GetAsync<string>(SettingKeys.Ui.DefaultTheme, ct));
+            return Results.Ok(new ThemePreference(adminDefault, "default"));
         }).WithName("GetUiThemePreference").WithOpenApi();
 
         group.MapPut("/ui-theme", async (
             [FromBody] UpdateUiThemeRequest req,
             HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
-            var normalized = NormalizeTheme(req.Theme);
+            var normalized = UiThemes.Normalize(req.Theme);
             if (normalized is null)
-                return Results.BadRequest(new { error = "Theme must be 'light' or 'dark'." });
+                return Results.BadRequest(new { error = "Theme must be 'steaan', 'light' or 'dark'." });
 
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             await using var conn = await dataSource.OpenConnectionAsync(ct);
@@ -447,16 +448,6 @@ public static class UserPreferencesEndpoints
             if (!clean.Contains(canonical)) clean.Add(canonical);
         }
         return clean.ToArray();
-    }
-
-    /// Returns the trimmed lowercase form when input is 'light' or 'dark',
-    /// otherwise null. Used both at write time (reject bad input) and at
-    /// read time (silently coerce a hand-edited DB row).
-    private static string? NormalizeTheme(string? raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw)) return null;
-        var v = raw.Trim().ToLowerInvariant();
-        return v is "light" or "dark" ? v : null;
     }
 
     public sealed record ColumnPreference(string Columns, string Source);
