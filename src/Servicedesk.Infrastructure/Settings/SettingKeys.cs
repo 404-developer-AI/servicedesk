@@ -1363,6 +1363,103 @@ public static class SettingKeys
         /// query parameters. 0 = counts only, no lists.
         public const string MaxListItems = "Reporting.MaxListItems";
     }
+    /// v0.1.0 — Customer portal (self-registration + approval, separate
+    /// customer login with mandatory TOTP, scoped ticket list/detail/reply).
+    /// All tunables live here; the Turnstile secret is in protected_secrets.
+    public static class Portal
+    {
+        /// Master switch. Off = every /api/portal endpoint answers 404 and the
+        /// portal pages show "not available" — existing customer sessions are
+        /// refused as well.
+        public const string Enabled = "Portal.Enabled";
+
+        /// Whether customers may self-register. Off = only invited accounts.
+        public const string RegistrationEnabled = "Portal.RegistrationEnabled";
+
+        /// Queue that receives the system ticket created for each verified
+        /// registration (the Tickets.NewUserCreatesNotificationTicket hook)
+        /// and the fallback sender mailbox for portal mail. Empty = the
+        /// registration ticket is skipped (approvals then happen from
+        /// Settings → Portal only).
+        public const string RegistrationQueueId = "Portal.RegistrationQueueId";
+
+        /// Queue new portal tickets are created in. Empty = portal ticket
+        /// creation is disabled (customers can still reply).
+        public const string NewTicketQueueId = "Portal.NewTicketQueueId";
+
+        /// Mailbox address used as From for verification/invitation/reset
+        /// mail. Empty = the registration queue's outbound (or inbound)
+        /// mailbox, then the new-ticket queue's.
+        public const string FromMailbox = "Portal.FromMailbox";
+
+        /// Display name on portal system mail (From header).
+        public const string FromName = "Portal.FromName";
+
+        /// Customer session lifetime in hours (own setting, independent of
+        /// the agent session lifetime).
+        public const string SessionLifetimeHours = "Portal.SessionLifetimeHours";
+
+        /// Validity of the email-verification link in hours.
+        public const string VerificationTokenHours = "Portal.VerificationTokenHours";
+
+        /// Validity of an invitation link in hours.
+        public const string InvitationTokenHours = "Portal.InvitationTokenHours";
+
+        /// Validity of a password-reset link in minutes.
+        public const string PasswordResetTokenMinutes = "Portal.PasswordResetTokenMinutes";
+
+        /// Minimum minutes between two verification / reset mails to the same
+        /// address (anti mail-bombing; the rate limiter covers per-IP).
+        public const string MailResendCooldownMinutes = "Portal.MailResendCooldownMinutes";
+
+        /// Minimum password length for customer accounts.
+        public const string PasswordMinimumLength = "Portal.PasswordMinimumLength";
+
+        /// Page size of the portal ticket list.
+        public const string TicketPageSize = "Portal.TicketPageSize";
+
+        /// Whether customers may reply to tickets whose status category is
+        /// Resolved (Closed is never writable from the portal).
+        public const string AllowReplyOnResolved = "Portal.AllowReplyOnResolved";
+
+        /// Short name of the organisation shown in portal mail + pages
+        /// (e.g. "Datawolk"). Empty = "Servicedesk".
+        public const string OrganisationName = "Portal.OrganisationName";
+
+        /// Text shown above the registration form (HTML allowed, sanitised
+        /// client-side). Empty = hidden.
+        public const string RegistrationIntroHtml = "Portal.RegistrationIntroHtml";
+
+        /// Cloudflare Turnstile on the registration form. Site key is public;
+        /// the secret key lives in protected_secrets (Portal.TurnstileSecret).
+        public const string TurnstileEnabled = "Portal.Turnstile.Enabled";
+        public const string TurnstileSiteKey = "Portal.Turnstile.SiteKey";
+        /// Expected `action` value echoed by Turnstile (set on the widget).
+        public const string TurnstileAction = "Portal.Turnstile.Action";
+        /// siteverify timeout in seconds. Fail closed on timeout.
+        public const string TurnstileTimeoutSeconds = "Portal.Turnstile.TimeoutSeconds";
+
+        /// Mail templates. Placeholders: {{name}}, {{email}}, {{link}},
+        /// {{expires}} (human-readable validity), {{organisation}}.
+        public const string VerificationMailSubject = "Portal.Mail.Verification.Subject";
+        public const string VerificationMailBody = "Portal.Mail.Verification.Body";
+        public const string InvitationMailSubject = "Portal.Mail.Invitation.Subject";
+        public const string InvitationMailBody = "Portal.Mail.Invitation.Body";
+        public const string PasswordResetMailSubject = "Portal.Mail.PasswordReset.Subject";
+        public const string PasswordResetMailBody = "Portal.Mail.PasswordReset.Body";
+        /// Sent once the registration is approved (so the customer knows they
+        /// can sign in). Empty subject = mail skipped.
+        public const string ApprovedMailSubject = "Portal.Mail.Approved.Subject";
+        public const string ApprovedMailBody = "Portal.Mail.Approved.Body";
+
+        /// Rate limits for the anonymous portal auth endpoints. Display-only
+        /// mirrors of the Security:RateLimit:PortalAuth:* / PortalRegister:*
+        /// configuration read at startup (same model as the other limiters).
+        public const string RateLimitAuthPermitPerWindow = "Portal.RateLimit.Auth.PermitPerWindow";
+        public const string RateLimitAuthWindowSeconds = "Portal.RateLimit.Auth.WindowSeconds";
+        public const string RateLimitRegisterPermitPerWindow = "Portal.RateLimit.Register.PermitPerWindow";
+        public const string RateLimitRegisterWindowSeconds = "Portal.RateLimit.Register.WindowSeconds";
+    }
 }
 
 public sealed record SettingDefault(
@@ -2192,5 +2289,70 @@ public static class SettingDefaults
             "Maximum Reporting API requests per IP within the reporting rate limit window. Read at startup, a change requires an app restart."),
         new SettingDefault(SettingKeys.Security.RateLimitReportingWindowSeconds, "60", "int", "Security",
             "Reporting API rate limit window length, in seconds. Read at startup, a change requires an app restart."),
+        // v0.1.0 — Customer portal.
+        new SettingDefault(SettingKeys.Portal.Enabled, "false", "bool", "Portal",
+            "Master switch for the customer portal. Off = all /api/portal endpoints answer 404, the portal pages show an unavailable notice and existing customer sessions are refused."),
+        new SettingDefault(SettingKeys.Portal.RegistrationEnabled, "true", "bool", "Portal",
+            "Allow customers to self-register (email verification + manual approval by an agent/admin). Off = only invited accounts can sign in."),
+        new SettingDefault(SettingKeys.Portal.RegistrationQueueId, "", "string", "Portal",
+            "Queue that receives the system ticket created for each verified registration (requires Tickets.NewUserCreatesNotificationTicket). Also the fallback sender mailbox for portal mail. Empty = no registration ticket; approvals happen from Settings → Portal."),
+        new SettingDefault(SettingKeys.Portal.NewTicketQueueId, "", "string", "Portal",
+            "Queue new portal tickets are created in. Empty = customers cannot create tickets from the portal (replying still works)."),
+        new SettingDefault(SettingKeys.Portal.FromMailbox, "", "string", "Portal",
+            "Mailbox address used as From for verification, invitation and password-reset mail. Empty = the registration queue's outbound (or inbound) mailbox, then the new-ticket queue's."),
+        new SettingDefault(SettingKeys.Portal.FromName, "", "string", "Portal",
+            "Display name on portal system mail. Empty = the organisation name."),
+        new SettingDefault(SettingKeys.Portal.OrganisationName, "", "string", "Portal",
+            "Organisation name shown in portal mail and on the portal pages. Empty = \"Servicedesk\"."),
+        new SettingDefault(SettingKeys.Portal.RegistrationIntroHtml, "", "string", "Portal",
+            "Optional text shown above the registration form (basic HTML allowed). Empty = hidden."),
+        new SettingDefault(SettingKeys.Portal.SessionLifetimeHours, "8", "int", "Portal",
+            "Customer session lifetime in hours. Independent of the agent session lifetime."),
+        new SettingDefault(SettingKeys.Portal.VerificationTokenHours, "24", "int", "Portal",
+            "Validity of the email-verification link in hours."),
+        new SettingDefault(SettingKeys.Portal.InvitationTokenHours, "168", "int", "Portal",
+            "Validity of an invitation link in hours (default 7 days)."),
+        new SettingDefault(SettingKeys.Portal.PasswordResetTokenMinutes, "60", "int", "Portal",
+            "Validity of a password-reset link in minutes."),
+        new SettingDefault(SettingKeys.Portal.MailResendCooldownMinutes, "2", "int", "Portal",
+            "Minimum minutes between two verification or password-reset mails to the same address. 0 = no cooldown."),
+        new SettingDefault(SettingKeys.Portal.PasswordMinimumLength, "12", "int", "Portal",
+            "Minimum password length for customer accounts."),
+        new SettingDefault(SettingKeys.Portal.TicketPageSize, "25", "int", "Portal",
+            "Number of tickets per page in the portal ticket list."),
+        new SettingDefault(SettingKeys.Portal.AllowReplyOnResolved, "true", "bool", "Portal",
+            "Allow customers to reply to tickets in a Resolved status (a reply typically reopens the ticket through your triggers). Closed tickets are never writable from the portal."),
+        new SettingDefault(SettingKeys.Portal.TurnstileEnabled, "false", "bool", "Portal",
+            "Protect the registration form with Cloudflare Turnstile. Requires the site key below and the secret key (stored encrypted). When on and the secret is missing, registration is refused (fail closed)."),
+        new SettingDefault(SettingKeys.Portal.TurnstileSiteKey, "", "string", "Portal",
+            "Cloudflare Turnstile site key (public). The secret key is entered separately and stored encrypted."),
+        new SettingDefault(SettingKeys.Portal.TurnstileAction, "portal-register", "string", "Portal",
+            "Turnstile action name stamped on the registration widget and verified server-side."),
+        new SettingDefault(SettingKeys.Portal.TurnstileTimeoutSeconds, "10", "int", "Portal",
+            "Timeout in seconds for the Turnstile siteverify call. A timeout refuses the registration (fail closed)."),
+        new SettingDefault(SettingKeys.Portal.VerificationMailSubject, "Confirm your email address for the {{organisation}} portal", "string", "Portal",
+            "Subject of the email-verification mail. Placeholders: {{name}}, {{email}}, {{link}}, {{expires}}, {{organisation}}."),
+        new SettingDefault(SettingKeys.Portal.VerificationMailBody, "<p>Hello {{name}},</p><p>Thank you for registering for the {{organisation}} customer portal. Please confirm your email address by clicking the link below:</p><p><a href=\"{{link}}\">Confirm my email address</a></p><p>This link is valid for {{expires}}. After confirmation our team reviews your registration; you receive a second mail once your account is approved.</p><p>If you did not register, you can ignore this mail.</p>", "string", "Portal",
+            "HTML body of the email-verification mail. Placeholders: {{name}}, {{email}}, {{link}}, {{expires}}, {{organisation}}."),
+        new SettingDefault(SettingKeys.Portal.InvitationMailSubject, "Your invitation to the {{organisation}} portal", "string", "Portal",
+            "Subject of the invitation mail. Placeholders: {{name}}, {{email}}, {{link}}, {{expires}}, {{organisation}}."),
+        new SettingDefault(SettingKeys.Portal.InvitationMailBody, "<p>Hello {{name}},</p><p>You have been invited to the {{organisation}} customer portal, where you can follow and create support tickets. Use the link below to set your password:</p><p><a href=\"{{link}}\">Activate my account</a></p><p>This link is valid for {{expires}}. At your first sign-in you will be asked to set up an authenticator app for two-factor authentication.</p>", "string", "Portal",
+            "HTML body of the invitation mail. Placeholders: {{name}}, {{email}}, {{link}}, {{expires}}, {{organisation}}."),
+        new SettingDefault(SettingKeys.Portal.PasswordResetMailSubject, "Reset your {{organisation}} portal password", "string", "Portal",
+            "Subject of the password-reset mail. Placeholders: {{name}}, {{email}}, {{link}}, {{expires}}, {{organisation}}."),
+        new SettingDefault(SettingKeys.Portal.PasswordResetMailBody, "<p>Hello {{name}},</p><p>A password reset was requested for your {{organisation}} customer portal account. Use the link below to choose a new password:</p><p><a href=\"{{link}}\">Reset my password</a></p><p>This link is valid for {{expires}}. If you did not request a reset, you can ignore this mail — your password stays unchanged.</p>", "string", "Portal",
+            "HTML body of the password-reset mail. Placeholders: {{name}}, {{email}}, {{link}}, {{expires}}, {{organisation}}."),
+        new SettingDefault(SettingKeys.Portal.ApprovedMailSubject, "Your {{organisation}} portal account is ready", "string", "Portal",
+            "Subject of the mail sent when a registration is approved. Empty = no mail. Placeholders: {{name}}, {{email}}, {{link}}, {{organisation}}."),
+        new SettingDefault(SettingKeys.Portal.ApprovedMailBody, "<p>Hello {{name}},</p><p>Your registration for the {{organisation}} customer portal has been approved. You can now sign in with your email address and password:</p><p><a href=\"{{link}}\">Sign in to the portal</a></p><p>At your first sign-in you will be asked to set up an authenticator app for two-factor authentication.</p>", "string", "Portal",
+            "HTML body of the approval mail. Placeholders: {{name}}, {{email}}, {{link}}, {{organisation}}."),
+        new SettingDefault(SettingKeys.Portal.RateLimitAuthPermitPerWindow, "10", "int", "Portal",
+            "Maximum portal sign-in / 2FA / password-reset requests per IP within the window. Mirrors Security:RateLimit:PortalAuth:* (read at startup, a change requires an app restart)."),
+        new SettingDefault(SettingKeys.Portal.RateLimitAuthWindowSeconds, "60", "int", "Portal",
+            "Window length in seconds for the portal auth rate limit. Read at startup."),
+        new SettingDefault(SettingKeys.Portal.RateLimitRegisterPermitPerWindow, "5", "int", "Portal",
+            "Maximum registration / forgot-password submissions per IP within the window. Mirrors Security:RateLimit:PortalRegister:* (read at startup)."),
+        new SettingDefault(SettingKeys.Portal.RateLimitRegisterWindowSeconds, "600", "int", "Portal",
+            "Window length in seconds for the portal registration rate limit. Read at startup."),
     };
 }

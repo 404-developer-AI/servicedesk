@@ -43,7 +43,14 @@ public sealed class ContentSecurityPolicyMiddleware
         // Attachment downloads are framed by our own origin for the PDF
         // preview lightbox; everything else keeps the stricter 'none'.
         var allowSameOriginFrame = IsAttachmentDownload(context.Request.Path);
-        var policy = BuildPolicy(nonce, _isDevelopment, _reportUri, allowSameOriginFrame, _inlineScriptHashes);
+        // Customer-portal pages (SPA documents under /portal) additionally
+        // allow the Cloudflare Turnstile script + challenge frame. Scoped to
+        // the document response of those routes only: an agent page never
+        // carries the relaxation, and the CSP is per-document so a portal
+        // document loaded at /portal/* keeps it across client-side navigation
+        // within the portal.
+        var portalPage = IsPortalPage(context.Request);
+        var policy = BuildPolicy(nonce, _isDevelopment, _reportUri, allowSameOriginFrame, _inlineScriptHashes, portalPage);
         context.Response.OnStarting(state =>
         {
             var ctx = (HttpContext)state!;
@@ -69,6 +76,21 @@ public sealed class ContentSecurityPolicyMiddleware
         return v.StartsWith("/api/tickets/", StringComparison.OrdinalIgnoreCase)
             && v.Contains("/attachments/", StringComparison.OrdinalIgnoreCase);
     }
+
+    /// True for a GET of a customer-portal SPA document (/portal or /portal/…),
+    /// never for API calls. Kept in lock-step with SecurityHeadersMiddleware.
+    internal static bool IsPortalPage(HttpRequest request)
+    {
+        if (!HttpMethods.IsGet(request.Method)) return false;
+        var path = request.Path;
+        if (!path.HasValue) return false;
+        var v = path.Value!;
+        return v.Equals("/portal", StringComparison.OrdinalIgnoreCase)
+            || v.StartsWith("/portal/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// Origin that serves the Turnstile widget script and challenge frame.
+    public const string TurnstileOrigin = "https://challenges.cloudflare.com";
 
     internal static string GenerateNonce()
     {
@@ -139,6 +161,15 @@ public sealed class ContentSecurityPolicyMiddleware
         string reportUri,
         bool allowSameOriginFrame,
         IReadOnlyList<string> inlineScriptHashes)
+        => BuildPolicy(nonce, development, reportUri, allowSameOriginFrame, inlineScriptHashes, portalPage: false);
+
+    internal static string BuildPolicy(
+        string nonce,
+        bool development,
+        string reportUri,
+        bool allowSameOriginFrame,
+        IReadOnlyList<string> inlineScriptHashes,
+        bool portalPage)
     {
         // The hash tokens ride next to the nonce: the nonce keeps covering
         // anything stamped with it at runtime, the hashes cover the static
@@ -146,9 +177,13 @@ public sealed class ContentSecurityPolicyMiddleware
         var hashPart = inlineScriptHashes.Count == 0
             ? string.Empty
             : " " + string.Join(' ', inlineScriptHashes);
+        // Portal documents: the Turnstile loader is a cross-origin <script>
+        // (host-source, no nonce) and renders its challenge in an <iframe>
+        // from the same origin — both allowed only there.
+        var turnstilePart = portalPage ? " " + TurnstileOrigin : string.Empty;
         var scriptSrc = development
-            ? $"'self' 'nonce-{nonce}'{hashPart} 'unsafe-eval'"
-            : $"'self' 'nonce-{nonce}'{hashPart}";
+            ? $"'self' 'nonce-{nonce}'{hashPart}{turnstilePart} 'unsafe-eval'"
+            : $"'self' 'nonce-{nonce}'{hashPart}{turnstilePart}";
 
         // style-src allows 'unsafe-inline' in both dev and prod. Reason: Sonner,
         // Radix, Framer Motion, Vaul and other UI libs inject stylesheets at
@@ -177,7 +212,7 @@ public sealed class ContentSecurityPolicyMiddleware
             ? "'self' ws: wss: http://localhost:* https://localhost:*"
             : "'self'";
 
-        return string.Join("; ", new[]
+        var directives = new List<string>
         {
             "default-src 'self'",
             $"script-src {scriptSrc}",
@@ -185,11 +220,18 @@ public sealed class ContentSecurityPolicyMiddleware
             "img-src 'self' data: blob:",
             "font-src 'self' data: https://fonts.gstatic.com",
             $"connect-src {connectSrc}",
+        };
+        // frame-src is normally governed by default-src 'self'; the portal
+        // registration page embeds the Turnstile challenge frame.
+        if (portalPage) directives.Add($"frame-src 'self' {TurnstileOrigin}");
+        directives.AddRange(new[]
+        {
             allowSameOriginFrame ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
             "base-uri 'self'",
             "form-action 'self'",
             "object-src 'none'",
             $"report-uri {reportUri}",
         });
+        return string.Join("; ", directives);
     }
 }

@@ -37,6 +37,7 @@ import { useTicketRealtime } from "@/hooks/useTicketRealtime";
 import { SlaPill } from "@/components/sla/SlaPill";
 import { TicketSidePanel, TicketPresence } from "./components/TicketSidePanel";
 import { TicketTimeline, isSystemEvent } from "./components/TicketTimeline";
+import { PortalRegistrationCard } from "@/components/portal/PortalRegistrationCard";
 import { PinnedEventsSummary } from "./components/PinnedEventsSummary";
 import { TicketTimesheetPanel } from "./components/TicketTimesheetPanel";
 import { TicketTimeAlertDialog } from "./components/TicketTimeAlertDialog";
@@ -884,6 +885,7 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         splitFromUserName={splitFromUserName}
         splitChildren={splitChildren}
         descriptionAttachments={descriptionAttachments}
+        portalRegistration={data.portalRegistration ?? null}
         parentTicketNumber={parentTicketNumber}
         parentLinkedByUserName={parentLinkedByUserName}
         childTickets={childTickets}
@@ -991,6 +993,7 @@ function TicketDetailBody({
   splitFromUserName,
   splitChildren,
   descriptionAttachments,
+  portalRegistration,
   parentTicketNumber,
   parentLinkedByUserName,
   childTickets,
@@ -1032,6 +1035,8 @@ function TicketDetailBody({
   splitFromUserName: string | null;
   splitChildren: { id: string; number: number }[];
   descriptionAttachments: { id: string; name: string; mimeType: string; size: number; url: string }[];
+  /// v0.1.0 — non-null only on a portal-registration system ticket.
+  portalRegistration: { userId: string; status: string; email: string; displayName: string } | null;
   parentTicketNumber: string | null;
   parentLinkedByUserName: string | null;
   childTickets: { id: string; number: string }[];
@@ -1267,6 +1272,10 @@ function TicketDetailBody({
             />
           </div>
         )}
+
+        {/* v0.1.0 — portal registration approve/reject card (only on the
+            system ticket a registration created). */}
+        {portalRegistration ? <PortalRegistrationCard ticketId={ticketId} /> : null}
 
         {/* v0.0.87 — per-ticket hour-limit warning (self-gating: only opens
             when the feature is on and the ticket is over its limit). The queue

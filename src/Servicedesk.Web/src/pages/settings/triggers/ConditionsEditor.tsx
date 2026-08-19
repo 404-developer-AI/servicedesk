@@ -49,6 +49,7 @@ const ARTICLE_TYPE_OPTIONS = [
   { value: "MailSent", label: "Mail sent" },
   { value: "Comment", label: "Comment" },
   { value: "Note", label: "Note" },
+  { value: "PortalMessage", label: "Portal message (customer)" },
 ];
 
 /// Conditions section of the trigger editor. One-level AND mode renders a

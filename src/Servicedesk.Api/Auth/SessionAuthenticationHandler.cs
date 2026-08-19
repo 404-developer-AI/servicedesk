@@ -31,6 +31,10 @@ public sealed class SessionAuthenticationHandler : AuthenticationHandler<Authent
     /// for M365) is a fully-authorized session.
     public const string AmrPending = "mfa-pending";
 
+    /// Fully authenticated local session that completed the TOTP step. The
+    /// customer-portal policy whitelists exactly this value.
+    public const string AmrPasswordPlusMfa = "pwd+mfa";
+
     /// Cache key for a validated session. Centralised so callers that mutate a
     /// session's amr (e.g. the 2FA verify upgrade) can evict the same entry
     /// this handler caches, otherwise the stale amr lingers for up to

@@ -49,17 +49,17 @@ public static class AuthEndpoints
         group.MapPost("/2fa/enroll/begin", BeginTotpEnroll)
             .WithName("AuthTotpBegin")
             .WithOpenApi()
-            .RequireAuthorization(AuthorizationPolicies.RequireCustomer);
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
         group.MapPost("/2fa/enroll/confirm", ConfirmTotpEnroll)
             .WithName("AuthTotpConfirm")
             .WithOpenApi()
-            .RequireAuthorization(AuthorizationPolicies.RequireCustomer);
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
         group.MapPost("/2fa/disable", DisableTotp)
             .WithName("AuthTotpDisable")
             .WithOpenApi()
-            .RequireAuthorization(AuthorizationPolicies.RequireCustomer);
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
         return app;
     }
@@ -81,10 +81,15 @@ public static class AuthEndpoints
     {
         var microsoftEnabled = await settings.GetAsync<bool>(SettingKeys.Auth.MicrosoftEnabled, ct);
         var userCount = await users.CountAsync(ct);
+        // v0.1.0 — lets the staff login page link to the customer portal
+        // when it is switched on (a boolean only; the portal has its own
+        // public config endpoint).
+        var portalEnabled = await settings.GetAsync<bool>(SettingKeys.Portal.Enabled, ct);
         return Results.Ok(new
         {
             microsoftEnabled,
             setupAvailable = userCount == 0,
+            portalEnabled,
         });
     }
 
@@ -181,7 +186,11 @@ public static class AuthEndpoints
         // enforces this), so we can't run the hasher against it. Same
         // 401-no-details response as a wrong email so a hostile prober
         // can't enumerate which accounts are on M365.
-        if (user.AuthMode != AuthModes.Local || string.IsNullOrEmpty(user.PasswordHash) || !user.IsActive)
+        // v0.1.0 — customer accounts authenticate through the portal flow
+        // (/api/portal/auth/login, mandatory TOTP). The agent login never
+        // mints a session for them; same generic 401 as a wrong password.
+        var isCustomer = string.Equals(user.RoleName, "Customer", StringComparison.Ordinal);
+        if (isCustomer || user.AuthMode != AuthModes.Local || string.IsNullOrEmpty(user.PasswordHash) || !user.IsActive)
         {
             _ = hasher.Verify("$argon2id$v=19$m=65536,t=3,p=1$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", request.Password, out _);
             await audit.LogAsync(new AuditEvent(
@@ -191,7 +200,7 @@ public static class AuthEndpoints
                 Target: user.Id.ToString(),
                 ClientIp: httpContext.Connection.RemoteIpAddress?.ToString(),
                 UserAgent: httpContext.Request.Headers.UserAgent.ToString(),
-                Payload: new { reason = user.IsActive ? "wrong_channel" : "inactive" }), ct);
+                Payload: new { reason = isCustomer ? "customer_use_portal" : user.IsActive ? "wrong_channel" : "inactive" }), ct);
             return Results.Unauthorized();
         }
 
@@ -584,26 +593,40 @@ public static class AuthEndpoints
         return Guid.TryParse(claim, out var id) ? id : null;
     }
 
-    private static async Task EstablishSessionAsync(
+    private static Task EstablishSessionAsync(
         HttpContext httpContext,
         ApplicationUser user,
         string amr,
         ISessionService sessions,
         ISettingsService settings,
         CancellationToken ct)
+        => EstablishSessionAsync(httpContext, user, amr, sessions, settings, lifetimeOverride: null, ct);
+
+    /// Mints a session + the cookie pair. Shared with the customer-portal
+    /// login (v0.1.0), which passes its own lifetime (Portal.SessionLifetimeHours)
+    /// so the cookie semantics stay identical across both flows.
+    internal static async Task<Guid> EstablishSessionAsync(
+        HttpContext httpContext,
+        ApplicationUser user,
+        string amr,
+        ISessionService sessions,
+        ISettingsService settings,
+        TimeSpan? lifetimeOverride,
+        CancellationToken ct)
     {
-        var lifetimeHours = await settings.GetAsync<int>(SettingKeys.Security.SessionLifetimeHours, ct);
+        var lifetime = lifetimeOverride
+            ?? TimeSpan.FromHours(await settings.GetAsync<int>(SettingKeys.Security.SessionLifetimeHours, ct));
         var cookieName = await settings.GetAsync<string>(SettingKeys.Security.SessionCookieName, ct);
         var sessionId = await sessions.CreateAsync(
             user.Id,
             httpContext.Connection.RemoteIpAddress?.ToString(),
             httpContext.Request.Headers.UserAgent.ToString(),
-            TimeSpan.FromHours(lifetimeHours),
+            lifetime,
             amr,
             ct);
 
         var secure = !httpContext.Request.IsHttps ? false : true;
-        var expires = DateTimeOffset.UtcNow.AddHours(lifetimeHours);
+        var expires = DateTimeOffset.UtcNow.Add(lifetime);
 
         httpContext.Response.Cookies.Append(cookieName, sessionId.ToString(), new CookieOptions
         {
@@ -623,9 +646,10 @@ public static class AuthEndpoints
             Path = "/",
             Expires = expires,
         });
+        return sessionId;
     }
 
-    private static void ClearAuthCookies(HttpContext httpContext, string sessionCookieName)
+    internal static void ClearAuthCookies(HttpContext httpContext, string sessionCookieName)
     {
         httpContext.Response.Cookies.Delete(sessionCookieName, new CookieOptions { Path = "/" });
         httpContext.Response.Cookies.Delete(DoubleSubmitCsrfMiddleware.CookieName, new CookieOptions { Path = "/" });

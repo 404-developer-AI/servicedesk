@@ -51,6 +51,14 @@ public sealed class DoubleSubmitCsrfMiddleware
         // /api/admin/timesheet/import/ are NOT covered by this prefix and
         // stay session + CSRF enforced.
         "/api/timesheet/import/",
+        // v0.1.0 — anonymous customer-portal auth endpoints (register,
+        // verify-email, login, forgot/reset password, invitation accept).
+        // No session exists yet; per-IP rate limiting + Turnstile (on the
+        // registration form) + single-use hashed tokens are the defence.
+        // The session-bound portal endpoints (/api/portal/auth/2fa/*,
+        // /api/portal/tickets/*, /api/portal/admin/*) stay CSRF-enforced —
+        // the portal login mints the XSRF cookie like the agent login.
+        "/api/portal/auth/public/",
         "/hubs/",
     };
 

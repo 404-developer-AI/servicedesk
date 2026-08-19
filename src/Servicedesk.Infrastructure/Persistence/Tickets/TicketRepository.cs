@@ -221,7 +221,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         switch (scope)
         {
             case VisibilityScope.Own:
-                sql.Append(" AND c.id = (SELECT id FROM contacts WHERE id = @ViewerContactId)");
+                sql.Append(" AND t.requester_contact_id = @ViewerContactId");
                 // NB: in v0.0.5 operator users are not contacts, so Own has
                 // no natural match; it's reserved for the customer portal.
                 break;

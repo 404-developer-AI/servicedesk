@@ -5656,6 +5656,116 @@ public sealed class DatabaseBootstrapper : IHostedService
                     VALUES ('v0_0_108_reset_user_theme_prefs');
             END IF;
         END $do$;
+
+        -- ===================================================================
+        -- v0.1.0 Customer portal.
+        --
+        -- Customers authenticate with their own flow (password + mandatory
+        -- TOTP) and see tickets through the contact they are linked to:
+        -- users.contact_id is the bridge between the auth row (users, role
+        -- 'Customer') and the CRM contact whose company links + company_role
+        -- decide the visibility scope. One portal account per contact.
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS contact_id UUID NULL REFERENCES contacts(id) ON DELETE SET NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_users_contact
+            ON users (contact_id) WHERE contact_id IS NOT NULL;
+
+        -- Lifecycle of a portal account. The users row exists from the first
+        -- registration step (is_active = FALSE until approved) so the email
+        -- is reserved; status drives what the login endpoint tells the user.
+        --   PendingVerification -> PendingApproval -> Active
+        --                                         -> Rejected
+        --   Active <-> Deactivated (admin)
+        -- Invited accounts skip the first two states: the users row is only
+        -- created when the invitation is accepted (the CHECK on users needs
+        -- a password hash for Local rows).
+        CREATE TABLE IF NOT EXISTS portal_accounts (
+            user_id                 UUID        PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            status                  TEXT        NOT NULL,
+            display_name            TEXT        NOT NULL DEFAULT '',
+            origin                  TEXT        NOT NULL,
+            registration_ip         TEXT        NULL,
+            registration_user_agent TEXT        NULL,
+            email_verified_utc      TIMESTAMPTZ NULL,
+            approval_ticket_id      UUID        NULL REFERENCES tickets(id) ON DELETE SET NULL,
+            approved_by_user_id     UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            approved_utc            TIMESTAMPTZ NULL,
+            rejected_by_user_id     UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            rejected_utc            TIMESTAMPTZ NULL,
+            rejection_reason        TEXT        NULL,
+            invited_by_user_id      UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            created_utc             TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc             TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT chk_portal_accounts_status
+                CHECK (status IN ('PendingVerification','PendingApproval','Active','Rejected','Deactivated')),
+            CONSTRAINT chk_portal_accounts_origin
+                CHECK (origin IN ('Registration','Invitation'))
+        );
+        CREATE INDEX IF NOT EXISTS ix_portal_accounts_status ON portal_accounts (status, created_utc DESC);
+        CREATE INDEX IF NOT EXISTS ix_portal_accounts_ticket
+            ON portal_accounts (approval_ticket_id) WHERE approval_ticket_id IS NOT NULL;
+
+        -- One-time links sent by mail: email verification, invitation,
+        -- password reset. Same model as survey/intake tokens: the 32-byte
+        -- secret never touches the DB, only its SHA-256 (unique lookup key).
+        -- Single use via the conditional UPDATE on used_utc.
+        CREATE TABLE IF NOT EXISTS portal_tokens (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            kind                TEXT        NOT NULL,
+            token_hash          BYTEA       NOT NULL,
+            email               CITEXT      NOT NULL,
+            user_id             UUID        NULL REFERENCES users(id) ON DELETE CASCADE,
+            contact_id          UUID        NULL REFERENCES contacts(id) ON DELETE CASCADE,
+            company_id          UUID        NULL REFERENCES companies(id) ON DELETE SET NULL,
+            company_role        TEXT        NULL,
+            display_name        TEXT        NOT NULL DEFAULT '',
+            created_by_user_id  UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            expires_utc         TIMESTAMPTZ NOT NULL,
+            used_utc            TIMESTAMPTZ NULL,
+            revoked_utc         TIMESTAMPTZ NULL,
+            CONSTRAINT chk_portal_tokens_kind
+                CHECK (kind IN ('EmailVerification','Invitation','PasswordReset')),
+            CONSTRAINT chk_portal_tokens_company_role
+                CHECK (company_role IS NULL OR company_role IN ('Member','TicketManager'))
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_portal_tokens_hash ON portal_tokens (token_hash);
+        CREATE INDEX IF NOT EXISTS ix_portal_tokens_email_kind
+            ON portal_tokens (email, kind) WHERE used_utc IS NULL AND revoked_utc IS NULL;
+        CREATE INDEX IF NOT EXISTS ix_portal_tokens_user
+            ON portal_tokens (user_id) WHERE user_id IS NOT NULL;
+
+        -- Tickets created from the portal carry their own source; messages a
+        -- customer posts from the portal are their own article type (customer
+        -- visible, author_contact_id set, never stamps first_response_utc).
+        ALTER TABLE tickets DROP CONSTRAINT IF EXISTS chk_ticket_source;
+        ALTER TABLE tickets ADD CONSTRAINT chk_ticket_source
+            CHECK (source IN ('Web','Mail','Api','System','Split','Zammad','Portal')) NOT VALID;
+
+        ALTER TABLE ticket_events DROP CONSTRAINT IF EXISTS chk_ticket_event_type;
+        ALTER TABLE ticket_events ADD CONSTRAINT chk_ticket_event_type
+            CHECK (event_type IN ('Created','Comment','Mail','Note','StatusChange',
+                                  'AssignmentChange','PriorityChange','QueueChange',
+                                  'CategoryChange','SystemNote','MailReceived',
+                                  'MailSent','CompanyAssignment','RequesterChange',
+                                  'IntakeFormSent','IntakeFormSubmitted','IntakeFormExpired',
+                                  'ParentLinked','ParentUnlinked',
+                                  'SurveySent','SurveySubmitted','SurveyExpired',
+                                  'TimeLimitAlertDismissed','TimeLimitExtended',
+                                  'TimeLimitTrackingDisabled','StatusGateDecision',
+                                  'ChecklistAttached','ChecklistDetached','ChecklistCompleted',
+                                  'ChecklistReopened','ChecklistItemChanged','ChecklistCloseBlocked',
+                                  'ProjectConverted','ProjectReverted',
+                                  'ProjectLinked','ProjectUnlinked',
+                                  'PortalMessage')) NOT VALID;
+
+        -- Portal list queries: a TicketManager lists by frozen company, a
+        -- Member by requester; both sort by recency.
+        CREATE INDEX IF NOT EXISTS ix_tickets_company_updated
+            ON tickets (company_id, updated_utc DESC, id DESC)
+            WHERE is_deleted = FALSE AND company_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS ix_tickets_requester_updated
+            ON tickets (requester_contact_id, updated_utc DESC, id DESC)
+            WHERE is_deleted = FALSE;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

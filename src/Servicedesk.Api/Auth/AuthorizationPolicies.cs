@@ -22,11 +22,20 @@ public static class AuthorizationPolicies
             .RequireMfaComplete()
             .RequireRole("Admin", "Agent"));
 
+        // v0.1.0 — the customer-portal gate. Customer role ONLY (agents and
+        // admins use the agent UI; they never act through portal endpoints)
+        // and, unlike the agent policies, an amr WHITELIST: TOTP is mandatory
+        // for customers, so only a session that completed the TOTP challenge
+        // ("pwd+mfa") passes. A password-only ("pwd") or pending session is
+        // refused — enrollment runs through the dedicated portal endpoints
+        // that read the principal directly.
         options.AddPolicy(RequireCustomer, p => p
             .AddAuthenticationSchemes(SessionAuthenticationHandler.SchemeName)
             .RequireAuthenticatedUser()
-            .RequireMfaComplete()
-            .RequireRole("Admin", "Agent", "Customer"));
+            .RequireRole("Customer")
+            .RequireAssertion(ctx =>
+                ctx.User.FindFirst(SessionAuthenticationHandler.AmrClaimType)?.Value
+                    == SessionAuthenticationHandler.AmrPasswordPlusMfa));
 
         return options;
     }

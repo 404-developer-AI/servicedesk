@@ -87,6 +87,12 @@ public static class ProtectedSecretKeys
     /// zero data retention (a separate, admin-confirmed precondition).
     public const string ClaudeApiKey = "Claude.ApiKey";
 
+    /// v0.1.0 — Cloudflare Turnstile secret key used by the customer-portal
+    /// registration endpoint to verify widget tokens (siteverify). Stored
+    /// here like every other integration secret — deliberately not an
+    /// environment variable. Write-only from the admin UI.
+    public const string PortalTurnstileSecret = "Portal.TurnstileSecret";
+
     /// Encrypted-secret key for a per-agent Telavox CAPI token. Returns a
     /// stable string built from the SD user-id so the protected_secrets
     /// row can be located on every poll and cleared on de-provision.

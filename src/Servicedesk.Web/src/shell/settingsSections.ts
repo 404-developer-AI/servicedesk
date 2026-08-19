@@ -20,6 +20,7 @@ import {
   Ticket,
   Timer,
   UserCog,
+  UserRound,
   Users,
   Zap,
   type LucideIcon,
@@ -114,6 +115,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       "Agents and admins — local accounts, M365-linked accounts, role assignment, activate / deactivate.",
     icon: UserCog,
+  },
+  {
+    slug: "portal",
+    label: "Customer portal",
+    description:
+      "Self-registration with approval, invitations, customer accounts, Turnstile anti-bot and the portal mail templates.",
+    icon: UserRound,
     separatorAfter: true,
   },
   {

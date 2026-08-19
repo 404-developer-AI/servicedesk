@@ -321,6 +321,13 @@ const EVENT_CONFIG: Record<string, EventConfig> = {
     dotColor: "bg-sky-400",
     label: "Mail received",
   },
+  // v0.1.0 — a customer wrote this from the portal (new-ticket
+  // description or reply). Customer-visible article like an inbound mail.
+  PortalMessage: {
+    icon: MessageCircle,
+    dotColor: "bg-teal-500",
+    label: "Portal message",
+  },
   MailSent: {
     icon: Send,
     dotColor: "bg-sky-500",
@@ -458,6 +465,7 @@ const CARD_ACCENT: Record<string, string> = {
   Mail: "border-l-sky-500/50",
   Note: "border-l-blue-500/50",
   Comment: "border-l-emerald-500/40",
+  PortalMessage: "border-l-teal-500/50",
 };
 
 function parseMetadata(json: string): Record<string, unknown> {

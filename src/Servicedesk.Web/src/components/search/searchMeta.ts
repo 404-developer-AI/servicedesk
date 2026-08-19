@@ -25,6 +25,7 @@ export type SearchKind =
   | "employee-feedback"
   | "checklist-items"
   | "checklist-templates"
+  | "portal-accounts"
   | (string & {});
 
 export const KIND_LABELS: Record<string, string> = {
@@ -48,6 +49,7 @@ export const KIND_LABELS: Record<string, string> = {
   "employee-feedback": "Employee Feedback",
   "checklist-items": "Checklist items",
   "checklist-templates": "Checklist templates",
+  "portal-accounts": "Portal accounts",
 };
 
 export const KIND_ORDER: string[] = [
@@ -71,6 +73,7 @@ export const KIND_ORDER: string[] = [
   "employee-feedback",
   "checklist-items",
   "checklist-templates",
+  "portal-accounts",
 ];
 
 export function labelForKind(kind: string): string {
@@ -134,6 +137,10 @@ export function hitHref(hit: SearchHit): string {
       return `/tickets/${hit.entityId}?checklist=${hit.meta?.checklistId ?? ""}`;
     case "checklist-templates":
       return `/settings/tickets?tab=checklists&template=${hit.entityId}`;
+    case "portal-accounts":
+      // A portal account hit opens the linked contact (where the account
+      // card lives); unlinked registrations land on Settings → Portal.
+      return hit.meta?.contactId ? `/contacts/${hit.meta.contactId}` : "/settings/portal";
     default:
       return "#";
   }

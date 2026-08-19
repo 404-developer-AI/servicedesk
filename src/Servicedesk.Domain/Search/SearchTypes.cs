@@ -29,6 +29,9 @@ public static class SearchSourceKind
     // admin template catalogue.
     public const string ChecklistItems = "checklist-items";
     public const string ChecklistTemplates = "checklist-templates";
+    // v0.1.0 - customer-portal accounts (registrations, invited users);
+    // hit -> the linked contact. Agents/admins only.
+    public const string PortalAccounts = "portal-accounts";
 }
 
 /// Per-user feature flags that gate availability of certain search sources.

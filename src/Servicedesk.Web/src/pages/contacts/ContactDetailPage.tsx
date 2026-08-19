@@ -32,6 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AddContactLinkDialog } from "@/components/AddContactLinkDialog";
 import { EntityTicketsList } from "@/components/EntityTicketsList";
+import { PortalAccountCard } from "@/components/portal/PortalAccountCard";
 import {
   Dialog,
   DialogContent,
@@ -205,11 +206,15 @@ export function ContactDetailPage({ contactId }: Props) {
       {tab === "overview" && (
         <div className="grid gap-6 lg:grid-cols-[2fr_3fr]">
           <ContactEditCard contact={contact} />
-          <CompanyLinksCard
-            contactId={contact.id}
-            companies={companies ?? []}
-            loading={loadingCompanies}
-          />
+          <div className="space-y-6">
+            <CompanyLinksCard
+              contactId={contact.id}
+              companies={companies ?? []}
+              loading={loadingCompanies}
+            />
+            {/* v0.1.0 — customer-portal account state + invite/lifecycle actions. */}
+            <PortalAccountCard contact={contact} />
+          </div>
         </div>
       )}
 

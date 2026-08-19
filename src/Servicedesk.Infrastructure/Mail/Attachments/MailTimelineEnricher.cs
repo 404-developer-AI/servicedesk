@@ -48,6 +48,7 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
                     break;
                 case "Note":
                 case "Comment":
+                case "PortalMessage":
                     eventIds.Add(evt.Id);
                     break;
             }
@@ -89,7 +90,7 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
             // bodies already use /api/.../attachments/{id} URLs (the editor
             // view), so there's no cid-rewrite to do; just surface the
             // non-inline rows in metadata for the timeline-strip.
-            if (evt.EventType == "Note" || evt.EventType == "Comment" || evt.EventType == "MailSent")
+            if (evt.EventType == "Note" || evt.EventType == "Comment" || evt.EventType == "MailSent" || evt.EventType == "PortalMessage")
             {
                 var e = TryAppendEventAttachments(detail.Ticket.Id, evt, batch);
                 // Outbound mail also gets the From/To/Cc/Bcc header surfaced.
