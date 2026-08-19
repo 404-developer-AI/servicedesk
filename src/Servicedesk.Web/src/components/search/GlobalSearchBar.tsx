@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/authStore";
 import { useServerTime, toServerLocalDate } from "@/hooks/useServerTime";
 import { KIND_ORDER, labelForKind, hitHref } from "@/components/search/searchMeta";
+import { ContactHoverCard } from "@/components/ContactHoverCard";
 
 // Fallback until the first response carries the server-configured value
 // (Search.DebounceMs). Clamped so a bad setting can't freeze the box.
@@ -307,7 +308,9 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
                           const subtitle = [requester, company].filter(Boolean).join(" · ");
                           const statusName = hit.meta?.statusName;
                           const statusColor = hit.meta?.statusColor;
-                          return (
+                          // For contact hits the whole row is the hover-card
+                          // trigger (a name-only trigger is too easy to miss).
+                          const item = (
                             <Command.Item
                               key={`${hit.kind}:${hit.entityId}`}
                               value={`${hit.kind}:${hit.entityId}`}
@@ -343,6 +346,16 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
                                 </span>
                               )}
                             </Command.Item>
+                          );
+                          return hit.kind === "contacts" ? (
+                            <ContactHoverCard
+                              key={`${hit.kind}:${hit.entityId}`}
+                              contactId={hit.entityId}
+                            >
+                              {item}
+                            </ContactHoverCard>
+                          ) : (
+                            item
                           );
                         })}
                       </Command.Group>
