@@ -33,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { AddContactLinkDialog } from "@/components/AddContactLinkDialog";
 import { EntityTicketsList } from "@/components/EntityTicketsList";
 import { PortalAccountCard } from "@/components/portal/PortalAccountCard";
+import { portalAdminApi } from "@/lib/portal-api";
 import {
   Dialog,
   DialogContent,
@@ -351,11 +352,6 @@ function ContactEditCard({ contact }: { contact: Contact }) {
           <DefinitionRow label="Mobile phone" value={contact.mobilePhone} />
           <DefinitionRow label="Job title" value={contact.jobTitle} />
           <DefinitionRow
-            label="Member role"
-            value={contact.companyRole}
-            hint="Used later by the customer portal (Member / TicketManager)."
-          />
-          <DefinitionRow
             label="Status"
             value={contact.isActive ? "Active" : "Inactive"}
           />
@@ -426,9 +422,9 @@ function CompanyLinksCard({
         </p>
       ) : (
         <div className="mt-3 space-y-3">
-          <RoleGroup title="Primary" items={primary ? [primary] : []} />
-          <RoleGroup title="Secondary" items={secondary} />
-          <RoleGroup title="Supplier" items={supplier} />
+          <RoleGroup title="Primary" items={primary ? [primary] : []} contactId={contactId} />
+          <RoleGroup title="Secondary" items={secondary} contactId={contactId} />
+          <RoleGroup title="Supplier" items={supplier} contactId={contactId} />
         </div>
       )}
       {primary && (
@@ -457,6 +453,52 @@ function CompanyLinksCard({
         />
       )}
     </section>
+  );
+}
+
+/// Member / Ticket manager switch under a company link — what this contact
+/// may see in the customer portal for that company.
+function PortalRoleToggle({ contactId, option }: { contactId: string; option: ContactCompanyOption }) {
+  const qc = useQueryClient();
+  const current = option.portalRole === "TicketManager" ? "TicketManager" : "Member";
+  const save = useMutation({
+    mutationFn: (role: "Member" | "TicketManager") => portalAdminApi.setPortalRole(contactId, option.companyId, role),
+    onSuccess: (_r, role) => {
+      qc.invalidateQueries({ queryKey: ["contact-companies", contactId] });
+      qc.invalidateQueries({ queryKey: ["contact", contactId] });
+      qc.invalidateQueries({ queryKey: ["portal-admin"] });
+      toast.success(`Portal role for ${option.companyShortName || option.companyName}: ${role === "TicketManager" ? "Ticket manager" : "Member"}`);
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? "Could not change the portal role" : "Could not change the portal role"),
+  });
+  return (
+    <div className="mt-1 flex items-center gap-2 pl-1 text-[11px] text-muted-foreground">
+      <span>Portal:</span>
+      <div className="inline-flex rounded-md border border-glass bg-glass p-0.5" role="radiogroup" aria-label="Portal role">
+        {(
+          [
+            { v: "Member", label: "Member", title: "Sees only the tickets they opened at this company" },
+            { v: "TicketManager", label: "Ticket manager", title: "Sees every ticket of this company" },
+          ] as const
+        ).map((opt) => (
+          <button
+            key={opt.v}
+            type="button"
+            role="radio"
+            aria-checked={current === opt.v}
+            title={opt.title}
+            disabled={save.isPending}
+            onClick={() => current !== opt.v && save.mutate(opt.v)}
+            className={cn(
+              "rounded px-2 py-0.5 text-[11px] font-medium transition-colors",
+              current === opt.v ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -605,13 +647,18 @@ function MovePrimaryDialog({
 function RoleGroup({
   title,
   items,
+  contactId,
 }: {
   title: string;
   items: ContactCompanyOption[];
+  contactId: string;
 }) {
   if (items.length === 0) return null;
   const role = title.toLowerCase() as ContactCompanyRole;
   const badge = ROLE_BADGE[role];
+  // v0.1.0 — customer-portal role per link (primary + secondary only;
+  // supplier links never grant portal access).
+  const portalEditable = role === "primary" || role === "secondary";
   return (
     <div>
       <div className="mb-1.5 flex items-center gap-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -641,6 +688,7 @@ function RoleGroup({
               </span>
               <ArrowRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
             </Link>
+            {portalEditable && <PortalRoleToggle contactId={contactId} option={c} />}
           </li>
         ))}
       </ul>

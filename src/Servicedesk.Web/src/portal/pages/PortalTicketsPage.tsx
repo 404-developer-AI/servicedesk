@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { portalTicketApi } from "@/lib/portal-api";
 import { cn } from "@/lib/utils";
-import { PriorityDot, StatusPill, usePortalDates, usePortalMe } from "@/portal/portalShared";
+import { PriorityDot, StatusPill, usePortalCompany, usePortalDates } from "@/portal/portalShared";
 import { usePortalConfig } from "@/portal/PortalAuthLayout";
 
 type Filter = "open" | "closed" | "all";
@@ -19,13 +19,21 @@ const FILTERS: { key: Filter; label: string }[] = [
 
 export function PortalTicketsPage() {
   const navigate = useNavigate();
-  const me = usePortalMe();
+  const company = usePortalCompany();
   const config = usePortalConfig();
   const dates = usePortalDates();
   const [filter, setFilter] = useState<Filter>("open");
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
-  const [page, setPage] = useState(1);
+  // Page is kept per company so switching company always starts at page 1
+  // (and returns to where you were when switching back).
+  const [pages, setPages] = useState<Record<string, number>>({});
+
+  const activeCompanyId = company.active?.id ?? null;
+  const pageKey = activeCompanyId ?? "";
+  const page = pages[pageKey] ?? 1;
+  const setPage = (next: number | ((p: number) => number)) =>
+    setPages((prev) => ({ ...prev, [pageKey]: typeof next === "function" ? next(prev[pageKey] ?? 1) : next }));
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -33,17 +41,19 @@ export function PortalTicketsPage() {
       setPage(1);
     }, 250);
     return () => clearTimeout(t);
+    // setPage is a stable wrapper around setPages; pageKey changes are handled by the per-company map.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
-
   const list = useQuery({
-    queryKey: ["portal", "tickets", filter, debounced, page],
-    queryFn: () => portalTicketApi.list(filter, debounced, page),
+    queryKey: ["portal", "tickets", activeCompanyId, filter, debounced, page],
+    queryFn: () => portalTicketApi.list(filter, debounced, page, activeCompanyId),
     placeholderData: keepPreviousData,
+    enabled: !company.isLoading,
   });
 
   const data = list.data;
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
-  const companyScope = data?.scope === "company" || me.user?.canSeeCompanyTickets;
+  const companyScope = data?.scope === "company" || company.active?.canSeeCompanyTickets === true;
   const newTicketEnabled = config.data?.enabled ? config.data.newTicketEnabled : false;
 
   return (
@@ -52,9 +62,12 @@ export function PortalTicketsPage() {
         <div>
           <h1 className="font-display text-display-sm tracking-tight">{companyScope ? "Tickets" : "My tickets"}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {companyScope
-              ? `Every ticket for ${me.user?.companyName ?? "your company"}, including those opened by colleagues.`
+            {company.active
+              ? companyScope
+                ? `Every ticket of ${company.active.name}, including those opened by colleagues.`
+                : `The requests you opened for ${company.active.name}.`
               : "The requests you opened with the service desk."}
+            {company.companies.length > 1 ? " Switch company in the bar above." : ""}
           </p>
         </div>
         {newTicketEnabled && (

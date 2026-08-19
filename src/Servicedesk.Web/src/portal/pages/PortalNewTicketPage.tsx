@@ -8,13 +8,13 @@ import { apiErrorMessage } from "@/lib/api";
 import { portalTicketApi } from "@/lib/portal-api";
 import { PortalComposer, htmlHasText, type PendingFile } from "@/portal/PortalComposer";
 import { usePortalConfig } from "@/portal/PortalAuthLayout";
-import { usePortalMe } from "@/portal/portalShared";
+import { usePortalCompany } from "@/portal/portalShared";
 
 export function PortalNewTicketPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const config = usePortalConfig();
-  const me = usePortalMe();
+  const company = usePortalCompany();
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [files, setFiles] = useState<PendingFile[]>([]);
@@ -36,7 +36,7 @@ export function PortalNewTicketPage() {
     }
     setBusy("Creating ticket…");
     try {
-      const created = await portalTicketApi.create(s, body);
+      const created = await portalTicketApi.create(s, body, company.active?.id ?? null);
       let failed = 0;
       if (created.messageEventId !== null) {
         for (let i = 0; i < files.length; i++) {
@@ -67,7 +67,8 @@ export function PortalNewTicketPage() {
       <div>
         <h1 className="font-display text-display-sm tracking-tight">New ticket</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Tell us what you need{me.user?.companyName ? ` — we open it for ${me.user.companyName}` : ""}. You receive updates by mail and can follow the ticket here.
+          Tell us what you need{company.active ? ` — we open it for ${company.active.name}` : ""}. You receive updates by mail and can follow the ticket here.
+          {company.companies.length > 1 ? " Wrong company? Switch it in the bar above first." : ""}
         </p>
       </div>
 

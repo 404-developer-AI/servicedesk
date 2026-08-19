@@ -90,8 +90,19 @@ public sealed record PortalAccountRow(
     DateTime CreatedUtc,
     DateTime UpdatedUtc);
 
+/// One company a customer may act in, with the portal role for that link
+/// (Member = own tickets at that company, TicketManager = every ticket of
+/// that company). Supplier links never appear here.
+public sealed record PortalCompanyAccess(Guid CompanyId, string CompanyName, string Role, bool IsPrimary)
+{
+    public bool IsTicketManager => string.Equals(Role, "TicketManager", StringComparison.Ordinal);
+}
+
+/// A requested (company, portal role) pair on approve / invite.
+public sealed record PortalCompanyLinkRequest(Guid CompanyId, string Role);
+
 /// Minimal authenticated-viewer projection resolved per request: which
-/// contact / company / role the customer session maps onto. Null contact
+/// contact and companies the customer session maps onto. Null contact
 /// means the account is not linked yet (must never happen for Active, but
 /// the query layer treats it as "sees nothing").
 public sealed record PortalViewer(
@@ -102,13 +113,25 @@ public sealed record PortalViewer(
     Guid? ContactId,
     string? ContactFirstName,
     string? ContactLastName,
-    string CompanyRole,
-    Guid? CompanyId,
-    string? CompanyName)
+    IReadOnlyList<PortalCompanyAccess> Companies)
 {
-    public bool IsTicketManager =>
-        string.Equals(CompanyRole, "TicketManager", StringComparison.Ordinal) && CompanyId.HasValue;
+    public PortalCompanyAccess? Company(Guid companyId) => Companies.FirstOrDefault(c => c.CompanyId == companyId);
+    public Guid[] AllCompanyIds => Companies.Select(c => c.CompanyId).ToArray();
+    public Guid[] ManagerCompanyIds => Companies.Where(c => c.IsTicketManager).Select(c => c.CompanyId).ToArray();
+    /// Default company for the list/new-ticket when the client sent none:
+    /// the primary link, else the first.
+    public PortalCompanyAccess? DefaultCompany => Companies.FirstOrDefault(c => c.IsPrimary) ?? Companies.FirstOrDefault();
 }
+
+/// Row used by the viewer lookup before it is folded into PortalViewer.
+public sealed record PortalViewerBase(
+    Guid UserId,
+    string Email,
+    string DisplayName,
+    string Status,
+    Guid? ContactId,
+    string? ContactFirstName,
+    string? ContactLastName);
 
 public sealed record PortalTokenRow(
     Guid Id,
@@ -123,7 +146,8 @@ public sealed record PortalTokenRow(
     DateTime CreatedUtc,
     DateTime ExpiresUtc,
     DateTime? UsedUtc,
-    DateTime? RevokedUtc)
+    DateTime? RevokedUtc,
+    string? CompanyLinksJson = null)
 {
     public bool IsUsable(DateTime nowUtc) => UsedUtc is null && RevokedUtc is null && ExpiresUtc > nowUtc;
 }
@@ -142,4 +166,5 @@ public sealed record PortalInvitationRow(
     DateTime CreatedUtc,
     DateTime ExpiresUtc,
     DateTime? UsedUtc,
-    DateTime? RevokedUtc);
+    DateTime? RevokedUtc,
+    string? CompanyLinksJson = null);

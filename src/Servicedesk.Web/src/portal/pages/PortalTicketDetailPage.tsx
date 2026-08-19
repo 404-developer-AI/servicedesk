@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Building2, Clock, FileText, Lock, MessageSquare, Paperclip, User } from "lucide-react";
@@ -8,7 +8,7 @@ import { ApiError, apiErrorMessage } from "@/lib/api";
 import { portalTicketApi, type PortalMessage } from "@/lib/portal-api";
 import { cn } from "@/lib/utils";
 import { PortalComposer, htmlHasText, type PendingFile } from "@/portal/PortalComposer";
-import { PriorityDot, StatusPill, formatBytes, usePortalDates } from "@/portal/portalShared";
+import { PriorityDot, StatusPill, formatBytes, usePortalCompany, usePortalDates } from "@/portal/portalShared";
 
 export function PortalTicketDetailPage({ ticketId }: { ticketId: string }) {
   const qc = useQueryClient();
@@ -21,6 +21,16 @@ export function PortalTicketDetailPage({ ticketId }: { ticketId: string }) {
   const [reply, setReply] = useState("");
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  // A deep link may open a ticket of another of the customer's companies;
+  // follow it with the header switcher so "back to tickets" stays coherent.
+  const company = usePortalCompany();
+  const ticketCompanyId = detail.data?.ticket.companyId ?? null;
+  useEffect(() => {
+    if (ticketCompanyId && company.active && ticketCompanyId !== company.active.id && company.companies.some((c) => c.id === ticketCompanyId)) {
+      company.select(ticketCompanyId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticketCompanyId]);
 
   async function submitReply() {
     if (!htmlHasText(reply)) {

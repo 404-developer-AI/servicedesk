@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { toServerLocal, toServerLocalDate, useServerTime } from "@/hooks/useServerTime";
 import { useTheme } from "@/app/ThemeProvider";
 import { colorPillStyle } from "@/lib/colorPill";
@@ -22,6 +22,63 @@ export function usePortalMe() {
 export function useInvalidatePortalMe() {
   const qc = useQueryClient();
   return useCallback(() => qc.invalidateQueries({ queryKey: PORTAL_ME_QK }), [qc]);
+}
+
+// ---- active company --------------------------------------------------------
+// The portal shows ONE company at a time; the header switcher changes it.
+// The choice is kept per user in localStorage (UX only — the server
+// re-validates the company on every call) and falls back to the primary
+// link. A tiny external store so every page sees the same value.
+
+const ACTIVE_COMPANY_EVENT = "sd-portal-company-changed";
+function storageKey(userId: string) {
+  return `sd-portal-company:${userId}`;
+}
+function readStored(userId: string): string | null {
+  try {
+    return window.localStorage.getItem(storageKey(userId));
+  } catch {
+    return null;
+  }
+}
+export function setActivePortalCompany(userId: string, companyId: string) {
+  try {
+    window.localStorage.setItem(storageKey(userId), companyId);
+  } catch {
+    // storage unavailable — in-memory only for this tab
+  }
+  window.dispatchEvent(new CustomEvent(ACTIVE_COMPANY_EVENT, { detail: { userId, companyId } }));
+}
+
+function subscribeActiveCompany(onChange: () => void) {
+  window.addEventListener(ACTIVE_COMPANY_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(ACTIVE_COMPANY_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+export function usePortalCompany() {
+  const me = usePortalMe();
+  const user = me.user;
+  const userId = user?.id ?? null;
+  const stored = useSyncExternalStore(
+    subscribeActiveCompany,
+    () => (userId ? readStored(userId) : null),
+    () => null,
+  );
+
+  const companies = user?.companies ?? [];
+  const active =
+    companies.find((c) => c.id === stored) ?? companies.find((c) => c.isPrimary) ?? companies[0] ?? null;
+  const select = useCallback(
+    (companyId: string) => {
+      if (user) setActivePortalCompany(user.id, companyId);
+    },
+    [user],
+  );
+  return { companies, active, select, isLoading: me.isLoading, user };
 }
 
 /// Server-anchored date formatting for portal pages. Falls back to the

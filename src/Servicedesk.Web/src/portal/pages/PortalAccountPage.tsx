@@ -31,12 +31,30 @@ export function PortalAccountPage() {
       <section className="glass-card divide-y divide-glass">
         <Row icon={User} label="Name" value={user?.displayName || "—"} />
         <Row icon={Mail} label="Email" value={user?.email || "—"} />
-        <Row icon={Building2} label="Company" value={user?.companyName || "Not linked to a company"} />
-        <Row
-          icon={ShieldCheck}
-          label="Access"
-          value={user?.canSeeCompanyTickets ? "Ticket manager — you see every ticket of your company" : "Member — you see the tickets you opened"}
-        />
+      </section>
+
+      <section className="glass-card p-5">
+        <h2 className="mb-2 flex items-center gap-2 text-sm font-medium">
+          <Building2 className="h-4 w-4 text-muted-foreground" /> Companies
+        </h2>
+        {user && user.companies.length > 0 ? (
+          <ul className="divide-y divide-glass text-sm">
+            {user.companies.map((c) => (
+              <li key={c.id} className="flex items-center justify-between gap-3 py-2">
+                <span className="min-w-0 truncate">
+                  {c.name}
+                  {c.isPrimary ? <span className="ml-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">primary</span> : null}
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  {c.canSeeCompanyTickets ? "Ticket manager — every ticket" : "Member — your tickets"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-muted-foreground">Not linked to a company — you see only the tickets you opened yourself.</p>
+        )}
       </section>
 
       <section className="glass-card space-y-4 p-5">

@@ -65,20 +65,28 @@ export type PortalLoginResponse = {
   enrollmentRequired: boolean;
 };
 
+export type PortalCompanyAccess = {
+  id: string;
+  name: string;
+  role: "Member" | "TicketManager";
+  isPrimary: boolean;
+  canSeeCompanyTickets: boolean;
+};
+
 export type PortalMeUser = {
   id: string;
   email: string;
   displayName: string;
   amr: string;
   twoFactorEnrolled: boolean;
-  companyName: string | null;
-  companyRole: "Member" | "TicketManager";
-  canSeeCompanyTickets: boolean;
+  /// Companies the customer may act in (primary first). The portal shows
+  /// one company at a time — see usePortalCompany().
+  companies: PortalCompanyAccess[];
 };
 
 export type PortalMeResponse = { enabled: boolean; user: PortalMeUser | null; serverTimeUtc: string };
 
-export type InvitationInfo = { email: string; displayName: string; companyName: string | null };
+export type InvitationInfo = { email: string; displayName: string; companyName: string | null; companyNames: string[] };
 
 export const portalAuthApi = {
   register: (email: string, password: string, displayName: string, turnstileToken: string | null) =>
@@ -132,6 +140,8 @@ export type PortalTicketList = {
   total: number;
   page: number;
   pageSize: number;
+  companyId: string | null;
+  companyName: string | null;
   scope: "company" | "own";
 };
 
@@ -164,6 +174,7 @@ export type PortalTicketDetail = {
     status: PortalStatus;
     priority: PortalPriority;
     requester: PortalRequester;
+    companyId: string | null;
     companyName: string | null;
     source: string;
     createdUtc: string;
@@ -181,16 +192,18 @@ export type PortalTicketDetail = {
 export type PortalUploadResult = { id: string; url: string; mimeType: string; size: number; filename: string };
 
 export const portalTicketApi = {
-  list: (filter: "open" | "closed" | "all", search: string, page: number) => {
+  list: (filter: "open" | "closed" | "all", search: string, page: number, companyId: string | null) => {
     const qs = new URLSearchParams({ filter, page: String(page) });
     if (search.trim()) qs.set("search", search.trim());
+    if (companyId) qs.set("companyId", companyId);
     return request<PortalTicketList>("GET", `/api/portal/tickets/?${qs.toString()}`);
   },
   get: (id: string) => request<PortalTicketDetail>("GET", `/api/portal/tickets/${id}`),
-  create: (subject: string, bodyHtml: string) =>
+  create: (subject: string, bodyHtml: string, companyId: string | null) =>
     request<{ id: string; number: number; messageEventId: number | null }>("POST", "/api/portal/tickets/", {
       subject,
       bodyHtml,
+      companyId,
     }),
   reply: (id: string, bodyHtml: string) =>
     request<{ eventId: number }>("POST", `/api/portal/tickets/${id}/messages`, { bodyHtml }),
@@ -276,6 +289,10 @@ export type PortalAdminStatus = {
 
 export type SuggestedCompany = { id: string; name: string } | null;
 
+/// One (company, portal role) pair on approve / invite; the first entry
+/// becomes the contact's primary link.
+export type PortalCompanyLinkInput = { companyId: string; role: "Member" | "TicketManager" };
+
 export const portalAdminApi = {
   status: () => request<PortalAdminStatus>("GET", "/api/portal/admin/status"),
   listAccounts: (statuses: PortalAccountStatus[] | null, search: string) => {
@@ -297,8 +314,10 @@ export const portalAdminApi = {
       "GET",
       `/api/portal/admin/accounts/by-ticket/${ticketId}`,
     ),
-  approve: (userId: string, companyId: string | null, companyRole: "Member" | "TicketManager") =>
-    request<{ account: PortalAccount }>("POST", `/api/portal/admin/accounts/${userId}/approve`, { companyId, companyRole }),
+  approve: (userId: string, companies: PortalCompanyLinkInput[]) =>
+    request<{ account: PortalAccount }>("POST", `/api/portal/admin/accounts/${userId}/approve`, { companies }),
+  setPortalRole: (contactId: string, companyId: string, role: "Member" | "TicketManager") =>
+    request<void>("PUT", `/api/portal/admin/contacts/${contactId}/companies/${companyId}/role`, { role }),
   reject: (userId: string, reason: string) =>
     request<{ account: PortalAccount }>("POST", `/api/portal/admin/accounts/${userId}/reject`, { reason }),
   deactivate: (userId: string) => request<{ account: PortalAccount }>("POST", `/api/portal/admin/accounts/${userId}/deactivate`),
@@ -316,13 +335,8 @@ export const portalAdminApi = {
     const q = qs.toString();
     return request<PortalInvitation[]>("GET", `/api/portal/admin/invitations${q ? `?${q}` : ""}`);
   },
-  invite: (input: {
-    email?: string;
-    displayName?: string;
-    contactId?: string | null;
-    companyId?: string | null;
-    companyRole: "Member" | "TicketManager";
-  }) => request<{ invitationId: string }>("POST", "/api/portal/admin/invitations", input),
+  invite: (input: { email?: string; displayName?: string; contactId?: string | null; companies: PortalCompanyLinkInput[] }) =>
+    request<{ invitationId: string }>("POST", "/api/portal/admin/invitations", input),
   resendInvitation: (id: string) => request<{ ok: boolean }>("POST", `/api/portal/admin/invitations/${id}/resend`),
   revokeInvitation: (id: string) => request<void>("DELETE", `/api/portal/admin/invitations/${id}`),
   turnstileSecretStatus: () => request<{ configured: boolean }>("GET", "/api/portal/admin/turnstile/secret"),

@@ -276,20 +276,49 @@ public sealed class PortalAccountRepository : IPortalAccountRepository
                     pa.status               AS Status,
                     u.contact_id            AS ContactId,
                     c.first_name            AS ContactFirstName,
-                    c.last_name             AS ContactLastName,
-                    COALESCE(c.company_role, 'Member') AS CompanyRole,
-                    co.id                   AS CompanyId,
-                    co.name                 AS CompanyName
+                    c.last_name             AS ContactLastName
             FROM users u
             JOIN portal_accounts pa        ON pa.user_id = u.id
             LEFT JOIN contacts c           ON c.id = u.contact_id
-            LEFT JOIN contact_companies cc ON cc.contact_id = c.id AND cc.role = 'primary'
-            LEFT JOIN companies co         ON co.id = cc.company_id
             WHERE u.id = @userId AND u.role_name = 'Customer'
             """;
+        // Companies the customer may act in: primary + secondary links only
+        // (supplier never grants portal access). NULL portal_role = Member.
+        const string companiesSql = """
+            SELECT  cc.company_id                       AS CompanyId,
+                    co.name                             AS CompanyName,
+                    COALESCE(cc.portal_role, 'Member')  AS Role,
+                    (cc.role = 'primary')               AS IsPrimary
+            FROM contact_companies cc
+            JOIN companies co ON co.id = cc.company_id
+            WHERE cc.contact_id = @contactId
+              AND cc.role IN ('primary','secondary')
+              AND co.is_active = TRUE
+            ORDER BY (cc.role = 'primary') DESC, co.name
+            """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        return await conn.QuerySingleOrDefaultAsync<PortalViewer>(new CommandDefinition(
+        var row = await conn.QuerySingleOrDefaultAsync<PortalViewerBase>(new CommandDefinition(
             sql, new { userId }, cancellationToken: ct));
+        if (row is null) return null;
+        IReadOnlyList<PortalCompanyAccess> companies = Array.Empty<PortalCompanyAccess>();
+        if (row.ContactId is not null)
+        {
+            companies = (await conn.QueryAsync<PortalCompanyAccess>(new CommandDefinition(
+                companiesSql, new { contactId = row.ContactId }, cancellationToken: ct))).ToList();
+        }
+        return new PortalViewer(row.UserId, row.Email, row.DisplayName, row.Status, row.ContactId,
+            row.ContactFirstName, row.ContactLastName, companies);
+    }
+
+    public async Task<bool> SetPortalRoleAsync(Guid contactId, Guid companyId, string portalRole, CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var n = await conn.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE contact_companies SET portal_role = @portalRole, updated_utc = now()
+             WHERE contact_id = @contactId AND company_id = @companyId
+            """, new { contactId, companyId, portalRole }, cancellationToken: ct));
+        return n == 1;
     }
 
     public async Task SetContactCompanyRoleAsync(Guid contactId, string companyRole, CancellationToken ct)
@@ -315,14 +344,15 @@ public sealed class PortalAccountRepository : IPortalAccountRepository
                 created_utc         AS CreatedUtc,
                 expires_utc         AS ExpiresUtc,
                 used_utc            AS UsedUtc,
-                revoked_utc         AS RevokedUtc
+                revoked_utc         AS RevokedUtc,
+                company_links::text AS CompanyLinksJson
         FROM portal_tokens
         """;
 
     public async Task<Guid> CreateTokenAsync(
         string kind, byte[] tokenHash, string email, Guid? userId, Guid? contactId,
         Guid? companyId, string? companyRole, string displayName, Guid? createdByUserId,
-        DateTime expiresUtc, CancellationToken ct)
+        DateTime expiresUtc, CancellationToken ct, string? companyLinksJson = null)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
@@ -334,12 +364,12 @@ public sealed class PortalAccountRepository : IPortalAccountRepository
         var id = await conn.ExecuteScalarAsync<Guid>(new CommandDefinition(
             """
             INSERT INTO portal_tokens (kind, token_hash, email, user_id, contact_id, company_id, company_role,
-                                       display_name, created_by_user_id, expires_utc)
+                                       display_name, created_by_user_id, expires_utc, company_links)
             VALUES (@kind, @tokenHash, @email::citext, @userId, @contactId, @companyId, @companyRole,
-                    @displayName, @createdBy, @expiresUtc)
+                    @displayName, @createdBy, @expiresUtc, @companyLinksJson::jsonb)
             RETURNING id
             """,
-            new { kind, tokenHash, email, userId, contactId, companyId, companyRole, displayName, createdBy = createdByUserId, expiresUtc },
+            new { kind, tokenHash, email, userId, contactId, companyId, companyRole, displayName, createdBy = createdByUserId, expiresUtc, companyLinksJson },
             tx, cancellationToken: ct));
         await tx.CommitAsync(ct);
         return id;
@@ -412,7 +442,8 @@ public sealed class PortalAccountRepository : IPortalAccountRepository
                     t.created_utc       AS CreatedUtc,
                     t.expires_utc       AS ExpiresUtc,
                     t.used_utc          AS UsedUtc,
-                    t.revoked_utc       AS RevokedUtc
+                    t.revoked_utc       AS RevokedUtc,
+                    t.company_links::text AS CompanyLinksJson
             FROM portal_tokens t
             LEFT JOIN companies co ON co.id = t.company_id
             LEFT JOIN users cb     ON cb.id = t.created_by_user_id

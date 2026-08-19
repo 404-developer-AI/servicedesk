@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Mail;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Domain.Companies;
 using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth;
@@ -54,7 +55,7 @@ public enum InviteOutcome { Sent, InvalidEmail, InvalidRole, EmailTaken, Contact
 
 public sealed record InviteResult(InviteOutcome Outcome, Guid? InvitationId = null);
 
-public sealed record InvitationInfo(TokenOutcome Outcome, string? Email = null, string? DisplayName = null, string? CompanyName = null);
+public sealed record InvitationInfo(TokenOutcome Outcome, string? Email = null, string? DisplayName = null, string? CompanyName = null, IReadOnlyList<string>? CompanyNames = null);
 
 public enum AcceptInviteOutcome { Created, Invalid, Expired, EmailTaken, WeakPassword, ContactHasAccount }
 
@@ -67,9 +68,14 @@ public interface IPortalAccountService
     Task<bool> IsPortalEnabledAsync(CancellationToken ct);
     Task<RegisterResult> RegisterAsync(RegisterCommand cmd, PortalCaller caller, CancellationToken ct);
     Task<VerifyEmailResult> VerifyEmailAsync(string rawToken, PortalCaller caller, CancellationToken ct);
-    Task<ApproveResult> ApproveAsync(Guid userId, Guid? companyId, string companyRole, PortalActor actor, CancellationToken ct);
+    /// <paramref name="companies"/>: the first entry becomes the primary link,
+    /// the rest secondary; each carries its own portal role.
+    Task<ApproveResult> ApproveAsync(Guid userId, IReadOnlyList<PortalCompanyLinkRequest> companies, PortalActor actor, CancellationToken ct);
     Task<bool> RejectAsync(Guid userId, string? reason, PortalActor actor, CancellationToken ct);
-    Task<InviteResult> InviteAsync(string email, string displayName, Guid? contactId, Guid? companyId, string companyRole, PortalActor actor, CancellationToken ct);
+    Task<InviteResult> InviteAsync(string email, string displayName, Guid? contactId, IReadOnlyList<PortalCompanyLinkRequest> companies, PortalActor actor, CancellationToken ct);
+    /// Sets the portal role of one existing company link (agent action from
+    /// the contact page). Returns false when the link does not exist.
+    Task<bool> SetPortalRoleAsync(Guid contactId, Guid companyId, string role, PortalActor actor, CancellationToken ct);
     Task<bool> ResendInvitationAsync(Guid invitationId, PortalActor actor, CancellationToken ct);
     Task<bool> RevokeInvitationAsync(Guid invitationId, PortalActor actor, CancellationToken ct);
     Task<InvitationInfo> DescribeInvitationAsync(string rawToken, CancellationToken ct);
@@ -343,41 +349,105 @@ public sealed class PortalAccountService : IPortalAccountService
 
     // ---- approval ---------------------------------------------------------
 
-    public async Task<ApproveResult> ApproveAsync(Guid userId, Guid? companyId, string companyRole, PortalActor actor, CancellationToken ct)
+    public async Task<ApproveResult> ApproveAsync(Guid userId, IReadOnlyList<PortalCompanyLinkRequest> companies, PortalActor actor, CancellationToken ct)
     {
-        if (!IsValidCompanyRole(companyRole)) return new(ApproveOutcome.InvalidRole);
+        var links = NormalizeLinks(companies);
+        if (links is null) return new(ApproveOutcome.InvalidRole);
         var account = await _accounts.GetByUserIdAsync(userId, ct);
         if (account is null) return new(ApproveOutcome.NotFound);
         if (account.Status != PortalAccountStatus.PendingApproval) return new(ApproveOutcome.NotPending);
-        if (companyId.HasValue && await _companies.GetCompanyAsync(companyId.Value, ct) is null)
-            return new(ApproveOutcome.InvalidCompany);
+        var names = new List<string>();
+        foreach (var l in links)
+        {
+            var c = await _companies.GetCompanyAsync(l.CompanyId, ct);
+            if (c is null) return new(ApproveOutcome.InvalidCompany);
+            names.Add($"{c.Name} ({RoleLabel(l.Role)})");
+        }
 
         var contact = await _contactLookup.EnsureByEmailAsync(account.Email, account.DisplayName, ct);
         var other = await _accounts.GetByContactIdAsync(contact.Id, ct);
         if (other is not null && other.UserId != userId) return new(ApproveOutcome.ContactAlreadyLinked);
 
-        if (companyId.HasValue && contact.PrimaryCompanyId != companyId)
-            await _companies.SetPrimaryCompanyAsync(contact.Id, companyId, ct);
-        await _accounts.SetContactCompanyRoleAsync(contact.Id, companyRole, ct);
+        await ApplyCompanyLinksAsync(contact, links, ct);
 
         if (!await _accounts.ApproveAsync(userId, contact.Id, actor.UserId, ct))
             return new(ApproveOutcome.NotPending);
 
-        var companyName = companyId.HasValue ? (await _companies.GetCompanyAsync(companyId.Value, ct))?.Name : null;
         await _audit.LogAsync(new AuditEvent(
             PortalEventTypes.Approved, actor.Email, actor.Role, Target: userId.ToString(),
             ClientIp: actor.Ip, UserAgent: actor.UserAgent,
-            Payload: new { email = account.Email, contactId = contact.Id, companyId, companyRole }), ct);
+            Payload: new { email = account.Email, contactId = contact.Id, companies = links }), ct);
 
         await TryPostSystemNoteAsync(account.ApprovalTicketId,
             $"Portal registration approved by {actor.Email}" +
-            (companyName is not null ? $" — company: {companyName}" : " — no company") +
-            $", role: {companyRole}.", ct);
+            (names.Count > 0 ? $" — access: {string.Join(", ", names)}." : " — no company linked."), ct);
 
         var loginLink = await BuildLinkAsync("/portal/login", null, ct);
         await _mail.SendAsync(PortalMailKind.Approved, account.Email, account.DisplayName, loginLink, null, ct);
         return new(ApproveOutcome.Approved, contact.Id);
     }
+
+    public async Task<bool> SetPortalRoleAsync(Guid contactId, Guid companyId, string role, PortalActor actor, CancellationToken ct)
+    {
+        if (!IsValidCompanyRole(role)) return false;
+        if (!await _accounts.SetPortalRoleAsync(contactId, companyId, role, ct)) return false;
+        // Keep the legacy per-contact value in step with the primary link.
+        var contact = await _companies.GetContactAsync(contactId, ct);
+        if (contact?.PrimaryCompanyId == companyId)
+            await _accounts.SetContactCompanyRoleAsync(contactId, role, ct);
+        await _audit.LogAsync(new AuditEvent(
+            "portal.contact.role_changed", actor.Email, actor.Role, Target: contactId.ToString(),
+            ClientIp: actor.Ip, UserAgent: actor.UserAgent, Payload: new { companyId, role }), ct);
+        return true;
+    }
+
+    /// Validates + de-duplicates the requested links (first wins per company).
+    /// Null = an invalid role was supplied.
+    private static List<PortalCompanyLinkRequest>? NormalizeLinks(IReadOnlyList<PortalCompanyLinkRequest>? companies)
+    {
+        var result = new List<PortalCompanyLinkRequest>();
+        foreach (var c in companies ?? Array.Empty<PortalCompanyLinkRequest>())
+        {
+            if (c.CompanyId == Guid.Empty) continue;
+            if (!IsValidCompanyRole(c.Role)) return null;
+            if (result.Any(r => r.CompanyId == c.CompanyId)) continue;
+            result.Add(new PortalCompanyLinkRequest(c.CompanyId, c.Role));
+        }
+        return result;
+    }
+
+    /// Links the contact to the requested companies: the first becomes (or
+    /// stays) primary — an existing different primary is demoted to
+    /// secondary by the repository's atomic move — the rest secondary; each
+    /// link gets its portal role. Existing links not in the list are kept
+    /// untouched (this never removes access the agent set elsewhere).
+    private async Task ApplyCompanyLinksAsync(Contact contact, IReadOnlyList<PortalCompanyLinkRequest> links, CancellationToken ct)
+    {
+        for (var i = 0; i < links.Count; i++)
+        {
+            var l = links[i];
+            var linkRole = i == 0 ? "primary" : "secondary";
+            // Keep an existing primary as primary when it is in the list but
+            // not first — only the first entry may *become* primary.
+            if (i > 0 && contact.PrimaryCompanyId == l.CompanyId) linkRole = "primary";
+            if (i == 0 && contact.PrimaryCompanyId is { } existing && existing != l.CompanyId
+                && links.Any(x => x.CompanyId == existing))
+            {
+                // The agent kept the current primary in the list: do not move
+                // the primary, add the first entry as secondary instead.
+                linkRole = "secondary";
+            }
+            await _companies.UpsertContactLinkAsync(contact.Id, l.CompanyId, linkRole, ct);
+            await _accounts.SetPortalRoleAsync(contact.Id, l.CompanyId, l.Role, ct);
+        }
+        // Legacy per-contact role mirrors the primary link's role.
+        var refreshed = await _companies.GetContactAsync(contact.Id, ct);
+        var primaryLink = refreshed?.PrimaryCompanyId is { } pid ? links.FirstOrDefault(x => x.CompanyId == pid) : null;
+        if (primaryLink is not null)
+            await _accounts.SetContactCompanyRoleAsync(contact.Id, primaryLink.Role, ct);
+    }
+
+    private static string RoleLabel(string role) => role == "TicketManager" ? "ticket manager" : "member";
 
     public async Task<bool> RejectAsync(Guid userId, string? reason, PortalActor actor, CancellationToken ct)
     {
@@ -418,37 +488,39 @@ public sealed class PortalAccountService : IPortalAccountService
     // ---- invitations ------------------------------------------------------
 
     public async Task<InviteResult> InviteAsync(
-        string email, string displayName, Guid? contactId, Guid? companyId, string companyRole, PortalActor actor, CancellationToken ct)
+        string email, string displayName, Guid? contactId, IReadOnlyList<PortalCompanyLinkRequest> companies, PortalActor actor, CancellationToken ct)
     {
         if (!await IsPortalEnabledAsync(ct)) return new(InviteOutcome.PortalDisabled);
-        if (!IsValidCompanyRole(companyRole)) return new(InviteOutcome.InvalidRole);
+        var links = NormalizeLinks(companies);
+        if (links is null) return new(InviteOutcome.InvalidRole);
 
         string? resolvedEmail;
         var name = NormalizeName(displayName) ?? string.Empty;
+        Contact? contact = null;
         if (contactId.HasValue)
         {
-            var contact = await _companies.GetContactAsync(contactId.Value, ct);
+            contact = await _companies.GetContactAsync(contactId.Value, ct);
             if (contact is null) return new(InviteOutcome.ContactNotFound);
-            if (await _accounts.GetByContactIdAsync(contact.Id, ct) is not null) return new(InviteOutcome.ContactHasAccount);
             // The account must sign in with the contact's address — the
             // contact is the identity, the invite email is never overridden.
             resolvedEmail = NormalizeEmail(contact.Email);
             if (resolvedEmail is null) return new(InviteOutcome.InvalidEmail);
-            if (name.Length == 0) name = $"{contact.FirstName} {contact.LastName}".Trim();
-            companyId ??= contact.PrimaryCompanyId;
         }
         else
         {
             resolvedEmail = NormalizeEmail(email);
             if (resolvedEmail is null) return new(InviteOutcome.InvalidEmail);
-            var existingContact = await _companies.GetContactByEmailAsync(resolvedEmail, ct);
-            if (existingContact is not null)
-            {
-                if (await _accounts.GetByContactIdAsync(existingContact.Id, ct) is not null) return new(InviteOutcome.ContactHasAccount);
-                contactId = existingContact.Id;
-                if (name.Length == 0) name = $"{existingContact.FirstName} {existingContact.LastName}".Trim();
-                companyId ??= existingContact.PrimaryCompanyId;
-            }
+            contact = await _companies.GetContactByEmailAsync(resolvedEmail, ct);
+        }
+        if (contact is not null)
+        {
+            if (await _accounts.GetByContactIdAsync(contact.Id, ct) is not null) return new(InviteOutcome.ContactHasAccount);
+            contactId = contact.Id;
+            if (name.Length == 0) name = $"{contact.FirstName} {contact.LastName}".Trim();
+            // No explicit companies → keep the contact's existing links
+            // (roles as they are) — the invite then just creates the account.
+            if (links.Count == 0 && contact.PrimaryCompanyId is { } primary)
+                links.Add(new PortalCompanyLinkRequest(primary, contact.CompanyRole is "TicketManager" ? "TicketManager" : "Member"));
         }
         if (name.Length == 0) name = resolvedEmail;
         if (await _users.FindByEmailAsync(resolvedEmail, ct) is not null) return new(InviteOutcome.EmailTaken);
@@ -456,9 +528,10 @@ public sealed class PortalAccountService : IPortalAccountService
         var hours = Math.Max(1, await _settings.GetAsync<int>(SettingKeys.Portal.InvitationTokenHours, ct));
         var validity = TimeSpan.FromHours(hours);
         var (raw, hash) = _tokens.Mint();
+        var first = links.FirstOrDefault();
         var id = await _accounts.CreateTokenAsync(
-            PortalTokenKind.Invitation, hash, resolvedEmail, null, contactId, companyId, companyRole,
-            name, actor.UserId, DateTime.UtcNow.Add(validity), ct);
+            PortalTokenKind.Invitation, hash, resolvedEmail, null, contactId, first?.CompanyId, first?.Role,
+            name, actor.UserId, DateTime.UtcNow.Add(validity), ct, SerializeLinks(links));
         var link = await BuildLinkAsync("/portal/invitation", raw, ct);
         if (!await _mail.SendAsync(PortalMailKind.Invitation, resolvedEmail, name, link, validity, ct))
         {
@@ -468,7 +541,7 @@ public sealed class PortalAccountService : IPortalAccountService
         await _audit.LogAsync(new AuditEvent(
             PortalEventTypes.Invited, actor.Email, actor.Role, Target: resolvedEmail,
             ClientIp: actor.Ip, UserAgent: actor.UserAgent,
-            Payload: new { invitationId = id, contactId, companyId, companyRole }), ct);
+            Payload: new { invitationId = id, contactId, companies = links }), ct);
         return new(InviteOutcome.Sent, id);
     }
 
@@ -481,7 +554,7 @@ public sealed class PortalAccountService : IPortalAccountService
         var (raw, hash) = _tokens.Mint();
         var id = await _accounts.CreateTokenAsync(
             PortalTokenKind.Invitation, hash, row.Email, null, row.ContactId, row.CompanyId, row.CompanyRole,
-            row.DisplayName, actor.UserId, DateTime.UtcNow.Add(validity), ct);
+            row.DisplayName, actor.UserId, DateTime.UtcNow.Add(validity), ct, row.CompanyLinksJson);
         var link = await BuildLinkAsync("/portal/invitation", raw, ct);
         if (!await _mail.SendAsync(PortalMailKind.Invitation, row.Email, row.DisplayName, link, validity, ct))
         {
@@ -510,10 +583,13 @@ public sealed class PortalAccountService : IPortalAccountService
     {
         var token = await LoadTokenAsync(rawToken, PortalTokenKind.Invitation, ct);
         if (token.Outcome != TokenOutcome.Ok || token.Row is null) return new(token.Outcome);
-        string? companyName = null;
-        if (token.Row.CompanyId.HasValue)
-            companyName = (await _companies.GetCompanyAsync(token.Row.CompanyId.Value, ct))?.Name;
-        return new(TokenOutcome.Ok, token.Row.Email, token.Row.DisplayName, companyName);
+        var names = new List<string>();
+        foreach (var l in LinksFromToken(token.Row))
+        {
+            var c = await _companies.GetCompanyAsync(l.CompanyId, ct);
+            if (c is not null) names.Add(c.Name);
+        }
+        return new(TokenOutcome.Ok, token.Row.Email, token.Row.DisplayName, names.FirstOrDefault(), names);
     }
 
     public async Task<AcceptInviteResult> AcceptInvitationAsync(string rawToken, string password, PortalCaller caller, CancellationToken ct)
@@ -540,16 +616,46 @@ public sealed class PortalAccountService : IPortalAccountService
         var userId = await _accounts.CreateInvitedAccountAsync(row.Email, hash, row.DisplayName, contact.Id, row.CreatedByUserId, ct);
         if (userId is null) return new(AcceptInviteOutcome.EmailTaken);
 
-        if (row.CompanyId.HasValue && contact.PrimaryCompanyId != row.CompanyId)
-            await _companies.SetPrimaryCompanyAsync(contact.Id, row.CompanyId, ct);
-        if (IsValidCompanyRole(row.CompanyRole ?? string.Empty))
-            await _accounts.SetContactCompanyRoleAsync(contact.Id, row.CompanyRole!, ct);
+        var links = LinksFromToken(row);
+        if (links.Count > 0) await ApplyCompanyLinksAsync(contact, links, ct);
 
         await _audit.LogAsync(new AuditEvent(
             PortalEventTypes.InvitationAccepted, row.Email, "Customer", Target: userId.Value.ToString(),
             ClientIp: caller.Ip, UserAgent: caller.UserAgent,
-            Payload: new { invitationId = row.Id, contactId = contact.Id, companyId = row.CompanyId, companyRole = row.CompanyRole }), ct);
+            Payload: new { invitationId = row.Id, contactId = contact.Id, companies = links }), ct);
         return new(AcceptInviteOutcome.Created, userId, row.Email);
+    }
+
+    private static string? SerializeLinks(IReadOnlyList<PortalCompanyLinkRequest> links) =>
+        links.Count == 0 ? null : System.Text.Json.JsonSerializer.Serialize(links.Select(l => new { companyId = l.CompanyId, role = l.Role }));
+
+    /// Company links carried by an invitation token: the JSON list when
+    /// present, else the legacy single (company_id, company_role) pair.
+    private static List<PortalCompanyLinkRequest> LinksFromToken(PortalTokenRow row)
+    {
+        if (!string.IsNullOrWhiteSpace(row.CompanyLinksJson))
+        {
+            try
+            {
+                var parsed = System.Text.Json.JsonSerializer.Deserialize<List<TokenLink>>(row.CompanyLinksJson,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                var list = NormalizeLinks(parsed?.Select(t => new PortalCompanyLinkRequest(t.CompanyId, t.Role ?? "Member")).ToList());
+                if (list is not null) return list;
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // fall through to the legacy pair
+            }
+        }
+        if (row.CompanyId.HasValue && IsValidCompanyRole(row.CompanyRole ?? string.Empty))
+            return new List<PortalCompanyLinkRequest> { new(row.CompanyId.Value, row.CompanyRole!) };
+        return new List<PortalCompanyLinkRequest>();
+    }
+
+    private sealed class TokenLink
+    {
+        public Guid CompanyId { get; set; }
+        public string? Role { get; set; }
     }
 
     // ---- password reset ---------------------------------------------------
