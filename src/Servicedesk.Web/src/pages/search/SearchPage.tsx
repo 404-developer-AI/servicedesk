@@ -5,6 +5,7 @@ import { searchApi, type SearchHit, type SearchSort } from "@/lib/api";
 import { sanitizeSnippet } from "@/lib/sanitize";
 import { KIND_ORDER, labelForKind, hitHref } from "@/components/search/searchMeta";
 import { useTheme } from "@/app/ThemeProvider";
+import { useServerTime, toServerLocalDate } from "@/hooks/useServerTime";
 
 const PAGE_SIZE = 25;
 
@@ -182,6 +183,10 @@ export function SearchPage() {
 function HitRow({ hit, query }: { hit: SearchHit; query: string }) {
   const navigate = useNavigate();
   const { theme } = useTheme();
+  // Server offset for the created/closed dates on ticket hits — display
+  // only, the timestamps themselves are server-provided.
+  const { time: serverTime } = useServerTime();
+  const serverOffset = serverTime?.offsetMinutes ?? 0;
   const requester = hit.meta?.requester;
   const company = hit.meta?.company;
   const subtitle = [requester, company].filter(Boolean).join(" · ");
@@ -245,6 +250,14 @@ function HitRow({ hit, query }: { hit: SearchHit; query: string }) {
           className="mt-1 truncate text-xs text-muted-foreground"
           dangerouslySetInnerHTML={{ __html: sanitizeSnippet(hit.snippet) }}
         />
+      )}
+      {hit.kind === "tickets" && hit.meta?.createdUtc && (
+        <div className="mt-0.5 text-[10px] text-muted-foreground/70">
+          Created {toServerLocalDate(hit.meta.createdUtc, serverOffset)}
+          {hit.meta?.closedUtc
+            ? ` · Closed ${toServerLocalDate(hit.meta.closedUtc, serverOffset)}`
+            : ""}
+        </div>
       )}
     </li>
   );
