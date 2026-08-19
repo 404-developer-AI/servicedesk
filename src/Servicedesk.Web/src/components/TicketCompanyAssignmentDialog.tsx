@@ -197,7 +197,7 @@ export function TicketCompanyAssignmentDialog({
             autoFocus
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Zoek in alle actieve companies..."
+            placeholder="Search all active companies..."
             className="pl-8"
           />
         </div>
@@ -209,7 +209,7 @@ export function TicketCompanyAssignmentDialog({
                 <RowSkeleton label="Contact-links laden..." />
               )}
               {!loadingDefault && (contactOptions?.length ?? 0) === 0 && (
-                <EmptyRow label="Geen bestaande company-links voor dit contact. Typ hierboven om te zoeken." />
+                <EmptyRow label="No existing company links for this contact. Type above to search." />
               )}
               {contactOptions?.map((o) => (
                 <OptionRow
