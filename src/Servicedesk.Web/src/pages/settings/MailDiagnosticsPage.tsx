@@ -109,7 +109,7 @@ export function MailDiagnosticsPage() {
         <Input
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Zoek in subject / afzender / id"
+          placeholder="Search subject / sender / id"
           className="text-xs"
         />
         {recent.isLoading ? (
@@ -117,8 +117,8 @@ export function MailDiagnosticsPage() {
         ) : filteredRecent.length === 0 ? (
           <div className="rounded-md border border-glass bg-glass px-3 py-4 text-center text-xs text-muted-foreground">
             {onlyIssues
-              ? "Geen mails met hangende of gefaalde bijlagen."
-              : "Geen mails gevonden."}
+              ? "No mails with pending or failed attachments."
+              : "No mails found."}
           </div>
         ) : (
           <ul className="max-h-72 divide-y divide-glass overflow-y-auto rounded-md border border-glass bg-glass">

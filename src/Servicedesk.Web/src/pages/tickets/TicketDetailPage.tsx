@@ -1267,7 +1267,7 @@ function TicketDetailBody({
           <TicketTimeline ticketId={ticketId} ticketNumber={ticket.number} events={visibleEvents} pinnedEventIds={pinnedEventIds} />
           {mode === "filter" && query.trim() && visibleEvents.length === 0 && (
             <div className="py-6 text-center text-sm text-muted-foreground">
-              Geen events matchen "{query}".
+              No events match "{query}".
             </div>
           )}
 
