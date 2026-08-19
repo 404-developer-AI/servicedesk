@@ -25,7 +25,7 @@ public static class ProjectQueuePin
     }
 }
 
-/// v0.0.104 — project tickets. A project ticket is a normal ticket with
+/// v0.0.105 — project tickets. A project ticket is a normal ticket with
 /// is_project = TRUE; other tickets point at it via project_ticket_id
 /// (one project per ticket, no nesting). All mutations here write their
 /// own internal timeline event; SignalR + audit stay in the endpoint.

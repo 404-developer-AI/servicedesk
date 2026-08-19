@@ -462,7 +462,7 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
     setChecklistBlock(null);
   }, []);
 
-  // v0.0.104 — project tickets. Settings gate the whole surface (badge,
+  // v0.0.105 — project tickets. Settings gate the whole surface (badge,
   // rail button, panel, prompt); the server re-enforces them on every
   // project endpoint. The docked project panel behaves like the checklist
   // panel: it replaces the details side panel while open.
@@ -696,7 +696,7 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
       await updateMutation.mutateAsync(fields);
       return;
     }
-    // v0.0.104 — closing a project with open linked tickets gets a soft
+    // v0.0.105 — closing a project with open linked tickets gets a soft
     // confirmation first (no hard block; the linked tickets are untouched).
     if (isProjectTicket && openLinkedTicketCount > 0) {
       const target = statuses?.find((s) => s.id === fields.statusId);
@@ -946,7 +946,7 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
           toast.success("Title review dismissed without logging.");
         }}
       />
-      {/* v0.0.104 — link-to-project prompt. Held back while the title-review
+      {/* v0.0.105 — link-to-project prompt. Held back while the title-review
           gate is open so the two first-open dialogs never stack. */}
       <ProjectPromptDialog
         open={!projectPromptHidden && promptProjects.length > 0 && !openGate}
@@ -1041,7 +1041,7 @@ function TicketDetailBody({
   activeChecklistId: string | null;
   onActiveChecklistChange: (id: string) => void;
   onOpenChecklist: (checklistId?: string | null) => void;
-  /// v0.0.104 — project tickets (settings-gated). The page owns the
+  /// v0.0.105 — project tickets (settings-gated). The page owns the
   /// docked project-panel state, like the checklist panel above.
   projectsEnabled: boolean;
   projectOpen: boolean;
@@ -1160,7 +1160,7 @@ function TicketDetailBody({
               Internal
             </span>
             <div className="ml-auto flex items-center gap-3">
-              {/* v0.0.104 — project marker: on the project ticket itself, and
+              {/* v0.0.105 — project marker: on the project ticket itself, and
                   as a jump-chip on tickets linked to a project. */}
               {projectsEnabled && ticket.isProject && (
                 <span
@@ -1348,7 +1348,7 @@ function TicketDetailBody({
               )}
             </button>
           )}
-          {/* v0.0.104 — project panel toggle, only on project tickets. */}
+          {/* v0.0.105 — project panel toggle, only on project tickets. */}
           {projectsEnabled && ticket.isProject && (
             <button
               type="button"

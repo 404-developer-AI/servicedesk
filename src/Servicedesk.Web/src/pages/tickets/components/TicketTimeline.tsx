@@ -403,7 +403,7 @@ const EVENT_CONFIG: Record<string, EventConfig> = {
   ChecklistReopened: { icon: ListChecks, dotColor: "bg-amber-500", label: "Checklist reopened" },
   ChecklistItemChanged: { icon: ListChecks, dotColor: "bg-violet-400", label: "Checklist item changed" },
   ChecklistCloseBlocked: { icon: ListChecks, dotColor: "bg-amber-500", label: "Trigger blocked by checklist" },
-  // v0.0.104 — project tickets.
+  // v0.0.105 — project tickets.
   ProjectConverted: { icon: FolderKanban, dotColor: "bg-sky-500", label: "Converted to project" },
   ProjectReverted: { icon: FolderKanban, dotColor: "bg-glass-strong", label: "Project flag removed" },
   ProjectLinked: { icon: FolderKanban, dotColor: "bg-sky-500", label: "Linked to project" },

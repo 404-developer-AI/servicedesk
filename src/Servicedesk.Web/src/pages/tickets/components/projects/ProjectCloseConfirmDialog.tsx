@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
-/// v0.0.104 — soft confirmation (no hard block) when a project ticket is
+/// v0.0.105 — soft confirmation (no hard block) when a project ticket is
 /// moved into Resolved/Closed while linked tickets are still open. The
 /// linked tickets themselves are untouched either way.
 export function ProjectCloseConfirmDialog({

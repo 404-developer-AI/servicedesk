@@ -63,7 +63,7 @@ public interface ITicketRepository
     /// updated list — so the link-parent dialog opens on the user's own context.
     /// When <paramref name="projectsOnly"/> is true only open project tickets
     /// (is_project, state category not Resolved/Closed) are returned — used by
-    /// the link-to-project dialog (v0.0.104).
+    /// the link-to-project dialog (v0.0.105).
     Task<IReadOnlyList<TicketPickerHit>> SearchPickerAsync(
         string? search,
         Guid excludeTicketId,
@@ -161,12 +161,12 @@ public sealed record TicketDetailRelations(
     ParentTicketSummary? Parent,
     IReadOnlyList<LinkedChildTicket> ChildTickets,
     TicketCompanyAlertSource? CompanyAlert,
-    // v0.0.104 — the project this ticket is linked to (null when
+    // v0.0.105 — the project this ticket is linked to (null when
     // unlinked) and, for project tickets, how many tickets link here.
     ProjectTicketSummary? Project = null,
     int ProjectLinkedTicketCount = 0);
 
-/// v0.0.104 — summary of the project a ticket is linked to, for the
+/// v0.0.105 — summary of the project a ticket is linked to, for the
 /// side panel + banner without a second round-trip.
 public sealed class ProjectTicketSummary
 {
@@ -297,7 +297,7 @@ public sealed record NewTicket(
     // into the freshly-created ticket's timeline. Null = no event,
     // identical to the pre-v0.0.39 behaviour.
     InitialTicketNote? InitialNote = null,
-    // v0.0.104 — create the ticket as a project ticket (agent toggled
+    // v0.0.105 — create the ticket as a project ticket (agent toggled
     // "Project ticket" in the new-ticket drawer). Default off.
     bool IsProject = false);
 

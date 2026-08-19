@@ -22,7 +22,7 @@ internal sealed class SetQueueHandler : ITriggerActionHandler
         if (!ActionJson.TryReadGuid(actionJson, "queue_id", out var newQueueId))
             return TriggerActionResult.Failed(Kind, "Action is missing required string 'queue_id'.");
 
-        // v0.0.104 — project tickets are pinned to the configured project
+        // v0.0.105 — project tickets are pinned to the configured project
         // queue: a trigger may not move one elsewhere. Same rule the manual
         // and bulk paths enforce in TicketMutationService.
         if (ctx.Ticket.IsProject && newQueueId != ctx.Ticket.QueueId

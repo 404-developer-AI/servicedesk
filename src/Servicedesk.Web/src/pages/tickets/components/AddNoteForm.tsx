@@ -48,7 +48,7 @@ type AddNoteFormProps = {
   /// the window instead of collapsing, and the "Pop out" button is hidden
   /// (already in a popup).
   isPopup?: boolean;
-  /// v0.0.104 — project tickets are internal: the "Reply" (public
+  /// v0.0.105 — project tickets are internal: the "Reply" (public
   /// comment) and "Send mail" tabs are hidden, leaving internal notes
   /// only, and any mail intent falls back to a note. The server refuses
   /// an outbound send regardless.

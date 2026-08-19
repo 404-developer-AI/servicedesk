@@ -41,7 +41,7 @@ export function useProjectOverview(ticketId: string, enabled: boolean) {
   });
 }
 
-/// v0.0.104 — the project working surface, docked in the ticket's right
+/// v0.0.105 — the project working surface, docked in the ticket's right
 /// column (in place of the details side panel, like the checklist panel).
 /// Lists every linked ticket with its context: open tickets first in the
 /// manual priority order (drag to reorder — top = highest priority),

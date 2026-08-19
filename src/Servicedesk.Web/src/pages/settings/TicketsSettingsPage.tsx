@@ -475,7 +475,7 @@ function GeneralTab() {
     onError: () => toast.error("Could not update setting"),
   });
 
-  // v0.0.104 — project tickets. Both flags are re-enforced server-side on
+  // v0.0.105 — project tickets. Both flags are re-enforced server-side on
   // every project endpoint; the agent-safe projection feeds the ticket UI.
   const projectsEnabled = useMemo(
     () => (entries?.find((e) => e.key === "Projects.Enabled")?.value ?? "true") === "true",

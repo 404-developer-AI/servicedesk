@@ -85,7 +85,7 @@ type TicketSidePanelProps = {
   parentLinkedByUserName?: string | null;
   childTickets?: { id: string; number: string }[];
   onUnlinkParent?: () => Promise<void> | void;
-  /// v0.0.104 — project tickets. `projectsEnabled` gates every project
+  /// v0.0.105 — project tickets. `projectsEnabled` gates every project
   /// surface; the rest comes from the detail response like the parent
   /// strip above.
   projectsEnabled?: boolean;
@@ -181,7 +181,7 @@ export function TicketSidePanel({
   const [linkParentOpen, setLinkParentOpen] = React.useState(false);
   const [linkProjectOpen, setLinkProjectOpen] = React.useState(false);
 
-  // v0.0.104 — project mutations. Every rule (merged, already project,
+  // v0.0.105 — project mutations. Every rule (merged, already project,
   // still-linked tickets, …) is enforced server-side; the 409 message is
   // surfaced as-is so the agent knows why an action was refused.
   const runProjectAction = React.useCallback(
@@ -410,7 +410,7 @@ function StatusTab({
   // v0.0.59 — "Sync orders" button is shown only to users with the Orders
   // feature flag.
   const { user } = useAuth();
-  // v0.0.104 — with a configured project queue, project tickets hide the
+  // v0.0.105 — with a configured project queue, project tickets hide the
   // queue selector entirely (the server refuses moves regardless).
   const projectSettingsQ = useProjectSettings();
   const projectQueuePinned = !!projectSettingsQ.data?.queueId;
@@ -543,7 +543,7 @@ function StatusTab({
         </div>
       )}
 
-      {/* v0.0.104 — project tickets pinned to the project queue have no
+      {/* v0.0.105 — project tickets pinned to the project queue have no
           queue selector: the queue is an implementation detail there and
           the server refuses moves anyway. */}
       {!(projectsEnabled && ticket.isProject && projectQueuePinned) && (
@@ -866,7 +866,7 @@ function RelationshipsBlock({
         </div>
       )}
 
-      {/* v0.0.104 — project link on a normal ticket */}
+      {/* v0.0.105 — project link on a normal ticket */}
       {projectsEnabled && ticket.projectTicketId && projectTicketNumber && (
         <div className="flex items-start gap-2 text-xs text-foreground/80">
           <FolderKanban className="h-3.5 w-3.5 mt-0.5 text-sky-300/80 shrink-0" />
@@ -896,7 +896,7 @@ function RelationshipsBlock({
         </div>
       )}
 
-      {/* v0.0.104 — project marker on the project ticket itself */}
+      {/* v0.0.105 — project marker on the project ticket itself */}
       {projectsEnabled && ticket.isProject && (
         <div className="flex items-start gap-2 text-xs text-foreground/80">
           <FolderKanban className="h-3.5 w-3.5 mt-0.5 text-sky-300/80 shrink-0" />

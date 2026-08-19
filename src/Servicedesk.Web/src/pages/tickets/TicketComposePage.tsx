@@ -25,7 +25,7 @@ export function TicketComposePage({ ticketId }: { ticketId: string }) {
   const queryClient = useQueryClient();
   useTicketRealtime(ticketId);
 
-  // v0.0.104 — project tickets have outbound mail disabled; the pop-out
+  // v0.0.105 — project tickets have outbound mail disabled; the pop-out
   // must mirror the inline composer's gate.
   const projectSettingsQ = useProjectSettings();
   const projectsEnabled = projectSettingsQ.data?.enabled ?? false;

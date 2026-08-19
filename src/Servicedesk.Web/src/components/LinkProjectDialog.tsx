@@ -23,7 +23,7 @@ type Props = {
   onLinked?: (projectTicketId: string) => void;
 };
 
-/// v0.0.104 — picker dialog for linking the current ticket to a project
+/// v0.0.105 — picker dialog for linking the current ticket to a project
 /// ticket. Only open project tickets are offered (the picker filters
 /// server-side); the ticket stays fully in its own queue — the link is
 /// just a pointer the project panel aggregates on. Server-side validates

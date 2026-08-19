@@ -81,7 +81,7 @@ type ViewFilters = {
   statusIds?: string[];
   priorityIds?: string[];
   openOnly?: boolean;
-  /// v0.0.104 — only project tickets, regardless of queue. Lets one view
+  /// v0.0.105 — only project tickets, regardless of queue. Lets one view
   /// collect every project across the whole install.
   projectsOnly?: boolean;
   search?: string;
@@ -420,7 +420,7 @@ function ViewDialog({
 
   const [name, setName] = React.useState(view?.name ?? "");
   const [filters, setFilters] = React.useState<ViewFilters>(initial);
-  // v0.0.104 — the "Project tickets only" checkbox renders only while the
+  // v0.0.105 — the "Project tickets only" checkbox renders only while the
   // projects feature is on (an existing stored filter keeps working either
   // way; the server just returns no is_project rows when none exist).
   const projectSettingsQ = useProjectSettings();

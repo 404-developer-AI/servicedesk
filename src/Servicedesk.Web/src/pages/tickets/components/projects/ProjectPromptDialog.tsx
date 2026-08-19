@@ -23,7 +23,7 @@ export function useProjectSettings() {
   });
 }
 
-/// v0.0.104 — first-open link prompt: the ticket's company has one or
+/// v0.0.105 — first-open link prompt: the ticket's company has one or
 /// more open project tickets and this ticket is not linked (and the
 /// question was never answered on it). "No thanks" is remembered per
 /// ticket server-side, so the prompt shows at most once.
