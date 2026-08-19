@@ -152,9 +152,23 @@ public static class TicketEndpoints
             var descriptionAttachments = await BuildSplitDescriptionAttachmentsAsync(
                 detail, dataSource, ct);
 
+            // v0.1.0 — a system ticket opened for a portal registration
+            // carries the pending account so the detail page can render the
+            // approve/reject card. One indexed point lookup
+            // (ix_portal_accounts_ticket); null for every other ticket.
+            object? portalRegistration = null;
+            if (detail.Ticket.Source == "System")
+            {
+                var portalAccounts = http.RequestServices.GetService<Servicedesk.Infrastructure.Portal.IPortalAccountRepository>();
+                var reg = portalAccounts is null ? null : await portalAccounts.GetByApprovalTicketAsync(id, ct);
+                if (reg is not null)
+                    portalRegistration = new { userId = reg.UserId, status = reg.Status, email = reg.Email, displayName = reg.DisplayName };
+            }
+
             return Results.Ok(new
             {
                 ticket = detail.Ticket,
+                portalRegistration,
                 body = detail.Body,
                 events = FilterTimelineEventsForRole(detail.Events, role),
                 pinnedEvents = detail.PinnedEvents,

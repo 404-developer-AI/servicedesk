@@ -68,13 +68,11 @@ describe("LoginPage", () => {
     authApi.config.mockResolvedValue({ microsoftEnabled: false, setupAvailable: false });
     renderLogin();
 
-    expect(screen.getByPlaceholderText("you@example.com")).toBeInTheDocument();
-
-    // Give the config-query one tick to resolve; the button must stay hidden.
-    await waitFor(() => {
-      expect(authApi.config).toHaveBeenCalled();
-    });
+    // The form renders once the config resolves (portal off → no chooser).
+    expect(await screen.findByPlaceholderText("you@example.com")).toBeInTheDocument();
+    expect(authApi.config).toHaveBeenCalled();
     expect(screen.queryByTestId("m365-signin")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("login-chooser")).not.toBeInTheDocument();
   });
 
   it("shows the Microsoft button when M365 is enabled", async () => {
@@ -103,7 +101,7 @@ describe("LoginPage", () => {
 
     renderLogin();
 
-    fireEvent.change(screen.getByPlaceholderText("you@example.com"), {
+    fireEvent.change(await screen.findByPlaceholderText("you@example.com"), {
       target: { value: "admin@example.com" },
     });
     fireEvent.change(screen.getByPlaceholderText("••••••••••••"), {
@@ -117,5 +115,32 @@ describe("LoginPage", () => {
     await waitFor(() => {
       expect(navigate).toHaveBeenCalledWith({ to: "/" });
     });
+  });
+
+  it("offers the agent/customer chooser when the portal is on and remembers the agent choice", async () => {
+    window.localStorage.removeItem("sd-login-role");
+    authApi.config.mockResolvedValue({ microsoftEnabled: false, setupAvailable: false, portalEnabled: true });
+    renderLogin();
+
+    expect(await screen.findByTestId("login-chooser")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("you@example.com")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("choose-agent"));
+    expect(await screen.findByPlaceholderText("you@example.com")).toBeInTheDocument();
+    expect(window.localStorage.getItem("sd-login-role")).toBe("agent");
+    // The form keeps a way back to the portal.
+    expect(screen.getByTestId("portal-link")).toHaveAttribute("href", "/portal/login");
+    window.localStorage.removeItem("sd-login-role");
+  });
+
+  it("skips the chooser for a remembered agent even when the portal is on", async () => {
+    window.localStorage.setItem("sd-login-role", "agent");
+    authApi.config.mockResolvedValue({ microsoftEnabled: false, setupAvailable: false, portalEnabled: true });
+    renderLogin();
+
+    expect(screen.getByPlaceholderText("you@example.com")).toBeInTheDocument();
+    await waitFor(() => expect(authApi.config).toHaveBeenCalled());
+    expect(screen.queryByTestId("login-chooser")).not.toBeInTheDocument();
+    window.localStorage.removeItem("sd-login-role");
   });
 });

@@ -20,6 +20,12 @@ public sealed class SecurityHeadersMiddleware
         // PDF/image preview lightbox can load them in an <iframe>. Anywhere
         // else stays DENY to prevent clickjacking.
         var allowSameOriginFrame = IsAttachmentDownload(context.Request.Path);
+        // Customer-portal documents embed the cross-origin Cloudflare
+        // Turnstile challenge frame, which cross-origin isolation
+        // (COEP: require-corp) would block. The portal has no need for
+        // isolation (no SharedArrayBuffer / high-res timers), so COEP is
+        // omitted on exactly those documents; COOP/CORP stay.
+        var portalPage = ContentSecurityPolicyMiddleware.IsPortalPage(context.Request);
 
         context.Response.OnStarting(state =>
         {
@@ -31,7 +37,7 @@ public sealed class SecurityHeadersMiddleware
             headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()";
             headers["Cross-Origin-Opener-Policy"] = "same-origin";
             headers["Cross-Origin-Resource-Policy"] = "same-origin";
-            headers["Cross-Origin-Embedder-Policy"] = "require-corp";
+            if (!portalPage) headers["Cross-Origin-Embedder-Policy"] = "require-corp";
             headers.Remove("Server");
             headers.Remove("X-Powered-By");
             return Task.CompletedTask;

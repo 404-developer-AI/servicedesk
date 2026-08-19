@@ -21,7 +21,9 @@ export async function bootstrapAuth(): Promise<void> {
       setupAvailable: setup.available,
     });
     // Load user preferences from backend
-    if (me.user) {
+    // v0.1.0 — customers have no agent preferences (columns, workspace,
+    // recent tickets); those endpoints are agent-gated and would only 403.
+    if (me.user && me.user.role !== "Customer") {
       useColumnPrefsStore.getState().loadFromServer();
       await useWorkspaceStore.getState().loadFromServer();
       const ws = useWorkspaceStore.getState();

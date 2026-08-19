@@ -51,6 +51,20 @@ import { TriggersSettingsPage } from "@/pages/settings/TriggersSettingsPage";
 import { TriggerRunsPage } from "@/pages/settings/triggers/TriggerRunsPage";
 import { SettingsLayout } from "@/shell/SettingsLayout";
 import { LoginPage } from "@/pages/auth/LoginPage";
+import { PortalLoginPage } from "@/portal/pages/PortalLoginPage";
+import { PortalRegisterPage } from "@/portal/pages/PortalRegisterPage";
+import {
+  PortalForgotPasswordPage,
+  PortalInvitationPage,
+  PortalResetPasswordPage,
+  PortalVerifyEmailPage,
+} from "@/portal/pages/PortalTokenPages";
+import { PortalShell } from "@/portal/PortalShell";
+import { PortalTicketsPage } from "@/portal/pages/PortalTicketsPage";
+import { PortalTicketDetailPage } from "@/portal/pages/PortalTicketDetailPage";
+import { PortalNewTicketPage } from "@/portal/pages/PortalNewTicketPage";
+import { PortalAccountPage } from "@/portal/pages/PortalAccountPage";
+import { PortalSettingsPage } from "@/pages/settings/PortalSettingsPage";
 import { SetupWizardPage } from "@/pages/auth/SetupWizardPage";
 import { ProfilePage } from "@/pages/profile/ProfilePage";
 import { MentionHistoryPage } from "@/pages/profile/MentionHistoryPage";
@@ -111,7 +125,49 @@ function anyAuthenticatedGate() {
     if (!authedUser()) {
       throw redirect({ to: "/login", search: { from: location.pathname } });
     }
+    // v0.1.0 — customers have their own shell; the agent routes that accept
+    // "any authenticated user" (dashboard) bounce them to the portal.
+    if (authedUser()?.role === "Customer") {
+      throw redirect({ to: "/portal" });
+    }
   };
+}
+
+// v0.1.0 — customer-portal gate. A portal session is only usable once the
+// TOTP step completed ("pwd+mfa" — mirrors the server-side RequireCustomer
+// whitelist); pending sessions resume on /portal/login. Agents/admins who
+// wander into /portal go back to the agent app.
+function portalUser() {
+  const { user } = authStore.get();
+  if (!user || user.role !== "Customer") return null;
+  if (user.amr !== "pwd+mfa") return null;
+  return user;
+}
+
+function portalGate() {
+  return ({ location }: { location: { pathname: string } }) => {
+    const { user } = authStore.get();
+    if (user && user.role !== "Customer") {
+      throw redirect({ to: "/" });
+    }
+    if (!portalUser()) {
+      throw redirect({ to: "/portal/login", search: { from: location.pathname } });
+    }
+  };
+}
+
+/// Anonymous portal pages (sign-in, registration, token links).
+const PORTAL_PUBLIC_PATHS = new Set([
+  "/portal/login",
+  "/portal/register",
+  "/portal/verify-email",
+  "/portal/forgot-password",
+  "/portal/reset-password",
+  "/portal/invitation",
+]);
+
+function isPortalPath(path: string): boolean {
+  return path === "/portal" || path.startsWith("/portal/");
 }
 
 const UNAUTHENTICATED_PATHS = new Set(["/login", "/setup"]);
@@ -124,6 +180,7 @@ const UNAUTHENTICATED_PATHS = new Set(["/login", "/setup"]);
 /// client from painting the shell + role chrome for a logged-out visitor.
 function isPublicPath(path: string): boolean {
   if (UNAUTHENTICATED_PATHS.has(path)) return true;
+  if (PORTAL_PUBLIC_PATHS.has(path)) return true;
   if (path.startsWith("/intake/")) return true;
   if (path.startsWith("/surveys/")) return true;
   if (path.startsWith("/kb/public/")) return true;
@@ -137,6 +194,9 @@ function isPublicPath(path: string): boolean {
 /// agent UI.
 function isBareRoute(path: string): boolean {
   if (UNAUTHENTICATED_PATHS.has(path)) return true;
+  // v0.1.0 — the customer portal has its own shell (PortalShell on the
+  // /portal layout route); nothing under /portal ever renders the agent shell.
+  if (isPortalPath(path)) return true;
   if (path.endsWith("/compose")) return true;
   // v0.0.103 — checklist pop-out window (same second-screen workflow).
   if (/^\/tickets\/[^/]+\/checklists$/.test(path)) return true;
@@ -173,7 +233,17 @@ const rootRoute = createRootRoute({
     // declared routes; this closes the not-found gap. Public paths (login,
     // setup, tokenised intake/survey links) stay exempt.
     if (!authedUser() && !isPublicPath(path)) {
+      // Portal paths bounce to the portal sign-in, never the staff login.
+      if (isPortalPath(path)) {
+        throw redirect({ to: "/portal/login", search: { from: path } });
+      }
       throw redirect({ to: "/login", search: { from: path } });
+    }
+    // A signed-in customer never sees the agent shell: anything outside the
+    // portal (incl. the not-found fallback) goes to /portal. The portal
+    // routes run their own gate.
+    if (!isPortalPath(path) && !isPublicPath(path) && authedUser()?.role === "Customer") {
+      throw redirect({ to: "/portal" });
     }
   },
   component: RootLayout,
@@ -199,6 +269,69 @@ const setupRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/setup",
   component: SetupWizardPage,
+});
+
+// v0.1.0 — customer portal. Anonymous pages are plain root children (bare,
+// no shell); the signed-in part hangs off the /portal layout route whose
+// component is the PortalShell.
+const portalLoginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/portal/login",
+  component: PortalLoginPage,
+});
+const portalRegisterRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/portal/register",
+  component: PortalRegisterPage,
+});
+const portalVerifyEmailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/portal/verify-email",
+  component: PortalVerifyEmailPage,
+});
+const portalForgotPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/portal/forgot-password",
+  component: PortalForgotPasswordPage,
+});
+const portalResetPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/portal/reset-password",
+  component: PortalResetPasswordPage,
+});
+const portalInvitationRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/portal/invitation",
+  component: PortalInvitationPage,
+});
+const portalRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/portal",
+  beforeLoad: portalGate(),
+  component: PortalShell,
+});
+const portalIndexRoute = createRoute({
+  getParentRoute: () => portalRoute,
+  path: "/",
+  component: PortalTicketsPage,
+});
+const portalNewTicketRoute = createRoute({
+  getParentRoute: () => portalRoute,
+  path: "tickets/new",
+  component: PortalNewTicketPage,
+});
+const portalTicketDetailRoute = createRoute({
+  getParentRoute: () => portalRoute,
+  path: "tickets/$ticketId",
+  component: function PortalTicketDetailRoute() {
+    const { ticketId } = portalTicketDetailRoute.useParams();
+    return <PortalTicketDetailPage ticketId={ticketId} />;
+  },
+});
+const portalAccountRoute = createRoute({
+  getParentRoute: () => portalRoute,
+  path: "account",
+  component: PortalAccountPage,
 });
 
 const dashboardRoute = createRoute({
@@ -350,7 +483,7 @@ const kbArticleNewRoute = createRoute({
 const profileRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/profile",
-  beforeLoad: anyAuthenticatedGate(),
+  beforeLoad: authGate(["Agent", "Admin"]),
   component: ProfilePage,
 });
 
@@ -550,6 +683,12 @@ const settingsGeneralRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "general",
   component: GeneralSettingsPage,
+});
+
+const settingsPortalRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "portal",
+  component: PortalSettingsPage,
 });
 
 const settingsMailRoute = createRoute({
@@ -897,6 +1036,13 @@ const contactDetailRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   loginRoute,
   setupRoute,
+  portalLoginRoute,
+  portalRegisterRoute,
+  portalVerifyEmailRoute,
+  portalForgotPasswordRoute,
+  portalResetPasswordRoute,
+  portalInvitationRoute,
+  portalRoute.addChildren([portalIndexRoute, portalNewTicketRoute, portalTicketDetailRoute, portalAccountRoute]),
   dashboardRoute,
   ticketsRoute,
   ticketDetailRoute,
@@ -928,6 +1074,7 @@ const routeTree = rootRoute.addChildren([
   settingsRoute.addChildren([
     settingsIndexRoute,
     settingsGeneralRoute,
+    settingsPortalRoute,
     settingsMailRoute,
     settingsSlaRoute,
     settingsIntakeFormsRoute,

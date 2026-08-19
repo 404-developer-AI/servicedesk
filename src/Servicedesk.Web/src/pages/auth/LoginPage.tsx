@@ -5,7 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { LockKeyhole, Mail, ShieldCheck, AlertTriangle } from "lucide-react";
+import { LockKeyhole, Mail, ShieldCheck, AlertTriangle, Headset, UserRound, ArrowRight } from "lucide-react";
 import { BrandWordmark } from "@/components/BrandMark";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,29 @@ type CodeValues = z.infer<typeof codeSchema>;
 
 type Stage = "credentials" | "two-factor";
 
+// v0.1.0 — when the customer portal is on, /login first asks "agent or
+// customer?". The agent choice is remembered per browser (a pure UX hint,
+// no security meaning) so staff land on the form directly from then on.
+type Mode = "pending" | "choose" | "agent";
+const LOGIN_ROLE_STORAGE_KEY = "sd-login-role";
+
+function readRememberedRole(): "agent" | null {
+  try {
+    return window.localStorage.getItem(LOGIN_ROLE_STORAGE_KEY) === "agent" ? "agent" : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberRole(role: "agent" | null) {
+  try {
+    if (role) window.localStorage.setItem(LOGIN_ROLE_STORAGE_KEY, role);
+    else window.localStorage.removeItem(LOGIN_ROLE_STORAGE_KEY);
+  } catch {
+    // storage unavailable — the chooser simply shows again next time
+  }
+}
+
 export function LoginPage() {
   const navigate = useNavigate();
   const [stage, setStage] = useState<Stage>("credentials");
@@ -38,11 +61,38 @@ export function LoginPage() {
   // Feature-flag snapshot for the M365 button. Failing fast here (stale
   // or missing config) must not break the local-login path — we render
   // the page regardless and only gate the Microsoft button on the flag.
-  const { data: config } = useQuery({
+  const { data: config, isError: configError } = useQuery({
     queryKey: ["auth", "config"],
     queryFn: () => authApi.config(),
     staleTime: 60_000,
   });
+
+  // Paths that must land straight on the agent form, never on the chooser:
+  // an M365 callback (?error=…), a redirect from an agent route (?from=…)
+  // and a session mid-TOTP-challenge. Plus a remembered "agent" choice.
+  const forcedAgent = useMemo(() => {
+    if (typeof window === "undefined") return true;
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("error") || params.has("from")) return true;
+    if (authStore.get().user?.amr === "mfa-pending") return true;
+    return readRememberedRole() === "agent";
+  }, []);
+  const [mode, setMode] = useState<Mode>(() => (forcedAgent ? "agent" : "pending"));
+  useEffect(() => {
+    if (mode !== "pending") return;
+    if (config === undefined && !configError) return;
+    setMode(config?.portalEnabled ? "choose" : "agent");
+  }, [mode, config, configError]);
+
+  const chooseAgent = () => {
+    rememberRole("agent");
+    setMode("agent");
+  };
+  const goToPortal = () => {
+    rememberRole(null);
+    // Full page load on purpose: the /portal documents carry their own CSP.
+    window.location.assign("/portal/login");
+  };
 
   // Reads `?error=…` set by the M365 callback on redirect-to-/login.
   // Done once on mount; subsequent renders shouldn't surface a stale
@@ -135,6 +185,55 @@ export function LoginPage() {
         </div>
 
         <div className="space-y-5 px-7 py-6">
+          {mode === "pending" && (
+            <div className="space-y-3" data-testid="login-pending" aria-busy="true">
+              <div className="h-9 animate-pulse rounded-md bg-glass" />
+              <div className="h-9 animate-pulse rounded-md bg-glass" />
+              <div className="h-9 animate-pulse rounded-md bg-glass" />
+            </div>
+          )}
+
+          {mode === "choose" && (
+            <div className="space-y-4" data-testid="login-chooser">
+              <div className="space-y-1">
+                <h1 className="font-display text-display-sm tracking-tight">Welcome</h1>
+                <p className="text-sm text-muted-foreground">How would you like to sign in?</p>
+              </div>
+              <button
+                type="button"
+                onClick={goToPortal}
+                data-testid="choose-customer"
+                className="group flex w-full items-center gap-3 rounded-xl border border-glass bg-gradient-to-br from-accent-purple to-accent-blue p-4 text-left text-white shadow-[0_10px_30px_-12px_hsl(var(--primary)/0.6)] transition-transform hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/15">
+                  <UserRound className="h-5 w-5" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold">Customer portal</span>
+                  <span className="block text-xs opacity-85">Follow your tickets, reply and open new requests.</span>
+                </span>
+                <ArrowRight className="h-4 w-4 shrink-0 opacity-80 transition-transform group-hover:translate-x-0.5" />
+              </button>
+              <button
+                type="button"
+                onClick={chooseAgent}
+                data-testid="choose-agent"
+                className="group flex w-full items-center gap-3 rounded-xl border border-glass bg-glass p-4 text-left transition-colors hover:bg-glass-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-glass bg-glass-strong text-foreground">
+                  <Headset className="h-5 w-5" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-foreground">Sign in as agent</span>
+                  <span className="block text-xs text-muted-foreground">Service desk staff and administrators.</span>
+                </span>
+                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+              </button>
+            </div>
+          )}
+
+          {mode === "agent" && (
+          <>
           {callbackErrorMessage && stage === "credentials" && (
             <div
               role="alert"
@@ -241,6 +340,20 @@ export function LoginPage() {
             </form>
           )}
 
+          {config?.portalEnabled && stage === "credentials" && (
+            <p className="text-center text-[11px] text-muted-foreground">
+              Not an agent?{" "}
+              <a
+                href="/portal/login"
+                className="font-medium text-primary hover:underline"
+                data-testid="portal-link"
+                onClick={() => rememberRole(null)}
+              >
+                Go to the customer portal
+              </a>
+            </p>
+          )}
+
           {config?.microsoftEnabled && stage === "credentials" && (
             <>
               <div className="relative py-1 text-center">
@@ -261,6 +374,8 @@ export function LoginPage() {
                 Sign in with Microsoft
               </Button>
             </>
+          )}
+          </>
           )}
         </div>
       </motion.div>

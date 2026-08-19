@@ -242,6 +242,10 @@ export type CompanyAlert = {
 
 export type TicketDetail = {
   ticket: Ticket;
+  /// v0.1.0 — set only on the system ticket a customer-portal registration
+  /// created (null everywhere else). The detail page renders the approve /
+  /// reject card when present.
+  portalRegistration?: { userId: string; status: string; email: string; displayName: string } | null;
   body: TicketBody;
   events: TicketEvent[];
   pinnedEvents: TicketEventPin[];

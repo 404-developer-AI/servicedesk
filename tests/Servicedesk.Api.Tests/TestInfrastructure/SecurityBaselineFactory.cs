@@ -112,6 +112,16 @@ public sealed class SecurityBaselineFactory : WebApplicationFactory<Program>
             services.RemoveAll<ITotpService>();
             services.AddSingleton<ITotpService>(Totp);
 
+            // v0.1.0 — customer-portal handlers inject Npgsql-backed portal
+            // singletons; swap no-op doubles so authorization / CSRF / disabled
+            // behaviour is testable without a database.
+            services.RemoveAll<Servicedesk.Infrastructure.Portal.IPortalAccountRepository>();
+            services.AddSingleton<Servicedesk.Infrastructure.Portal.IPortalAccountRepository, FakePortalAccountRepository>();
+            services.RemoveAll<Servicedesk.Infrastructure.Portal.IPortalTicketRepository>();
+            services.AddSingleton<Servicedesk.Infrastructure.Portal.IPortalTicketRepository, FakePortalTicketRepository>();
+            services.RemoveAll<Servicedesk.Infrastructure.Portal.IPortalAccountService>();
+            services.AddSingleton<Servicedesk.Infrastructure.Portal.IPortalAccountService, FakePortalAccountService>();
+
             // /auth/me reads per-user dashboard tile preferences — swap the
             // Postgres-backed service for a no-op so DI does not pull in
             // NpgsqlDataSource (removed above).
@@ -261,6 +271,17 @@ public sealed class FakeUserService : IUserService
     private readonly ConcurrentDictionary<string, Guid> _byEmail = new(StringComparer.OrdinalIgnoreCase);
 
     public Task<int> CountAsync(CancellationToken ct = default) => Task.FromResult(_byId.Count);
+
+    /// Test seam: add a Local user row with any role (v0.1.0 — portal tests
+    /// need a Customer row the agent login must refuse).
+    public ApplicationUser Add(string email, string passwordHash, string role)
+    {
+        var user = new ApplicationUser(Guid.NewGuid(), email, passwordHash, role,
+            DateTime.UtcNow, null, 0, null, AuthModes.Local, null, null, true);
+        _byId[user.Id] = user;
+        _byEmail[email] = user.Id;
+        return user;
+    }
 
     public Task<ApplicationUser?> CreateFirstAdminAsync(string email, string passwordHash, CancellationToken ct = default)
     {
@@ -422,6 +443,10 @@ public sealed class FakeSessionService : ISessionService
 
     private readonly ConcurrentDictionary<Guid, Entry> _sessions = new();
 
+    /// v0.1.0 — per-user role override for the synthesised principal
+    /// (default Admin). Portal tests register a Customer user here.
+    public ConcurrentDictionary<Guid, string> Roles { get; } = new();
+
     public Task<Guid> CreateAsync(Guid userId, string? ip, string? userAgent, TimeSpan lifetime, string amr, CancellationToken ct = default)
     {
         var id = Guid.NewGuid();
@@ -437,7 +462,8 @@ public sealed class FakeSessionService : ISessionService
         }
         // Tests supply the user via FakeUserService-resolved principal, but the
         // handler in production only needs a user. We synthesise a minimal one.
-        var user = new ApplicationUser(e.UserId, "test@example.com", "", "Admin", DateTime.UtcNow, null, 0, null,
+        var role = Roles.TryGetValue(e.UserId, out var r) ? r : "Admin";
+        var user = new ApplicationUser(e.UserId, "test@example.com", "", role, DateTime.UtcNow, null, 0, null,
             AuthModes.Local, null, null, true);
         return Task.FromResult<SessionValidation?>(new SessionValidation(e.Id, user, e.Amr, e.ExpiresUtc));
     }

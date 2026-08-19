@@ -28,7 +28,9 @@ server {
 
     client_max_body_size 50M;
 
-    location ~ ^/api/auth/ {
+    # Agent auth + customer-portal auth (v0.1.0) share the nginx-level
+    # burst limit; the app applies its own per-IP limiters on top.
+    location ~ ^/api/(auth|portal/auth)/ {
         limit_req zone=auth burst=20 nodelay;
         proxy_pass http://app:8080;
         proxy_http_version 1.1;

@@ -8,6 +8,7 @@ using Microsoft.OpenApi.Models;
 using Serilog;
 using Servicedesk.Api.Audit;
 using Servicedesk.Api.Auth;
+using Servicedesk.Api.Portal;
 using Servicedesk.Api.Companies;
 using Servicedesk.Api.ComposeTemplates;
 using Servicedesk.Api.TicketTemplates;
@@ -430,6 +431,40 @@ builder.Services.AddRateLimiter(options =>
             AutoReplenishment = true,
         });
     });
+
+    // v0.1.0 — customer portal. Two anonymous buckets, both per IP and
+    // separate from the agent "auth" bucket so a busy customer office behind
+    // one NAT cannot lock agents out (or vice versa):
+    //   portal-auth     — login / 2FA / reset / invitation accept (10/min)
+    //   portal-register — registration + forgot-password (5 per 10 min):
+    //                     both send mail, so they are throttled harder.
+    // Settings → Portal shows the display-only mirrors (Portal.RateLimit.*).
+    var portalAuthPermit = builder.Configuration.GetValue<int?>("Security:RateLimit:PortalAuth:PermitPerWindow") ?? 10;
+    var portalAuthWindow = builder.Configuration.GetValue<int?>("Security:RateLimit:PortalAuth:WindowSeconds") ?? 60;
+    options.AddPolicy("portal-auth", ctx =>
+    {
+        var key = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = portalAuthPermit,
+            Window = TimeSpan.FromSeconds(portalAuthWindow),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        });
+    });
+    var portalRegisterPermit = builder.Configuration.GetValue<int?>("Security:RateLimit:PortalRegister:PermitPerWindow") ?? 5;
+    var portalRegisterWindow = builder.Configuration.GetValue<int?>("Security:RateLimit:PortalRegister:WindowSeconds") ?? 600;
+    options.AddPolicy("portal-register", ctx =>
+    {
+        var key = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = portalRegisterPermit,
+            Window = TimeSpan.FromSeconds(portalRegisterWindow),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        });
+    });
 });
 
 var app = builder.Build();
@@ -706,6 +741,10 @@ app.MapCspReportEndpoint();
 app.MapAuditEndpoints();
 app.MapAuthEndpoints();
 app.MapMicrosoftAuthEndpoints();
+app.MapPortalPublicEndpoints();
+app.MapPortalAuthEndpoints();
+app.MapPortalTicketEndpoints();
+app.MapPortalAdminEndpoints();
 app.MapAdminUserEndpoints();
 app.MapTaxonomyEndpoints();
 app.MapCompanyEndpoints();

@@ -42,4 +42,8 @@ public enum TicketEventType
     ProjectReverted,
     ProjectLinked,
     ProjectUnlinked,
+    // v0.1.0 — customer portal: a message (new-ticket description or
+    // reply) posted by a customer from the portal. Customer-visible,
+    // author_contact_id set, never stamps first_response_utc.
+    PortalMessage,
 }

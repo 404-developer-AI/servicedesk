@@ -47,81 +47,9 @@ public static class TicketAttachmentEndpoints
             if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.Ticket.QueueId, ct))
                 return Results.NotFound();
 
-            if (!http.Request.HasFormContentType)
-                return Results.BadRequest(new { error = "multipart/form-data required." });
-
-            // Cheap pre-flight cap: if the client truthfully advertises a
-            // gigantic Content-Length we reject before ReadFormAsync allocates
-            // anything. Matches the nginx client_max_body_size = 50 MB. The
-            // fine-grained, admin-tunable Storage.MaxAttachmentBytes still
-            // applies after parsing — this is just a denial-of-service guard.
-            const long HardBodyCeilingBytes = 52_428_800;
-            if (http.Request.ContentLength is long advertised && advertised > HardBodyCeilingBytes)
-            {
-                return Results.Json(new { error = "Request body exceeds 50 MB hard ceiling." }, statusCode: 413);
-            }
-
-            var form = await http.Request.ReadFormAsync(ct);
-            var file = form.Files.FirstOrDefault();
-            if (file is null || file.Length == 0)
-                return Results.BadRequest(new { error = "Upload a non-empty file in the 'file' field." });
-
-            var maxBytes = await settings.GetAsync<long>(SettingKeys.Storage.MaxAttachmentBytes, ct);
-            if (maxBytes <= 0) maxBytes = 26_214_400; // 25 MB safety net
-            if (file.Length > maxBytes)
-            {
-                return Results.Json(new
-                {
-                    error = $"File exceeds the {Math.Max(1, maxBytes / 1_048_576)} MB limit (Storage.MaxAttachmentBytes).",
-                }, statusCode: 413);
-            }
-
-            // Sniff first — read the head into memory, then concat with the
-            // rest of the stream when writing to the blob store. Reject HTML
-            // outright; an HTML "attachment" served back inline is XSS bait
-            // even with our content-type discipline.
-            var headBuffer = ArrayPool<byte>.Shared.Rent(MimeSniffer.SniffWindowBytes);
-            int headLen;
-            string sniffedMime;
-            BlobWriteResult writeResult;
-            try
-            {
-                await using var source = file.OpenReadStream();
-                headLen = await ReadFullyAsync(source, headBuffer.AsMemory(0, MimeSniffer.SniffWindowBytes), ct);
-                sniffedMime = MimeSniffer.Sniff(headBuffer.AsSpan(0, headLen), file.ContentType, file.FileName);
-                if (string.Equals(sniffedMime, "text/html", StringComparison.OrdinalIgnoreCase))
-                {
-                    return Results.BadRequest(new { error = "HTML uploads are not allowed." });
-                }
-
-                // Re-stream: the head bytes we already read + the remainder.
-                using var combined = new ConcatStream(headBuffer.AsMemory(0, headLen), source);
-                writeResult = await blobs.WriteAsync(combined, ct);
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(headBuffer);
-            }
-
-            if (writeResult.SizeBytes > maxBytes)
-            {
-                // We've written the blob; leave it on disk (it's content-
-                // addressed and de-dups), but reject the row insert. The
-                // orphan-sweeper will reclaim the bytes if no other row
-                // references them.
-                return Results.Json(new
-                {
-                    error = $"File exceeds the {Math.Max(1, maxBytes / 1_048_576)} MB limit (Storage.MaxAttachmentBytes).",
-                }, statusCode: 413);
-            }
-
-            var safeFilename = SanitizeFilename(file.FileName);
-            var attachmentId = await attachments.CreateUploadedAsync(new NewUploadedAttachment(
-                TicketId: id,
-                ContentHash: writeResult.ContentHash,
-                SizeBytes: writeResult.SizeBytes,
-                MimeType: sniffedMime,
-                OriginalFilename: safeFilename), ct);
+            var stored = await StoreUploadedFileAsync(http, id, attachments, blobs, settings, ct);
+            if (stored.Error is not null) return stored.Error;
+            var (attachmentId, safeFilename, sniffedMime, writeResult) = stored.Ok!.Value;
 
             await audit.LogAsync(new AuditEvent(
                 EventType: "ticket.attachment.uploaded",
@@ -222,6 +150,95 @@ public static class TicketAttachmentEndpoints
         }).WithName("GetTicketAttachment").WithOpenApi();
 
         return app;
+    }
+
+    /// Result of <see cref="StoreUploadedFileAsync"/>: either an error
+    /// response to return verbatim, or the stored attachment row.
+    internal readonly record struct StoredUpload(
+        IResult? Error,
+        (Guid AttachmentId, string Filename, string MimeType, BlobWriteResult Write)? Ok);
+
+    /// The shared upload core (size caps, MIME sniff, HTML refusal, streamed
+    /// blob write, row insert). Used by the agent endpoint above and by the
+    /// customer-portal upload (v0.1.0) so both apply identical validation.
+    /// Authorization is the caller's job — this only stores.
+    internal static async Task<StoredUpload> StoreUploadedFileAsync(
+        HttpContext http, Guid ticketId,
+        IAttachmentRepository attachments, IBlobStore blobs, ISettingsService settings,
+        CancellationToken ct)
+    {
+        if (!http.Request.HasFormContentType)
+            return new(Results.BadRequest(new { error = "multipart/form-data required." }), null);
+
+        // Cheap pre-flight cap: if the client truthfully advertises a
+        // gigantic Content-Length we reject before ReadFormAsync allocates
+        // anything. Matches the nginx client_max_body_size = 50 MB. The
+        // fine-grained, admin-tunable Storage.MaxAttachmentBytes still
+        // applies after parsing — this is just a denial-of-service guard.
+        const long HardBodyCeilingBytes = 52_428_800;
+        if (http.Request.ContentLength is long advertised && advertised > HardBodyCeilingBytes)
+            return new(Results.Json(new { error = "Request body exceeds 50 MB hard ceiling." }, statusCode: 413), null);
+
+        var form = await http.Request.ReadFormAsync(ct);
+        var file = form.Files.FirstOrDefault();
+        if (file is null || file.Length == 0)
+            return new(Results.BadRequest(new { error = "Upload a non-empty file in the 'file' field." }), null);
+
+        var maxBytes = await settings.GetAsync<long>(SettingKeys.Storage.MaxAttachmentBytes, ct);
+        if (maxBytes <= 0) maxBytes = 26_214_400; // 25 MB safety net
+        if (file.Length > maxBytes)
+        {
+            return new(Results.Json(new
+            {
+                error = $"File exceeds the {Math.Max(1, maxBytes / 1_048_576)} MB limit (Storage.MaxAttachmentBytes).",
+            }, statusCode: 413), null);
+        }
+
+        // Sniff first — read the head into memory, then concat with the
+        // rest of the stream when writing to the blob store. Reject HTML
+        // outright; an HTML "attachment" served back inline is XSS bait
+        // even with our content-type discipline.
+        var headBuffer = ArrayPool<byte>.Shared.Rent(MimeSniffer.SniffWindowBytes);
+        int headLen;
+        string sniffedMime;
+        BlobWriteResult writeResult;
+        try
+        {
+            await using var source = file.OpenReadStream();
+            headLen = await ReadFullyAsync(source, headBuffer.AsMemory(0, MimeSniffer.SniffWindowBytes), ct);
+            sniffedMime = MimeSniffer.Sniff(headBuffer.AsSpan(0, headLen), file.ContentType, file.FileName);
+            if (string.Equals(sniffedMime, "text/html", StringComparison.OrdinalIgnoreCase))
+                return new(Results.BadRequest(new { error = "HTML uploads are not allowed." }), null);
+
+            // Re-stream: the head bytes we already read + the remainder.
+            using var combined = new ConcatStream(headBuffer.AsMemory(0, headLen), source);
+            writeResult = await blobs.WriteAsync(combined, ct);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(headBuffer);
+        }
+
+        if (writeResult.SizeBytes > maxBytes)
+        {
+            // We've written the blob; leave it on disk (it's content-
+            // addressed and de-dups), but reject the row insert. The
+            // orphan-sweeper will reclaim the bytes if no other row
+            // references them.
+            return new(Results.Json(new
+            {
+                error = $"File exceeds the {Math.Max(1, maxBytes / 1_048_576)} MB limit (Storage.MaxAttachmentBytes).",
+            }, statusCode: 413), null);
+        }
+
+        var safeFilename = SanitizeFilename(file.FileName);
+        var attachmentId = await attachments.CreateUploadedAsync(new NewUploadedAttachment(
+            TicketId: ticketId,
+            ContentHash: writeResult.ContentHash,
+            SizeBytes: writeResult.SizeBytes,
+            MimeType: sniffedMime,
+            OriginalFilename: safeFilename), ct);
+        return new(null, (attachmentId, safeFilename, sniffedMime, writeResult));
     }
 
     private static async Task<int> ReadFullyAsync(Stream source, Memory<byte> dest, CancellationToken ct)

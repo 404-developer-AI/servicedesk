@@ -60,6 +60,9 @@ public sealed class UserAdminService : IUserAdminService
                     u.feedback_own_only AS FeedbackOwnOnly
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
+            -- v0.1.0: customer-portal accounts have their own admin surface
+            -- (Settings -> Portal) and none of the agent feature flags.
+            WHERE u.role_name <> 'Customer'
             ORDER BY u.created_utc ASC
             """;
         await using var connection = await _dataSource.OpenConnectionAsync(ct);

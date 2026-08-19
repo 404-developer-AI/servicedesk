@@ -3925,6 +3925,8 @@ export const triggerGroupApi = {
 export type AuthConfig = {
   microsoftEnabled: boolean;
   setupAvailable: boolean;
+  /// v0.1.0 — the customer portal is switched on (staff login shows a link).
+  portalEnabled?: boolean;
 };
 
 // ---- Employee Feedback ----

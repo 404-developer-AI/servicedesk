@@ -38,6 +38,7 @@ using Servicedesk.Domain.Search;
 using Servicedesk.Infrastructure.Search;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Portal;
 using Servicedesk.Infrastructure.Signatures;
 using Servicedesk.Infrastructure.Sla;
 using Servicedesk.Infrastructure.Storage;
@@ -648,6 +649,20 @@ public static class DependencyInjection
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<TicketChecklistItemSearchSource>()));
         services.AddSingleton<ChecklistTemplateSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<ChecklistTemplateSearchSource>()));
+
+        // v0.1.0 — Customer portal: accounts + one-time tokens, Turnstile
+        // verification, transactional mail, scoped ticket queries and the
+        // agent-side search source over portal accounts (customers never
+        // reach global search; the source is agent/admin-only).
+        services.AddHttpClient(TurnstileVerifier.HttpClientName);
+        services.AddSingleton<IPortalTokenService, PortalTokenService>();
+        services.AddSingleton<IPortalAccountRepository, PortalAccountRepository>();
+        services.AddSingleton<ITurnstileVerifier, TurnstileVerifier>();
+        services.AddSingleton<IPortalMailService, PortalMailService>();
+        services.AddSingleton<IPortalAccountService, PortalAccountService>();
+        services.AddSingleton<IPortalTicketRepository, PortalTicketRepository>();
+        services.AddSingleton<PortalAccountSearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<PortalAccountSearchSource>()));
 
         // Timesheet search-source (v0.0.35 commit H). Customer sees zero
         // hits; Agent/Admin see entries scoped by the timesheet_manager
