@@ -1167,8 +1167,6 @@ export const ticketApi = {
   // v0.0.105 — project tickets. Settings gate the whole surface; every
   // mutation is re-validated server-side (queue access + project rules).
   projectSettings: () => request<ProjectSettings>("GET", "/api/settings/projects"),
-  convertToProject: (id: string) =>
-    request<{ isProject: boolean }>("POST", `/api/tickets/${id}/project/convert`),
   revertProject: (id: string) =>
     request<{ isProject: boolean }>("POST", `/api/tickets/${id}/project/revert`),
   linkProject: (id: string, projectTicketId: string) =>
