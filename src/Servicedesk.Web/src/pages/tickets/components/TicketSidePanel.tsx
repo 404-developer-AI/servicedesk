@@ -311,9 +311,6 @@ export function TicketSidePanel({
             onUnlinkProject={() =>
               runProjectAction(() => ticketApiClient.unlinkProject(ticket.id), "Removed from project")
             }
-            onConvertProject={() =>
-              runProjectAction(() => ticketApiClient.convertToProject(ticket.id), "Converted to project ticket")
-            }
             onRevertProject={() =>
               runProjectAction(() => ticketApiClient.revertProject(ticket.id), "Converted back to a normal ticket")
             }
@@ -379,7 +376,6 @@ function StatusTab({
   projectLinkedTicketCount,
   onRequestLinkProject,
   onUnlinkProject,
-  onConvertProject,
   onRevertProject,
 }: {
   ticket: Ticket;
@@ -404,7 +400,6 @@ function StatusTab({
   projectLinkedTicketCount: number;
   onRequestLinkProject: () => void;
   onUnlinkProject: () => void;
-  onConvertProject: () => void;
   onRevertProject: () => void;
 }) {
   // v0.0.59 — "Sync orders" button is shown only to users with the Orders
@@ -640,7 +635,6 @@ function StatusTab({
         projectLinkedTicketCount={projectLinkedTicketCount}
         onRequestLinkProject={onRequestLinkProject}
         onUnlinkProject={onUnlinkProject}
-        onConvertProject={onConvertProject}
         onRevertProject={onRevertProject}
       />
 
@@ -746,7 +740,6 @@ function RelationshipsBlock({
   projectLinkedTicketCount,
   onRequestLinkProject,
   onUnlinkProject,
-  onConvertProject,
   onRevertProject,
 }: {
   ticket: Ticket;
@@ -765,7 +758,6 @@ function RelationshipsBlock({
   projectLinkedTicketCount: number;
   onRequestLinkProject: () => void;
   onUnlinkProject: () => void;
-  onConvertProject: () => void;
   onRevertProject: () => void;
 }) {
   // Merged tickets are frozen — hide the manual-link entry points so
@@ -952,19 +944,6 @@ function RelationshipsBlock({
             </Button>
           )}
           <LinkedTicketLauncher ticket={ticket} />
-          {projectsEnabled && !ticket.isProject && !ticket.projectTicketId && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start gap-2 text-xs text-muted-foreground/80"
-              onClick={onConvertProject}
-              title="Turn this ticket into a project other tickets can be linked to"
-            >
-              <FolderKanban className="h-3.5 w-3.5" />
-              Convert to project ticket
-            </Button>
-          )}
         </div>
       )}
     </div>
@@ -1323,8 +1302,8 @@ const RESOLVED_VIA_LABEL: Record<NonNullable<Ticket["companyResolvedVia"]>, stri
   thread_reply: "via thread-reply",
   primary: "via primary link",
   secondary: "via secondary link",
-  manual: "manueel toegewezen",
-  unresolved: "niet eenduidig",
+  manual: "manually assigned",
+  unresolved: "not resolved",
 };
 
 function ResolutionBadge({

@@ -25,38 +25,11 @@ public static class TicketProjectEndpoints
             .WithTags("TicketProjects")
             .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
-        // Convert an existing ticket into a project ticket.
-        group.MapPost("/{id:guid}/project/convert", async (
-            Guid id, HttpContext http,
-            ITicketRepository tickets, ITicketProjectRepository projects,
-            IQueueAccessService queueAccess, ISettingsService settings,
-            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
-        {
-            if (!await ProjectsEnabledAsync(settings, ct))
-                return ProjectsDisabled();
-            var access = await CheckAccessAsync(id, http, tickets, queueAccess, ct);
-            if (access.Error is not null) return access.Error;
-
-            // v0.0.105 — pinned project queue: converting moves the ticket
-            // there, so the actor also needs access to that queue.
-            var pinQueueId = await ProjectQueuePin.GetPinnedQueueIdAsync(settings, ct);
-            if (pinQueueId is Guid pin
-                && !await queueAccess.HasQueueAccessAsync(access.UserId, access.Role, pin, ct))
-            {
-                return Results.Json(
-                    new { error = "Converting moves the ticket to the project queue, which you do not have access to.", code = "queue_forbidden" },
-                    statusCode: 403);
-            }
-
-            var result = await projects.ConvertToProjectAsync(id, access.UserId, pinQueueId, ct);
-            if (!result.Success) return MapFailure(result.FailureReason);
-
-            await AuditAsync(audit, http, "ticket.project_converted", id,
-                new { movedToQueueId = pinQueueId });
-            await PushTicketAsync(hub, id, ct);
-            await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", id.ToString(), ct);
-            return Results.Ok(new { isProject = true });
-        }).WithName("ConvertTicketToProject").WithOpenApi();
+        // NOTE: there is deliberately no convert endpoint — a project
+        // ticket is only ever created through the new-ticket flow (the
+        // "Project ticket" toggle), so every project starts clean in the
+        // project queue. Revert below is the escape hatch for a project
+        // created by mistake (only while nothing is linked to it).
 
         // Turn a project ticket back into a normal ticket (only while no
         // tickets are linked to it).
@@ -276,20 +249,10 @@ public static class TicketProjectEndpoints
             error = "This ticket has been merged and cannot take part in a project.",
             code = "is_merged",
         }),
-        ProjectFailureReason.AlreadyProject => Results.Conflict(new
-        {
-            error = "This ticket is already a project.",
-            code = "already_project",
-        }),
         ProjectFailureReason.NotAProject => Results.Conflict(new
         {
             error = "This ticket is not a project.",
             code = "not_a_project",
-        }),
-        ProjectFailureReason.LinkedToProject => Results.Conflict(new
-        {
-            error = "This ticket is linked to a project. Unlink it before converting it to a project.",
-            code = "linked_to_project",
         }),
         ProjectFailureReason.HasLinkedTickets => Results.Conflict(new
         {
