@@ -485,6 +485,15 @@ function GeneralTab() {
     () => (entries?.find((e) => e.key === "Projects.LinkPromptEnabled")?.value ?? "true") === "true",
     [entries],
   );
+  const projectQueueId = useMemo(
+    () => entries?.find((e) => e.key === "Projects.QueueId")?.value ?? "",
+    [entries],
+  );
+  const { data: projectQueues } = useQuery({
+    queryKey: ["taxonomy", "queues"],
+    queryFn: () => taxonomyApi.queues.list(),
+    staleTime: 60_000,
+  });
   const updateProjects = useMutation({
     mutationFn: ({ key, value }: { key: string; value: string }) => settingsApi.update(key, value),
     onSuccess: () => {
@@ -672,6 +681,31 @@ function GeneralTab() {
               updateProjects.mutate({ key: "Projects.LinkPromptEnabled", value: v ? "true" : "false" })
             }
           />
+          <div className="space-y-1.5">
+            <span className="text-sm font-medium text-foreground">Project queue</span>
+            <select
+              value={projectQueueId}
+              disabled={isLoading || updateProjects.isPending}
+              onChange={(e) =>
+                updateProjects.mutate({ key: "Projects.QueueId", value: e.target.value })
+              }
+              className="h-9 w-full max-w-xs rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="">Not pinned — projects can sit in any queue</option>
+              {(projectQueues ?? []).map((q) => (
+                <option key={q.id} value={q.id}>
+                  {q.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground/70">
+              When set, new and converted project tickets are placed in this
+              queue automatically, the queue field disappears on project
+              tickets, and moving them to another queue is refused everywhere
+              (manual, bulk and triggers). This queue's access list decides
+              which agents see projects.
+            </p>
+          </div>
         </div>
       </section>
     </div>

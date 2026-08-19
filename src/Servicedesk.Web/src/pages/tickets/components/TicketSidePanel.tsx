@@ -11,6 +11,7 @@ import { SwitchRequesterDialog } from "@/components/SwitchRequesterDialog";
 import { MergeTicketDialog } from "@/components/MergeTicketDialog";
 import { LinkParentDialog } from "@/components/LinkParentDialog";
 import { LinkProjectDialog } from "@/components/LinkProjectDialog";
+import { useProjectSettings } from "@/pages/tickets/components/projects/ProjectPromptDialog";
 import { LinkedTicketTypeDialog } from "@/components/LinkedTicketTypeDialog";
 import { SyncOrdersButton } from "@/pages/orders/SyncOrdersButton";
 import { NewTicketDrawer } from "@/shell/NewTicketDrawer";
@@ -409,6 +410,10 @@ function StatusTab({
   // v0.0.59 — "Sync orders" button is shown only to users with the Orders
   // feature flag.
   const { user } = useAuth();
+  // v0.0.104 — with a configured project queue, project tickets hide the
+  // queue selector entirely (the server refuses moves regardless).
+  const projectSettingsQ = useProjectSettings();
+  const projectQueuePinned = !!projectSettingsQ.data?.queueId;
   // Pulsing "Contact not linked" warning. Only renders when (a) the admin
   // has the toggle on and (b) the requester has zero current company links.
   const { data: warningSetting } = useQuery({
@@ -538,19 +543,24 @@ function StatusTab({
         </div>
       )}
 
-      <div>
-        <FieldLabel>Queue</FieldLabel>
-        <TaxonomySelect
-          value={ticket.queueId}
-          onChange={(v) => onUpdate({ queueId: v })}
-          options={queueOptions.map((q) => ({
-            id: q.id,
-            name: q.name,
-            color: q.color,
-            suffix: !q.isActive ? "— inactive" : undefined,
-          }))}
-        />
-      </div>
+      {/* v0.0.104 — project tickets pinned to the project queue have no
+          queue selector: the queue is an implementation detail there and
+          the server refuses moves anyway. */}
+      {!(projectsEnabled && ticket.isProject && projectQueuePinned) && (
+        <div>
+          <FieldLabel>Queue</FieldLabel>
+          <TaxonomySelect
+            value={ticket.queueId}
+            onChange={(v) => onUpdate({ queueId: v })}
+            options={queueOptions.map((q) => ({
+              id: q.id,
+              name: q.name,
+              color: q.color,
+              suffix: !q.isActive ? "— inactive" : undefined,
+            }))}
+          />
+        </div>
+      )}
 
       <div>
         <FieldLabel>Priority</FieldLabel>

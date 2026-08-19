@@ -42,6 +42,9 @@ public enum TicketMutationCheck
     /// attached checklist that blocks closing still has required open items.
     /// <see cref="FieldUpdatePrecheck.ChecklistBlockers"/> names them.
     ChecklistIncomplete,
+    /// v0.0.104 — project tickets are pinned to the configured project
+    /// queue (Projects.QueueId); moving one to any other queue is refused.
+    ProjectQueueLocked,
 }
 
 /// Result of <see cref="ITicketMutationService.PrecheckFieldUpdateAsync"/>.
@@ -127,6 +130,7 @@ public sealed class TicketMutationService : ITicketMutationService
     private readonly ISlaEngine _sla;
     private readonly ITriggerService _triggers;
     private readonly IChecklistCloseGuard _checklistGuard;
+    private readonly Settings.ISettingsService _settings;
 
     public TicketMutationService(
         ITicketRepository tickets,
@@ -137,7 +141,8 @@ public sealed class TicketMutationService : ITicketMutationService
         ITicketListNotifier notifier,
         ISlaEngine sla,
         ITriggerService triggers,
-        IChecklistCloseGuard checklistGuard)
+        IChecklistCloseGuard checklistGuard,
+        Settings.ISettingsService settings)
     {
         _tickets = tickets;
         _queueAccess = queueAccess;
@@ -148,6 +153,7 @@ public sealed class TicketMutationService : ITicketMutationService
         _sla = sla;
         _triggers = triggers;
         _checklistGuard = checklistGuard;
+        _settings = settings;
     }
 
     public async Task<AccessPrecheck> PrecheckAccessAsync(TicketMutationActor actor, Guid ticketId, CancellationToken ct)
@@ -172,6 +178,16 @@ public sealed class TicketMutationService : ITicketMutationService
         {
             if (!await _queueAccess.HasQueueAccessAsync(actor.UserId, actor.Role, update.QueueId.Value, ct))
                 return FieldUpdatePrecheck.Fail(TicketMutationCheck.TargetQueueNoAccess);
+
+            // v0.0.104 — project tickets are pinned to the configured project
+            // queue: any move to a different queue is refused (single-ticket
+            // and bulk share this rule by construction).
+            if (current.Ticket.IsProject)
+            {
+                var pinned = await ProjectQueuePin.GetPinnedQueueIdAsync(_settings, ct);
+                if (pinned is Guid pin && update.QueueId.Value != pin)
+                    return FieldUpdatePrecheck.Fail(TicketMutationCheck.ProjectQueueLocked);
+            }
         }
 
         // v0.0.40 polish — an explicit status must sit in the target queue's

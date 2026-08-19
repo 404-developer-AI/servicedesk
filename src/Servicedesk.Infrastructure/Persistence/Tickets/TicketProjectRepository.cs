@@ -1,7 +1,29 @@
 using Dapper;
 using Npgsql;
+using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Persistence.Tickets;
+
+/// Shared reader for the "project tickets are pinned to one queue" rule
+/// (Projects.QueueId). Returns null when the projects feature is off or no
+/// queue is configured — callers then leave queues alone. Used by the
+/// create endpoint, the convert endpoint, the mutation-service precheck
+/// and the trigger set_queue handler so all paths agree.
+public static class ProjectQueuePin
+{
+    public static async Task<Guid?> GetPinnedQueueIdAsync(ISettingsService settings, CancellationToken ct)
+    {
+        bool enabled;
+        try { enabled = await settings.GetAsync<bool>(SettingKeys.Projects.Enabled, ct); }
+        catch { enabled = true; }
+        if (!enabled) return null;
+
+        string raw;
+        try { raw = await settings.GetAsync<string>(SettingKeys.Projects.QueueId, ct) ?? string.Empty; }
+        catch { return null; }
+        return Guid.TryParse(raw, out var id) && id != Guid.Empty ? id : null;
+    }
+}
 
 /// v0.0.104 — project tickets. A project ticket is a normal ticket with
 /// is_project = TRUE; other tickets point at it via project_ticket_id
@@ -10,8 +32,12 @@ namespace Servicedesk.Infrastructure.Persistence.Tickets;
 public interface ITicketProjectRepository
 {
     /// Flags an existing ticket as a project. Refused when the ticket is
-    /// merged, already a project, or itself linked to a project.
-    Task<ProjectMutationResult> ConvertToProjectAsync(Guid ticketId, Guid actorUserId, CancellationToken ct);
+    /// merged, already a project, or itself linked to a project. When
+    /// <paramref name="pinQueueId"/> is set (Projects.QueueId) the ticket
+    /// is moved into that queue in the same transaction, with a normal
+    /// QueueChange timeline event.
+    Task<ProjectMutationResult> ConvertToProjectAsync(
+        Guid ticketId, Guid actorUserId, Guid? pinQueueId, CancellationToken ct);
 
     /// Clears the project flag again. Refused while any ticket is still
     /// linked to this project (unlink first — the escape hatch, not a force).
@@ -126,19 +152,21 @@ public sealed class TicketProjectRepository : ITicketProjectRepository
         public bool IsProject { get; set; }
         public Guid? ProjectTicketId { get; set; }
         public Guid? MergedIntoTicketId { get; set; }
+        public Guid QueueId { get; set; }
     }
 
     private const string StateSql = """
         SELECT id AS Id, number AS Number, is_project AS IsProject,
                project_ticket_id AS ProjectTicketId,
-               merged_into_ticket_id AS MergedIntoTicketId
+               merged_into_ticket_id AS MergedIntoTicketId,
+               queue_id AS QueueId
         FROM tickets
         WHERE id = @id AND is_deleted = FALSE
         FOR UPDATE
         """;
 
     public async Task<ProjectMutationResult> ConvertToProjectAsync(
-        Guid ticketId, Guid actorUserId, CancellationToken ct)
+        Guid ticketId, Guid actorUserId, Guid? pinQueueId, CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
@@ -150,9 +178,48 @@ public sealed class TicketProjectRepository : ITicketProjectRepository
         if (row.IsProject) return new ProjectMutationResult(false, ProjectFailureReason.AlreadyProject);
         if (row.ProjectTicketId is not null) return new ProjectMutationResult(false, ProjectFailureReason.LinkedToProject);
 
-        await conn.ExecuteAsync(new CommandDefinition(
-            "UPDATE tickets SET is_project = TRUE, updated_utc = now() WHERE id = @ticketId",
-            new { ticketId }, tx, cancellationToken: ct));
+        // Move into the pinned project queue in the same transaction, with a
+        // regular QueueChange event so the timeline explains the jump. A
+        // vanished/inactive pinned queue would violate the FK — fall back to
+        // "no move" rather than failing the convert.
+        var moveToQueue = pinQueueId is Guid pin && pin != row.QueueId
+            && await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
+                "SELECT EXISTS(SELECT 1 FROM queues WHERE id = @pin)",
+                new { pin }, tx, cancellationToken: ct))
+            ? pinQueueId
+            : null;
+
+        if (moveToQueue is Guid targetQueueId)
+        {
+            await conn.ExecuteAsync(new CommandDefinition(
+                "UPDATE tickets SET is_project = TRUE, queue_id = @targetQueueId, updated_utc = now() WHERE id = @ticketId",
+                new { ticketId, targetQueueId }, tx, cancellationToken: ct));
+            var names = (await conn.QueryAsync<(Guid Id, string Name)>(new CommandDefinition(
+                "SELECT id, name FROM queues WHERE id = ANY(@ids)",
+                new { ids = new[] { row.QueueId, targetQueueId } }, tx, cancellationToken: ct)))
+                .ToDictionary(x => x.Id, x => x.Name);
+            var queueMeta = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                from = row.QueueId,
+                to = targetQueueId,
+                fromName = names.GetValueOrDefault(row.QueueId),
+                toName = names.GetValueOrDefault(targetQueueId),
+                reason = "project_queue_pin",
+            });
+            await conn.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO ticket_events (ticket_id, event_type, author_user_id, metadata, is_internal)
+                VALUES (@ticketId, 'QueueChange', @actorUserId, @queueMeta::jsonb, FALSE)
+                """,
+                new { ticketId, actorUserId, queueMeta }, tx, cancellationToken: ct));
+        }
+        else
+        {
+            await conn.ExecuteAsync(new CommandDefinition(
+                "UPDATE tickets SET is_project = TRUE, updated_utc = now() WHERE id = @ticketId",
+                new { ticketId }, tx, cancellationToken: ct));
+        }
+
         await conn.ExecuteAsync(new CommandDefinition(
             """
             INSERT INTO ticket_events (ticket_id, event_type, author_user_id, metadata, is_internal)

@@ -181,7 +181,7 @@ public static class TicketEndpoints
             ITicketRepository tickets, ICompanyRepository companies, IQueueAccessService queueAccess,
             IContactLookupService contactLookup,
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla,
-            ITriggerService triggers, CancellationToken ct) =>
+            ITriggerService triggers, ISettingsService settings, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(req.Subject))
                 return Results.BadRequest(new { error = "Subject is required." });
@@ -190,7 +190,15 @@ public static class TicketEndpoints
 
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, req.QueueId, ct))
+
+            // v0.0.104 — project tickets are pinned to the configured project
+            // queue: a project create lands there regardless of the queue the
+            // client sent (the drawer hides the queue field in that case).
+            var effectiveQueueId = req.QueueId;
+            if (req.IsProject && await ProjectQueuePin.GetPinnedQueueIdAsync(settings, ct) is Guid pinnedQueueId)
+                effectiveQueueId = pinnedQueueId;
+
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, effectiveQueueId, ct))
                 return Results.Json(new { error = "You do not have access to this queue." }, statusCode: 403);
 
             var requester = await companies.GetContactAsync(req.RequesterContactId, ct);
@@ -249,7 +257,7 @@ public static class TicketEndpoints
                 BodyText: req.BodyText ?? "",
                 BodyHtml: req.BodyHtml,
                 RequesterContactId: req.RequesterContactId,
-                QueueId: req.QueueId,
+                QueueId: effectiveQueueId,
                 StatusId: req.StatusId,
                 PriorityId: req.PriorityId,
                 CategoryId: req.CategoryId,
@@ -569,6 +577,15 @@ public static class TicketEndpoints
                     {
                         error = "This status is not allowed for the target queue.",
                         code = "status_not_in_queue_scope",
+                    });
+                case TicketMutationCheck.ProjectQueueLocked:
+                    // v0.0.104 — project tickets are pinned to the project
+                    // queue; the queue selector is hidden client-side, so
+                    // this only catches stale clients.
+                    return Results.Conflict(new
+                    {
+                        error = "Project tickets live in the project queue and cannot be moved to another queue.",
+                        code = "project_queue_locked",
                     });
                 case TicketMutationCheck.ChecklistIncomplete:
                     // v0.0.103 — hard block: no confirmation payload can

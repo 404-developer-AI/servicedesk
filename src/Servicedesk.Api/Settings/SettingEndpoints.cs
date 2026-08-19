@@ -151,11 +151,17 @@ public static class SettingEndpoints
         {
             bool enabled;
             bool linkPrompt;
+            string queueId;
             try { enabled = await svc.GetAsync<bool>(SettingKeys.Projects.Enabled, ct); }
             catch { enabled = true; }
             try { linkPrompt = await svc.GetAsync<bool>(SettingKeys.Projects.LinkPromptEnabled, ct); }
             catch { linkPrompt = true; }
-            return Results.Ok(new ProjectSettingsDto(enabled, linkPrompt));
+            try { queueId = await svc.GetAsync<string>(SettingKeys.Projects.QueueId, ct) ?? string.Empty; }
+            catch { queueId = string.Empty; }
+            // Normalise garbage to "not pinned" so the client never acts on a
+            // half-valid id.
+            if (!Guid.TryParse(queueId, out _)) queueId = string.Empty;
+            return Results.Ok(new ProjectSettingsDto(enabled, linkPrompt, queueId));
         })
         .WithTags("Settings")
         .RequireAuthorization(AuthorizationPolicies.RequireAgent)
@@ -192,7 +198,7 @@ public static class SettingEndpoints
     public sealed record MailComposeSettings(bool ForgottenAttachmentEnabled, string ForgottenAttachmentKeywords);
     public sealed record BulkActionsSettings(bool Enabled, int MaxSelection);
 
-    public sealed record ProjectSettingsDto(bool Enabled, bool LinkPromptEnabled);
+    public sealed record ProjectSettingsDto(bool Enabled, bool LinkPromptEnabled, string QueueId);
 
     public sealed record ChecklistSettingsDto(
         bool Enabled,

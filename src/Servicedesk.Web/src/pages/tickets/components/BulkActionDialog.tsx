@@ -37,6 +37,7 @@ const SKIP_REASON_LABEL: Record<string, string> = {
   status_not_in_queue_scope: "Status not allowed in the ticket's queue",
   status_gate_required: "Status change needs a confirmation — open the ticket",
   checklist_incomplete: "Checklist not finished — open the ticket to complete it",
+  project_queue_locked: "Project ticket — stays in the project queue",
   failed: "Failed — try again or open the ticket",
 };
 

@@ -119,6 +119,8 @@ public static class SettingKeys
     {
         public const string Enabled = "Projects.Enabled";
         public const string LinkPromptEnabled = "Projects.LinkPromptEnabled";
+        /// Queue project tickets are pinned to (uuid, empty = not pinned).
+        public const string QueueId = "Projects.QueueId";
     }
 
     public static class Storage
@@ -1481,6 +1483,8 @@ public static class SettingDefaults
             "Project tickets: a ticket can be created as (or converted to) a project, other tickets link to it via 'Link to project', and the project ticket shows a panel with all linked tickets plus a time rollup for after-calculation. Projects are internal — customers never see them. Turn off to hide every project surface; existing flags and links are kept."),
         new SettingDefault(SettingKeys.Projects.LinkPromptEnabled, "true", "bool", "Tickets",
             "When a ticket is opened for the first time and its company has an open project ticket, ask the agent whether the ticket should be linked to that project. A 'no' is remembered per ticket, so the question is asked at most once."),
+        new SettingDefault(SettingKeys.Projects.QueueId, "", "string", "Tickets",
+            "Queue that holds every project ticket. When set, new and converted project tickets are placed in this queue automatically and cannot be moved to another queue (the queue field is hidden on project tickets); which agents see projects is controlled by this queue's access list. Leave empty to let project tickets sit in any queue like normal tickets."),
 
         // Storage — ADR-001 (v0.0.8). Keys only; runtime consumers land in later steps.
         new SettingDefault(SettingKeys.Storage.BlobRoot, "/var/lib/servicedesk/blobs", "string", "Storage",

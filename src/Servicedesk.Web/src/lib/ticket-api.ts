@@ -416,6 +416,9 @@ export type CreateTicketRequest = {
 export type ProjectSettings = {
   enabled: boolean;
   linkPromptEnabled: boolean;
+  /// Queue project tickets are pinned to; "" = not pinned (queues behave
+  /// normally on project tickets).
+  queueId: string;
 };
 
 /// One linked ticket in the project panel, with enough context to work
