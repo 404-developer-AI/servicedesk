@@ -45,7 +45,11 @@ public sealed record TicketQuery(
     // sidebar's ad-hoc filter dropdowns + legacy URLs.
     IReadOnlyList<Guid>? QueueIds = null,
     IReadOnlyList<Guid>? StatusIds = null,
-    IReadOnlyList<Guid>? PriorityIds = null);
+    IReadOnlyList<Guid>? PriorityIds = null,
+    // v0.0.104 — restrict to project tickets, regardless of queue. Used by
+    // the "Project tickets only" view filter so one saved view shows every
+    // project across the whole install (queue access still applies).
+    bool ProjectsOnly = false);
 
 public sealed record TicketListItem(
     Guid Id,

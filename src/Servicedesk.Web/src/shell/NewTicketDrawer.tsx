@@ -16,6 +16,7 @@ import { AgentPicker } from "@/components/AgentPicker";
 import { CompanyAlertDialog } from "@/components/CompanyAlertDialog";
 import { TaxonomySelect } from "@/components/TaxonomySelect";
 import { PendingTillField } from "@/components/PendingTillField";
+import { useProjectSettings } from "@/pages/tickets/components/projects/ProjectPromptDialog";
 import { TicketCompanyAssignmentDialog } from "@/components/TicketCompanyAssignmentDialog";
 import {
   Select,
@@ -53,6 +54,9 @@ const createTicketSchema = z.object({
   // ignores it otherwise). null/undefined → backend computes the
   // default from settings.
   pendingTillUtc: z.string().datetime().optional().nullable(),
+  // v0.0.104 — create as a project ticket. Only rendered when the
+  // Projects.Enabled setting is on; default off.
+  isProject: z.boolean().optional(),
 });
 
 type CreateTicketForm = z.infer<typeof createTicketSchema>;
@@ -216,8 +220,14 @@ export function NewTicketDrawer({
       categoryId: "",
       assigneeUserId: null,
       pendingTillUtc: null,
+      isProject: false,
     },
   });
+
+  // v0.0.104 — the "Project ticket" toggle only renders while the
+  // Projects.Enabled setting is on (the server re-checks on create).
+  const projectSettingsQ = useProjectSettings();
+  const projectsEnabled = projectSettingsQ.data?.enabled ?? false;
 
   // Drives the conditional "Pending till" field in the right column —
   // we re-render whenever statusId changes so the field appears/hides
@@ -501,6 +511,8 @@ export function NewTicketDrawer({
         // link list, so the backend can upsert the row in the same call.
         companyId: selectedCompanyId ?? undefined,
         newLinkRole: selectedCompanyId && selectedNewLinkRole ? selectedNewLinkRole : undefined,
+        // v0.0.104 — project toggle; only sent when actually ticked.
+        isProject: data.isProject || undefined,
       });
 
       // Two-step note for the image case. A failure here must not lose the
@@ -948,6 +960,38 @@ export function NewTicketDrawer({
                       )}
                     />
                   </div>
+
+                  {/* v0.0.104 — create as a project ticket (settings-gated). */}
+                  {projectsEnabled && (
+                    <div>
+                      <FormLabel>Project</FormLabel>
+                      <Controller
+                        name="isProject"
+                        control={control}
+                        render={({ field }) => (
+                          <label
+                            className="flex cursor-pointer items-start gap-2 rounded-md border border-glass bg-glass px-2.5 py-2 text-xs hover:bg-glass-hover"
+                            title="A project ticket collects other tickets: they link to it and the project panel shows them with a time rollup. Projects are internal — customers never see them."
+                          >
+                            <input
+                              type="checkbox"
+                              checked={field.value ?? false}
+                              onChange={(e) => field.onChange(e.target.checked)}
+                              className="mt-0.5 h-3.5 w-3.5 accent-primary"
+                            />
+                            <span className="min-w-0">
+                              <span className="block font-medium text-foreground/85">
+                                Project ticket
+                              </span>
+                              <span className="block text-[11px] text-muted-foreground/70">
+                                Other tickets can be linked to it; internal only.
+                              </span>
+                            </span>
+                          </label>
+                        )}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

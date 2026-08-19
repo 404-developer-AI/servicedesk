@@ -167,6 +167,17 @@ export type Ticket = {
   /// these are populated.
   zammadTicketId: number | null;
   zammadTicketNumber: string | null;
+  /// v0.0.104 — project tickets. `isProject` flags this ticket as a
+  /// project; `projectTicketId` links a normal ticket to (at most) one
+  /// project. `projectSortOrder` is the manual priority position inside
+  /// the project panel; `projectPromptDismissedUtc` remembers that the
+  /// link-to-project prompt was answered on this ticket.
+  isProject: boolean;
+  projectTicketId: string | null;
+  projectLinkedUtc: string | null;
+  projectLinkedByUserId: string | null;
+  projectSortOrder: number;
+  projectPromptDismissedUtc: string | null;
 };
 
 export type TicketBody = {
@@ -272,6 +283,12 @@ export type TicketDetail = {
   parentLinkedByUserName: string | null;
   /// Children manually linked to this ticket via Main/Sub.
   childTickets: { id: string; number: string }[];
+  /// v0.0.104 — the project this ticket is linked to (all null when
+  /// unlinked), plus how many tickets link to THIS ticket as a project.
+  projectTicketNumber: string | null;
+  projectTicketSubject: string | null;
+  projectLinkedByUserName: string | null;
+  projectLinkedTicketCount: number;
 };
 
 /// Lightweight row returned by /api/tickets/picker for the merge dialog.
@@ -335,6 +352,9 @@ export type TicketListQuery = {
   companyId?: string;
   search?: string;
   openOnly?: boolean;
+  /// v0.0.104 — restrict to project tickets, regardless of queue (the
+  /// "Project tickets only" view filter).
+  projectsOnly?: boolean;
   openFirst?: boolean;
   /// v0.0.95 — per-view "Open tickets first": server buckets New/Open above
   /// Pending above Resolved/Closed before applying the sort field.
@@ -386,6 +406,57 @@ export type CreateTicketRequest = {
   /// 'primary' yields 409 if the contact already has a primary on a
   /// different company.
   newLinkRole?: ContactCompanyRole;
+  /// v0.0.104 — create as a project ticket (the "Project ticket" toggle
+  /// in the new-ticket drawer). Omitted/false = a normal ticket.
+  isProject?: boolean;
+};
+
+// ---- Project tickets (v0.0.104) -------------------------------------
+
+export type ProjectSettings = {
+  enabled: boolean;
+  linkPromptEnabled: boolean;
+};
+
+/// One linked ticket in the project panel, with enough context to work
+/// from the overview without opening it (open first, then manual order).
+export type ProjectLinkedTicket = {
+  id: string;
+  number: number;
+  subject: string;
+  sortOrder: number;
+  linkedUtc: string | null;
+  statusName: string;
+  statusColor: string;
+  statusStateCategory: string;
+  priorityName: string;
+  assigneeName: string | null;
+  requesterName: string | null;
+  requesterEmail: string | null;
+  queueName: string;
+};
+
+/// Logged minutes per ticket per timesheet task, over the project ticket
+/// itself plus its linked tickets. The panel aggregates per ticket, per
+/// task and grand total client-side.
+export type ProjectTimeRow = {
+  ticketId: string;
+  taskName: string;
+  taskIsAbsence: boolean;
+  minutes: number;
+};
+
+export type ProjectOverview = {
+  tickets: ProjectLinkedTicket[];
+  timeRows: ProjectTimeRow[];
+  /// Linked tickets hidden from this viewer by queue access.
+  hiddenTicketCount: number;
+};
+
+export type ProjectPromptItem = {
+  id: string;
+  number: string;
+  subject: string;
 };
 
 // v0.0.39 — server-side preset summary used by the LinkedTicketTypeDialog.
@@ -999,6 +1070,7 @@ export const ticketApi = {
     if (query.companyId) params.set("companyId", query.companyId);
     if (query.search) params.set("search", query.search);
     if (query.openOnly) params.set("openOnly", "true");
+    if (query.projectsOnly) params.set("projectsOnly", "true");
     if (query.openFirst) params.set("openFirst", "true");
     if (query.stateBucketSort) params.set("stateBucketSort", "true");
     if (query.sortField) params.set("sortField", query.sortField);
@@ -1064,7 +1136,7 @@ export const ticketApi = {
     request<TicketDetail>("PATCH", `/api/tickets/${id}/company`, body),
   changeRequester: (id: string, contactId: string) =>
     request<TicketDetail>("PATCH", `/api/tickets/${id}/requester`, { contactId }),
-  picker: (q?: string, excludeTicketId?: string, limit = 20, recentFirst = false) => {
+  picker: (q?: string, excludeTicketId?: string, limit = 20, recentFirst = false, projectsOnly = false) => {
     const params = new URLSearchParams();
     if (q) params.set("q", q);
     if (excludeTicketId) params.set("excludeTicketId", excludeTicketId);
@@ -1072,6 +1144,8 @@ export const ticketApi = {
     // When set, an empty query returns the caller's recently-opened tickets
     // first; a typed query still searches all accessible tickets.
     if (recentFirst) params.set("recentFirst", "true");
+    // v0.0.104 — restrict to open project tickets (link-to-project dialog).
+    if (projectsOnly) params.set("projectsOnly", "true");
     return request<{ items: TicketPickerItem[] }>(
       "GET",
       `/api/tickets/picker?${params.toString()}`,
@@ -1087,6 +1161,31 @@ export const ticketApi = {
     ),
   unlinkParent: (id: string) =>
     request<void>("DELETE", `/api/tickets/${id}/link-parent`),
+  // v0.0.104 — project tickets. Settings gate the whole surface; every
+  // mutation is re-validated server-side (queue access + project rules).
+  projectSettings: () => request<ProjectSettings>("GET", "/api/settings/projects"),
+  convertToProject: (id: string) =>
+    request<{ isProject: boolean }>("POST", `/api/tickets/${id}/project/convert`),
+  revertProject: (id: string) =>
+    request<{ isProject: boolean }>("POST", `/api/tickets/${id}/project/revert`),
+  linkProject: (id: string, projectTicketId: string) =>
+    request<{ projectTicketId: string; projectNumber: number }>(
+      "POST",
+      `/api/tickets/${id}/project/link`,
+      { projectTicketId },
+    ),
+  unlinkProject: (id: string) =>
+    request<void>("DELETE", `/api/tickets/${id}/project/link`),
+  reorderProject: (id: string, orderedTicketIds: string[]) =>
+    request<void>("POST", `/api/tickets/${id}/project/reorder`, { orderedTicketIds }),
+  projectOverview: (id: string) =>
+    request<ProjectOverview>("GET", `/api/tickets/${id}/project/overview`),
+  /// First-open link prompt probe: open projects on this ticket's company;
+  /// empty when the prompt does not apply (already linked/dismissed/off).
+  projectPrompt: (id: string) =>
+    request<{ projects: ProjectPromptItem[] }>("GET", `/api/tickets/${id}/project/prompt`),
+  dismissProjectPrompt: (id: string) =>
+    request<void>("POST", `/api/tickets/${id}/project/prompt/dismiss`),
   // v0.0.39 — linked-ticket presets (manual triggers grouped by type).
   listLinkedTicketPresets: (parentTicketId: string) =>
     request<LinkedTicketPresetSummary[]>(

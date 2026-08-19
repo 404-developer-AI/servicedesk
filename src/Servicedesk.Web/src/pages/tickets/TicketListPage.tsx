@@ -47,6 +47,7 @@ function readFiltersFromSearch(searchStr: string): TicketListQuery {
   if (assigneeUserId) filters.assigneeUserId = assigneeUserId;
   if (search) filters.search = search;
   if (openOnly === "true") filters.openOnly = true;
+  if (params.get("projectsOnly") === "true") filters.projectsOnly = true;
   return filters;
 }
 
@@ -135,6 +136,7 @@ export function TicketListPage() {
       if (typeof vf.assigneeUserId === "string") applied.assigneeUserId = vf.assigneeUserId;
       if (typeof vf.search === "string") applied.search = vf.search;
       if (vf.openOnly === true) applied.openOnly = true;
+      if (vf.projectsOnly === true) applied.projectsOnly = true;
       setFilters(applied);
     } catch {
       // bad JSON — ignore, show unfiltered

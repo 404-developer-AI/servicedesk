@@ -53,7 +53,19 @@ public sealed record Ticket(
     // / nullable long so a JSON-deserialised Ticket from an older
     // payload still hydrates cleanly.
     long? ZammadTicketId = null,
-    string? ZammadTicketNumber = null);
+    string? ZammadTicketNumber = null,
+    // v0.0.104 — project tickets. IsProject flags this ticket as a
+    // project; ProjectTicketId links a normal ticket to (at most) one
+    // project ticket. ProjectSortOrder is the manual priority position
+    // inside the project's panel. ProjectPromptDismissedUtc remembers
+    // that the link-to-project prompt was answered (linked or declined)
+    // so it never re-asks on this ticket.
+    bool IsProject = false,
+    Guid? ProjectTicketId = null,
+    DateTime? ProjectLinkedUtc = null,
+    Guid? ProjectLinkedByUserId = null,
+    int ProjectSortOrder = 0,
+    DateTime? ProjectPromptDismissedUtc = null);
 
 public sealed record TicketBody(
     Guid TicketId,

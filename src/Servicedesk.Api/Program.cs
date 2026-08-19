@@ -714,6 +714,7 @@ app.MapAdminUserEndpoints();
 app.MapTaxonomyEndpoints();
 app.MapCompanyEndpoints();
 app.MapTicketEndpoints();
+app.MapTicketProjectEndpoints();
 app.MapTicketChecklistEndpoints();
 app.MapChecklistTemplateEndpoints();
 app.MapTicketExportEndpoints();

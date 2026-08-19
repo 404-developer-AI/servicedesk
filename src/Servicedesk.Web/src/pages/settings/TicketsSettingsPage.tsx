@@ -475,6 +475,26 @@ function GeneralTab() {
     onError: () => toast.error("Could not update setting"),
   });
 
+  // v0.0.104 — project tickets. Both flags are re-enforced server-side on
+  // every project endpoint; the agent-safe projection feeds the ticket UI.
+  const projectsEnabled = useMemo(
+    () => (entries?.find((e) => e.key === "Projects.Enabled")?.value ?? "true") === "true",
+    [entries],
+  );
+  const projectPromptEnabled = useMemo(
+    () => (entries?.find((e) => e.key === "Projects.LinkPromptEnabled")?.value ?? "true") === "true",
+    [entries],
+  );
+  const updateProjects = useMutation({
+    mutationFn: ({ key, value }: { key: string; value: string }) => settingsApi.update(key, value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "tickets-general"] });
+      qc.invalidateQueries({ queryKey: ["settings", "projects"] });
+      toast.success("Setting updated");
+    },
+    onError: () => toast.error("Could not update setting"),
+  });
+
   return (
     <div className="space-y-6">
       <section className="glass-card p-5">
@@ -616,6 +636,42 @@ function GeneralTab() {
             keep this at a size that comfortably finishes (100 is a good default;
             500 is the hard ceiling).
           </p>
+        </div>
+      </section>
+
+      <section className="glass-card p-5">
+        <div className="space-y-1">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            Project tickets
+          </h2>
+          <p className="text-xs text-muted-foreground/70">
+            A ticket can be created as (or converted to) a project ticket.
+            Other tickets link to it via “Link to project” while staying in
+            their own queue; the project ticket shows a panel with every
+            linked ticket (drag to prioritize) and a time rollup over the
+            whole project for after-calculation. Projects are internal —
+            customers never see them.
+          </p>
+        </div>
+        <div className="mt-4 space-y-3">
+          <ToggleRow
+            label="Enable project tickets"
+            description="Shows the project toggle on new tickets, the convert/link actions and the project panel. Turning this off hides every project surface; existing flags and links are kept."
+            checked={projectsEnabled}
+            disabled={isLoading || updateProjects.isPending}
+            onCheckedChange={(v) =>
+              updateProjects.mutate({ key: "Projects.Enabled", value: v ? "true" : "false" })
+            }
+          />
+          <ToggleRow
+            label="Ask to link new tickets to an open project"
+            description="When a ticket is opened for the first time and its company has an open project, the agent is asked whether to link it. A 'no' is remembered per ticket."
+            checked={projectPromptEnabled}
+            disabled={isLoading || updateProjects.isPending}
+            onCheckedChange={(v) =>
+              updateProjects.mutate({ key: "Projects.LinkPromptEnabled", value: v ? "true" : "false" })
+            }
+          />
         </div>
       </section>
     </div>

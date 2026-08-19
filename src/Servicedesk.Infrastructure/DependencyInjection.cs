@@ -363,6 +363,7 @@ public static class DependencyInjection
 
         services.AddSingleton<ICompanyRepository, CompanyRepository>();
         services.AddSingleton<ITicketRepository, TicketRepository>();
+        services.AddSingleton<ITicketProjectRepository, TicketProjectRepository>();
         services.AddSingleton<IRecentTicketsService, RecentTicketsService>();
         services.AddSingleton<IViewRepository, ViewRepository>();
         services.AddSingleton<IViewGroupRepository, ViewGroupRepository>();

@@ -61,13 +61,17 @@ public interface ITicketRepository
     /// search term is given, the result leads with the tickets that user most
     /// recently opened (newest first), backfilled with the global most-recently-
     /// updated list — so the link-parent dialog opens on the user's own context.
+    /// When <paramref name="projectsOnly"/> is true only open project tickets
+    /// (is_project, state category not Resolved/Closed) are returned — used by
+    /// the link-to-project dialog (v0.0.104).
     Task<IReadOnlyList<TicketPickerHit>> SearchPickerAsync(
         string? search,
         Guid excludeTicketId,
         IReadOnlyCollection<Guid>? accessibleQueueIds,
         Guid? recentForUserId,
         int limit,
-        CancellationToken ct);
+        CancellationToken ct,
+        bool projectsOnly = false);
 
     /// v0.0.101 — everything the detail view needs *around* the ticket, in one
     /// round-trip: merge sources ("Merged from #A, #B"), merge target + actor,
@@ -156,7 +160,21 @@ public sealed record TicketDetailRelations(
     IReadOnlyList<SplitChildTicket> SplitChildren,
     ParentTicketSummary? Parent,
     IReadOnlyList<LinkedChildTicket> ChildTickets,
-    TicketCompanyAlertSource? CompanyAlert);
+    TicketCompanyAlertSource? CompanyAlert,
+    // v0.0.104 — the project this ticket is linked to (null when
+    // unlinked) and, for project tickets, how many tickets link here.
+    ProjectTicketSummary? Project = null,
+    int ProjectLinkedTicketCount = 0);
+
+/// v0.0.104 — summary of the project a ticket is linked to, for the
+/// side panel + banner without a second round-trip.
+public sealed class ProjectTicketSummary
+{
+    public Guid ProjectTicketId { get; set; }
+    public long ProjectNumber { get; set; }
+    public string ProjectSubject { get; set; } = string.Empty;
+    public string? LinkedByName { get; set; }
+}
 
 /// The company row the on-open / on-create alert is rendered from.
 public sealed class TicketCompanyAlertSource
@@ -278,7 +296,10 @@ public sealed record NewTicket(
     // ticket" flow to drop an opening note (internal or public)
     // into the freshly-created ticket's timeline. Null = no event,
     // identical to the pre-v0.0.39 behaviour.
-    InitialTicketNote? InitialNote = null);
+    InitialTicketNote? InitialNote = null,
+    // v0.0.104 — create the ticket as a project ticket (agent toggled
+    // "Project ticket" in the new-ticket drawer). Default off.
+    bool IsProject = false);
 
 public sealed record InitialTicketNote(string BodyHtml, bool IsInternal);
 

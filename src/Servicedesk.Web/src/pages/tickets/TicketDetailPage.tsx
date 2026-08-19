@@ -2,7 +2,7 @@ import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Check, Copy, Download, FileDown, GitBranch, ListChecks, PanelRightClose, PanelRightOpen, Pencil, X } from "lucide-react";
+import { Check, Copy, Download, FileDown, FolderKanban, GitBranch, ListChecks, PanelRightClose, PanelRightOpen, Pencil, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatTicketRef } from "@/lib/ticketRef";
 import { useTicketReferencePrefix } from "@/hooks/useTicketReferencePrefix";
@@ -41,6 +41,9 @@ import { PinnedEventsSummary } from "./components/PinnedEventsSummary";
 import { TicketTimesheetPanel } from "./components/TicketTimesheetPanel";
 import { TicketTimeAlertDialog } from "./components/TicketTimeAlertDialog";
 import { AddNoteForm } from "./components/AddNoteForm";
+import { TicketProjectPanel, useProjectOverview } from "./components/projects/TicketProjectPanel";
+import { ProjectPromptDialog, useProjectSettings } from "./components/projects/ProjectPromptDialog";
+import { ProjectCloseConfirmDialog } from "./components/projects/ProjectCloseConfirmDialog";
 import { buildMailContext, flattenQueueMailboxes } from "./mailContext";
 import { InTicketSearchProvider, useInTicketSearch } from "./components/InTicketSearch";
 
@@ -459,6 +462,69 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
     setChecklistBlock(null);
   }, []);
 
+  // v0.0.104 — project tickets. Settings gate the whole surface (badge,
+  // rail button, panel, prompt); the server re-enforces them on every
+  // project endpoint. The docked project panel behaves like the checklist
+  // panel: it replaces the details side panel while open.
+  const projectSettingsQ = useProjectSettings();
+  const projectsEnabled = projectSettingsQ.data?.enabled ?? false;
+  const isProjectTicket = projectsEnabled && !!data?.ticket?.isProject;
+  const [projectOpen, setProjectOpen] = React.useState(false);
+  React.useEffect(() => {
+    setProjectOpen(false);
+  }, [ticketId]);
+  // The overview feeds both the panel and the close-confirmation below;
+  // React Query dedupes with the panel's own subscription on the same key.
+  const projectOverviewQ = useProjectOverview(ticketId, isProjectTicket);
+  const openLinkedTicketCount = React.useMemo(
+    () =>
+      (projectOverviewQ.data?.tickets ?? []).filter(
+        (t) => t.statusStateCategory !== "Resolved" && t.statusStateCategory !== "Closed",
+      ).length,
+    [projectOverviewQ.data],
+  );
+
+  // First-open link prompt: only probed while it could still apply — the
+  // server re-checks every condition and returns [] otherwise.
+  const projectPromptQ = useQuery({
+    queryKey: ["ticket-project-prompt", ticketId],
+    queryFn: () => ticketApi.projectPrompt(ticketId),
+    enabled:
+      !!data?.ticket &&
+      projectsEnabled &&
+      (projectSettingsQ.data?.linkPromptEnabled ?? false) &&
+      !data.ticket.isProject &&
+      !data.ticket.projectTicketId &&
+      !data.ticket.projectPromptDismissedUtc,
+    staleTime: 0,
+  });
+  const [projectPromptHidden, setProjectPromptHidden] = React.useState(false);
+  React.useEffect(() => {
+    setProjectPromptHidden(false);
+  }, [ticketId]);
+  const promptProjects = projectPromptQ.data?.projects ?? [];
+  const linkFromPromptMutation = useMutation({
+    mutationFn: (projectTicketId: string) => ticketApi.linkProject(ticketId, projectTicketId),
+    onSuccess: (response) => {
+      setProjectPromptHidden(true);
+      toast.success(`Linked to project #${response.projectNumber}`);
+      queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
+      queryClient.invalidateQueries({ queryKey: ["ticket", response.projectTicketId] });
+    },
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? `Link failed: ${err.message}` : "Link failed"),
+  });
+  const declineProjectPrompt = React.useCallback(() => {
+    // Hide immediately; the server remembers the "no" so it never re-asks.
+    setProjectPromptHidden(true);
+    queryClient.setQueryData(["ticket-project-prompt", ticketId], { projects: [] });
+    ticketApi.dismissProjectPrompt(ticketId).catch(() => {});
+  }, [queryClient, ticketId]);
+
+  // Soft confirmation when the project itself is closed/resolved while
+  // linked tickets are still open (no hard block — see ROADMAP decision).
+  const [projectClosePending, setProjectClosePending] = React.useState<TicketFieldUpdate | null>(null);
+
   React.useEffect(() => {
     if (data?.ticket) {
       addTicket({
@@ -568,11 +634,12 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
     return true;
   }, []);
 
-  const handleSidePanelUpdate = React.useCallback(async (fields: TicketFieldUpdate) => {
-    // Non-status updates and same-value status PATCHes skip the gate
-    // probe entirely — listStatusGates would return [] anyway and the
-    // extra round-trip would only slow the common case.
-    if (!fields.statusId || fields.statusId === currentStatusId) {
+  // The status-change tail (checklist pre-check → gate probe → PATCH),
+  // shared by the direct path and the project close-confirmation below.
+  const runStatusChange = React.useCallback(async (fields: TicketFieldUpdate) => {
+    // Callers only route status changes here, but narrow the type for TS
+    // (and fall through safely if a non-status update ever lands here).
+    if (!fields.statusId) {
       await updateMutation.mutateAsync(fields);
       return;
     }
@@ -618,8 +685,28 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
     setGateQueue(matches);
     setGateConfirmations([]);
     setGatePendingFields(fields);
-    setGateTargetStatusId(fields.statusId);
-  }, [currentStatusId, ticketId, updateMutation, checklistsEnabled, checklistSettings, checklists, statuses, readChecklistBlock]);
+    setGateTargetStatusId(fields.statusId ?? null);
+  }, [ticketId, updateMutation, checklistsEnabled, checklistSettings, checklists, statuses, readChecklistBlock]);
+
+  const handleSidePanelUpdate = React.useCallback(async (fields: TicketFieldUpdate) => {
+    // Non-status updates and same-value status PATCHes skip the gate
+    // probe entirely — listStatusGates would return [] anyway and the
+    // extra round-trip would only slow the common case.
+    if (!fields.statusId || fields.statusId === currentStatusId) {
+      await updateMutation.mutateAsync(fields);
+      return;
+    }
+    // v0.0.104 — closing a project with open linked tickets gets a soft
+    // confirmation first (no hard block; the linked tickets are untouched).
+    if (isProjectTicket && openLinkedTicketCount > 0) {
+      const target = statuses?.find((s) => s.id === fields.statusId);
+      if (target && (target.stateCategory === "Resolved" || target.stateCategory === "Closed")) {
+        setProjectClosePending(fields);
+        return;
+      }
+    }
+    await runStatusChange(fields);
+  }, [currentStatusId, updateMutation, isProjectTicket, openLinkedTicketCount, statuses, runStatusChange]);
 
   const closeGateDialog = React.useCallback(() => {
     setGateQueue([]);
@@ -771,6 +858,9 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
   const parentTicketNumber = data.parentTicketNumber ?? null;
   const parentLinkedByUserName = data.parentLinkedByUserName ?? null;
   const childTickets = data.childTickets ?? [];
+  const projectTicketNumber = data.projectTicketNumber ?? null;
+  const projectLinkedByUserName = data.projectLinkedByUserName ?? null;
+  const projectLinkedTicketCount = data.projectLinkedTicketCount ?? 0;
 
   return (
     <>
@@ -805,6 +895,12 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         activeChecklistId={activeChecklistId}
         onActiveChecklistChange={setActiveChecklistId}
         onOpenChecklist={openChecklistPanel}
+        projectsEnabled={projectsEnabled}
+        projectOpen={projectOpen}
+        onProjectOpenChange={setProjectOpen}
+        projectTicketNumber={projectTicketNumber}
+        projectLinkedByUserName={projectLinkedByUserName}
+        projectLinkedTicketCount={projectLinkedTicketCount}
       />
       <ChecklistBlockedDialog
         open={checklistBlock !== null}
@@ -850,6 +946,31 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
           toast.success("Title review dismissed without logging.");
         }}
       />
+      {/* v0.0.104 — link-to-project prompt. Held back while the title-review
+          gate is open so the two first-open dialogs never stack. */}
+      <ProjectPromptDialog
+        open={!projectPromptHidden && promptProjects.length > 0 && !openGate}
+        projects={promptProjects}
+        linking={linkFromPromptMutation.isPending}
+        onLink={(projectTicketId) => linkFromPromptMutation.mutate(projectTicketId)}
+        onDecline={declineProjectPrompt}
+      />
+      <ProjectCloseConfirmDialog
+        open={projectClosePending !== null}
+        openTicketCount={openLinkedTicketCount}
+        targetStatusName={
+          statuses?.find((s) => s.id === projectClosePending?.statusId)?.name ?? null
+        }
+        onConfirm={() => {
+          const fields = projectClosePending;
+          setProjectClosePending(null);
+          if (fields) void runStatusChange(fields);
+        }}
+        onCancel={() => {
+          setProjectClosePending(null);
+          toast("Status not changed");
+        }}
+      />
     </>
   );
 }
@@ -878,6 +999,12 @@ function TicketDetailBody({
   activeChecklistId,
   onActiveChecklistChange,
   onOpenChecklist,
+  projectsEnabled,
+  projectOpen,
+  onProjectOpenChange,
+  projectTicketNumber,
+  projectLinkedByUserName,
+  projectLinkedTicketCount,
 }: {
   ticketId: string;
   ticket: any;
@@ -914,6 +1041,14 @@ function TicketDetailBody({
   activeChecklistId: string | null;
   onActiveChecklistChange: (id: string) => void;
   onOpenChecklist: (checklistId?: string | null) => void;
+  /// v0.0.104 — project tickets (settings-gated). The page owns the
+  /// docked project-panel state, like the checklist panel above.
+  projectsEnabled: boolean;
+  projectOpen: boolean;
+  onProjectOpenChange: (open: boolean) => void;
+  projectTicketNumber: string | null;
+  projectLinkedByUserName: string | null;
+  projectLinkedTicketCount: number;
 }) {
   const { matchesEvent, mode, query, registerScope } = useInTicketSearch();
   const checklistSummary = React.useMemo(() => summarizeChecklists(checklists), [checklists]);
@@ -1025,6 +1160,28 @@ function TicketDetailBody({
               Internal
             </span>
             <div className="ml-auto flex items-center gap-3">
+              {/* v0.0.104 — project marker: on the project ticket itself, and
+                  as a jump-chip on tickets linked to a project. */}
+              {projectsEnabled && ticket.isProject && (
+                <span
+                  className="flex shrink-0 items-center gap-1 rounded-md border border-sky-400/60 bg-sky-100/80 px-2 py-1 text-xs font-medium text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200"
+                  title="Internal project — customers cannot see this ticket"
+                >
+                  <FolderKanban className="h-3 w-3" aria-hidden />
+                  Project
+                </span>
+              )}
+              {projectsEnabled && !ticket.isProject && ticket.projectTicketId && projectTicketNumber && (
+                <Link
+                  to="/tickets/$ticketId"
+                  params={{ ticketId: ticket.projectTicketId }}
+                  className="flex shrink-0 items-center gap-1 rounded-md border border-sky-400/60 bg-sky-100/80 px-2 py-1 text-xs font-medium text-sky-800 transition-colors hover:bg-sky-200/80 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:bg-sky-500/20"
+                  title="Part of a project — open the project ticket"
+                >
+                  <FolderKanban className="h-3 w-3" aria-hidden />
+                  Project #{projectTicketNumber}
+                </Link>
+              )}
               <IsoClassificationActions ticket={ticket} />
               {checklistsEnabled && checklistSettings && (
                 <ChecklistHeaderButton
@@ -1126,6 +1283,7 @@ function TicketDetailBody({
                 ticketId={ticketId}
                 queueId={ticket.queueId}
                 statusId={ticket.statusId}
+                internalOnly={projectsEnabled && ticket.isProject}
                 mailContext={buildMailContext(ticket, events, requesterEmail, ownMailboxAddresses)}
                 onSubmitted={() => {
                   queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
@@ -1146,29 +1304,33 @@ function TicketDetailBody({
           <button
             type="button"
             onClick={() => {
-              if (checklistOpen) {
-                // Switching back from the checklist: show details.
+              if (checklistOpen || projectOpen) {
+                // Switching back from a docked panel: show details.
                 onChecklistOpenChange(false);
+                onProjectOpenChange(false);
                 setSidePanelExpanded(true);
               } else {
                 setSidePanelExpanded((v) => !v);
               }
             }}
-            title={checklistOpen ? "Show ticket details" : sidePanelExpanded ? "Collapse side panel" : "Expand side panel"}
-            aria-label={checklistOpen ? "Show ticket details" : sidePanelExpanded ? "Collapse side panel" : "Expand side panel"}
+            title={checklistOpen || projectOpen ? "Show ticket details" : sidePanelExpanded ? "Collapse side panel" : "Expand side panel"}
+            aria-label={checklistOpen || projectOpen ? "Show ticket details" : sidePanelExpanded ? "Collapse side panel" : "Expand side panel"}
             className={cn(
               "p-1.5 rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-glass-hover transition-colors",
-              !checklistOpen && sidePanelExpanded && "text-foreground",
+              !checklistOpen && !projectOpen && sidePanelExpanded && "text-foreground",
             )}
           >
-            {sidePanelExpanded && !checklistOpen
+            {sidePanelExpanded && !checklistOpen && !projectOpen
               ? <PanelRightClose className="h-4 w-4" />
               : <PanelRightOpen className="h-4 w-4" />}
           </button>
           {checklistsEnabled && (
             <button
               type="button"
-              onClick={() => onChecklistOpenChange(!checklistOpen)}
+              onClick={() => {
+                onProjectOpenChange(false);
+                onChecklistOpenChange(!checklistOpen);
+              }}
               title={checklistOpen ? "Hide checklist panel" : "Show checklist panel"}
               aria-label={checklistOpen ? "Hide checklist panel" : "Show checklist panel"}
               className={cn(
@@ -1186,6 +1348,26 @@ function TicketDetailBody({
               )}
             </button>
           )}
+          {/* v0.0.104 — project panel toggle, only on project tickets. */}
+          {projectsEnabled && ticket.isProject && (
+            <button
+              type="button"
+              onClick={() => {
+                onChecklistOpenChange(false);
+                onProjectOpenChange(!projectOpen);
+              }}
+              title={projectOpen ? "Hide project panel" : "Show project panel"}
+              aria-label={projectOpen ? "Hide project panel" : "Show project panel"}
+              className={cn(
+                "p-1.5 rounded-md transition-colors hover:bg-glass-hover",
+                projectOpen
+                  ? "text-sky-200 bg-sky-400/15"
+                  : "text-muted-foreground/60 hover:text-foreground",
+              )}
+            >
+              <FolderKanban className="h-4 w-4" />
+            </button>
+          )}
         </div>
         {checklistsEnabled && checklistOpen && checklistSettings ? (
           <div className="w-[440px] min-h-0 overflow-hidden">
@@ -1200,6 +1382,17 @@ function TicketDetailBody({
                 setSidePanelExpanded(true);
               }}
               mode="docked"
+            />
+          </div>
+        ) : projectsEnabled && ticket.isProject && projectOpen ? (
+          <div className="w-[440px] min-h-0 overflow-hidden">
+            <TicketProjectPanel
+              ticketId={ticketId}
+              ticketNumber={ticket.number}
+              onClose={() => {
+                onProjectOpenChange(false);
+                setSidePanelExpanded(true);
+              }}
             />
           </div>
         ) : (
@@ -1229,6 +1422,10 @@ function TicketDetailBody({
               await ticketApi.unlinkParent(ticketId);
               queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
             }}
+            projectsEnabled={projectsEnabled}
+            projectTicketNumber={projectTicketNumber}
+            projectLinkedByUserName={projectLinkedByUserName}
+            projectLinkedTicketCount={projectLinkedTicketCount}
           />
         </div>
         )}

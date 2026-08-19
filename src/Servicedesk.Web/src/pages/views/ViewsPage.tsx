@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { useProjectSettings } from "@/pages/tickets/components/projects/ProjectPromptDialog";
 
 // ---- Column definitions ----
 
@@ -80,6 +81,9 @@ type ViewFilters = {
   statusIds?: string[];
   priorityIds?: string[];
   openOnly?: boolean;
+  /// v0.0.104 — only project tickets, regardless of queue. Lets one view
+  /// collect every project across the whole install.
+  projectsOnly?: boolean;
   search?: string;
 };
 
@@ -100,6 +104,7 @@ function normaliseFilters(raw: LegacyViewFilters): ViewFilters {
     priorityIds:
       priorityIds && priorityIds.length > 0 ? priorityIds : undefined,
     openOnly: raw.openOnly,
+    projectsOnly: raw.projectsOnly,
     search: raw.search,
   };
 }
@@ -136,6 +141,7 @@ function formatFilters(
       if (names) parts.push(`Priority: ${names}`);
     }
     if (f.openOnly) parts.push("Open only");
+    if (f.projectsOnly) parts.push("Projects only");
     if (f.search) parts.push(`Search: "${f.search}"`);
     return parts;
   } catch {
@@ -414,6 +420,11 @@ function ViewDialog({
 
   const [name, setName] = React.useState(view?.name ?? "");
   const [filters, setFilters] = React.useState<ViewFilters>(initial);
+  // v0.0.104 — the "Project tickets only" checkbox renders only while the
+  // projects feature is on (an existing stored filter keeps working either
+  // way; the server just returns no is_project rows when none exist).
+  const projectSettingsQ = useProjectSettings();
+  const projectsEnabled = projectSettingsQ.data?.enabled ?? false;
   // Sidebar ordering — lower numbers appear first, identical across users.
   const [sortOrder, setSortOrder] = React.useState<number>(view?.sortOrder ?? 0);
   const [selectedColumns, setSelectedColumns] = React.useState<string[]>(
@@ -555,6 +566,18 @@ function ViewDialog({
             />
             Open only (hide resolved &amp; closed tickets)
           </label>
+
+          {projectsEnabled && (
+            <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={filters.projectsOnly ?? false}
+                onChange={(e) => patch({ projectsOnly: e.target.checked || undefined })}
+                className="rounded border-glass-strong"
+              />
+              Project tickets only (every project, regardless of queue)
+            </label>
+          )}
 
           {/* ---- Columns ---- */}
           <div className="space-y-2 pt-1">

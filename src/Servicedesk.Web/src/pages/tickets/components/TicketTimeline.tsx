@@ -33,6 +33,7 @@ import {
   TimerReset,
   Ban,
   ListChecks,
+  FolderKanban,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ticketApi, ApiError, type TicketEvent, type OutboundMailKind } from "@/lib/ticket-api";
@@ -402,6 +403,11 @@ const EVENT_CONFIG: Record<string, EventConfig> = {
   ChecklistReopened: { icon: ListChecks, dotColor: "bg-amber-500", label: "Checklist reopened" },
   ChecklistItemChanged: { icon: ListChecks, dotColor: "bg-violet-400", label: "Checklist item changed" },
   ChecklistCloseBlocked: { icon: ListChecks, dotColor: "bg-amber-500", label: "Trigger blocked by checklist" },
+  // v0.0.104 — project tickets.
+  ProjectConverted: { icon: FolderKanban, dotColor: "bg-sky-500", label: "Converted to project" },
+  ProjectReverted: { icon: FolderKanban, dotColor: "bg-glass-strong", label: "Project flag removed" },
+  ProjectLinked: { icon: FolderKanban, dotColor: "bg-sky-500", label: "Linked to project" },
+  ProjectUnlinked: { icon: FolderKanban, dotColor: "bg-glass-strong", label: "Removed from project" },
 };
 
 /// Event types that are system/audit noise rather than real
@@ -427,6 +433,10 @@ const SYSTEM_EVENT_TYPES = new Set<string>([
   "ChecklistReopened",
   "ChecklistItemChanged",
   "ChecklistCloseBlocked",
+  "ProjectConverted",
+  "ProjectReverted",
+  "ProjectLinked",
+  "ProjectUnlinked",
 ]);
 
 export function isSystemEvent(event: TicketEvent): boolean {
@@ -697,6 +707,37 @@ function EventBody({ event }: { event: TicketEvent }) {
         </span>
       );
     }
+
+    case "ProjectConverted":
+      return (
+        <span className="text-sm text-muted-foreground">
+          Ticket converted to a project ticket
+        </span>
+      );
+
+    case "ProjectReverted":
+      return (
+        <span className="text-sm text-muted-foreground">
+          Ticket converted back to a normal ticket
+        </span>
+      );
+
+    case "ProjectLinked": {
+      const number = meta.projectNumber != null ? String(meta.projectNumber) : null;
+      return (
+        <span className="text-sm text-muted-foreground">
+          Linked to project
+          {number && <span className="text-foreground/80"> #{number}</span>}
+        </span>
+      );
+    }
+
+    case "ProjectUnlinked":
+      return (
+        <span className="text-sm text-muted-foreground">
+          Removed from its project
+        </span>
+      );
 
     case "ChecklistCloseBlocked": {
       const triggerName = typeof meta.triggerName === "string" ? meta.triggerName : "Trigger";

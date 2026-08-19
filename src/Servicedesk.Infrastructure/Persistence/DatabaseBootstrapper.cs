@@ -5561,6 +5561,48 @@ public sealed class DatabaseBootstrapper : IHostedService
         ALTER TABLE user_notifications DROP CONSTRAINT IF EXISTS chk_user_notifications_type;
         ALTER TABLE user_notifications ADD CONSTRAINT chk_user_notifications_type
             CHECK (notification_type IN ('mention','survey_submitted','checklist_blocked')) NOT VALID;
+
+        -- ===================================================================
+        -- v0.0.104 Project tickets
+        -- ===================================================================
+        -- A project ticket is a normal ticket flagged is_project; other
+        -- tickets link to it via project_ticket_id (one project per ticket,
+        -- no nesting — a project can never itself be linked to a project).
+        -- project_sort_order is the agent-managed priority position inside
+        -- the project panel. project_prompt_dismissed_utc remembers a "no"
+        -- on the link-to-project prompt so it never re-asks on that ticket
+        -- (linking also stamps it, so a later unlink stays quiet too).
+        ALTER TABLE tickets
+            ADD COLUMN IF NOT EXISTS is_project                   BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS project_ticket_id            UUID NULL REFERENCES tickets(id) ON DELETE SET NULL,
+            ADD COLUMN IF NOT EXISTS project_linked_utc           TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS project_linked_by_user_id    UUID NULL REFERENCES users(id) ON DELETE SET NULL,
+            ADD COLUMN IF NOT EXISTS project_sort_order           INT NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS project_prompt_dismissed_utc TIMESTAMPTZ NULL;
+        CREATE INDEX IF NOT EXISTS ix_tickets_project
+            ON tickets (project_ticket_id, project_sort_order)
+            WHERE project_ticket_id IS NOT NULL;
+        -- Sparse: the link-to-project prompt looks up open projects by company.
+        CREATE INDEX IF NOT EXISTS ix_tickets_is_project_company
+            ON tickets (company_id)
+            WHERE is_project = TRUE AND is_deleted = FALSE;
+
+        -- Project timeline event types (convert / revert / link / unlink).
+        ALTER TABLE ticket_events DROP CONSTRAINT IF EXISTS chk_ticket_event_type;
+        ALTER TABLE ticket_events ADD CONSTRAINT chk_ticket_event_type
+            CHECK (event_type IN ('Created','Comment','Mail','Note','StatusChange',
+                                  'AssignmentChange','PriorityChange','QueueChange',
+                                  'CategoryChange','SystemNote','MailReceived',
+                                  'MailSent','CompanyAssignment','RequesterChange',
+                                  'IntakeFormSent','IntakeFormSubmitted','IntakeFormExpired',
+                                  'ParentLinked','ParentUnlinked',
+                                  'SurveySent','SurveySubmitted','SurveyExpired',
+                                  'TimeLimitAlertDismissed','TimeLimitExtended',
+                                  'TimeLimitTrackingDisabled','StatusGateDecision',
+                                  'ChecklistAttached','ChecklistDetached','ChecklistCompleted',
+                                  'ChecklistReopened','ChecklistItemChanged','ChecklistCloseBlocked',
+                                  'ProjectConverted','ProjectReverted',
+                                  'ProjectLinked','ProjectUnlinked')) NOT VALID;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

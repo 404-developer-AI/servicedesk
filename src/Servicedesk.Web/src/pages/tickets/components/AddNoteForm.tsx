@@ -48,11 +48,16 @@ type AddNoteFormProps = {
   /// the window instead of collapsing, and the "Pop out" button is hidden
   /// (already in a popup).
   isPopup?: boolean;
+  /// v0.0.104 — project tickets are internal: the "Reply" (public
+  /// comment) and "Send mail" tabs are hidden, leaving internal notes
+  /// only, and any mail intent falls back to a note. The server refuses
+  /// an outbound send regardless.
+  internalOnly?: boolean;
 };
 
 type TabType = "reply" | "note" | "mail";
 
-export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailContext, isPopup = false }: AddNoteFormProps) {
+export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailContext, isPopup = false, internalOnly = false }: AddNoteFormProps) {
   const { user } = useAuth();
 
   // Per-queue gate for the AI-assist button. Shares the cached accessible-queues
@@ -76,6 +81,7 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
     isPopup || !!savedDraft || !!savedMailDraft,
   );
   const [tab, setTab] = React.useState<TabType>(() => {
+    if (internalOnly) return "note";
     if (savedDraft && savedMailDraft) {
       return savedMailDraft.updatedUtc > savedDraft.updatedUtc
         ? "mail"
@@ -84,6 +90,11 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
     if (savedMailDraft) return "mail";
     return savedDraft?.tab ?? "note";
   });
+  // Defensive: if a non-note tab was active when the ticket became
+  // internal-only (e.g. it was converted to a project), fall back.
+  React.useEffect(() => {
+    if (internalOnly) setTab("note");
+  }, [internalOnly]);
   const [bodyHtml, setBodyHtml] = React.useState(savedDraft?.bodyHtml ?? "");
   const [initialContent] = React.useState(savedDraft?.bodyHtml ?? "");
   const [editorKey, setEditorKey] = React.useState(0);
@@ -161,11 +172,11 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
   // switching to the mail tab. <SendMailForm> picks up the same intent via
   // props and applies it to its own state.
   React.useEffect(() => {
-    if (pendingAction) {
+    if (pendingAction && !internalOnly) {
       setExpanded(true);
       setTab("mail");
     }
-  }, [pendingAction?.id, pendingAction]);
+  }, [pendingAction?.id, pendingAction, internalOnly]);
 
   // v0.0.42 — Auto-insert a compose template into the empty internal-note
   // composer. Fires once per expand-cycle: the moment the editor mounts on
@@ -408,33 +419,37 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
         >
           Internal note
         </button>
-        <button
-          type="button"
-          onClick={() => {
-            setTab("reply");
-            updateDraft(bodyHtml, "reply");
-          }}
-          className={cn(
-            "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-            tab === "reply"
-              ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-              : "text-muted-foreground hover:text-foreground hover:bg-glass-hover"
-          )}
-        >
-          Reply
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab("mail")}
-          className={cn(
-            "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-            tab === "mail"
-              ? "bg-sky-500/15 text-sky-300 border border-sky-500/30"
-              : "text-muted-foreground hover:text-foreground hover:bg-glass-hover"
-          )}
-        >
-          Send mail
-        </button>
+        {!internalOnly && (
+          <button
+            type="button"
+            onClick={() => {
+              setTab("reply");
+              updateDraft(bodyHtml, "reply");
+            }}
+            className={cn(
+              "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+              tab === "reply"
+                ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                : "text-muted-foreground hover:text-foreground hover:bg-glass-hover"
+            )}
+          >
+            Reply
+          </button>
+        )}
+        {!internalOnly && (
+          <button
+            type="button"
+            onClick={() => setTab("mail")}
+            className={cn(
+              "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+              tab === "mail"
+                ? "bg-sky-500/15 text-sky-300 border border-sky-500/30"
+                : "text-muted-foreground hover:text-foreground hover:bg-glass-hover"
+            )}
+          >
+            Send mail
+          </button>
+        )}
         {!isPopup ? (
           <button
             type="button"
