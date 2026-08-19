@@ -975,6 +975,9 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
   );
 }
 
+// Shape of the id an order pill may carry — Adsolut mirror rows are GUIDs.
+const ORDER_GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 function TicketDetailBody({
   ticketId, ticket, body, events, pinnedEvents, pinnedEventIds, updateMutation, queryClient,
   onSidePanelUpdate,
@@ -1073,6 +1076,31 @@ function TicketDetailBody({
     () => events.filter(isSystemEvent).length,
     [events],
   );
+
+  // Orders tagged via "::" pills anywhere in this ticket (description or any
+  // article/note body). Derived from the already-fetched HTML — the pill is
+  // the source of truth for order↔ticket links (ticket_order_links is dead
+  // by design). GUID-checked so a hand-crafted data-order-id in an inbound
+  // mail body can never smuggle an arbitrary string into an /api/orders/{id}
+  // fetch. First-seen order wins; duplicates collapse to one row.
+  const taggedOrders = React.useMemo(() => {
+    const seen = new Map<string, string>();
+    const htmls: string[] = [];
+    if (body?.bodyHtml) htmls.push(body.bodyHtml);
+    for (const e of events) if (e.bodyHtml) htmls.push(e.bodyHtml);
+    const parser = new DOMParser();
+    for (const html of htmls) {
+      parser
+        .parseFromString(html, "text/html")
+        .querySelectorAll("[data-order-id]")
+        .forEach((el) => {
+          const id = el.getAttribute("data-order-id")?.toLowerCase();
+          if (!id || !ORDER_GUID_RE.test(id) || seen.has(id)) return;
+          seen.set(id, el.getAttribute("data-label") ?? el.textContent ?? "");
+        });
+    }
+    return Array.from(seen, ([id, label]) => ({ id, label }));
+  }, [body, events]);
 
   // Scroll the activity feed to the latest post when an agent opens (or
   // switches to) a ticket. We park a ref on the same scroll container the
@@ -1426,6 +1454,7 @@ function TicketDetailBody({
             projectTicketNumber={projectTicketNumber}
             projectLinkedByUserName={projectLinkedByUserName}
             projectLinkedTicketCount={projectLinkedTicketCount}
+            taggedOrders={taggedOrders}
           />
         </div>
         )}

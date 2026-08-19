@@ -98,8 +98,13 @@ function formatBytes(n: number): string {
 /// future hover / click-through affordance. We allow the three data
 /// attrs *only* on `span` elements and do not enable HTML5-custom-data
 /// on anything else (tightest scope that still lets the chip survive).
+/// The "::" order pills' attrs are whitelisted explicitly too — the
+/// OrderPillHost click-through and the side panel's Orders block both
+/// depend on `data-order-id` surviving, and relying on DOMPurify's
+/// ALLOW_DATA_ATTR default would break silently if this config is ever
+/// tightened.
 const SANITIZE_CONFIG = {
-  ADD_ATTR: ["data-type", "data-id", "data-label"],
+  ADD_ATTR: ["data-type", "data-id", "data-label", "data-order-id", "data-order-mention"],
 };
 
 // Lazy-load + async-decode every inline image. A content-rich imported mail

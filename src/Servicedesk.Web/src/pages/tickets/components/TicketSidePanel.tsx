@@ -1,8 +1,8 @@
 import * as React from "react";
 import { toast } from "sonner";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { agentQueueApi, settingsApi, taxonomyApi } from "@/lib/api";
+import { agentQueueApi, ordersApi, settingsApi, taxonomyApi } from "@/lib/api";
 import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
 import { AgentPicker } from "@/components/AgentPicker";
 import { ContactFormDialog } from "@/components/ContactFormDialog";
@@ -53,6 +53,7 @@ import {
   Smartphone,
   MapPin,
   Briefcase,
+  Package,
   Pencil,
   Pin,
   PinOff,
@@ -92,6 +93,11 @@ type TicketSidePanelProps = {
   projectTicketNumber?: string | null;
   projectLinkedByUserName?: string | null;
   projectLinkedTicketCount?: number;
+  /// Orders tagged in the ticket via "::" pills (description or any
+  /// article/note), deduped by the detail page. Drives the "Orders" block
+  /// in the Status tab; the label is the pill's own "OR3 · Customer" text
+  /// used as a fallback while the mirror row loads.
+  taggedOrders?: { id: string; label: string }[];
 };
 
 type TabId = "status" | "contact" | "company";
@@ -174,6 +180,7 @@ export function TicketSidePanel({
   projectTicketNumber,
   projectLinkedByUserName,
   projectLinkedTicketCount = 0,
+  taggedOrders,
 }: TicketSidePanelProps) {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = React.useState<TabId>("status");
@@ -307,6 +314,7 @@ export function TicketSidePanel({
             projectTicketNumber={projectTicketNumber ?? null}
             projectLinkedByUserName={projectLinkedByUserName ?? null}
             projectLinkedTicketCount={projectLinkedTicketCount}
+            taggedOrders={taggedOrders ?? []}
             onRequestLinkProject={() => setLinkProjectOpen(true)}
             onUnlinkProject={() =>
               runProjectAction(() => ticketApiClient.unlinkProject(ticket.id), "Removed from project")
@@ -374,6 +382,7 @@ function StatusTab({
   projectTicketNumber,
   projectLinkedByUserName,
   projectLinkedTicketCount,
+  taggedOrders,
   onRequestLinkProject,
   onUnlinkProject,
   onRevertProject,
@@ -398,6 +407,7 @@ function StatusTab({
   projectTicketNumber: string | null;
   projectLinkedByUserName: string | null;
   projectLinkedTicketCount: number;
+  taggedOrders: { id: string; label: string }[];
   onRequestLinkProject: () => void;
   onUnlinkProject: () => void;
   onRevertProject: () => void;
@@ -651,6 +661,14 @@ function StatusTab({
         </Button>
       )}
 
+      {/* Orders tagged via "::" pills — same feature gate as the pills
+          themselves (OrderPillHost is only mounted for these users, so
+          rows would be dead buttons without it). Hidden when nothing is
+          tagged. */}
+      {user?.adsolutOrdersEnabled && taggedOrders.length > 0 && (
+        <OrdersBlock orders={taggedOrders} />
+      )}
+
       {onToggleSystemEvents && systemEventCount > 0 && (
         <div className="space-y-2 rounded-md border border-glass-strong bg-glass px-2.5 py-2">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
@@ -688,6 +706,78 @@ function StatusTab({
 
       <ZammadImportBadge ticket={ticket} />
     </>
+  );
+}
+
+/* ─── Orders block ─── */
+
+/// Splits a pill label ("OR3 · Customer") back into its document-ref and
+/// customer halves. A label without the separator is customer-only (see
+/// orderMentionLabel).
+function splitOrderLabel(label: string): [string | null, string | null] {
+  const idx = label.indexOf(" · ");
+  if (idx === -1) return [null, label || null];
+  return [label.slice(0, idx), label.slice(idx + 3)];
+}
+
+/// "Orders" strip in the Status tab: every order tagged in the ticket via a
+/// "::" pill (description or any article/note), deduped by the detail page.
+/// The mirror row is fetched per order (cache key shared with
+/// OrderDetailDialog) for a live status badge; until it arrives the pill's
+/// own label carries the row. Rows render with `data-order-id`, so the
+/// global OrderPillHost capture-phase click listener opens the same
+/// OrderDetailDialog as clicking the pill in the text — no local handler.
+function OrdersBlock({ orders }: { orders: { id: string; label: string }[] }) {
+  const details = useQueries({
+    queries: orders.map((o) => ({
+      queryKey: ["orders", "detail", o.id],
+      queryFn: () => ordersApi.detail(o.id),
+      staleTime: 60_000,
+      retry: 1,
+    })),
+  });
+  return (
+    <div className="space-y-2 rounded-md border border-glass-strong bg-glass px-2.5 py-2">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
+        Orders
+      </div>
+      <div className="space-y-1.5">
+        {orders.map((o, i) => {
+          const header = details[i]?.data?.header;
+          const [labelDoc, labelCustomer] = splitOrderLabel(o.label);
+          const doc = header
+            ? (header.kluwerRef ?? `${header.bookCode ?? ""} ${header.docNr ?? ""}`.trim())
+            : labelDoc;
+          const customer = header ? header.customerName : labelCustomer;
+          const state = header?.stateDescription ?? header?.stateCode ?? null;
+          return (
+            <button
+              key={o.id}
+              type="button"
+              data-order-id={o.id}
+              className="flex w-full items-center gap-2 rounded-md border border-glass bg-glass px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-glass-hover"
+            >
+              <Package className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium text-foreground">
+                  {doc || "Order"}
+                </span>
+                {customer && (
+                  <span className="block truncate text-[11px] text-muted-foreground">
+                    {customer}
+                  </span>
+                )}
+              </span>
+              {state && (
+                <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium border border-glass bg-glass-strong text-muted-foreground/80">
+                  {state}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
