@@ -644,6 +644,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
             onChange={setTo}
             ariaLabel="To recipients"
             placeholder="name@example.com, …"
+            ticketId={ticketId}
           />
           {!showCc ? (
             <button
@@ -672,6 +673,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
               onChange={setCc}
               ariaLabel="Cc recipients"
               placeholder="cc@example.com, …"
+              ticketId={ticketId}
             />
           </div>
         ) : null}
@@ -683,6 +685,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
               onChange={setBcc}
               ariaLabel="Bcc recipients"
               placeholder="bcc@example.com, …"
+              ticketId={ticketId}
             />
           </div>
         ) : null}

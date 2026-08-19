@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
-import { contactApi, type MailRecipientInput } from "@/lib/ticket-api";
+import { contactApi, ticketApi, type MailRecipientInput } from "@/lib/ticket-api";
 import { cn } from "@/lib/utils";
 
 // Loose email shape check — matches the server's "single @, dotted domain"
@@ -37,18 +37,31 @@ type Props = {
   placeholder?: string;
   ariaLabel?: string;
   autoFocus?: boolean;
+  /// When set, suggestions come from the ticket's ranked recipient endpoint
+  /// (company contacts + previously-used addresses by usage, general contact
+  /// matches below) and the list already opens on focus with an empty input.
+  /// Without it the field falls back to the plain contact typeahead.
+  ticketId?: string;
 };
+
+/// Unified dropdown row — from the ranked endpoint or the legacy contact
+/// search, whichever backs this instance.
+type Suggestion = { address: string; name: string | null };
 
 /// Chip/pill recipient editor with contact autocomplete. Backs the To/Cc/Bcc
 /// fields of the mail composer: type to get contact suggestions, Enter/comma/
 /// semicolon/Tab (or picking a suggestion) commits a pill, the × on each pill —
-/// or Backspace on an empty input — removes it.
+/// or Backspace on an empty input — removes it. With a `ticketId`, focusing
+/// an empty field already lists the ticket's company contacts (most-used
+/// first — see the recipient-suggestions endpoint); typing re-ranks with
+/// company matches above general contact matches.
 export function RecipientInput({
   value,
   onChange,
   placeholder,
   ariaLabel,
   autoFocus,
+  ticketId,
 }: Props) {
   const [input, setInput] = React.useState("");
   const [debounced, setDebounced] = React.useState("");
@@ -62,10 +75,21 @@ export function RecipientInput({
     return () => clearTimeout(t);
   }, [input]);
 
+  // Ranked, ticket-scoped suggestions — fires as soon as the field opens,
+  // also with an empty input (that's the "click → company contacts" list).
+  const { data: ranked } = useQuery({
+    queryKey: ["recipient-suggestions", ticketId, debounced],
+    queryFn: () => ticketApi.recipientSuggestions(ticketId!, debounced),
+    enabled: !!ticketId && open,
+    placeholderData: (prev) => prev,
+    staleTime: 30_000,
+  });
+
+  // Legacy plain contact typeahead for instances without a ticket context.
   const { data: contacts } = useQuery({
     queryKey: ["contacts", "recipient-suggest", debounced],
     queryFn: () => contactApi.list(debounced),
-    enabled: debounced.length >= 1,
+    enabled: !ticketId && debounced.length >= 1,
     placeholderData: (prev) => prev,
     staleTime: 30_000,
   });
@@ -76,15 +100,20 @@ export function RecipientInput({
     () => new Set(value.map((r) => dedupKey(r.address))),
     [value],
   );
-  const suggestions = React.useMemo(
-    () =>
-      (contacts ?? [])
-        .filter((c) => c.email && !taken.has(dedupKey(c.email)))
-        .slice(0, 8),
-    [contacts, taken],
-  );
+  const suggestions = React.useMemo<Suggestion[]>(() => {
+    const source: Suggestion[] = ticketId
+      ? (ranked?.items ?? []).map((s) => ({ address: s.address, name: s.name }))
+      : (contacts ?? [])
+          .filter((c) => c.email)
+          .map((c) => ({
+            address: c.email,
+            name: [c.firstName, c.lastName].filter(Boolean).join(" ") || null,
+          }));
+    return source.filter((s) => !taken.has(dedupKey(s.address))).slice(0, 8);
+  }, [ticketId, ranked, contacts, taken]);
 
-  const showDropdown = open && debounced.length >= 1 && suggestions.length > 0;
+  const showDropdown =
+    open && suggestions.length > 0 && (!!ticketId || debounced.length >= 1);
 
   function commitRaw(raw: string) {
     const parts = raw.split(/[,;\n]+/);
@@ -137,8 +166,8 @@ export function RecipientInput({
       if (e.key === "Tab" && !input.trim() && activeIndex < 0) return;
       if (showDropdown && activeIndex >= 0) {
         e.preventDefault();
-        const c = suggestions[activeIndex];
-        addContact(c.email, [c.firstName, c.lastName].filter(Boolean).join(" "));
+        const s = suggestions[activeIndex];
+        addContact(s.address, s.name ?? "");
         return;
       }
       if (input.trim()) {
@@ -240,29 +269,26 @@ export function RecipientInput({
             if (blurTimer.current) window.clearTimeout(blurTimer.current);
           }}
         >
-          {suggestions.map((c, i) => {
-            const name = [c.firstName, c.lastName].filter(Boolean).join(" ");
-            return (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => {
-                  addContact(c.email, name);
-                  inputRef.current?.focus();
-                }}
-                onMouseEnter={() => setActiveIndex(i)}
-                className={cn(
-                  "w-full rounded px-2 py-1.5 text-left text-sm transition-colors",
-                  i === activeIndex ? "bg-glass-strong" : "hover:bg-glass-hover",
-                )}
-              >
-                {name ? (
-                  <div className="truncate font-medium text-foreground">{name}</div>
-                ) : null}
-                <div className="truncate text-xs text-muted-foreground">{c.email}</div>
-              </button>
-            );
-          })}
+          {suggestions.map((s, i) => (
+            <button
+              key={dedupKey(s.address)}
+              type="button"
+              onClick={() => {
+                addContact(s.address, s.name ?? "");
+                inputRef.current?.focus();
+              }}
+              onMouseEnter={() => setActiveIndex(i)}
+              className={cn(
+                "w-full rounded px-2 py-1.5 text-left text-sm transition-colors",
+                i === activeIndex ? "bg-glass-strong" : "hover:bg-glass-hover",
+              )}
+            >
+              {s.name ? (
+                <div className="truncate font-medium text-foreground">{s.name}</div>
+              ) : null}
+              <div className="truncate text-xs text-muted-foreground">{s.address}</div>
+            </button>
+          ))}
         </div>
       ) : null}
     </div>
