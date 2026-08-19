@@ -10,7 +10,7 @@ using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Api.Tickets;
 
-/// v0.0.104 — project tickets. Convert/revert on the project side,
+/// v0.0.105 — project tickets. Convert/revert on the project side,
 /// link/unlink/reorder on the member side, the panel overview and the
 /// first-open link prompt. Everything is agent-gated + queue-access
 /// checked like the rest of the ticket surface, and every mutation is
@@ -37,7 +37,7 @@ public static class TicketProjectEndpoints
             var access = await CheckAccessAsync(id, http, tickets, queueAccess, ct);
             if (access.Error is not null) return access.Error;
 
-            // v0.0.104 — pinned project queue: converting moves the ticket
+            // v0.0.105 — pinned project queue: converting moves the ticket
             // there, so the actor also needs access to that queue.
             var pinQueueId = await ProjectQueuePin.GetPinnedQueueIdAsync(settings, ct);
             if (pinQueueId is Guid pin

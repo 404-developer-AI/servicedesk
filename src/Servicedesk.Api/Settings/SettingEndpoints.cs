@@ -142,7 +142,7 @@ public static class SettingEndpoints
         .WithName("GetChecklistSettings")
         .WithOpenApi();
 
-        // ---- Project ticket settings (v0.0.104, agent-readable) ----
+        // ---- Project ticket settings (v0.0.105, agent-readable) ----
         // The ticket surfaces need the enable flag (render the project
         // badge/panel/buttons and the new-ticket toggle at all) and the
         // link-prompt flag (probe on first open). The server re-enforces

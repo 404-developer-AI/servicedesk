@@ -5563,7 +5563,7 @@ public sealed class DatabaseBootstrapper : IHostedService
             CHECK (notification_type IN ('mention','survey_submitted','checklist_blocked')) NOT VALID;
 
         -- ===================================================================
-        -- v0.0.104 Project tickets
+        -- v0.0.105 Project tickets
         -- ===================================================================
         -- A project ticket is a normal ticket flagged is_project; other
         -- tickets link to it via project_ticket_id (one project per ticket,

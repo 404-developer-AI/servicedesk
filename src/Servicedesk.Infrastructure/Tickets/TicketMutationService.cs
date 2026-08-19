@@ -42,7 +42,7 @@ public enum TicketMutationCheck
     /// attached checklist that blocks closing still has required open items.
     /// <see cref="FieldUpdatePrecheck.ChecklistBlockers"/> names them.
     ChecklistIncomplete,
-    /// v0.0.104 — project tickets are pinned to the configured project
+    /// v0.0.105 — project tickets are pinned to the configured project
     /// queue (Projects.QueueId); moving one to any other queue is refused.
     ProjectQueueLocked,
 }
@@ -179,7 +179,7 @@ public sealed class TicketMutationService : ITicketMutationService
             if (!await _queueAccess.HasQueueAccessAsync(actor.UserId, actor.Role, update.QueueId.Value, ct))
                 return FieldUpdatePrecheck.Fail(TicketMutationCheck.TargetQueueNoAccess);
 
-            // v0.0.104 — project tickets are pinned to the configured project
+            // v0.0.105 — project tickets are pinned to the configured project
             // queue: any move to a different queue is refused (single-ticket
             // and bulk share this rule by construction).
             if (current.Ticket.IsProject)

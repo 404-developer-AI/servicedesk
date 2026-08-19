@@ -114,7 +114,7 @@ internal sealed class SendMailHandler : ITriggerActionHandler
                 new { reason = "Suppressed: triggering article is an auto-submitted mail (loop prevention)." });
         }
 
-        // v0.0.104 — project tickets are internal: trigger mail toward the
+        // v0.0.105 — project tickets are internal: trigger mail toward the
         // customer never goes out from a project (agent-directed
         // notifications — owner-agent / queue-agents / address — are
         // unaffected). Mirrors the manual-compose gate on the mail

@@ -36,7 +36,7 @@ public enum TicketEventType
     ChecklistItemChanged,
     // A trigger's set-status action was refused by the checklist close block.
     ChecklistCloseBlocked,
-    // v0.0.104 — project tickets: convert / revert on the project ticket,
+    // v0.0.105 — project tickets: convert / revert on the project ticket,
     // link / unlink on the ticket that joins or leaves a project.
     ProjectConverted,
     ProjectReverted,

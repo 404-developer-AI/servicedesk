@@ -54,7 +54,7 @@ const createTicketSchema = z.object({
   // ignores it otherwise). null/undefined → backend computes the
   // default from settings.
   pendingTillUtc: z.string().datetime().optional().nullable(),
-  // v0.0.104 — create as a project ticket. Only rendered when the
+  // v0.0.105 — create as a project ticket. Only rendered when the
   // Projects.Enabled setting is on; default off.
   isProject: z.boolean().optional(),
 });
@@ -224,7 +224,7 @@ export function NewTicketDrawer({
     },
   });
 
-  // v0.0.104 — the "Project ticket" toggle only renders while the
+  // v0.0.105 — the "Project ticket" toggle only renders while the
   // Projects.Enabled setting is on (the server re-checks on create).
   const projectSettingsQ = useProjectSettings();
   const projectsEnabled = projectSettingsQ.data?.enabled ?? false;
@@ -521,7 +521,7 @@ export function NewTicketDrawer({
         // link list, so the backend can upsert the row in the same call.
         companyId: selectedCompanyId ?? undefined,
         newLinkRole: selectedCompanyId && selectedNewLinkRole ? selectedNewLinkRole : undefined,
-        // v0.0.104 — project toggle; only sent when actually ticked.
+        // v0.0.105 — project toggle; only sent when actually ticked.
         isProject: data.isProject || undefined,
       });
 
@@ -901,7 +901,7 @@ export function NewTicketDrawer({
                     );
                   })()}
 
-                  {/* v0.0.104 — a project ticket with a pinned project queue
+                  {/* v0.0.105 — a project ticket with a pinned project queue
                       has no queue choice: the server places it there. */}
                   {!projectQueueForced && (
                     <div>
@@ -975,7 +975,7 @@ export function NewTicketDrawer({
                     />
                   </div>
 
-                  {/* v0.0.104 — create as a project ticket (settings-gated). */}
+                  {/* v0.0.105 — create as a project ticket (settings-gated). */}
                   {projectsEnabled && (
                     <div>
                       <FormLabel>Project</FormLabel>

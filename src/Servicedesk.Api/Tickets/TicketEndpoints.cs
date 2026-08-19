@@ -191,7 +191,7 @@ public static class TicketEndpoints
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
-            // v0.0.104 — project tickets are pinned to the configured project
+            // v0.0.105 — project tickets are pinned to the configured project
             // queue: a project create lands there regardless of the queue the
             // client sent (the drawer hides the queue field in that case).
             var effectiveQueueId = req.QueueId;
@@ -579,7 +579,7 @@ public static class TicketEndpoints
                         code = "status_not_in_queue_scope",
                     });
                 case TicketMutationCheck.ProjectQueueLocked:
-                    // v0.0.104 — project tickets are pinned to the project
+                    // v0.0.105 — project tickets are pinned to the project
                     // queue; the queue selector is hidden client-side, so
                     // this only catches stale clients.
                     return Results.Conflict(new
@@ -1090,7 +1090,7 @@ public static class TicketEndpoints
             if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.Ticket.QueueId, ct))
                 return Results.NotFound();
 
-            // v0.0.104 — project tickets are internal: no outbound mail from
+            // v0.0.105 — project tickets are internal: no outbound mail from
             // a project. The composer hides the mail tab; this is the server
             // gate for stale clients. Only enforced while projects are on —
             // switching the feature off returns the ticket to normal rules.
@@ -2119,7 +2119,7 @@ public static class TicketEndpoints
         // different company → 409.
         Guid? CompanyId = null,
         string? NewLinkRole = null,
-        // v0.0.104 — create as a project ticket (the "Project ticket"
+        // v0.0.105 — create as a project ticket (the "Project ticket"
         // toggle in the new-ticket drawer). Default off.
         bool IsProject = false);
 

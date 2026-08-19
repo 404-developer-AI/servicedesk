@@ -113,7 +113,7 @@ public static class SettingKeys
         public const string MaxItemsPerChecklist = "Checklists.MaxItemsPerChecklist";
     }
 
-    /// v0.0.104 — project tickets (a normal ticket flagged as project;
+    /// v0.0.105 — project tickets (a normal ticket flagged as project;
     /// other tickets link to it, with a project panel + time rollup).
     public static class Projects
     {

@@ -54,7 +54,7 @@ public sealed record Ticket(
     // payload still hydrates cleanly.
     long? ZammadTicketId = null,
     string? ZammadTicketNumber = null,
-    // v0.0.104 — project tickets. IsProject flags this ticket as a
+    // v0.0.105 — project tickets. IsProject flags this ticket as a
     // project; ProjectTicketId links a normal ticket to (at most) one
     // project ticket. ProjectSortOrder is the manual priority position
     // inside the project's panel. ProjectPromptDismissedUtc remembers

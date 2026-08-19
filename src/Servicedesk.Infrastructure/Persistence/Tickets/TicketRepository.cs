@@ -494,7 +494,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                   LIMIT 1))
             WHERE t.id = @ticketId;
 
-            -- 6: linked project summary (null when not linked) — v0.0.104
+            -- 6: linked project summary (null when not linked) — v0.0.105
             SELECT p.id     AS ProjectTicketId,
                    p.number AS ProjectNumber,
                    p.subject AS ProjectSubject,
@@ -1361,7 +1361,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         CancellationToken ct,
         bool projectsOnly = false)
     {
-        // v0.0.104 — link-to-project dialog: only open project tickets are
+        // v0.0.105 — link-to-project dialog: only open project tickets are
         // valid targets. Composes with every arm below (recent / fill / search).
         var projectFilter = projectsOnly
             ? " AND t.is_project = TRUE AND s.state_category NOT IN ('Resolved','Closed')"

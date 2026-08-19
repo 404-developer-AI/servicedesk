@@ -167,7 +167,7 @@ export type Ticket = {
   /// these are populated.
   zammadTicketId: number | null;
   zammadTicketNumber: string | null;
-  /// v0.0.104 — project tickets. `isProject` flags this ticket as a
+  /// v0.0.105 — project tickets. `isProject` flags this ticket as a
   /// project; `projectTicketId` links a normal ticket to (at most) one
   /// project. `projectSortOrder` is the manual priority position inside
   /// the project panel; `projectPromptDismissedUtc` remembers that the
@@ -283,7 +283,7 @@ export type TicketDetail = {
   parentLinkedByUserName: string | null;
   /// Children manually linked to this ticket via Main/Sub.
   childTickets: { id: string; number: string }[];
-  /// v0.0.104 — the project this ticket is linked to (all null when
+  /// v0.0.105 — the project this ticket is linked to (all null when
   /// unlinked), plus how many tickets link to THIS ticket as a project.
   projectTicketNumber: string | null;
   projectTicketSubject: string | null;
@@ -352,7 +352,7 @@ export type TicketListQuery = {
   companyId?: string;
   search?: string;
   openOnly?: boolean;
-  /// v0.0.104 — restrict to project tickets, regardless of queue (the
+  /// v0.0.105 — restrict to project tickets, regardless of queue (the
   /// "Project tickets only" view filter).
   projectsOnly?: boolean;
   openFirst?: boolean;
@@ -406,12 +406,12 @@ export type CreateTicketRequest = {
   /// 'primary' yields 409 if the contact already has a primary on a
   /// different company.
   newLinkRole?: ContactCompanyRole;
-  /// v0.0.104 — create as a project ticket (the "Project ticket" toggle
+  /// v0.0.105 — create as a project ticket (the "Project ticket" toggle
   /// in the new-ticket drawer). Omitted/false = a normal ticket.
   isProject?: boolean;
 };
 
-// ---- Project tickets (v0.0.104) -------------------------------------
+// ---- Project tickets (v0.0.105) -------------------------------------
 
 export type ProjectSettings = {
   enabled: boolean;
@@ -1147,7 +1147,7 @@ export const ticketApi = {
     // When set, an empty query returns the caller's recently-opened tickets
     // first; a typed query still searches all accessible tickets.
     if (recentFirst) params.set("recentFirst", "true");
-    // v0.0.104 — restrict to open project tickets (link-to-project dialog).
+    // v0.0.105 — restrict to open project tickets (link-to-project dialog).
     if (projectsOnly) params.set("projectsOnly", "true");
     return request<{ items: TicketPickerItem[] }>(
       "GET",
@@ -1164,7 +1164,7 @@ export const ticketApi = {
     ),
   unlinkParent: (id: string) =>
     request<void>("DELETE", `/api/tickets/${id}/link-parent`),
-  // v0.0.104 — project tickets. Settings gate the whole surface; every
+  // v0.0.105 — project tickets. Settings gate the whole surface; every
   // mutation is re-validated server-side (queue access + project rules).
   projectSettings: () => request<ProjectSettings>("GET", "/api/settings/projects"),
   convertToProject: (id: string) =>
