@@ -1,6 +1,6 @@
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Toaster } from "sonner";
-import { Building2, LifeBuoy, LogOut, Plus, Ticket, UserCircle2 } from "lucide-react";
+import { Building2, Check, ChevronsUpDown, LifeBuoy, LogOut, Plus, Ticket, UserCircle2 } from "lucide-react";
 import { BrandWordmark } from "@/components/BrandMark";
 import { MaintenanceBanner } from "@/components/maintenance/MaintenanceBanner";
 import {
@@ -18,7 +18,7 @@ import { useUpdateCheck } from "@/hooks/useUpdateCheck";
 import { portalAuthApi } from "@/lib/portal-api";
 import { refreshAuth } from "@/auth/bootstrap";
 import { cn } from "@/lib/utils";
-import { usePortalMe } from "@/portal/portalShared";
+import { usePortalCompany, usePortalMe } from "@/portal/portalShared";
 import { usePortalConfig, portalOrganisation } from "@/portal/PortalAuthLayout";
 
 /// The authenticated customer-portal chrome: top bar (brand, nav, account),
@@ -31,6 +31,7 @@ export function PortalShell() {
   const navigate = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const me = usePortalMe();
+  const company = usePortalCompany();
   const config = usePortalConfig();
   const version = useSystemVersion();
   const { time, error: timeError } = useServerTime();
@@ -81,10 +82,41 @@ export function PortalShell() {
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-2">
-            {me.user?.companyName ? (
+            {company.companies.length > 1 ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex h-9 items-center gap-2 rounded-lg border border-glass bg-glass px-2.5 text-sm text-foreground transition-colors hover:bg-glass-hover"
+                    data-testid="portal-company-switcher"
+                    title="Switch company"
+                  >
+                    <Building2 className="h-4 w-4 text-muted-foreground" />
+                    <span className="max-w-[200px] truncate">{company.active?.name ?? "Company"}</span>
+                    <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                    Tickets of
+                  </DropdownMenuLabel>
+                  {company.companies.map((c) => (
+                    <DropdownMenuItem key={c.id} onClick={() => company.select(c.id)} className="gap-2">
+                      <Check className={cn("h-4 w-4", c.id === company.active?.id ? "opacity-100" : "opacity-0")} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{c.name}</span>
+                        <span className="block text-[10px] text-muted-foreground">
+                          {c.canSeeCompanyTickets ? "Ticket manager — all tickets" : "Member — your tickets"}
+                        </span>
+                      </span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : company.active ? (
               <span className="hidden items-center gap-1.5 text-xs text-muted-foreground md:inline-flex">
                 <Building2 className="h-3.5 w-3.5" />
-                {me.user.companyName}
+                {company.active.name}
               </span>
             ) : null}
             <DropdownMenu>

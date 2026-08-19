@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Send, UserRound } from "lucide-react";
 import { toast } from "sonner";
@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiErrorMessage } from "@/lib/api";
 import { portalAdminApi } from "@/lib/portal-api";
-import type { Contact } from "@/lib/ticket-api";
+import { contactApi, type Contact } from "@/lib/ticket-api";
 import { useAuth } from "@/auth/authStore";
 import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
 import {
@@ -52,6 +52,13 @@ export function PortalAccountCard({ contact }: { contact: Contact }) {
 
   const account = q.data?.account ?? null;
   const invitations = (q.data?.invitations ?? []).filter((i) => !i.expired);
+  // Shares the contact page's company-links query (same key) so the roles
+  // shown here always match the Company links card.
+  const links = useQuery({
+    queryKey: ["contact-companies", contact.id],
+    queryFn: () => contactApi.listCompanies(contact.id),
+  });
+  const portalLinks = (links.data ?? []).filter((c) => c.role === "primary" || c.role === "secondary");
 
   return (
     <section className="glass-card p-5" data-testid="contact-portal-account">
@@ -71,8 +78,21 @@ export function PortalAccountCard({ contact }: { contact: Contact }) {
           <dl className="grid grid-cols-[110px_1fr] gap-y-1 text-xs">
             <dt className="text-muted-foreground">Sign-in email</dt>
             <dd className="truncate">{account.email}</dd>
-            <dt className="text-muted-foreground">Portal role</dt>
-            <dd>{contact.companyRole === "TicketManager" ? "Ticket manager — sees every company ticket" : "Member — sees own tickets"}</dd>
+            <dt className="text-muted-foreground">Companies</dt>
+            <dd>
+              {portalLinks.length === 0 ? (
+                <span className="text-muted-foreground">None — sees only own tickets without a company</span>
+              ) : (
+                <ul className="space-y-0.5">
+                  {portalLinks.map((c) => (
+                    <li key={c.linkId} className="truncate">
+                      {c.companyShortName || c.companyName}
+                      <span className="text-muted-foreground"> · {c.portalRole === "TicketManager" ? "Ticket manager" : "Member"}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </dd>
             <dt className="text-muted-foreground">Origin</dt>
             <dd>
               {account.origin === "Invitation" ? `Invited${account.invitedByEmail ? ` by ${account.invitedByEmail}` : ""}` : "Self-registered"}
@@ -92,7 +112,7 @@ export function PortalAccountCard({ contact }: { contact: Contact }) {
           </dl>
           <PortalAccountActions account={account} isAdmin={isAdmin} compact onApprove={() => setApproveOpen(true)} onReject={() => setRejectOpen(true)} />
           <p className="text-[11px] text-muted-foreground">
-            The portal role (Member / Ticket manager) is the contact&apos;s company role — change it in the contact details.
+            The portal role per company (Member / Ticket manager) is set on the company links in the card above.
           </p>
         </div>
       ) : invitations.length > 0 ? (
@@ -134,8 +154,6 @@ export function PortalAccountCard({ contact }: { contact: Contact }) {
           id: contact.id,
           email: contact.email,
           name: `${contact.firstName} ${contact.lastName}`.trim(),
-          primaryCompanyId: contact.primaryCompanyId,
-          companyRole: contact.companyRole,
         }}
       />
       <PortalApproveDialog open={approveOpen} onClose={() => setApproveOpen(false)} account={account} suggestedCompany={null} />

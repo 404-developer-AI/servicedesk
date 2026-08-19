@@ -36,7 +36,8 @@ public sealed class CompanyRepository : ICompanyRepository
 
     private const string LinkCols = """
         id AS Id, contact_id AS ContactId, company_id AS CompanyId,
-        role AS Role, created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
+        role AS Role, created_utc AS CreatedUtc, updated_utc AS UpdatedUtc,
+        portal_role AS PortalRole
         """;
 
     private readonly NpgsqlDataSource _dataSource;
@@ -565,7 +566,7 @@ public sealed class CompanyRepository : ICompanyRepository
             SELECT cc.id AS LinkId, co.id AS CompanyId,
                    co.name AS CompanyName, co.code AS CompanyCode,
                    co.short_name AS CompanyShortName, co.is_active AS CompanyIsActive,
-                   cc.role AS Role
+                   cc.role AS Role, cc.portal_role AS PortalRole
             FROM contact_companies cc
             JOIN companies co ON co.id = cc.company_id
             WHERE cc.contact_id = @contactId
@@ -610,7 +611,8 @@ public sealed class CompanyRepository : ICompanyRepository
             ON CONFLICT (contact_id, company_id) DO UPDATE
                SET role = EXCLUDED.role, updated_utc = now()
             RETURNING id AS Id, contact_id AS ContactId, company_id AS CompanyId,
-                      role AS Role, created_utc AS CreatedUtc, updated_utc AS UpdatedUtc
+                      role AS Role, created_utc AS CreatedUtc, updated_utc AS UpdatedUtc,
+                      portal_role AS PortalRole
             """;
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);

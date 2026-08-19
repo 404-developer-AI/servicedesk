@@ -1255,12 +1255,6 @@ function ContactTab({
         </FieldRow>
       )}
 
-      {contact.companyRole && contact.companyRole !== "Member" && (
-        <FieldRow icon={Building2} label="Role">
-          {contact.companyRole}
-        </FieldRow>
-      )}
-
       <div className="border-t border-glass" />
 
       <div>

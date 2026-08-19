@@ -13,7 +13,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CompanyPicker } from "@/components/CompanyPicker";
 import { apiErrorMessage } from "@/lib/api";
-import { portalAdminApi, type PortalAccount, type PortalAccountStatus } from "@/lib/portal-api";
+import { portalAdminApi, type PortalAccount, type PortalAccountStatus, type PortalCompanyLinkInput } from "@/lib/portal-api";
+import { contactApi } from "@/lib/ticket-api";
+import { Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Shared agent-side building blocks for the customer portal: the approve
@@ -59,29 +61,116 @@ export function PortalStatusChip({ status, className }: { status: PortalAccountS
 
 type RoleOption = "Member" | "TicketManager";
 
-function RoleSelect({ value, onChange, disabled }: { value: RoleOption; onChange: (v: RoleOption) => void; disabled?: boolean }) {
+/// One editable (company, portal role) row. `companyId` null = not chosen yet.
+export type CompanyLinkRow = { key: string; companyId: string | null; role: RoleOption };
+
+function newRow(companyId: string | null = null, role: RoleOption = "Member"): CompanyLinkRow {
+  const key = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+  return { key, companyId, role };
+}
+
+function rowsToLinks(rows: CompanyLinkRow[]): PortalCompanyLinkInput[] {
+  const seen = new Set<string>();
+  const out: PortalCompanyLinkInput[] = [];
+  for (const r of rows) {
+    if (!r.companyId || seen.has(r.companyId)) continue;
+    seen.add(r.companyId);
+    out.push({ companyId: r.companyId, role: r.role });
+  }
+  return out;
+}
+
+function RoleToggle({ value, onChange, disabled }: { value: RoleOption; onChange: (v: RoleOption) => void; disabled?: boolean }) {
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="inline-flex shrink-0 rounded-md border border-glass bg-glass p-0.5" role="radiogroup" aria-label="Portal role">
       {(
         [
-          { v: "Member", title: "Member", desc: "Sees only the tickets they opened." },
-          { v: "TicketManager", title: "Ticket manager", desc: "Sees every ticket of the company." },
+          { v: "Member", label: "Member", title: "Sees only the tickets they opened at this company" },
+          { v: "TicketManager", label: "Ticket manager", title: "Sees every ticket of this company" },
         ] as const
       ).map((opt) => (
         <button
           key={opt.v}
           type="button"
+          role="radio"
+          aria-checked={value === opt.v}
+          title={opt.title}
           disabled={disabled}
           onClick={() => onChange(opt.v)}
           className={cn(
-            "rounded-lg border p-3 text-left transition-colors",
-            value === opt.v ? "border-primary bg-primary/[0.06]" : "border-glass bg-glass hover:bg-glass-hover",
+            "rounded px-2 py-1 text-[11px] font-medium transition-colors",
+            value === opt.v ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
           )}
         >
-          <div className="text-sm font-medium">{opt.title}</div>
-          <div className="mt-0.5 text-[11px] text-muted-foreground">{opt.desc}</div>
+          {opt.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+/// Multi-company editor used by the approve + invite dialogs: every row is
+/// a company with its own portal role; the first row becomes the contact's
+/// primary link (the rest secondary).
+export function CompanyLinksEditor({
+  rows,
+  onChange,
+  disabled,
+  suggestion,
+}: {
+  rows: CompanyLinkRow[];
+  onChange: (rows: CompanyLinkRow[]) => void;
+  disabled?: boolean;
+  suggestion?: { id: string; name: string } | null;
+}) {
+  const update = (key: string, patch: Partial<CompanyLinkRow>) => onChange(rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  const remove = (key: string) => onChange(rows.filter((r) => r.key !== key));
+  const suggestionUsed = suggestion ? rows.some((r) => r.companyId === suggestion.id) : true;
+  return (
+    <div className="space-y-2">
+      {rows.map((r, idx) => (
+        <div key={r.key} className="flex flex-wrap items-center gap-2 rounded-lg border border-glass bg-glass p-2">
+          <span className="w-14 shrink-0 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">{idx === 0 ? "Primary" : "Also"}</span>
+          <div className="min-w-[200px] flex-1">
+            <CompanyPicker value={r.companyId} onChange={(id) => update(r.key, { companyId: id })} placeholder="Select a company…" />
+          </div>
+          <RoleToggle value={r.role} onChange={(role) => update(r.key, { role })} disabled={disabled} />
+          <button
+            type="button"
+            className="text-muted-foreground hover:text-foreground disabled:opacity-40"
+            aria-label="Remove company"
+            disabled={disabled || rows.length === 1}
+            onClick={() => remove(r.key)}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ))}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="button" variant="ghost" size="sm" className="gap-1.5" disabled={disabled} onClick={() => onChange([...rows, newRow()])}>
+          <Plus className="h-3.5 w-3.5" /> Add another company
+        </Button>
+        {suggestion && !suggestionUsed ? (
+          <p className="text-[11px] text-muted-foreground">
+            Suggested by email domain:{" "}
+            <button
+              type="button"
+              className="font-medium text-primary hover:underline"
+              onClick={() => {
+                const empty = rows.find((x) => !x.companyId);
+                if (empty) update(empty.key, { companyId: suggestion.id });
+                else onChange([...rows, newRow(suggestion.id)]);
+              }}
+            >
+              {suggestion.name}
+            </button>
+          </p>
+        ) : null}
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Member = sees the tickets they opened at that company · Ticket manager = sees every ticket of that company. The customer
+        switches company in the portal; tickets stay separated per company. Leave the company empty for own tickets only.
+      </p>
     </div>
   );
 }
@@ -98,17 +187,17 @@ type ApproveProps = {
 
 export function PortalApproveDialog({ open, onClose, account, suggestedCompany, onDone }: ApproveProps) {
   const invalidate = usePortalAdminInvalidate();
-  const [companyId, setCompanyId] = React.useState<string | null>(null);
-  const [role, setRole] = React.useState<RoleOption>("Member");
+  const [rows, setRows] = React.useState<CompanyLinkRow[]>([newRow()]);
 
   React.useEffect(() => {
     if (!open) return;
-    setCompanyId(account?.companyId ?? suggestedCompany?.id ?? null);
-    setRole(account?.companyRole ?? "Member");
+    const initial = account?.companyId ?? suggestedCompany?.id ?? null;
+    setRows([newRow(initial, account?.companyRole === "TicketManager" ? "TicketManager" : "Member")]);
   }, [open, account, suggestedCompany]);
 
+  const links = rowsToLinks(rows);
   const approve = useMutation({
-    mutationFn: () => portalAdminApi.approve(account!.userId, companyId, role),
+    mutationFn: () => portalAdminApi.approve(account!.userId, links),
     onSuccess: (res) => {
       toast.success(`Portal account for ${account?.email} approved`);
       invalidate();
@@ -120,50 +209,30 @@ export function PortalApproveDialog({ open, onClose, account, suggestedCompany, 
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-[520px]">
+      <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle>Approve portal registration</DialogTitle>
           <DialogDescription>
             {account ? (
               <>
                 <span className="font-medium text-foreground">{account.displayName || account.email}</span> ({account.email}) registered
-                {account.emailVerifiedUtc ? " and confirmed their email address" : ""}. Choose the company and role; the contact is
-                created or linked automatically.
+                {account.emailVerifiedUtc ? " and confirmed their email address" : ""}. Choose the companies and the role per company; the
+                contact is created or linked automatically.
               </>
             ) : null}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Company</label>
-            <CompanyPicker value={companyId} onChange={setCompanyId} placeholder="No company — own tickets only" />
-            {suggestedCompany && companyId !== suggestedCompany.id ? (
-              <p className="text-[11px] text-muted-foreground">
-                Suggested by email domain:{" "}
-                <button type="button" className="font-medium text-primary hover:underline" onClick={() => setCompanyId(suggestedCompany.id)}>
-                  {suggestedCompany.name}
-                </button>
-              </p>
-            ) : suggestedCompany ? (
-              <p className="text-[11px] text-muted-foreground">Matches the email domain of the registrant.</p>
-            ) : (
-              <p className="text-[11px] text-muted-foreground">Unknown email domain — pick the company manually or leave empty.</p>
-            )}
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Portal role</label>
-            <RoleSelect value={role} onChange={setRole} />
-            {role === "TicketManager" && !companyId ? (
-              <p className="text-[11px] text-amber-600 dark:text-amber-300">A ticket manager without a company effectively sees own tickets only.</p>
-            ) : null}
-          </div>
+        <div className="space-y-1.5">
+          <label className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Companies & portal roles</label>
+          <CompanyLinksEditor rows={rows} onChange={setRows} suggestion={suggestedCompany} disabled={approve.isPending} />
+          {!suggestedCompany ? <p className="text-[11px] text-muted-foreground">Unknown email domain — pick the company manually.</p> : null}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose} disabled={approve.isPending}>
             Cancel
           </Button>
           <Button onClick={() => approve.mutate()} disabled={!account || approve.isPending}>
-            {approve.isPending ? "Approving…" : "Approve and activate"}
+            {approve.isPending ? "Approving…" : links.length === 0 ? "Approve without company" : "Approve and activate"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -234,33 +303,45 @@ export function PortalRejectDialog({
 type InviteProps = {
   open: boolean;
   onClose: () => void;
-  /// Pre-bound contact (contact page). The email comes from the contact then.
-  contact?: { id: string; email: string; name: string; primaryCompanyId: string | null; companyRole?: string | null } | null;
+  /// Pre-bound contact (contact page). The email comes from the contact then
+  /// and the rows are prefilled from the contact's existing company links.
+  contact?: { id: string; email: string; name: string } | null;
 };
 
 export function PortalInviteDialog({ open, onClose, contact }: InviteProps) {
   const invalidate = usePortalAdminInvalidate();
   const [email, setEmail] = React.useState("");
   const [name, setName] = React.useState("");
-  const [companyId, setCompanyId] = React.useState<string | null>(null);
-  const [role, setRole] = React.useState<RoleOption>("Member");
+  const [rows, setRows] = React.useState<CompanyLinkRow[]>([newRow()]);
+  const contactLinks = useQuery({
+    queryKey: ["contact-companies", contact?.id],
+    queryFn: () => contactApi.listCompanies(contact!.id),
+    enabled: open && !!contact,
+  });
 
   React.useEffect(() => {
     if (!open) return;
     setEmail(contact?.email ?? "");
     setName(contact?.name ?? "");
-    setCompanyId(contact?.primaryCompanyId ?? null);
-    setRole(contact?.companyRole === "TicketManager" ? "TicketManager" : "Member");
+    setRows([newRow()]);
   }, [open, contact]);
+  React.useEffect(() => {
+    if (!open || !contact || !contactLinks.data) return;
+    const linked = contactLinks.data
+      .filter((c) => c.role === "primary" || c.role === "secondary")
+      .sort((a, b) => (a.role === "primary" ? -1 : b.role === "primary" ? 1 : 0))
+      .map((c) => newRow(c.companyId, c.portalRole === "TicketManager" ? "TicketManager" : "Member"));
+    setRows(linked.length > 0 ? linked : [newRow()]);
+  }, [open, contact, contactLinks.data]);
 
+  const links = rowsToLinks(rows);
   const invite = useMutation({
     mutationFn: () =>
       portalAdminApi.invite({
         email: contact ? undefined : email.trim(),
         displayName: name.trim(),
         contactId: contact?.id ?? null,
-        companyId,
-        companyRole: role,
+        companies: links,
       }),
     onSuccess: () => {
       toast.success(`Invitation sent to ${contact?.email ?? email.trim()}`);
@@ -274,7 +355,7 @@ export function PortalInviteDialog({ open, onClose, contact }: InviteProps) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-[520px]">
+      <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle>Invite to the customer portal</DialogTitle>
           <DialogDescription>
@@ -294,12 +375,8 @@ export function PortalInviteDialog({ open, onClose, contact }: InviteProps) {
             </div>
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Company</label>
-            <CompanyPicker value={companyId} onChange={setCompanyId} placeholder="No company — own tickets only" />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Portal role</label>
-            <RoleSelect value={role} onChange={setRole} />
+            <label className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Companies & portal roles</label>
+            <CompanyLinksEditor rows={rows} onChange={setRows} disabled={invite.isPending} />
           </div>
         </div>
         <DialogFooter>

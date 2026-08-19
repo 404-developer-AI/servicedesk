@@ -62,10 +62,15 @@ public static class PortalTicketEndpoints
 
     private static async Task<IResult> List(
         HttpContext http, [FromQuery] string? filter, [FromQuery] string? search, [FromQuery] int? page,
+        [FromQuery] Guid? companyId,
         IPortalAccountRepository accounts, IPortalTicketRepository tickets, ISettingsService settings, CancellationToken ct)
     {
         var viewer = await ViewerAsync(http, accounts, settings, ct);
         if (viewer is null) return PortalRequest.Disabled();
+        // One company at a time. No companyId → the default (primary) one;
+        // a companyId the viewer is not linked to → 404 (no existence leak).
+        var active = companyId is null ? viewer.DefaultCompany : viewer.Company(companyId.Value);
+        if (companyId is not null && active is null) return Results.NotFound();
         var f = (filter ?? "open").ToLowerInvariant() switch
         {
             "closed" => PortalTicketFilter.Closed,
@@ -75,7 +80,7 @@ public static class PortalTicketEndpoints
         var pageSize = await settings.GetAsync<int>(SettingKeys.Portal.TicketPageSize, ct);
         if (pageSize <= 0) pageSize = 25;
         var term = search is { Length: > 200 } ? search[..200] : search;
-        var result = await tickets.ListAsync(viewer, f, term, page ?? 1, pageSize, ct);
+        var result = await tickets.ListAsync(viewer, active?.CompanyId, f, term, page ?? 1, pageSize, ct);
         return Results.Ok(new
         {
             items = result.Items.Select(t => new
@@ -98,7 +103,9 @@ public static class PortalTicketEndpoints
             total = result.Total,
             page = result.Page,
             pageSize = result.PageSize,
-            scope = viewer.IsTicketManager ? "company" : "own",
+            companyId = active?.CompanyId,
+            companyName = active?.CompanyName,
+            scope = active?.IsTicketManager == true ? "company" : "own",
         });
     }
 
@@ -143,6 +150,7 @@ public static class PortalTicketEndpoints
                     email = header.RequesterEmail,
                     isYou = header.RequesterContactId == viewer.ContactId,
                 },
+                companyId = header.CompanyId,
                 companyName = header.CompanyName,
                 source = header.Source,
                 createdUtc = header.CreatedUtc,
@@ -235,7 +243,7 @@ public static class PortalTicketEndpoints
 
     // ---- create -----------------------------------------------------------
 
-    public sealed record CreateRequest([property: Required] string Subject, string? BodyHtml);
+    public sealed record CreateRequest([property: Required] string Subject, string? BodyHtml, Guid? CompanyId);
 
     private static async Task<IResult> Create(
         [FromBody] CreateRequest req, HttpContext http,
@@ -267,7 +275,23 @@ public static class PortalTicketEndpoints
         if (status is null || priority is null)
             return Results.Json(new { error = "taxonomy_missing" }, statusCode: StatusCodes.Status503ServiceUnavailable);
 
-        var resolution = await contactLookup.ResolveCompanyForNewTicketAsync(viewer.ContactId!.Value, ct);
+        // The ticket is opened for the customer's active company (must be
+        // one of their links); without any company the usual resolution
+        // for the contact applies.
+        PortalCompanyAccess? forCompany = null;
+        if (req.CompanyId is { } requested)
+        {
+            forCompany = viewer.Company(requested);
+            if (forCompany is null)
+                return Results.BadRequest(new { error = "invalid_company", message = "You have no access to that company." });
+        }
+        else
+        {
+            forCompany = viewer.DefaultCompany;
+        }
+        var resolution = forCompany is not null
+            ? new CompanyResolution(forCompany.CompanyId, "manual", false)
+            : await contactLookup.ResolveCompanyForNewTicketAsync(viewer.ContactId!.Value, ct);
         var created = await tickets.CreateAsync(new NewTicket(
             Subject: subject,
             BodyText: bodyText,
@@ -297,7 +321,7 @@ public static class PortalTicketEndpoints
         await audit.LogAsync(new AuditEvent(PortalEventTypes.TicketCreated, viewer.Email, "Customer",
             Target: created.Id.ToString(), ClientIp: http.Connection.RemoteIpAddress?.ToString(),
             UserAgent: http.Request.Headers.UserAgent.ToString(),
-            Payload: new { number = created.Number, queueId, contactId = viewer.ContactId }), ct);
+            Payload: new { number = created.Number, queueId, contactId = viewer.ContactId, companyId = resolution.CompanyId }), ct);
 
         await sla.OnTicketCreatedAsync(created.Id, ct);
         await notifier.NotifyUpdatedAsync(created.Id, ct);

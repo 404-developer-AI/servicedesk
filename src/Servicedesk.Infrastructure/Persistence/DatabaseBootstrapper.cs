@@ -5766,6 +5766,35 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_tickets_requester_updated
             ON tickets (requester_contact_id, updated_utc DESC, id DESC)
             WHERE is_deleted = FALSE;
+
+        -- Portal role PER company link (decision 2026-08-19, same day): a
+        -- contact can be Member at one company and TicketManager at another.
+        -- NULL on a primary/secondary link reads as 'Member'; supplier links
+        -- never grant portal access. contacts.company_role stays as the
+        -- legacy per-contact value (Adsolut/Zammad sync still write it) and
+        -- is copied once onto the primary link.
+        ALTER TABLE contact_companies ADD COLUMN IF NOT EXISTS portal_role TEXT NULL;
+        ALTER TABLE contact_companies DROP CONSTRAINT IF EXISTS chk_contact_companies_portal_role;
+        ALTER TABLE contact_companies ADD CONSTRAINT chk_contact_companies_portal_role
+            CHECK (portal_role IS NULL OR portal_role IN ('Member','TicketManager')) NOT VALID;
+        DO $do$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM data_migrations WHERE name = 'v0_1_0_portal_role_per_link'
+            ) THEN
+                UPDATE contact_companies cc
+                   SET portal_role = c.company_role, updated_utc = now()
+                  FROM contacts c
+                 WHERE c.id = cc.contact_id
+                   AND cc.role = 'primary'
+                   AND cc.portal_role IS NULL
+                   AND c.company_role = 'TicketManager';
+                INSERT INTO data_migrations (name) VALUES ('v0_1_0_portal_role_per_link');
+            END IF;
+        END $do$;
+
+        -- Invitations may carry several company links ([{companyId, role}]).
+        ALTER TABLE portal_tokens ADD COLUMN IF NOT EXISTS company_links JSONB NULL;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

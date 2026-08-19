@@ -34,6 +34,7 @@ public static class PortalAdminEndpoints
         agent.MapPost("/accounts/{userId:guid}/resend-verification", ResendVerification).WithName("PortalAdminResendVerification").WithOpenApi();
         agent.MapGet("/invitations", ListInvitations).WithName("PortalAdminListInvitations").WithOpenApi();
         agent.MapPost("/invitations", Invite).WithName("PortalAdminInvite").WithOpenApi();
+        agent.MapPut("/contacts/{contactId:guid}/companies/{companyId:guid}/role", SetPortalRole).WithName("PortalAdminSetPortalRole").WithOpenApi();
         agent.MapPost("/invitations/{id:guid}/resend", ResendInvitation).WithName("PortalAdminResendInvitation").WithOpenApi();
         agent.MapDelete("/invitations/{id:guid}", RevokeInvitation).WithName("PortalAdminRevokeInvitation").WithOpenApi();
 
@@ -184,12 +185,25 @@ public static class PortalAdminEndpoints
         });
     }
 
-    public sealed record ApproveRequest(Guid? CompanyId, [property: Required] string CompanyRole);
+    public sealed record CompanyLinkDto(Guid CompanyId, string? Role);
+
+    /// Companies + roles; `companyId`/`companyRole` are the legacy single-pair
+    /// shape (still accepted) and are folded in first.
+    public sealed record ApproveRequest(Guid? CompanyId, string? CompanyRole, List<CompanyLinkDto>? Companies);
+
+    private static IReadOnlyList<PortalCompanyLinkRequest> ToLinks(Guid? companyId, string? companyRole, List<CompanyLinkDto>? companies)
+    {
+        var list = new List<PortalCompanyLinkRequest>();
+        if (companyId is { } single && single != Guid.Empty) list.Add(new PortalCompanyLinkRequest(single, companyRole ?? "Member"));
+        foreach (var c in companies ?? new List<CompanyLinkDto>())
+            if (c.CompanyId != Guid.Empty) list.Add(new PortalCompanyLinkRequest(c.CompanyId, c.Role ?? "Member"));
+        return list;
+    }
 
     private static async Task<IResult> Approve(Guid userId, [FromBody] ApproveRequest req, HttpContext http,
         IPortalAccountService service, IPortalAccountRepository accounts, CancellationToken ct)
     {
-        var result = await service.ApproveAsync(userId, req.CompanyId, req.CompanyRole ?? "Member", PortalRequest.Actor(http), ct);
+        var result = await service.ApproveAsync(userId, ToLinks(req.CompanyId, req.CompanyRole, req.Companies), PortalRequest.Actor(http), ct);
         return result.Outcome switch
         {
             ApproveOutcome.Approved => Results.Ok(new { account = Project((await accounts.GetByUserIdAsync(userId, ct))!) }),
@@ -257,13 +271,13 @@ public static class PortalAdminEndpoints
         return Results.Ok(rows.Select(Project));
     }
 
-    public sealed record InviteRequest(string? Email, string? DisplayName, Guid? ContactId, Guid? CompanyId, string? CompanyRole);
+    public sealed record InviteRequest(string? Email, string? DisplayName, Guid? ContactId, Guid? CompanyId, string? CompanyRole, List<CompanyLinkDto>? Companies);
 
     private static async Task<IResult> Invite([FromBody] InviteRequest req, HttpContext http, IPortalAccountService service, CancellationToken ct)
     {
         var result = await service.InviteAsync(
-            req.Email ?? string.Empty, req.DisplayName ?? string.Empty, req.ContactId, req.CompanyId,
-            req.CompanyRole ?? "Member", PortalRequest.Actor(http), ct);
+            req.Email ?? string.Empty, req.DisplayName ?? string.Empty, req.ContactId,
+            ToLinks(req.CompanyId, req.CompanyRole, req.Companies), PortalRequest.Actor(http), ct);
         return result.Outcome switch
         {
             InviteOutcome.Sent => Results.Ok(new { invitationId = result.InvitationId }),
@@ -276,6 +290,17 @@ public static class PortalAdminEndpoints
             InviteOutcome.MailFailed => Results.Json(new { error = "mail_failed", message = "The invitation mail could not be sent. Check the portal sender mailbox (Settings → Portal)." }, statusCode: StatusCodes.Status503ServiceUnavailable),
             _ => Results.StatusCode(StatusCodes.Status500InternalServerError),
         };
+    }
+
+    public sealed record SetRoleRequest([property: Required] string Role);
+
+    private static async Task<IResult> SetPortalRole(Guid contactId, Guid companyId, [FromBody] SetRoleRequest req, HttpContext http,
+        IPortalAccountService service, CancellationToken ct)
+    {
+        if (req.Role is not ("Member" or "TicketManager"))
+            return Results.BadRequest(new { error = "invalid_role", message = "Role must be Member or TicketManager." });
+        var ok = await service.SetPortalRoleAsync(contactId, companyId, req.Role, PortalRequest.Actor(http), ct);
+        return ok ? Results.NoContent() : Results.NotFound(new { error = "link_not_found", message = "This contact is not linked to that company." });
     }
 
     private static async Task<IResult> ResendInvitation(Guid id, HttpContext http, IPortalAccountService service, CancellationToken ct)

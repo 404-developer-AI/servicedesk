@@ -300,9 +300,17 @@ public static class PortalAuthEndpoints
                 displayName = string.IsNullOrWhiteSpace(viewer.DisplayName) ? contactName : viewer.DisplayName,
                 amr,
                 twoFactorEnrolled = enrolled,
-                companyName = viewer.CompanyName,
-                companyRole = viewer.CompanyRole,
-                canSeeCompanyTickets = viewer.IsTicketManager,
+                // Companies the customer may act in, each with its portal
+                // role; the primary link first. The portal header switches
+                // between them; the list only ever shows one at a time.
+                companies = viewer.Companies.Select(c => new
+                {
+                    id = c.CompanyId,
+                    name = c.CompanyName,
+                    role = c.Role,
+                    isPrimary = c.IsPrimary,
+                    canSeeCompanyTickets = c.IsTicketManager,
+                }),
             },
             serverTimeUtc = DateTimeOffset.UtcNow,
         });
@@ -346,7 +354,7 @@ public static class PortalAuthEndpoints
         var info = await service.DescribeInvitationAsync(token ?? string.Empty, ct);
         return info.Outcome switch
         {
-            TokenOutcome.Ok => Results.Ok(new { email = info.Email, displayName = info.DisplayName, companyName = info.CompanyName }),
+            TokenOutcome.Ok => Results.Ok(new { email = info.Email, displayName = info.DisplayName, companyName = info.CompanyName, companyNames = info.CompanyNames ?? Array.Empty<string>() }),
             TokenOutcome.Expired => Results.Json(new { error = "expired", message = "This invitation has expired. Ask the service desk to send a new one." }, statusCode: StatusCodes.Status410Gone),
             TokenOutcome.AlreadyUsed => Results.Conflict(new { error = "already_used", message = "This invitation was already used. Sign in instead." }),
             _ => Results.NotFound(new { error = "invalid", message = "This invitation link is not valid." }),

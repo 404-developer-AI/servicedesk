@@ -990,7 +990,12 @@ export type ContactCompanyLink = {
   role: ContactCompanyRole;
   createdUtc: string;
   updatedUtc: string;
+  /// v0.1.0 — customer-portal role for this link (null = Member on
+  /// primary/secondary links, no portal access on supplier links).
+  portalRole: PortalRole | null;
 };
+
+export type PortalRole = "Member" | "TicketManager";
 
 /// One entry in the contact's role-annotated company list — used by the
 /// ticket company-assignment dialog and future contact-detail view.
@@ -1002,6 +1007,7 @@ export type ContactCompanyOption = {
   companyShortName: string;
   companyIsActive: boolean;
   role: ContactCompanyRole;
+  portalRole: PortalRole | null;
 };
 
 /// Minimal company row returned by the agent-readable picker endpoint.

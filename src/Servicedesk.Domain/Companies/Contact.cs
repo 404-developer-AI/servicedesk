@@ -26,7 +26,10 @@ public sealed record ContactCompanyLink(
     Guid CompanyId,
     string Role,
     DateTime CreatedUtc,
-    DateTime UpdatedUtc);
+    DateTime UpdatedUtc,
+    /// v0.1.0 — customer-portal role for this link (Member | TicketManager);
+    /// null reads as Member on primary/secondary links, no access on supplier.
+    string? PortalRole = null);
 
 public sealed record ContactCompanyOption(
     Guid LinkId,
@@ -35,7 +38,8 @@ public sealed record ContactCompanyOption(
     string CompanyCode,
     string CompanyShortName,
     bool CompanyIsActive,
-    string Role);
+    string Role,
+    string? PortalRole = null);
 
 /// Row shape used by the dedicated `/contacts` overview page. Extends the
 /// base contact with denormalized primary-company metadata, a count of

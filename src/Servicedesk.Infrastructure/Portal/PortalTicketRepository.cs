@@ -50,14 +50,20 @@ public sealed record PortalTicketHeader(
     DateTime? ResolvedUtc,
     DateTime? ClosedUtc,
     string BodyText,
-    string? BodyHtml);
+    string? BodyHtml,
+    Guid? CompanyId);
 
 public enum PortalTicketFilter { All = 0, Open = 1, Closed = 2 }
 
 public interface IPortalTicketRepository
 {
+    /// Tickets of ONE company (the customer's active company): own tickets
+    /// there (Member), or every ticket there (TicketManager). Own tickets
+    /// without a company ride along in every company view.
+    /// <paramref name="companyId"/> must be one of the viewer's companies;
+    /// null = the viewer has no company at all (own company-less tickets only).
     Task<PortalTicketPage> ListAsync(
-        PortalViewer viewer, PortalTicketFilter filter, string? search, int page, int pageSize, CancellationToken ct);
+        PortalViewer viewer, Guid? companyId, PortalTicketFilter filter, string? search, int page, int pageSize, CancellationToken ct);
 
     Task<PortalTicketHeader?> GetHeaderAsync(PortalViewer viewer, Guid ticketId, CancellationToken ct);
 
@@ -88,34 +94,47 @@ public sealed class PortalTicketRepository : IPortalTicketRepository
         "PortalMessage", "MailReceived", "MailSent", "Comment", "StatusChange",
     };
 
-    /// Scope predicate: a Member sees tickets they requested; a TicketManager
-    /// additionally sees every ticket frozen on their primary company.
-    /// Project tickets and deleted tickets are invisible to every customer.
-    private const string ScopeWhere = """
+    /// List scope — ONE company at a time (the active company in the portal
+    /// header): own tickets frozen on that company (plus own tickets without
+    /// any company), and every ticket of that company when the viewer is
+    /// TicketManager there. Project / deleted tickets are never visible.
+    private const string ListScopeWhere = """
         t.is_deleted = FALSE
         AND t.is_project = FALSE
         AND (
-              (@ContactId IS NOT NULL AND t.requester_contact_id = @ContactId)
+              (t.requester_contact_id = @ContactId
+                  AND (t.company_id IS NULL OR (@CompanyId IS NOT NULL AND t.company_id = @CompanyId)))
            OR (@IsManager AND @CompanyId IS NOT NULL AND t.company_id = @CompanyId)
         )
         """;
 
-    private static object ScopeParams(PortalViewer viewer) => new
-    {
-        ContactId = viewer.ContactId,
-        IsManager = viewer.IsTicketManager,
-        CompanyId = viewer.IsTicketManager ? viewer.CompanyId : null,
-    };
+    /// Detail scope — across all of the viewer's companies (a deep link may
+    /// point at any of them; the UI switches the active company to match):
+    /// own tickets at a linked company (or without company) + every ticket
+    /// of a company where the viewer is TicketManager. A ticket at a company
+    /// the viewer is NOT linked to stays invisible even when they requested it.
+    private const string DetailScopeWhere = """
+        t.is_deleted = FALSE
+        AND t.is_project = FALSE
+        AND (
+              (t.requester_contact_id = @ContactId
+                  AND (t.company_id IS NULL OR t.company_id = ANY(@AllCompanyIds)))
+           OR t.company_id = ANY(@ManagerCompanyIds)
+        )
+        """;
 
     public async Task<PortalTicketPage> ListAsync(
-        PortalViewer viewer, PortalTicketFilter filter, string? search, int page, int pageSize, CancellationToken ct)
+        PortalViewer viewer, Guid? companyId, PortalTicketFilter filter, string? search, int page, int pageSize, CancellationToken ct)
     {
         if (viewer.ContactId is null)
+            return new PortalTicketPage(Array.Empty<PortalTicketListItem>(), 0, page, pageSize);
+        var access = companyId is null ? null : viewer.Company(companyId.Value);
+        if (companyId is not null && access is null)
             return new PortalTicketPage(Array.Empty<PortalTicketListItem>(), 0, page, pageSize);
 
         pageSize = Math.Clamp(pageSize, 1, 200);
         page = Math.Max(1, page);
-        var where = ScopeWhere;
+        var where = ListScopeWhere;
         if (filter == PortalTicketFilter.Open) where += " AND s.state_category NOT IN ('Resolved','Closed')";
         else if (filter == PortalTicketFilter.Closed) where += " AND s.state_category IN ('Resolved','Closed')";
 
@@ -155,8 +174,10 @@ public sealed class PortalTicketRepository : IPortalTicketRepository
             LIMIT @Limit OFFSET @Offset
             """;
 
-        var scope = ScopeParams(viewer);
-        var args = new DynamicParameters(scope);
+        var args = new DynamicParameters();
+        args.Add("ContactId", viewer.ContactId, DbType.Guid);
+        args.Add("CompanyId", companyId, DbType.Guid);
+        args.Add("IsManager", access?.IsTicketManager ?? false, DbType.Boolean);
         if (term is not null)
         {
             args.Add("Term", "%" + term + "%", DbType.String);
@@ -195,17 +216,21 @@ public sealed class PortalTicketRepository : IPortalTicketRepository
                     t.resolved_utc          AS ResolvedUtc,
                     t.closed_utc            AS ClosedUtc,
                     COALESCE(b.body_text, '') AS BodyText,
-                    b.body_html             AS BodyHtml
+                    b.body_html             AS BodyHtml,
+                    t.company_id            AS CompanyId
             FROM tickets t
             JOIN statuses   s ON s.id = t.status_id
             JOIN priorities p ON p.id = t.priority_id
             JOIN contacts   c ON c.id = t.requester_contact_id
             LEFT JOIN companies co    ON co.id = t.company_id
             LEFT JOIN ticket_bodies b ON b.ticket_id = t.id
-            WHERE t.id = @TicketId AND {ScopeWhere}
+            WHERE t.id = @TicketId AND {DetailScopeWhere}
             """;
-        var args = new DynamicParameters(ScopeParams(viewer));
-        args.Add("TicketId", ticketId);
+        var args = new DynamicParameters();
+        args.Add("ContactId", viewer.ContactId, DbType.Guid);
+        args.Add("AllCompanyIds", viewer.AllCompanyIds);
+        args.Add("ManagerCompanyIds", viewer.ManagerCompanyIds);
+        args.Add("TicketId", ticketId, DbType.Guid);
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.QuerySingleOrDefaultAsync<PortalTicketHeader>(new CommandDefinition(sql, args, cancellationToken: ct));
     }

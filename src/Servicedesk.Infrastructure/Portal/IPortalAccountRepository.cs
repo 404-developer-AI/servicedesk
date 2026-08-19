@@ -51,8 +51,13 @@ public interface IPortalAccountRepository
     /// Resolves the contact / company / role a customer session maps onto.
     Task<PortalViewer?> GetViewerAsync(Guid userId, CancellationToken ct);
 
-    /// Sets contacts.company_role (Member | TicketManager) for a contact.
+    /// Sets contacts.company_role (Member | TicketManager) for a contact
+    /// (legacy per-contact value, kept in step with the primary link).
     Task SetContactCompanyRoleAsync(Guid contactId, string companyRole, CancellationToken ct);
+
+    /// Sets the portal role on one existing contact_companies link.
+    /// Returns false when the link does not exist.
+    Task<bool> SetPortalRoleAsync(Guid contactId, Guid companyId, string portalRole, CancellationToken ct);
 
     // ---- tokens -----------------------------------------------------------
 
@@ -61,7 +66,7 @@ public interface IPortalAccountRepository
     Task<Guid> CreateTokenAsync(
         string kind, byte[] tokenHash, string email, Guid? userId, Guid? contactId,
         Guid? companyId, string? companyRole, string displayName, Guid? createdByUserId,
-        DateTime expiresUtc, CancellationToken ct);
+        DateTime expiresUtc, CancellationToken ct, string? companyLinksJson = null);
 
     Task<PortalTokenRow?> GetTokenByHashAsync(byte[] tokenHash, CancellationToken ct);
     Task<PortalTokenRow?> GetTokenByIdAsync(Guid id, CancellationToken ct);
