@@ -9,6 +9,7 @@ import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
 import { useTheme } from "@/app/ThemeProvider";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TicketTypeBadge } from "@/components/TicketTypeBadge";
+import { ContactHoverCard } from "@/components/ContactHoverCard";
 import { ListChecks } from "lucide-react";
 import type { TicketListItem } from "@/lib/ticket-api";
 import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
@@ -123,9 +124,11 @@ export const ALL_COLUMNS = [
         .filter(Boolean)
         .join(" ");
       return (
-        <span className="text-foreground/90">
-          {name || row.requesterEmail}
-        </span>
+        <ContactHoverCard contactId={row.requesterContactId}>
+          <span className="text-foreground/90">
+            {name || row.requesterEmail}
+          </span>
+        </ContactHoverCard>
       );
     },
   }),

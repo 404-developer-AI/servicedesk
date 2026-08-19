@@ -5,6 +5,7 @@ import { searchApi, type SearchHit, type SearchSort } from "@/lib/api";
 import { sanitizeSnippet } from "@/lib/sanitize";
 import { KIND_ORDER, labelForKind, hitHref } from "@/components/search/searchMeta";
 import { useTheme } from "@/app/ThemeProvider";
+import { ContactHoverCard } from "@/components/ContactHoverCard";
 import { useServerTime, toServerLocalDate } from "@/hooks/useServerTime";
 
 const PAGE_SIZE = 25;
@@ -218,7 +219,9 @@ function HitRow({ hit, query }: { hit: SearchHit; query: string }) {
     }
   }
 
-  return (
+  // For contact hits the whole row is the hover-card trigger (a name-only
+  // trigger is too easy to miss).
+  const row = (
     <li
       className="cursor-pointer px-4 py-3 transition-colors hover:bg-glass-hover"
       onClick={go}
@@ -260,5 +263,11 @@ function HitRow({ hit, query }: { hit: SearchHit; query: string }) {
         </div>
       )}
     </li>
+  );
+
+  return hit.kind === "contacts" ? (
+    <ContactHoverCard contactId={hit.entityId}>{row}</ContactHoverCard>
+  ) : (
+    row
   );
 }
