@@ -258,7 +258,10 @@ export function DateTimePicker({
                   "flex h-8 w-full items-center justify-center rounded-md text-xs font-mono transition-colors",
                   cell.outside ? "text-muted-foreground/30" : "text-foreground/80",
                   !isSelected && !beforeMin && "hover:bg-glass-hover",
-                  isToday && !isSelected && "ring-1 ring-inset ring-white/15",
+                  // Light grey fill on (server-local) today so the current
+                  // day is obvious the moment the calendar opens.
+                  isToday && !isSelected &&
+                    "bg-glass-strong font-semibold text-foreground ring-1 ring-inset ring-white/15",
                   isSelected &&
                     "bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-[0_0_12px_-2px_rgba(139,92,246,0.6)]",
                   beforeMin && "cursor-not-allowed opacity-30",
