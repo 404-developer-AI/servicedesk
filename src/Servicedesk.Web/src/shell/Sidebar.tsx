@@ -14,7 +14,7 @@ import {
   Sparkles,
   UserCircle2,
 } from "lucide-react";
-import ticksyMark from "@/assets/brand/ticksy.svg";
+import { BrandMark } from "@/components/BrandMark";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -332,7 +332,7 @@ export function Sidebar() {
     <motion.aside
       animate={{ width: collapsed ? 76 : 260 }}
       transition={{ type: "spring", stiffness: 220, damping: 26 }}
-      className="glass-panel sticky top-3 z-20 m-3 mr-0 flex h-[calc(100vh-1.5rem)] flex-col self-start overflow-hidden"
+      className="glass-panel sd-sidebar sticky top-3 z-20 m-3 mr-0 flex h-[calc(100vh-1.5rem)] flex-col self-start overflow-hidden"
       data-testid="app-sidebar"
     >
       <div
@@ -341,13 +341,7 @@ export function Sidebar() {
           collapsed ? "justify-center px-3" : "px-4",
         )}
       >
-        <img
-          src={ticksyMark}
-          alt=""
-          aria-hidden="true"
-          draggable={false}
-          className="h-9 w-9 shrink-0 select-none"
-        />
+        <BrandMark size={36} />
         {!collapsed && (
           <div className="min-w-0">
             <div className="truncate font-display text-base font-semibold tracking-tight">Servicedesk</div>
@@ -668,10 +662,12 @@ function NavRow({
   badge?: boolean;
 }) {
   const Icon = item.icon;
+  // sd-nav-row / sd-nav-row-active are theme hooks (Steaan paints the
+  // teal rail + tint through them) — not styled in the Nebula themes.
   const rowClass = cn(
-    "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all",
+    "sd-nav-row group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all",
     active
-      ? "bg-glass-strong text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+      ? "sd-nav-row-active bg-glass-strong text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
       : "text-muted-foreground hover:bg-glass-hover hover:text-foreground",
     collapsed && "justify-center px-2",
     onUnpin && !collapsed && "pr-9",
@@ -866,9 +862,9 @@ function ViewRow({
       onClick={onSelect}
       title={collapsed ? view.name : undefined}
       className={cn(
-        "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors",
+        "sd-nav-row flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors",
         active
-          ? "bg-glass-strong text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
+          ? "sd-nav-row-active bg-glass-strong text-foreground shadow-[inset_0_0_0_1px_hsl(var(--border))]"
           : "text-muted-foreground hover:bg-glass-hover hover:text-foreground",
         collapsed ? "justify-center px-2" : "pr-9",
       )}

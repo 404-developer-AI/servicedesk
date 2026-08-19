@@ -8,16 +8,21 @@
     <meta name="color-scheme" content="light dark" />
     <script>
       // Anti-FOUC: apply the persisted theme to <html> before any CSS/JS so
-      // the first paint matches the user's last choice. Light is the factory
-      // default (v0.0.44 decision); only an explicit "dark" value flips us.
+      // the first paint matches the user's last choice. Three themes:
+      // "steaan" (flat light house style — factory default since v0.0.108),
+      // and the Nebula glass theme as "light" / "dark". Mirrors
+      // applyTheme() in src/app/ThemeProvider.tsx — keep the two in sync.
       (function () {
         try {
           var t = window.localStorage.getItem("sd-theme");
-          var dark = t === "dark";
-          if (dark) document.documentElement.classList.add("dark");
-          document.documentElement.style.colorScheme = dark ? "dark" : "light";
+          if (t !== "light" && t !== "dark") t = "steaan";
+          var c = document.documentElement.classList;
+          if (t === "dark") c.add("dark");
+          if (t === "steaan") c.add("theme-steaan");
+          document.documentElement.dataset.theme = t;
+          document.documentElement.style.colorScheme = t === "dark" ? "dark" : "light";
         } catch (_) {
-          /* localStorage blocked — Light default applies. */
+          /* localStorage blocked — the factory default applies. */
         }
       })();
     </script>

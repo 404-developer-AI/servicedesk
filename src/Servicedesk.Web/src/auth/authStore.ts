@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import type { UiTheme } from "@/lib/theme";
 import type { Role } from "@/lib/roles";
 
 export type AuthUser = {
@@ -70,10 +71,10 @@ export type AuthUser = {
   /// via the edit-mode UI; default empty (no tiles) on first upgrade.
   dashboardTiles: { tileId: string; size: DashboardTileSize }[];
   /// v0.0.44 — Server-resolved effective theme (user preference falling
-  /// back to admin default, then to 'light'). The ThemeProvider syncs
-  /// from this on bootstrap so the first authenticated paint matches
-  /// the saved choice across devices.
-  effectiveTheme: "light" | "dark";
+  /// back to admin default, then to the factory 'steaan' since v0.0.108).
+  /// The ThemeProvider syncs from this on bootstrap so the first
+  /// authenticated paint matches the saved choice across devices.
+  effectiveTheme: UiTheme;
 };
 
 export type DashboardTileSize = "small" | "medium" | "wide" | "full";

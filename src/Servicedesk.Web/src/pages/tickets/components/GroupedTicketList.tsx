@@ -13,6 +13,7 @@ import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
 import { useTheme } from "@/app/ThemeProvider";
 import type { TicketListItem, DisplayConfig } from "@/lib/ticket-api";
 import type { CSSProperties } from "react";
+import { colorPillStyle } from "@/lib/colorPill";
 
 // ---- Group key helpers ----
 
@@ -263,7 +264,7 @@ export function GroupedTicketList({
   footer,
   selection,
 }: GroupedTicketListProps) {
-  const { theme } = useTheme();
+  const theme = useTheme();
   const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(
     new Set(),
   );
@@ -384,7 +385,7 @@ export function GroupedTicketList({
   return (
     <div className="glass-card h-full overflow-auto">
         <table className="w-full text-left text-sm">
-          <thead className="sticky top-0 z-10 bg-[hsl(256deg_28.3%_89.61%)] dark:bg-[hsl(240_10%_8%)]">
+          <thead className="sd-table-head sticky top-0 z-10 bg-[hsl(256deg_28.3%_89.61%)] dark:bg-[hsl(240_10%_8%)]">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {selection && (
@@ -452,14 +453,7 @@ export function GroupedTicketList({
                           />
                           <span
                             className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium"
-                            style={
-                              theme === "light"
-                                ? {
-                                    backgroundColor: `color-mix(in srgb, ${color} 22%, transparent)`,
-                                    color: `color-mix(in srgb, ${color}, black 45%)`,
-                                  }
-                                : { backgroundColor: `${color}20`, color }
-                            }
+                            style={colorPillStyle(color, theme)}
                           >
                             {group.label}
                           </span>

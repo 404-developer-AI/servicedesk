@@ -11,7 +11,7 @@ Self-hosted helpdesk for small and mid-size teams. One install per organisation,
 - **Mail** — Microsoft Graph, app-only auth, polling intake. Outbound is draft-then-send so the Graph `internetMessageId` is persisted for reply-threading.
 - **Auth** — custom session auth (Argon2id, optional TOTP 2FA, encrypted recovery codes) plus single-tenant Microsoft 365 OIDC for agents/admins. Customer-portal login is a separate flow.
 - **Reverse proxy** — Nginx (in Docker) with TLS via Let's Encrypt (Certbot).
-- **UI** — Tailwind + shadcn/ui + Framer Motion. Dark glassmorphism by default, light theme opt-in. Inter variable font.
+- **UI** — Tailwind + shadcn/ui + Framer Motion. Two looks, picked per user: "Steaan" (flat, light, teal — the default) and "Nebula" (the glassmorphism one, light or dark). Inter variable font.
 - **Checklists** — admins build checklist templates (sections, steps, team/timing labels, manual links, required or optional), agents attach them to a ticket and tick them off right inside the ticket — docked panel or a pop-out window for a second screen — with a per-step log, comments, own steps and "not applicable, because…". A checklist can block resolving/closing until it's done, and the progress is visible in the ticket header, above the activity feed and in the ticket list.
 - **Bulk actions** — select tickets in the list (shift-click ranges, per-group select-all) and post a note or change status / queue / assignee / priority on all of them in one go. Every ticket still runs its normal rules; the ones that don't allow the change are skipped and reported, never forced.
 - **Search** — PostgreSQL `tsvector` + GIN with `pg_trgm` and `unaccent` for fuzzy matching; global Ctrl/Cmd+K palette across tickets, contacts, companies, and settings.

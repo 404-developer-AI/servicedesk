@@ -1295,8 +1295,10 @@ function TimelineEvent({
             event.isInternal
               ? "border-l-amber-500/60"
               : CARD_ACCENT[event.eventType] ?? "border-l-glass-strong",
+            // sd-internal-note is a theme hook: Steaan paints the amber-50
+            // card through it, the Nebula themes leave it unstyled.
             event.isInternal
-              ? "ring-1 ring-amber-500/30 bg-amber-500/[0.04]"
+              ? "sd-internal-note ring-1 ring-amber-500/30 bg-amber-500/[0.04]"
               : event.eventType === "MailReceived" && "bg-sky-500/[0.05]"
           )}
         >

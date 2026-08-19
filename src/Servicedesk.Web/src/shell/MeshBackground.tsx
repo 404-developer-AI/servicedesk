@@ -136,12 +136,13 @@ type MeshSurfaceProps = {
 export function MeshSurface({ className }: MeshSurfaceProps) {
   const reduced = usePrefersReducedMotion();
   const visible = useDocumentVisible();
-  const { theme } = useTheme();
+  const { mode } = useTheme();
 
   // The shader palette is calibrated for a dark canvas — running it in
   // light mode produces muddy purple haze on a near-white background. Fall
   // back to the static CSS gradient, which already has a light-mode look.
-  if (reduced || theme === "light") {
+  // Steaan is light-only (and flat by design), so it takes this branch too.
+  if (reduced || mode === "light") {
     return <div className={cn("app-background", className)} aria-hidden />;
   }
 

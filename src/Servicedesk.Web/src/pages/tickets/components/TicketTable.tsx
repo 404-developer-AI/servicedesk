@@ -13,6 +13,7 @@ import { ContactHoverCard } from "@/components/ContactHoverCard";
 import { ListChecks } from "lucide-react";
 import type { TicketListItem } from "@/lib/ticket-api";
 import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { colorPillStyle } from "@/lib/colorPill";
 
 /// v0.0.103 — compact checklist progress next to the subject; amber while
 /// required items are open, emerald once everything is done.
@@ -59,23 +60,31 @@ function ServerDate({ iso, className }: { iso: string; className?: string }) {
 type ColoredBadgeProps = {
   label: string;
   color: string;
+  /**
+   * `chip` (default) = tinted pill. `dot` = coloured dot + plain label —
+   * the Steaan translation for priority, where the spec reserves tinted
+   * chips for status. The Nebula themes always render chips.
+   */
+  variant?: "chip" | "dot";
 };
 
-function ColoredBadge({ label, color }: ColoredBadgeProps) {
+function ColoredBadge({ label, color, variant = "chip" }: ColoredBadgeProps) {
   // Status/priority colours are database-provided hex strings, so the
-  // palette is computed at render time. Light mode bumps the tint alpha
-  // and darkens the text toward black so any admin-picked hue stays
-  // recognisable while remaining readable on a near-white row. Dark mode
-  // keeps the original 12.5% tint + full-saturation text, which already
-  // reads cleanly on the deep canvas.
-  const { theme } = useTheme();
-  const style =
-    theme === "light"
-      ? {
-          backgroundColor: `color-mix(in srgb, ${color} 22%, transparent)`,
-          color: `color-mix(in srgb, ${color}, black 45%)`,
-        }
-      : { backgroundColor: `${color}20`, color };
+  // palette is computed at render time per theme — see colorPillStyle.
+  const theme = useTheme();
+  if (variant === "dot" && theme.family === "steaan") {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/85">
+        <span
+          aria-hidden
+          className="h-2 w-2 shrink-0 rounded-full"
+          style={{ backgroundColor: color }}
+        />
+        {label}
+      </span>
+    );
+  }
+  const style = colorPillStyle(color, theme);
   return (
     <span
       className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium"
@@ -168,7 +177,7 @@ export const ALL_COLUMNS = [
     cell: (info) => {
       const row = info.row.original;
       const color = row.priorityColor || "#6b7280";
-      return <ColoredBadge label={row.priorityName} color={color} />;
+      return <ColoredBadge label={row.priorityName} color={color} variant="dot" />;
     },
   }),
   columnHelper.accessor("categoryName", {
@@ -250,7 +259,7 @@ export function TicketTable({ data, onRowClick }: TicketTableProps) {
     <div className="glass-card overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead className="bg-[hsl(256deg_28.3%_89.61%)] dark:bg-[hsl(240_10%_8%)] sticky top-0 z-10">
+          <thead className="sd-table-head bg-[hsl(256deg_28.3%_89.61%)] dark:bg-[hsl(240_10%_8%)] sticky top-0 z-10">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (

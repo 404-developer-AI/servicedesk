@@ -54,7 +54,9 @@ public static class SettingKeys
     /// v0.0.44 — UI-wide preferences. The default theme applies to new users
     /// and to existing users who have not yet picked a theme via Profile.
     /// Per-user override lives in <c>user_preferences</c> under the
-    /// <c>ui:theme</c> key. Allowed values: <c>light</c> | <c>dark</c>.
+    /// <c>ui:theme</c> key. Allowed values: see <see cref="UiThemes"/>
+    /// (<c>steaan</c> | <c>light</c> | <c>dark</c>; v0.0.108 made Steaan the
+    /// factory default).
     public static class Ui
     {
         public const string DefaultTheme = "Ui.DefaultTheme";
@@ -1430,12 +1432,16 @@ public static class SettingDefaults
         new SettingDefault(SettingKeys.Navigation.ShowOpenTickets, "true", "bool", "Navigation",
             "Show the 'Open Tickets' link in the sidebar navigation."),
 
-        // Ui — v0.0.44 theming. Drives the initial theme for new users and for
-        // existing users who have not yet chosen a theme on their Profile page.
-        // Allowed values: 'light' | 'dark'. Unknown values fall back to 'light'
-        // on read (factory default) so a hand-edited DB row can't break paint.
-        new SettingDefault(SettingKeys.Ui.DefaultTheme, "light", "string", "Ui",
-            "Default theme applied to new users and to users who have not yet picked a theme on their Profile page. Allowed values: 'light' or 'dark'. A user who has explicitly picked a theme keeps that choice across all devices via their saved preference; this setting only applies until they do."),
+        // Ui — v0.0.44 theming, v0.0.108 Steaan. Drives the initial theme for
+        // new users and for existing users who have not yet chosen a theme on
+        // their Profile page. Allowed values: 'steaan' | 'light' | 'dark'
+        // (light/dark = the Nebula glass theme). Unknown values fall back to
+        // 'steaan' on read (factory default) so a hand-edited DB row can't
+        // break paint. Existing installs are moved from the old seeded
+        // 'light' to 'steaan' once by a data_migrations step in the
+        // bootstrapper; an admin-chosen 'dark' is preserved.
+        new SettingDefault(SettingKeys.Ui.DefaultTheme, UiThemes.Factory, "string", "Ui",
+            "Default theme applied to new users and to users who have not yet picked a theme on their Profile page. Allowed values: 'steaan' (flat light house style), 'light' or 'dark' (the Nebula glass theme). A user who has explicitly picked a theme keeps that choice across all devices via their saved preference; this setting only applies until they do."),
 
         new SettingDefault(SettingKeys.Tickets.DefaultPrioritySlug, "normal", "string", "Tickets",
             "Slug of the priority assigned to new tickets when none is specified."),

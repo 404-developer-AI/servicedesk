@@ -102,6 +102,72 @@
     color-scheme: dark;
   }
 
+  /* ─── Steaan (v0.0.108) — flat, warm-neutral, light-only house style ───
+     Third theme next to the Nebula light/dark pair above. The `.theme-steaan`
+     class on <html> (set by the index.html bootstrap / ThemeProvider) swaps
+     the SAME token set: shadcn semantics go stone + teal, and the glass
+     tokens resolve to solid surfaces and hairline borders so every
+     `.glass-card` / `bg-glass` / `border-glass` call site turns flat without
+     a per-component fork. Blur and the mesh are switched off in the
+     component overrides at the end of this file. No dark Steaan exists by
+     design (the source design system has no dark palette). */
+  .theme-steaan {
+    --background: 60 9% 98%;            /* #FAFAF9 stone-50 */
+    --foreground: 24 10% 10%;           /* #1C1917 */
+
+    --card: 0 0% 100%;
+    --card-foreground: 24 10% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 24 10% 10%;
+
+    --primary: 175 77% 26%;             /* #0F766E teal */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 60 5% 96%;             /* #F5F5F4 */
+    --secondary-foreground: 30 6% 25%;  /* #44403C */
+
+    --muted: 60 5% 96%;
+    --muted-foreground: 25 5% 45%;      /* #78716C */
+
+    --accent: 166 76% 97%;              /* #F0FDFA teal tint */
+    --accent-foreground: 175 77% 26%;
+
+    --destructive: 0 72% 51%;           /* #DC2626 */
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 20 6% 90%;                /* #E7E5E4 */
+    --input: 24 6% 83%;                 /* #D6D3D1 */
+    --ring: 175 77% 26%;
+
+    /* 10px base → rounded-md (controls) = 8px, rounded-sm (chips) = 6px.
+       Cards/tables/dialogs take 12px via the .glass-card override. */
+    --radius: 0.625rem;
+
+    /* Solid surfaces: glass = a stone-50 wash (reads as a faint tint on a
+       white card, vanishes on the page), strong/hover = stone-100, borders
+       = opaque hairlines. Alpha 1 everywhere so nothing stacks into mud. */
+    --glass-bg: 60 9% 98% / 1;
+    --glass-bg-strong: 60 5% 96% / 1;
+    --glass-hover: 60 5% 96% / 1;
+    --glass-border: 20 6% 90% / 1;
+    --glass-border-strong: 24 6% 83% / 1;
+    --overlay: 24 10% 10% / 0.40;
+
+    --scrollbar-thumb: 24 5% 64% / 0.45;
+    --scrollbar-thumb-hover: 25 5% 45% / 0.55;
+    --scrollbar-thumb-active: 30 6% 25% / 0.65;
+
+    /* Steaan-only tokens consumed by the overrides below. */
+    --steaan-primary-hover: 176 69% 22%;   /* #115E59 */
+    --steaan-tint-strong: 167 85% 89%;     /* #CCFBF1 */
+    --steaan-shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.05);
+    --steaan-shadow-md: 0 1px 3px rgba(28, 25, 23, 0.06), 0 4px 12px rgba(28, 25, 23, 0.05);
+    --steaan-shadow-lg: 0 2px 6px rgba(28, 25, 23, 0.06), 0 12px 32px rgba(28, 25, 23, 0.12);
+
+    color-scheme: light;
+  }
+
   html {
     /* Honours the class on <html>; the bootstrap script in index.html sets
        it before paint to prevent FOUC. */
@@ -499,4 +565,318 @@
 /* Dimmed modifier for historical content (event revision snapshots). */
 .rich-prose-dim {
   color: hsl(var(--foreground) / 0.7);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Steaan theme — component overrides (v0.0.108)
+   Everything here is scoped to `.theme-steaan` and exists to turn the
+   shared component tree flat: solid white cards with hairline borders and
+   warm shadows, no backdrop blur, no purple→blue gradients, teal accents,
+   the 3px teal nav rail and the login aurora. Selectors are `.theme-steaan
+   .x` (0,2,0) so they out-rank Tailwind utilities (0,1,0) without
+   `!important`, except where a utility itself sets a vendor-prefixed
+   property (backdrop-filter) that must be force-cleared.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Flat page canvas — the Nebula radial washes are gone. */
+.theme-steaan .app-background {
+  background-image: none;
+}
+/* Auth pages (login, setup wizard): the teal "aurora" from the design
+   system — one soft radial at the top, white card on top of it. */
+.theme-steaan .auth-surface {
+  background-image: radial-gradient(
+    900px 500px at 50% -10%,
+    hsl(var(--steaan-tint-strong)) 0%,
+    transparent 60%
+  );
+}
+
+/* Surfaces: the glass primitives become cards. */
+.theme-steaan .glass-card,
+.theme-steaan .glass-panel {
+  background-color: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.theme-steaan .glass-card {
+  box-shadow: var(--steaan-shadow-sm);
+}
+.theme-steaan .glass-panel {
+  box-shadow: none;
+}
+.theme-steaan .glass-hover:hover {
+  background-color: hsl(var(--glass-hover));
+  border-color: hsl(var(--glass-border-strong));
+}
+
+/* No backdrop blur anywhere — popovers/dialogs/sheets already sit on a
+   ≥95% solid popover surface, so dropping the blur leaves them clean. */
+.theme-steaan [class*="backdrop-blur"] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* The signature purple→blue gradient (sidebar "+", new-ticket submit,
+   setup wizard CTA, call popup, KB chat) becomes solid teal. Tailwind's
+   gradient utilities only set the stop variables, so redefining both stops
+   to the same colour is all it takes. */
+.theme-steaan .from-accent-purple {
+  --tw-gradient-from: hsl(var(--primary)) var(--tw-gradient-from-position);
+  --tw-gradient-to: hsl(var(--primary)) var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+.theme-steaan .to-accent-blue {
+  --tw-gradient-to: hsl(var(--primary)) var(--tw-gradient-to-position);
+}
+.theme-steaan .from-accent-purple:hover,
+.theme-steaan .to-accent-blue:hover {
+  --tw-gradient-from: hsl(var(--steaan-primary-hover)) var(--tw-gradient-from-position);
+  --tw-gradient-to: hsl(var(--steaan-primary-hover)) var(--tw-gradient-to-position);
+}
+
+/* Sidebar: a full-height white column with a right hairline instead of the
+   floating glass panel. */
+.theme-steaan .sd-sidebar {
+  margin: 0;
+  top: 0;
+  height: 100vh;
+  border-radius: 0;
+  border: 0;
+  border-right: 1px solid hsl(var(--border));
+  box-shadow: none;
+}
+/* Active nav item: teal-50 fill, teal text, 3px teal rail on the left
+   edge. Hover stays the stone-100 token. */
+.theme-steaan .sd-nav-row {
+  position: relative;
+  font-weight: 500;
+}
+.theme-steaan .sd-nav-row-active {
+  background-color: hsl(var(--accent));
+  color: hsl(var(--primary));
+  font-weight: 600;
+  box-shadow: none;
+}
+.theme-steaan .sd-nav-row-active::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 20px;
+  border-radius: 2px;
+  background-color: hsl(var(--primary));
+}
+
+/* Ticket list / grouped list header row: teal-50 band with teal labels
+   instead of the lavender band (sd-table-head is a theme hook, unstyled
+   under Nebula). */
+.theme-steaan .sd-table-head {
+  background-color: hsl(var(--accent));
+}
+.theme-steaan .sd-table-head th {
+  color: hsl(var(--primary));
+  border-bottom-color: hsl(var(--steaan-tint-strong));
+}
+
+/* Timeline: internal notes on an amber-50 card with an amber-200 hairline
+   (flat tint instead of the glow ring). */
+.theme-steaan .sd-internal-note {
+  background-color: #fffbeb;
+  --tw-ring-color: #fde68a;
+}
+
+/* @@-mention chip follows the primary hue. */
+.theme-steaan .sd-mention {
+  background: hsl(var(--accent));
+  color: hsl(var(--primary));
+  border-color: hsl(var(--steaan-tint-strong));
+}
+
+/* Headings: 600–700 with -0.02em tracking per the spec. */
+.theme-steaan h1,
+.theme-steaan h2,
+.theme-steaan h3,
+.theme-steaan .font-display {
+  letter-spacing: -0.02em;
+}
+
+/* Focus ring: teal hairline + the soft 3px teal halo. */
+.theme-steaan input:focus-visible,
+.theme-steaan textarea:focus-visible,
+.theme-steaan select:focus-visible {
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.15);
+  outline: none;
+}
+
+/* ─── Steaan: purple-family remap (generated from the classes in use) ───
+   Nebula's accent vocabulary is scattered through the tree as plain
+   Tailwind purple / violet / indigo utilities (tinted chips, gate-dialog
+   CTAs, toggle tracks, the KB chat launcher, the date picker's Done button,
+   focus rings, checkbox accent-color...). Rather than fork every call
+   site, Steaan redirects those exact utilities to the teal primary:
+   solids -> primary, tints keep their alpha, pale text -> primary, deep
+   text -> primary-hover, gradients collapse to solid teal. Selectors are
+   `:root.theme-steaan .x` (0,3,0) so they also out-rank the light-mode
+   legibility block above ((0,2,1)). `dark:` variants are skipped (never
+   active under Steaan). Regenerate when new purple utilities land — or,
+   better, reach for `primary`/`accent` tokens in new code. */
+:root.theme-steaan .accent-purple-400,
+:root.theme-steaan .accent-purple-500,
+:root.theme-steaan .accent-violet-500 {
+  accent-color: hsl(var(--primary));
+}
+:root.theme-steaan .bg-fuchsia-400,
+:root.theme-steaan .bg-indigo-400,
+:root.theme-steaan .bg-purple-400,
+:root.theme-steaan .bg-purple-500,
+:root.theme-steaan .bg-violet-400,
+:root.theme-steaan .bg-violet-500,
+:root.theme-steaan .bg-violet-500\/80,
+:root.theme-steaan .bg-violet-500\/90,
+:root.theme-steaan .hover\:bg-violet-400:hover {
+  background-color: hsl(var(--primary));
+}
+:root.theme-steaan .bg-indigo-400\/10,
+:root.theme-steaan .bg-purple-500\/10,
+:root.theme-steaan .bg-violet-400\/10,
+:root.theme-steaan .bg-violet-500\/10,
+:root.theme-steaan .bg-violet-500\/\[0\.10\],
+:root.theme-steaan .hover\:bg-violet-500\/10:hover {
+  background-color: hsl(var(--primary) / 0.1);
+}
+:root.theme-steaan .bg-purple-100,
+:root.theme-steaan .bg-violet-100 {
+  background-color: hsl(var(--accent));
+}
+:root.theme-steaan .bg-purple-400\/20,
+:root.theme-steaan .bg-purple-500\/20,
+:root.theme-steaan .bg-violet-500\/20,
+:root.theme-steaan .hover\:bg-purple-500\/20:hover,
+:root.theme-steaan .hover\:bg-violet-400\/20:hover {
+  background-color: hsl(var(--primary) / 0.2);
+}
+:root.theme-steaan .bg-purple-500\/15,
+:root.theme-steaan .bg-violet-400\/15,
+:root.theme-steaan .bg-violet-500\/15,
+:root.theme-steaan .hover\:bg-purple-500\/15:hover,
+:root.theme-steaan .hover\:bg-violet-400\/15:hover {
+  background-color: hsl(var(--primary) / 0.15);
+}
+:root.theme-steaan .bg-purple-500\/\[0\.04\],
+:root.theme-steaan .bg-purple-500\/\[0\.05\],
+:root.theme-steaan .bg-violet-500\/\[0\.05\] {
+  background-color: hsl(var(--primary) / 0.06);
+}
+:root.theme-steaan .bg-purple-500\/\[0\.08\] {
+  background-color: hsl(var(--primary) / 0.08);
+}
+:root.theme-steaan .bg-purple-500\/\[0\.12\],
+:root.theme-steaan .bg-violet-500\/\[0\.12\] {
+  background-color: hsl(var(--primary) / 0.12);
+}
+:root.theme-steaan .bg-purple-500\/\[0\.13\] {
+  background-color: hsl(var(--primary) / 0.13);
+}
+:root.theme-steaan .border-indigo-400\/20,
+:root.theme-steaan .border-purple-400\/20 {
+  border-color: hsl(var(--primary) / 0.2);
+}
+:root.theme-steaan .border-purple-400,
+:root.theme-steaan .border-violet-400 {
+  border-color: hsl(var(--primary));
+}
+:root.theme-steaan .border-purple-400\/30,
+:root.theme-steaan .border-purple-500\/30,
+:root.theme-steaan .border-violet-400\/30,
+:root.theme-steaan .border-violet-500\/30,
+:root.theme-steaan .hover\:border-violet-400\/30:hover {
+  border-color: hsl(var(--primary) / 0.3);
+}
+:root.theme-steaan .border-purple-400\/50,
+:root.theme-steaan .hover\:border-violet-400\/50:hover {
+  border-color: hsl(var(--primary) / 0.5);
+}
+:root.theme-steaan .border-purple-400\/60,
+:root.theme-steaan .border-violet-400\/60 {
+  border-color: hsl(var(--primary) / 0.6);
+}
+:root.theme-steaan .border-violet-400\/25 {
+  border-color: hsl(var(--primary) / 0.25);
+}
+:root.theme-steaan .border-violet-400\/40,
+:root.theme-steaan .focus\:border-violet-400\/40:focus {
+  border-color: hsl(var(--primary) / 0.4);
+}
+:root.theme-steaan .focus\:ring-violet-400\/40:focus,
+:root.theme-steaan .ring-purple-400\/40 {
+  --tw-ring-color: hsl(var(--primary) / 0.4);
+}
+:root.theme-steaan .from-purple-500,
+:root.theme-steaan .from-violet-500,
+:root.theme-steaan .from-violet-500\/90,
+:root.theme-steaan .from-violet-600,
+:root.theme-steaan .hover\:from-violet-500:hover {
+  --tw-gradient-from: hsl(var(--primary)) var(--tw-gradient-from-position);
+  --tw-gradient-to: hsl(var(--primary)) var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+:root.theme-steaan .hover\:bg-purple-500\/\[0\.16\]:hover {
+  background-color: hsl(var(--primary) / 0.16);
+}
+:root.theme-steaan .hover\:bg-violet-500\/\[0\.18\]:hover {
+  background-color: hsl(var(--primary) / 0.18);
+}
+:root.theme-steaan .hover\:text-purple-100:hover,
+:root.theme-steaan .hover\:text-violet-200:hover,
+:root.theme-steaan .text-indigo-200,
+:root.theme-steaan .text-purple-100,
+:root.theme-steaan .text-purple-200,
+:root.theme-steaan .text-purple-300,
+:root.theme-steaan .text-violet-100,
+:root.theme-steaan .text-violet-200,
+:root.theme-steaan .text-violet-300 {
+  color: hsl(var(--primary));
+}
+:root.theme-steaan .hover\:to-indigo-500:hover,
+:root.theme-steaan .to-indigo-600,
+:root.theme-steaan .to-indigo-600\/90 {
+  --tw-gradient-to: hsl(var(--primary)) var(--tw-gradient-to-position);
+}
+:root.theme-steaan .ring-violet-400\/50 {
+  --tw-ring-color: hsl(var(--primary) / 0.5);
+}
+:root.theme-steaan .text-purple-200\/80,
+:root.theme-steaan .text-violet-300\/80 {
+  color: hsl(var(--primary) / 0.8);
+}
+:root.theme-steaan .text-purple-200\/90,
+:root.theme-steaan .text-violet-300\/90 {
+  color: hsl(var(--primary) / 0.9);
+}
+:root.theme-steaan .text-purple-300\/70 {
+  color: hsl(var(--primary) / 0.7);
+}
+:root.theme-steaan .text-purple-900,
+:root.theme-steaan .text-violet-700,
+:root.theme-steaan .text-violet-800 {
+  color: hsl(var(--steaan-primary-hover));
+}
+:root.theme-steaan .via-indigo-500 {
+  --tw-gradient-stops: var(--tw-gradient-from), hsl(var(--primary)) var(--tw-gradient-via-position), var(--tw-gradient-to);
+}
+:root.theme-steaan .from-violet-500.to-blue-500,
+:root.theme-steaan .from-violet-600.to-blue-500,
+:root.theme-steaan .from-purple-500.to-sky-400 {
+  --tw-gradient-to: hsl(var(--primary)) var(--tw-gradient-to-position);
+}
+/* Purple glow shadows under gate-dialog CTAs / the date-picker day cell. */
+:root.theme-steaan [class*="rgba(124,58,237"],
+:root.theme-steaan [class*="rgba(139,92,246"] {
+  box-shadow: var(--steaan-shadow-sm);
 }

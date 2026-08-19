@@ -1,10 +1,11 @@
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AtSign, ChevronRight, Moon, Sun } from "lucide-react";
+import { AtSign, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/auth/authStore";
 import { TwoFactorSection } from "@/pages/profile/TwoFactorSection";
 import { useTheme } from "@/app/ThemeProvider";
+import { ThemePicker } from "@/components/ThemePicker";
 import { preferencesApi } from "@/lib/api";
 import { viewApi } from "@/lib/ticket-api";
 import {
@@ -19,7 +20,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
 
 export function ProfilePage() {
   const { user } = useAuth();
@@ -53,49 +53,14 @@ export function ProfilePage() {
         </dl>
       </section>
 
-      <section className="glass-card space-y-3 p-6">
+      <section className="glass-card space-y-4 p-6">
         <div className="flex items-baseline justify-between gap-3">
           <div className="text-sm font-medium">Appearance</div>
           <div className="text-[11px] text-muted-foreground">
             Saved to your account — applies on every device.
           </div>
         </div>
-        <div
-          role="radiogroup"
-          aria-label="Theme"
-          className="inline-flex rounded-lg border border-glass bg-glass p-1"
-        >
-          <button
-            type="button"
-            role="radio"
-            aria-checked={theme === "light"}
-            onClick={() => setTheme("light")}
-            className={cn(
-              "flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              theme === "light"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <Sun className="h-3.5 w-3.5" />
-            Light
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={theme === "dark"}
-            onClick={() => setTheme("dark")}
-            className={cn(
-              "flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              theme === "dark"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <Moon className="h-3.5 w-3.5" />
-            Dark
-          </button>
-        </div>
+        <ThemePicker value={theme} onChange={setTheme} label="Theme" />
       </section>
 
       {isAgent ? <PostCloseRedirectSection /> : null}
@@ -109,9 +74,9 @@ export function ProfilePage() {
             <AtSign className="h-4 w-4 text-purple-200" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium">Mijn tags</div>
+            <div className="text-sm font-medium">My tags</div>
             <div className="text-xs text-muted-foreground">
-              Alle @@-tags die jij ontvangen hebt, met ack / viewed status.
+              Every @@-tag you have received, with its acknowledged / viewed status.
             </div>
           </div>
           <ChevronRight className="h-4 w-4 text-muted-foreground" />

@@ -548,7 +548,7 @@ export function RichTextEditor({
           margin: 0;
         }
         .rte-content .ProseMirror a {
-          color: hsl(265 89% 70%);
+          color: hsl(var(--primary));
           text-decoration: underline;
         }
         .rte-content .ProseMirror code {
@@ -591,8 +591,8 @@ export function RichTextEditor({
           user-select: none;
         }
         .rte-content .ProseMirror .sd-signature-block.ProseMirror-selectednode {
-          border-color: hsl(265 89% 70% / 0.5);
-          box-shadow: 0 0 0 1px hsl(265 89% 70% / 0.3);
+          border-color: hsl(var(--primary) / 0.5);
+          box-shadow: 0 0 0 1px hsl(var(--primary) / 0.3);
         }
         .rte-content .ProseMirror .sd-signature-block__label {
           font-size: 10px;
@@ -625,9 +625,9 @@ export function RichTextEditor({
           align-items: center;
           padding: 0 0.4em;
           border-radius: 9999px;
-          background: hsl(265 89% 70% / 0.15);
-          color: hsl(265 89% 85%);
-          border: 1px solid hsl(265 89% 70% / 0.3);
+          background: hsl(var(--primary) / 0.12);
+          color: hsl(var(--primary));
+          border: 1px solid hsl(var(--primary) / 0.3);
           font-weight: 500;
           font-size: 0.92em;
           white-space: nowrap;

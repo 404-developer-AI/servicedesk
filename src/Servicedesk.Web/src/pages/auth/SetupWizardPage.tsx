@@ -54,7 +54,7 @@ export function SetupWizardPage() {
   });
 
   return (
-    <div className="app-background relative flex min-h-screen items-center justify-center px-4 py-10">
+    <div className="app-background auth-surface relative flex min-h-screen items-center justify-center px-4 py-10">
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
