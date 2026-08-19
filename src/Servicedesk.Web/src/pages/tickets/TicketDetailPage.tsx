@@ -995,32 +995,17 @@ function TicketDetailBody({
       {/* Left column — header + description static, activity scrolls, reply pinned bottom */}
       <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
         <SearchContextBar ticketId={ticketId} />
-        {/* Static: ticket number + subject on one line, with SLA pills + PDF inline */}
+        {/* Static: ticket number + subject on one line, full width — action pills
+            live on the Description label row below so long subjects stay visible */}
         <div className="shrink-0 pb-4">
-          <div className="flex items-start gap-3">
-            <div className="flex-1 min-w-0">
-              <EditableSubject
-                number={ticket.number}
-                value={ticket.subject}
-                ticketTypeId={ticket.ticketTypeId}
-                onSave={async (subject) => {
-                  await updateMutation.mutateAsync({ subject });
-                }}
-              />
-            </div>
-            <IsoClassificationActions ticket={ticket} />
-            {checklistsEnabled && checklistSettings && (
-              <ChecklistHeaderButton
-                ticketId={ticketId}
-                checklists={checklists}
-                maxPerTicket={checklistSettings.maxPerTicket}
-                onOpen={() => onOpenChecklist(activeChecklistId)}
-                onAttached={(c) => onOpenChecklist(c.id)}
-              />
-            )}
-            <SlaPill ticketId={ticket.id} className="shrink-0 justify-end" />
-            <ExportPdfButton ticketId={ticketId} />
-          </div>
+          <EditableSubject
+            number={ticket.number}
+            value={ticket.subject}
+            ticketTypeId={ticket.ticketTypeId}
+            onSave={async (subject) => {
+              await updateMutation.mutateAsync({ subject });
+            }}
+          />
         </div>
 
         <SplitBanners
@@ -1039,6 +1024,20 @@ function TicketDetailBody({
             <span className="rounded px-1.5 py-0.5 text-[10px] font-medium border border-glass bg-glass text-muted-foreground/60">
               Internal
             </span>
+            <div className="ml-auto flex items-center gap-3">
+              <IsoClassificationActions ticket={ticket} />
+              {checklistsEnabled && checklistSettings && (
+                <ChecklistHeaderButton
+                  ticketId={ticketId}
+                  checklists={checklists}
+                  maxPerTicket={checklistSettings.maxPerTicket}
+                  onOpen={() => onOpenChecklist(activeChecklistId)}
+                  onAttached={(c) => onOpenChecklist(c.id)}
+                />
+              )}
+              <SlaPill ticketId={ticket.id} className="shrink-0 justify-end" />
+              <ExportPdfButton ticketId={ticketId} />
+            </div>
           </div>
           <EditableDescription
             html={body.bodyHtml}
