@@ -399,6 +399,7 @@ public static class DependencyInjection
         services.AddSingleton<IMentionNotificationService, MentionNotificationService>();
 
         services.AddSingleton<IMailMessageRepository, MailMessageRepository>();
+        services.AddSingleton<Mail.Outbound.IRecipientSuggestionRepository, Mail.Outbound.RecipientSuggestionRepository>();
         services.AddSingleton<IAttachmentRepository, AttachmentRepository>();
         services.AddSingleton<IAttachmentJobRepository, AttachmentJobRepository>();
 

@@ -691,6 +691,17 @@ export type MailRecipientInput = {
   name?: string;
 };
 
+/// One row from the composer's recipient-suggestion endpoint. Company
+/// contacts and previously-used addresses arrive ranked by usage; general
+/// contact matches (isCompanyContact false, usageCount 0) trail them.
+export type RecipientSuggestion = {
+  address: string;
+  name: string | null;
+  contactId: string | null;
+  isCompanyContact: boolean;
+  usageCount: number;
+};
+
 export type SendOutboundMailRequest = {
   kind: OutboundMailKind;
   to?: MailRecipientInput[];
@@ -1117,6 +1128,14 @@ export const ticketApi = {
     request<TicketEvent>("POST", `/api/tickets/${id}/events`, event),
   sendMail: (id: string, payload: SendOutboundMailRequest) =>
     request<TicketEvent>("POST", `/api/tickets/${id}/mail`, payload),
+  /// Ranked To/Cc/Bcc suggestions for the composer: the ticket's company
+  /// contacts + previously-used addresses first (most-used on that company's
+  /// outbound mail on top), general contact matches below when `q` is given.
+  recipientSuggestions: (id: string, q: string) =>
+    request<{ items: RecipientSuggestion[] }>(
+      "GET",
+      `/api/tickets/${id}/recipient-suggestions${q ? `?q=${encodeURIComponent(q)}` : ""}`,
+    ),
   /// v0.0.61 — resolved signature preview (self-contained data-URI HTML) to
   /// pre-load into the compose window, or { html: null } when nothing should
   /// be pre-loaded. `reply` mirrors the send-time reply gating.

@@ -1200,6 +1200,29 @@ public static class TicketEndpoints
             return Results.Ok(new { html });
         }).WithName("GetComposeSignature").WithOpenApi();
 
+        // Ranked recipient suggestions for the composer's To/Cc/Bcc fields:
+        // company contacts + previously-used addresses first (most-used on
+        // this company's outbound mail on top), general contact matches below
+        // when a search term is given. Access = queue access on the ticket,
+        // checked via a lightweight context fetch (no full detail load — this
+        // fires on focus and per keystroke).
+        group.MapGet("/{id:guid}/recipient-suggestions", async (
+            Guid id, string? q, HttpContext http,
+            IRecipientSuggestionRepository suggestions, IQueueAccessService queueAccess,
+            CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            var context = await suggestions.GetTicketContextAsync(id, ct);
+            if (context is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, context.QueueId, ct))
+                return Results.NotFound();
+
+            var items = await suggestions.ListAsync(context.CompanyId, q, limit: 20, ct);
+            return Results.Ok(new { items });
+        }).WithName("GetRecipientSuggestions").WithOpenApi();
+
         group.MapPut("/{id:guid}/events/{eventId:long}", async (
             Guid id, long eventId, [FromBody] UpdateEventRequest req, HttpContext http,
             ITicketRepository tickets, IQueueAccessService queueAccess,
