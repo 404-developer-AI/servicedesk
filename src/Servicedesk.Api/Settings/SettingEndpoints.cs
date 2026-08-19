@@ -142,6 +142,26 @@ public static class SettingEndpoints
         .WithName("GetChecklistSettings")
         .WithOpenApi();
 
+        // ---- Project ticket settings (v0.0.104, agent-readable) ----
+        // The ticket surfaces need the enable flag (render the project
+        // badge/panel/buttons and the new-ticket toggle at all) and the
+        // link-prompt flag (probe on first open). The server re-enforces
+        // both on every project endpoint.
+        app.MapGet("/api/settings/projects", async (ISettingsService svc, CancellationToken ct) =>
+        {
+            bool enabled;
+            bool linkPrompt;
+            try { enabled = await svc.GetAsync<bool>(SettingKeys.Projects.Enabled, ct); }
+            catch { enabled = true; }
+            try { linkPrompt = await svc.GetAsync<bool>(SettingKeys.Projects.LinkPromptEnabled, ct); }
+            catch { linkPrompt = true; }
+            return Results.Ok(new ProjectSettingsDto(enabled, linkPrompt));
+        })
+        .WithTags("Settings")
+        .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+        .WithName("GetProjectSettings")
+        .WithOpenApi();
+
         // ---- Copilot launcher settings (v0.0.89, agent-readable) ----
         // The nav button needs the enable flag, URL, label and open-mode on the
         // client to render itself. None of these are secret (it is a public
@@ -171,6 +191,8 @@ public static class SettingEndpoints
     public sealed record NotificationsSettings(int PopupDurationSeconds);
     public sealed record MailComposeSettings(bool ForgottenAttachmentEnabled, string ForgottenAttachmentKeywords);
     public sealed record BulkActionsSettings(bool Enabled, int MaxSelection);
+
+    public sealed record ProjectSettingsDto(bool Enabled, bool LinkPromptEnabled);
 
     public sealed record ChecklistSettingsDto(
         bool Enabled,

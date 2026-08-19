@@ -49,7 +49,7 @@ public static class TicketEndpoints
         group.MapGet("/", async (
             Guid? queueId, Guid? statusId, Guid? priorityId, Guid? assigneeUserId,
             Guid? requesterContactId, Guid? companyId, string? search, bool? openOnly, bool? openFirst,
-            bool? stateBucketSort,
+            bool? stateBucketSort, bool? projectsOnly,
             string? sortField, string? sortDirection, bool? priorityFloat, int? offset,
             DateTime? cursorUpdatedUtc, Guid? cursorId, int? limit,
             // v0.0.40 polish — multi-select filters from saved views. Comma-
@@ -97,7 +97,8 @@ public static class TicketEndpoints
                 AccessibleQueueIds: accessibleQueueIds,
                 QueueIds: ParseGuidList(queueIds),
                 StatusIds: ParseGuidList(statusIds),
-                PriorityIds: ParseGuidList(priorityIds));
+                PriorityIds: ParseGuidList(priorityIds),
+                ProjectsOnly: projectsOnly ?? false);
             var page = await repo.SearchAsync(q, VisibilityScope.All, null, null, ct);
             return Results.Ok(new
             {
@@ -168,6 +169,10 @@ public static class TicketEndpoints
                 parentTicketNumber = rel.Parent?.ParentNumber.ToString(),
                 parentLinkedByUserName = rel.Parent?.LinkedByName,
                 childTickets = rel.ChildTickets.Select(c => new { id = c.Id, number = c.Number.ToString() }),
+                projectTicketNumber = rel.Project?.ProjectNumber.ToString(),
+                projectTicketSubject = rel.Project?.ProjectSubject,
+                projectLinkedByUserName = rel.Project?.LinkedByName,
+                projectLinkedTicketCount = rel.ProjectLinkedTicketCount,
             });
         }).WithName("GetTicket").WithOpenApi();
 
@@ -257,7 +262,8 @@ public static class TicketEndpoints
                 TicketTypeId: req.TicketTypeId,
                 InitialNote: req.InitialNote is { } note && !string.IsNullOrWhiteSpace(note.BodyHtml)
                     ? new InitialTicketNote(note.BodyHtml, note.IsInternal)
-                    : null), ct);
+                    : null,
+                IsProject: req.IsProject), ct);
 
             // Apply the parent link after create so the new ticket exists
             // for the FK + cycle-check. Failure here is logged but does not
@@ -1057,7 +1063,7 @@ public static class TicketEndpoints
             ITicketRepository tickets, IQueueAccessService queueAccess,
             IOutboundMailService outbound, IHubContext<TicketPresenceHub> hub,
             IComposeTemplateSurveyDispatcher surveyTemplateDispatcher,
-            IAuditLogger audit, CancellationToken ct) =>
+            IAuditLogger audit, ISettingsService settings, CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
@@ -1066,6 +1072,23 @@ public static class TicketEndpoints
             if (ticket is null) return Results.NotFound();
             if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.Ticket.QueueId, ct))
                 return Results.NotFound();
+
+            // v0.0.104 — project tickets are internal: no outbound mail from
+            // a project. The composer hides the mail tab; this is the server
+            // gate for stale clients. Only enforced while projects are on —
+            // switching the feature off returns the ticket to normal rules.
+            if (ticket.Ticket.IsProject)
+            {
+                bool projectsOn;
+                try { projectsOn = await settings.GetAsync<bool>(SettingKeys.Projects.Enabled, ct); }
+                catch { projectsOn = true; }
+                if (projectsOn)
+                    return Results.Conflict(new
+                    {
+                        error = "This is a project ticket — outbound mail is disabled on projects. Post an internal note, or mail from a linked ticket instead.",
+                        code = "project_ticket_mail_disabled",
+                    });
+            }
 
             if (!Enum.TryParse<OutboundMailKind>(req.Kind, ignoreCase: true, out var kind))
                 return Results.BadRequest(new { error = "kind must be Reply, ReplyAll, or New." });
@@ -1312,7 +1335,7 @@ public static class TicketEndpoints
         // enforced server-side: an agent cannot merge into a queue they can't
         // see, regardless of what the client sends.
         group.MapGet("/picker", async (
-            string? q, Guid? excludeTicketId, int? limit, bool? recentFirst,
+            string? q, Guid? excludeTicketId, int? limit, bool? recentFirst, bool? projectsOnly,
             HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess,
             ISettingsService settings, CancellationToken ct) =>
         {
@@ -1339,7 +1362,8 @@ public static class TicketEndpoints
                 accessibleQueueIds: accessibleQueueIds,
                 recentForUserId: recentFirst == true ? userId : null,
                 limit: limit ?? 20,
-                ct: ct);
+                ct: ct,
+                projectsOnly: projectsOnly == true);
             return Results.Ok(new { items = hits });
         }).WithName("PickTicket").WithOpenApi();
 
@@ -2077,7 +2101,10 @@ public static class TicketEndpoints
         // 'primary' conflicts with an existing primary link to a
         // different company → 409.
         Guid? CompanyId = null,
-        string? NewLinkRole = null);
+        string? NewLinkRole = null,
+        // v0.0.104 — create as a project ticket (the "Project ticket"
+        // toggle in the new-ticket drawer). Default off.
+        bool IsProject = false);
 
     public sealed record InitialNoteRequest(string BodyHtml, bool IsInternal);
 

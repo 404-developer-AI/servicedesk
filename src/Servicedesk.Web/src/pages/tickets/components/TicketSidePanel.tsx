@@ -10,10 +10,11 @@ import { AddContactLinkDialog } from "@/components/AddContactLinkDialog";
 import { SwitchRequesterDialog } from "@/components/SwitchRequesterDialog";
 import { MergeTicketDialog } from "@/components/MergeTicketDialog";
 import { LinkParentDialog } from "@/components/LinkParentDialog";
+import { LinkProjectDialog } from "@/components/LinkProjectDialog";
 import { LinkedTicketTypeDialog } from "@/components/LinkedTicketTypeDialog";
 import { SyncOrdersButton } from "@/pages/orders/SyncOrdersButton";
 import { NewTicketDrawer } from "@/shell/NewTicketDrawer";
-import { ticketApi as ticketApiClient, type LinkedTicketPrefill } from "@/lib/ticket-api";
+import { ApiError, ticketApi as ticketApiClient, type LinkedTicketPrefill } from "@/lib/ticket-api";
 import { AddCompanyContactDialog } from "@/components/AddCompanyContactDialog";
 import { CompanyEditDialog } from "@/components/CompanyEditDialog";
 import { TaxonomySelect } from "@/components/TaxonomySelect";
@@ -42,6 +43,7 @@ import {
   Building2,
   Eye,
   EyeOff,
+  FolderKanban,
   GitMerge,
   Globe,
   Link2,
@@ -82,6 +84,13 @@ type TicketSidePanelProps = {
   parentLinkedByUserName?: string | null;
   childTickets?: { id: string; number: string }[];
   onUnlinkParent?: () => Promise<void> | void;
+  /// v0.0.104 — project tickets. `projectsEnabled` gates every project
+  /// surface; the rest comes from the detail response like the parent
+  /// strip above.
+  projectsEnabled?: boolean;
+  projectTicketNumber?: string | null;
+  projectLinkedByUserName?: string | null;
+  projectLinkedTicketCount?: number;
 };
 
 type TabId = "status" | "contact" | "company";
@@ -160,10 +169,32 @@ export function TicketSidePanel({
   parentLinkedByUserName,
   childTickets,
   onUnlinkParent,
+  projectsEnabled = false,
+  projectTicketNumber,
+  projectLinkedByUserName,
+  projectLinkedTicketCount = 0,
 }: TicketSidePanelProps) {
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = React.useState<TabId>("status");
   const [mergeOpen, setMergeOpen] = React.useState(false);
   const [linkParentOpen, setLinkParentOpen] = React.useState(false);
+  const [linkProjectOpen, setLinkProjectOpen] = React.useState(false);
+
+  // v0.0.104 — project mutations. Every rule (merged, already project,
+  // still-linked tickets, …) is enforced server-side; the 409 message is
+  // surfaced as-is so the agent knows why an action was refused.
+  const runProjectAction = React.useCallback(
+    async (action: () => Promise<unknown>, successMessage: string) => {
+      try {
+        await action();
+        toast.success(successMessage);
+        queryClient.invalidateQueries({ queryKey: ["ticket", ticket.id] });
+      } catch (err) {
+        toast.error(err instanceof ApiError ? err.message : "Action failed");
+      }
+    },
+    [queryClient, ticket.id],
+  );
 
   const { data: contact } = useQuery({
     queryKey: ["contact", ticket.requesterContactId],
@@ -271,6 +302,20 @@ export function TicketSidePanel({
             parentLinkedByUserName={parentLinkedByUserName ?? null}
             childTickets={childTickets ?? []}
             onUnlinkParent={onUnlinkParent}
+            projectsEnabled={projectsEnabled}
+            projectTicketNumber={projectTicketNumber ?? null}
+            projectLinkedByUserName={projectLinkedByUserName ?? null}
+            projectLinkedTicketCount={projectLinkedTicketCount}
+            onRequestLinkProject={() => setLinkProjectOpen(true)}
+            onUnlinkProject={() =>
+              runProjectAction(() => ticketApiClient.unlinkProject(ticket.id), "Removed from project")
+            }
+            onConvertProject={() =>
+              runProjectAction(() => ticketApiClient.convertToProject(ticket.id), "Converted to project ticket")
+            }
+            onRevertProject={() =>
+              runProjectAction(() => ticketApiClient.revertProject(ticket.id), "Converted back to a normal ticket")
+            }
           />
         )}
         {activeTab === "contact" && (
@@ -299,6 +344,11 @@ export function TicketSidePanel({
         source={ticket}
         onClose={() => setLinkParentOpen(false)}
       />
+      <LinkProjectDialog
+        open={linkProjectOpen}
+        source={ticket}
+        onClose={() => setLinkProjectOpen(false)}
+      />
     </div>
   );
 }
@@ -322,6 +372,14 @@ function StatusTab({
   parentLinkedByUserName,
   childTickets,
   onUnlinkParent,
+  projectsEnabled,
+  projectTicketNumber,
+  projectLinkedByUserName,
+  projectLinkedTicketCount,
+  onRequestLinkProject,
+  onUnlinkProject,
+  onConvertProject,
+  onRevertProject,
 }: {
   ticket: Ticket;
   onUpdate: (fields: TicketFieldUpdate) => Promise<void>;
@@ -339,6 +397,14 @@ function StatusTab({
   parentLinkedByUserName: string | null;
   childTickets: { id: string; number: string }[];
   onUnlinkParent?: () => Promise<void> | void;
+  projectsEnabled: boolean;
+  projectTicketNumber: string | null;
+  projectLinkedByUserName: string | null;
+  projectLinkedTicketCount: number;
+  onRequestLinkProject: () => void;
+  onUnlinkProject: () => void;
+  onConvertProject: () => void;
+  onRevertProject: () => void;
 }) {
   // v0.0.59 — "Sync orders" button is shown only to users with the Orders
   // feature flag.
@@ -424,7 +490,10 @@ function StatusTab({
     !!mergedIntoTicketNumber || mergedSourceTicketNumbers.length > 0;
   const hasParentRelation = !!parentTicketNumber || !!ticket.parentTicketId;
   const hasChildren = childTickets.length > 0;
-  const showRelationships = hasMergeRelations || hasParentRelation || hasChildren;
+  const hasProjectRelation =
+    projectsEnabled && (!!ticket.projectTicketId || ticket.isProject);
+  const showRelationships =
+    hasMergeRelations || hasParentRelation || hasChildren || hasProjectRelation;
 
   return (
     <>
@@ -555,6 +624,14 @@ function StatusTab({
         showRelationships={showRelationships}
         onRequestLinkParent={onRequestLinkParent}
         onUnlinkParent={onUnlinkParent}
+        projectsEnabled={projectsEnabled}
+        projectTicketNumber={projectTicketNumber}
+        projectLinkedByUserName={projectLinkedByUserName}
+        projectLinkedTicketCount={projectLinkedTicketCount}
+        onRequestLinkProject={onRequestLinkProject}
+        onUnlinkProject={onUnlinkProject}
+        onConvertProject={onConvertProject}
+        onRevertProject={onRevertProject}
       />
 
       {!ticket.mergedIntoTicketId && (
@@ -653,6 +730,14 @@ function RelationshipsBlock({
   showRelationships,
   onRequestLinkParent,
   onUnlinkParent,
+  projectsEnabled,
+  projectTicketNumber,
+  projectLinkedByUserName,
+  projectLinkedTicketCount,
+  onRequestLinkProject,
+  onUnlinkProject,
+  onConvertProject,
+  onRevertProject,
 }: {
   ticket: Ticket;
   mergedIntoTicketNumber: string | null;
@@ -664,6 +749,14 @@ function RelationshipsBlock({
   showRelationships: boolean;
   onRequestLinkParent: () => void;
   onUnlinkParent?: () => Promise<void> | void;
+  projectsEnabled: boolean;
+  projectTicketNumber: string | null;
+  projectLinkedByUserName: string | null;
+  projectLinkedTicketCount: number;
+  onRequestLinkProject: () => void;
+  onUnlinkProject: () => void;
+  onConvertProject: () => void;
+  onRevertProject: () => void;
 }) {
   // Merged tickets are frozen — hide the manual-link entry points so
   // the agent doesn't try to set a parent on something that already
@@ -763,6 +856,59 @@ function RelationshipsBlock({
         </div>
       )}
 
+      {/* v0.0.104 — project link on a normal ticket */}
+      {projectsEnabled && ticket.projectTicketId && projectTicketNumber && (
+        <div className="flex items-start gap-2 text-xs text-foreground/80">
+          <FolderKanban className="h-3.5 w-3.5 mt-0.5 text-sky-300/80 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <span className="text-muted-foreground/70">Project </span>
+            <Link
+              to="/tickets/$ticketId"
+              params={{ ticketId: ticket.projectTicketId }}
+              className="text-primary hover:underline font-medium"
+            >
+              #{projectTicketNumber}
+            </Link>
+            {projectLinkedByUserName && (
+              <span className="text-muted-foreground/60"> · linked by {projectLinkedByUserName}</span>
+            )}
+          </div>
+          {!isMerged && (
+            <button
+              type="button"
+              onClick={onUnlinkProject}
+              title="Remove from project"
+              className="text-muted-foreground/50 hover:text-destructive p-0.5"
+            >
+              <Unlink className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* v0.0.104 — project marker on the project ticket itself */}
+      {projectsEnabled && ticket.isProject && (
+        <div className="flex items-start gap-2 text-xs text-foreground/80">
+          <FolderKanban className="h-3.5 w-3.5 mt-0.5 text-sky-300/80 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <span className="text-foreground/85 font-medium">Project ticket</span>
+            <span className="text-muted-foreground/60">
+              {" "}· {projectLinkedTicketCount} linked ticket{projectLinkedTicketCount === 1 ? "" : "s"}
+            </span>
+          </div>
+          {!isMerged && projectLinkedTicketCount === 0 && (
+            <button
+              type="button"
+              onClick={onRevertProject}
+              title="Convert back to a normal ticket"
+              className="text-muted-foreground/50 hover:text-destructive p-0.5"
+            >
+              <Unlink className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      )}
+
       {!showRelationships && (
         <div className="text-[11px] text-muted-foreground/50 italic">
           No related tickets yet.
@@ -783,7 +929,32 @@ function RelationshipsBlock({
               Link to main ticket
             </Button>
           )}
+          {projectsEnabled && !ticket.isProject && !ticket.projectTicketId && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full justify-start gap-2 text-xs"
+              onClick={onRequestLinkProject}
+            >
+              <FolderKanban className="h-3.5 w-3.5" />
+              Link to project
+            </Button>
+          )}
           <LinkedTicketLauncher ticket={ticket} />
+          {projectsEnabled && !ticket.isProject && !ticket.projectTicketId && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start gap-2 text-xs text-muted-foreground/80"
+              onClick={onConvertProject}
+              title="Turn this ticket into a project other tickets can be linked to"
+            >
+              <FolderKanban className="h-3.5 w-3.5" />
+              Convert to project ticket
+            </Button>
+          )}
         </div>
       )}
     </div>

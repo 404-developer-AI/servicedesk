@@ -185,6 +185,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         if (query.RequesterContactId.HasValue) sql.Append(" AND t.requester_contact_id = @RequesterContactId");
         if (query.RequesterCompanyId.HasValue) sql.Append(" AND t.company_id = @RequesterCompanyId");
         if (query.OpenOnly) sql.Append(" AND s.state_category NOT IN ('Resolved','Closed')");
+        if (query.ProjectsOnly) sql.Append(" AND t.is_project = TRUE");
 
         // Queue-access enforcement: restrict to only the queues the caller
         // is allowed to see. When null (admin), no filter is applied.
@@ -372,7 +373,13 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                    parent_linked_by_user_id AS ParentLinkedByUserId,
                    ticket_type_id AS TicketTypeId,
                    zammad_ticket_id AS ZammadTicketId,
-                   zammad_ticket_number AS ZammadTicketNumber
+                   zammad_ticket_number AS ZammadTicketNumber,
+                   is_project AS IsProject,
+                   project_ticket_id AS ProjectTicketId,
+                   project_linked_utc AS ProjectLinkedUtc,
+                   project_linked_by_user_id AS ProjectLinkedByUserId,
+                   project_sort_order AS ProjectSortOrder,
+                   project_prompt_dismissed_utc AS ProjectPromptDismissedUtc
             FROM tickets WHERE id = @id AND is_deleted = FALSE
             """;
         const string bodySql = """
@@ -486,6 +493,20 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                   WHERE cc.contact_id = t.requester_contact_id AND cc.role = 'primary'
                   LIMIT 1))
             WHERE t.id = @ticketId;
+
+            -- 6: linked project summary (null when not linked) — v0.0.104
+            SELECT p.id     AS ProjectTicketId,
+                   p.number AS ProjectNumber,
+                   p.subject AS ProjectSubject,
+                   u.email  AS LinkedByName
+            FROM tickets t
+            JOIN tickets p ON p.id = t.project_ticket_id
+            LEFT JOIN users u ON u.id = t.project_linked_by_user_id
+            WHERE t.id = @ticketId AND t.project_ticket_id IS NOT NULL;
+
+            -- 7: how many tickets are linked to this ticket as their project
+            SELECT COUNT(*) FROM tickets
+            WHERE project_ticket_id = @ticketId AND is_deleted = FALSE;
             """;
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -498,6 +519,8 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         var parent = await grid.ReadFirstOrDefaultAsync<ParentTicketSummary>();
         var children = (await grid.ReadAsync<LinkedChildTicket>()).ToList();
         var companyAlert = await grid.ReadFirstOrDefaultAsync<TicketCompanyAlertSource>();
+        var project = await grid.ReadFirstOrDefaultAsync<ProjectTicketSummary>();
+        var projectLinkedCount = await grid.ReadFirstAsync<int>();
         if (head is null) return null;
 
         return new TicketDetailRelations(
@@ -509,7 +532,9 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             SplitChildren: splitChildren,
             Parent: parent,
             ChildTickets: children,
-            CompanyAlert: companyAlert);
+            CompanyAlert: companyAlert,
+            Project: project,
+            ProjectLinkedTicketCount: projectLinkedCount);
     }
 
     private sealed class RelationsHeadRow
@@ -531,13 +556,14 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             INSERT INTO tickets (subject, requester_contact_id, assignee_user_id, queue_id,
                                  status_id, priority_id, category_id, source,
                                  company_id, awaiting_company_assignment, company_resolved_via,
-                                 pending_till_utc, ticket_type_id)
+                                 pending_till_utc, ticket_type_id, is_project)
             VALUES (@Subject, @RequesterContactId, @AssigneeUserId, @QueueId,
                     @StatusId, @PriorityId, @CategoryId, @Source,
                     @CompanyId, @AwaitingCompanyAssignment, @CompanyResolvedVia,
                     @PendingTillUtc,
                     COALESCE(@TicketTypeId,
-                             (SELECT id FROM ticket_types WHERE code = 'support' LIMIT 1)))
+                             (SELECT id FROM ticket_types WHERE code = 'support' LIMIT 1)),
+                    @IsProject)
             RETURNING id AS Id, number AS Number, subject AS Subject,
                       requester_contact_id AS RequesterContactId, assignee_user_id AS AssigneeUserId,
                       queue_id AS QueueId, status_id AS StatusId, priority_id AS PriorityId,
@@ -561,7 +587,13 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                       parent_linked_by_user_id AS ParentLinkedByUserId,
                       ticket_type_id AS TicketTypeId,
                       zammad_ticket_id AS ZammadTicketId,
-                      zammad_ticket_number AS ZammadTicketNumber
+                      zammad_ticket_number AS ZammadTicketNumber,
+                      is_project AS IsProject,
+                      project_ticket_id AS ProjectTicketId,
+                      project_linked_utc AS ProjectLinkedUtc,
+                      project_linked_by_user_id AS ProjectLinkedByUserId,
+                      project_sort_order AS ProjectSortOrder,
+                      project_prompt_dismissed_utc AS ProjectPromptDismissedUtc
             """;
         const string insertBody = """
             INSERT INTO ticket_bodies (ticket_id, body_text, body_html)
@@ -1326,8 +1358,14 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         IReadOnlyCollection<Guid>? accessibleQueueIds,
         Guid? recentForUserId,
         int limit,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool projectsOnly = false)
     {
+        // v0.0.104 — link-to-project dialog: only open project tickets are
+        // valid targets. Composes with every arm below (recent / fill / search).
+        var projectFilter = projectsOnly
+            ? " AND t.is_project = TRUE AND s.state_category NOT IN ('Resolved','Closed')"
+            : string.Empty;
         // Picker filters out tickets that are already merged so an agent can't
         // accidentally select a "tombstone" as the target. We exclude self
         // (no-op merge) and respect queue-access — admins pass null and skip
@@ -1357,7 +1395,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                   ON urt.ticket_id = t.id AND urt.user_id = @RecentUserId
                 WHERE t.is_deleted = FALSE
                   AND t.merged_into_ticket_id IS NULL
-                  AND t.id <> @excludeTicketId{queueFilter}
+                  AND t.id <> @excludeTicketId{queueFilter}{projectFilter}
                 ORDER BY urt.added_utc DESC
                 LIMIT @Limit
                 """;
@@ -1379,7 +1417,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                 WHERE t.is_deleted = FALSE
                   AND t.merged_into_ticket_id IS NULL
                   AND t.id <> @excludeTicketId
-                  AND t.id <> ALL(@SeenIds){queueFilter}
+                  AND t.id <> ALL(@SeenIds){queueFilter}{projectFilter}
                 ORDER BY t.updated_utc DESC, t.id DESC
                 LIMIT @Fill
                 """;
@@ -1405,6 +1443,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
               AND t.id <> @excludeTicketId
             """);
         sql.Append(queueFilter);
+        sql.Append(projectFilter);
         // v0.0.101: number arm only when the term parses as a ticket number,
         // compared as a typed bigint (indexed) instead of casting the column.
         var pickerNumber = TryParseTicketNumber(search);

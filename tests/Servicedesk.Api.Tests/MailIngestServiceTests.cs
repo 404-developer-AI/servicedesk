@@ -522,7 +522,7 @@ public sealed class MailIngestServiceTests
         public Task<int> InsertFakeBatchAsync(int c, CancellationToken ct) => throw new NotImplementedException();
         public Task<bool> IsTitleReviewedAsync(Guid ticketId, CancellationToken ct) => throw new NotImplementedException();
         public Task<bool> MarkTitleReviewedAsync(Guid ticketId, Guid actorUserId, CancellationToken ct) => throw new NotImplementedException();
-        public Task<IReadOnlyList<TicketPickerHit>> SearchPickerAsync(string? s, Guid e, IReadOnlyCollection<Guid>? q, Guid? r, int l, CancellationToken ct)
+        public Task<IReadOnlyList<TicketPickerHit>> SearchPickerAsync(string? s, Guid e, IReadOnlyCollection<Guid>? q, Guid? r, int l, CancellationToken ct, bool projectsOnly = false)
             => Task.FromResult<IReadOnlyList<TicketPickerHit>>(Array.Empty<TicketPickerHit>());
         public Task<MergeResult?> MergeAsync(Guid s, Guid t, Guid a, bool ack, CancellationToken ct)
             => Task.FromResult<MergeResult?>(null);
