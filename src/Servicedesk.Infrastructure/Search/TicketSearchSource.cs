@@ -152,7 +152,12 @@ public sealed class TicketSearchSource : ISearchSource
                        COALESCE(c.first_name || ' ' || c.last_name, c.email, '') AS requester_name,
                        COALESCE(co.name, '')  AS company_name,
                        COALESCE(s.name, '')   AS status_name,
-                       COALESCE(s.color, '')  AS status_color
+                       COALESCE(s.color, '')  AS status_color,
+                       t2.created_utc,
+                       -- Close moment, same convention as the Reporting API:
+                       -- closed_utc, falling back to resolved_utc for tickets
+                       -- that stopped at Resolved.
+                       COALESCE(t2.closed_utc, t2.resolved_utc) AS closed_utc
                 FROM ranked r
                 JOIN tickets t2        ON t2.id = r.id
                 LEFT JOIN statuses s   ON s.id = t2.status_id
@@ -180,7 +185,9 @@ public sealed class TicketSearchSource : ISearchSource
                    w.requester_name AS "RequesterName",
                    w.company_name   AS "CompanyName",
                    w.status_name    AS "StatusName",
-                   w.status_color   AS "StatusColor"
+                   w.status_color   AS "StatusColor",
+                   w.created_utc    AS "CreatedUtc",
+                   w.closed_utc     AS "ClosedUtc"
             FROM windowed w
             """;
 
@@ -241,6 +248,11 @@ public sealed class TicketSearchSource : ISearchSource
                 ["statusName"] = string.IsNullOrWhiteSpace(r.StatusName) ? null : r.StatusName,
                 ["statusColor"] = string.IsNullOrWhiteSpace(r.StatusColor) ? null : r.StatusColor,
                 ["isClosed"] = r.IsClosed ? "true" : "false",
+                ["createdUtc"] = r.CreatedUtc.ToString("O"),
+                // Only while the ticket is *currently* closed/resolved — a
+                // reopened ticket keeps its old resolved/closed stamp, and
+                // showing "Closed <date>" on an open ticket reads as wrong.
+                ["closedUtc"] = r.IsClosed ? r.ClosedUtc?.ToString("O") : null,
             })).ToList();
 
         var totalInGroup = rows.Count > 0 ? (int)rows[0].TotalHits : 0;
@@ -304,5 +316,7 @@ public sealed class TicketSearchSource : ISearchSource
         string? RequesterName,
         string? CompanyName,
         string? StatusName,
-        string? StatusColor);
+        string? StatusColor,
+        DateTime CreatedUtc,
+        DateTime? ClosedUtc);
 }

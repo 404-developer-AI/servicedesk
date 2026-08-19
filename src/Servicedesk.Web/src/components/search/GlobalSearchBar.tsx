@@ -8,6 +8,7 @@ import { searchApi, type SearchHit } from "@/lib/api";
 import { sanitizeSnippet } from "@/lib/sanitize";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/authStore";
+import { useServerTime, toServerLocalDate } from "@/hooks/useServerTime";
 import { KIND_ORDER, labelForKind, hitHref } from "@/components/search/searchMeta";
 
 // Fallback until the first response carries the server-configured value
@@ -27,6 +28,10 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
   // rect to position the portal-mounted result panel.
   const anchorRef = useRef<HTMLElement | null>(null);
   const { user } = useAuth();
+  // Server offset for the created/closed dates on ticket hits — display
+  // only, the timestamps themselves are server-provided.
+  const { time: serverTime } = useServerTime();
+  const serverOffset = serverTime?.offsetMinutes ?? 0;
 
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
@@ -328,6 +333,14 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
                                   className="truncate text-xs text-muted-foreground"
                                   dangerouslySetInnerHTML={{ __html: sanitizeSnippet(hit.snippet) }}
                                 />
+                              )}
+                              {hit.kind === "tickets" && hit.meta?.createdUtc && (
+                                <span className="text-[10px] text-muted-foreground/70">
+                                  Created {toServerLocalDate(hit.meta.createdUtc, serverOffset)}
+                                  {hit.meta?.closedUtc
+                                    ? ` · Closed ${toServerLocalDate(hit.meta.closedUtc, serverOffset)}`
+                                    : ""}
+                                </span>
                               )}
                             </Command.Item>
                           );
