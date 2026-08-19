@@ -41,6 +41,8 @@ public static class TicketBulkSkipReason
     public const string GateRequired = "status_gate_required";
     /// v0.0.103 — a checklist that blocks closing still has required open items.
     public const string ChecklistIncomplete = "checklist_incomplete";
+    /// v0.0.104 — project tickets are pinned to the project queue.
+    public const string ProjectQueueLocked = "project_queue_locked";
     public const string Failed = "failed";
 }
 
@@ -163,6 +165,7 @@ public sealed class TicketBulkActionService : ITicketBulkActionService
                     TicketMutationCheck.TargetQueueNoAccess => TicketBulkSkipReason.TargetQueueNoAccess,
                     TicketMutationCheck.StatusNotInQueueScope => TicketBulkSkipReason.StatusNotInQueueScope,
                     TicketMutationCheck.ChecklistIncomplete => TicketBulkSkipReason.ChecklistIncomplete,
+                    TicketMutationCheck.ProjectQueueLocked => TicketBulkSkipReason.ProjectQueueLocked,
                     _ => TicketBulkSkipReason.Failed,
                 };
                 if (reason is not null)

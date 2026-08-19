@@ -37,11 +37,24 @@ public static class TicketProjectEndpoints
             var access = await CheckAccessAsync(id, http, tickets, queueAccess, ct);
             if (access.Error is not null) return access.Error;
 
-            var result = await projects.ConvertToProjectAsync(id, access.UserId, ct);
+            // v0.0.104 — pinned project queue: converting moves the ticket
+            // there, so the actor also needs access to that queue.
+            var pinQueueId = await ProjectQueuePin.GetPinnedQueueIdAsync(settings, ct);
+            if (pinQueueId is Guid pin
+                && !await queueAccess.HasQueueAccessAsync(access.UserId, access.Role, pin, ct))
+            {
+                return Results.Json(
+                    new { error = "Converting moves the ticket to the project queue, which you do not have access to.", code = "queue_forbidden" },
+                    statusCode: 403);
+            }
+
+            var result = await projects.ConvertToProjectAsync(id, access.UserId, pinQueueId, ct);
             if (!result.Success) return MapFailure(result.FailureReason);
 
-            await AuditAsync(audit, http, "ticket.project_converted", id, new { });
+            await AuditAsync(audit, http, "ticket.project_converted", id,
+                new { movedToQueueId = pinQueueId });
             await PushTicketAsync(hub, id, ct);
+            await hub.Clients.Group("ticket-list").SendAsync("TicketListUpdated", id.ToString(), ct);
             return Results.Ok(new { isProject = true });
         }).WithName("ConvertTicketToProject").WithOpenApi();
 

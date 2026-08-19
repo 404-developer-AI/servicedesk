@@ -228,6 +228,16 @@ export function NewTicketDrawer({
   // Projects.Enabled setting is on (the server re-checks on create).
   const projectSettingsQ = useProjectSettings();
   const projectsEnabled = projectSettingsQ.data?.enabled ?? false;
+  const projectQueueId = projectSettingsQ.data?.queueId || null;
+
+  // With a pinned project queue, ticking "Project ticket" hides the queue
+  // field and forces the pinned queue into the form so status filtering
+  // and validation follow it (the server pins it regardless).
+  const watchedIsProject = useWatch({ control, name: "isProject" });
+  const projectQueueForced = !!(projectsEnabled && watchedIsProject && projectQueueId);
+  useEffect(() => {
+    if (projectQueueForced && projectQueueId) setValue("queueId", projectQueueId);
+  }, [projectQueueForced, projectQueueId, setValue]);
 
   // Drives the conditional "Pending till" field in the right column —
   // we re-render whenever statusId changes so the field appears/hides
@@ -891,23 +901,27 @@ export function NewTicketDrawer({
                     );
                   })()}
 
-                  <div>
-                    <FormLabel>Queue *</FormLabel>
-                    <Controller
-                      name="queueId"
-                      control={control}
-                      render={({ field }) => (
-                        <TaxonomySelect
-                          value={field.value}
-                          onChange={field.onChange}
-                          options={queueOptions}
-                          placeholder="Select queue…"
-                          disabled={!taxonomyReady}
-                        />
-                      )}
-                    />
-                    <FieldError message={errors.queueId?.message} />
-                  </div>
+                  {/* v0.0.104 — a project ticket with a pinned project queue
+                      has no queue choice: the server places it there. */}
+                  {!projectQueueForced && (
+                    <div>
+                      <FormLabel>Queue *</FormLabel>
+                      <Controller
+                        name="queueId"
+                        control={control}
+                        render={({ field }) => (
+                          <TaxonomySelect
+                            value={field.value}
+                            onChange={field.onChange}
+                            options={queueOptions}
+                            placeholder="Select queue…"
+                            disabled={!taxonomyReady}
+                          />
+                        )}
+                      />
+                      <FieldError message={errors.queueId?.message} />
+                    </div>
+                  )}
 
                   <div>
                     <FormLabel>Priority *</FormLabel>
