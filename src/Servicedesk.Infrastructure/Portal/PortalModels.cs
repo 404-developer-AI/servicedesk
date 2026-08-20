@@ -39,6 +39,9 @@ public static class PortalEventTypes
     public const string Deleted = "portal.account.deleted";
     public const string TotpReset = "portal.account.totp_reset";
     public const string SessionsRevoked = "portal.account.sessions_revoked";
+    /// v0.1.1 — an admin opened / closed a read-only shadow view of the portal.
+    public const string ImpersonationStarted = "portal.impersonation.started";
+    public const string ImpersonationEnded = "portal.impersonation.ended";
     public const string LoginSuccess = "portal.login.success";
     public const string LoginFailed = "portal.login.failed";
     public const string LoginLockedOut = "portal.login.locked_out";

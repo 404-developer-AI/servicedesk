@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { portalTicketApi } from "@/lib/portal-api";
 import { cn } from "@/lib/utils";
-import { PriorityDot, StatusPill, usePortalCompany, usePortalDates } from "@/portal/portalShared";
+import { PriorityDot, StatusPill, usePortalCompany, usePortalDates, usePortalMe } from "@/portal/portalShared";
 import { usePortalConfig } from "@/portal/PortalAuthLayout";
 
 type Filter = "open" | "closed" | "all";
@@ -54,7 +54,8 @@ export function PortalTicketsPage() {
   const data = list.data;
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
   const companyScope = data?.scope === "company" || company.active?.canSeeCompanyTickets === true;
-  const newTicketEnabled = config.data?.enabled ? config.data.newTicketEnabled : false;
+  const me = usePortalMe();
+  const newTicketEnabled = (config.data?.enabled ? config.data.newTicketEnabled : false) && !me.user?.impersonated;
 
   return (
     <div className="space-y-5">

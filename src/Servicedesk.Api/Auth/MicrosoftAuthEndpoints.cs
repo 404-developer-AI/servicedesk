@@ -322,7 +322,7 @@ public static class MicrosoftAuthEndpoints
             httpContext.Request.Headers.UserAgent.ToString(),
             TimeSpan.FromHours(lifetimeHours),
             AmrExternal,
-            ct);
+            ct: ct);
 
         var secure = httpContext.Request.IsHttps;
         var expires = DateTimeOffset.UtcNow.AddHours(lifetimeHours);

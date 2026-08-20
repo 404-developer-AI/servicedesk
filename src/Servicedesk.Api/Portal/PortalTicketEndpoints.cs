@@ -251,6 +251,7 @@ public static class PortalTicketEndpoints
         IContactLookupService contactLookup, ISlaEngine sla, ITicketListNotifier notifier, ITriggerService triggers,
         ISettingsService settings, IAuditLogger audit, CancellationToken ct)
     {
+        if (PortalRequest.IsImpersonated(http)) return PortalRequest.ReadOnly();
         var viewer = await ViewerAsync(http, accounts, settings, ct);
         if (viewer is null) return PortalRequest.Disabled();
 
@@ -349,6 +350,7 @@ public static class PortalTicketEndpoints
         ISlaEngine sla, ITicketListNotifier notifier, ITriggerService triggers,
         ISettingsService settings, IAuditLogger audit, CancellationToken ct)
     {
+        if (PortalRequest.IsImpersonated(http)) return PortalRequest.ReadOnly();
         var viewer = await ViewerAsync(http, accounts, settings, ct);
         if (viewer is null) return PortalRequest.Disabled();
         var header = await portalTickets.GetHeaderAsync(viewer, id, ct);
@@ -398,6 +400,7 @@ public static class PortalTicketEndpoints
         IAttachmentRepository attachments, IBlobStore blobs, ISettingsService settings, IAuditLogger audit,
         CancellationToken ct)
     {
+        if (PortalRequest.IsImpersonated(http)) return PortalRequest.ReadOnly();
         var viewer = await ViewerAsync(http, accounts, settings, ct);
         if (viewer is null) return PortalRequest.Disabled();
         var header = await portalTickets.GetHeaderAsync(viewer, id, ct);

@@ -8,7 +8,7 @@ import { apiErrorMessage } from "@/lib/api";
 import { portalTicketApi } from "@/lib/portal-api";
 import { PortalComposer, htmlHasText, type PendingFile } from "@/portal/PortalComposer";
 import { usePortalConfig } from "@/portal/PortalAuthLayout";
-import { usePortalCompany } from "@/portal/portalShared";
+import { usePortalCompany, usePortalMe } from "@/portal/portalShared";
 
 export function PortalNewTicketPage() {
   const navigate = useNavigate();
@@ -21,7 +21,8 @@ export function PortalNewTicketPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [subjectError, setSubjectError] = useState<string | null>(null);
 
-  const enabled = config.data?.enabled ? config.data.newTicketEnabled : true;
+  const me = usePortalMe();
+  const enabled = (config.data?.enabled ? config.data.newTicketEnabled : true) && !me.user?.impersonated;
 
   async function submit() {
     const s = subject.trim();

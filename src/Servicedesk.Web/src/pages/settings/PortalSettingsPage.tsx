@@ -86,6 +86,11 @@ export function PortalSettingsPage() {
             <Field entry={e("Portal.AllowReplyOnResolved")} label="Allow replies on resolved tickets" hint="Closed tickets are never writable from the portal." />
             <Field entry={e("Portal.TicketPageSize")} label="Tickets per page" />
             <Field entry={e("Portal.SessionLifetimeHours")} label="Customer session lifetime (hours)" />
+            <Field
+              entry={e("Portal.ImpersonationLifetimeMinutes")}
+              label="Shadow view lifetime (minutes)"
+              hint={'How long an admin’s read-only "View portal as this customer" session stays signed in.'}
+            />
           </div>
         )}
       </section>

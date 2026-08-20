@@ -1,5 +1,6 @@
 import { authApi } from "@/lib/api";
 import { authStore, type AuthUser } from "@/auth/authStore";
+import { refreshPortalAuth } from "@/auth/portalAuth";
 import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
 import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
 import { useSidebarStore } from "@/stores/useSidebarStore";
@@ -10,6 +11,12 @@ import { hydrateRecentTicketsFromServer } from "@/stores/useRecentTicketsStore";
 /// Network failures fall through to an unauthenticated, non-setup state — the
 /// login page then surfaces the real error on submit.
 export async function bootstrapAuth(): Promise<void> {
+  // v0.1.1 — the portal rides its own session cookie, so /api/auth/me never
+  // sees a customer (or shadow) session. On portal paths the portal gates
+  // need the portal session primed before the router mounts; fetched in
+  // parallel with the staff bootstrap.
+  const path = window.location.pathname;
+  const portalBoot = path === "/portal" || path.startsWith("/portal/") ? refreshPortalAuth() : null;
   try {
     const [setup, me] = await Promise.all([
       authApi.setupStatus(),
@@ -39,6 +46,7 @@ export async function bootstrapAuth(): Promise<void> {
   } catch {
     authStore.set({ status: "ready", user: null, setupAvailable: false });
   }
+  if (portalBoot) await portalBoot;
 }
 
 export async function refreshAuth(): Promise<void> {

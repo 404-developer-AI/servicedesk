@@ -9,6 +9,7 @@ export function PortalAccountPage() {
   const me = usePortalMe();
   const [sent, setSent] = useState(false);
   const user = me.user;
+  const readOnly = user?.impersonated ?? false;
 
   async function sendReset() {
     if (!user) return;
@@ -64,10 +65,14 @@ export function PortalAccountPage() {
             To change your password we send a reset link to your email address. All other sessions are signed out when you set a new one.
           </p>
         </div>
-        <Button variant="secondary" size="sm" className="gap-2" onClick={sendReset} disabled={sent}>
-          <KeyRound className="h-3.5 w-3.5" />
-          {sent ? "Reset link sent" : "Send me a reset link"}
-        </Button>
+        {readOnly ? (
+          <p className="text-xs text-muted-foreground">Disabled in this read-only view.</p>
+        ) : (
+          <Button variant="secondary" size="sm" className="gap-2" onClick={sendReset} disabled={sent}>
+            <KeyRound className="h-3.5 w-3.5" />
+            {sent ? "Reset link sent" : "Send me a reset link"}
+          </Button>
+        )}
       </section>
 
       <section className="glass-card space-y-2 p-5">

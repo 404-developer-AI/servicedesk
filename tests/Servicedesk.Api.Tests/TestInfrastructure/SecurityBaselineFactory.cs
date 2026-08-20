@@ -439,7 +439,7 @@ public sealed class FakeUserService : IUserService
 
 public sealed class FakeSessionService : ISessionService
 {
-    public sealed record Entry(Guid Id, Guid UserId, string Amr, DateTime ExpiresUtc, DateTime LastSeenUtc, bool Revoked);
+    public sealed record Entry(Guid Id, Guid UserId, string Amr, DateTime ExpiresUtc, DateTime LastSeenUtc, bool Revoked, Guid? ImpersonatorUserId = null);
 
     private readonly ConcurrentDictionary<Guid, Entry> _sessions = new();
 
@@ -447,10 +447,10 @@ public sealed class FakeSessionService : ISessionService
     /// (default Admin). Portal tests register a Customer user here.
     public ConcurrentDictionary<Guid, string> Roles { get; } = new();
 
-    public Task<Guid> CreateAsync(Guid userId, string? ip, string? userAgent, TimeSpan lifetime, string amr, CancellationToken ct = default)
+    public Task<Guid> CreateAsync(Guid userId, string? ip, string? userAgent, TimeSpan lifetime, string amr, Guid? impersonatorUserId = null, CancellationToken ct = default)
     {
         var id = Guid.NewGuid();
-        _sessions[id] = new Entry(id, userId, amr, DateTime.UtcNow.Add(lifetime), DateTime.UtcNow, false);
+        _sessions[id] = new Entry(id, userId, amr, DateTime.UtcNow.Add(lifetime), DateTime.UtcNow, false, impersonatorUserId);
         return Task.FromResult(id);
     }
 
@@ -465,7 +465,7 @@ public sealed class FakeSessionService : ISessionService
         var role = Roles.TryGetValue(e.UserId, out var r) ? r : "Admin";
         var user = new ApplicationUser(e.UserId, "test@example.com", "", role, DateTime.UtcNow, null, 0, null,
             AuthModes.Local, null, null, true);
-        return Task.FromResult<SessionValidation?>(new SessionValidation(e.Id, user, e.Amr, e.ExpiresUtc));
+        return Task.FromResult<SessionValidation?>(new SessionValidation(e.Id, user, e.Amr, e.ExpiresUtc, e.ImpersonatorUserId));
     }
 
     public Task TouchAsync(Guid sessionId, CancellationToken ct = default)

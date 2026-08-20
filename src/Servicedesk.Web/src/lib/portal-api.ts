@@ -78,6 +78,10 @@ export type PortalMeUser = {
   email: string;
   displayName: string;
   amr: string;
+  /// v0.1.1 — true when this session is an admin's read-only shadow view
+  /// ("View portal as this customer"). The shell shows a banner and every
+  /// write is hidden client-side and refused server-side.
+  impersonated: boolean;
   twoFactorEnrolled: boolean;
   /// Companies the customer may act in (primary first). The portal shows
   /// one company at a time — see usePortalCompany().
@@ -325,6 +329,10 @@ export const portalAdminApi = {
   resetTotp: (userId: string) => request<{ account: PortalAccount }>("POST", `/api/portal/admin/accounts/${userId}/reset-totp`),
   revokeSessions: (userId: string) =>
     request<{ account: PortalAccount }>("POST", `/api/portal/admin/accounts/${userId}/revoke-sessions`),
+  /// v0.1.1 — mint a read-only shadow session on the portal cookie; the
+  /// caller then opens /portal in a new tab.
+  impersonate: (userId: string) =>
+    request<{ expiresUtc: string }>("POST", `/api/portal/admin/accounts/${userId}/impersonate`),
   resendVerification: (userId: string) =>
     request<{ account: PortalAccount }>("POST", `/api/portal/admin/accounts/${userId}/resend-verification`),
   remove: (userId: string) => request<void>("DELETE", `/api/portal/admin/accounts/${userId}`),
