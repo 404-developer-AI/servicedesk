@@ -40,6 +40,11 @@ public static class SettingKeys
         public const string SessionIdleTimeoutMinutes = "Security.Session.IdleTimeoutMinutes";
         public const string SessionCookieName = "Security.Session.CookieName";
 
+        /// v0.1.1 — the customer portal rides its own session cookie so a
+        /// customer session (or an admin's shadow session) can live next to
+        /// a staff session in the same browser.
+        public const string PortalSessionCookieName = "Security.Session.PortalCookieName";
+
         public const string TwoFactorRequired = "Security.TwoFactor.Required";
         public const string TwoFactorTotpStepSeconds = "Security.TwoFactor.TotpStepSeconds";
         public const string TwoFactorTotpWindow = "Security.TwoFactor.TotpWindow";
@@ -1399,6 +1404,10 @@ public static class SettingKeys
         /// the agent session lifetime).
         public const string SessionLifetimeHours = "Portal.SessionLifetimeHours";
 
+        /// v0.1.1 — lifetime in minutes of an admin's read-only shadow
+        /// session ("View portal as this customer").
+        public const string ImpersonationLifetimeMinutes = "Portal.ImpersonationLifetimeMinutes";
+
         /// Validity of the email-verification link in hours.
         public const string VerificationTokenHours = "Portal.VerificationTokenHours";
 
@@ -1516,6 +1525,8 @@ public static class SettingDefaults
             "Idle timeout in minutes. A session with no activity for this long is revoked."),
         new SettingDefault(SettingKeys.Security.SessionCookieName, "sd_session", "string", "Security",
             "Name of the httpOnly session cookie set on successful login."),
+        new SettingDefault(SettingKeys.Security.PortalSessionCookieName, "sd_portal", "string", "Security",
+            "Name of the httpOnly session cookie for customer-portal sessions. Separate from the staff cookie so both can live in one browser."),
 
         new SettingDefault(SettingKeys.Security.TwoFactorRequired, "false", "bool", "Security",
             "When true, admins and agents must enroll TOTP before they can use the app."),
@@ -2308,6 +2319,8 @@ public static class SettingDefaults
             "Optional text shown above the registration form (basic HTML allowed). Empty = hidden."),
         new SettingDefault(SettingKeys.Portal.SessionLifetimeHours, "8", "int", "Portal",
             "Customer session lifetime in hours. Independent of the agent session lifetime."),
+        new SettingDefault(SettingKeys.Portal.ImpersonationLifetimeMinutes, "15", "int", "Portal",
+            "How long an admin's read-only shadow view of the portal (\"View portal as this customer\") stays signed in, in minutes."),
         new SettingDefault(SettingKeys.Portal.VerificationTokenHours, "24", "int", "Portal",
             "Validity of the email-verification link in hours."),
         new SettingDefault(SettingKeys.Portal.InvitationTokenHours, "168", "int", "Portal",

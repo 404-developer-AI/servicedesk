@@ -29,13 +29,18 @@ public static class AuthorizationPolicies
         // ("pwd+mfa") passes. A password-only ("pwd") or pending session is
         // refused — enrollment runs through the dedicated portal endpoints
         // that read the principal directly.
+        // v0.1.1 adds "impersonated" to the whitelist: an admin's read-only
+        // shadow session carries the Customer role of the viewed account
+        // (the admin passed their own MFA to mint it); every portal WRITE
+        // endpoint refuses that amr — see PortalRequest.ReadOnly().
         options.AddPolicy(RequireCustomer, p => p
             .AddAuthenticationSchemes(SessionAuthenticationHandler.SchemeName)
             .RequireAuthenticatedUser()
             .RequireRole("Customer")
             .RequireAssertion(ctx =>
                 ctx.User.FindFirst(SessionAuthenticationHandler.AmrClaimType)?.Value
-                    == SessionAuthenticationHandler.AmrPasswordPlusMfa));
+                    is SessionAuthenticationHandler.AmrPasswordPlusMfa
+                    or SessionAuthenticationHandler.AmrImpersonated));
 
         return options;
     }

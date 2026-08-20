@@ -15,7 +15,7 @@ import { CompanyPicker } from "@/components/CompanyPicker";
 import { apiErrorMessage } from "@/lib/api";
 import { portalAdminApi, type PortalAccount, type PortalAccountStatus, type PortalCompanyLinkInput } from "@/lib/portal-api";
 import { contactApi } from "@/lib/ticket-api";
-import { Plus, X } from "lucide-react";
+import { Eye, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Shared agent-side building blocks for the customer portal: the approve
@@ -445,6 +445,17 @@ export function PortalAccountActions({
   const confirmThen = (q: string, action: Parameters<typeof run.mutate>[0]) => {
     if (window.confirm(q)) run.mutate(action);
   };
+  // v0.1.1 — shadow login: mints a read-only portal session for this
+  // customer and opens /portal in a new tab. Admin-only; the tab's banner
+  // has the Exit that ends the session.
+  const view = useMutation({
+    mutationFn: () => portalAdminApi.impersonate(account.userId),
+    onSuccess: () => {
+      window.open("/portal", "_blank");
+      toast.success("Read-only portal view opened — use Exit view in the portal tab to end it.");
+    },
+    onError: (err) => toast.error(apiErrorMessage(err) ?? "Could not open the portal view"),
+  });
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {account.status === "PendingApproval" && onApprove ? (
@@ -464,6 +475,11 @@ export function PortalAccountActions({
       ) : null}
       {account.status === "Active" ? (
         <>
+          {isAdmin ? (
+            <Button size={size} variant="outline" className="gap-1.5" onClick={() => view.mutate()} disabled={view.isPending}>
+              <Eye className="h-3.5 w-3.5" /> View portal
+            </Button>
+          ) : null}
           <Button size={size} variant="outline" onClick={() => confirmThen("Deactivate this portal account? All sessions are signed out.", "deactivate")} disabled={run.isPending}>
             Deactivate
           </Button>

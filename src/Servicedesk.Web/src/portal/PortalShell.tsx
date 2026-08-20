@@ -1,6 +1,6 @@
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Toaster } from "sonner";
-import { Building2, Check, ChevronsUpDown, LifeBuoy, LogOut, Plus, Ticket, UserCircle2 } from "lucide-react";
+import { Building2, Check, ChevronsUpDown, Eye, LifeBuoy, LogOut, Plus, Ticket, UserCircle2 } from "lucide-react";
 import { BrandWordmark } from "@/components/BrandMark";
 import { MaintenanceBanner } from "@/components/maintenance/MaintenanceBanner";
 import {
@@ -16,7 +16,7 @@ import { useSystemVersion } from "@/hooks/useSystemVersion";
 import { formatServerLocalClock, formatServerLocalDate, useServerTime } from "@/hooks/useServerTime";
 import { useUpdateCheck } from "@/hooks/useUpdateCheck";
 import { portalAuthApi } from "@/lib/portal-api";
-import { refreshAuth } from "@/auth/bootstrap";
+import { refreshPortalAuth } from "@/auth/portalAuth";
 import { cn } from "@/lib/utils";
 import { usePortalCompany, usePortalMe } from "@/portal/portalShared";
 import { usePortalConfig, portalOrganisation } from "@/portal/PortalAuthLayout";
@@ -39,7 +39,8 @@ export function PortalShell() {
   const versionLabel = version.data ? `v${version.data.version.split("-")[0]}` : version.isError ? "version unavailable" : "…";
   const clock = time ? `${formatServerLocalDate(time)} ${formatServerLocalClock(time)}` : "…";
   const organisation = portalOrganisation(config.data);
-  const newTicketEnabled = config.data?.enabled ? config.data.newTicketEnabled : false;
+  const impersonated = me.user?.impersonated ?? false;
+  const newTicketEnabled = (config.data?.enabled ? config.data.newTicketEnabled : false) && !impersonated;
 
   async function signOut() {
     try {
@@ -47,7 +48,21 @@ export function PortalShell() {
     } catch {
       // ignore
     }
-    await refreshAuth();
+    await refreshPortalAuth();
+    navigate({ to: "/portal/login" });
+  }
+
+  /// Ends a shadow view: revoke the session server-side (logged as
+  /// impersonation ended), then close the tab the admin opened — or fall
+  /// back to the login page when the browser refuses to close it.
+  async function exitShadow() {
+    try {
+      await portalAuthApi.logout();
+    } catch {
+      // ignore
+    }
+    await refreshPortalAuth();
+    window.close();
     navigate({ to: "/portal/login" });
   }
 
@@ -156,6 +171,28 @@ export function PortalShell() {
           </div>
         </div>
       </header>
+
+      {impersonated ? (
+        <div
+          className="sticky top-14 z-20 border-b border-amber-500/30 bg-amber-500/10 backdrop-blur-xl"
+          data-testid="portal-impersonation-banner"
+        >
+          <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-2.5 gap-y-1 px-4 py-1.5 text-xs sm:px-6">
+            <Eye className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+            <span className="min-w-0">
+              <span className="font-medium">Viewing the portal as {me.user?.displayName || me.user?.email}</span>
+              <span className="text-muted-foreground"> — read-only, nothing is sent or changed.</span>
+            </span>
+            <button
+              type="button"
+              onClick={exitShadow}
+              className="ml-auto rounded-md border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-amber-500/25"
+            >
+              Exit view
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <MaintenanceBanner variant="shell" />
 

@@ -2,6 +2,8 @@ using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Audit;
+using Servicedesk.Infrastructure.Auth;
+using Servicedesk.Infrastructure.Auth.Sessions;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Portal;
 using Servicedesk.Infrastructure.Secrets;
@@ -43,6 +45,7 @@ public static class PortalAdminEndpoints
             .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
         admin.MapGet("/status", Status).WithName("PortalAdminStatus").WithOpenApi();
         admin.MapDelete("/accounts/{userId:guid}", Delete).WithName("PortalAdminDeleteAccount").WithOpenApi();
+        admin.MapPost("/accounts/{userId:guid}/impersonate", Impersonate).WithName("PortalAdminImpersonate").WithOpenApi();
         admin.MapGet("/turnstile/secret", GetTurnstileSecretStatus).WithName("PortalAdminTurnstileSecretStatus").WithOpenApi();
         admin.MapPut("/turnstile/secret", SetTurnstileSecret).WithName("PortalAdminSetTurnstileSecret").WithOpenApi();
         admin.MapDelete("/turnstile/secret", DeleteTurnstileSecret).WithName("PortalAdminDeleteTurnstileSecret").WithOpenApi();
@@ -255,6 +258,41 @@ public static class PortalAdminEndpoints
         if (row is null) return Results.NotFound();
         if (!ok) return Results.Conflict(new { error, message });
         return Results.Ok(new { account = Project(row) });
+    }
+
+    /// v0.1.1 — shadow login: mints a short-lived READ-ONLY portal session
+    /// for the customer (amr "impersonated", impersonator recorded) and sets
+    /// it on the portal cookie, so the admin can open /portal in a new tab
+    /// and see exactly what this customer sees. Every portal write endpoint
+    /// refuses the amr; "Exit" (portal logout) or expiry ends it. Admin-only
+    /// by the route group; the account must be Active.
+    private static async Task<IResult> Impersonate(
+        Guid userId, HttpContext http, IPortalAccountRepository accounts, IUserService users,
+        ISessionService sessions, ISettingsService settings, IAuditLogger audit, CancellationToken ct)
+    {
+        if (!await PortalRequest.PortalEnabledAsync(settings, ct))
+            return Results.Conflict(new { error = "portal_disabled", message = "The customer portal is not enabled." });
+
+        var account = await accounts.GetByUserIdAsync(userId, ct);
+        if (account is null) return Results.NotFound();
+        if (account.Status != PortalAccountStatus.Active)
+            return Results.Conflict(new { error = "not_active", message = "Only an active portal account can be viewed." });
+
+        var customer = await users.FindByIdAsync(userId, ct);
+        if (customer is null || customer.RoleName != "Customer" || !customer.IsActive)
+            return Results.NotFound();
+
+        var actor = PortalRequest.Actor(http);
+        var minutes = Math.Clamp(await settings.GetAsync<int>(SettingKeys.Portal.ImpersonationLifetimeMinutes, ct), 1, 240);
+        await AuthEndpoints.EstablishSessionAsync(http, customer, SessionAuthenticationHandler.AmrImpersonated,
+            sessions, settings, TimeSpan.FromMinutes(minutes),
+            portalCookie: true, impersonatorUserId: actor.UserId, ct);
+
+        await audit.LogAsync(new AuditEvent(PortalEventTypes.ImpersonationStarted, actor.Email, actor.Role,
+            Target: userId.ToString(), ClientIp: actor.Ip, UserAgent: actor.UserAgent,
+            Payload: new { customerEmail = account.Email, lifetimeMinutes = minutes }), ct);
+
+        return Results.Ok(new { expiresUtc = DateTimeOffset.UtcNow.AddMinutes(minutes) });
     }
 
     private static async Task<IResult> Delete(Guid userId, HttpContext http, IPortalAccountService service, CancellationToken ct)

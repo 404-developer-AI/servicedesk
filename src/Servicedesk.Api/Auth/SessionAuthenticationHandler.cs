@@ -35,6 +35,15 @@ public sealed class SessionAuthenticationHandler : AuthenticationHandler<Authent
     /// customer-portal policy whitelists exactly this value.
     public const string AmrPasswordPlusMfa = "pwd+mfa";
 
+    /// v0.1.1 — an admin's read-only shadow view of the customer portal
+    /// ("View portal as this customer"). Whitelisted by RequireCustomer next
+    /// to "pwd+mfa" (the admin already passed their own MFA), but every
+    /// portal write endpoint refuses it — see PortalRequest.ReadOnly().
+    public const string AmrImpersonated = "impersonated";
+
+    /// Claim carrying the admin user id that minted a shadow session.
+    public const string ImpersonatorClaimType = "impersonator";
+
     /// Cache key for a validated session. Centralised so callers that mutate a
     /// session's amr (e.g. the 2FA verify upgrade) can evict the same entry
     /// this handler caches, otherwise the stale amr lingers for up to
@@ -67,9 +76,20 @@ public sealed class SessionAuthenticationHandler : AuthenticationHandler<Authent
         _cache = cache;
     }
 
+    /// v0.1.1 — the customer-portal API rides its own session cookie so a
+    /// customer session (or a shadow session) can live next to a staff
+    /// session in one browser. /api/portal/admin/* is the agent/admin side
+    /// of the portal and stays on the staff cookie.
+    internal static bool IsPortalSessionRequest(PathString path) =>
+        path.StartsWithSegments("/api/portal")
+        && !path.StartsWithSegments("/api/portal/admin");
+
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        var cookieName = await _settings.GetAsync<string>(SettingKeys.Security.SessionCookieName);
+        var cookieName = await _settings.GetAsync<string>(
+            IsPortalSessionRequest(Request.Path)
+                ? SettingKeys.Security.PortalSessionCookieName
+                : SettingKeys.Security.SessionCookieName);
         var cookieValue = Request.Cookies[cookieName];
         if (string.IsNullOrWhiteSpace(cookieValue) || !Guid.TryParse(cookieValue, out var sessionId))
         {
@@ -109,6 +129,10 @@ public sealed class SessionAuthenticationHandler : AuthenticationHandler<Authent
         identity.AddClaim(new Claim(ClaimTypes.Role, v.User.RoleName));
         identity.AddClaim(new Claim(AmrClaimType, v.Amr));
         identity.AddClaim(new Claim("sid", v.SessionId.ToString()));
+        if (v.ImpersonatorUserId is { } impersonator)
+        {
+            identity.AddClaim(new Claim(ImpersonatorClaimType, impersonator.ToString()));
+        }
 
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, SchemeName);

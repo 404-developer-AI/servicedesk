@@ -3,11 +3,14 @@ using Npgsql;
 
 namespace Servicedesk.Infrastructure.Auth.Sessions;
 
-public sealed record SessionValidation(Guid SessionId, ApplicationUser User, string Amr, DateTime ExpiresUtc);
+public sealed record SessionValidation(Guid SessionId, ApplicationUser User, string Amr, DateTime ExpiresUtc, Guid? ImpersonatorUserId = null);
 
 public interface ISessionService
 {
-    Task<Guid> CreateAsync(Guid userId, string? ip, string? userAgent, TimeSpan lifetime, string amr, CancellationToken ct = default);
+    /// <paramref name="impersonatorUserId"/> (v0.1.1) marks a shadow
+    /// session: an admin viewing the customer portal as this user. Stored
+    /// on the session row for the audit trail and surfaced as a claim.
+    Task<Guid> CreateAsync(Guid userId, string? ip, string? userAgent, TimeSpan lifetime, string amr, Guid? impersonatorUserId = null, CancellationToken ct = default);
     Task<SessionValidation?> ValidateAsync(Guid sessionId, TimeSpan idleTimeout, CancellationToken ct = default);
     Task TouchAsync(Guid sessionId, CancellationToken ct = default);
     Task RevokeAsync(Guid sessionId, CancellationToken ct = default);
@@ -31,11 +34,11 @@ public sealed class SessionService : ISessionService
     }
 
     public async Task<Guid> CreateAsync(
-        Guid userId, string? ip, string? userAgent, TimeSpan lifetime, string amr, CancellationToken ct = default)
+        Guid userId, string? ip, string? userAgent, TimeSpan lifetime, string amr, Guid? impersonatorUserId = null, CancellationToken ct = default)
     {
         const string sql = """
-            INSERT INTO user_sessions (user_id, expires_utc, ip, user_agent, amr)
-            VALUES (@userId, @expires, @ip, @userAgent, @amr)
+            INSERT INTO user_sessions (user_id, expires_utc, ip, user_agent, amr, impersonator_user_id)
+            VALUES (@userId, @expires, @ip, @userAgent, @amr, @impersonatorUserId)
             RETURNING id
             """;
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
@@ -48,6 +51,7 @@ public sealed class SessionService : ISessionService
                 ip,
                 userAgent,
                 amr,
+                impersonatorUserId,
             },
             cancellationToken: ct));
     }
@@ -55,7 +59,8 @@ public sealed class SessionService : ISessionService
     public async Task<SessionValidation?> ValidateAsync(Guid sessionId, TimeSpan idleTimeout, CancellationToken ct = default)
     {
         const string sql = """
-            SELECT s.id AS SessionId, s.amr AS Amr, s.expires_utc AS ExpiresUtc,
+            SELECT s.id AS SessionId, s.amr AS Amr, s.impersonator_user_id AS ImpersonatorUserId,
+                   s.expires_utc AS ExpiresUtc,
                    s.last_seen_utc AS LastSeenUtc, s.revoked_utc AS RevokedUtc,
                    u.id AS UserId, u.email AS Email, u.password_hash AS PasswordHash,
                    u.role_name AS RoleName, u.created_utc AS CreatedUtc,
@@ -100,7 +105,7 @@ public sealed class SessionService : ISessionService
             row.UserId, row.Email, row.PasswordHash, row.RoleName, row.CreatedUtc,
             row.LastLoginUtc, row.FailedAttempts, row.LockoutUntilUtc,
             row.AuthMode, row.ExternalProvider, row.ExternalSubject, row.IsActive);
-        return new SessionValidation(row.SessionId, user, row.Amr, row.ExpiresUtc);
+        return new SessionValidation(row.SessionId, user, row.Amr, row.ExpiresUtc, row.ImpersonatorUserId);
     }
 
     public async Task TouchAsync(Guid sessionId, CancellationToken ct = default)
@@ -142,6 +147,7 @@ public sealed class SessionService : ISessionService
     private sealed record SessionRow(
         Guid SessionId,
         string Amr,
+        Guid? ImpersonatorUserId,
         DateTime ExpiresUtc,
         DateTime LastSeenUtc,
         DateTime? RevokedUtc,

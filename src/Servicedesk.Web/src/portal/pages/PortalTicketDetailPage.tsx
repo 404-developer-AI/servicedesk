@@ -7,8 +7,9 @@ import { SafeHtml } from "@/components/SafeHtml";
 import { ApiError, apiErrorMessage } from "@/lib/api";
 import { portalTicketApi, type PortalMessage } from "@/lib/portal-api";
 import { cn } from "@/lib/utils";
+import { Eye } from "lucide-react";
 import { PortalComposer, htmlHasText, type PendingFile } from "@/portal/PortalComposer";
-import { PriorityDot, StatusPill, formatBytes, usePortalCompany, usePortalDates } from "@/portal/portalShared";
+import { PriorityDot, StatusPill, formatBytes, usePortalCompany, usePortalDates, usePortalMe } from "@/portal/portalShared";
 
 export function PortalTicketDetailPage({ ticketId }: { ticketId: string }) {
   const qc = useQueryClient();
@@ -24,6 +25,8 @@ export function PortalTicketDetailPage({ ticketId }: { ticketId: string }) {
   // A deep link may open a ticket of another of the customer's companies;
   // follow it with the header switcher so "back to tickets" stays coherent.
   const company = usePortalCompany();
+  const me = usePortalMe();
+  const readOnly = me.user?.impersonated ?? false;
   const ticketCompanyId = detail.data?.ticket.companyId ?? null;
   useEffect(() => {
     if (ticketCompanyId && company.active && ticketCompanyId !== company.active.id && company.companies.some((c) => c.id === ticketCompanyId)) {
@@ -142,7 +145,12 @@ export function PortalTicketDetailPage({ ticketId }: { ticketId: string }) {
       </section>
 
       <section className="glass-card p-5" data-testid="portal-reply">
-        {canReply ? (
+        {readOnly ? (
+          <div className="flex items-start gap-2.5 text-sm text-muted-foreground">
+            <Eye className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>Read-only view — replying is disabled while viewing the portal as this customer.</p>
+          </div>
+        ) : canReply ? (
           <>
             <h2 className="mb-3 text-sm font-medium">Reply</h2>
             <PortalComposer

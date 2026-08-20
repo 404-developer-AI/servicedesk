@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Portal;
 using Servicedesk.Infrastructure.Settings;
 
@@ -28,6 +29,24 @@ internal static class PortalRequest
 
     public static Guid? SessionId(HttpContext http) =>
         Guid.TryParse(http.User.FindFirst("sid")?.Value, out var g) ? g : null;
+
+    /// v0.1.1 — true for an admin's read-only shadow session ("View portal
+    /// as this customer"). RequireCustomer lets it through for reads; every
+    /// portal write endpoint checks this and answers <see cref="ReadOnly"/>.
+    public static bool IsImpersonated(HttpContext http) =>
+        http.User.FindFirst(SessionAuthenticationHandler.AmrClaimType)?.Value
+            == SessionAuthenticationHandler.AmrImpersonated;
+
+    /// The admin user id that minted a shadow session (impersonator claim).
+    public static Guid? ImpersonatorId(HttpContext http) =>
+        Guid.TryParse(http.User.FindFirst(SessionAuthenticationHandler.ImpersonatorClaimType)?.Value, out var g) ? g : null;
+
+    /// 403 for any write attempted through a shadow session. Server-side
+    /// enforcement — the portal UI hides the same actions, but the amr is
+    /// what actually guarantees the view stays read-only.
+    public static IResult ReadOnly() => Results.Json(
+        new { error = "impersonated_read_only", message = "This is a read-only view — changes are disabled while viewing the portal as a customer." },
+        statusCode: StatusCodes.Status403Forbidden);
 
     public static bool IsCustomerPrincipal(HttpContext http) =>
         http.User.Identity?.IsAuthenticated == true

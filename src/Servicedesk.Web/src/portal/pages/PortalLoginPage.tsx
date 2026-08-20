@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
 import { portalAuthApi } from "@/lib/portal-api";
 import { authStore } from "@/auth/authStore";
-import { refreshAuth } from "@/auth/bootstrap";
+import { portalAuthStore, refreshPortalAuth } from "@/auth/portalAuth";
 import { FieldError, FieldLabel, FormError, FormNotice, PortalAuthLayout, usePortalConfig } from "@/portal/PortalAuthLayout";
 
 const loginSchema = z.object({
@@ -39,14 +39,16 @@ export function PortalLoginPage() {
   // not yet enrolled) lands back here after a reload; a complete session
   // goes straight to the portal; agents never belong here.
   useEffect(() => {
-    const user = authStore.get().user;
-    if (!user) return;
-    if (user.role !== "Customer") {
-      navigate({ to: "/" });
+    // v0.1.1 — resume rides the portal session store (own cookie); the staff
+    // store only decides where an agent without a portal session belongs.
+    const portal = portalAuthStore.get().user;
+    if (!portal) {
+      const staff = authStore.get().user;
+      if (staff && staff.role !== "Customer") navigate({ to: "/" });
       return;
     }
-    if (user.amr === "mfa-pending") {
-      if (user.twoFactorEnabled) setStage("two-factor");
+    if (portal.amr === "mfa-pending") {
+      if (portal.twoFactorEnrolled) setStage("two-factor");
       else void startEnrollment();
       return;
     }
@@ -97,7 +99,7 @@ export function PortalLoginPage() {
     setNotice(null);
     try {
       const res = await portalAuthApi.login(values.email, values.password);
-      await refreshAuth();
+      await refreshPortalAuth();
       if (res.twoFactorRequired) {
         setStage("two-factor");
         return;
@@ -116,7 +118,7 @@ export function PortalLoginPage() {
     setServerError(null);
     try {
       await portalAuthApi.verifyTwoFactor(values.code.trim());
-      await refreshAuth();
+      await refreshPortalAuth();
       toast.success("Welcome back");
       navigate({ to: "/portal" });
     } catch (e) {
@@ -128,7 +130,7 @@ export function PortalLoginPage() {
     setServerError(null);
     try {
       const res = await portalAuthApi.confirmEnroll(values.code.trim());
-      await refreshAuth();
+      await refreshPortalAuth();
       setRecoveryCodes(res.recoveryCodes);
       setStage("recovery-codes");
     } catch (e) {
@@ -285,7 +287,7 @@ async function signOutToStart(navigate: ReturnType<typeof useNavigate>) {
   } catch {
     // ignore
   }
-  await refreshAuth();
+  await refreshPortalAuth();
   navigate({ to: "/portal/login" });
   window.location.reload();
 }

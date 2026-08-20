@@ -10,7 +10,10 @@ public sealed class FakePortalAccountRepository : IPortalAccountRepository
 {
     public Task<Guid?> CreatePendingRegistrationAsync(string email, string passwordHash, string displayName, string? ip, string? userAgent, CancellationToken ct) => Task.FromResult<Guid?>(null);
     public Task<Guid?> CreateInvitedAccountAsync(string email, string passwordHash, string displayName, Guid contactId, Guid? invitedByUserId, CancellationToken ct) => Task.FromResult<Guid?>(null);
-    public Task<PortalAccountRow?> GetByUserIdAsync(Guid userId, CancellationToken ct) => Task.FromResult<PortalAccountRow?>(null);
+    /// Test seam (v0.1.1) — the impersonate endpoint needs an Active row.
+    public PortalAccountRow? Account { get; set; }
+    public Task<PortalAccountRow?> GetByUserIdAsync(Guid userId, CancellationToken ct) =>
+        Task.FromResult(Account is { } a && a.UserId == userId ? Account : null);
     public Task<PortalAccountRow?> GetByEmailAsync(string email, CancellationToken ct) => Task.FromResult<PortalAccountRow?>(null);
     public Task<PortalAccountRow?> GetByContactIdAsync(Guid contactId, CancellationToken ct) => Task.FromResult<PortalAccountRow?>(null);
     public Task<PortalAccountRow?> GetByApprovalTicketAsync(Guid ticketId, CancellationToken ct) => Task.FromResult<PortalAccountRow?>(null);

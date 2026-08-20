@@ -169,7 +169,7 @@ public static class PortalAuthEndpoints
         // upgrades the session.
         var lifetimeHours = Math.Max(1, await settings.GetAsync<int>(SettingKeys.Portal.SessionLifetimeHours, ct));
         await AuthEndpoints.EstablishSessionAsync(http, user, SessionAuthenticationHandler.AmrPending, sessions, settings,
-            TimeSpan.FromHours(lifetimeHours), ct);
+            TimeSpan.FromHours(lifetimeHours), portalCookie: true, impersonatorUserId: null, ct);
 
         await audit.LogAsync(new AuditEvent(PortalEventTypes.LoginSuccess, user.Email, "Customer",
             Target: user.Id.ToString(), ClientIp: ip, UserAgent: ua,
@@ -194,6 +194,7 @@ public static class PortalAuthEndpoints
     {
         if (!await PortalRequest.PortalEnabledAsync(settings, ct)) return PortalRequest.Disabled();
         if (!PortalRequest.IsCustomerPrincipal(http)) return Results.Unauthorized();
+        if (PortalRequest.IsImpersonated(http)) return PortalRequest.ReadOnly();
         var userId = PortalRequest.UserId(http);
         var sessionId = PortalRequest.SessionId(http);
         if (userId is null || sessionId is null) return Results.Unauthorized();
@@ -221,6 +222,7 @@ public static class PortalAuthEndpoints
     {
         if (!await PortalRequest.PortalEnabledAsync(settings, ct)) return PortalRequest.Disabled();
         if (!PortalRequest.IsCustomerPrincipal(http)) return Results.Unauthorized();
+        if (PortalRequest.IsImpersonated(http)) return PortalRequest.ReadOnly();
         var userId = PortalRequest.UserId(http);
         if (userId is null) return Results.Unauthorized();
         // Re-enrollment of an already enrolled account is an agent action
@@ -239,6 +241,7 @@ public static class PortalAuthEndpoints
     {
         if (!await PortalRequest.PortalEnabledAsync(settings, ct)) return PortalRequest.Disabled();
         if (!PortalRequest.IsCustomerPrincipal(http)) return Results.Unauthorized();
+        if (PortalRequest.IsImpersonated(http)) return PortalRequest.ReadOnly();
         var userId = PortalRequest.UserId(http);
         var sessionId = PortalRequest.SessionId(http);
         if (userId is null || sessionId is null) return Results.Unauthorized();
@@ -259,16 +262,34 @@ public static class PortalAuthEndpoints
     // ---- logout + me ------------------------------------------------------
 
     private static async Task<IResult> Logout(
-        HttpContext http, ISessionService sessions, ISettingsService settings, IAuditLogger audit, CancellationToken ct)
+        HttpContext http, ISessionService sessions, ISettingsService settings, IUserService users,
+        IMemoryCache cache, IAuditLogger audit, CancellationToken ct)
     {
-        var cookieName = await settings.GetAsync<string>(SettingKeys.Security.SessionCookieName, ct);
+        var cookieName = await settings.GetAsync<string>(SettingKeys.Security.PortalSessionCookieName, ct);
         if (Guid.TryParse(http.Request.Cookies[cookieName], out var sessionId))
         {
             await sessions.RevokeAsync(sessionId, ct);
-            await audit.LogAsync(new AuditEvent(PortalEventTypes.Logout,
-                http.User.Identity?.Name ?? "anon", http.User.FindFirst(ClaimTypes.Role)?.Value ?? "anon",
-                Target: sessionId.ToString(), ClientIp: http.Connection.RemoteIpAddress?.ToString(),
-                UserAgent: http.Request.Headers.UserAgent.ToString()), ct);
+            // Evict the handler's 5-minute cache so the revocation bites
+            // immediately — for a shadow session "Exit" must be instant.
+            cache.Remove(SessionAuthenticationHandler.CacheKey(sessionId));
+            if (PortalRequest.IsImpersonated(http))
+            {
+                var impersonatorId = PortalRequest.ImpersonatorId(http);
+                var impersonator = impersonatorId is { } iid ? await users.FindByIdAsync(iid, ct) : null;
+                await audit.LogAsync(new AuditEvent(PortalEventTypes.ImpersonationEnded,
+                    impersonator?.Email ?? impersonatorId?.ToString() ?? "unknown", "Admin",
+                    Target: PortalRequest.UserId(http)?.ToString(),
+                    ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                    UserAgent: http.Request.Headers.UserAgent.ToString(),
+                    Payload: new { sessionId, customerEmail = http.User.Identity?.Name }), ct);
+            }
+            else
+            {
+                await audit.LogAsync(new AuditEvent(PortalEventTypes.Logout,
+                    http.User.Identity?.Name ?? "anon", http.User.FindFirst(ClaimTypes.Role)?.Value ?? "anon",
+                    Target: sessionId.ToString(), ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                    UserAgent: http.Request.Headers.UserAgent.ToString()), ct);
+            }
         }
         AuthEndpoints.ClearAuthCookies(http, cookieName);
         return Results.Ok();
@@ -299,6 +320,7 @@ public static class PortalAuthEndpoints
                 email = viewer.Email,
                 displayName = string.IsNullOrWhiteSpace(viewer.DisplayName) ? contactName : viewer.DisplayName,
                 amr,
+                impersonated = amr == SessionAuthenticationHandler.AmrImpersonated,
                 twoFactorEnrolled = enrolled,
                 // Companies the customer may act in, each with its portal
                 // role; the primary link first. The portal header switches

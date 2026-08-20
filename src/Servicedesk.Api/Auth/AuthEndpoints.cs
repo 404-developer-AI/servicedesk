@@ -605,7 +605,7 @@ public static class AuthEndpoints
     /// Mints a session + the cookie pair. Shared with the customer-portal
     /// login (v0.1.0), which passes its own lifetime (Portal.SessionLifetimeHours)
     /// so the cookie semantics stay identical across both flows.
-    internal static async Task<Guid> EstablishSessionAsync(
+    internal static Task<Guid> EstablishSessionAsync(
         HttpContext httpContext,
         ApplicationUser user,
         string amr,
@@ -613,16 +613,36 @@ public static class AuthEndpoints
         ISettingsService settings,
         TimeSpan? lifetimeOverride,
         CancellationToken ct)
+        => EstablishSessionAsync(httpContext, user, amr, sessions, settings, lifetimeOverride,
+            portalCookie: false, impersonatorUserId: null, ct);
+
+    /// Full form (v0.1.1): <paramref name="portalCookie"/> writes the
+    /// customer-portal session cookie instead of the staff one (the portal
+    /// rides its own cookie so both sessions can coexist in one browser);
+    /// <paramref name="impersonatorUserId"/> marks an admin's read-only
+    /// shadow session and is recorded on the session row.
+    internal static async Task<Guid> EstablishSessionAsync(
+        HttpContext httpContext,
+        ApplicationUser user,
+        string amr,
+        ISessionService sessions,
+        ISettingsService settings,
+        TimeSpan? lifetimeOverride,
+        bool portalCookie,
+        Guid? impersonatorUserId,
+        CancellationToken ct)
     {
         var lifetime = lifetimeOverride
             ?? TimeSpan.FromHours(await settings.GetAsync<int>(SettingKeys.Security.SessionLifetimeHours, ct));
-        var cookieName = await settings.GetAsync<string>(SettingKeys.Security.SessionCookieName, ct);
+        var cookieName = await settings.GetAsync<string>(
+            portalCookie ? SettingKeys.Security.PortalSessionCookieName : SettingKeys.Security.SessionCookieName, ct);
         var sessionId = await sessions.CreateAsync(
             user.Id,
             httpContext.Connection.RemoteIpAddress?.ToString(),
             httpContext.Request.Headers.UserAgent.ToString(),
             lifetime,
             amr,
+            impersonatorUserId,
             ct);
 
         var secure = !httpContext.Request.IsHttps ? false : true;

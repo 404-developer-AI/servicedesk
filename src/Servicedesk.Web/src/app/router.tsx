@@ -10,6 +10,7 @@ import { AppShell } from "@/shell/AppShell";
 import { StubPage } from "@/shell/StubPage";
 import type { Role } from "@/lib/roles";
 import { authStore } from "@/auth/authStore";
+import { portalAuthStore } from "@/auth/portalAuth";
 import { DashboardPage } from "@/pages/dashboard/DashboardPage";
 import { AuditLogPage } from "@/pages/settings/AuditLogPage";
 import { GeneralSettingsPage } from "@/pages/settings/GeneralSettingsPage";
@@ -133,24 +134,27 @@ function anyAuthenticatedGate() {
   };
 }
 
-// v0.1.0 — customer-portal gate. A portal session is only usable once the
-// TOTP step completed ("pwd+mfa" — mirrors the server-side RequireCustomer
-// whitelist); pending sessions resume on /portal/login. Agents/admins who
-// wander into /portal go back to the agent app.
+// v0.1.0 — customer-portal gate. Since the cookie split (v0.1.1) the portal
+// session lives in portalAuthStore (fed by /api/portal/auth/me), never in
+// the staff authStore. A portal session is usable once the TOTP step
+// completed ("pwd+mfa" — mirrors the server-side RequireCustomer whitelist)
+// or when it is an admin's read-only shadow view ("impersonated"); pending
+// sessions resume on /portal/login. Agents/admins without a portal session
+// who wander into /portal go back to the agent app.
 function portalUser() {
-  const { user } = authStore.get();
-  if (!user || user.role !== "Customer") return null;
-  if (user.amr !== "pwd+mfa") return null;
+  const { user } = portalAuthStore.get();
+  if (!user) return null;
+  if (user.amr !== "pwd+mfa" && !user.impersonated) return null;
   return user;
 }
 
 function portalGate() {
   return ({ location }: { location: { pathname: string } }) => {
-    const { user } = authStore.get();
-    if (user && user.role !== "Customer") {
-      throw redirect({ to: "/" });
-    }
     if (!portalUser()) {
+      const { user } = authStore.get();
+      if (user && user.role !== "Customer") {
+        throw redirect({ to: "/" });
+      }
       throw redirect({ to: "/portal/login", search: { from: location.pathname } });
     }
   };

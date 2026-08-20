@@ -5795,6 +5795,15 @@ public sealed class DatabaseBootstrapper : IHostedService
 
         -- Invitations may carry several company links ([{companyId, role}]).
         ALTER TABLE portal_tokens ADD COLUMN IF NOT EXISTS company_links JSONB NULL;
+
+        -- ===================================================================
+        -- v0.1.1 Shadow login (admin views the portal as a customer)
+        -- ===================================================================
+        -- A session minted by an admin to see the portal exactly as one
+        -- customer sees it. Read-only by its amr ('impersonated'); the
+        -- minting admin is recorded for the audit trail. Dies with either
+        -- user (user_id cascades already; this one cascades on the admin).
+        ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS impersonator_user_id UUID NULL REFERENCES users(id) ON DELETE CASCADE;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

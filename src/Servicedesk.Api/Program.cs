@@ -521,6 +521,9 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<DoubleSubmitCsrfMiddleware>();
+// v0.1.1 — refuses every write on the customer portal surface while the
+// session is an admin's read-only shadow view (amr "impersonated").
+app.UseMiddleware<Servicedesk.Api.Portal.PortalImpersonationReadOnlyMiddleware>();
 app.UseMiddleware<ClientVersionGateMiddleware>(systemInfo);
 
 if (app.Environment.IsDevelopment())
