@@ -18,7 +18,35 @@ namespace Servicedesk.Api.Auth;
 public sealed class DoubleSubmitCsrfMiddleware
 {
     public const string CookieName = "XSRF-TOKEN";
+
+    /// v0.1.1 fix — the customer portal carries its own CSRF cookie, mirroring
+    /// the session-cookie split. With one shared cookie a portal logout (and
+    /// the Exit of an admin's shadow view, which is a portal logout) deleted
+    /// the token of the staff session living in the same browser: every later
+    /// agent write — including <c>POST /api/auth/logout</c> itself — was
+    /// rejected with 403, so signing out silently left the session alive.
+    public const string PortalCookieName = "XSRF-TOKEN-PORTAL";
+
     public const string HeaderName = "X-XSRF-TOKEN";
+
+    /// Paths served by a customer-portal session. Everything else — including
+    /// <c>/api/portal/admin/</c>, which agents and admins call from the agent
+    /// app — belongs to the staff realm.
+    private static readonly string[] PortalRealmPrefixes =
+    {
+        "/api/portal/auth/",
+        "/api/portal/tickets/",
+    };
+
+    /// Which CSRF cookie guards <paramref name="path"/>.
+    public static string CookieNameFor(string path)
+    {
+        foreach (var prefix in PortalRealmPrefixes)
+        {
+            if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return PortalCookieName;
+        }
+        return CookieName;
+    }
 
     private static readonly HashSet<string> SafeMethods = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -87,7 +115,7 @@ public sealed class DoubleSubmitCsrfMiddleware
             }
         }
 
-        var cookie = context.Request.Cookies[CookieName];
+        var cookie = context.Request.Cookies[CookieNameFor(path)];
         var header = context.Request.Headers[HeaderName].ToString();
         if (string.IsNullOrEmpty(cookie) || string.IsNullOrEmpty(header) || !ConstantTimeEquals(cookie, header))
         {

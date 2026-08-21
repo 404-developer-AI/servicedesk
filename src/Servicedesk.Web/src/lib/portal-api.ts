@@ -17,7 +17,7 @@ async function request<T>(method: string, url: string, body?: unknown, init?: Re
     headers: {
       Accept: "application/json",
       ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...(isSafe ? {} : csrfHeader()),
+      ...(isSafe ? {} : csrfHeader(url)),
       ...(init?.headers ?? {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -218,7 +218,7 @@ export const portalTicketApi = {
     const res = await fetch(url, {
       method: "POST",
       credentials: "include",
-      headers: { Accept: "application/json", ...csrfHeader() },
+      headers: { Accept: "application/json", ...csrfHeader(url) },
       body: form,
     });
     if (!res.ok) {

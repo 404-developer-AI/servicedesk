@@ -236,12 +236,18 @@ const rootRoute = createRootRoute({
     // shell + role chrome to an anonymous visitor. Per-route gates only cover
     // declared routes; this closes the not-found gap. Public paths (login,
     // setup, tokenised intake/survey links) stay exempt.
-    if (!authedUser() && !isPublicPath(path)) {
-      // Portal paths bounce to the portal sign-in, never the staff login.
+    if (!isPublicPath(path)) {
       if (isPortalPath(path)) {
-        throw redirect({ to: "/portal/login", search: { from: path } });
+        // v0.1.1 fix — the portal rides its own session store since the
+        // cookie split; a customer has no staff session at all, so gating
+        // portal paths on authedUser() bounced every signed-in customer
+        // (fresh 2FA enrollment included) straight back to the portal login.
+        if (!portalUser()) {
+          throw redirect({ to: "/portal/login", search: { from: path } });
+        }
+      } else if (!authedUser()) {
+        throw redirect({ to: "/login", search: { from: path } });
       }
-      throw redirect({ to: "/login", search: { from: path } });
     }
     // A signed-in customer never sees the agent shell: anything outside the
     // portal (incl. the not-found fallback) goes to /portal. The portal

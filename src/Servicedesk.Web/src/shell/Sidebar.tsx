@@ -313,11 +313,15 @@ export function Sidebar() {
 
   const navigate = useNavigate();
 
+  // v0.1.1 — never fake a sign-out: clearing the local user while the server
+  // session survives leaves an "I am signed out" screen on a live session that
+  // one refresh brings back. If the call fails, say so and stay signed in.
   const handleLogout = async () => {
     try {
       await authApi.logout();
     } catch {
-      // logout is idempotent locally even if the server call fails
+      toast.error("Sign-out failed — you are still signed in. Reload the page and try again.");
+      return;
     }
     authStore.patch({ user: null });
     toast.success("Signed out");

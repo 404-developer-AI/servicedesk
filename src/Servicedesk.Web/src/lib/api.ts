@@ -152,7 +152,7 @@ async function request<T>(
     headers: {
       Accept: "application/json",
       ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...(isSafe ? {} : csrfHeader()),
+      ...(isSafe ? {} : csrfHeader(url)),
       ...(init?.headers ?? {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -3449,7 +3449,7 @@ export const preferencesApi = {
       keepalive: true,
       headers: {
         "Content-Type": "application/json",
-        ...csrfHeader(),
+        ...csrfHeader("/api/preferences/workspace"),
       },
       body: JSON.stringify({ entries }),
     });
@@ -4081,16 +4081,13 @@ export const feedbackApi = {
     entryId: string,
     file: File,
   ): Promise<FeedbackAttachment> => {
-    const csrf = document.cookie
-      .split("; ")
-      .find((c) => c.startsWith("XSRF-TOKEN="))
-      ?.split("=")[1];
     const fd = new FormData();
     fd.append("file", file, file.name);
-    const res = await fetch(`/api/feedback/entries/${entryId}/attachments`, {
+    const url = `/api/feedback/entries/${entryId}/attachments`;
+    const res = await fetch(url, {
       method: "POST",
       credentials: "include",
-      headers: csrf ? { "X-XSRF-TOKEN": decodeURIComponent(csrf) } : undefined,
+      headers: csrfHeader(url),
       body: fd,
     });
     if (!res.ok) {

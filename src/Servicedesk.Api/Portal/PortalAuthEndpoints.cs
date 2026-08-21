@@ -291,7 +291,7 @@ public static class PortalAuthEndpoints
                     UserAgent: http.Request.Headers.UserAgent.ToString()), ct);
             }
         }
-        AuthEndpoints.ClearAuthCookies(http, cookieName);
+        AuthEndpoints.ClearAuthCookies(http, cookieName, portalCookie: true);
         return Results.Ok();
     }
 
@@ -307,6 +307,11 @@ public static class PortalAuthEndpoints
         var viewer = await accounts.GetViewerAsync(userId.Value, ct);
         if (viewer is null || viewer.Status != PortalAccountStatus.Active)
             return Results.Ok(new { enabled, user = (object?)null, serverTimeUtc = DateTimeOffset.UtcNow });
+
+        // Re-mint the portal CSRF cookie when a live session lost it (see
+        // AuthEndpoints.EnsureCsrfCookie) — e.g. a session predating the
+        // per-realm cookie split.
+        AuthEndpoints.EnsureCsrfCookie(http, portalCookie: true);
 
         var amr = http.User.FindFirst(SessionAuthenticationHandler.AmrClaimType)?.Value ?? string.Empty;
         var enrolled = await totp.IsEnabledAsync(userId.Value, ct);
