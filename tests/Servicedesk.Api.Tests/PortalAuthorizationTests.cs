@@ -17,6 +17,37 @@ namespace Servicedesk.Api.Tests;
 ///   * Anonymous portal auth POSTs are CSRF-exempt; session-bound ones are not.
 public sealed class PortalAuthorizationTests
 {
+    // v0.1.1 fix — a live staff session whose CSRF cookie was wiped (the
+    // pre-split shared-cookie bug did exactly that on every portal logout)
+    // must get a fresh one from /me, otherwise sign-out itself 403s forever.
+    [Fact]
+    public async Task Staff_me_remints_a_missing_csrf_cookie()
+    {
+        using var factory = new SecurityBaselineFactory();
+        var client = await ClientWithSession(factory, "Admin", "pwd+mfa"); // no CSRF cookie sent
+
+        var response = await client.GetAsync("/api/auth/me");
+
+        response.EnsureSuccessStatusCode();
+        var setCookies = response.Headers.TryGetValues("Set-Cookie", out var v) ? v.ToList() : new List<string>();
+        Assert.Contains(setCookies, c =>
+            c.StartsWith($"{DoubleSubmitCsrfMiddleware.CookieName}=", StringComparison.Ordinal)
+            && !c.StartsWith($"{DoubleSubmitCsrfMiddleware.PortalCookieName}=", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Staff_me_leaves_an_existing_csrf_cookie_alone()
+    {
+        using var factory = new SecurityBaselineFactory();
+        var client = await ClientWithSession(factory, "Admin", "pwd+mfa", withCsrf: true);
+
+        var response = await client.GetAsync("/api/auth/me");
+
+        response.EnsureSuccessStatusCode();
+        var setCookies = response.Headers.TryGetValues("Set-Cookie", out var v) ? v.ToList() : new List<string>();
+        Assert.DoesNotContain(setCookies, c => c.StartsWith($"{DoubleSubmitCsrfMiddleware.CookieName}=", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task Pending_customer_session_is_forbidden_on_portal_tickets()
     {
@@ -274,8 +305,11 @@ public sealed class PortalAuthorizationTests
         var cookie = $"{cookieName}={sessionId}; {portalCookieName}={sessionId}";
         if (withCsrf)
         {
-            cookie += "; XSRF-TOKEN=test-csrf-token";
-            client.DefaultRequestHeaders.Add("X-XSRF-TOKEN", "test-csrf-token");
+            // The CSRF cookie is split per realm too (staff vs portal), so send
+            // the same token under both names — one helper, both surfaces.
+            cookie += $"; {DoubleSubmitCsrfMiddleware.CookieName}=test-csrf-token"
+                + $"; {DoubleSubmitCsrfMiddleware.PortalCookieName}=test-csrf-token";
+            client.DefaultRequestHeaders.Add(DoubleSubmitCsrfMiddleware.HeaderName, "test-csrf-token");
         }
         client.DefaultRequestHeaders.Add("Cookie", cookie);
         return client;

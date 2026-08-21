@@ -1,5 +1,5 @@
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Toaster } from "sonner";
+import { Toaster, toast } from "sonner";
 import { Building2, Check, ChevronsUpDown, Eye, LifeBuoy, LogOut, Plus, Ticket, UserCircle2 } from "lucide-react";
 import { BrandWordmark } from "@/components/BrandMark";
 import { MaintenanceBanner } from "@/components/maintenance/MaintenanceBanner";
@@ -42,11 +42,14 @@ export function PortalShell() {
   const impersonated = me.user?.impersonated ?? false;
   const newTicketEnabled = (config.data?.enabled ? config.data.newTicketEnabled : false) && !impersonated;
 
+  // v0.1.1 — a failed logout leaves the session alive server-side, so report it
+  // instead of navigating away as if the customer were signed out.
   async function signOut() {
     try {
       await portalAuthApi.logout();
     } catch {
-      // ignore
+      toast.error("Sign-out failed — you are still signed in. Reload the page and try again.");
+      return;
     }
     await refreshPortalAuth();
     navigate({ to: "/portal/login" });
@@ -59,7 +62,10 @@ export function PortalShell() {
     try {
       await portalAuthApi.logout();
     } catch {
-      // ignore
+      // Closing the tab on a failed revoke would hide a still-live shadow
+      // session; keep the view open so the admin can retry.
+      toast.error("Could not end the portal view — the read-only session is still open. Reload and try again.");
+      return;
     }
     await refreshPortalAuth();
     window.close();

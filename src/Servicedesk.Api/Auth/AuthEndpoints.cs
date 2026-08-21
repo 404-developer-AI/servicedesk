@@ -343,6 +343,9 @@ public static class AuthEndpoints
         {
             return Results.Ok(new { user = (object?)null, serverTimeUtc = DateTimeOffset.UtcNow });
         }
+        // Re-mint the CSRF cookie when a live session lost it (see
+        // EnsureCsrfCookie) — without this, sign-out itself is unreachable.
+        EnsureCsrfCookie(httpContext);
         var email = httpContext.User.FindFirst(ClaimTypes.Email)?.Value ?? "";
         var role = httpContext.User.FindFirst(ClaimTypes.Role)?.Value ?? "";
         var amr = httpContext.User.FindFirst(SessionAuthenticationHandler.AmrClaimType)?.Value ?? AmrPassword;
@@ -657,8 +660,14 @@ public static class AuthEndpoints
             Expires = expires,
         });
 
+        // v0.1.1 — the CSRF cookie follows the session-cookie split: the portal
+        // gets its own so the two realms can coexist in one browser without
+        // one flow's logout deleting the other's token.
+        var csrfCookieName = portalCookie
+            ? DoubleSubmitCsrfMiddleware.PortalCookieName
+            : DoubleSubmitCsrfMiddleware.CookieName;
         var csrfToken = DoubleSubmitCsrfMiddleware.GenerateToken();
-        httpContext.Response.Cookies.Append(DoubleSubmitCsrfMiddleware.CookieName, csrfToken, new CookieOptions
+        httpContext.Response.Cookies.Append(csrfCookieName, csrfToken, new CookieOptions
         {
             HttpOnly = false,
             Secure = secure,
@@ -669,9 +678,39 @@ public static class AuthEndpoints
         return sessionId;
     }
 
-    internal static void ClearAuthCookies(HttpContext httpContext, string sessionCookieName)
+    /// Self-healing for the double-submit pair (v0.1.1): a live session whose
+    /// CSRF cookie is gone — wiped by the pre-split shared-cookie bug, or by a
+    /// selective cookie clear — would be stuck: every write 403s, including
+    /// logout itself. `/me` calls this so an authenticated GET re-mints the
+    /// missing token for its own realm. Safe because double-submit stores
+    /// nothing server-side; the token only has to match its own header copy.
+    internal static void EnsureCsrfCookie(HttpContext httpContext, bool portalCookie = false)
     {
+        var csrfCookieName = portalCookie
+            ? DoubleSubmitCsrfMiddleware.PortalCookieName
+            : DoubleSubmitCsrfMiddleware.CookieName;
+        if (!string.IsNullOrEmpty(httpContext.Request.Cookies[csrfCookieName])) return;
+        httpContext.Response.Cookies.Append(csrfCookieName, DoubleSubmitCsrfMiddleware.GenerateToken(), new CookieOptions
+        {
+            HttpOnly = false,
+            Secure = httpContext.Request.IsHttps,
+            SameSite = SameSiteMode.Strict,
+            Path = "/",
+            // Session-scoped: the next /me mints a fresh one when needed, so
+            // it never has to outlive the session cookie it accompanies.
+        });
+    }
+
+    /// Clears one realm's cookie pair. <paramref name="portalCookie"/> selects
+    /// the customer-portal CSRF cookie; a portal logout must never delete the
+    /// staff token (or vice versa) because both sessions can be live in the
+    /// same browser — an admin running a shadow view is exactly that case.
+    internal static void ClearAuthCookies(HttpContext httpContext, string sessionCookieName, bool portalCookie = false)
+    {
+        var csrfCookieName = portalCookie
+            ? DoubleSubmitCsrfMiddleware.PortalCookieName
+            : DoubleSubmitCsrfMiddleware.CookieName;
         httpContext.Response.Cookies.Delete(sessionCookieName, new CookieOptions { Path = "/" });
-        httpContext.Response.Cookies.Delete(DoubleSubmitCsrfMiddleware.CookieName, new CookieOptions { Path = "/" });
+        httpContext.Response.Cookies.Delete(csrfCookieName, new CookieOptions { Path = "/" });
     }
 }
