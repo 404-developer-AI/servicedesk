@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Mail;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Domain.Companies;
+using Servicedesk.Domain.Taxonomy;
 using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth;
@@ -335,7 +336,30 @@ public sealed class PortalAccountService : IPortalAccountService
         var status = statuses.FirstOrDefault(s => s.IsDefault && s.IsActive) ?? statuses.FirstOrDefault(s => s.IsActive);
         var priority = priorities.FirstOrDefault(p => p.IsDefault && p.IsActive) ?? priorities.FirstOrDefault(p => p.IsActive);
         if (status is null || priority is null) return null;
-        return (status.Id, priority.Id);
+
+        // Registration tickets bypass triggers (deliberate — a "new ticket"
+        // trigger must not mail the registrant), so their priority is set
+        // here: Portal.RegistrationTicketPriorityId overrides the default
+        // when it points at an existing active priority.
+        var overrideRaw = await _settings.GetAsync<string>(SettingKeys.Portal.RegistrationTicketPriorityId, ct);
+        var overridden = PickRegistrationPriority(priorities, overrideRaw);
+        if (overridden is null && !string.IsNullOrWhiteSpace(overrideRaw))
+        {
+            _logger.LogWarning(
+                "Portal.RegistrationTicketPriorityId {PriorityRaw} does not match an active priority — falling back to the default.",
+                overrideRaw);
+        }
+        return (status.Id, overridden ?? priority.Id);
+    }
+
+    /// Pure decision for the registration-ticket priority override: the
+    /// configured id wins only when it parses and matches an *active*
+    /// priority; anything else (empty, garbage, deleted/inactive priority)
+    /// yields null so the caller keeps the default.
+    internal static Guid? PickRegistrationPriority(IReadOnlyList<Priority> priorities, string? overrideRaw)
+    {
+        if (!Guid.TryParse(overrideRaw, out var overrideId)) return null;
+        return priorities.FirstOrDefault(p => p.Id == overrideId && p.IsActive)?.Id;
     }
 
     public async Task<(Guid Id, string Name)?> SuggestCompanyAsync(string email, CancellationToken ct)
