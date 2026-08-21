@@ -11,6 +11,30 @@ namespace Servicedesk.Api.Tests;
 /// of the Turnstile allowance to /portal documents.
 public sealed class PortalUnitTests
 {
+    // v0.1.1 — Portal.RegistrationTicketPriorityId: the override wins only
+    // when it points at an existing *active* priority; empty, garbage and
+    // inactive ids all fall back to the default (registration tickets bypass
+    // triggers, so this setting is the only priority knob they have).
+    [Fact]
+    public void Registration_priority_override_picks_only_active_matches()
+    {
+        static Servicedesk.Domain.Taxonomy.Priority P(Guid id, bool active) => new(
+            id, "High", "high", 3, "#f00", "flame", 1,
+            IsActive: active, IsSystem: false, IsDefault: false,
+            CreatedUtc: DateTime.UnixEpoch, UpdatedUtc: DateTime.UnixEpoch);
+
+        var active = Guid.NewGuid();
+        var inactive = Guid.NewGuid();
+        var priorities = new[] { P(active, true), P(inactive, false) };
+
+        Assert.Equal(active, PortalAccountService.PickRegistrationPriority(priorities, active.ToString()));
+        Assert.Null(PortalAccountService.PickRegistrationPriority(priorities, inactive.ToString()));
+        Assert.Null(PortalAccountService.PickRegistrationPriority(priorities, Guid.NewGuid().ToString()));
+        Assert.Null(PortalAccountService.PickRegistrationPriority(priorities, ""));
+        Assert.Null(PortalAccountService.PickRegistrationPriority(priorities, null));
+        Assert.Null(PortalAccountService.PickRegistrationPriority(priorities, "not-a-guid"));
+    }
+
     [Fact]
     public void Token_roundtrip_hashes_match_and_garbage_is_rejected()
     {

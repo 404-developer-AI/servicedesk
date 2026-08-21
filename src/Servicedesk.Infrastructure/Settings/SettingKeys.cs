@@ -1388,6 +1388,11 @@ public static class SettingKeys
         /// Settings → Portal only).
         public const string RegistrationQueueId = "Portal.RegistrationQueueId";
 
+        /// Priority of the registration system ticket. Empty = the default
+        /// priority. The registration ticket bypasses triggers, so this is
+        /// the one knob that controls its priority.
+        public const string RegistrationTicketPriorityId = "Portal.RegistrationTicketPriorityId";
+
         /// Queue new portal tickets are created in. Empty = portal ticket
         /// creation is disabled (customers can still reply).
         public const string NewTicketQueueId = "Portal.NewTicketQueueId";
@@ -2307,6 +2312,8 @@ public static class SettingDefaults
             "Allow customers to self-register (email verification + manual approval by an agent/admin). Off = only invited accounts can sign in."),
         new SettingDefault(SettingKeys.Portal.RegistrationQueueId, "", "string", "Portal",
             "Queue that receives the system ticket created for each verified registration (requires Tickets.NewUserCreatesNotificationTicket). Also the fallback sender mailbox for portal mail. Empty = no registration ticket; approvals happen from Settings → Portal."),
+        new SettingDefault(SettingKeys.Portal.RegistrationTicketPriorityId, "", "string", "Portal",
+            "Priority of the registration system ticket. Empty = the default priority. Registration tickets bypass triggers, so a trigger cannot raise their priority — this setting does."),
         new SettingDefault(SettingKeys.Portal.NewTicketQueueId, "", "string", "Portal",
             "Queue new portal tickets are created in. Empty = customers cannot create tickets from the portal (replying still works)."),
         new SettingDefault(SettingKeys.Portal.FromMailbox, "", "string", "Portal",

@@ -109,6 +109,12 @@ export function PortalSettingsPage() {
               hint="The team approves or rejects from the card on that ticket. Needs the queue below."
             />
             <QueueSettingRow entry={e("Portal.RegistrationQueueId")} label="Queue for registration tickets" hint="Also the fallback sender mailbox for portal mail." emptyLabel="Not set — approvals from this page only" />
+            <PrioritySettingRow
+              entry={e("Portal.RegistrationTicketPriorityId")}
+              label="Priority of registration tickets"
+              hint="Registration tickets bypass triggers, so this is the one knob that sets their priority."
+              emptyLabel="Default priority"
+            />
             <Field entry={e("Portal.VerificationTokenHours")} label="Confirmation link validity (hours)" />
             <Field entry={e("Portal.InvitationTokenHours")} label="Invitation link validity (hours)" />
             <Field entry={e("Portal.PasswordResetTokenMinutes")} label="Password-reset link validity (minutes)" />
@@ -264,6 +270,45 @@ function QueueSettingRow({ entry, label, hint, emptyLabel }: { entry: SettingEnt
         {(queues.data ?? []).map((q) => (
           <option key={q.id} value={q.id}>
             {q.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+/// Same shape as QueueSettingRow, over the priority taxonomy. Inactive
+/// priorities are hidden unless one is the saved value (so a stale choice
+/// stays visible instead of silently jumping to "default").
+function PrioritySettingRow({ entry, label, hint, emptyLabel }: { entry: SettingEntry | undefined; label: string; hint: string; emptyLabel: string }) {
+  const qc = useQueryClient();
+  const priorities = useQuery({ queryKey: ["taxonomy", "priorities"], queryFn: () => taxonomyApi.priorities.list() });
+  const save = useMutation({
+    mutationFn: (value: string) => settingsApi.update(entry!.key, value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: PORTAL_QK });
+      toast.success(`${label} updated`);
+    },
+    onError: (err) => toast.error(apiErrorMessage(err) ?? "Save failed"),
+  });
+  if (!entry) return null;
+  const options = (priorities.data ?? []).filter((p) => p.isActive || p.id === entry.value);
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 py-3">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      </div>
+      <select
+        value={entry.value}
+        disabled={save.isPending || priorities.isLoading}
+        onChange={(ev) => save.mutate(ev.target.value)}
+        className="h-9 w-full max-w-xs rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <option value="">{emptyLabel}</option>
+        {options.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
           </option>
         ))}
       </select>
