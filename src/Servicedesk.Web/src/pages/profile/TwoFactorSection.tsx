@@ -8,7 +8,7 @@ import { authApi, ApiError } from "@/lib/api";
 import { refreshAuth } from "@/auth/bootstrap";
 import { useAuth } from "@/auth/authStore";
 
-type Stage = "idle" | "enrolling" | "done";
+type Stage = "idle" | "enrolling" | "done" | "disabling";
 
 export function TwoFactorSection() {
   const { user } = useAuth();
@@ -75,19 +75,31 @@ export function TwoFactorSection() {
     }
   };
 
+  // v0.1.2 — disabling is a step-up action: the server demands a live
+  // authenticator code (or a recovery code), so a stolen session alone
+  // cannot strip the second factor.
   const disable = async () => {
-    if (!window.confirm("Disable two-factor authentication?")) return;
+    if (code.trim().length < 6) {
+      setError("Enter the 6-digit code from your authenticator (or a recovery code).");
+      return;
+    }
+    setError(null);
     setBusy(true);
     try {
-      await authApi.disableTotp();
+      await authApi.disableTotp(code.trim());
       await refreshAuth();
       setOtpauthUri(null);
       setSecret(null);
       setRecoveryCodes(null);
+      setCode("");
       setStage("idle");
       toast.success("Two-factor disabled");
-    } catch {
-      toast.error("Could not disable two-factor");
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 423) {
+        setError("Too many wrong codes — this account is temporarily locked.");
+      } else {
+        setError("The code is not valid. Check your authenticator app and try again.");
+      }
     } finally {
       setBusy(false);
     }
@@ -114,8 +126,8 @@ export function TwoFactorSection() {
             Two-factor authentication
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Protect your account with a time-based one-time password. Optional in
-            this release — will become mandatory for admins and agents later.
+            Protect your account with a time-based one-time password. An admin
+            can make this mandatory for all staff (Settings → Security).
           </p>
         </div>
         <span
@@ -137,9 +149,56 @@ export function TwoFactorSection() {
       )}
 
       {stage === "idle" && enabled && (
-        <Button variant="destructive" onClick={disable} disabled={busy}>
+        <Button
+          variant="destructive"
+          onClick={() => {
+            setError(null);
+            setCode("");
+            setStage("disabling");
+          }}
+          disabled={busy}
+        >
           Disable two-factor
         </Button>
+      )}
+
+      {stage === "disabling" && (
+        <div className="space-y-3" data-testid="two-factor-disable">
+          <p className="text-xs text-muted-foreground">
+            Confirm with a current authenticator code (or a recovery code) to
+            turn two-factor authentication off.
+          </p>
+          <div className="space-y-1.5">
+            <label className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+              Verification code
+            </label>
+            <Input
+              autoFocus
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="123 456"
+              inputMode="text"
+              autoComplete="one-time-code"
+              className="font-mono tracking-[0.2em]"
+            />
+          </div>
+          {error && <p className="text-[11px] text-destructive/90">{error}</p>}
+          <div className="flex gap-2">
+            <Button variant="destructive" onClick={disable} disabled={busy}>
+              {busy ? "Disabling…" : "Disable two-factor"}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setStage("idle");
+                setCode("");
+                setError(null);
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
       )}
 
       {stage === "enrolling" && (
@@ -224,7 +283,7 @@ export function TwoFactorSection() {
         </div>
       )}
 
-      {error && stage !== "enrolling" && (
+      {error && stage !== "enrolling" && stage !== "disabling" && (
         <p className="text-[11px] text-destructive/90">{error}</p>
       )}
     </section>

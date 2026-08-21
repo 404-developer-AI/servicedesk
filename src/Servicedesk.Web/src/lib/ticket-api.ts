@@ -1610,6 +1610,11 @@ export const adminUserApi = {
   remove: (userId: string) =>
     request<void>("DELETE", `/api/admin/users/${userId}`),
 
+  // v0.1.2 — admin-initiated password reset for Local staff accounts.
+  // Revokes every open session of the target.
+  resetPassword: (userId: string, newPassword: string) =>
+    request<void>("POST", `/api/admin/users/${userId}/reset-password`, { newPassword }),
+
   setTimesheetFlags: (
     userId: string,
     enabled: boolean,

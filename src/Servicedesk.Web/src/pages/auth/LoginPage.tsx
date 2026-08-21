@@ -5,7 +5,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { LockKeyhole, Mail, ShieldCheck, AlertTriangle, Headset, UserRound, ArrowRight } from "lucide-react";
+import QRCode from "qrcode";
+import { LockKeyhole, Mail, ShieldCheck, AlertTriangle, Headset, UserRound, ArrowRight, Copy } from "lucide-react";
 import { BrandWordmark } from "@/components/BrandMark";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,11 @@ const codeSchema = z.object({
 type LoginValues = z.infer<typeof loginSchema>;
 type CodeValues = z.infer<typeof codeSchema>;
 
-type Stage = "credentials" | "two-factor";
+// v0.1.2 — "enroll" + "recovery-codes" mirror the portal's forced-enrollment
+// flow: with Security.TwoFactor.Required on, a local account without an
+// authenticator lands here after the password step and cannot reach the app
+// until enrollment completes (the session stays "mfa-pending" server-side).
+type Stage = "credentials" | "two-factor" | "enroll" | "recovery-codes";
 
 // v0.1.0 — when the customer portal is on, /login first asks "agent or
 // customer?". The agent choice is remembered per browser (a pure UX hint,
@@ -108,18 +113,51 @@ export function LoginPage() {
     [callbackError],
   );
 
+  const [enrollment, setEnrollment] = useState<{ secret: string; qr: string | null } | null>(null);
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
+
+  async function startEnrollment() {
+    setServerError(null);
+    try {
+      const res = await authApi.beginTotpEnroll();
+      let qr: string | null = null;
+      try {
+        qr = await QRCode.toDataURL(res.otpauthUri, { margin: 1, width: 196 });
+      } catch {
+        qr = null;
+      }
+      setEnrollment({ secret: res.secret, qr });
+      setStage("enroll");
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        // Already enrolled after all → challenge instead.
+        setStage("two-factor");
+        return;
+      }
+      setServerError(describeAuthError(e, "Could not start the authenticator setup."));
+      setStage("credentials");
+    }
+  }
+
   useEffect(() => {
     const user = authStore.get().user;
     if (!user) return;
     // A pending session (password accepted, TOTP still owed) must finish the
     // challenge here — the server rejects it everywhere else. Resume the 2FA
-    // step instead of bouncing into the app (e.g. after a mid-challenge reload).
+    // step instead of bouncing into the app (e.g. after a mid-challenge
+    // reload). A pending session WITHOUT an enrolled authenticator is the
+    // forced-enrollment case (Security.TwoFactor.Required) → resume there.
     if (user.amr === "mfa-pending") {
-      setStage("two-factor");
+      if (user.twoFactorEnabled) {
+        setStage("two-factor");
+      } else {
+        void startEnrollment();
+      }
       return;
     }
     // Fully-authenticated session landing on /login → bounce to dashboard.
     navigate({ to: "/" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
 
   const loginForm = useForm<LoginValues>({
@@ -132,6 +170,11 @@ export function LoginPage() {
     defaultValues: { code: "" },
   });
 
+  const enrollForm = useForm<CodeValues>({
+    resolver: zodResolver(codeSchema),
+    defaultValues: { code: "" },
+  });
+
   const onLogin = loginForm.handleSubmit(async (values) => {
     setServerError(null);
     try {
@@ -139,6 +182,10 @@ export function LoginPage() {
       await refreshAuth();
       if (res.twoFactorRequired) {
         setStage("two-factor");
+        return;
+      }
+      if (res.enrollmentRequired) {
+        await startEnrollment();
         return;
       }
       toast.success("Welcome back");
@@ -159,6 +206,32 @@ export function LoginPage() {
       setServerError(describeAuthError(e, "Verification failed."));
     }
   });
+
+  const onConfirmEnroll = enrollForm.handleSubmit(async (values) => {
+    setServerError(null);
+    try {
+      const res = await authApi.confirmTotpEnroll(values.code.trim());
+      await refreshAuth();
+      setRecoveryCodes(res.recoveryCodes);
+      setStage("recovery-codes");
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 400) {
+        setServerError("The code is not valid. Check your authenticator app and try again.");
+        return;
+      }
+      setServerError(describeAuthError(e, "Could not confirm the authenticator."));
+    }
+  });
+
+  const copyRecoveryCodes = async () => {
+    if (!recoveryCodes) return;
+    try {
+      await navigator.clipboard.writeText(recoveryCodes.join("\n"));
+      toast.success("Recovery codes copied");
+    } catch {
+      toast.error("Clipboard unavailable");
+    }
+  };
 
   const onMicrosoft = () => {
     // Top-level redirect into the backend's /challenge endpoint. The
@@ -247,7 +320,7 @@ export function LoginPage() {
             </div>
           )}
 
-          {stage === "credentials" ? (
+          {stage === "credentials" && (
             <form onSubmit={onLogin} className="space-y-4" noValidate>
               <div className="space-y-1.5">
                 <label className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
@@ -305,7 +378,9 @@ export function LoginPage() {
                 {loginForm.formState.isSubmitting ? "Signing in…" : "Sign in"}
               </Button>
             </form>
-          ) : (
+          )}
+
+          {stage === "two-factor" && (
             <form onSubmit={onVerify} className="space-y-4" noValidate>
               <p className="text-sm text-muted-foreground">
                 Enter the 6-digit code from your authenticator app, or a single-use
@@ -338,6 +413,89 @@ export function LoginPage() {
                 {codeForm.formState.isSubmitting ? "Verifying…" : "Verify"}
               </Button>
             </form>
+          )}
+
+          {stage === "enroll" && (
+            <form onSubmit={onConfirmEnroll} className="space-y-4" noValidate data-testid="forced-enroll">
+              <p className="text-sm text-muted-foreground">
+                Two-factor authentication is required for this service desk. Scan
+                the code with an authenticator app (Microsoft Authenticator,
+                Google Authenticator, 1Password, …) and enter the 6-digit code it
+                shows.
+              </p>
+              <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start">
+                <div className="rounded-lg border border-glass bg-white p-2">
+                  {enrollment?.qr ? (
+                    <img src={enrollment.qr} alt="TOTP QR code" width={196} height={196} />
+                  ) : (
+                    <div className="h-[196px] w-[196px] animate-pulse rounded bg-glass-strong" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1 space-y-2 text-xs text-muted-foreground">
+                  <p>Can&apos;t scan? Enter the secret manually:</p>
+                  <code className="block break-all rounded border border-glass bg-glass px-2 py-1.5 font-mono text-[11px] text-foreground">
+                    {enrollment?.secret}
+                  </code>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                  Verification code
+                </label>
+                <Input
+                  autoFocus
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="123 456"
+                  className="font-mono tracking-[0.2em]"
+                  {...enrollForm.register("code")}
+                />
+                {enrollForm.formState.errors.code && (
+                  <p className="text-[11px] text-destructive/90">
+                    {enrollForm.formState.errors.code.message}
+                  </p>
+                )}
+              </div>
+              {serverError && (
+                <div className="rounded-md border border-destructive/40 bg-destructive/[0.06] px-3 py-2 text-xs text-destructive/90">
+                  {serverError}
+                </div>
+              )}
+              <Button type="submit" className="w-full" disabled={enrollForm.formState.isSubmitting}>
+                {enrollForm.formState.isSubmitting ? "Confirming…" : "Confirm and continue"}
+              </Button>
+            </form>
+          )}
+
+          {stage === "recovery-codes" && recoveryCodes && (
+            <div className="space-y-4" data-testid="forced-enroll-recovery">
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-4 py-3 text-xs text-amber-200">
+                Save these recovery codes somewhere safe. Each one works exactly
+                once and can be used instead of an authenticator code if you lose
+                your device. They are shown only now.
+              </div>
+              <div className="grid grid-cols-2 gap-2 font-mono text-xs">
+                {recoveryCodes.map((c) => (
+                  <code key={c} className="rounded border border-glass bg-glass px-2 py-1.5">
+                    {c}
+                  </code>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={copyRecoveryCodes}>
+                  <Copy className="mr-2 h-4 w-4" /> Copy all
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={() => {
+                    toast.success("Two-factor authentication enabled");
+                    navigate({ to: "/" });
+                  }}
+                >
+                  Continue to the app
+                </Button>
+              </div>
+            </div>
           )}
 
           {config?.portalEnabled && stage === "credentials" && (

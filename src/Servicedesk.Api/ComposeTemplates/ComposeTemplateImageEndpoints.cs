@@ -136,11 +136,10 @@ public static class ComposeTemplateImageEndpoints
             var stream = await blobs.OpenReadAsync(att.ContentHash, ct);
             if (stream is null) return Results.NotFound();
 
+            // Inline only for inline-safe types (audit v0.1.1 #2).
             var fileName = string.IsNullOrWhiteSpace(att.OriginalFilename) ? "image" : att.OriginalFilename;
-            var contentType = string.IsNullOrWhiteSpace(att.MimeType) ? "application/octet-stream" : att.MimeType;
-            return inline == true
-                ? Results.File(stream, contentType, fileDownloadName: null, enableRangeProcessing: true)
-                : Results.File(stream, contentType, fileDownloadName: fileName, enableRangeProcessing: true);
+            return Servicedesk.Api.Tickets.AttachmentResponse.File(
+                stream, att.MimeType, fileName, inline == true);
         }).WithTags("ComposeTemplates")
           .RequireAuthorization(AuthorizationPolicies.RequireAgent)
           .WithName("GetComposeTemplateImage").WithOpenApi();

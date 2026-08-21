@@ -238,11 +238,35 @@ public sealed class AttachmentWorker : BackgroundService
             ?? throw new InvalidOperationException(
                 $"Attachment row {p.AttachmentId} disappeared between enqueue and ingest.");
 
+        // v0.1.2 (audit v0.1.1 #2) — the row's MIME type so far is whatever
+        // the *sender's* mail client declared. Sniff the stored bytes exactly
+        // like the upload endpoint does and persist the server's verdict
+        // instead, so a `text/html` label on an innocuous file cannot ride
+        // along to the inline-download route. (Unlike uploads the attachment
+        // is kept either way — the download guard force-downloads anything
+        // that still sniffs as HTML/XML.)
+        var mimeType = row.MimeType;
+        await using (var head = await blobs.OpenReadAsync(result.ContentHash, ct))
+        {
+            if (head is not null)
+            {
+                var buffer = new byte[Storage.MimeSniffer.SniffWindowBytes];
+                var read = 0;
+                while (read < buffer.Length)
+                {
+                    var n = await head.ReadAsync(buffer.AsMemory(read), ct);
+                    if (n == 0) break;
+                    read += n;
+                }
+                mimeType = Storage.MimeSniffer.Sniff(buffer.AsSpan(0, read), row.MimeType, row.OriginalFilename);
+            }
+        }
+
         await attachments.MarkReadyAsync(
             p.AttachmentId,
             result.ContentHash,
             result.SizeBytes,
-            row.MimeType,
+            mimeType,
             ct);
 
         return result;

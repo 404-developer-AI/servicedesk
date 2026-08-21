@@ -307,6 +307,7 @@ function UserRow({
   onChanged: () => void;
 }) {
   const [mutationPending, setMutationPending] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
 
   async function runAction<T>(fn: () => Promise<T>, successMessage: string) {
     setMutationPending(true);
@@ -452,6 +453,18 @@ function UserRow({
               Upgrade to M365…
             </DropdownMenuItem>
           )}
+          {!isMicrosoft && (
+            <DropdownMenuItem
+              disabled={mutationPending}
+              onSelect={(e) => {
+                e.preventDefault();
+                setResetOpen(true);
+              }}
+            >
+              <KeyRound className="mr-2 h-4 w-4" />
+              Reset password…
+            </DropdownMenuItem>
+          )}
           {user.role !== "Customer" && (
             <DropdownMenuItem
               disabled={mutationPending}
@@ -478,7 +491,109 @@ function UserRow({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <ResetPasswordDialog
+        user={user}
+        open={resetOpen}
+        onOpenChange={setResetOpen}
+        onDone={onChanged}
+      />
     </div>
+  );
+}
+
+// ---- Reset password (v0.1.2, Local staff accounts only) -----------------
+
+function ResetPasswordDialog({
+  user,
+  open,
+  onOpenChange,
+  onDone,
+}: {
+  user: UserAdminRow;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onDone: () => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [show, setShow] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  const close = (next: boolean) => {
+    if (!next) {
+      setPassword("");
+      setError(null);
+      setShow(false);
+    }
+    onOpenChange(next);
+  };
+
+  const submit = async () => {
+    setError(null);
+    setPending(true);
+    try {
+      await adminUserApi.resetPassword(user.id, password);
+      toast.success("Password reset — the user's sessions were signed out");
+      close(false);
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not reset the password.");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={close}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Reset password</DialogTitle>
+          <DialogDescription>
+            Set a new password for <span className="font-medium">{user.email}</span>.
+            Every open session of this account is signed out immediately; share
+            the new password through a secure channel.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5">
+          <label className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+            New password
+          </label>
+          <div className="relative">
+            <Input
+              type={show ? "text" : "password"}
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShow((s) => !s)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              aria-label={show ? "Hide password" : "Show password"}
+            >
+              {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          {error && <p className="text-[11px] text-destructive/90">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => close(false)} disabled={pending}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={pending || password.length === 0}>
+            {pending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Resetting…
+              </>
+            ) : (
+              "Reset password"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -44,15 +44,19 @@ public sealed class SessionAuthenticationHandler : AuthenticationHandler<Authent
     /// Claim carrying the admin user id that minted a shadow session.
     public const string ImpersonatorClaimType = "impersonator";
 
-    /// Cache key for a validated session. Centralised so callers that mutate a
-    /// session's amr (e.g. the 2FA verify upgrade) can evict the same entry
-    /// this handler caches, otherwise the stale amr lingers for up to
-    /// <see cref="CacheDuration"/> and access stays blocked after verifying.
-    public static string CacheKey(Guid sessionId) => $"session:{sessionId}";
+    /// Cache key for a validated session. Delegates to the Infrastructure-side
+    /// <see cref="SessionCache"/> so <c>SessionService</c> evicts the exact
+    /// entries this handler caches whenever a session is revoked or its amr
+    /// changes — revocation bites on the very next request.
+    public static string CacheKey(Guid sessionId) => SessionCache.Key(sessionId);
 
     /// How long a validated session is kept in the memory cache before
-    /// we re-query the database.
-    private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
+    /// we re-query the database. 60s (was 5 min, audit v0.1.1 #4): the
+    /// revocation paths evict explicitly, so this now only bounds how long
+    /// out-of-band row changes (role edits in SQL, expiry) can lag; the read
+    /// behind a miss is a single indexed lookup and the touch-throttle
+    /// already bounds the write load.
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(60);
 
     /// Minimum interval between touch (last_seen_utc) writes for the same
     /// session. Must be well below the idle timeout (default 60 min).

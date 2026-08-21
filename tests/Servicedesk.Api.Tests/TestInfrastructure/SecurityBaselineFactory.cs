@@ -275,8 +275,13 @@ public sealed class FakeUserService : IUserService
     /// Test seam: add a Local user row with any role (v0.1.0 — portal tests
     /// need a Customer row the agent login must refuse).
     public ApplicationUser Add(string email, string passwordHash, string role)
+        => AddWithId(Guid.NewGuid(), email, passwordHash, role);
+
+    /// Test seam (v0.1.2): add a row under a caller-chosen id so a test can
+    /// line the user store up with a pre-minted fake session.
+    public ApplicationUser AddWithId(Guid id, string email, string passwordHash, string role)
     {
-        var user = new ApplicationUser(Guid.NewGuid(), email, passwordHash, role,
+        var user = new ApplicationUser(id, email, passwordHash, role,
             DateTime.UtcNow, null, 0, null, AuthModes.Local, null, null, true);
         _byId[user.Id] = user;
         _byEmail[email] = user.Id;
@@ -498,6 +503,18 @@ public sealed class FakeSessionService : ISessionService
         return Task.CompletedTask;
     }
 
+    public Task RevokeAllForUserExceptAsync(Guid userId, Guid keepSessionId, CancellationToken ct = default)
+    {
+        foreach (var kv in _sessions)
+        {
+            if (kv.Value.UserId == userId && kv.Key != keepSessionId && !kv.Value.Revoked)
+            {
+                _sessions[kv.Key] = kv.Value with { Revoked = true };
+            }
+        }
+        return Task.CompletedTask;
+    }
+
     public Task UpgradeAmrAsync(Guid sessionId, string amr, CancellationToken ct = default)
     {
         if (_sessions.TryGetValue(sessionId, out var e))
@@ -532,12 +549,20 @@ public sealed class FakeTotpService : ITotpService
 {
     public bool Enabled { get; set; }
 
+    /// Test seam (v0.1.2): what VerifyAsync answers. Default Rejected so the
+    /// legacy tests keep their behaviour; step-up tests flip it to accepted.
+    public TwoFactorResult VerifyResult { get; set; } = TwoFactorResult.Rejected;
+
     public Task<bool> IsEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(Enabled);
     public Task<TotpEnrollment> BeginEnrollAsync(Guid userId, string accountLabel, CancellationToken ct = default) =>
         Task.FromResult(new TotpEnrollment("JBSWY3DPEHPK3PXP", "otpauth://totp/Servicedesk:test?secret=JBSWY3DPEHPK3PXP"));
     public Task<IReadOnlyList<string>?> ConfirmEnrollAsync(Guid userId, string code, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<string>?>(new[] { "aaaa-bbbb-cccc-dddd" });
     public Task<TwoFactorResult> VerifyAsync(Guid userId, string code, CancellationToken ct = default) =>
-        Task.FromResult(TwoFactorResult.Rejected);
-    public Task DisableAsync(Guid userId, CancellationToken ct = default) => Task.CompletedTask;
+        Task.FromResult(VerifyResult);
+    public Task DisableAsync(Guid userId, CancellationToken ct = default)
+    {
+        Enabled = false;
+        return Task.CompletedTask;
+    }
 }

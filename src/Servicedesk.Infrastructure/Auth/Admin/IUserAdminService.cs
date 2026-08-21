@@ -110,6 +110,18 @@ public interface IUserAdminService
         Guid actingAdminId,
         CancellationToken ct = default);
 
+    /// v0.1.2 (audit v0.1.1 #8) — admin-initiated password reset for a Local
+    /// staff account. Validates against Security.Password.MinimumLength,
+    /// hashes with Argon2id, clears the lockout counter and revokes every
+    /// open session of the target so a stolen session dies with the old
+    /// password. Microsoft-mode rows and Customer rows are rejected
+    /// (customers reset through the portal flow).
+    Task<ResetStaffPasswordResult> ResetPasswordAsync(
+        Guid userId,
+        string newPassword,
+        Guid actingAdminId,
+        CancellationToken ct = default);
+
     /// Consolidated partial-update across every per-user feature flag.
     /// Each field in <paramref name="update"/> is nullable: null = leave
     /// alone, non-null = write. One transaction with FOR UPDATE row lock,
@@ -221,6 +233,15 @@ public abstract record DeleteResult
     public sealed record SelfDeleteForbidden : DeleteResult;
     public sealed record LastAdminForbidden : DeleteResult;
     public sealed record BlockedReferences(IReadOnlyList<string> Reasons) : DeleteResult;
+}
+
+public abstract record ResetStaffPasswordResult
+{
+    public sealed record Done(UserAdminRow Row) : ResetStaffPasswordResult;
+    public sealed record UserNotFound : ResetStaffPasswordResult;
+    public sealed record NotLocalUser : ResetStaffPasswordResult;
+    public sealed record CustomerNotAllowed : ResetStaffPasswordResult;
+    public sealed record WeakPassword(int MinimumLength) : ResetStaffPasswordResult;
 }
 
 public abstract record UpdateTimesheetFlagsResult

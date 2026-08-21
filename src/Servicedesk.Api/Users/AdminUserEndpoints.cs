@@ -53,6 +53,14 @@ public static class AdminUserEndpoints
             .WithName("AdminUsersDelete")
             .WithOpenApi();
 
+        // v0.1.2 (audit v0.1.1 #8) — admin-initiated password reset for
+        // Local staff accounts. Rate-limited like the other credential
+        // writes; every open session of the target is revoked.
+        group.MapPost("/{id:guid}/reset-password", ResetPassword)
+            .WithName("AdminUsersResetPassword")
+            .WithOpenApi()
+            .RequireRateLimiting("auth");
+
         group.MapPut("/{id:guid}/timesheet-flags", UpdateTimesheetFlags)
             .WithName("AdminUsersUpdateTimesheetFlags")
             .WithOpenApi();
@@ -342,6 +350,41 @@ public static class AdminUserEndpoints
             SetActiveResult.SelfChangeForbidden => Results.Conflict(new { error = "You cannot deactivate your own account." }),
             SetActiveResult.LastAdminForbidden => Results.Conflict(new { error = "At least one active Admin must remain." }),
             _ => Results.Problem("Unhandled set-active result."),
+        };
+    }
+
+    public sealed record ResetPasswordRequest([property: Required] string NewPassword);
+
+    private static async Task<IResult> ResetPassword(
+        Guid id,
+        [FromBody] ResetPasswordRequest request,
+        HttpContext httpContext,
+        IUserAdminService admin,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        var adminId = RequireUserId(httpContext);
+        if (adminId is null) return Results.Unauthorized();
+
+        var result = await admin.ResetPasswordAsync(id, request.NewPassword ?? string.Empty, adminId.Value, ct);
+        return result switch
+        {
+            ResetStaffPasswordResult.Done done =>
+                await LogAndReturnAsync(httpContext, audit,
+                    AuthEventTypes.UserPasswordReset,
+                    target: done.Row.Id.ToString(),
+                    payload: new { email = done.Row.Email },
+                    body: null,
+                    statusCode: StatusCodes.Status200OK,
+                    ct: ct),
+            ResetStaffPasswordResult.UserNotFound => Results.NotFound(),
+            ResetStaffPasswordResult.NotLocalUser =>
+                Results.Conflict(new { error = "Microsoft accounts have no local password. Their password lives in Entra ID." }),
+            ResetStaffPasswordResult.CustomerNotAllowed =>
+                Results.Conflict(new { error = "Customer accounts reset their password through the portal flow." }),
+            ResetStaffPasswordResult.WeakPassword weak =>
+                Results.BadRequest(new { error = $"Password must be at least {weak.MinimumLength} characters." }),
+            _ => Results.Problem("Unhandled reset-password result."),
         };
     }
 

@@ -101,11 +101,10 @@ public static class KbPublicEndpoints
             var stream = await blobs.OpenReadAsync(att.ContentHash, ct);
             if (stream is null) return Results.NotFound();
 
-            var fileName = string.IsNullOrWhiteSpace(att.OriginalFilename) ? "attachment" : att.OriginalFilename;
-            var contentType = string.IsNullOrWhiteSpace(att.MimeType) ? "application/octet-stream" : att.MimeType;
-            return inline == true
-                ? Results.File(stream, contentType, fileDownloadName: null, enableRangeProcessing: true)
-                : Results.File(stream, contentType, fileDownloadName: fileName, enableRangeProcessing: true);
+            // Inline only for inline-safe types (audit v0.1.1 #2) — this
+            // route is anonymous, so the guard matters double here.
+            return Servicedesk.Api.Tickets.AttachmentResponse.File(
+                stream, att.MimeType, att.OriginalFilename, inline == true);
         }).WithName("GetPublicKbAttachment").WithOpenApi();
 
         return app;

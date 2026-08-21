@@ -46,20 +46,36 @@ public static class AuthEndpoints
 
         group.MapGet("/me", Me).WithName("AuthMe").WithOpenApi();
 
+        // Deliberately WITHOUT the RequireAgent policy (v0.1.2): when
+        // Security.TwoFactor.Required is on, an un-enrolled staff login mints
+        // an "mfa-pending" session that the role policies reject — but that
+        // session must be able to reach exactly these two endpoints to
+        // enroll. Each handler checks the principal itself (authenticated +
+        // staff role), mirroring the portal's forced-enrollment endpoints.
         group.MapPost("/2fa/enroll/begin", BeginTotpEnroll)
             .WithName("AuthTotpBegin")
             .WithOpenApi()
-            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
+            .RequireRateLimiting("auth");
 
         group.MapPost("/2fa/enroll/confirm", ConfirmTotpEnroll)
             .WithName("AuthTotpConfirm")
             .WithOpenApi()
-            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
+            .RequireRateLimiting("auth");
 
         group.MapPost("/2fa/disable", DisableTotp)
             .WithName("AuthTotpDisable")
             .WithOpenApi()
-            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+            .RequireRateLimiting("auth");
+
+        // v0.1.2 — self-service password change for Local staff accounts
+        // (audit v0.1.1 #8). Requires the current password, enforces the
+        // minimum length, revokes every OTHER session and is audited.
+        group.MapPost("/change-password", ChangePassword)
+            .WithName("AuthChangePassword")
+            .WithOpenApi()
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+            .RequireRateLimiting("auth");
 
         return app;
     }
@@ -144,7 +160,7 @@ public static class AuthEndpoints
         [property: Required] string Email,
         [property: Required] string Password);
 
-    public sealed record LoginResponse(string Email, string Role, bool TwoFactorRequired);
+    public sealed record LoginResponse(string Email, string Role, bool TwoFactorRequired, bool EnrollmentRequired);
 
     private static async Task<IResult> Login(
         [FromBody] LoginRequest request,
@@ -231,14 +247,23 @@ public static class AuthEndpoints
         }
 
         var twoFactorEnabled = await totp.IsEnabledAsync(user.Id, ct);
+        // v0.1.2 — Security.TwoFactor.Required is now enforced (audit v0.1.1
+        // #1): with the flag on, a Local staff user who never enrolled gets a
+        // PENDING session that can only reach the /2fa/enroll endpoints, the
+        // same forced-enrollment model the customer portal has always had.
+        // M365 sign-ins are unaffected — their MFA lives in Entra policies.
+        var twoFactorRequired = await settings.GetAsync<bool>(SettingKeys.Security.TwoFactorRequired, ct);
+        var enrollmentRequired = twoFactorRequired && !twoFactorEnabled;
         await users.RecordSuccessfulLoginAsync(user.Id, ct);
 
         // 2FA-enabled users get a PENDING session (password step done, TOTP
         // still owed). It authenticates but the role policies reject it until
         // /2fa/verify upgrades it to "pwd+mfa" — so the cookie alone is useless
         // to a client that skips the challenge. Non-2FA users are fully
-        // authorized immediately ("pwd").
-        var amr = twoFactorEnabled ? SessionAuthenticationHandler.AmrPending : AmrPassword;
+        // authorized immediately ("pwd") unless enrollment is being forced.
+        var amr = twoFactorEnabled || enrollmentRequired
+            ? SessionAuthenticationHandler.AmrPending
+            : AmrPassword;
         await EstablishSessionAsync(httpContext, user, amr, sessions, settings, ct);
 
         await audit.LogAsync(new AuditEvent(
@@ -248,9 +273,9 @@ public static class AuthEndpoints
             Target: user.Id.ToString(),
             ClientIp: httpContext.Connection.RemoteIpAddress?.ToString(),
             UserAgent: httpContext.Request.Headers.UserAgent.ToString(),
-            Payload: new { twoFactorChallengeRequired = twoFactorEnabled }), ct);
+            Payload: new { twoFactorChallengeRequired = twoFactorEnabled, enrollmentRequired }), ct);
 
-        return Results.Ok(new LoginResponse(user.Email, user.RoleName, twoFactorEnabled));
+        return Results.Ok(new LoginResponse(user.Email, user.RoleName, twoFactorEnabled, enrollmentRequired));
     }
 
     public sealed record VerifyTwoFactorRequest([property: Required] string Code);
@@ -261,6 +286,7 @@ public static class AuthEndpoints
         ITotpService totp,
         ISessionService sessions,
         ISettingsService settings,
+        IUserService users,
         IMemoryCache cache,
         IAuditLogger audit,
         CancellationToken ct)
@@ -272,23 +298,40 @@ public static class AuthEndpoints
             return Results.Unauthorized();
         }
 
+        // v0.1.2 (audit v0.1.1 #6) — the account lockout now guards the second
+        // factor exactly like the password step: a locked account cannot burn
+        // through codes, and every rejected code feeds the same counter below.
+        var user = await users.FindByIdAsync(userId, ct);
+        if (user is null) return Results.Unauthorized();
+        if (user.LockoutUntilUtc.HasValue && user.LockoutUntilUtc > DateTimeOffset.UtcNow)
+        {
+            return Results.StatusCode(StatusCodes.Status423Locked);
+        }
+
         var result = await totp.VerifyAsync(userId, request.Code ?? string.Empty, ct);
         if (result == TwoFactorResult.Rejected)
         {
+            var nowLocked = await RecordTwoFactorFailureAsync(users, settings, userId, ct);
             await audit.LogAsync(new AuditEvent(
-                EventType: AuthEventTypes.TwoFactorChallengeFailed,
+                EventType: nowLocked ? AuthEventTypes.LoginLockedOut : AuthEventTypes.TwoFactorChallengeFailed,
                 Actor: httpContext.User.Identity?.Name ?? userId.ToString(),
                 ActorRole: httpContext.User.FindFirst(ClaimTypes.Role)?.Value ?? "anon",
                 Target: userId.ToString(),
                 ClientIp: httpContext.Connection.RemoteIpAddress?.ToString(),
-                UserAgent: httpContext.Request.Headers.UserAgent.ToString()), ct);
-            return Results.Unauthorized();
+                UserAgent: httpContext.Request.Headers.UserAgent.ToString(),
+                Payload: new { step = "2fa" }), ct);
+            return nowLocked
+                ? Results.StatusCode(StatusCodes.Status423Locked)
+                : Results.Unauthorized();
         }
+
+        // Successful challenge clears the streak the failed codes built up.
+        await users.RecordSuccessfulLoginAsync(userId, ct);
 
         await sessions.UpgradeAmrAsync(sessionId, AmrPasswordPlusMfa, ct);
         // Evict the handler's cached (pre-upgrade) session so the new
         // "pwd+mfa" amr takes effect on the very next request instead of after
-        // the 5-minute cache window — otherwise the user stays blocked right
+        // the cache window — otherwise the user stays blocked right
         // after a successful challenge.
         cache.Remove(SessionAuthenticationHandler.CacheKey(sessionId));
 
@@ -522,12 +565,31 @@ public static class AuthEndpoints
     private static async Task<IResult> BeginTotpEnroll(
         HttpContext httpContext,
         ITotpService totp,
+        IAuditLogger audit,
         CancellationToken ct)
     {
+        if (!IsStaffPrincipal(httpContext)) return Results.Unauthorized();
         var userId = RequireUserId(httpContext);
         if (userId is null) return Results.Unauthorized();
+        // Re-enrollment guard (audit v0.1.1 #7): BeginEnroll upserts a fresh
+        // secret with enabled=FALSE, so calling it against a working TOTP
+        // setup would silently disable it. An enrolled account must first go
+        // through /2fa/disable (which demands a valid current code).
+        if (await totp.IsEnabledAsync(userId.Value, ct))
+        {
+            return Results.Conflict(new { error = "already_enrolled" });
+        }
         var email = httpContext.User.FindFirst(ClaimTypes.Email)?.Value ?? userId.Value.ToString();
         var enrollment = await totp.BeginEnrollAsync(userId.Value, email, ct);
+        // Audited: this call rotates the pending secret, which is the state
+        // transition that matters if enrollment is later abandoned.
+        await audit.LogAsync(new AuditEvent(
+            EventType: AuthEventTypes.TwoFactorEnrollStarted,
+            Actor: httpContext.User.Identity?.Name ?? userId.Value.ToString(),
+            ActorRole: httpContext.User.FindFirst(ClaimTypes.Role)?.Value ?? "anon",
+            Target: userId.Value.ToString(),
+            ClientIp: httpContext.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: httpContext.Request.Headers.UserAgent.ToString()), ct);
         return Results.Ok(new { secret = enrollment.SecretBase32, otpauthUri = enrollment.OtpAuthUri });
     }
 
@@ -542,8 +604,13 @@ public static class AuthEndpoints
         IAuditLogger audit,
         CancellationToken ct)
     {
+        if (!IsStaffPrincipal(httpContext)) return Results.Unauthorized();
         var userId = RequireUserId(httpContext);
         if (userId is null) return Results.Unauthorized();
+        if (await totp.IsEnabledAsync(userId.Value, ct))
+        {
+            return Results.Conflict(new { error = "already_enrolled" });
+        }
         var codes = await totp.ConfirmEnrollAsync(userId.Value, request.Code ?? string.Empty, ct);
         if (codes is null)
         {
@@ -569,14 +636,48 @@ public static class AuthEndpoints
         return Results.Ok(new { recoveryCodes = codes });
     }
 
+    public sealed record DisableTotpRequest([property: Required] string Code);
+
     private static async Task<IResult> DisableTotp(
+        [FromBody] DisableTotpRequest request,
         HttpContext httpContext,
         ITotpService totp,
+        IUserService users,
+        ISettingsService settings,
         IAuditLogger audit,
         CancellationToken ct)
     {
         var userId = RequireUserId(httpContext);
         if (userId is null) return Results.Unauthorized();
+
+        // Step-up (audit v0.1.1 #7): removing the second factor demands proof
+        // of the second factor — a live TOTP code or a recovery code. A
+        // stolen session cookie alone can no longer downgrade the account.
+        // Bad codes feed the same lockout counter as the login challenge.
+        var user = await users.FindByIdAsync(userId.Value, ct);
+        if (user is null) return Results.Unauthorized();
+        if (user.LockoutUntilUtc.HasValue && user.LockoutUntilUtc > DateTimeOffset.UtcNow)
+        {
+            return Results.StatusCode(StatusCodes.Status423Locked);
+        }
+
+        var result = await totp.VerifyAsync(userId.Value, request.Code ?? string.Empty, ct);
+        if (result == TwoFactorResult.Rejected)
+        {
+            var nowLocked = await RecordTwoFactorFailureAsync(users, settings, userId.Value, ct);
+            await audit.LogAsync(new AuditEvent(
+                EventType: nowLocked ? AuthEventTypes.LoginLockedOut : AuthEventTypes.TwoFactorChallengeFailed,
+                Actor: httpContext.User.Identity?.Name ?? userId.Value.ToString(),
+                ActorRole: httpContext.User.FindFirst(ClaimTypes.Role)?.Value ?? "anon",
+                Target: userId.Value.ToString(),
+                ClientIp: httpContext.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: httpContext.Request.Headers.UserAgent.ToString(),
+                Payload: new { step = "2fa_disable" }), ct);
+            return nowLocked
+                ? Results.StatusCode(StatusCodes.Status423Locked)
+                : Results.BadRequest(new { error = "invalid_code" });
+        }
+
         await totp.DisableAsync(userId.Value, ct);
         await audit.LogAsync(new AuditEvent(
             EventType: AuthEventTypes.TwoFactorDisabled,
@@ -588,7 +689,95 @@ public static class AuthEndpoints
         return Results.Ok();
     }
 
+    // ---- Password change (v0.1.2) ------------------------------------------
+
+    public sealed record ChangePasswordRequest(
+        [property: Required] string CurrentPassword,
+        [property: Required] string NewPassword);
+
+    private static async Task<IResult> ChangePassword(
+        [FromBody] ChangePasswordRequest request,
+        HttpContext httpContext,
+        IUserService users,
+        IPasswordHasher hasher,
+        ISessionService sessions,
+        ISettingsService settings,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        var userId = RequireUserId(httpContext);
+        var sidClaim = httpContext.User.FindFirst("sid")?.Value;
+        if (userId is null || !Guid.TryParse(sidClaim, out var sessionId)) return Results.Unauthorized();
+
+        var user = await users.FindByIdAsync(userId.Value, ct);
+        if (user is null) return Results.Unauthorized();
+        if (user.AuthMode != AuthModes.Local || string.IsNullOrEmpty(user.PasswordHash))
+        {
+            return Results.BadRequest(new { error = "Microsoft accounts change their password at Microsoft." });
+        }
+        if (user.LockoutUntilUtc.HasValue && user.LockoutUntilUtc > DateTimeOffset.UtcNow)
+        {
+            return Results.StatusCode(StatusCodes.Status423Locked);
+        }
+
+        if (!hasher.Verify(user.PasswordHash, request.CurrentPassword ?? string.Empty, out _))
+        {
+            // Wrong current password on a live session is the same signal as
+            // a wrong password at login — feed the same lockout counter.
+            var nowLocked = await RecordTwoFactorFailureAsync(users, settings, userId.Value, ct);
+            await audit.LogAsync(new AuditEvent(
+                EventType: nowLocked ? AuthEventTypes.LoginLockedOut : AuthEventTypes.LoginFailed,
+                Actor: user.Email,
+                ActorRole: user.RoleName,
+                Target: user.Id.ToString(),
+                ClientIp: httpContext.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: httpContext.Request.Headers.UserAgent.ToString(),
+                Payload: new { step = "change_password" }), ct);
+            return nowLocked
+                ? Results.StatusCode(StatusCodes.Status423Locked)
+                : Results.BadRequest(new { error = "invalid_current_password" });
+        }
+
+        var minLength = await settings.GetAsync<int>(SettingKeys.Security.PasswordMinimumLength, ct);
+        if (string.IsNullOrEmpty(request.NewPassword) || request.NewPassword.Length < minLength)
+        {
+            return Results.BadRequest(new { error = $"Password must be at least {minLength} characters." });
+        }
+
+        await users.UpdatePasswordHashAsync(userId.Value, hasher.Hash(request.NewPassword), ct);
+        // "Log everything else out": any other session — a stolen one
+        // included — dies now; the session doing the change stays.
+        await sessions.RevokeAllForUserExceptAsync(userId.Value, sessionId, ct);
+
+        await audit.LogAsync(new AuditEvent(
+            EventType: AuthEventTypes.PasswordChanged,
+            Actor: user.Email,
+            ActorRole: user.RoleName,
+            Target: user.Id.ToString(),
+            ClientIp: httpContext.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: httpContext.Request.Headers.UserAgent.ToString()), ct);
+        return Results.Ok();
+    }
+
     // ---- Helpers -----------------------------------------------------------
+
+    /// True for an authenticated staff principal regardless of its amr — the
+    /// forced-enrollment endpoints must accept "mfa-pending" sessions, but
+    /// never a customer (customers enroll through /api/portal/auth).
+    private static bool IsStaffPrincipal(HttpContext httpContext) =>
+        httpContext.User.Identity?.IsAuthenticated == true
+        && httpContext.User.FindFirst(ClaimTypes.Role)?.Value is "Agent" or "Admin";
+
+    /// Feeds a failed second-factor (or step-up) attempt into the same
+    /// lockout counter the password step uses, with the same settings.
+    private static async Task<bool> RecordTwoFactorFailureAsync(
+        IUserService users, ISettingsService settings, Guid userId, CancellationToken ct)
+    {
+        var maxAttempts = await settings.GetAsync<int>(SettingKeys.Security.LockoutMaxAttempts, ct);
+        var windowSeconds = await settings.GetAsync<int>(SettingKeys.Security.LockoutWindowSeconds, ct);
+        var durationSeconds = await settings.GetAsync<int>(SettingKeys.Security.LockoutDurationSeconds, ct);
+        return await users.RecordFailedLoginAsync(userId, maxAttempts, windowSeconds, durationSeconds, ct);
+    }
 
     private static Guid? RequireUserId(HttpContext httpContext)
     {

@@ -493,15 +493,9 @@ public static class PortalTicketEndpoints
             Target: contentHash, ClientIp: http.Connection.RemoteIpAddress?.ToString(),
             UserAgent: http.Request.Headers.UserAgent.ToString(), Payload: auditPayload), ct);
 
-        var fileName = string.IsNullOrWhiteSpace(originalFilename) ? "attachment" : originalFilename;
-        var contentType = string.IsNullOrWhiteSpace(mimeType) ? "application/octet-stream" : mimeType;
-        // Never serve anything as HTML/SVG inline — text/html is refused at
-        // upload but inbound mail can carry it; force download for those.
-        var inlineSafe = inline && !contentType.Contains("html", StringComparison.OrdinalIgnoreCase)
-                                && !contentType.Contains("svg", StringComparison.OrdinalIgnoreCase)
-                                && !contentType.Contains("xml", StringComparison.OrdinalIgnoreCase);
-        return inlineSafe
-            ? Results.File(stream, contentType, fileDownloadName: null, enableRangeProcessing: true)
-            : Results.File(stream, contentType, fileDownloadName: fileName, enableRangeProcessing: true);
+        // Never serve anything scriptable inline — the shared guard
+        // (AttachmentResponse, audit v0.1.1 #2) forces a download for
+        // HTML/SVG/XML/JS regardless of what the sender declared.
+        return Servicedesk.Api.Tickets.AttachmentResponse.File(stream, mimeType, originalFilename, inline);
     }
 }
