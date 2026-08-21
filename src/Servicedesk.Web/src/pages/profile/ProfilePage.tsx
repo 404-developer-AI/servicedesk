@@ -4,6 +4,7 @@ import { AtSign, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/auth/authStore";
 import { TwoFactorSection } from "@/pages/profile/TwoFactorSection";
+import { ChangePasswordSection } from "@/pages/profile/ChangePasswordSection";
 import { useTheme } from "@/app/ThemeProvider";
 import { ThemePicker } from "@/components/ThemePicker";
 import { preferencesApi } from "@/lib/api";
@@ -82,6 +83,8 @@ export function ProfilePage() {
           <ChevronRight className="h-4 w-4 text-muted-foreground" />
         </Link>
       ) : null}
+
+      <ChangePasswordSection />
 
       <TwoFactorSection />
     </div>

@@ -114,15 +114,13 @@ public static class TicketMailEndpoints
                 Payload: new { ticketId = id, mailMessageId, filename = att.OriginalFilename }), ct);
 
             var fileName = SanitizeFilename(att.OriginalFilename);
-            if (string.IsNullOrWhiteSpace(fileName)) fileName = "attachment";
-            var contentType = string.IsNullOrWhiteSpace(att.MimeType) ? "application/octet-stream" : att.MimeType;
             // inline=true serves the bytes with Content-Disposition: inline so
             // browsers render the file directly in <img>/<iframe>/PDF viewer
             // instead of forcing a download. Range processing stays on in
-            // either mode so large PDFs stream page-by-page.
-            return inline == true
-                ? Results.File(stream, contentType, fileDownloadName: null, enableRangeProcessing: true)
-                : Results.File(stream, contentType, fileDownloadName: fileName, enableRangeProcessing: true);
+            // either mode so large PDFs stream page-by-page. Inline is only
+            // honoured for inline-safe types (audit v0.1.1 #2) — the sender
+            // controls this MIME type, see AttachmentResponse.
+            return AttachmentResponse.File(stream, att.MimeType, fileName, inline == true);
         }).WithName("GetTicketMailAttachment").WithOpenApi();
 
         return app;

@@ -6,14 +6,15 @@ public static class SettingKeys
 {
     public static class Security
     {
+        // Rate-limit knobs are wired since v0.1.2 (audit v0.1.1 #10): read
+        // once at startup, resolution env-config override > this DB value >
+        // code default. A change in the Settings UI requires an app restart.
         public const string RateLimitGlobalPermitPerWindow = "Security.RateLimit.Global.PermitPerWindow";
         public const string RateLimitGlobalWindowSeconds = "Security.RateLimit.Global.WindowSeconds";
         public const string RateLimitAuthPermitPerWindow = "Security.RateLimit.Auth.PermitPerWindow";
         public const string RateLimitAuthWindowSeconds = "Security.RateLimit.Auth.WindowSeconds";
         // v0.0.92 — flood protection on the CSP-report endpoint, previously a
-        // hardcoded 20/min. Like the other rate-limit knobs these are read
-        // from configuration at startup (SERVICEDESK_Security__RateLimit__…
-        // environment variables); a change requires an app restart.
+        // hardcoded 20/min.
         public const string RateLimitCspReportPermitPerWindow = "Security.RateLimit.CspReport.PermitPerWindow";
         public const string RateLimitCspReportWindowSeconds = "Security.RateLimit.CspReport.WindowSeconds";
         // v0.0.96 — Reporting API (machine-to-machine ticket statistics).
@@ -22,7 +23,10 @@ public static class SettingKeys
         // change requires an app restart.
         public const string RateLimitReportingPermitPerWindow = "Security.RateLimit.Reporting.PermitPerWindow";
         public const string RateLimitReportingWindowSeconds = "Security.RateLimit.Reporting.WindowSeconds";
-        public const string HstsMaxAgeDays = "Security.Hsts.MaxAgeDays";
+        // Security.Hsts.MaxAgeDays was removed in v0.1.2 (audit v0.1.1 #10):
+        // it had no read site, and HSTS is owned by nginx — the layer that
+        // terminates TLS. The stale settings row is deleted by the
+        // bootstrapper so the dead knob disappears from the Settings UI.
         public const string CspReportUri = "Security.Csp.ReportUri";
         public const string CspReportDedupWindowSeconds = "Security.Csp.ReportDedupWindowSeconds";
         public const string CspIgnoredReportDirectives = "Security.Csp.IgnoredReportDirectives";
@@ -1466,9 +1470,10 @@ public static class SettingKeys
         public const string ApprovedMailSubject = "Portal.Mail.Approved.Subject";
         public const string ApprovedMailBody = "Portal.Mail.Approved.Body";
 
-        /// Rate limits for the anonymous portal auth endpoints. Display-only
-        /// mirrors of the Security:RateLimit:PortalAuth:* / PortalRegister:*
-        /// configuration read at startup (same model as the other limiters).
+        /// Rate limits for the anonymous portal auth endpoints. Wired since
+        /// v0.1.2: read once at startup (env-config override > DB > code
+        /// default, same model as the other limiters); a change requires an
+        /// app restart.
         public const string RateLimitAuthPermitPerWindow = "Portal.RateLimit.Auth.PermitPerWindow";
         public const string RateLimitAuthWindowSeconds = "Portal.RateLimit.Auth.WindowSeconds";
         public const string RateLimitRegisterPermitPerWindow = "Portal.RateLimit.Register.PermitPerWindow";
@@ -1487,16 +1492,14 @@ public static class SettingDefaults
 {
     public static readonly IReadOnlyList<SettingDefault> All = new[]
     {
-        new SettingDefault(SettingKeys.Security.RateLimitGlobalPermitPerWindow, "120", "int", "Security",
-            "Maximum requests per IP within the global rate limit window."),
+        new SettingDefault(SettingKeys.Security.RateLimitGlobalPermitPerWindow, "240", "int", "Security",
+            "Maximum requests per IP within the global rate limit window. Read at startup, a change requires an app restart; a SERVICEDESK_Security__RateLimit__… environment variable overrides this value."),
         new SettingDefault(SettingKeys.Security.RateLimitGlobalWindowSeconds, "60", "int", "Security",
-            "Global rate limit window length, in seconds."),
+            "Global rate limit window length, in seconds. Read at startup, a change requires an app restart."),
         new SettingDefault(SettingKeys.Security.RateLimitAuthPermitPerWindow, "10", "int", "Security",
-            "Maximum /api/auth/* requests per IP within the auth rate limit window."),
+            "Maximum /api/auth/* requests per IP within the auth rate limit window. Read at startup, a change requires an app restart."),
         new SettingDefault(SettingKeys.Security.RateLimitAuthWindowSeconds, "60", "int", "Security",
-            "Auth rate limit window length, in seconds."),
-        new SettingDefault(SettingKeys.Security.HstsMaxAgeDays, "365", "int", "Security",
-            "HSTS max-age sent in the Strict-Transport-Security header, in days."),
+            "Auth rate limit window length, in seconds. Read at startup, a change requires an app restart."),
         new SettingDefault(SettingKeys.Security.RateLimitCspReportPermitPerWindow, "60", "int", "Security",
             "Maximum CSP violation reports accepted per IP within the CSP-report rate limit window. Flood protection for the audit log; read at startup, a change requires an app restart."),
         new SettingDefault(SettingKeys.Security.RateLimitCspReportWindowSeconds, "60", "int", "Security",
@@ -1534,7 +1537,7 @@ public static class SettingDefaults
             "Name of the httpOnly session cookie for customer-portal sessions. Separate from the staff cookie so both can live in one browser."),
 
         new SettingDefault(SettingKeys.Security.TwoFactorRequired, "false", "bool", "Security",
-            "When true, admins and agents must enroll TOTP before they can use the app."),
+            "When true, local-password admins and agents must enroll TOTP: their next sign-in is held at the authenticator-setup step until enrollment completes. Applies at sign-in — sessions that are already open finish their lifetime first. Microsoft 365 sign-ins are not affected; enforce MFA for them via Entra ID policies."),
         new SettingDefault(SettingKeys.Security.TwoFactorTotpStepSeconds, "30", "int", "Security",
             "TOTP time step in seconds. RFC 6238 default is 30."),
         new SettingDefault(SettingKeys.Security.TwoFactorTotpWindow, "1", "int", "Security",
@@ -2367,11 +2370,11 @@ public static class SettingDefaults
         new SettingDefault(SettingKeys.Portal.ApprovedMailBody, "<p>Hello {{name}},</p><p>Your registration for the {{organisation}} customer portal has been approved. You can now sign in with your email address and password:</p><p><a href=\"{{link}}\">Sign in to the portal</a></p><p>At your first sign-in you will be asked to set up an authenticator app for two-factor authentication.</p>", "string", "Portal",
             "HTML body of the approval mail. Placeholders: {{name}}, {{email}}, {{link}}, {{organisation}}."),
         new SettingDefault(SettingKeys.Portal.RateLimitAuthPermitPerWindow, "10", "int", "Portal",
-            "Maximum portal sign-in / 2FA / password-reset requests per IP within the window. Mirrors Security:RateLimit:PortalAuth:* (read at startup, a change requires an app restart)."),
+            "Maximum portal sign-in / 2FA / password-reset requests per IP within the window. Read at startup, a change requires an app restart; a SERVICEDESK_Security__RateLimit__PortalAuth__… environment variable overrides this value."),
         new SettingDefault(SettingKeys.Portal.RateLimitAuthWindowSeconds, "60", "int", "Portal",
             "Window length in seconds for the portal auth rate limit. Read at startup."),
         new SettingDefault(SettingKeys.Portal.RateLimitRegisterPermitPerWindow, "5", "int", "Portal",
-            "Maximum registration / forgot-password submissions per IP within the window. Mirrors Security:RateLimit:PortalRegister:* (read at startup)."),
+            "Maximum registration / forgot-password submissions per IP within the window. Read at startup, a change requires an app restart; a SERVICEDESK_Security__RateLimit__PortalRegister__… environment variable overrides this value."),
         new SettingDefault(SettingKeys.Portal.RateLimitRegisterWindowSeconds, "600", "int", "Portal",
             "Window length in seconds for the portal registration rate limit. Read at startup."),
     };

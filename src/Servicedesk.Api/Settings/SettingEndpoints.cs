@@ -39,6 +39,11 @@ public static class SettingEndpoints
             {
                 return Results.NotFound(new { error = $"Unknown setting key '{key}'." });
             }
+            catch (ArgumentException ex)
+            {
+                // v0.1.2 — write-side validation (type + per-key format).
+                return Results.BadRequest(new { error = ex.Message });
+            }
         }).WithName("UpdateSetting").WithOpenApi();
 
         // ---- Navigation settings (any authenticated agent/admin) ----
@@ -178,6 +183,14 @@ public static class SettingEndpoints
         {
             var enabled = await svc.GetAsync<bool>(SettingKeys.Copilot.Enabled, ct);
             var url = await svc.GetAsync<string>(SettingKeys.Copilot.Url, ct) ?? string.Empty;
+            // v0.1.2 (audit v0.1.1 #9) — the value ends up in window.open in
+            // every agent's browser. Writes are validated to https, but a
+            // pre-validation DB row could still carry anything; re-check at
+            // the read site and refuse to serve a non-https URL.
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed) || parsed.Scheme != Uri.UriSchemeHttps)
+            {
+                url = string.Empty;
+            }
             var label = await svc.GetAsync<string>(SettingKeys.Copilot.Label, ct);
             if (string.IsNullOrWhiteSpace(label)) label = "Copilot";
             var openInPopup = await svc.GetAsync<bool>(SettingKeys.Copilot.OpenInPopup, ct);

@@ -142,11 +142,9 @@ public static class TicketAttachmentEndpoints
                 UserAgent: http.Request.Headers.UserAgent.ToString(),
                 Payload: new { ticketId = id, eventId = att.EventId, filename = att.OriginalFilename }), ct);
 
-            var fileName = string.IsNullOrWhiteSpace(att.OriginalFilename) ? "attachment" : att.OriginalFilename;
-            var contentType = string.IsNullOrWhiteSpace(att.MimeType) ? "application/octet-stream" : att.MimeType;
-            return inline == true
-                ? Results.File(stream, contentType, fileDownloadName: null, enableRangeProcessing: true)
-                : Results.File(stream, contentType, fileDownloadName: fileName, enableRangeProcessing: true);
+            // Inline only for inline-safe types (audit v0.1.1 #2) — see
+            // AttachmentResponse for the reasoning.
+            return AttachmentResponse.File(stream, att.MimeType, att.OriginalFilename, inline == true);
         }).WithName("GetTicketAttachment").WithOpenApi();
 
         return app;

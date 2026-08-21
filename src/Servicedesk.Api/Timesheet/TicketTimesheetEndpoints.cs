@@ -1,15 +1,18 @@
 using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
+using Servicedesk.Infrastructure.Access;
+using Servicedesk.Infrastructure.Persistence.Tickets;
 using Servicedesk.Infrastructure.Timesheet;
 
 namespace Servicedesk.Api.Timesheet;
 
 /// v0.0.35-F — ticket-scoped Timesheet reads for the expand-panel and the
 /// "Import registered time" button on the reply editor. Every endpoint is
-/// gated by <c>RequireAgent</c>; customers have no surface here.
-///
-/// No write-paths live in this group — entries are still mutated through
-/// the existing own-row endpoints (Tab 1) or manager endpoints (Tab 2).
+/// gated by <c>RequireAgent</c> plus a queue-access check on the ticket
+/// (v0.1.2, audit v0.1.1 #5): time registrations carry agent identities and
+/// the alert endpoints mutate the ticket, so they follow the same rule as
+/// every other ticket-scoped surface — no access answers 404, never 403, so
+/// ticket existence does not leak.
 public static class TicketTimesheetEndpoints
 {
     public static IEndpointRouteBuilder MapTicketTimesheetEndpoints(this IEndpointRouteBuilder app)
@@ -20,9 +23,13 @@ public static class TicketTimesheetEndpoints
 
         group.MapGet("/{ticketId:guid}", async (
             Guid ticketId,
+            HttpContext http,
+            ITicketRepository tickets,
+            IQueueAccessService queueAccess,
             ITicketTimesheetService svc,
             CancellationToken ct) =>
         {
+            if (!await HasTicketAccessAsync(ticketId, http, tickets, queueAccess, ct)) return Results.NotFound();
             var rows = await svc.ListByTicketAsync(ticketId, ct);
             var totalMinutes = rows.Sum(r => r.Minutes);
             return Results.Ok(new { items = rows, totalMinutes });
@@ -32,9 +39,13 @@ public static class TicketTimesheetEndpoints
 
         group.MapGet("/{ticketId:guid}/reply-html", async (
             Guid ticketId,
+            HttpContext http,
+            ITicketRepository tickets,
+            IQueueAccessService queueAccess,
             ITicketTimesheetService svc,
             CancellationToken ct) =>
         {
+            if (!await HasTicketAccessAsync(ticketId, http, tickets, queueAccess, ct)) return Results.NotFound();
             var html = await svc.BuildReplyHtmlAsync(ticketId, ct);
             return Results.Ok(new { html });
         })
@@ -45,9 +56,13 @@ public static class TicketTimesheetEndpoints
         // ticket-open warning popup and the "Time logged" remaining display.
         group.MapGet("/{ticketId:guid}/time-alert", async (
             Guid ticketId,
+            HttpContext http,
+            ITicketRepository tickets,
+            IQueueAccessService queueAccess,
             ITicketTimeAlertService svc,
             CancellationToken ct) =>
         {
+            if (!await HasTicketAccessAsync(ticketId, http, tickets, queueAccess, ct)) return Results.NotFound();
             var status = await svc.GetStatusAsync(ticketId, ct);
             return Results.Ok(status);
         })
@@ -63,9 +78,12 @@ public static class TicketTimesheetEndpoints
             Guid ticketId,
             bool? silent,
             HttpContext http,
+            ITicketRepository tickets,
+            IQueueAccessService queueAccess,
             ITicketTimeAlertService svc,
             CancellationToken ct) =>
         {
+            if (!await HasTicketAccessAsync(ticketId, http, tickets, queueAccess, ct)) return Results.NotFound();
             var (_, role) = ActorContext.Resolve(http);
             var effectiveSilent = silent == true && string.Equals(role, "Admin", StringComparison.Ordinal);
             await svc.DismissAsync(ticketId, ActorContext.GetUserId(http), effectiveSilent, ct);
@@ -80,9 +98,12 @@ public static class TicketTimesheetEndpoints
             Guid ticketId,
             [FromBody] ExtendTimeAlertRequest req,
             HttpContext http,
+            ITicketRepository tickets,
+            IQueueAccessService queueAccess,
             ITicketTimeAlertService svc,
             CancellationToken ct) =>
         {
+            if (!await HasTicketAccessAsync(ticketId, http, tickets, queueAccess, ct)) return Results.NotFound();
             var result = await svc.ExtendAsync(
                 ticketId, ActorContext.GetUserId(http),
                 req.AddMinutes, req.CustomerConfirmed, req.Note, ct);
@@ -107,9 +128,12 @@ public static class TicketTimesheetEndpoints
             Guid ticketId,
             [FromBody] DisableTimeAlertRequest req,
             HttpContext http,
+            ITicketRepository tickets,
+            IQueueAccessService queueAccess,
             ITicketTimeAlertService svc,
             CancellationToken ct) =>
         {
+            if (!await HasTicketAccessAsync(ticketId, http, tickets, queueAccess, ct)) return Results.NotFound();
             var result = await svc.DisableAsync(
                 ticketId, ActorContext.GetUserId(http), req.Reason ?? string.Empty, ct);
             return result switch
@@ -125,6 +149,23 @@ public static class TicketTimesheetEndpoints
         .WithOpenApi();
 
         return app;
+    }
+
+    /// The same precheck every other ticket-scoped endpoint runs: resolve
+    /// the ticket, check queue access for the caller, answer false (→ 404)
+    /// on a miss so ticket existence never leaks across queue boundaries.
+    private static async Task<bool> HasTicketAccessAsync(
+        Guid ticketId,
+        HttpContext http,
+        ITicketRepository tickets,
+        IQueueAccessService queueAccess,
+        CancellationToken ct)
+    {
+        var ticket = await tickets.GetByIdAsync(ticketId, ct);
+        if (ticket is null) return false;
+        var userId = ActorContext.GetUserId(http);
+        var (_, role) = ActorContext.Resolve(http);
+        return await queueAccess.HasQueueAccessAsync(userId, role, ticket.Ticket.QueueId, ct);
     }
 
     /// Body of the "allow more time" action. The optional note is posted as an

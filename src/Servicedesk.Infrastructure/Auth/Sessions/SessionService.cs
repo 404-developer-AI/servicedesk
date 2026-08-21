@@ -1,9 +1,19 @@
 using Dapper;
+using Microsoft.Extensions.Caching.Memory;
 using Npgsql;
 
 namespace Servicedesk.Infrastructure.Auth.Sessions;
 
 public sealed record SessionValidation(Guid SessionId, ApplicationUser User, string Amr, DateTime ExpiresUtc, Guid? ImpersonatorUserId = null);
+
+/// Cache-key format for validated sessions. Lives here (not in the API's
+/// authentication handler) so <see cref="SessionService"/> can evict the
+/// exact entries the handler caches when a session is revoked — revocation
+/// must bite immediately, not after the handler's cache window expires.
+public static class SessionCache
+{
+    public static string Key(Guid sessionId) => $"session:{sessionId}";
+}
 
 public interface ISessionService
 {
@@ -21,16 +31,23 @@ public interface ISessionService
     /// than waiting for <c>SessionLifetimeHours</c> to expire.
     Task RevokeAllForUserAsync(Guid userId, CancellationToken ct = default);
 
+    /// Same as <see cref="RevokeAllForUserAsync"/> but keeps one session
+    /// alive — the "log everything else out" semantics of a self-service
+    /// password change (v0.1.2).
+    Task RevokeAllForUserExceptAsync(Guid userId, Guid keepSessionId, CancellationToken ct = default);
+
     Task UpgradeAmrAsync(Guid sessionId, string amr, CancellationToken ct = default);
 }
 
 public sealed class SessionService : ISessionService
 {
     private readonly NpgsqlDataSource _dataSource;
+    private readonly IMemoryCache _cache;
 
-    public SessionService(NpgsqlDataSource dataSource)
+    public SessionService(NpgsqlDataSource dataSource, IMemoryCache cache)
     {
         _dataSource = dataSource;
+        _cache = cache;
     }
 
     public async Task<Guid> CreateAsync(
@@ -124,15 +141,43 @@ public sealed class SessionService : ISessionService
             "UPDATE user_sessions SET revoked_utc = now() WHERE id = @id AND revoked_utc IS NULL",
             new { id = sessionId },
             cancellationToken: ct));
+        // Evict here — not at the call sites — so no caller can forget it and
+        // leave the revoked cookie usable for the rest of the cache window.
+        _cache.Remove(SessionCache.Key(sessionId));
     }
 
     public async Task RevokeAllForUserAsync(Guid userId, CancellationToken ct = default)
     {
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
-        await connection.ExecuteAsync(new CommandDefinition(
-            "UPDATE user_sessions SET revoked_utc = now() WHERE user_id = @userId AND revoked_utc IS NULL",
+        var revoked = await connection.QueryAsync<Guid>(new CommandDefinition(
+            """
+            UPDATE user_sessions SET revoked_utc = now()
+            WHERE user_id = @userId AND revoked_utc IS NULL
+            RETURNING id
+            """,
             new { userId },
             cancellationToken: ct));
+        foreach (var sessionId in revoked)
+        {
+            _cache.Remove(SessionCache.Key(sessionId));
+        }
+    }
+
+    public async Task RevokeAllForUserExceptAsync(Guid userId, Guid keepSessionId, CancellationToken ct = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var revoked = await connection.QueryAsync<Guid>(new CommandDefinition(
+            """
+            UPDATE user_sessions SET revoked_utc = now()
+            WHERE user_id = @userId AND id <> @keepSessionId AND revoked_utc IS NULL
+            RETURNING id
+            """,
+            new { userId, keepSessionId },
+            cancellationToken: ct));
+        foreach (var sessionId in revoked)
+        {
+            _cache.Remove(SessionCache.Key(sessionId));
+        }
     }
 
     public async Task UpgradeAmrAsync(Guid sessionId, string amr, CancellationToken ct = default)
@@ -142,6 +187,7 @@ public sealed class SessionService : ISessionService
             "UPDATE user_sessions SET amr = @amr WHERE id = @id",
             new { id = sessionId, amr },
             cancellationToken: ct));
+        _cache.Remove(SessionCache.Key(sessionId));
     }
 
     private sealed record SessionRow(

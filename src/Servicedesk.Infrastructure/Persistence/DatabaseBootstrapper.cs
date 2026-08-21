@@ -5804,6 +5804,45 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- minting admin is recorded for the audit trail. Dies with either
         -- user (user_id cascades already; this one cascades on the admin).
         ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS impersonator_user_id UUID NULL REFERENCES users(id) ON DELETE CASCADE;
+
+        -- ===================================================================
+        -- v0.1.2 Security hardening (internal audit of v0.1.1)
+        -- ===================================================================
+        -- RFC 6238 §5.2 replay protection: the timestep of the last accepted
+        -- TOTP code is persisted, and any code whose timestep is at or before
+        -- it is rejected — an observed/phished code cannot be replayed inside
+        -- the verification window on a second session.
+        ALTER TABLE user_totp ADD COLUMN IF NOT EXISTS last_used_step BIGINT NULL;
+
+        -- Recovery codes move from reversible DataProtection ciphertext to
+        -- SHA-256 (each code is 80 bits of CSPRNG entropy — same storage
+        -- model as the portal/intake/survey one-time tokens). Legacy
+        -- ciphertext rows are re-hashed in place at startup by
+        -- RecoveryCodeHashMigrator; the ciphertext column goes nullable so
+        -- migrated and new rows can drop the reversible copy entirely.
+        ALTER TABLE user_recovery_codes ADD COLUMN IF NOT EXISTS code_sha256 BYTEA NULL;
+        ALTER TABLE user_recovery_codes ALTER COLUMN code_ciphertext DROP NOT NULL;
+
+        -- Security.Hsts.MaxAgeDays is retired: it never had a read site and
+        -- HSTS is owned by nginx (the layer that terminates TLS). Deleting
+        -- the row removes the dead knob from the Settings UI.
+        DELETE FROM settings WHERE key = 'Security.Hsts.MaxAgeDays';
+
+        -- The global rate-limit budget was seeded as 120 while the code ran
+        -- 240, and the DB value was never read — so a stored 120 was never in
+        -- force. Now that the DB value IS read (startup), lift exactly the
+        -- never-applied seed to the real default once, so wiring the setting
+        -- cannot silently halve the budget of an existing install.
+        DO $do$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM data_migrations WHERE name = 'v0_1_2_ratelimit_global_default'
+            ) THEN
+                UPDATE settings SET value = '240', updated_utc = now()
+                 WHERE key = 'Security.RateLimit.Global.PermitPerWindow' AND value = '120';
+                INSERT INTO data_migrations (name) VALUES ('v0_1_2_ratelimit_global_default');
+            END IF;
+        END $do$;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

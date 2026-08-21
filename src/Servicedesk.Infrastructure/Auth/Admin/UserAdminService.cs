@@ -615,6 +615,73 @@ public sealed class UserAdminService : IUserAdminService
         return new DeleteResult.Deleted();
     }
 
+    public async Task<ResetStaffPasswordResult> ResetPasswordAsync(
+        Guid userId,
+        string newPassword,
+        Guid actingAdminId,
+        CancellationToken ct = default)
+    {
+        var minLength = await _settings.GetAsync<int>(SettingKeys.Security.PasswordMinimumLength, ct);
+        if (string.IsNullOrEmpty(newPassword) || newPassword.Length < minLength)
+        {
+            return new ResetStaffPasswordResult.WeakPassword(minLength);
+        }
+
+        // Hash BEFORE opening the transaction so the slow Argon2 pass
+        // doesn't hold the row lock (same pattern as AddLocalUserAsync).
+        var hash = _hasher.Hash(newPassword);
+
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await connection.BeginTransactionAsync(ct);
+
+        var current = await connection.QueryFirstOrDefaultAsync<(string Role, string AuthMode)?>(
+            new CommandDefinition(
+                "SELECT role_name AS Role, auth_mode AS AuthMode FROM users WHERE id = @id FOR UPDATE",
+                new { id = userId },
+                tx,
+                cancellationToken: ct));
+        if (current is null)
+        {
+            await tx.RollbackAsync(ct);
+            return new ResetStaffPasswordResult.UserNotFound();
+        }
+        if (string.Equals(current.Value.Role, "Customer", StringComparison.Ordinal))
+        {
+            await tx.RollbackAsync(ct);
+            return new ResetStaffPasswordResult.CustomerNotAllowed();
+        }
+        if (!string.Equals(current.Value.AuthMode, AuthModes.Local, StringComparison.Ordinal))
+        {
+            await tx.RollbackAsync(ct);
+            return new ResetStaffPasswordResult.NotLocalUser();
+        }
+
+        // Also clears the lockout counter — the usual reason for a reset is
+        // "the user is locked out and the old password is lost/compromised".
+        await connection.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE users SET
+                password_hash = @hash,
+                failed_attempts = 0,
+                lockout_until_utc = NULL
+            WHERE id = @id
+            """,
+            new { id = userId, hash },
+            tx,
+            cancellationToken: ct));
+        await tx.CommitAsync(ct);
+        _ = actingAdminId; // used by audit at the endpoint layer
+
+        // Every open session of the target dies now — a compromised session
+        // must not outlive the password it was minted with.
+        await _sessions.RevokeAllForUserAsync(userId, ct);
+
+        var row = await GetByIdAsync(userId, ct);
+        return row is null
+            ? new ResetStaffPasswordResult.UserNotFound()
+            : new ResetStaffPasswordResult.Done(row);
+    }
+
     public async Task<UpdateTimesheetFlagsResult> UpdateTimesheetFlagsAsync(
         Guid userId,
         bool enabled,

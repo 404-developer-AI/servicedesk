@@ -190,7 +190,7 @@ public static class PortalAuthEndpoints
 
     private static async Task<IResult> VerifyTwoFactor(
         [FromBody] CodeRequest req, HttpContext http, ITotpService totp, ISessionService sessions,
-        IMemoryCache cache, IAuditLogger audit, ISettingsService settings, CancellationToken ct)
+        IUserService users, IMemoryCache cache, IAuditLogger audit, ISettingsService settings, CancellationToken ct)
     {
         if (!await PortalRequest.PortalEnabledAsync(settings, ct)) return PortalRequest.Disabled();
         if (!PortalRequest.IsCustomerPrincipal(http)) return Results.Unauthorized();
@@ -199,14 +199,31 @@ public static class PortalAuthEndpoints
         var sessionId = PortalRequest.SessionId(http);
         if (userId is null || sessionId is null) return Results.Unauthorized();
 
+        // v0.1.2 (audit v0.1.1 #6) — the lockout counter now also guards the
+        // second factor: same settings, same counter as the password step.
+        var user = await users.FindByIdAsync(userId.Value, ct);
+        if (user is null) return Results.Unauthorized();
+        if (user.LockoutUntilUtc.HasValue && user.LockoutUntilUtc > DateTime.UtcNow)
+        {
+            return Results.StatusCode(StatusCodes.Status423Locked);
+        }
+
         var result = await totp.VerifyAsync(userId.Value, req.Code ?? string.Empty, ct);
         if (result == TwoFactorResult.Rejected)
         {
-            await audit.LogAsync(new AuditEvent(PortalEventTypes.TwoFactorChallengeFailed,
+            var maxAttempts = await settings.GetAsync<int>(SettingKeys.Security.LockoutMaxAttempts, ct);
+            var windowSeconds = await settings.GetAsync<int>(SettingKeys.Security.LockoutWindowSeconds, ct);
+            var lockoutSeconds = await settings.GetAsync<int>(SettingKeys.Security.LockoutDurationSeconds, ct);
+            var nowLocked = await users.RecordFailedLoginAsync(userId.Value, maxAttempts, windowSeconds, lockoutSeconds, ct);
+            await audit.LogAsync(new AuditEvent(
+                nowLocked ? PortalEventTypes.LoginLockedOut : PortalEventTypes.TwoFactorChallengeFailed,
                 http.User.Identity?.Name ?? userId.ToString()!, "Customer", Target: userId.ToString(),
                 ClientIp: http.Connection.RemoteIpAddress?.ToString(), UserAgent: http.Request.Headers.UserAgent.ToString()), ct);
-            return Results.Unauthorized();
+            return nowLocked ? Results.StatusCode(StatusCodes.Status423Locked) : Results.Unauthorized();
         }
+
+        // Successful challenge clears the streak the failed codes built up.
+        await users.RecordSuccessfulLoginAsync(userId.Value, ct);
 
         await sessions.UpgradeAmrAsync(sessionId.Value, SessionAuthenticationHandler.AmrPasswordPlusMfa, ct);
         cache.Remove(SessionAuthenticationHandler.CacheKey(sessionId.Value));

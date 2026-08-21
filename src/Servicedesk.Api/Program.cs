@@ -202,18 +202,23 @@ builder.Services.AddSingleton<Servicedesk.Infrastructure.Dashboard.IAgentActivit
 builder.Services.AddSingleton<Servicedesk.Infrastructure.Activity.IActivityBroadcaster,
     Servicedesk.Api.Activity.SignalRActivityBroadcaster>();
 
+// v0.1.2 (audit v0.1.1 #10) — the rate-limit budgets in the settings DB are
+// wired to the running limiters: env-config override > DB value > code
+// default, read once at startup (a Settings-UI change requires a restart).
+var rateLimitSettings = Servicedesk.Api.Security.StartupRateLimitSettings.Load(builder.Configuration, Serilog.Log.Logger);
+int RateLimitValue(string configKey, string settingKey, int fallback) =>
+    builder.Configuration.GetValue<int?>(configKey) ?? rateLimitSettings.GetInt(settingKey) ?? fallback;
+
 builder.Services.AddRateLimiter(options =>
 {
     options.OnRejected = AuditRateLimiterEvents.OnRejected;
 
-    // Values read from configuration at startup. Live-reload on change is a
-    // v0.0.x concern — see Security.RateLimit.* keys in SettingKeys.
     // 240/60s per IP: a single content-rich page (a ticket with many inline
     // images, each a separate authenticated GET) legitimately fires dozens of
     // requests at once, so the old 120 tripped on normal use. Still per-IP and
-    // bounded; tune via Security:RateLimit:Global:* without a rebuild.
-    var globalPermit = builder.Configuration.GetValue<int?>("Security:RateLimit:Global:PermitPerWindow") ?? 240;
-    var globalWindow = builder.Configuration.GetValue<int?>("Security:RateLimit:Global:WindowSeconds") ?? 60;
+    // bounded; tune via Settings → Security or Security:RateLimit:Global:*.
+    var globalPermit = RateLimitValue("Security:RateLimit:Global:PermitPerWindow", SettingKeys.Security.RateLimitGlobalPermitPerWindow, 240);
+    var globalWindow = RateLimitValue("Security:RateLimit:Global:WindowSeconds", SettingKeys.Security.RateLimitGlobalWindowSeconds, 60);
     // Inline-image GETs get their own generous bucket: one content-rich ticket
     // (a long imported email thread) can embed 150+ inline images, each a
     // separate authenticated GET fired at once on open. They're queue-access
@@ -221,8 +226,8 @@ builder.Services.AddRateLimiter(options =>
     // apply — but a per-IP ceiling still bounds abuse.
     var attachmentPermit = builder.Configuration.GetValue<int?>("Security:RateLimit:Attachments:PermitPerWindow") ?? 1200;
     var attachmentWindow = builder.Configuration.GetValue<int?>("Security:RateLimit:Attachments:WindowSeconds") ?? 60;
-    var authPermit = builder.Configuration.GetValue<int?>("Security:RateLimit:Auth:PermitPerWindow") ?? 10;
-    var authWindow = builder.Configuration.GetValue<int?>("Security:RateLimit:Auth:WindowSeconds") ?? 60;
+    var authPermit = RateLimitValue("Security:RateLimit:Auth:PermitPerWindow", SettingKeys.Security.RateLimitAuthPermitPerWindow, 10);
+    var authWindow = RateLimitValue("Security:RateLimit:Auth:WindowSeconds", SettingKeys.Security.RateLimitAuthWindowSeconds, 60);
 
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
     {
@@ -284,8 +289,8 @@ builder.Services.AddRateLimiter(options =>
     // like the other policies. With inline-script hashes in the CSP and report
     // dedup in place a healthy install sends almost no reports, so 60 is pure
     // headroom for e.g. a misbehaving browser extension across many tabs.
-    var cspReportPermit = builder.Configuration.GetValue<int?>("Security:RateLimit:CspReport:PermitPerWindow") ?? 60;
-    var cspReportWindow = builder.Configuration.GetValue<int?>("Security:RateLimit:CspReport:WindowSeconds") ?? 60;
+    var cspReportPermit = RateLimitValue("Security:RateLimit:CspReport:PermitPerWindow", SettingKeys.Security.RateLimitCspReportPermitPerWindow, 60);
+    var cspReportWindow = RateLimitValue("Security:RateLimit:CspReport:WindowSeconds", SettingKeys.Security.RateLimitCspReportWindowSeconds, 60);
     options.AddPolicy("csp-report", ctx =>
     {
         var key = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
@@ -304,8 +309,8 @@ builder.Services.AddRateLimiter(options =>
     // Defaults to 20 req / 60s — tunable via IntakeForms.PublicRateLimit.*
     // setting keys in the settings DB (rate-limit config is loaded at
     // startup and not live-reloaded, matching the global + auth policies).
-    var intakePublicPermit = builder.Configuration.GetValue<int?>("IntakeForms:PublicRateLimit:PermitPerWindow") ?? 20;
-    var intakePublicWindow = builder.Configuration.GetValue<int?>("IntakeForms:PublicRateLimit:WindowSeconds") ?? 60;
+    var intakePublicPermit = RateLimitValue("IntakeForms:PublicRateLimit:PermitPerWindow", SettingKeys.IntakeForms.PublicRateLimitPermits, 20);
+    var intakePublicWindow = RateLimitValue("IntakeForms:PublicRateLimit:WindowSeconds", SettingKeys.IntakeForms.PublicRateLimitWindowSeconds, 60);
 
     options.AddPolicy("intake-public", ctx =>
     {
@@ -338,8 +343,8 @@ builder.Services.AddRateLimiter(options =>
     // v0.0.38 — public survey endpoints partition by {ip, token} just like
     // intake-public. Defaults to 10 req / 60s (stricter than intake because
     // a GET+POST is the only legitimate flow; reloads are rare).
-    var surveyPublicPermit = builder.Configuration.GetValue<int?>("Surveys:PublicRateLimit:PermitPerWindow") ?? 10;
-    var surveyPublicWindow = builder.Configuration.GetValue<int?>("Surveys:PublicRateLimit:WindowSeconds") ?? 60;
+    var surveyPublicPermit = RateLimitValue("Surveys:PublicRateLimit:PermitPerWindow", SettingKeys.Surveys.PublicRateLimitPermits, 10);
+    var surveyPublicWindow = RateLimitValue("Surveys:PublicRateLimit:WindowSeconds", SettingKeys.Surveys.PublicRateLimitWindowSeconds, 60);
     options.AddPolicy("survey-public", ctx =>
     {
         var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
@@ -368,8 +373,8 @@ builder.Services.AddRateLimiter(options =>
     // v0.0.75 — public KB article reader partitions by {ip, articleId}.
     // More permits than surveys because rendering one article also pulls
     // its inline images through the public attachment route.
-    var kbPublicPermit = builder.Configuration.GetValue<int?>("KnowledgeBase:PublicRateLimit:PermitPerWindow") ?? 60;
-    var kbPublicWindow = builder.Configuration.GetValue<int?>("KnowledgeBase:PublicRateLimit:WindowSeconds") ?? 60;
+    var kbPublicPermit = RateLimitValue("KnowledgeBase:PublicRateLimit:PermitPerWindow", SettingKeys.KnowledgeBase.PublicRateLimitPermits, 60);
+    var kbPublicWindow = RateLimitValue("KnowledgeBase:PublicRateLimit:WindowSeconds", SettingKeys.KnowledgeBase.PublicRateLimitWindowSeconds, 60);
     options.AddPolicy("kb-public", ctx =>
     {
         var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
@@ -418,8 +423,8 @@ builder.Services.AddRateLimiter(options =>
         });
     });
 
-    var reportingPermit = builder.Configuration.GetValue<int?>("Security:RateLimit:Reporting:PermitPerWindow") ?? 30;
-    var reportingWindow = builder.Configuration.GetValue<int?>("Security:RateLimit:Reporting:WindowSeconds") ?? 60;
+    var reportingPermit = RateLimitValue("Security:RateLimit:Reporting:PermitPerWindow", SettingKeys.Security.RateLimitReportingPermitPerWindow, 30);
+    var reportingWindow = RateLimitValue("Security:RateLimit:Reporting:WindowSeconds", SettingKeys.Security.RateLimitReportingWindowSeconds, 60);
     options.AddPolicy("reporting", ctx =>
     {
         var key = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
@@ -439,8 +444,8 @@ builder.Services.AddRateLimiter(options =>
     //   portal-register — registration + forgot-password (5 per 10 min):
     //                     both send mail, so they are throttled harder.
     // Settings → Portal shows the display-only mirrors (Portal.RateLimit.*).
-    var portalAuthPermit = builder.Configuration.GetValue<int?>("Security:RateLimit:PortalAuth:PermitPerWindow") ?? 10;
-    var portalAuthWindow = builder.Configuration.GetValue<int?>("Security:RateLimit:PortalAuth:WindowSeconds") ?? 60;
+    var portalAuthPermit = RateLimitValue("Security:RateLimit:PortalAuth:PermitPerWindow", SettingKeys.Portal.RateLimitAuthPermitPerWindow, 10);
+    var portalAuthWindow = RateLimitValue("Security:RateLimit:PortalAuth:WindowSeconds", SettingKeys.Portal.RateLimitAuthWindowSeconds, 60);
     options.AddPolicy("portal-auth", ctx =>
     {
         var key = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
@@ -452,8 +457,8 @@ builder.Services.AddRateLimiter(options =>
             AutoReplenishment = true,
         });
     });
-    var portalRegisterPermit = builder.Configuration.GetValue<int?>("Security:RateLimit:PortalRegister:PermitPerWindow") ?? 5;
-    var portalRegisterWindow = builder.Configuration.GetValue<int?>("Security:RateLimit:PortalRegister:WindowSeconds") ?? 600;
+    var portalRegisterPermit = RateLimitValue("Security:RateLimit:PortalRegister:PermitPerWindow", SettingKeys.Portal.RateLimitRegisterPermitPerWindow, 5);
+    var portalRegisterWindow = RateLimitValue("Security:RateLimit:PortalRegister:WindowSeconds", SettingKeys.Portal.RateLimitRegisterWindowSeconds, 600);
     options.AddPolicy("portal-register", ctx =>
     {
         var key = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
@@ -474,10 +479,11 @@ var systemInfo = SystemInfo.Capture(Assembly.GetExecutingAssembly());
 app.UseForwardedHeaders();
 app.UseSerilogRequestLogging();
 
-if (!app.Environment.IsDevelopment())
-{
-    app.UseHsts();
-}
+// HSTS is owned by nginx (deploy/nginx/default.conf.template), the layer
+// that actually terminates TLS — it emits max-age=31536000 with `always`.
+// The app no longer calls UseHsts() (v0.1.2, audit v0.1.1 #10): the pair
+// produced two conflicting Strict-Transport-Security headers, and the app's
+// copy ran with the framework's 30-day default that nothing configured.
 
 app.UseHttpsRedirection();
 app.UseServicedeskSecurityHeaders();

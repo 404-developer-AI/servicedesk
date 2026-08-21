@@ -16,6 +16,15 @@ const POPUP_WIDTH = 480;
 /// the right of the screen; otherwise a normal new tab. No-op without a URL.
 export function openCopilotWindow(url: string, openInPopup: boolean): void {
   if (!url) return;
+  // Defense in depth (audit v0.1.1 #9): the server validates Copilot.Url to
+  // https on write AND on read, but this value still crosses a privilege
+  // boundary (admin-set, runs in every agent's browser via window.open) — a
+  // javascript:/data: URL must never reach window.open from here either.
+  try {
+    if (new URL(url).protocol !== "https:") return;
+  } catch {
+    return;
+  }
 
   if (!openInPopup) {
     const tab = window.open(url, COPILOT_WINDOW_NAME);
@@ -28,7 +37,11 @@ export function openCopilotWindow(url: string, openInPopup: boolean): void {
   // Pin to the right edge of the available screen, falling back to 0 if the
   // numbers are unavailable (some browsers return 0 for availWidth).
   const left = Math.max(0, window.screen.availWidth - width);
-  const features = `popup=yes,noopener=no,width=${width},height=${height},left=${left},top=0`;
+  // Note: no `noopener` here on purpose — severing the opener puts the popup
+  // in another browsing-context group, which breaks the named-window reuse
+  // (every click would stack a fresh window). The URL is server-validated to
+  // https plus scheme-guarded above, which is what actually bounds the risk.
+  const features = `popup=yes,width=${width},height=${height},left=${left},top=0`;
   const win = window.open(url, COPILOT_WINDOW_NAME, features);
   // Pop-up blockers can return null; nothing to focus then.
   win?.focus();

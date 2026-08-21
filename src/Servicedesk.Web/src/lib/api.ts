@@ -99,6 +99,9 @@ export type LoginResponse = {
   email: string;
   role: Role;
   twoFactorRequired: boolean;
+  /// v0.1.2 — Security.TwoFactor.Required is on and this local account has
+  /// no authenticator yet: the session is pending until enrollment finishes.
+  enrollmentRequired: boolean;
 };
 
 export type TotpEnrollment = {
@@ -4137,5 +4140,11 @@ export const authApi = {
   beginTotpEnroll: () => request<TotpEnrollment>("POST", "/api/auth/2fa/enroll/begin"),
   confirmTotpEnroll: (code: string) =>
     request<RecoveryCodesResponse>("POST", "/api/auth/2fa/enroll/confirm", { code }),
-  disableTotp: () => request<void>("POST", "/api/auth/2fa/disable"),
+  // v0.1.2 — disabling 2FA is a step-up action: it requires a live
+  // authenticator code (or a recovery code), not just a session.
+  disableTotp: (code: string) => request<void>("POST", "/api/auth/2fa/disable", { code }),
+  // v0.1.2 — self-service password change for Local staff accounts. Revokes
+  // every other session on success.
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<void>("POST", "/api/auth/change-password", { currentPassword, newPassword }),
 };

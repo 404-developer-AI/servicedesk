@@ -730,6 +730,10 @@ public static class DependencyInjection
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<Servicedesk.Infrastructure.Search.ReportTemplateSearchSource>()));
 
         services.AddHostedService<DatabaseBootstrapper>();
+        // v0.1.2 — one-shot re-hash of legacy (reversibly encrypted) TOTP
+        // recovery codes. Must run after the bootstrapper so the
+        // code_sha256 column exists; registration order guarantees that.
+        services.AddHostedService<Servicedesk.Infrastructure.Auth.Totp.RecoveryCodeHashMigrator>();
         services.AddHostedService<SettingsSeeder>();
         // Lazy E.164 backfill for contacts that existed before v0.0.34
         // added the phone_e164 / mobile_phone_e164 columns. Runs after

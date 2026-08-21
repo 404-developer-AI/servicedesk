@@ -8,7 +8,11 @@
 
   <ItemGroup>
     <PackageReference Include="Dapper" Version="2.1.35" />
-    <PackageReference Include="HtmlSanitizer" Version="9.0.892" />
+    <!-- 9.2.x moves the sanitizer onto AngleSharp 1.7.x, past the 1.5.0 fix
+         for GHSA-pgww-w46g-26qg (mXSS via MathML annotation-xml). AngleSharp
+         is the parser INSIDE the sanitizer, so a parser bug there is a
+         sanitizer bypass — keep this package current. -->
+    <PackageReference Include="HtmlSanitizer" Version="9.2.995" />
     <PackageReference Include="libphonenumber-csharp" Version="8.13.45" />
     <PackageReference Include="Konscious.Security.Cryptography.Argon2" Version="1.3.1" />
     <PackageReference Include="Microsoft.AspNetCore.DataProtection" Version="8.0.10" />
@@ -33,6 +37,14 @@
     <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.18.0" />
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.18.0" />
     <PackageReference Include="PdfSharpCore" Version="1.3.67" />
+    <!-- PdfSharpCore still resolves SixLabors.ImageSharp 1.0.4, which carries
+         three High advisories in its image decoders. Pin the last patched
+         2.x (Apache-2.0; 3.x changed license) to override the transitive
+         resolution. Safe because our PDF builders only use the text APIs
+         (XFont/XGraphics.DrawString) — no XImage/raster load path — and the
+         PDF test suite exercises exactly that. Drop this override once
+         PdfSharpCore ships against a patched ImageSharp itself. -->
+    <PackageReference Include="SixLabors.ImageSharp" Version="2.1.13" />
     <!-- Pulled in transitively by Microsoft.IdentityModel.* and Microsoft.Graph.
          Pinning 8.0.3 (last on the 8.x track that patches GHSA-37gx-xxp4-5rgx
          and GHSA-w3x6-4m5h-cxqf — both fixed there). -->
