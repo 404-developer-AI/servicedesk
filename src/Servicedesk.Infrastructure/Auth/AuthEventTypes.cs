@@ -10,7 +10,7 @@ public static class AuthEventTypes
     public const string LoginLockedOut = "login_locked_out";
     public const string Logout = "logout";
     public const string TwoFactorEnrolled = "2fa_enrolled";
-    // v0.1.2 — enrollment start rotates the pending secret (and used to
+    // v0.1.3 — enrollment start rotates the pending secret (and used to
     // silently disable a working setup pre-guard), so it leaves a trace too.
     public const string TwoFactorEnrollStarted = "2fa_enroll_started";
     public const string TwoFactorDisabled = "2fa_disabled";
@@ -39,7 +39,7 @@ public static class AuthEventTypes
     public const string UserCreatedMicrosoft = "user.created.m365";
     public const string UserUpgradedMicrosoft = "user.upgraded.m365";
     public const string UserRoleChanged = "user.role.changed";
-    // v0.1.2 — admin-initiated password reset for a Local staff account.
+    // v0.1.3 — admin-initiated password reset for a Local staff account.
     public const string UserPasswordReset = "user.password.reset";
     public const string UserActivated = "user.activated";
     public const string UserDeactivated = "user.deactivated";

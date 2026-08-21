@@ -29,7 +29,7 @@ const codeSchema = z.object({
 type LoginValues = z.infer<typeof loginSchema>;
 type CodeValues = z.infer<typeof codeSchema>;
 
-// v0.1.2 — "enroll" + "recovery-codes" mirror the portal's forced-enrollment
+// v0.1.3 — "enroll" + "recovery-codes" mirror the portal's forced-enrollment
 // flow: with Security.TwoFactor.Required on, a local account without an
 // authenticator lands here after the password step and cannot reach the app
 // until enrollment completes (the session stays "mfa-pending" server-side).

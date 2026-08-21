@@ -5806,7 +5806,7 @@ public sealed class DatabaseBootstrapper : IHostedService
         ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS impersonator_user_id UUID NULL REFERENCES users(id) ON DELETE CASCADE;
 
         -- ===================================================================
-        -- v0.1.2 Security hardening (internal audit of v0.1.1)
+        -- v0.1.3 Security hardening (internal audit of v0.1.1)
         -- ===================================================================
         -- RFC 6238 §5.2 replay protection: the timestep of the last accepted
         -- TOTP code is persisted, and any code whose timestep is at or before
@@ -5836,11 +5836,11 @@ public sealed class DatabaseBootstrapper : IHostedService
         DO $do$
         BEGIN
             IF NOT EXISTS (
-                SELECT 1 FROM data_migrations WHERE name = 'v0_1_2_ratelimit_global_default'
+                SELECT 1 FROM data_migrations WHERE name = 'v0_1_3_ratelimit_global_default'
             ) THEN
                 UPDATE settings SET value = '240', updated_utc = now()
                  WHERE key = 'Security.RateLimit.Global.PermitPerWindow' AND value = '120';
-                INSERT INTO data_migrations (name) VALUES ('v0_1_2_ratelimit_global_default');
+                INSERT INTO data_migrations (name) VALUES ('v0_1_3_ratelimit_global_default');
             END IF;
         END $do$;
         """;

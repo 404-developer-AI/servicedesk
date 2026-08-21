@@ -502,7 +502,7 @@ function UserRow({
   );
 }
 
-// ---- Reset password (v0.1.2, Local staff accounts only) -----------------
+// ---- Reset password (v0.1.3, Local staff accounts only) -----------------
 
 function ResetPasswordDialog({
   user,
