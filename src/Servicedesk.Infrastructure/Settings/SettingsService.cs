@@ -70,7 +70,7 @@ public sealed class SettingsService : ISettingsService
             ?? throw new KeyNotFoundException($"Unknown setting key '{key}'.");
 
         var newValue = value is null ? "" : System.Convert.ToString(value, CultureInfo.InvariantCulture) ?? "";
-        // v0.1.2 (audit v0.1.1 #9) — reject values that don't match the
+        // v0.1.3 (audit v0.1.1 #9) — reject values that don't match the
         // registered ValueType or a key-specific format rule; the endpoint
         // maps the ArgumentException to a 400 with the message.
         var validationError = SettingValueValidator.Validate(def, newValue);

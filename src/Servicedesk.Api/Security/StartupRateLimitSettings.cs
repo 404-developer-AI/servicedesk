@@ -3,13 +3,13 @@ using Npgsql;
 
 namespace Servicedesk.Api.Security;
 
-/// v0.1.2 (audit v0.1.1 #10) — the rate-limit budgets shown in Settings →
+/// v0.1.3 (audit v0.1.1 #10) — the rate-limit budgets shown in Settings →
 /// Security / Portal / IntakeForms / Surveys / KnowledgeBase are now actually
 /// read: once, at startup, straight from the settings table (the settings
 /// cache and its DI graph don't exist yet at AddRateLimiter time). Resolution
 /// order per key: explicit environment configuration
 /// (SERVICEDESK_Security__RateLimit__…) &gt; settings DB row &gt; code default —
-/// env stays on top so installs tuned before v0.1.2 keep their behavior. A
+/// env stays on top so installs tuned before v0.1.3 keep their behavior. A
 /// change in the Settings UI requires an app restart, which every affected
 /// setting description states.
 ///

@@ -41,7 +41,7 @@ public static class SettingEndpoints
             }
             catch (ArgumentException ex)
             {
-                // v0.1.2 — write-side validation (type + per-key format).
+                // v0.1.3 — write-side validation (type + per-key format).
                 return Results.BadRequest(new { error = ex.Message });
             }
         }).WithName("UpdateSetting").WithOpenApi();
@@ -183,7 +183,7 @@ public static class SettingEndpoints
         {
             var enabled = await svc.GetAsync<bool>(SettingKeys.Copilot.Enabled, ct);
             var url = await svc.GetAsync<string>(SettingKeys.Copilot.Url, ct) ?? string.Empty;
-            // v0.1.2 (audit v0.1.1 #9) — the value ends up in window.open in
+            // v0.1.3 (audit v0.1.1 #9) — the value ends up in window.open in
             // every agent's browser. Writes are validated to https, but a
             // pre-validation DB row could still carry anything; re-check at
             // the read site and refuse to serve a non-https URL.

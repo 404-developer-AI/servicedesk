@@ -110,7 +110,7 @@ public interface IUserAdminService
         Guid actingAdminId,
         CancellationToken ct = default);
 
-    /// v0.1.2 (audit v0.1.1 #8) — admin-initiated password reset for a Local
+    /// v0.1.3 (audit v0.1.1 #8) — admin-initiated password reset for a Local
     /// staff account. Validates against Security.Password.MinimumLength,
     /// hashes with Argon2id, clears the lockout counter and revokes every
     /// open session of the target so a stolen session dies with the old

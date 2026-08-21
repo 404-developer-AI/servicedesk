@@ -199,7 +199,7 @@ public static class PortalAuthEndpoints
         var sessionId = PortalRequest.SessionId(http);
         if (userId is null || sessionId is null) return Results.Unauthorized();
 
-        // v0.1.2 (audit v0.1.1 #6) — the lockout counter now also guards the
+        // v0.1.3 (audit v0.1.1 #6) — the lockout counter now also guards the
         // second factor: same settings, same counter as the password step.
         var user = await users.FindByIdAsync(userId.Value, ct);
         if (user is null) return Results.Unauthorized();

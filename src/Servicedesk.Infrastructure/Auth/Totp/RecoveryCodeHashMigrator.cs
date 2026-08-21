@@ -7,7 +7,7 @@ using Npgsql;
 
 namespace Servicedesk.Infrastructure.Auth.Totp;
 
-/// One-shot startup migration (v0.1.2): recovery codes used to be stored as
+/// One-shot startup migration (v0.1.3): recovery codes used to be stored as
 /// reversible DataProtection ciphertext; they are now SHA-256 only, like every
 /// other one-time secret in the schema. This decrypts each legacy row, writes
 /// the hash, and drops the ciphertext. Runs after <c>DatabaseBootstrapper</c>

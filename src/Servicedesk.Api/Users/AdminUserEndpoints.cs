@@ -53,7 +53,7 @@ public static class AdminUserEndpoints
             .WithName("AdminUsersDelete")
             .WithOpenApi();
 
-        // v0.1.2 (audit v0.1.1 #8) — admin-initiated password reset for
+        // v0.1.3 (audit v0.1.1 #8) — admin-initiated password reset for
         // Local staff accounts. Rate-limited like the other credential
         // writes; every open session of the target is revoked.
         group.MapPost("/{id:guid}/reset-password", ResetPassword)

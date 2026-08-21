@@ -730,7 +730,7 @@ public static class DependencyInjection
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<Servicedesk.Infrastructure.Search.ReportTemplateSearchSource>()));
 
         services.AddHostedService<DatabaseBootstrapper>();
-        // v0.1.2 — one-shot re-hash of legacy (reversibly encrypted) TOTP
+        // v0.1.3 — one-shot re-hash of legacy (reversibly encrypted) TOTP
         // recovery codes. Must run after the bootstrapper so the
         // code_sha256 column exists; registration order guarantees that.
         services.AddHostedService<Servicedesk.Infrastructure.Auth.Totp.RecoveryCodeHashMigrator>();

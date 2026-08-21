@@ -6,7 +6,7 @@ public static class SettingKeys
 {
     public static class Security
     {
-        // Rate-limit knobs are wired since v0.1.2 (audit v0.1.1 #10): read
+        // Rate-limit knobs are wired since v0.1.3 (audit v0.1.1 #10): read
         // once at startup, resolution env-config override > this DB value >
         // code default. A change in the Settings UI requires an app restart.
         public const string RateLimitGlobalPermitPerWindow = "Security.RateLimit.Global.PermitPerWindow";
@@ -23,7 +23,7 @@ public static class SettingKeys
         // change requires an app restart.
         public const string RateLimitReportingPermitPerWindow = "Security.RateLimit.Reporting.PermitPerWindow";
         public const string RateLimitReportingWindowSeconds = "Security.RateLimit.Reporting.WindowSeconds";
-        // Security.Hsts.MaxAgeDays was removed in v0.1.2 (audit v0.1.1 #10):
+        // Security.Hsts.MaxAgeDays was removed in v0.1.3 (audit v0.1.1 #10):
         // it had no read site, and HSTS is owned by nginx — the layer that
         // terminates TLS. The stale settings row is deleted by the
         // bootstrapper so the dead knob disappears from the Settings UI.
@@ -1471,7 +1471,7 @@ public static class SettingKeys
         public const string ApprovedMailBody = "Portal.Mail.Approved.Body";
 
         /// Rate limits for the anonymous portal auth endpoints. Wired since
-        /// v0.1.2: read once at startup (env-config override > DB > code
+        /// v0.1.3: read once at startup (env-config override > DB > code
         /// default, same model as the other limiters); a change requires an
         /// app restart.
         public const string RateLimitAuthPermitPerWindow = "Portal.RateLimit.Auth.PermitPerWindow";

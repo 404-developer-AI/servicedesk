@@ -46,7 +46,7 @@ public static class AuthEndpoints
 
         group.MapGet("/me", Me).WithName("AuthMe").WithOpenApi();
 
-        // Deliberately WITHOUT the RequireAgent policy (v0.1.2): when
+        // Deliberately WITHOUT the RequireAgent policy (v0.1.3): when
         // Security.TwoFactor.Required is on, an un-enrolled staff login mints
         // an "mfa-pending" session that the role policies reject — but that
         // session must be able to reach exactly these two endpoints to
@@ -68,7 +68,7 @@ public static class AuthEndpoints
             .RequireAuthorization(AuthorizationPolicies.RequireAgent)
             .RequireRateLimiting("auth");
 
-        // v0.1.2 — self-service password change for Local staff accounts
+        // v0.1.3 — self-service password change for Local staff accounts
         // (audit v0.1.1 #8). Requires the current password, enforces the
         // minimum length, revokes every OTHER session and is audited.
         group.MapPost("/change-password", ChangePassword)
@@ -247,7 +247,7 @@ public static class AuthEndpoints
         }
 
         var twoFactorEnabled = await totp.IsEnabledAsync(user.Id, ct);
-        // v0.1.2 — Security.TwoFactor.Required is now enforced (audit v0.1.1
+        // v0.1.3 — Security.TwoFactor.Required is now enforced (audit v0.1.1
         // #1): with the flag on, a Local staff user who never enrolled gets a
         // PENDING session that can only reach the /2fa/enroll endpoints, the
         // same forced-enrollment model the customer portal has always had.
@@ -298,7 +298,7 @@ public static class AuthEndpoints
             return Results.Unauthorized();
         }
 
-        // v0.1.2 (audit v0.1.1 #6) — the account lockout now guards the second
+        // v0.1.3 (audit v0.1.1 #6) — the account lockout now guards the second
         // factor exactly like the password step: a locked account cannot burn
         // through codes, and every rejected code feeds the same counter below.
         var user = await users.FindByIdAsync(userId, ct);
@@ -689,7 +689,7 @@ public static class AuthEndpoints
         return Results.Ok();
     }
 
-    // ---- Password change (v0.1.2) ------------------------------------------
+    // ---- Password change (v0.1.3) ------------------------------------------
 
     public sealed record ChangePasswordRequest(
         [property: Required] string CurrentPassword,

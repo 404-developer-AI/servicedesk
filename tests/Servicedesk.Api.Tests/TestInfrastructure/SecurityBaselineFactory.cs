@@ -277,7 +277,7 @@ public sealed class FakeUserService : IUserService
     public ApplicationUser Add(string email, string passwordHash, string role)
         => AddWithId(Guid.NewGuid(), email, passwordHash, role);
 
-    /// Test seam (v0.1.2): add a row under a caller-chosen id so a test can
+    /// Test seam (v0.1.3): add a row under a caller-chosen id so a test can
     /// line the user store up with a pre-minted fake session.
     public ApplicationUser AddWithId(Guid id, string email, string passwordHash, string role)
     {
@@ -549,7 +549,7 @@ public sealed class FakeTotpService : ITotpService
 {
     public bool Enabled { get; set; }
 
-    /// Test seam (v0.1.2): what VerifyAsync answers. Default Rejected so the
+    /// Test seam (v0.1.3): what VerifyAsync answers. Default Rejected so the
     /// legacy tests keep their behaviour; step-up tests flip it to accepted.
     public TwoFactorResult VerifyResult { get; set; } = TwoFactorResult.Rejected;
 

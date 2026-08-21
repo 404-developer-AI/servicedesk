@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace Servicedesk.Infrastructure.Settings;
 
-/// Write-side validation for the settings store (v0.1.2, audit v0.1.1 #9).
+/// Write-side validation for the settings store (v0.1.3, audit v0.1.1 #9).
 /// Two layers: the registered <c>ValueType</c> ("int" / "bool") must parse,
 /// and a handful of keys with real format requirements get a dedicated rule —
 /// URL keys must be http(s) (never <c>javascript:</c> / <c>data:</c>, which

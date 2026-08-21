@@ -33,7 +33,7 @@ public interface ISessionService
 
     /// Same as <see cref="RevokeAllForUserAsync"/> but keeps one session
     /// alive — the "log everything else out" semantics of a self-service
-    /// password change (v0.1.2).
+    /// password change (v0.1.3).
     Task RevokeAllForUserExceptAsync(Guid userId, Guid keepSessionId, CancellationToken ct = default);
 
     Task UpgradeAmrAsync(Guid sessionId, string amr, CancellationToken ct = default);

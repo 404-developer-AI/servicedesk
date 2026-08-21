@@ -9,7 +9,7 @@ namespace Servicedesk.Api.Timesheet;
 /// v0.0.35-F — ticket-scoped Timesheet reads for the expand-panel and the
 /// "Import registered time" button on the reply editor. Every endpoint is
 /// gated by <c>RequireAgent</c> plus a queue-access check on the ticket
-/// (v0.1.2, audit v0.1.1 #5): time registrations carry agent identities and
+/// (v0.1.3, audit v0.1.1 #5): time registrations carry agent identities and
 /// the alert endpoints mutate the ticket, so they follow the same rule as
 /// every other ticket-scoped surface — no access answers 404, never 403, so
 /// ticket existence does not leak.

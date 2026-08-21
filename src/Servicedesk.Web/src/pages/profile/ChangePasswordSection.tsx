@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { authApi, ApiError, apiErrorMessage } from "@/lib/api";
 import { useAuth } from "@/auth/authStore";
 
-/// v0.1.2 (audit v0.1.1 #8) — self-service password change for Local staff
+/// v0.1.3 (audit v0.1.1 #8) — self-service password change for Local staff
 /// accounts. Hidden for M365 sessions (amr "ext"): their password lives at
 /// Microsoft. A successful change signs out every other session.
 export function ChangePasswordSection() {

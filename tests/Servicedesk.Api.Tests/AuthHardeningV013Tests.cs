@@ -11,13 +11,13 @@ using Xunit;
 
 namespace Servicedesk.Api.Tests;
 
-/// v0.1.2 — behaviour added by the v0.1.1 security audit:
+/// v0.1.3 — behaviour added by the v0.1.1 security audit:
 /// #1 Security.TwoFactor.Required forces enrollment at sign-in,
 /// #7 enroll-begin refuses an already-enrolled account and disable demands a
 ///    valid code, and
 /// #8 the self-service password change verifies the current password and
 ///    revokes every other session.
-public sealed class AuthHardeningV012Tests
+public sealed class AuthHardeningV013Tests
 {
     // ---- #1 forced enrollment ---------------------------------------------
 

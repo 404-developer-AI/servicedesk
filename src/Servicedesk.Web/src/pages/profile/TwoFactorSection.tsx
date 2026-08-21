@@ -75,7 +75,7 @@ export function TwoFactorSection() {
     }
   };
 
-  // v0.1.2 — disabling is a step-up action: the server demands a live
+  // v0.1.3 — disabling is a step-up action: the server demands a live
   // authenticator code (or a recovery code), so a stolen session alone
   // cannot strip the second factor.
   const disable = async () => {

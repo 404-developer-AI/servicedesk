@@ -14,7 +14,7 @@ using Xunit;
 
 namespace Servicedesk.Api.Tests;
 
-/// v0.1.2 (audit v0.1.1 #5) — the ticket-scoped timesheet/time-alert
+/// v0.1.3 (audit v0.1.1 #5) — the ticket-scoped timesheet/time-alert
 /// endpoints enforce queue access like every other ticket-scoped surface.
 /// An agent without access to the ticket's queue gets 404 (never 403, so
 /// ticket existence does not leak) on every handler, reads AND writes.

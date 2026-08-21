@@ -238,7 +238,7 @@ public sealed class AttachmentWorker : BackgroundService
             ?? throw new InvalidOperationException(
                 $"Attachment row {p.AttachmentId} disappeared between enqueue and ingest.");
 
-        // v0.1.2 (audit v0.1.1 #2) — the row's MIME type so far is whatever
+        // v0.1.3 (audit v0.1.1 #2) — the row's MIME type so far is whatever
         // the *sender's* mail client declared. Sniff the stored bytes exactly
         // like the upload endpoint does and persist the server's verdict
         // instead, so a `text/html` label on an innocuous file cannot ride

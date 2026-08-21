@@ -202,7 +202,7 @@ builder.Services.AddSingleton<Servicedesk.Infrastructure.Dashboard.IAgentActivit
 builder.Services.AddSingleton<Servicedesk.Infrastructure.Activity.IActivityBroadcaster,
     Servicedesk.Api.Activity.SignalRActivityBroadcaster>();
 
-// v0.1.2 (audit v0.1.1 #10) — the rate-limit budgets in the settings DB are
+// v0.1.3 (audit v0.1.1 #10) — the rate-limit budgets in the settings DB are
 // wired to the running limiters: env-config override > DB value > code
 // default, read once at startup (a Settings-UI change requires a restart).
 var rateLimitSettings = Servicedesk.Api.Security.StartupRateLimitSettings.Load(builder.Configuration, Serilog.Log.Logger);
@@ -481,7 +481,7 @@ app.UseSerilogRequestLogging();
 
 // HSTS is owned by nginx (deploy/nginx/default.conf.template), the layer
 // that actually terminates TLS — it emits max-age=31536000 with `always`.
-// The app no longer calls UseHsts() (v0.1.2, audit v0.1.1 #10): the pair
+// The app no longer calls UseHsts() (v0.1.3, audit v0.1.1 #10): the pair
 // produced two conflicting Strict-Transport-Security headers, and the app's
 // copy ran with the framework's 30-day default that nothing configured.
 

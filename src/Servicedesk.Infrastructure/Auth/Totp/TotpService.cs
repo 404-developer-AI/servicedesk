@@ -202,7 +202,7 @@ public sealed class TotpService : ITotpService
             }
             else if (recovery.LegacyCiphertext is { Length: > 0 })
             {
-                // Pre-v0.1.2 row that the startup migrator has not reached
+                // Pre-v0.1.3 row that the startup migrator has not reached
                 // (e.g. the DataProtection key was briefly unavailable).
                 try
                 {
