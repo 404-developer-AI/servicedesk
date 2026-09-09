@@ -180,20 +180,22 @@ async function request<T>(
   return text ? (JSON.parse(text) as T) : (undefined as T);
 }
 
+/// Standalone so the memoised picker variant can reference it without the
+/// API object referencing itself in its own initializer (TS7022).
+function fetchTemplates(includeInactive = false): Promise<IntakeTemplate[]> {
+  return request<IntakeTemplate[]>(
+    "GET",
+    `/api/settings/intake-templates${includeInactive ? "?includeInactive=true" : ""}`,
+  );
+}
+
 export const intakeFormsApi = {
   // ─── Admin: template CRUD ───
-  listTemplates: (includeInactive = false) =>
-    request<IntakeTemplate[]>(
-      "GET",
-      `/api/settings/intake-templates${includeInactive ? "?includeInactive=true" : ""}`,
-    ),
+  listTemplates: fetchTemplates,
   /// v0.1.4 — picker variant: memoised for a short TTL so the `::` picker
   /// doesn't refetch the intake-template list per keystroke. The admin
   /// pages keep using `listTemplates` so their edits show immediately.
-  listTemplatesCached: memoizeTtl(
-    (includeInactive = false) => intakeFormsApi.listTemplates(includeInactive),
-    PICKER_CACHE_TTL_MS,
-  ),
+  listTemplatesCached: memoizeTtl(fetchTemplates, PICKER_CACHE_TTL_MS),
   getTemplate: (id: string) =>
     request<IntakeTemplate>("GET", `/api/settings/intake-templates/${id}`),
   createTemplate: (body: TemplateUpsertRequest) =>
