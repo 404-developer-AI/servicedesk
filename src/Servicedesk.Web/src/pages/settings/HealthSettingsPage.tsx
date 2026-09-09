@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Activity, AlertTriangle, Archive, CheckCircle2, ChevronDown, ChevronRight, RadioTower, ShieldAlert, Trash2 } from "lucide-react";
+import { Activity, AlertTriangle, Archive, CheckCircle2, ChevronDown, ChevronRight, Gauge, RadioTower, ShieldAlert, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -43,6 +43,20 @@ const SECURITY_ACTIVITY_SETTINGS: ReadonlyArray<{ key: string; label: string }> 
   { key: "Health.SecurityActivity.Threshold.CsrfRejected", label: "Threshold — CSRF rejections" },
   { key: "Health.SecurityActivity.Threshold.RateLimited", label: "Threshold — rate-limit rejections" },
   { key: "Health.SecurityActivity.Threshold.MicrosoftLoginRejected", label: "Threshold — M365 login rejections" },
+];
+
+// v0.1.4 — the request budgets behind "Rate-limit rejections". Read once
+// at startup (restart to apply); an env override wins over the DB value.
+const RATE_LIMIT_SETTINGS: ReadonlyArray<{ key: string; label: string }> = [
+  { key: "Security.RateLimit.Global.PermitPerWindow", label: "Global — requests per window (per session)" },
+  { key: "Security.RateLimit.Global.WindowSeconds", label: "Global — window (seconds)" },
+  { key: "Security.RateLimit.Global.IpCeilingMultiplier", label: "Global — per-IP ceiling (× per-session budget)" },
+  { key: "Security.RateLimit.Auth.PermitPerWindow", label: "Login endpoints — requests per window (per IP)" },
+  { key: "Security.RateLimit.Auth.WindowSeconds", label: "Login endpoints — window (seconds)" },
+  { key: "Security.RateLimit.CspReport.PermitPerWindow", label: "CSP reports — per window (per IP)" },
+  { key: "Security.RateLimit.CspReport.WindowSeconds", label: "CSP reports — window (seconds)" },
+  { key: "Security.RateLimit.Reporting.PermitPerWindow", label: "Reporting API — requests per window (per IP)" },
+  { key: "Security.RateLimit.Reporting.WindowSeconds", label: "Reporting API — window (seconds)" },
 ];
 
 // v0.0.101 — generic data-retention sweep (RetentionWorker). Days = 0
@@ -176,6 +190,13 @@ export function HealthSettingsPage() {
         title="Data retention"
         description="Housekeeping tables that only ever grew: dead sessions, old notifications, finished attachment jobs, acknowledged incidents and disk samples are pruned in batches on this schedule. 0 days keeps a table forever. Tickets, mail, attachments and the audit log are never touched."
         keys={RETENTION_SETTINGS}
+      />
+      <CollapsibleSettingsCard
+        category="Security"
+        icon={<Gauge className="h-5 w-5" />}
+        title="Rate limits"
+        description="Request budgets enforced by the API. Signed-in traffic is budgeted per session, so colleagues behind one office address don't share a bucket; the per-IP ceiling still bounds everything one address can send. Changes are read at startup — restart the app to apply. When the security-activity card reports rate-limit rejections, its detail rows name the endpoint and source behind them."
+        keys={RATE_LIMIT_SETTINGS}
       />
       <CollapsibleSettingsCard
         category="Health"

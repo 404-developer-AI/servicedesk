@@ -156,4 +156,63 @@ public sealed class AuditQueryService : IAuditQuery
         }
         return result;
     }
+
+    public async Task<AuditTopBreakdown> TopByEventTypesAsync(
+        IReadOnlyCollection<string> eventTypes,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        int top,
+        CancellationToken cancellationToken = default)
+    {
+        if (eventTypes is null || eventTypes.Count == 0)
+        {
+            return AuditTopBreakdown.Empty;
+        }
+
+        var limit = Math.Clamp(top, 1, 20);
+
+        // Normalise the target so one endpoint is one row: GUIDs → {id},
+        // purely numeric path segments → {n}. The HTTP method (present on
+        // rate-limit rejections) is prefixed so GET and PUT on the same path
+        // stay distinguishable — that difference is exactly what tells an
+        // admin whether a picker loop or a save loop is behind a burst.
+        const string sql = """
+            WITH hits AS (
+                SELECT
+                    trim(coalesce(payload->>'method', '') || ' ' ||
+                         regexp_replace(
+                             regexp_replace(coalesce(target, '(none)'),
+                                 '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', '{id}', 'gi'),
+                             '/[0-9]+(?=/|$)', '/{n}', 'g')) AS label,
+                    coalesce(client_ip, '(unknown)') AS ip
+                  FROM audit_log
+                 WHERE event_type = ANY(@types)
+                   AND utc >= @from
+                   AND utc <  @to
+            )
+            SELECT label AS Label, COUNT(*)::int AS Cnt FROM hits GROUP BY label ORDER BY Cnt DESC, label LIMIT @limit;
+            SELECT ip AS Label, COUNT(*)::int AS Cnt FROM hits GROUP BY ip ORDER BY Cnt DESC, ip LIMIT @limit;
+            SELECT COUNT(DISTINCT ip)::int FROM hits;
+            """;
+
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var multi = await connection.QueryMultipleAsync(new CommandDefinition(sql, new
+        {
+            types = eventTypes.ToArray(),
+            from = fromUtc,
+            to = toUtc,
+            limit,
+        }, cancellationToken: cancellationToken));
+
+        var targets = (await multi.ReadAsync<TopRow>()).Select(r => new AuditTopItem(r.Label, r.Cnt)).ToList();
+        var sources = (await multi.ReadAsync<TopRow>()).Select(r => new AuditTopItem(r.Label, r.Cnt)).ToList();
+        var distinct = await multi.ReadSingleAsync<int>();
+        return new AuditTopBreakdown(targets, sources, distinct);
+    }
+
+    private sealed class TopRow
+    {
+        public string Label { get; set; } = string.Empty;
+        public int Cnt { get; set; }
+    }
 }

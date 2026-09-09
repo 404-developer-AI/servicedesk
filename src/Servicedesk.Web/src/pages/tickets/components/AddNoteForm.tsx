@@ -520,7 +520,7 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
           // Note + reply: only compose-templates surface in the picker. The
           // intake-form chip flow is mail-only (it needs a recipient + send
           // mechanism the internal-note pathway doesn't have).
-          const list = await composeTemplatesApi.usable(
+          const list = await composeTemplatesApi.usableCached(
             queueId ?? null,
             statusId ?? null,
           );

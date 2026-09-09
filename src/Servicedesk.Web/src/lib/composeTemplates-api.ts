@@ -1,3 +1,8 @@
+import { memoizeTtl } from "@/lib/ttlCache";
+
+/// How long the `::` picker reuses a fetched template list (v0.1.4).
+const PICKER_CACHE_TTL_MS = 30_000;
+
 // API client for the Templates feature — pre-canned HTML snippets the
 // agent pulls into an editor via the `::` picker (same trigger as intake
 // forms; the picker merges results from both sources).
@@ -147,6 +152,16 @@ export const composeTemplatesApi = {
         : "/api/compose-templates/usable",
     );
   },
+
+  /// v0.1.4 — picker variant of `usable`: memoised for a short TTL so the
+  /// `::` picker (one call per keystroke before the editor-side debounce)
+  /// fetches the list once per composer session instead of per key. Admin
+  /// CRUD keeps using `usable`/`list`, so a fresh edit is never masked there.
+  usableCached: memoizeTtl(
+    (queueId: string | null, statusId?: string | null) =>
+      composeTemplatesApi.usable(queueId, statusId),
+    PICKER_CACHE_TTL_MS,
+  ),
 
   /// v0.0.42 — Auto-insert lookup. Returns the single best-matching
   /// auto-insert template (if any) for the (queue, status) tuple of an

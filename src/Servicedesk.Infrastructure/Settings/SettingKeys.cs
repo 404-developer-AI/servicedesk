@@ -11,6 +11,11 @@ public static class SettingKeys
         // code default. A change in the Settings UI requires an app restart.
         public const string RateLimitGlobalPermitPerWindow = "Security.RateLimit.Global.PermitPerWindow";
         public const string RateLimitGlobalWindowSeconds = "Security.RateLimit.Global.WindowSeconds";
+        // v0.1.4 — the global budget is per *session* for signed-in callers
+        // (per IP for anonymous ones); this multiplier × PermitPerWindow is
+        // the hard per-IP ceiling that still bounds everything one address
+        // can send regardless of how many sessions/cookies it presents.
+        public const string RateLimitGlobalIpCeilingMultiplier = "Security.RateLimit.Global.IpCeilingMultiplier";
         public const string RateLimitAuthPermitPerWindow = "Security.RateLimit.Auth.PermitPerWindow";
         public const string RateLimitAuthWindowSeconds = "Security.RateLimit.Auth.WindowSeconds";
         // v0.0.92 — flood protection on the CSP-report endpoint, previously a
@@ -1493,9 +1498,11 @@ public static class SettingDefaults
     public static readonly IReadOnlyList<SettingDefault> All = new[]
     {
         new SettingDefault(SettingKeys.Security.RateLimitGlobalPermitPerWindow, "240", "int", "Security",
-            "Maximum requests per IP within the global rate limit window. Read at startup, a change requires an app restart; a SERVICEDESK_Security__RateLimit__… environment variable overrides this value."),
+            "Maximum API requests per signed-in session (per IP for anonymous callers) within the global rate limit window. Read at startup, a change requires an app restart; a SERVICEDESK_Security__RateLimit__… environment variable overrides this value."),
         new SettingDefault(SettingKeys.Security.RateLimitGlobalWindowSeconds, "60", "int", "Security",
             "Global rate limit window length, in seconds. Read at startup, a change requires an app restart."),
+        new SettingDefault(SettingKeys.Security.RateLimitGlobalIpCeilingMultiplier, "5", "int", "Security",
+            "Hard per-IP ceiling as a multiple of the per-session budget: one address can never exceed this × the permit count per window, however many sessions sit behind it (an office NAT shares this ceiling; a forged-cookie flood is bounded by it). Read at startup, a change requires an app restart."),
         new SettingDefault(SettingKeys.Security.RateLimitAuthPermitPerWindow, "10", "int", "Security",
             "Maximum /api/auth/* requests per IP within the auth rate limit window. Read at startup, a change requires an app restart."),
         new SettingDefault(SettingKeys.Security.RateLimitAuthWindowSeconds, "60", "int", "Security",

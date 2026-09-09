@@ -22,6 +22,8 @@ public sealed class SecurityActivityMonitor : BackgroundService
     // turn the background service into a busy-loop against Postgres.
     private static readonly TimeSpan MinInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan MinWindow = TimeSpan.FromSeconds(30);
+    /// Rows per list in a category breakdown (top targets / top sources).
+    private const int BreakdownTop = 5;
 
     private readonly IServiceScopeFactory _scopes;
     private readonly ISecurityActivitySnapshot _snapshot;
@@ -142,6 +144,45 @@ public sealed class SecurityActivityMonitor : BackgroundService
             monitorEnabled: enabled,
             acknowledgedFromUtc: ackFrom);
 
+        // v0.1.4 — for every category that tripped, pull the top targets and
+        // sources behind the count and re-evaluate so the summary, the
+        // health card and the incident all say *what* and *who*, not just
+        // how many. Only hot categories are queried, so a quiet install
+        // never pays for this; a failure here degrades to the bare count.
+        var hot = snapshot.Categories.Where(c => c.Status != HealthStatus.Ok).ToList();
+        if (enabled && hot.Count > 0)
+        {
+            var breakdowns = new Dictionary<string, AuditTopBreakdown>(StringComparer.Ordinal);
+            var fromUtc = new DateTimeOffset(effectiveFromUtc, TimeSpan.Zero);
+            var toUtc = new DateTimeOffset(nowUtc, TimeSpan.Zero);
+            foreach (var c in hot)
+            {
+                var category = SecurityActivityCategories.All.First(x => x.Key == c.Key);
+                try
+                {
+                    breakdowns[c.Key] = await audit.TopByEventTypesAsync(
+                        category.EventTypes, fromUtc, toUtc, BreakdownTop, ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "Security-activity breakdown query failed for {Category}; reporting the bare count.", c.Key);
+                }
+            }
+
+            if (breakdowns.Count > 0)
+            {
+                snapshot = SecurityActivityEvaluator.Evaluate(
+                    countsByEventType: counts,
+                    thresholdsByCategoryKey: thresholds,
+                    criticalMultiplier: multiplier,
+                    window: window,
+                    nowUtc: nowUtc,
+                    monitorEnabled: enabled,
+                    acknowledgedFromUtc: ackFrom,
+                    breakdownsByCategoryKey: breakdowns);
+            }
+        }
+
         _snapshot.Set(snapshot);
 
         // Reset the alert-guard when monitoring is off, or when no category
@@ -190,6 +231,9 @@ public sealed class SecurityActivityMonitor : BackgroundService
                 threshold = c.Threshold,
                 criticalThreshold = c.CriticalThreshold,
                 status = c.Status.ToString(),
+                topTargets = c.Breakdown?.TopTargets.Select(t => new { t.Label, t.Count }).ToArray(),
+                topSources = c.Breakdown?.TopSources.Select(t => new { t.Label, t.Count }).ToArray(),
+                distinctSources = c.Breakdown?.DistinctSources,
             })
             .ToArray();
 

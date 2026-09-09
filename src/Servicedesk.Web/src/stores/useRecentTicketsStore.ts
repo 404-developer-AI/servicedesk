@@ -119,9 +119,11 @@ export const useRecentTicketsStore = create<RecentTicketsState>()((set, get) => 
     });
   },
   clearRecents: () => {
-    const ids = get().recentTickets.map((t) => t.id);
+    if (get().recentTickets.length === 0) return;
     set({ recentTickets: [] });
-    Promise.all(ids.map((id) => recentTicketsApi.remove(id).catch(() => {}))).catch(() => {});
+    // v0.1.4 — one DELETE for the whole list. The per-ticket fan-out fired
+    // N requests plus N SignalR rehydrates for a single click.
+    recentTicketsApi.clear().catch(() => {});
   },
 }));
 
@@ -148,6 +150,20 @@ export async function hydrateRecentTicketsFromServer(): Promise<void> {
     // Leave the store untouched on failure — a stale list is better
     // than an empty sidebar. Next push or reload will retry.
   }
+}
+
+/// v0.1.4 — coalesced variant for the `RecentTicketsUpdated` push: a burst
+/// of pushes (several adds/removes in quick succession) becomes one GET
+/// once the burst settles, instead of one GET per push.
+const HYDRATE_COALESCE_MS = 300;
+let hydrateTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function scheduleRecentTicketsHydrate(): void {
+  if (hydrateTimer) clearTimeout(hydrateTimer);
+  hydrateTimer = setTimeout(() => {
+    hydrateTimer = null;
+    void hydrateRecentTicketsFromServer();
+  }, HYDRATE_COALESCE_MS);
 }
 
 const LEGACY_KEY = "sd-recent-tickets";

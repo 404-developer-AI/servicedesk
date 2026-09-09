@@ -1,3 +1,5 @@
+using Servicedesk.Infrastructure.Audit;
+
 namespace Servicedesk.Infrastructure.Health.SecurityActivity;
 
 /// Frozen result of one monitor evaluation. The HealthAggregator reads it
@@ -21,13 +23,18 @@ public sealed record SecurityActivitySnapshot(
     DateTime? AcknowledgedFromUtc = null);
 
 /// Per-category outcome inside a snapshot.
+///
+/// <see cref="Breakdown"/> (v0.1.4) is filled only for categories at or
+/// above their threshold: the top targets / client IPs behind the count,
+/// so the alert names the endpoint and the source instead of a bare number.
 public sealed record SecurityActivityCategoryResult(
     string Key,
     string Label,
     int Count,
     int Threshold,
     int CriticalThreshold,
-    HealthStatus Status);
+    HealthStatus Status,
+    AuditTopBreakdown? Breakdown = null);
 
 /// In-memory holder for the latest snapshot. The monitor writes here on
 /// every evaluation tick; the aggregator reads. Singleton in DI.

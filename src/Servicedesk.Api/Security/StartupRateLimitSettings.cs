@@ -35,9 +35,21 @@ internal sealed class StartupRateLimitSettings
 
             using var connection = new NpgsqlConnection(connectionString);
             connection.Open();
+            // v0.1.4 — the session cookie names are needed too: the global
+            // limiter partitions signed-in traffic per session cookie, and
+            // both names are settings.
             var rows = connection.Query<(string Key, string Value)>(
                 new CommandDefinition(
-                    "SELECT key AS Key, value AS Value FROM settings WHERE key LIKE '%RateLimit%'",
+                    """
+                    SELECT key AS Key, value AS Value FROM settings
+                     WHERE key LIKE '%RateLimit%'
+                        OR key IN (@SessionCookieKey, @PortalCookieKey)
+                    """,
+                    new
+                    {
+                        SessionCookieKey = Servicedesk.Infrastructure.Settings.SettingKeys.Security.SessionCookieName,
+                        PortalCookieKey = Servicedesk.Infrastructure.Settings.SettingKeys.Security.PortalSessionCookieName,
+                    },
                     commandTimeout: 5));
             return new StartupRateLimitSettings(
                 rows.ToDictionary(r => r.Key, r => r.Value, StringComparer.Ordinal));
@@ -54,5 +66,10 @@ internal sealed class StartupRateLimitSettings
     public int? GetInt(string settingKey)
         => _values.TryGetValue(settingKey, out var raw) && int.TryParse(raw, out var value) && value > 0
             ? value
+            : null;
+
+    public string? GetString(string settingKey)
+        => _values.TryGetValue(settingKey, out var raw) && !string.IsNullOrWhiteSpace(raw)
+            ? raw.Trim()
             : null;
 }

@@ -64,6 +64,24 @@ public static class RecentTicketsEndpoints
             return Results.NoContent();
         }).WithName("RecentTicketsRemove").WithOpenApi();
 
+        // v0.1.4 — "Clear recents" in one call (was one DELETE per ticket
+        // from the client, each with its own SignalR rehydrate).
+        group.MapDelete("/", async (
+            HttpContext httpContext,
+            IRecentTicketsService service,
+            IHubContext<UserNotificationHub> hub,
+            CancellationToken ct) =>
+        {
+            var userId = ResolveUserId(httpContext);
+            if (userId is null) return Results.Unauthorized();
+            var removed = await service.ClearAsync(userId.Value, ct);
+            if (removed > 0)
+            {
+                await BroadcastAsync(hub, userId.Value, ct);
+            }
+            return Results.NoContent();
+        }).WithName("RecentTicketsClear").WithOpenApi();
+
         group.MapPut("/order", async (
             [FromBody] ReorderRecentTicketsRequest request,
             HttpContext httpContext,
