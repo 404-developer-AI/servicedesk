@@ -118,6 +118,27 @@ export interface ResolveTokenParams {
   companyId?: string | null;
 }
 
+/// Picker endpoint. `queueId=null` lists only unrestricted templates —
+/// matches the New-Ticket drawer where no queue is selected yet.
+/// v0.0.42: `statusId` narrows the result further when supplied.
+/// Standalone (not an object member) so the memoised variant below can
+/// reference it without the object referencing itself in its initializer.
+function fetchUsable(
+  queueId: string | null,
+  statusId?: string | null,
+): Promise<UsableComposeTemplate[]> {
+  const qs = new URLSearchParams();
+  if (queueId) qs.set("queueId", queueId);
+  if (statusId) qs.set("statusId", statusId);
+  const suffix = qs.toString();
+  return request<UsableComposeTemplate[]>(
+    "GET",
+    suffix
+      ? `/api/compose-templates/usable?${suffix}`
+      : "/api/compose-templates/usable",
+  );
+}
+
 export const composeTemplatesApi = {
   list: (includeInactive = true) =>
     request<ComposeTemplate[]>(
@@ -137,31 +158,13 @@ export const composeTemplatesApi = {
   remove: (id: string) =>
     request<void>("DELETE", `/api/settings/compose-templates/${id}`),
 
-  /// Picker endpoint. `queueId=null` lists only unrestricted templates —
-  /// matches the New-Ticket drawer where no queue is selected yet.
-  /// v0.0.42: `statusId` narrows the result further when supplied.
-  usable: (queueId: string | null, statusId?: string | null) => {
-    const qs = new URLSearchParams();
-    if (queueId) qs.set("queueId", queueId);
-    if (statusId) qs.set("statusId", statusId);
-    const suffix = qs.toString();
-    return request<UsableComposeTemplate[]>(
-      "GET",
-      suffix
-        ? `/api/compose-templates/usable?${suffix}`
-        : "/api/compose-templates/usable",
-    );
-  },
+  usable: fetchUsable,
 
   /// v0.1.4 — picker variant of `usable`: memoised for a short TTL so the
   /// `::` picker (one call per keystroke before the editor-side debounce)
   /// fetches the list once per composer session instead of per key. Admin
   /// CRUD keeps using `usable`/`list`, so a fresh edit is never masked there.
-  usableCached: memoizeTtl(
-    (queueId: string | null, statusId?: string | null) =>
-      composeTemplatesApi.usable(queueId, statusId),
-    PICKER_CACHE_TTL_MS,
-  ),
+  usableCached: memoizeTtl(fetchUsable, PICKER_CACHE_TTL_MS),
 
   /// v0.0.42 — Auto-insert lookup. Returns the single best-matching
   /// auto-insert template (if any) for the (queue, status) tuple of an

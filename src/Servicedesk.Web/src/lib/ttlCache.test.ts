@@ -22,7 +22,7 @@ describe("memoizeTtl", () => {
 
   it("shares one in-flight request between concurrent callers", async () => {
     let resolve!: (v: string[]) => void;
-    const fn = vi.fn(() => new Promise<string[]>((r) => { resolve = r; }));
+    const fn = vi.fn((_key: string) => new Promise<string[]>((r) => { resolve = r; }));
     const cached = memoizeTtl(fn, 30_000);
 
     const a = cached("q");
@@ -33,7 +33,7 @@ describe("memoizeTtl", () => {
   });
 
   it("refetches once the TTL has elapsed", async () => {
-    const fn = vi.fn(async () => ["v"]);
+    const fn = vi.fn(async (_key: string) => ["v"]);
     const cached = memoizeTtl(fn, 30_000);
 
     await cached("q");
@@ -55,7 +55,7 @@ describe("memoizeTtl", () => {
   });
 
   it("invalidate() drops every entry", async () => {
-    const fn = vi.fn(async () => ["v"]);
+    const fn = vi.fn(async (_key: string) => ["v"]);
     const cached = memoizeTtl(fn, 30_000);
 
     await cached("q");
