@@ -54,13 +54,12 @@ public sealed class SessionAuthenticationHandler : AuthenticationHandler<Authent
     /// we re-query the database. 60s (was 5 min, audit v0.1.1 #4): the
     /// revocation paths evict explicitly, so this now only bounds how long
     /// out-of-band row changes (role edits in SQL, expiry) can lag; the read
-    /// behind a miss is a single indexed lookup and the touch-throttle
-    /// already bounds the write load.
+    /// behind a miss is a single indexed lookup. It also throttles the
+    /// last_seen_utc write: a session is only re-validated (and touched) on a
+    /// cache miss, i.e. at most once per this window per active session — so
+    /// no separate touch-throttle is needed (an earlier one equalled this
+    /// window, so it never elapsed and last_seen_utc never moved; v0.1.5).
     private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(60);
-
-    /// Minimum interval between touch (last_seen_utc) writes for the same
-    /// session. Must be well below the idle timeout (default 60 min).
-    private static readonly TimeSpan TouchThrottle = TimeSpan.FromSeconds(60);
 
     private readonly ISessionService _sessions;
     private readonly ISettingsService _settings;
@@ -113,16 +112,22 @@ public sealed class SessionAuthenticationHandler : AuthenticationHandler<Authent
                 return AuthenticateResult.NoResult();
             }
 
-            cached = new CachedSession(validation, DateTime.UtcNow);
+            cached = new CachedSession(validation);
             _cache.Set(cacheKey, cached, CacheDuration);
-        }
 
-        // Throttle touch: only write last_seen_utc if enough time has passed.
-        if (DateTime.UtcNow - cached.LastTouchedUtc > TouchThrottle)
-        {
-            cached = cached with { LastTouchedUtc = DateTime.UtcNow };
-            _cache.Set(cacheKey, cached, CacheDuration);
-            _ = _sessions.TouchAsync(sessionId, Context.RequestAborted);
+            // Slide the idle window on every fresh validation — this is what
+            // keeps an ACTIVE session alive. A validation only runs on a cache
+            // miss (at most once per CacheDuration per session), so CacheDuration
+            // itself throttles the write.
+            //
+            // The token MUST outlive the request. This is fire-and-forget, and
+            // Context.RequestAborted is cancelled the instant the response is
+            // sent — handing it here meant the UPDATE was almost always
+            // cancelled before it ran. Combined with the removed touch-throttle
+            // that never elapsed, last_seen_utc never moved off the login time,
+            // so every session hard-expired at the idle timeout regardless of
+            // activity (the hourly forced re-logins). v0.1.5 fix.
+            _ = _sessions.TouchAsync(sessionId, CancellationToken.None);
         }
 
         var v = cached.Validation;
@@ -143,5 +148,5 @@ public sealed class SessionAuthenticationHandler : AuthenticationHandler<Authent
         return AuthenticateResult.Success(ticket);
     }
 
-    private sealed record CachedSession(SessionValidation Validation, DateTime LastTouchedUtc);
+    private sealed record CachedSession(SessionValidation Validation);
 }
