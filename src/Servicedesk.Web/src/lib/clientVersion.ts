@@ -19,6 +19,31 @@
 
 export const CLIENT_VERSION_HEADER = "X-Client-Version";
 export const CLIENT_VERSION_OUTDATED_EVENT = "app:client-version-outdated";
+/// v0.1.5 — fired when an authenticated /api call comes back 401, i.e. the
+/// session expired, idled out (Security.Session.IdleTimeoutMinutes) or was
+/// revoked. `detail.path` is the request path so the handler can tell a staff
+/// session (→ /login) from a portal one (→ /portal/login). Auth-flow calls
+/// are excluded (a 401 there is a normal login/probe outcome, not an expiry).
+export const SESSION_EXPIRED_EVENT = "app:session-expired";
+
+/// A 401 on these prefixes is part of the sign-in flow itself (wrong password,
+/// the logged-out /me + /setup probes at boot), never a mid-session expiry, so
+/// it must not bounce the user to the login page.
+function isAuthFlowPath(path: string): boolean {
+  return path.startsWith("/api/auth/") || path.startsWith("/api/portal/auth/");
+}
+
+function sameOriginApiPath(input: RequestInfo | URL): string | null {
+  try {
+    const raw =
+      typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const url = new URL(raw, window.location.origin);
+    if (url.origin !== window.location.origin || !url.pathname.startsWith("/api/")) return null;
+    return url.pathname;
+  } catch {
+    return null;
+  }
+}
 
 const BAKED_VERSION: string =
   typeof __APP_VERSION__ !== "undefined" && __APP_VERSION__ ? __APP_VERSION__ : "dev";
@@ -67,6 +92,12 @@ export function installClientVersionFetch(): void {
     const response = await originalFetch(input, options);
     if (response.status === 426) {
       window.dispatchEvent(new Event(CLIENT_VERSION_OUTDATED_EVENT));
+    }
+    if (response.status === 401) {
+      const path = sameOriginApiPath(input);
+      if (path && !isAuthFlowPath(path)) {
+        window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT, { detail: { path } }));
+      }
     }
     return response;
   };
