@@ -7,6 +7,7 @@ import { router } from "@/app/router";
 import { ThemeProvider } from "@/app/ThemeProvider";
 import { bootstrapAuth } from "@/auth/bootstrap";
 import { installClientVersionFetch } from "@/lib/clientVersion";
+import { installSessionExpiryHandler } from "@/lib/sessionExpiry";
 
 // Must run before the first fetch (bootstrapAuth below) so every API call —
 // central helper, feature-local helpers, uploads, SignalR negotiate — carries
@@ -28,6 +29,10 @@ const queryClient = new QueryClient({
 // page. If the network call fails, bootstrapAuth falls through to a safe
 // "unauthenticated, no setup" state and the login page surfaces errors itself.
 await bootstrapAuth();
+
+// A mid-session 401 (idle timeout / expiry / revocation) now bounces the
+// viewer to the sign-in page instead of surfacing a raw error toast.
+installSessionExpiryHandler();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
