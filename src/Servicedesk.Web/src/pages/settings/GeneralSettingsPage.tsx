@@ -13,11 +13,24 @@ import {
   Sparkles,
   Search,
   RefreshCw,
+  KeyRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SettingField } from "@/components/settings/SettingField";
+import { CollapsibleSettingsCard } from "@/components/settings/CollapsibleSettingsCard";
+
+// v0.1.5 — staff session policy. These existed since day one but had no UI
+// field, so the only way to change them was the DB (and a restart, because a
+// raw row edit bypasses the settings cache). Editing them here writes through
+// the settings service, so a change applies to newly (re)validated sessions
+// without a restart. Idle timeout was the cause of the hourly forced M365
+// re-logins + the 401-on-send-mail an agent hit mid-compose.
+const SESSION_SETTINGS: ReadonlyArray<{ key: string; label: string }> = [
+  { key: "Security.Session.IdleTimeoutMinutes", label: "Idle timeout (minutes)" },
+  { key: "Security.Session.LifetimeHours", label: "Absolute session lifetime (hours)" },
+];
 import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { renderLoginBannerPreviewHtml } from "@/components/auth/LoginBanner";
 import { settingsApi, type SettingEntry, type LoginBannerType } from "@/lib/api";
@@ -95,6 +108,14 @@ export function GeneralSettingsPage() {
           Admin only
         </Badge>
       </header>
+
+      <CollapsibleSettingsCard
+        category="Security"
+        icon={<KeyRound className="h-5 w-5" />}
+        title="Sessions & sign-in"
+        description="How long a staff session stays valid. Idle timeout signs an agent out after that many minutes without a request; absolute lifetime is the hard cap regardless of activity. Shorter is safer, but too short forces repeated sign-ins mid-work. Applies to newly validated sessions — no restart needed. (The customer portal has its own lifetime under Settings → Customer portal.)"
+        keys={SESSION_SETTINGS}
+      />
 
       <DefaultThemeSection
         entry={defaultThemeEntry}
