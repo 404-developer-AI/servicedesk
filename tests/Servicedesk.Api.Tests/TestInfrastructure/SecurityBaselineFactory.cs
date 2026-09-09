@@ -482,6 +482,20 @@ public sealed class FakeSessionService : ISessionService
         return Task.CompletedTask;
     }
 
+    /// Test helper: pretend the session was last active `by` ago (an agent who
+    /// has been working a while but is still inside the idle window).
+    public void Backdate(Guid sessionId, TimeSpan by)
+    {
+        if (_sessions.TryGetValue(sessionId, out var e))
+        {
+            _sessions[sessionId] = e with { LastSeenUtc = DateTime.UtcNow - by };
+        }
+    }
+
+    /// Test helper: read the session's current last-seen stamp.
+    public DateTime? LastSeen(Guid sessionId) =>
+        _sessions.TryGetValue(sessionId, out var e) ? e.LastSeenUtc : null;
+
     public Task RevokeAsync(Guid sessionId, CancellationToken ct = default)
     {
         if (_sessions.TryGetValue(sessionId, out var e))
