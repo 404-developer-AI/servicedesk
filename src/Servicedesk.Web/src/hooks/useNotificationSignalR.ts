@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { useNavigate } from "@tanstack/react-router";
 import type { UserNotification } from "@/lib/notification-api";
 import { notificationApi } from "@/lib/notification-api";
-import { hydrateRecentTicketsFromServer } from "@/stores/useRecentTicketsStore";
+import { scheduleRecentTicketsHydrate } from "@/stores/useRecentTicketsStore";
 
 let connection: HubConnection | null = null;
 
@@ -203,7 +203,7 @@ export function useNotificationSignalR(toastDurationMs: number) {
     // we rehydrate the local cache so the sidebar reflects the change
     // without a manual refresh.
     const handleRecentTicketsUpdated = () => {
-      void hydrateRecentTicketsFromServer();
+      scheduleRecentTicketsHydrate();
     };
     hub.on("RecentTicketsUpdated", handleRecentTicketsUpdated);
 

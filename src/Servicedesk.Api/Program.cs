@@ -213,65 +213,79 @@ builder.Services.AddRateLimiter(options =>
 {
     options.OnRejected = AuditRateLimiterEvents.OnRejected;
 
-    // 240/60s per IP: a single content-rich page (a ticket with many inline
-    // images, each a separate authenticated GET) legitimately fires dozens of
-    // requests at once, so the old 120 tripped on normal use. Still per-IP and
-    // bounded; tune via Settings → Security or Security:RateLimit:Global:*.
+    // v0.1.4 — the global limiter is a chain: a hard per-IP ceiling over a
+    // per-session budget (per IP for anonymous callers). Before this, six
+    // agents behind one office NAT shared a single 240/min bucket and normal
+    // ticket work tripped it several times a day. Partition logic and the
+    // rationale live in GlobalRateLimitPartitioner; budgets are tunable via
+    // Settings → Health → Rate limits or Security:RateLimit:Global:*.
     var globalPermit = RateLimitValue("Security:RateLimit:Global:PermitPerWindow", SettingKeys.Security.RateLimitGlobalPermitPerWindow, 240);
     var globalWindow = RateLimitValue("Security:RateLimit:Global:WindowSeconds", SettingKeys.Security.RateLimitGlobalWindowSeconds, 60);
+    var ipCeilingMultiplier = RateLimitValue("Security:RateLimit:Global:IpCeilingMultiplier", SettingKeys.Security.RateLimitGlobalIpCeilingMultiplier, 5);
     // Inline-image GETs get their own generous bucket: one content-rich ticket
     // (a long imported email thread) can embed 150+ inline images, each a
     // separate authenticated GET fired at once on open. They're queue-access
     // gated and ETag-cached (304 on revisit), so the tight API budget doesn't
-    // apply — but a per-IP ceiling still bounds abuse.
+    // apply — but the per-session budget and per-IP ceiling still bound abuse.
     var attachmentPermit = builder.Configuration.GetValue<int?>("Security:RateLimit:Attachments:PermitPerWindow") ?? 1200;
     var attachmentWindow = builder.Configuration.GetValue<int?>("Security:RateLimit:Attachments:WindowSeconds") ?? 60;
     var authPermit = RateLimitValue("Security:RateLimit:Auth:PermitPerWindow", SettingKeys.Security.RateLimitAuthPermitPerWindow, 10);
     var authWindow = RateLimitValue("Security:RateLimit:Auth:WindowSeconds", SettingKeys.Security.RateLimitAuthWindowSeconds, 60);
+    // The session cookie names are settings; the limiter needs them to key
+    // signed-in traffic per session.
+    var sessionCookieName = rateLimitSettings.GetString(SettingKeys.Security.SessionCookieName) ?? "sd_session";
+    var portalCookieName = rateLimitSettings.GetString(SettingKeys.Security.PortalSessionCookieName) ?? "sd_portal";
 
-    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
-    {
-        // The always-on lightweight polls — the live server clock
-        // (/api/system/time) and the dashboard status pill
-        // (/api/system/health) — must never be throttled. They drive
-        // globally-visible UI and are cheap, read-only, and carry no attack
-        // surface worth limiting. Without this, a burst elsewhere on the same
-        // IP (e.g. a content-heavy ticket) exhausts the window and freezes the
-        // whole UI's clock/status. /api/system/version is deliberately NOT
-        // exempt — it's fetched once per load plus event-driven re-checks
-        // (SignalR reconnect / tab focus, client-throttled), never on a timer.
-        var path = ctx.Request.Path.Value ?? string.Empty;
-        if (path.StartsWith("/api/system/time", StringComparison.OrdinalIgnoreCase)
-            || path.StartsWith("/api/system/health", StringComparison.OrdinalIgnoreCase))
+    static RateLimitPartition<string> FixedWindow(string key, int permit, int windowSeconds)
+        => RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
         {
-            return RateLimitPartition.GetNoLimiter("system-poll");
-        }
-
-        // Inline-image / attachment downloads (GET …/attachments/{id}) run on
-        // their own generous per-IP bucket so an image-heavy ticket doesn't
-        // exhaust the main API budget and 429 the rest of the page.
-        if (HttpMethods.IsGet(ctx.Request.Method)
-            && path.Contains("/attachments/", StringComparison.OrdinalIgnoreCase))
-        {
-            var attKey = "att:" + (ctx.Connection.RemoteIpAddress?.ToString() ?? "anon");
-            return RateLimitPartition.GetFixedWindowLimiter(attKey, _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = attachmentPermit,
-                Window = TimeSpan.FromSeconds(attachmentWindow),
-                QueueLimit = 0,
-                AutoReplenishment = true,
-            });
-        }
-
-        var key = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
-        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = globalPermit,
-            Window = TimeSpan.FromSeconds(globalWindow),
+            PermitLimit = permit,
+            Window = TimeSpan.FromSeconds(windowSeconds),
             QueueLimit = 0,
             AutoReplenishment = true,
         });
+
+    // Chain link — per-IP ceiling. Everything one address sends, whatever
+    // cookies it presents, shares this bucket (attachments on a parallel
+    // ceiling of their own). Only the system polls bypass it.
+    var ipCeiling = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
+    {
+        if (GlobalRateLimitPartitioner.IsSystemPoll(ctx.Request.Path))
+        {
+            return RateLimitPartition.GetNoLimiter(GlobalRateLimitPartitioner.SystemPollKey);
+        }
+
+        var ip = GlobalRateLimitPartitioner.IpKey(ctx);
+        return GlobalRateLimitPartitioner.IsAttachmentGet(ctx)
+            ? FixedWindow("ipatt:" + ip, checked(attachmentPermit * ipCeilingMultiplier), attachmentWindow)
+            : FixedWindow("ip:" + ip, checked(globalPermit * ipCeilingMultiplier), globalWindow);
     });
+
+    // Chain link — per-session budget (per IP when anonymous). Connection
+    // plumbing (hub negotiates, version probe, maintenance banner) is exempt
+    // here so a refresh on an exhausted budget can still reconnect; it stays
+    // bounded by the ceiling.
+    var sessionBudget = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
+    {
+        if (GlobalRateLimitPartitioner.IsSystemPoll(ctx.Request.Path) || GlobalRateLimitPartitioner.IsInfra(ctx))
+        {
+            return RateLimitPartition.GetNoLimiter(GlobalRateLimitPartitioner.InfraKey);
+        }
+
+        var key = GlobalRateLimitPartitioner.SessionOrIpKey(ctx, sessionCookieName, portalCookieName);
+        return GlobalRateLimitPartitioner.IsAttachmentGet(ctx)
+            ? FixedWindow("att:" + key, attachmentPermit, attachmentWindow)
+            : FixedWindow(key, globalPermit, globalWindow);
+    });
+
+    // Order matters: the session budget goes first. The middleware attempts
+    // an acquire twice on the slow path and a chain consumes a permit from
+    // every link *before* the one that rejects, so with the ceiling first a
+    // session-rejected request would silently burn two ceiling permits and
+    // one runaway session could 429 its whole office. Session-first means a
+    // session rejection never touches the ceiling, and a ceiling rejection
+    // (the abuse case) is the only one that costs the caller extra.
+    options.GlobalLimiter = PartitionedRateLimiter.CreateChained(sessionBudget, ipCeiling);
 
     options.AddPolicy("auth", ctx =>
     {

@@ -19,6 +19,7 @@ import {
   Paperclip,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { debounceAsync } from "@/lib/asyncDebounce";
 import { substituteComposeTokens } from "@/lib/composeTokens";
 import type { TicketAttachmentMeta, MentionPickerItem } from "@/lib/ticket-api";
 import { MentionList, type MentionListHandle } from "./MentionList";
@@ -55,7 +56,8 @@ type RichTextEditorProps = {
   /// in their own <AttachmentTray />. Images are always inserted inline.
   linkNonImageUploads?: boolean;
   /// When provided, the editor enables the @@-mention typeahead: typing `@@`
-  /// opens a popover fed by this callback (debounced to ~120ms by the editor).
+  /// opens a popover fed by this callback (debounced by the editor, see
+  /// PICKER_DEBOUNCE_MS).
   /// Selecting a row inserts a Mention node whose `id` is the agent's user-id.
   /// Called alongside onChange on every update with the current set of
   /// mentioned user-ids (deduplicated, source order).
@@ -940,6 +942,13 @@ type ComposeMentionProps = MentionNodeAttrs & {
   href?: string;
 };
 
+/// v0.1.4 — typing pause before the `@@` / `::` pickers query the server.
+/// Every keystroke used to fire a request (34 template fetches in 8 seconds
+/// for one agent typing `::`), which helped exhaust the per-session
+/// rate-limit budget. Short enough to feel instant, long enough to collapse
+/// a typed word into one lookup.
+const PICKER_DEBOUNCE_MS = 250;
+
 function buildIntakeSuggestion(
   queryRef: React.MutableRefObject<
     ((query: string) => Promise<IntakeMentionItem[]>) | undefined
@@ -951,16 +960,21 @@ function buildIntakeSuggestion(
     Record<string, string> | undefined
   >,
 ): Omit<SuggestionOptions<IntakeMentionItem, ComposeMentionProps>, "editor"> {
+  // v0.1.4 — one lookup per typing pause instead of one per keystroke.
+  const lookup = debounceAsync(async (query: string) => {
+    const fn = queryRef.current;
+    if (!fn) return [];
+    try {
+      return await fn(query);
+    } catch {
+      return [];
+    }
+  }, PICKER_DEBOUNCE_MS);
+
   return {
     char: "::",
-    async items({ query }: { query: string }) {
-      const fn = queryRef.current;
-      if (!fn) return [];
-      try {
-        return await fn(query);
-      } catch {
-        return [];
-      }
+    items({ query }: { query: string }) {
+      return lookup(query);
     },
     // Custom command — we ignore Tiptap's default insertContent for Mention
     // and dispatch on item kind. Templates get insertContent(html); intake
@@ -1202,16 +1216,21 @@ function buildMentionSuggestion(
     ((query: string) => Promise<MentionPickerItem[]>) | undefined
   >,
 ): Omit<SuggestionOptions<MentionPickerItem, MentionNodeAttrs>, "editor"> {
+  // v0.1.4 — one agent search per typing pause instead of one per keystroke.
+  const lookup = debounceAsync(async (query: string) => {
+    const fn = queryRef.current;
+    if (!fn) return [];
+    try {
+      return await fn(query);
+    } catch {
+      return [];
+    }
+  }, PICKER_DEBOUNCE_MS);
+
   return {
     char: "@@",
-    async items({ query }: { query: string }) {
-      const fn = queryRef.current;
-      if (!fn) return [];
-      try {
-        return await fn(query);
-      } catch {
-        return [];
-      }
+    items({ query }: { query: string }) {
+      return lookup(query);
     },
     render: () => {
       let component: ReactRenderer<MentionListHandle> | null = null;

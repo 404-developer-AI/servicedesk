@@ -1,3 +1,8 @@
+import { memoizeTtl } from "@/lib/ttlCache";
+
+/// How long the `::` picker reuses a fetched intake-template list (v0.1.4).
+const PICKER_CACHE_TTL_MS = 30_000;
+
 // v0.0.19 Intake Forms API client.
 //
 // Matches the shape of `slaApi` in `api.ts`: one object of named functions
@@ -182,6 +187,13 @@ export const intakeFormsApi = {
       "GET",
       `/api/settings/intake-templates${includeInactive ? "?includeInactive=true" : ""}`,
     ),
+  /// v0.1.4 — picker variant: memoised for a short TTL so the `::` picker
+  /// doesn't refetch the intake-template list per keystroke. The admin
+  /// pages keep using `listTemplates` so their edits show immediately.
+  listTemplatesCached: memoizeTtl(
+    (includeInactive = false) => intakeFormsApi.listTemplates(includeInactive),
+    PICKER_CACHE_TTL_MS,
+  ),
   getTemplate: (id: string) =>
     request<IntakeTemplate>("GET", `/api/settings/intake-templates/${id}`),
   createTemplate: (body: TemplateUpsertRequest) =>

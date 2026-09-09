@@ -25,6 +25,13 @@ public interface IRecentTicketsService
     /// was actually deleted (caller decides whether to broadcast).
     Task<bool> RemoveAsync(Guid userId, Guid ticketId, CancellationToken ct = default);
 
+    /// v0.1.4 — empties the user's list in one statement. Returns the number
+    /// of rows removed (caller broadcasts only when > 0). Replaces the
+    /// client-side "one DELETE per ticket" fan-out, which fired N requests +
+    /// N SignalR rehydrates for a single click and could exhaust a rate-limit
+    /// budget on its own.
+    Task<int> ClearAsync(Guid userId, CancellationToken ct = default);
+
     /// Replaces the user's full ordering with the supplied id list.
     /// Unknown ids (no row in user_recent_tickets) are silently dropped;
     /// missing ids retain their old position. Used by the drag-reorder
@@ -173,6 +180,16 @@ public sealed class RecentTicketsService : IRecentTicketsService
             new { UserId = userId, TicketId = ticketId },
             cancellationToken: ct));
         return rows > 0;
+    }
+
+    public async Task<int> ClearAsync(Guid userId, CancellationToken ct = default)
+    {
+        const string sql = "DELETE FROM user_recent_tickets WHERE user_id = @UserId";
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        return await connection.ExecuteAsync(new CommandDefinition(
+            sql,
+            new { UserId = userId },
+            cancellationToken: ct));
     }
 
     public async Task ReorderAsync(Guid userId, IReadOnlyList<Guid> orderedIds, CancellationToken ct = default)

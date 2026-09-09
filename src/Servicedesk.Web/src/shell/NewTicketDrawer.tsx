@@ -732,7 +732,7 @@ export function NewTicketDrawer({
                             // intake-form chip flow doesn't apply (no
                             // ticket id yet). Only compose templates
                             // surface here, scoped to the chosen queue.
-                            const list = await composeTemplatesApi.usable(
+                            const list = await composeTemplatesApi.usableCached(
                               watchedQueueId || null,
                             );
                             const needle = q.trim().toLowerCase();

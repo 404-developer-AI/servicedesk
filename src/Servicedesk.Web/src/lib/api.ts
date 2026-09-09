@@ -393,6 +393,8 @@ export const recentTicketsApi = {
     request<void>("POST", `/api/me/recent-tickets/${ticketId}`),
   remove: (ticketId: string) =>
     request<void>("DELETE", `/api/me/recent-tickets/${ticketId}`),
+  /// v0.1.4 — one call empties the list (was one DELETE per ticket).
+  clear: () => request<void>("DELETE", "/api/me/recent-tickets/"),
   reorder: (ticketIds: string[]) =>
     request<void>("PUT", "/api/me/recent-tickets/order", { ticketIds }),
 };

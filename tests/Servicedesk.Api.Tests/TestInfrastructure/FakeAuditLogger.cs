@@ -89,4 +89,28 @@ public sealed class FakeAuditQuery : IAuditQuery
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
         return Task.FromResult<IReadOnlyDictionary<string, int>>(dict);
     }
+
+    public Task<AuditTopBreakdown> TopByEventTypesAsync(
+        IReadOnlyCollection<string> eventTypes,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        int top,
+        CancellationToken cancellationToken = default)
+    {
+        var types = new HashSet<string>(eventTypes, StringComparer.Ordinal);
+        var hits = _entries
+            .Where(e => types.Contains(e.EventType))
+            .Where(e => e.Utc >= fromUtc.UtcDateTime && e.Utc < toUtc.UtcDateTime)
+            .ToList();
+        var targets = hits.GroupBy(e => e.Target ?? "(none)", StringComparer.Ordinal)
+            .Select(g => new AuditTopItem(g.Key, g.Count()))
+            .OrderByDescending(t => t.Count).ThenBy(t => t.Label, StringComparer.Ordinal)
+            .Take(top).ToList();
+        var sources = hits.GroupBy(e => e.ClientIp ?? "(unknown)", StringComparer.Ordinal)
+            .Select(g => new AuditTopItem(g.Key, g.Count()))
+            .OrderByDescending(t => t.Count).ThenBy(t => t.Label, StringComparer.Ordinal)
+            .Take(top).ToList();
+        var distinct = hits.Select(e => e.ClientIp ?? "(unknown)").Distinct(StringComparer.Ordinal).Count();
+        return Task.FromResult(new AuditTopBreakdown(targets, sources, distinct));
+    }
 }

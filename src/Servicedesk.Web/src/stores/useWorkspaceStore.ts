@@ -96,6 +96,17 @@ type WorkspaceState = {
   flushSync: () => void;
 };
 
+// v0.1.4 — signature of the last entry set sent to the server. The
+// auto-save flushes on every route change; before this it PUT the full
+// entry set (all drafts included) every time, whether or not anything had
+// changed — one redundant write per ticket open, which added up under the
+// per-session rate-limit budget. An unchanged set is now a no-op.
+let lastSavedSignature: string | null = null;
+
+function signatureOf(entries: Array<{ key: string; value: string }>): string {
+  return JSON.stringify(entries);
+}
+
 function toEntries(state: WorkspaceState) {
   const entries: Array<{ key: string; value: string }> = [];
   if (state.lastTicketId) {
@@ -246,6 +257,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const raw = await preferencesApi.getWorkspace();
       const parsed = fromEntries(raw);
       set({ ...parsed, loaded: true });
+      // What we just loaded *is* the server state — the first flush after
+      // load must not re-send it unchanged.
+      lastSavedSignature = signatureOf(toEntries(get()));
     } catch {
       set({ loaded: true });
     }
@@ -254,8 +268,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   flush: async () => {
     const entries = toEntries(get());
     if (entries.length === 0) return;
+    const signature = signatureOf(entries);
+    if (signature === lastSavedSignature) return;
     try {
       await preferencesApi.saveWorkspace(entries);
+      lastSavedSignature = signature;
     } catch {
       // silent — best-effort persistence
     }
@@ -264,6 +281,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   flushSync: () => {
     const entries = toEntries(get());
     if (entries.length === 0) return;
+    const signature = signatureOf(entries);
+    if (signature === lastSavedSignature) return;
+    // Optimistic: keepalive saves can't be awaited on unload. A lost save
+    // is re-sent on the next change anyway.
+    lastSavedSignature = signature;
     preferencesApi.fireAndForgetWorkspaceSave(entries);
   },
 }));

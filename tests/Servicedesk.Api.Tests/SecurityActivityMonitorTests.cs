@@ -52,6 +52,51 @@ public sealed class SecurityActivityMonitorTests
         Assert.Equal("security-activity", push.Subsystem);
     }
 
+    // v0.1.4 — the breakdown query runs only for categories that tripped,
+    // and its result reaches the snapshot, the summary and the incident.
+    [Fact]
+    public async Task Hot_category_queries_breakdown_and_surfaces_it()
+    {
+        var audit = new StubAuditQuery(new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["rate_limited"] = 84, // default threshold 50 → Warning
+        })
+        {
+            Breakdown = new AuditTopBreakdown(
+                new[] { new AuditTopItem("GET /api/compose-templates/usable", 34) },
+                new[] { new AuditTopItem("81.82.205.178", 84) },
+                1),
+        };
+        var incidents = new StubIncidentLog();
+        var notifier = new StubAlertNotifier();
+        var (monitor, snapshot) = BuildMonitor(audit, incidents, notifier);
+
+        await monitor.TickAsync(CancellationToken.None);
+
+        Assert.Equal(1, audit.BreakdownQueryCount); // one hot category, one query
+        var snap = snapshot.Get()!;
+        var rl = Assert.Single(snap.Categories, c => c.Key == "rate_limited");
+        Assert.NotNull(rl.Breakdown);
+        Assert.Contains("GET /api/compose-templates/usable ×34, 1 source", snap.Summary);
+        var report = Assert.Single(incidents.Reports);
+        Assert.Contains("81.82.205.178", report.ContextJson);
+        Assert.Contains("compose-templates", Assert.Single(notifier.Sent).Summary);
+    }
+
+    [Fact]
+    public async Task Calm_tick_never_queries_breakdown()
+    {
+        var audit = new StubAuditQuery(new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["rate_limited"] = 3,
+        });
+        var (monitor, _) = BuildMonitor(audit, new StubIncidentLog(), new StubAlertNotifier());
+
+        await monitor.TickAsync(CancellationToken.None);
+
+        Assert.Equal(0, audit.BreakdownQueryCount);
+    }
+
     [Fact]
     public async Task Sustained_warning_does_not_refire_on_next_tick()
     {
@@ -309,6 +354,15 @@ public sealed class SecurityActivityMonitorTests
             LastFromUtc = fromUtc;
             LastToUtc = toUtc;
             return Task.FromResult(Counts);
+        }
+
+        public AuditTopBreakdown Breakdown { get; set; } = AuditTopBreakdown.Empty;
+        public int BreakdownQueryCount { get; private set; }
+        public Task<AuditTopBreakdown> TopByEventTypesAsync(
+            IReadOnlyCollection<string> eventTypes, DateTimeOffset fromUtc, DateTimeOffset toUtc, int top, CancellationToken ct = default)
+        {
+            BreakdownQueryCount++;
+            return Task.FromResult(Breakdown);
         }
     }
 

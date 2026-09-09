@@ -542,6 +542,21 @@ public sealed class HealthAggregator : IHealthAggregator
                     _ => $"{c.Count} / {c.Threshold}",
                 };
                 details.Add(new HealthDetail(c.Label, lvl));
+
+                // v0.1.4 — name the endpoint(s) and source(s) behind a hot
+                // category so the card is actionable without a DB session.
+                if (c.Breakdown is { } bd && bd.TopTargets.Count > 0)
+                {
+                    details.Add(new HealthDetail(
+                        $"{c.Label} — top targets",
+                        string.Join(" · ", bd.TopTargets.Select(t => $"{t.Label} ({t.Count})"))));
+                    var sourcesText = string.Join(" · ", bd.TopSources.Select(t => $"{t.Label} ({t.Count})"));
+                    details.Add(new HealthDetail(
+                        $"{c.Label} — sources",
+                        bd.DistinctSources > bd.TopSources.Count
+                            ? $"{sourcesText} · {bd.DistinctSources} distinct in total"
+                            : sourcesText));
+                }
             }
         }
 

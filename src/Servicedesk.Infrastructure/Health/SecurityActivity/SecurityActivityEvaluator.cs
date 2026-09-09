@@ -1,3 +1,5 @@
+using Servicedesk.Infrastructure.Audit;
+
 namespace Servicedesk.Infrastructure.Health.SecurityActivity;
 
 /// Pure function that turns raw counts + thresholds into a snapshot. Lives
@@ -12,7 +14,8 @@ public static class SecurityActivityEvaluator
         TimeSpan window,
         DateTime nowUtc,
         bool monitorEnabled,
-        DateTime? acknowledgedFromUtc = null)
+        DateTime? acknowledgedFromUtc = null,
+        IReadOnlyDictionary<string, AuditTopBreakdown>? breakdownsByCategoryKey = null)
     {
         var multiplier = criticalMultiplier < 1 ? 1 : criticalMultiplier;
         var rollup = HealthStatus.Ok;
@@ -35,16 +38,24 @@ public static class SecurityActivityEvaluator
                 : category.DefaultThreshold;
             var critical = checked(threshold * multiplier);
 
+            AuditTopBreakdown? breakdown = null;
+            if (breakdownsByCategoryKey is not null
+                && breakdownsByCategoryKey.TryGetValue(category.Key, out var bd)
+                && bd is not null)
+            {
+                breakdown = bd;
+            }
+
             HealthStatus status;
             if (count >= critical)
             {
                 status = HealthStatus.Critical;
-                hotParts.Add($"{category.Label}: {count}");
+                hotParts.Add(FormatHotPart(category.Label, count, breakdown));
             }
             else if (count >= threshold)
             {
                 status = HealthStatus.Warning;
-                hotParts.Add($"{category.Label}: {count}");
+                hotParts.Add(FormatHotPart(category.Label, count, breakdown));
             }
             else
             {
@@ -59,7 +70,8 @@ public static class SecurityActivityEvaluator
                 Count: count,
                 Threshold: threshold,
                 CriticalThreshold: critical,
-                Status: status));
+                Status: status,
+                Breakdown: status == HealthStatus.Ok ? null : breakdown));
         }
 
         var windowText = FormatWindow(window);
@@ -92,6 +104,20 @@ public static class SecurityActivityEvaluator
             Categories: results,
             MonitorEnabled: monitorEnabled,
             AcknowledgedFromUtc: acknowledgedFromUtc);
+    }
+
+    /// "Rate-limit rejections: 84 (top: GET /api/compose-templates/usable ×34, 1 source)".
+    /// Falls back to the bare count when no breakdown was captured.
+    internal static string FormatHotPart(string label, int count, AuditTopBreakdown? breakdown)
+    {
+        if (breakdown is null || breakdown.TopTargets.Count == 0)
+        {
+            return $"{label}: {count}";
+        }
+
+        var top = breakdown.TopTargets[0];
+        var sources = breakdown.DistinctSources == 1 ? "1 source" : $"{breakdown.DistinctSources} sources";
+        return $"{label}: {count} (top: {top.Label} ×{top.Count}, {sources})";
     }
 
     private static string FormatWindow(TimeSpan window)

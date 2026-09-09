@@ -1,3 +1,4 @@
+using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Health;
 using Servicedesk.Infrastructure.Health.SecurityActivity;
 using Xunit;
@@ -114,6 +115,49 @@ public sealed class SecurityActivityEvaluatorTests
             snap.Categories.Single(c => c.Key == "login_failed").Status);
     }
 
+    // v0.1.4 — a hot category carries its top-target/source breakdown and
+    // the summary names the endpoint + source count instead of a bare number.
+    [Fact]
+    public void Breakdown_is_attached_to_hot_categories_and_named_in_summary()
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["rate_limited"] = 84,
+            ["login_failed"] = 1,
+        };
+        var breakdowns = new Dictionary<string, AuditTopBreakdown>(StringComparer.Ordinal)
+        {
+            ["rate_limited"] = new(
+                new[] { new AuditTopItem("GET /api/compose-templates/usable", 34), new AuditTopItem("PUT /api/preferences/workspace", 10) },
+                new[] { new AuditTopItem("81.82.205.178", 84) },
+                DistinctSources: 1),
+            // Supplied for a calm category: must be dropped, not surfaced.
+            ["login_failed"] = new(new[] { new AuditTopItem("someone", 1) }, new[] { new AuditTopItem("1.2.3.4", 1) }, 1),
+        };
+
+        var snap = Evaluate(counts, monitorEnabled: true, breakdowns: breakdowns);
+
+        var rl = Assert.Single(snap.Categories, c => c.Key == "rate_limited");
+        Assert.Equal(HealthStatus.Warning, rl.Status);
+        Assert.NotNull(rl.Breakdown);
+        Assert.Equal(2, rl.Breakdown!.TopTargets.Count);
+        Assert.Contains("Rate-limit rejections: 84 (top: GET /api/compose-templates/usable ×34, 1 source)", snap.Summary);
+
+        var lf = Assert.Single(snap.Categories, c => c.Key == "login_failed");
+        Assert.Null(lf.Breakdown);
+    }
+
+    [Fact]
+    public void Hot_category_without_breakdown_keeps_bare_count()
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal) { ["rate_limited"] = 60 };
+
+        var snap = Evaluate(counts, monitorEnabled: true);
+
+        Assert.Contains("Rate-limit rejections: 60.", snap.Summary);
+        Assert.DoesNotContain("(top:", snap.Summary);
+    }
+
     private static SecurityActivitySnapshot Evaluate(
         IReadOnlyDictionary<string, int> counts,
         bool monitorEnabled,
@@ -122,7 +166,8 @@ public sealed class SecurityActivityEvaluatorTests
         int csrfThreshold = 5,
         int rateLimitedThreshold = 50,
         int msRejectedThreshold = 5,
-        int multiplier = 3)
+        int multiplier = 3,
+        IReadOnlyDictionary<string, AuditTopBreakdown>? breakdowns = null)
     {
         var thresholds = new Dictionary<string, int>(StringComparer.Ordinal)
         {
@@ -139,6 +184,7 @@ public sealed class SecurityActivityEvaluatorTests
             criticalMultiplier: multiplier,
             window: Window,
             nowUtc: Now,
-            monitorEnabled: monitorEnabled);
+            monitorEnabled: monitorEnabled,
+            breakdownsByCategoryKey: breakdowns);
     }
 }
