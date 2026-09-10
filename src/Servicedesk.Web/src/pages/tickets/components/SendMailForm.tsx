@@ -487,6 +487,10 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
     setShowCc(draft.showCc || draft.cc.length > 0);
     setShowBcc(draft.showBcc || draft.bcc.length > 0);
     setSubject(draft.subject);
+    // Re-seed the upload list so pasted images / tray files from before the
+    // remount are sent with their ids again (the server also resolves body
+    // URLs itself, but the tray must show them and the ids keep it exact).
+    attachments.hydrate(draft.attachments ?? []);
     // The saved body carries only the BARE signature marker, so inflate it
     // with the resolved preview for DISPLAY; `bodyHtml` stays bare for send.
     // If the signature query hasn't resolved yet, the re-inflate effect below
@@ -551,8 +555,9 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
       // Tag the draft with the feed action it belongs to so a remount restores
       // it instead of re-applying the intent. null for a plain New compose.
       intentId: initialIntent?.id ?? null,
+      attachments: attachments.readyMetas,
     });
-  }, [ticketId, kind, to, cc, bcc, showCc, showBcc, subject, bodyHtml]);
+  }, [ticketId, kind, to, cc, bcc, showCc, showBcc, subject, bodyHtml, attachments.readyMetas]);
 
   const mutation = useMutation({
     mutationFn: () => {

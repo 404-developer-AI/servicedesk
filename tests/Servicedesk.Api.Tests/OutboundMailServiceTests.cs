@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Servicedesk.Domain.Taxonomy;
 using Servicedesk.Domain.Tickets;
+using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.IntakeForms;
 using Servicedesk.Infrastructure.Mail.Attachments;
@@ -62,6 +63,161 @@ public sealed class OutboundMailServiceTests
         Assert.True(assignment.Item.IsInline);
         Assert.Equal(sentAtt.ContentId, assignment.Item.ContentId);
         Assert.Equal(TicketId, assignment.TicketId);
+    }
+
+    // ------------------------------------------------------------------
+    // v0.1.6 — body-referenced attachment images. The client's attachmentIds
+    // is only a hint; the body decides what goes inline.
+    // ------------------------------------------------------------------
+
+    private static readonly Guid OtherTicketId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+    private static readonly Guid InboundMailId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+
+    private static OutboundMailRequest Request(string bodyHtml, IReadOnlyList<Guid>? attachmentIds = null, string? role = "Agent")
+        => new(TicketId, AuthorId, OutboundMailKind.New,
+            To: new[] { new GraphRecipient("dest@example.com", "D") },
+            Cc: Array.Empty<GraphRecipient>(),
+            Bcc: Array.Empty<GraphRecipient>(),
+            Subject: "Subj",
+            BodyHtml: bodyHtml,
+            AttachmentIds: attachmentIds,
+            AuthorRole: role);
+
+    private static AttachmentRow ImageRow(Guid ownerId, string ownerKind, long? eventId = null)
+        => new(Id: Guid.NewGuid(), OwnerId: ownerId, OwnerKind: ownerKind,
+            ContentHash: "hash-img", SizeBytes: 2048, MimeType: "image/png",
+            OriginalFilename: "shot.png", IsInline: false, ContentId: null,
+            ProcessingState: "Ready", EventId: eventId);
+
+    [Fact]
+    public async Task Staged_image_referenced_only_in_body_is_still_inlined()
+    {
+        // Draft-restore scenario: the body still carries the URL but the client
+        // lost the attachment id, so AttachmentIds is empty.
+        var att = ReadyImage();
+        var (svc, graph, _, repo, _) = Build(attachments: new[] { att });
+        var url = $"/api/tickets/{TicketId}/attachments/{att.Id}?inline=true";
+
+        var result = await svc.SendAsync(Request($"<img src=\"{url}\">"), default);
+
+        Assert.Equal(OutboundMailStatus.Sent, result.Status);
+        var sent = Assert.Single(graph.LastMessage!.Attachments!);
+        Assert.True(sent.IsInline);
+        Assert.Contains($"cid:{sent.ContentId}\"", graph.LastMessage.BodyHtml);
+        Assert.DoesNotContain("inline=true", graph.LastMessage.BodyHtml);
+        Assert.Empty(repo.UploadedCreates); // own staged row: no copy needed
+        var assignment = Assert.Single(repo.MailReassignments);
+        Assert.Equal(att.Id, assignment.Item.AttachmentId);
+    }
+
+    [Fact]
+    public async Task Image_from_earlier_article_on_same_ticket_is_copied_and_inlined()
+    {
+        var bound = ImageRow(TicketId, "Ticket", eventId: 42);
+        var (svc, graph, _, repo, tickets) = Build(attachments: new[] { bound });
+        var url = $"/api/tickets/{TicketId}/attachments/{bound.Id}";
+
+        var result = await svc.SendAsync(Request($"<img src=\"{url}\">"), default);
+
+        Assert.Equal(OutboundMailStatus.Sent, result.Status);
+        var copy = Assert.Single(repo.UploadedCreates);
+        Assert.Equal(TicketId, copy.TicketId);
+        Assert.Equal(bound.ContentHash, copy.ContentHash);
+        var sent = Assert.Single(graph.LastMessage!.Attachments!);
+        Assert.True(sent.IsInline);
+        // The persisted timeline body points at the ticket-owned copy, not the
+        // original event-bound row.
+        var assignment = Assert.Single(repo.MailReassignments);
+        Assert.NotEqual(bound.Id, assignment.Item.AttachmentId);
+        Assert.Contains($"/api/tickets/{TicketId}/attachments/{assignment.Item.AttachmentId}", tickets.LastEventInput!.BodyHtml);
+        Assert.DoesNotContain(bound.Id.ToString(), tickets.LastEventInput.BodyHtml);
+    }
+
+    [Fact]
+    public async Task Inbound_mail_image_of_this_ticket_is_copied_and_inlined()
+    {
+        var mailAtt = ImageRow(InboundMailId, "Mail");
+        var mailRow = new MailMessageRow(InboundMailId, "<in@x>", null, "s", "c@x", "C", MailboxAddress,
+            DateTime.UtcNow, null, null, "", TicketId, 7, null, null);
+        var (svc, graph, _, repo, _) = Build(attachments: new[] { mailAtt }, mailRows: new[] { mailRow });
+        var url = $"/api/tickets/{TicketId}/mail/{InboundMailId}/attachments/{mailAtt.Id}";
+
+        var result = await svc.SendAsync(Request($"<img src=\"{url}\">"), default);
+
+        Assert.Equal(OutboundMailStatus.Sent, result.Status);
+        Assert.Single(repo.UploadedCreates);
+        var sent = Assert.Single(graph.LastMessage!.Attachments!);
+        Assert.True(sent.IsInline);
+        Assert.DoesNotContain(url, graph.LastMessage.BodyHtml);
+    }
+
+    [Fact]
+    public async Task Image_from_another_ticket_is_copied_when_sender_has_queue_access()
+    {
+        var foreign = ImageRow(OtherTicketId, "Ticket");
+        var (svc, graph, _, repo, tickets) = Build(attachments: new[] { foreign }, queueAccessAllowed: true);
+        var url = $"/api/tickets/{OtherTicketId}/attachments/{foreign.Id}";
+
+        var result = await svc.SendAsync(Request($"<img src=\"{url}\">"), default);
+
+        Assert.Equal(OutboundMailStatus.Sent, result.Status);
+        var copy = Assert.Single(repo.UploadedCreates);
+        Assert.Equal(TicketId, copy.TicketId);
+        Assert.True(Assert.Single(graph.LastMessage!.Attachments!).IsInline);
+        Assert.DoesNotContain(OtherTicketId.ToString(), tickets.LastEventInput!.BodyHtml);
+    }
+
+    [Theory]
+    [InlineData(false, "Agent")]
+    [InlineData(true, null)]
+    public async Task Image_from_another_ticket_is_left_alone_without_access(bool queueAccess, string? role)
+    {
+        var foreign = ImageRow(OtherTicketId, "Ticket");
+        var (svc, graph, _, repo, tickets) = Build(attachments: new[] { foreign }, queueAccessAllowed: queueAccess);
+        var url = $"/api/tickets/{OtherTicketId}/attachments/{foreign.Id}";
+
+        var result = await svc.SendAsync(Request($"<img src=\"{url}\">", role: role), default);
+
+        Assert.Equal(OutboundMailStatus.Sent, result.Status);
+        Assert.Empty(repo.UploadedCreates);
+        Assert.Null(graph.LastMessage!.Attachments);
+        Assert.Contains(url, graph.LastMessage.BodyHtml);
+        Assert.Contains(url, tickets.LastEventInput!.BodyHtml);
+    }
+
+    [Fact]
+    public async Task Broken_ownership_chain_is_never_copied()
+    {
+        // The URL names ticket B, but the row is owned by ticket A: a forged
+        // reference. Even with queue access the copy must not happen.
+        var row = ImageRow(TicketId, "Ticket");
+        var (svc, graph, _, repo, _) = Build(attachments: new[] { row }, queueAccessAllowed: true);
+        var url = $"/api/tickets/{OtherTicketId}/attachments/{row.Id}";
+
+        var result = await svc.SendAsync(Request($"<img src=\"{url}\">"), default);
+
+        Assert.Equal(OutboundMailStatus.Sent, result.Status);
+        Assert.Empty(repo.UploadedCreates);
+        Assert.Null(graph.LastMessage!.Attachments);
+    }
+
+    [Fact]
+    public void Body_reference_extractor_parses_both_routes_and_query_suffix()
+    {
+        var a = Guid.NewGuid(); var m = Guid.NewGuid(); var x = Guid.NewGuid();
+        var body =
+            $"<img src=\"/api/tickets/{TicketId}/attachments/{a}?inline=true\">" +
+            $"<img src=\"/api/tickets/{OtherTicketId}/mail/{m}/attachments/{x}\">" +
+            $"<img src=\"/api/tickets/{TicketId}/attachments/{a}?inline=true\">";
+
+        var refs = OutboundMailService.ExtractBodyAttachmentReferences(body);
+
+        Assert.Equal(2, refs.Count);
+        Assert.Equal(a, refs[0].AttachmentId);
+        Assert.Null(refs[0].MailMessageId);
+        Assert.EndsWith("?inline=true", refs[0].Raw);
+        Assert.Equal(m, refs[1].MailMessageId);
+        Assert.Equal(OtherTicketId, refs[1].TicketId);
     }
 
     [Fact]
@@ -390,12 +546,14 @@ public sealed class OutboundMailServiceTests
         StubTickets tickets) Build(
         IReadOnlyList<AttachmentRow>? attachments = null,
         long? maxOutboundBytes = null,
-        IEnumerable<Guid>? knownAgents = null)
+        IEnumerable<Guid>? knownAgents = null,
+        bool queueAccessAllowed = true,
+        IReadOnlyList<MailMessageRow>? mailRows = null)
     {
         var graph = new StubGraph();
         var taxonomy = new StubTaxonomy();
         var tickets = new StubTickets();
-        var mail = new StubMail();
+        var mail = new StubMail(mailRows);
         var atts = new StubAttachments(attachments ?? Array.Empty<AttachmentRow>());
         var blobs = new StubBlobs();
         var settings = new StubSettings(maxOutboundBytes ?? (3L * 1024 * 1024));
@@ -407,8 +565,20 @@ public sealed class OutboundMailServiceTests
         var intakeTokens = new StubIntakeTokens();
         var svc = new OutboundMailService(graph, taxonomy, tickets, mail, atts, blobs, settings, sla, users, mentions,
             taggingMailboxes, intakeForms, intakeTokens, new NoopTriggerService(), new NoopSignatureComposer(),
-            NullLogger<OutboundMailService>.Instance);
+            new StubQueueAccess(queueAccessAllowed), NullLogger<OutboundMailService>.Instance);
         return (svc, graph, mail, atts, tickets);
+    }
+
+    private sealed class StubQueueAccess : IQueueAccessService
+    {
+        private readonly bool _allow;
+        public StubQueueAccess(bool allow) => _allow = allow;
+        public Task<bool> HasQueueAccessAsync(Guid userId, string role, Guid queueId, CancellationToken ct = default)
+            => Task.FromResult(_allow);
+        public Task<IReadOnlyList<Guid>> GetAccessibleQueueIdsAsync(Guid userId, string role, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task SetQueueAccessAsync(Guid userId, IReadOnlyList<Guid> queueIds, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<Guid>> GetUsersForQueueAsync(Guid queueId, CancellationToken ct = default) => throw new NotImplementedException();
+        public void InvalidateCache(Guid userId) { }
     }
 
     private sealed class StubGraph : IGraphMailClient
@@ -529,9 +699,15 @@ public sealed class OutboundMailServiceTests
 
     private sealed class StubMail : IMailMessageRepository
     {
+        private readonly Dictionary<Guid, MailMessageRow> _rows;
+        public StubMail(IReadOnlyList<MailMessageRow>? rows = null)
+        {
+            _rows = (rows ?? Array.Empty<MailMessageRow>()).ToDictionary(r => r.Id);
+        }
         public List<NewOutboundMailMessage> Outbound { get; } = new();
         public Task<MailMessageRow?> GetByMessageIdAsync(string m, CancellationToken ct) => Task.FromResult<MailMessageRow?>(null);
-        public Task<MailMessageRow?> GetByIdAsync(Guid id, CancellationToken ct) => Task.FromResult<MailMessageRow?>(null);
+        public Task<MailMessageRow?> GetByIdAsync(Guid id, CancellationToken ct)
+            => Task.FromResult(_rows.TryGetValue(id, out var r) ? r : null);
         public Task<MailMessageRow?> GetByTicketEventIdAsync(long ticketEventId, CancellationToken ct) => Task.FromResult<MailMessageRow?>(null);
         public Task<Guid?> FindTicketIdByReferencesAsync(IReadOnlyList<string> ids, CancellationToken ct) => Task.FromResult<Guid?>(null);
         public Task<Guid> InsertAsync(NewMailMessage row, IReadOnlyList<NewMailRecipient> r, IReadOnlyList<NewMailAttachment> a, CancellationToken ct) => throw new NotImplementedException();

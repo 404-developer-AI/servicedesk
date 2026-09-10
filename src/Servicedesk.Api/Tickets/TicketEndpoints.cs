@@ -1137,7 +1137,8 @@ public static class TicketEndpoints
                 MentionedUserIds: req.MentionedUserIds,
                 LinkedFormIds: req.LinkedFormIds,
                 MentionedMailboxIds: req.MentionedMailboxIds,
-                SignaturePreloaded: req.SignaturePreloaded);
+                SignaturePreloaded: req.SignaturePreloaded,
+                AuthorRole: userRole);
 
             var result = await outbound.SendAsync(request, ct);
             switch (result.Status)
