@@ -76,4 +76,78 @@ public class MimeSnifferTests
         Assert.NotEqual("image/png", sniffed);
         Assert.Equal("text/plain", sniffed);
     }
+
+    // ------------------------------------------------------------------
+    // v0.1.7 — whitespace-prefixed PDFs. bpost's notifier prepends a CRLF to
+    // every attachment body; before the fix a PDF whose first 512 bytes were
+    // ASCII object headers sniffed as text/plain (the timeline preview then
+    // showed raw PDF source) and one whose compressed stream started early
+    // sniffed as octet-stream.
+    // ------------------------------------------------------------------
+
+    private static byte[] Latin1(string s) => Encoding.Latin1.GetBytes(s);
+
+    private static byte[] Concat(params byte[][] parts)
+    {
+        var all = new List<byte>();
+        foreach (var p in parts) all.AddRange(p);
+        return all.ToArray();
+    }
+
+    // Mirrors the misfiled production file: %PDF-1.4, a few binary comment
+    // bytes, then a long run of ASCII object dictionaries (no NUL in 512).
+    private static byte[] AsciiHeavyPdf(string prefix = "")
+        => Concat(
+            Latin1(prefix + "%PDF-1.4\n%"),
+            new byte[] { 0xF6, 0xE4, 0xFC, 0xDF },
+            Latin1("\n1 0 obj\n<<\n/Type /Catalog\n/Version /1.7\n/Pages 2 0 R\n>>\nendobj\n" +
+                   new string('x', 600)));
+
+    // Mirrors the second file: compressed stream (with NULs) inside the
+    // first 512 bytes.
+    private static byte[] BinaryHeavyPdf(string prefix = "")
+        => Concat(
+            Latin1(prefix + "%PDF-1.5\n%"),
+            new byte[] { 0xE2, 0xE3, 0xCF, 0xD3 },
+            Latin1("\n2 0 obj\n<</Filter/FlateDecode/Length 300>>stream\n"),
+            Enumerable.Range(0, 400).Select(i => (byte)(i % 7 == 0 ? 0 : 0x80 + (i % 100))).ToArray());
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("\r\n")]
+    [InlineData("\n")]
+    [InlineData("  \t\r\n")]
+    public void Pdf_signature_is_recognised_with_or_without_leading_whitespace(string prefix)
+    {
+        Assert.Equal("application/pdf", MimeSniffer.Sniff(AsciiHeavyPdf(prefix), "application/pdf", "proof.pdf"));
+        Assert.Equal("application/pdf", MimeSniffer.Sniff(BinaryHeavyPdf(prefix), "application/pdf", "label.pdf"));
+    }
+
+    [Fact]
+    public void Whitespace_prefixed_pdf_no_longer_depends_on_the_declared_type()
+    {
+        // The inbound worker passes the sender's label; the reclassify
+        // service passes the old (wrong) verdict. Both must land on PDF.
+        Assert.Equal("application/pdf", MimeSniffer.Sniff(AsciiHeavyPdf("\r\n"), "text/plain", "proof.pdf"));
+        Assert.Equal("application/pdf", MimeSniffer.Sniff(BinaryHeavyPdf("\r\n"), "application/octet-stream", "label.pdf"));
+        Assert.Equal("application/pdf", MimeSniffer.Sniff(AsciiHeavyPdf("\r\n"), null, null));
+    }
+
+    [Fact]
+    public void A_pdf_named_file_without_signature_is_not_promoted_to_pdf()
+    {
+        // The filename is never enough: a text file called .pdf stays text,
+        // and a declared application/pdf without magic is not trusted.
+        var text = Latin1("This is not a PDF at all.\n" + new string('y', 300));
+        Assert.Equal("text/plain", MimeSniffer.Sniff(text, "application/pdf", "fake.pdf"));
+
+        var binary = Concat(Latin1("junk"), new byte[] { 0, 1, 2, 3, 0, 0, 0xFF }, Latin1(new string('z', 100)));
+        Assert.Equal("application/octet-stream", MimeSniffer.Sniff(binary, "application/pdf", "fake.pdf"));
+    }
+
+    [Fact]
+    public void Html_disguised_with_leading_whitespace_is_still_flagged()
+    {
+        Assert.Equal("text/html", MimeSniffer.Sniff(Latin1("\r\n<html><body>x</body></html>"), "application/pdf", "x.pdf"));
+    }
 }

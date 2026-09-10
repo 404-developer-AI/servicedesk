@@ -740,6 +740,9 @@ public static class DependencyInjection
         // SettingsSeeder so Telavox.DefaultCountryCode is already in the
         // settings table when the normaliser asks for it.
         services.AddHostedService<ContactPhoneBackfillService>();
+        // v0.1.7 — one-shot re-sniff of PDFs the v0.1.3 sniffer misfiled as
+        // text/plain or octet-stream (leading whitespace before %PDF).
+        services.AddHostedService<Mail.Attachments.AttachmentMimeReclassifyService>();
         services.AddHostedService<TaxonomySeeder>();
         services.AddHostedService<SlaSeeder>();
         services.AddHostedService<TriggerSeeder>();

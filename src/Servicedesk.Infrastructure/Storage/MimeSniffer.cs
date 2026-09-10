@@ -97,8 +97,13 @@ public static class MimeSniffer
         // sniff SVG to image/* because of script-execution risk on inline
         // viewing. SVGs always come back as text/xml.
 
-        // PDF: %PDF
+        // PDF: %PDF. Some mailers (seen: bpost's Nodemailer-based notifier
+        // via Amazon SES) prepend a CRLF to the attachment body, so the
+        // signature is also accepted after leading whitespace — the same
+        // tolerance the HTML check below already has. PDF readers skip that
+        // whitespace themselves, so the file is a genuine PDF either way.
         if (b[0] == 0x25 && b[1] == 0x50 && b[2] == 0x44 && b[3] == 0x46) return "application/pdf";
+        if (StartsWithIgnoringWhitespaceAndCase(b, "%pdf-")) return "application/pdf";
 
         // ZIP / Office Open XML / ODF — start with PK\x03\x04
         if (b[0] == 0x50 && b[1] == 0x4B && (b[2] == 0x03 || b[2] == 0x05) && (b[3] == 0x04 || b[3] == 0x06))
