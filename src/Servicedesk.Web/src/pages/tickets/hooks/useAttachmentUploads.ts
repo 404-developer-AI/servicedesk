@@ -81,6 +81,32 @@ export function useAttachmentUploads(ticketId: string) {
     setItems([]);
   }, []);
 
+  /// Seed the list with uploads that already completed in an earlier mount —
+  /// a restored mail draft carries the metadata of every image/file the
+  /// agent attached before navigating away. Without this the body still
+  /// shows the images but the submit payload would forget their ids.
+  const hydrate = React.useCallback((metas: TicketAttachmentMeta[]) => {
+    setItems(
+      metas.map((meta) => ({
+        localId: meta.id,
+        filename: meta.filename,
+        size: meta.size,
+        status: "ready" as const,
+        meta,
+      })),
+    );
+  }, []);
+
+  /// Metadata of every completed upload — what a draft persists so a remount
+  /// can hydrate() back to the same state.
+  const readyMetas = React.useMemo(
+    () =>
+      items
+        .filter((it) => it.status === "ready" && it.meta)
+        .map((it) => it.meta!),
+    [items],
+  );
+
   // Only rows that completed cleanly contribute to the submit payload.
   // Pending uploads block submit; failed ones are silently excluded but the
   // chip stays visible so the user can re-attach manually.
@@ -102,7 +128,9 @@ export function useAttachmentUploads(ticketId: string) {
     upload,
     remove,
     reset,
+    hydrate,
     readyAttachmentIds,
+    readyMetas,
     hasPending,
   };
 }

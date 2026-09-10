@@ -52,7 +52,12 @@ public sealed record OutboundMailRequest(
     /// agent's chosen spot). The send path then swaps that marker for the
     /// authoritative signature, or — if the agent removed the block — adds
     /// nothing. False keeps the legacy append-at-the-bottom behaviour.
-    bool SignaturePreloaded = false);
+    bool SignaturePreloaded = false,
+    /// v0.1.6 — the sender's role, needed for the queue-access check when the
+    /// body references an image that lives on *another* ticket (copied from
+    /// that ticket's timeline or composer). Null fails closed: such
+    /// references are left untouched instead of being copied onto this ticket.
+    string? AuthorRole = null);
 
 public enum OutboundMailStatus
 {

@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Domain.IntakeForms;
 using Servicedesk.Domain.Tickets;
+using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.IntakeForms;
 using Servicedesk.Infrastructure.Mail.Attachments;
@@ -40,6 +41,7 @@ public sealed class OutboundMailService : IOutboundMailService
     private readonly IIntakeFormTokenService _intakeTokens;
     private readonly ITriggerService _triggers;
     private readonly ISignatureComposer _signatures;
+    private readonly IQueueAccessService _queueAccess;
     private readonly ILogger<OutboundMailService> _logger;
 
     public OutboundMailService(
@@ -58,8 +60,10 @@ public sealed class OutboundMailService : IOutboundMailService
         IIntakeFormTokenService intakeTokens,
         ITriggerService triggers,
         ISignatureComposer signatures,
+        IQueueAccessService queueAccess,
         ILogger<OutboundMailService> logger)
     {
+        _queueAccess = queueAccess;
         _graph = graph;
         _taxonomy = taxonomy;
         _tickets = tickets;
@@ -125,6 +129,20 @@ public sealed class OutboundMailService : IOutboundMailService
         // timeline body references the ticket-owned copy — deleting the
         // template or its image later can never break an already-sent mail.
         var effectiveBody = await MaterializeTemplateImagesAsync(request, ct);
+
+        // Body-referenced attachment images (v0.1.6). The client's
+        // attachmentIds list is only a hint: it is lost when a saved draft is
+        // restored, and it never covers images the agent copied out of a
+        // timeline article or another ticket's composer. The body itself is
+        // the source of truth — every attachment URL in it is resolved here,
+        // copied onto this ticket where needed (after an access check on the
+        // source ticket), and rewritten to a canonical URL the inline
+        // pipeline below understands. See MaterializeBodyAttachmentReferencesAsync.
+        var bodyRefs = await MaterializeBodyAttachmentReferencesAsync(request, effectiveBody.BodyHtml, ct);
+        effectiveBody = new MaterializedTemplateImages(
+            bodyRefs.BodyHtml,
+            effectiveBody.NewAttachmentIds.Concat(bodyRefs.AttachmentIds).ToList());
+
         var attachmentIds = new List<Guid>(request.AttachmentIds ?? Array.Empty<Guid>());
         attachmentIds.AddRange(effectiveBody.NewAttachmentIds);
 
@@ -522,6 +540,192 @@ public sealed class OutboundMailService : IOutboundMailService
         }
 
         return new MaterializedTemplateImages(body, newIds);
+    }
+
+    // ============================================================
+    // Body-referenced attachment images (v0.1.6) helpers
+    // ============================================================
+
+    private sealed record MaterializedBodyReferences(
+        string BodyHtml,
+        IReadOnlyList<Guid> AttachmentIds);
+
+    /// One parsed attachment URL from the body. <see cref="Raw"/> is the exact
+    /// text as it appears (including any <c>?inline=true</c> suffix) so the
+    /// rewrite can swap it verbatim.
+    internal sealed record BodyAttachmentReference(
+        string Raw,
+        Guid TicketId,
+        Guid? MailMessageId,
+        Guid AttachmentId);
+
+    /// Matches both attachment download routes the SPA renders images from:
+    ///   /api/tickets/{ticketId}/attachments/{attachmentId}
+    ///   /api/tickets/{ticketId}/mail/{mailMessageId}/attachments/{attachmentId}
+    /// with an optional query string (the timeline appends ?inline=true when
+    /// an agent opens an image in a new tab and copies it from there).
+    private static readonly Regex BodyAttachmentUrlRegex = new(
+        @"/api/tickets/(?<ticket>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})" +
+        @"(?:/mail/(?<mail>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}))?" +
+        @"/attachments/(?<att>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})" +
+        @"(?:\?[^""'\s<>]*)?",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// Distinct attachment URLs referenced anywhere in the body, in
+    /// first-appearance order. Internal so tests can pin the URL contract
+    /// shared by the download endpoints, the editor, and this rewrite.
+    internal static IReadOnlyList<BodyAttachmentReference> ExtractBodyAttachmentReferences(string bodyHtml)
+    {
+        if (string.IsNullOrEmpty(bodyHtml)) return Array.Empty<BodyAttachmentReference>();
+        var refs = new List<BodyAttachmentReference>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (Match m in BodyAttachmentUrlRegex.Matches(bodyHtml))
+        {
+            if (!seen.Add(m.Value)) continue;
+            if (!Guid.TryParse(m.Groups["ticket"].Value, out var ticketId)) continue;
+            if (!Guid.TryParse(m.Groups["att"].Value, out var attachmentId)) continue;
+            Guid? mailId = null;
+            if (m.Groups["mail"].Success && Guid.TryParse(m.Groups["mail"].Value, out var parsedMail))
+                mailId = parsedMail;
+            refs.Add(new BodyAttachmentReference(m.Value, ticketId, mailId, attachmentId));
+        }
+        return refs;
+    }
+
+    internal static string TicketAttachmentUrl(Guid ticketId, Guid attachmentId)
+        => $"/api/tickets/{ticketId}/attachments/{attachmentId}";
+
+    /// Resolves every attachment URL in the body to a row that is staged on
+    /// *this* ticket, so the inline/cid pipeline can pick it up regardless of
+    /// what the client put in <c>attachmentIds</c>. Three cases:
+    ///
+    ///  1. Already staged on this ticket (fresh upload, no event yet) — the id
+    ///     is simply added to the send list. This is the draft-restore repair:
+    ///     the client forgot the id, the body did not.
+    ///  2. Bound to an earlier article on this ticket, or an inbound-mail
+    ///     attachment of this ticket — a row already owned by an event can't
+    ///     be re-bound to the new mail, so the bytes are re-staged as a new
+    ///     row (content-addressed blob store: metadata only, no byte copy).
+    ///  3. On another ticket — same ownership chain the download endpoints
+    ///     enforce (attachment → mail → ticket, or attachment → event →
+    ///     ticket) PLUS a queue-access check for the sender on the source
+    ///     ticket. Without access the URL is left untouched (the recipient
+    ///     gets a broken image, exactly as before) — never a copy. This is the
+    ///     exfiltration guard: a guessed URL of a restricted queue's image
+    ///     must not become a readable inline part.
+    ///
+    /// Only <c>image/*</c> rows qualify; non-image URLs are left as-is (the
+    /// inline pipeline never cid-embeds them either). Every rewritten URL is
+    /// normalised to the canonical form (query string dropped) so a
+    /// <c>?inline=true</c> suffix can't leak into the <c>cid:</c> reference.
+    private async Task<MaterializedBodyReferences> MaterializeBodyAttachmentReferencesAsync(
+        OutboundMailRequest request, string body, CancellationToken ct)
+    {
+        var refs = ExtractBodyAttachmentReferences(body);
+        if (refs.Count == 0)
+            return new MaterializedBodyReferences(body, Array.Empty<Guid>());
+
+        var ids = new List<Guid>();
+        var replacements = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        // Per-send memo so the same image referenced twice (quote + body)
+        // resolves once and maps onto one copy.
+        var resolvedCopies = new Dictionary<Guid, Guid>();
+        var accessByTicket = new Dictionary<Guid, bool>();
+
+        foreach (var r in refs)
+        {
+            if (resolvedCopies.TryGetValue(r.AttachmentId, out var existingCopy))
+            {
+                replacements[r.Raw] = TicketAttachmentUrl(request.TicketId, existingCopy);
+                continue;
+            }
+
+            var row = await _attachments.GetByIdAsync(r.AttachmentId, ct);
+            if (row is null
+                || row.ProcessingState != "Ready"
+                || string.IsNullOrWhiteSpace(row.ContentHash)
+                || !row.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            // Case 1 — staged on this ticket: nothing to copy, just make sure
+            // the inline pipeline sees it and the URL is canonical.
+            if (r.MailMessageId is null
+                && r.TicketId == request.TicketId
+                && row.OwnerKind == "Ticket"
+                && row.OwnerId == request.TicketId
+                && row.EventId is null)
+            {
+                if (!ids.Contains(row.Id)) ids.Add(row.Id);
+                resolvedCopies[row.Id] = row.Id;
+                replacements[r.Raw] = TicketAttachmentUrl(request.TicketId, row.Id);
+                continue;
+            }
+
+            // Ownership chain, identical to the download endpoints. Any break
+            // means the URL is not a legitimate reference and stays untouched.
+            bool chainOk;
+            if (r.MailMessageId is { } mailId)
+            {
+                if (row.OwnerKind != "Mail" || row.OwnerId != mailId) continue;
+                var mailRow = await _mail.GetByIdAsync(mailId, ct);
+                chainOk = mailRow is not null && mailRow.TicketId == r.TicketId;
+            }
+            else
+            {
+                var ownsDirect = row.OwnerKind == "Ticket" && row.OwnerId == r.TicketId && row.EventId is null;
+                var ownsViaEvent = row.EventId.HasValue
+                    && await _tickets.EventBelongsToTicketAsync(r.TicketId, row.EventId.Value, ct);
+                chainOk = ownsDirect || ownsViaEvent;
+            }
+            if (!chainOk) continue;
+
+            // Case 3 — another ticket: the sender must be allowed to read it.
+            if (r.TicketId != request.TicketId)
+            {
+                if (!accessByTicket.TryGetValue(r.TicketId, out var allowed))
+                {
+                    allowed = false;
+                    if (!string.IsNullOrWhiteSpace(request.AuthorRole))
+                    {
+                        var source = await _tickets.GetByIdAsync(r.TicketId, ct);
+                        if (source is not null)
+                        {
+                            allowed = await _queueAccess.HasQueueAccessAsync(
+                                request.AuthorUserId, request.AuthorRole, source.Ticket.QueueId, ct);
+                        }
+                    }
+                    accessByTicket[r.TicketId] = allowed;
+                }
+                if (!allowed)
+                {
+                    _logger.LogWarning(
+                        "Outbound mail on ticket {TicketId} references attachment {AttachmentId} of ticket {SourceTicketId}, which user {UserId} cannot access; URL left as-is.",
+                        request.TicketId, r.AttachmentId, r.TicketId, request.AuthorUserId);
+                    continue;
+                }
+            }
+
+            // Case 2/3 — re-stage the bytes on this ticket. Content-addressed
+            // store: a metadata row only.
+            var copyId = await _attachments.CreateUploadedAsync(new NewUploadedAttachment(
+                TicketId: request.TicketId,
+                ContentHash: row.ContentHash!,
+                SizeBytes: row.SizeBytes,
+                MimeType: row.MimeType,
+                OriginalFilename: row.OriginalFilename), ct);
+            ids.Add(copyId);
+            resolvedCopies[row.Id] = copyId;
+            replacements[r.Raw] = TicketAttachmentUrl(request.TicketId, copyId);
+        }
+
+        if (replacements.Count == 0)
+            return new MaterializedBodyReferences(body, ids);
+
+        var rewritten = BodyAttachmentUrlRegex.Replace(body,
+            m => replacements.TryGetValue(m.Value, out var replacement) ? replacement : m.Value);
+        return new MaterializedBodyReferences(rewritten, ids);
     }
 
     /// Distinct compose-template image ids referenced anywhere in the body,

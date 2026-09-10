@@ -1,6 +1,10 @@
 import { create } from "zustand";
 import { preferencesApi } from "@/lib/api";
-import type { MailRecipientInput, OutboundMailKind } from "@/lib/ticket-api";
+import type {
+  MailRecipientInput,
+  OutboundMailKind,
+  TicketAttachmentMeta,
+} from "@/lib/ticket-api";
 
 export type Draft = {
   ticketId: string;
@@ -35,6 +39,11 @@ export type MailDraft = {
   // the same action — where the in-progress draft must be restored — from a
   // genuinely new feed click, which deliberately overrides the draft.
   intentId: number | null;
+  // Completed uploads (images pasted into the body, files in the tray) so a
+  // remount can hydrate the attachment list — the body alone keeps the image
+  // URLs but not the ids the send payload needs. Optional: drafts saved
+  // before v0.1.6 have none, and the server also resolves body URLs itself.
+  attachments?: TicketAttachmentMeta[];
   updatedUtc: string;
 };
 
