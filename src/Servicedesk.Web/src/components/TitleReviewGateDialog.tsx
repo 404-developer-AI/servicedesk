@@ -100,7 +100,14 @@ export function TitleReviewGateDialog({ gate, onConfirm, onDismiss, submitting }
   return (
     <Dialog open={!!gate}>
       <DialogContent
-        className="sm:max-w-lg border border-glass bg-popover/95 backdrop-blur-xl [&>button]:hidden"
+        // Viewport-bound, column-flex layout: the original-request preview
+        // is the only part that scrolls (both axes), the header, title
+        // field and footer stay put. `overflow-hidden` + `min-w-0` on the
+        // preview keep a wide mail (fixed-width table, long URL) from
+        // pushing the panel out past the dialog's edge — the grid default
+        // would size the panel to its content's min-width and never
+        // trigger the horizontal scroll.
+        className="flex max-h-[85vh] w-[calc(100vw-2rem)] flex-col overflow-hidden sm:max-w-lg border border-glass bg-popover/95 backdrop-blur-xl [&>button]:hidden"
         onEscapeKeyDown={(e) => {
           // The gate never closes on a plain Esc. Admins get a Shift+Esc
           // silent escape hatch (close without running any confirm actions).
@@ -124,8 +131,8 @@ export function TitleReviewGateDialog({ gate, onConfirm, onDismiss, submitting }
         </DialogHeader>
 
         {showRequestPanel && (
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between gap-2">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5">
+            <div className="flex shrink-0 items-center justify-between gap-2">
               <span className="text-xs font-medium text-muted-foreground">
                 {gate.requestSource === "mail"
                   ? "Original request — from the first email"
@@ -144,7 +151,7 @@ export function TitleReviewGateDialog({ gate, onConfirm, onDismiss, submitting }
                 </a>
               ) : null}
             </div>
-            <div className="relative max-h-48 overflow-y-auto rounded-md border border-glass bg-glass px-3 py-2">
+            <div className="relative min-h-[5rem] min-w-0 flex-1 overflow-auto rounded-md border border-glass bg-glass px-3 py-2">
               {requestDanger ? (
                 <div
                   className="rich-prose rich-prose-sm"

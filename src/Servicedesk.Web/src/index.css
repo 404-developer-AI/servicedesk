@@ -550,6 +550,29 @@
   border-radius: 0.5rem;
   margin: 0.8em 0;
 }
+/* Wide-content containment (v0.1.8). Rendered mail bodies routinely carry
+   fixed-width layout tables (newsletters, signatures) and unbroken strings
+   (URLs, tokens); neither may widen the surface that hosts them. Tables
+   render as a block with their own horizontal scroll and ignore inline
+   width attributes; long words break anywhere. Applies wherever .rich-prose
+   is used (timeline, revision dialog, title-review gate). */
+.rich-prose {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.rich-prose table {
+  display: block;
+  max-width: 100%;
+  width: auto !important;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 0.8em 0;
+}
+.rich-prose table td,
+.rich-prose table th {
+  vertical-align: top;
+  max-width: none;
+}
 /* Compact modifier for message bodies (timeline mail/notes, dialogs) —
    matches the compose editor's density so a sent mail reads the same in
    the ticket as it did while typing. Declared after .rich-prose so the
