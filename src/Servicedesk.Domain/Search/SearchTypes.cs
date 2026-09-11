@@ -32,6 +32,9 @@ public static class SearchSourceKind
     // v0.1.0 - customer-portal accounts (registrations, invited users);
     // hit -> the linked contact. Agents/admins only.
     public const string PortalAccounts = "portal-accounts";
+    // v0.1.10 - per-client notes on Assets → Remote Desktop; hit -> the
+    // Remote Desktop tab with that client's notes opened. Agents/admins only.
+    public const string RemoteDesktopNotes = "remote-desktop-notes";
 }
 
 /// Per-user feature flags that gate availability of certain search sources.

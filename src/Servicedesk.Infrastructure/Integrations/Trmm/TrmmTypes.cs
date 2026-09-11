@@ -50,3 +50,21 @@ public sealed record TrmmConnectionTestResult(
     int LatencyMs,
     string? ErrorCode,
     string? ErrorMessage);
+
+/// One check row as returned by TRMM's per-agent
+/// <c>GET /agents/{agent_id}/checks/</c> (agent-level and policy-inherited
+/// checks, each with the agent's own last result embedded under
+/// <c>check_result</c>). Only the fields the Remote Desktop tab consumes
+/// are captured; a check without a result yet has null
+/// <see cref="ResultStatus"/> / <see cref="LastRunUtc"/>.
+public sealed record TrmmAgentCheck(
+    long Id,
+    string? Name,
+    string? CheckType,
+    string? ReadableDesc,
+    long? ScriptId,
+    string? ResultStatus,
+    string? Stdout,
+    string? Stderr,
+    long? Retcode,
+    DateTime? LastRunUtc);

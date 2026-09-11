@@ -8,6 +8,7 @@ import {
   Clock,
   Globe,
   KeyRound,
+  MonitorCheck,
   RefreshCw,
   Server,
   Trash2,
@@ -65,6 +66,26 @@ export function TrmmIntegrationPage() {
   const [keyDraft, setKeyDraft] = useState("");
   const [urlDraft, setUrlDraft] = useState("");
   const [intervalDraft, setIntervalDraft] = useState<number>(15);
+
+  // v0.1.10 — Remote Desktop check sync. Drafts seed from the status
+  // payload once and are saved as one unit so the four knobs never
+  // drift apart mid-edit.
+  const [rdsDraft, setRdsDraft] = useState<{
+    enabled: boolean;
+    scriptName: string;
+    intervalMinutes: number;
+    includeWorkstations: boolean;
+  } | null>(null);
+  useEffect(() => {
+    if (status.data && rdsDraft === null) {
+      setRdsDraft({
+        enabled: status.data.rdsCheckEnabled,
+        scriptName: status.data.rdsCheckScriptName,
+        intervalMinutes: status.data.rdsSyncIntervalMinutes,
+        includeWorkstations: status.data.rdsIncludeWorkstations,
+      });
+    }
+  }, [status.data, rdsDraft]);
 
   useEffect(() => {
     if (status.data && intervalDraft === 15 && status.data.syncIntervalMinutes !== 15) {
@@ -131,6 +152,38 @@ export function TrmmIntegrationPage() {
     onError: (err) => {
       const upstream = apiErrorMessage(err);
       toast.error(upstream ?? "Save failed");
+    },
+  });
+
+  const saveRds = useMutation({
+    mutationFn: () => trmmAdminApi.setRdsSettings(rdsDraft!),
+    onSuccess: () => {
+      toast.success("Remote Desktop check settings saved");
+      qc.invalidateQueries({ queryKey: STATUS_QK });
+      qc.invalidateQueries({ queryKey: ["assets", "remote-desktop"] });
+    },
+    onError: (err) => {
+      const upstream = apiErrorMessage(err);
+      toast.error(upstream ?? "Save failed");
+    },
+  });
+
+  const triggerRdsSync = useMutation({
+    mutationFn: () => trmmAdminApi.triggerRdsSync(),
+    onSuccess: (result) => {
+      if (result.success) {
+        toast.success(
+          `Checked ${result.agents} servers — ${result.rds} with Remote Desktop, ${result.failed + result.noCheck + result.pending + result.errors} to follow up (${result.latencyMs} ms)`,
+        );
+        qc.invalidateQueries({ queryKey: STATUS_QK });
+        qc.invalidateQueries({ queryKey: ["assets", "remote-desktop"] });
+      } else {
+        toast.error(result.errorMessage ?? "Remote Desktop sync failed");
+      }
+    },
+    onError: (err) => {
+      const upstream = apiErrorMessage(err);
+      toast.error(upstream ?? "Remote Desktop sync failed");
     },
   });
 
@@ -335,6 +388,113 @@ export function TrmmIntegrationPage() {
                   <RefreshCw className="mr-2 h-3 w-3" /> Sync now
                 </>
               )}
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-glass bg-glass p-5 space-y-4">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <MonitorCheck className="h-4 w-4 text-primary" /> Remote Desktop check
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Reads the result of your RDS script check on every server agent and feeds
+              Assets → Remote Desktop. One TRMM call per server per cycle, so it runs on
+              its own interval.
+            </p>
+          </div>
+          <Switch
+            checked={rdsDraft?.enabled ?? false}
+            disabled={rdsDraft === null}
+            onCheckedChange={(v) => setRdsDraft((d) => (d ? { ...d, enabled: v } : d))}
+            aria-label="Enable Remote Desktop check sync"
+          />
+        </div>
+        {rdsDraft === null ? (
+          <Skeleton className="h-24 w-full" />
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="space-y-1">
+              <span className="text-xs text-muted-foreground">Script / check name</span>
+              <Input
+                value={rdsDraft.scriptName}
+                onChange={(e) => setRdsDraft({ ...rdsDraft, scriptName: e.target.value })}
+                placeholder="Check-RDS"
+              />
+              <span className="block text-[11px] text-muted-foreground">
+                Substring match on the check name. Empty = any script check printing
+                &ldquo;Remote Desktop server:&rdquo;.
+              </span>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs text-muted-foreground">Sync interval</span>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={5}
+                  max={1440}
+                  value={rdsDraft.intervalMinutes}
+                  onChange={(e) =>
+                    setRdsDraft({ ...rdsDraft, intervalMinutes: Number(e.target.value) })
+                  }
+                  className="w-28"
+                />
+                <span className="text-sm text-muted-foreground">minutes</span>
+              </div>
+              <span className="block text-[11px] text-muted-foreground">Between 5 and 1440.</span>
+            </label>
+            <label className="flex items-center gap-3 sm:col-span-2">
+              <Switch
+                checked={rdsDraft.includeWorkstations}
+                onCheckedChange={(v) => setRdsDraft({ ...rdsDraft, includeWorkstations: v })}
+                aria-label="Also read the check on workstations"
+              />
+              <span className="text-xs text-muted-foreground">
+                Also read the check on workstation agents (off by default — the check
+                normally only runs on servers).
+              </span>
+            </label>
+          </div>
+        )}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-glass pt-3">
+          <p className="text-xs text-muted-foreground">
+            Last check sync:{" "}
+            <strong className="text-foreground">{formatWhen(status.data?.lastRdsSyncUtc ?? null)}</strong>
+            {status.data?.lastRdsStatus === "failed" && (
+              <span className="ml-2 text-amber-400">— {status.data.lastRdsError ?? "failed"}</span>
+            )}
+            {status.data?.lastRdsStatus === "ok" && (
+              <span className="ml-2 text-emerald-400">— ok</span>
+            )}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => triggerRdsSync.mutate()}
+              disabled={!enabled || !status.data?.rdsCheckEnabled || !canTest || triggerRdsSync.isPending}
+            >
+              {triggerRdsSync.isPending ? (
+                <>
+                  <RefreshCw className="mr-2 h-3 w-3 animate-spin" /> Syncing…
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-2 h-3 w-3" /> Sync checks now
+                </>
+              )}
+            </Button>
+            <Button
+              onClick={() => saveRds.mutate()}
+              disabled={
+                rdsDraft === null ||
+                saveRds.isPending ||
+                rdsDraft.intervalMinutes < 5 ||
+                rdsDraft.intervalMinutes > 1440
+              }
+            >
+              Save
             </Button>
           </div>
         </div>

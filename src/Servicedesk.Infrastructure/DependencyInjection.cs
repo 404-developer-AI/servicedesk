@@ -287,6 +287,12 @@ public static class DependencyInjection
         services.AddSingleton<Servicedesk.Infrastructure.Integrations.Trmm.IAssetRepository,
             Servicedesk.Infrastructure.Integrations.Trmm.AssetRepository>();
         services.AddHostedService<Servicedesk.Infrastructure.Integrations.Trmm.TrmmSyncWorker>();
+        // v0.1.10 — Remote Desktop check sync + per-client notes.
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.Trmm.ITrmmRdsSyncService,
+            Servicedesk.Infrastructure.Integrations.Trmm.TrmmRdsSyncService>();
+        services.AddSingleton<Servicedesk.Infrastructure.Integrations.Trmm.IRemoteDesktopRepository,
+            Servicedesk.Infrastructure.Integrations.Trmm.RemoteDesktopRepository>();
+        services.AddHostedService<Servicedesk.Infrastructure.Integrations.Trmm.TrmmRdsSyncWorker>();
 
         // Microsoft 365 per-customer connect (consent + Graph read). One
         // multi-tenant MSP app (M365.* settings + protected secret) reads each
@@ -470,6 +476,9 @@ public static class DependencyInjection
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<SettingsSearchSource>()));
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<KbArticleSearchSource>()));
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<AssetSearchSource>()));
+        // v0.1.10 — Remote Desktop client notes (Assets → Remote Desktop).
+        services.AddSingleton<RemoteDesktopNoteSearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<RemoteDesktopNoteSearchSource>()));
         services.AddSingleton<ISearchService, SearchService>();
 
         services.AddSingleton<ISlaRepository, SlaRepository>();

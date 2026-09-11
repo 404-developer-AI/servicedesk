@@ -690,6 +690,28 @@ public static class SettingKeys
         /// Default 30. Lower = fail-fast on a slow upstream; higher =
         /// tolerate occasional latency without aborting a full sync.
         public const string RequestTimeoutSeconds = "Trmm.RequestTimeoutSeconds";
+
+        /// v0.1.10 — Remote Desktop check sync. Opt-in on top of
+        /// <see cref="Enabled"/>: when off, the RDS worker sleeps and the
+        /// Assets → Remote Desktop tab shows its setup banner.
+        public const string RdsCheckEnabled = "Trmm.RdsCheckEnabled";
+
+        /// Name of the TRMM script (or script check) that reports the RDS
+        /// role. Matched case-insensitively as a substring against the
+        /// check's name and readable description, so "Check-RDS" finds
+        /// "Script check: Check-RDS.ps1". Empty = fall back to any script
+        /// check whose output carries the "Remote Desktop server:" line.
+        public const string RdsCheckScriptName = "Trmm.RdsCheckScriptName";
+
+        /// Cadence (minutes) of the RDS sync. One TRMM call per server
+        /// per cycle, so this runs slower than the agent mirror by
+        /// default. Clamped to [5, 1440]. Default 60.
+        public const string RdsSyncIntervalMinutes = "Trmm.RdsSyncIntervalMinutes";
+
+        /// Also read checks on workstation agents. Off by default: the
+        /// RDS check is deployed to servers only, and workstations are
+        /// typically 3x as many — pure wasted calls.
+        public const string RdsIncludeWorkstations = "Trmm.RdsIncludeWorkstations";
     }
 
     /// End-of-life data feed (v0.0.52). Background worker pulls the
@@ -2181,6 +2203,16 @@ public static class SettingDefaults
             "Background sync cadence (minutes). The worker pulls clients + sites + agents per tick and upserts into the local mirror tables. Clamped to [1, 1440]."),
         new SettingDefault(SettingKeys.Trmm.RequestTimeoutSeconds, "30", "int", "Tactical RMM",
             "HTTP timeout per TRMM API call, in seconds. Clamped to [5, 300]. Lower = fail-fast on a slow upstream; higher = tolerate occasional latency without aborting a sync."),
+        // Remote Desktop check sync — v0.1.10. Opt-in on top of the master
+        // switch; its own cadence because it is one call per server.
+        new SettingDefault(SettingKeys.Trmm.RdsCheckEnabled, "false", "bool", "Tactical RMM",
+            "Reads the Remote Desktop (RDS) script-check result of every server agent and feeds Assets → Remote Desktop. Requires the integration itself to be enabled. Off = the tab shows its setup banner and no per-agent calls are made."),
+        new SettingDefault(SettingKeys.Trmm.RdsCheckScriptName, "Check-RDS", "string", "Tactical RMM",
+            "Name of the TRMM script (or script check) that prints 'Remote Desktop server: TRUE/FALSE'. Matched case-insensitively as a substring of the check name / description. Leave empty to fall back to any script check whose output contains that line."),
+        new SettingDefault(SettingKeys.Trmm.RdsSyncIntervalMinutes, "60", "int", "Tactical RMM",
+            "How often (minutes) the Remote Desktop check results are re-read from TRMM. One API call per server per cycle. Clamped to [5, 1440]."),
+        new SettingDefault(SettingKeys.Trmm.RdsIncludeWorkstations, "false", "bool", "Tactical RMM",
+            "Also read the check on workstation agents. Off by default — the RDS check normally only runs on servers and workstations outnumber them, so this would only add empty calls."),
 
         new SettingDefault(SettingKeys.M365.Enabled, "false", "bool", "Microsoft 365",
             "Master kill-switch for the Microsoft 365 customer-tenant reader (multi-tenant app). When false, no customer-tenant reads are attempted. Flip on once the MSP app's tenant id, client id and client secret are configured."),

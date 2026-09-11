@@ -26,6 +26,7 @@ export type SearchKind =
   | "checklist-items"
   | "checklist-templates"
   | "portal-accounts"
+  | "remote-desktop-notes"
   | (string & {});
 
 export const KIND_LABELS: Record<string, string> = {
@@ -50,6 +51,7 @@ export const KIND_LABELS: Record<string, string> = {
   "checklist-items": "Checklist items",
   "checklist-templates": "Checklist templates",
   "portal-accounts": "Portal accounts",
+  "remote-desktop-notes": "Remote Desktop notes",
 };
 
 export const KIND_ORDER: string[] = [
@@ -74,6 +76,7 @@ export const KIND_ORDER: string[] = [
   "checklist-items",
   "checklist-templates",
   "portal-accounts",
+  "remote-desktop-notes",
 ];
 
 export function labelForKind(kind: string): string {
@@ -141,6 +144,9 @@ export function hitHref(hit: SearchHit): string {
       // A portal account hit opens the linked contact (where the account
       // card lives); unlinked registrations land on Settings → Portal.
       return hit.meta?.contactId ? `/contacts/${hit.meta.contactId}` : "/settings/portal";
+    case "remote-desktop-notes":
+      // A note hit opens the Remote Desktop tab with that client's notes.
+      return `/assets?tab=remote-desktop&client=${hit.entityId}`;
     default:
       return "#";
   }

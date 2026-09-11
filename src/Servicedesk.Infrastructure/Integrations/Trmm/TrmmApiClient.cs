@@ -96,6 +96,17 @@ public sealed class TrmmApiClient : ITrmmApiClient
         return ParseAgents(body);
     }
 
+    public async Task<IReadOnlyList<TrmmAgentCheck>> ListAgentChecksAsync(string agentId, CancellationToken ct)
+    {
+        // The agent id is a TRMM-minted opaque token (a hex/uuid-ish
+        // string). It came out of our own mirror table, but it still gets
+        // escaped before it lands in a URL path so a malformed upstream
+        // value can never rewrite the route.
+        var path = "/agents/" + Uri.EscapeDataString(agentId.Trim()) + "/checks/";
+        var body = await SendAsync(TrmmEventTypes.AgentChecksList, path, ct, auditSuccess: false);
+        return ParseAgentChecks(body);
+    }
+
     public async Task<TrmmConnectionTestResult> TestConnectionAsync(CancellationToken ct)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -135,7 +146,8 @@ public sealed class TrmmApiClient : ITrmmApiClient
         string eventType,
         string path,
         CancellationToken ct,
-        bool includeSuccessBodySnippet = false)
+        bool includeSuccessBodySnippet = false,
+        bool auditSuccess = true)
     {
         var baseUrl = await ResolveBaseUrlAsync(ct);
         var apiKey = await _secrets.GetAsync(ProtectedSecretKeys.TrmmApiKey, ct);
@@ -224,21 +236,24 @@ public sealed class TrmmApiClient : ITrmmApiClient
 
             if (response.IsSuccessStatusCode)
             {
-                object? successPayload = includeSuccessBodySnippet
-                    ? new
-                    {
-                        snippet = Truncate(responseBody, 8192),
-                        responseLength = responseBody.Length,
-                    }
-                    : null;
-                await _audit.LogAsync(new IntegrationAuditEvent(
-                    Integration: TrmmEventTypes.Integration,
-                    EventType: eventType,
-                    Outcome: IntegrationAuditOutcome.Ok,
-                    Endpoint: path,
-                    HttpStatus: status,
-                    LatencyMs: (int)stopwatch.ElapsedMilliseconds,
-                    Payload: successPayload), ct);
+                if (auditSuccess)
+                {
+                    object? successPayload = includeSuccessBodySnippet
+                        ? new
+                        {
+                            snippet = Truncate(responseBody, 8192),
+                            responseLength = responseBody.Length,
+                        }
+                        : null;
+                    await _audit.LogAsync(new IntegrationAuditEvent(
+                        Integration: TrmmEventTypes.Integration,
+                        EventType: eventType,
+                        Outcome: IntegrationAuditOutcome.Ok,
+                        Endpoint: path,
+                        HttpStatus: status,
+                        LatencyMs: (int)stopwatch.ElapsedMilliseconds,
+                        Payload: successPayload), ct);
+                }
                 return responseBody;
             }
 
@@ -388,6 +403,51 @@ public sealed class TrmmApiClient : ITrmmApiClient
                 ClientName: clientName?.Trim(),
                 SiteId: siteId,
                 SiteName: siteName?.Trim()));
+        }
+        return list;
+    }
+
+    /// Parses TRMM's per-agent checks response. Every row is a Check
+    /// (agent-level or policy-inherited) serialised with the agent's own
+    /// <c>check_result</c> object embedded; a check that never ran on
+    /// this agent carries an empty <c>{}</c> there, which maps to null
+    /// result fields here. Non-script rows are kept — the RDS matcher
+    /// decides which one is ours — but rows without an id are dropped.
+    internal static IReadOnlyList<TrmmAgentCheck> ParseAgentChecks(string body)
+    {
+        using var doc = JsonDocument.Parse(body);
+        var array = ExtractArray(doc.RootElement);
+        if (array.ValueKind != JsonValueKind.Array) return Array.Empty<TrmmAgentCheck>();
+
+        var list = new List<TrmmAgentCheck>(array.GetArrayLength());
+        foreach (var el in array.EnumerateArray())
+        {
+            var id = ReadLong(el, "id");
+            if (id is null) continue;
+
+            string? resultStatus = null, stdout = null, stderr = null;
+            long? retcode = null;
+            DateTime? lastRun = null;
+            if (el.TryGetProperty("check_result", out var result) && result.ValueKind == JsonValueKind.Object)
+            {
+                resultStatus = ReadString(result, "status");
+                stdout = ReadString(result, "stdout");
+                stderr = ReadString(result, "stderr");
+                retcode = ReadLong(result, "retcode");
+                lastRun = ReadDateTime(result, "last_run");
+            }
+
+            list.Add(new TrmmAgentCheck(
+                Id: id.Value,
+                Name: ReadString(el, "name"),
+                CheckType: ReadString(el, "check_type"),
+                ReadableDesc: ReadString(el, "readable_desc"),
+                ScriptId: ReadLong(el, "script"),
+                ResultStatus: resultStatus?.Trim().ToLowerInvariant(),
+                Stdout: stdout,
+                Stderr: stderr,
+                Retcode: retcode,
+                LastRunUtc: lastRun));
         }
         return list;
     }

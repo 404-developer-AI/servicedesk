@@ -15,6 +15,10 @@ public static class TrmmEventTypes
     public const string ClientsList = "clients_list";
     public const string AgentsList  = "agents_list";
     public const string VersionGet  = "version_get";
+    // v0.1.10 — per-agent checks read by the Remote Desktop sync. Only
+    // failures are audited per call (success would be one row per server
+    // per cycle); the cycle itself lands as RdsSync* rows below.
+    public const string AgentChecksList = "agent_checks_list";
 
     // Lifecycle events emitted by TrmmSyncWorker. Sync-tick rows are the
     // healthcheck row equivalents for this integration — one per cycle,
@@ -22,6 +26,13 @@ public static class TrmmEventTypes
     public const string SyncStarted   = "sync_started";
     public const string SyncCompleted = "sync_completed";
     public const string SyncFailed    = "sync_failed";
+
+    // v0.1.10 — Remote Desktop (RDS) check sync. Separate cadence from the
+    // agent mirror; one started + one completed/failed row per cycle with
+    // the per-status counts on the payload.
+    public const string RdsSyncStarted   = "rds_sync_started";
+    public const string RdsSyncCompleted = "rds_sync_completed";
+    public const string RdsSyncFailed    = "rds_sync_failed";
 
     // Admin actions. Configured covers a base-URL or API-key write; the
     // matching audit-log security row is in audit_log via IAuditLogger.
@@ -38,4 +49,10 @@ public static class TrmmEventTypes
     public const string SecurityEnabledChanged = "integration.trmm.enabled.changed";
     public const string SecurityClientMappingSet = "integration.trmm.client_mapping.set";
     public const string SecuritySyncTriggered  = "integration.trmm.sync.triggered";
+    public const string SecurityRdsSyncTriggered = "integration.trmm.rds_sync.triggered";
+    public const string SecurityRdsSettingsUpdated = "integration.trmm.rds_settings.updated";
+    // Client notes (v0.1.10) are agent-level content, not a credential or
+    // gate — only the admin override paths (editing / deleting someone
+    // else's note) land in the security trail.
+    public const string SecurityClientNoteOverridden = "assets.remote_desktop.note.overridden";
 }
