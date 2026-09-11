@@ -9,6 +9,9 @@ namespace Servicedesk.Api.Presence;
 /// invalidate its React Query cache the moment a sync run finishes.
 /// The payload carries the per-table counts so a viewer can render a
 /// "X agents updated" toast without an extra round-trip.
+///
+/// v0.1.10: the Remote Desktop tab (RDS sync + client notes) reuses the
+/// same event name with a <c>kind</c> discriminator on the payload.
 public sealed class SignalRTrmmSyncNotifier : ITrmmSyncNotifier
 {
     private readonly IHubContext<TicketPresenceHub> _hub;
@@ -23,6 +26,7 @@ public sealed class SignalRTrmmSyncNotifier : ITrmmSyncNotifier
             "AssetsChanged",
             new
             {
+                kind = "agents-sync",
                 clients = outcome.Clients,
                 sites = outcome.Sites,
                 agents = outcome.Agents,
@@ -30,4 +34,7 @@ public sealed class SignalRTrmmSyncNotifier : ITrmmSyncNotifier
                 latencyMs = outcome.LatencyMs,
             },
             ct);
+
+    public Task NotifyRemoteDesktopChangedAsync(object payload, CancellationToken ct) =>
+        _hub.Clients.Group("ticket-list").SendAsync("AssetsChanged", payload, ct);
 }

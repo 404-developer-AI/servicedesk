@@ -3905,6 +3905,64 @@ public sealed class DatabaseBootstrapper : IHostedService
             VALUES ('singleton')
             ON CONFLICT (id) DO NOTHING;
 
+        -- ===================================================================
+        -- v0.1.10 — Remote Desktop (RDS) check mirror + per-client notes
+        --
+        -- trmm_agent_rds holds the parsed result of the customer's RDS
+        -- script check per agent (one row per agent, keyed on the TRMM
+        -- agent id so a pruned agent takes its row with it). The raw
+        -- stdout/stderr are kept so the tab can show the script output
+        -- verbatim; last_login_local is the server's OWN clock as printed
+        -- by the script — deliberately an unzoned TIMESTAMP, never
+        -- converted to UTC.
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS trmm_agent_rds (
+            trmm_agent_id       TEXT        PRIMARY KEY
+                                            REFERENCES trmm_agents(trmm_agent_id) ON DELETE CASCADE,
+            status              TEXT        NOT NULL,
+            check_id            BIGINT      NULL,
+            check_status        TEXT        NULL,
+            retcode             BIGINT      NULL,
+            stdout              TEXT        NULL,
+            stderr              TEXT        NULL,
+            last_login_local    TIMESTAMP   NULL,
+            last_login_kind     TEXT        NULL,
+            last_login_user     TEXT        NULL,
+            last_run_utc        TIMESTAMPTZ NULL,
+            fetched_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            fetch_error         TEXT        NULL,
+            CONSTRAINT chk_trmm_agent_rds_status
+                CHECK (status IN ('rds','not_rds','failed','no_check','pending','error'))
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_trmm_agent_rds_status
+            ON trmm_agent_rds (status);
+
+        -- Per-client notes thread (Assets → Remote Desktop). Author is a
+        -- SET NULL FK so a deleted user leaves the note with "former
+        -- user" attribution instead of taking the note down with them.
+        CREATE TABLE IF NOT EXISTS trmm_client_notes (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            trmm_client_id      BIGINT      NOT NULL
+                                            REFERENCES trmm_clients(trmm_client_id) ON DELETE CASCADE,
+            body                TEXT        NOT NULL,
+            author_id           UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_trmm_client_notes_client
+            ON trmm_client_notes (trmm_client_id, created_utc DESC);
+        CREATE INDEX IF NOT EXISTS ix_trmm_client_notes_body_trgm
+            ON trmm_client_notes USING GIN (body gin_trgm_ops);
+
+        -- RDS sync bookkeeping rides on the existing singleton row.
+        ALTER TABLE trmm_sync_state
+            ADD COLUMN IF NOT EXISTS last_rds_sync_utc TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS last_rds_status   TEXT        NULL,
+            ADD COLUMN IF NOT EXISTS last_rds_error    TEXT        NULL,
+            ADD COLUMN IF NOT EXISTS last_rds_counts   JSONB       NOT NULL DEFAULT '{}'::jsonb;
+
         -- Per-user opt-in flag for the Assets page (mirrors kb_enabled,
         -- timesheet_enabled, activity_feed_enabled). Customer-rol blijft
         -- altijd geblokkeerd op route- en search-source-niveau; deze flag

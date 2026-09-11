@@ -30,6 +30,9 @@ public static class TrmmEndpoints
         admin.MapPut("/base-url", SetBaseUrl).WithName("SetTrmmBaseUrl").WithOpenApi();
         admin.MapPut("/enabled", SetEnabled).WithName("SetTrmmEnabled").WithOpenApi();
         admin.MapPut("/sync-interval", SetSyncInterval).WithName("SetTrmmSyncInterval").WithOpenApi();
+        // v0.1.10 — Remote Desktop check sync knobs + manual trigger.
+        admin.MapPut("/rds-settings", SetRdsSettings).WithName("SetTrmmRdsSettings").WithOpenApi();
+        admin.MapPost("/rds-sync", TriggerRdsSync).WithName("TriggerTrmmRdsSync").WithOpenApi();
 
         admin.MapPost("/test-connection", TestConnection).WithName("TestTrmmConnection").WithOpenApi();
         admin.MapPost("/sync", TriggerSync).WithName("TriggerTrmmSync").WithOpenApi();
@@ -48,6 +51,7 @@ public static class TrmmEndpoints
         ISettingsService settings,
         IProtectedSecretStore secrets,
         IAssetRepository assets,
+        IRemoteDesktopRepository remoteDesktop,
         CancellationToken ct)
     {
         var enabled = await settings.GetAsync<bool>(SettingKeys.Trmm.Enabled, ct);
@@ -55,6 +59,11 @@ public static class TrmmEndpoints
         var intervalMinutes = await settings.GetAsync<int>(SettingKeys.Trmm.SyncIntervalMinutes, ct);
         var hasApiKey = await secrets.HasAsync(ProtectedSecretKeys.TrmmApiKey, ct);
         var syncState = await assets.GetSyncStateAsync(ct);
+        var rdsState = await remoteDesktop.GetRdsSyncStateAsync(ct);
+        var rdsEnabled = await settings.GetAsync<bool>(SettingKeys.Trmm.RdsCheckEnabled, ct);
+        var rdsScriptName = await settings.GetAsync<string>(SettingKeys.Trmm.RdsCheckScriptName, ct) ?? string.Empty;
+        var rdsInterval = await settings.GetAsync<int>(SettingKeys.Trmm.RdsSyncIntervalMinutes, ct);
+        var rdsWorkstations = await settings.GetAsync<bool>(SettingKeys.Trmm.RdsIncludeWorkstations, ct);
 
         var state = !enabled
             ? "disabled"
@@ -70,6 +79,136 @@ public static class TrmmEndpoints
             lastSyncUtc = syncState.LastSyncUtc,
             lastStatus = syncState.LastStatus,
             lastError = syncState.LastError,
+            rdsCheckEnabled = rdsEnabled,
+            rdsCheckScriptName = rdsScriptName,
+            rdsSyncIntervalMinutes = rdsInterval,
+            rdsIncludeWorkstations = rdsWorkstations,
+            lastRdsSyncUtc = rdsState.LastRdsSyncUtc,
+            lastRdsStatus = rdsState.LastRdsStatus,
+            lastRdsError = rdsState.LastRdsError,
+        });
+    }
+
+    // ---- /rds-settings + /rds-sync (v0.1.10) ---------------------------
+
+    public sealed record SetRdsSettingsRequest(
+        [property: Required] bool Enabled,
+        string? ScriptName,
+        [property: Required] int IntervalMinutes,
+        [property: Required] bool IncludeWorkstations);
+
+    private static async Task<IResult> SetRdsSettings(
+        [FromBody] SetRdsSettingsRequest req,
+        HttpContext http,
+        ISettingsService settings,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        if (req is null) return Results.BadRequest(new { error = "missing_body" });
+        if (req.IntervalMinutes < 5 || req.IntervalMinutes > 1440)
+        {
+            return Results.BadRequest(new
+            {
+                error = "invalid_interval",
+                message = "Remote Desktop sync interval must be between 5 and 1440 minutes.",
+            });
+        }
+        var scriptName = (req.ScriptName ?? string.Empty).Trim();
+        if (scriptName.Length > 200)
+        {
+            return Results.BadRequest(new
+            {
+                error = "invalid_script_name",
+                message = "Script name must be 200 characters or fewer.",
+            });
+        }
+
+        var (actor, role) = ActorContext.Resolve(http);
+        var inv = global::System.Globalization.CultureInfo.InvariantCulture;
+        await settings.SetAsync(SettingKeys.Trmm.RdsCheckEnabled, req.Enabled ? "true" : "false", actor, role, ct);
+        await settings.SetAsync(SettingKeys.Trmm.RdsCheckScriptName, scriptName, actor, role, ct);
+        await settings.SetAsync(SettingKeys.Trmm.RdsSyncIntervalMinutes, req.IntervalMinutes.ToString(inv), actor, role, ct);
+        await settings.SetAsync(SettingKeys.Trmm.RdsIncludeWorkstations, req.IncludeWorkstations ? "true" : "false", actor, role, ct);
+
+        await audit.LogAsync(new AuditEvent(
+            EventType: TrmmEventTypes.SecurityRdsSettingsUpdated,
+            Actor: actor,
+            ActorRole: role,
+            Target: SettingKeys.Trmm.RdsCheckEnabled,
+            ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString(),
+            Payload: new
+            {
+                enabled = req.Enabled,
+                scriptName,
+                intervalMinutes = req.IntervalMinutes,
+                includeWorkstations = req.IncludeWorkstations,
+            }), ct);
+
+        return Results.Ok(new
+        {
+            rdsCheckEnabled = req.Enabled,
+            rdsCheckScriptName = scriptName,
+            rdsSyncIntervalMinutes = req.IntervalMinutes,
+            rdsIncludeWorkstations = req.IncludeWorkstations,
+        });
+    }
+
+    private static async Task<IResult> TriggerRdsSync(
+        HttpContext http,
+        ITrmmRdsSyncService sync,
+        ITrmmSyncNotifier notifier,
+        IAuditLogger audit,
+        ISettingsService settings,
+        CancellationToken ct)
+    {
+        var enabled = await settings.GetAsync<bool>(SettingKeys.Trmm.Enabled, ct);
+        var rdsEnabled = await settings.GetAsync<bool>(SettingKeys.Trmm.RdsCheckEnabled, ct);
+        if (!enabled || !rdsEnabled)
+        {
+            return Results.Json(new
+            {
+                error = "integration_disabled",
+                message = enabled
+                    ? "The Remote Desktop check sync is disabled. Enable it under Settings → Integrations → Tactical RMM first."
+                    : "Tactical RMM integration is disabled. Toggle it on first.",
+            }, statusCode: 409);
+        }
+
+        var (actor, role) = ActorContext.Resolve(http);
+        await audit.LogAsync(new AuditEvent(
+            EventType: TrmmEventTypes.SecurityRdsSyncTriggered,
+            Actor: actor,
+            ActorRole: role,
+            Target: SettingKeys.Trmm.RdsCheckEnabled,
+            ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString(),
+            Payload: new { trigger = "manual" }), ct);
+
+        var outcome = await sync.RunOnceAsync("manual", ct);
+        if (outcome.Success)
+        {
+            await notifier.NotifyRemoteDesktopChangedAsync(new
+            {
+                kind = "rds-sync",
+                agents = outcome.Agents,
+                rds = outcome.Rds,
+                attention = outcome.Failed + outcome.NoCheck + outcome.Pending + outcome.Errors,
+            }, ct);
+        }
+        return Results.Ok(new
+        {
+            success = outcome.Success,
+            agents = outcome.Agents,
+            rds = outcome.Rds,
+            notRds = outcome.NotRds,
+            failed = outcome.Failed,
+            noCheck = outcome.NoCheck,
+            pending = outcome.Pending,
+            errors = outcome.Errors,
+            latencyMs = outcome.LatencyMs,
+            errorCode = outcome.ErrorCode,
+            errorMessage = outcome.ErrorMessage,
         });
     }
 

@@ -808,6 +808,7 @@ app.MapVeeamEndpoints();
 app.MapClaudeEndpoints();
 app.MapKbChatEndpoints();
 app.MapAssetsEndpoints();
+app.MapRemoteDesktopEndpoints();
 app.MapAdminMailDiagnosticsEndpoints();
 app.MapMailMailboxEndpoints();
 app.MapHealthEndpoints();

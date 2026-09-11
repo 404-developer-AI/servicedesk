@@ -515,10 +515,25 @@ const activityFeedRoute = createRoute({
 // `assets_enabled` flag enforced both server-side (RequireAgent on
 // /api/assets and the per-user flag on /auth/me) and via the sidebar
 // hide so a flag-off user never sees a dead link.
+// v0.1.10 — `tab` picks Assets vs Remote Desktop; `client` (a TRMM client
+// id) opens that client's notes on the Remote Desktop tab (global-search
+// deep-link).
 const assetsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/assets",
   beforeLoad: authGate(["Agent", "Admin"]),
+  validateSearch: (raw: Record<string, unknown>): {
+    tab?: "remote-desktop";
+    client?: number;
+  } => ({
+    tab: raw.tab === "remote-desktop" ? "remote-desktop" : undefined,
+    client:
+      typeof raw.client === "string" && /^\d+$/.test(raw.client)
+        ? Number(raw.client)
+        : typeof raw.client === "number"
+          ? raw.client
+          : undefined,
+  }),
   component: AssetsPage,
 });
 

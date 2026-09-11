@@ -13,6 +13,14 @@ public interface ITrmmApiClient
     Task<TrmmClientSnapshot> ListClientsAndSitesAsync(CancellationToken ct);
 
     Task<IReadOnlyList<TrmmAgent>> ListAgentsAsync(CancellationToken ct);
+
+    /// Pulls every check (agent-level + policy-inherited) of one agent
+    /// together with that agent's last result per check. Used by the
+    /// Remote Desktop sync (v0.1.10) to read the RDS script-check output.
+    /// Success is <b>not</b> audited per call — one row per agent per
+    /// cycle would flood <c>integration_audit</c>; the RDS sync writes
+    /// a single summary row instead. Failures are still audited.
+    Task<IReadOnlyList<TrmmAgentCheck>> ListAgentChecksAsync(string agentId, CancellationToken ct);
     Task<TrmmConnectionTestResult> TestConnectionAsync(CancellationToken ct);
 }
 
