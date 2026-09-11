@@ -121,7 +121,7 @@ public static class TicketAttachmentEndpoints
             // browsers (no HTTP cache) would otherwise fire one GET per
             // <img>. must-revalidate keeps the ownership check honest after
             // the TTL expires; private because the body is auth-gated.
-            var etag = $"\"{att.ContentHash}\"";
+            var etag = AttachmentResponse.ETag(att.ContentHash, att.MimeType);
             http.Response.Headers.ETag = etag;
             http.Response.Headers.CacheControl = "private, max-age=604800, must-revalidate";
             var ifNoneMatch = http.Request.Headers.IfNoneMatch.ToString();

@@ -128,7 +128,7 @@ public static class AgentProfileEndpoints
             var p = await repo.GetAsync(userId, ct);
             if (p is null || string.IsNullOrWhiteSpace(p.PhotoBlobHash)) return Results.NotFound();
 
-            var etag = $"\"{p.PhotoBlobHash}\"";
+            var etag = Servicedesk.Api.Tickets.AttachmentResponse.ETag(p.PhotoBlobHash, p.PhotoMime);
             http.Response.Headers.ETag = etag;
             http.Response.Headers.CacheControl = "private, max-age=86400, must-revalidate";
             var inm = http.Request.Headers.IfNoneMatch.ToString();
@@ -237,7 +237,7 @@ public static class AgentProfileEndpoints
         {
             var p = await repo.GetAsync(userId, ct);
             if (p is null || string.IsNullOrWhiteSpace(p.PhotoBlobHash)) return Results.NotFound();
-            var etag = $"\"{p.PhotoBlobHash}\"";
+            var etag = Servicedesk.Api.Tickets.AttachmentResponse.ETag(p.PhotoBlobHash, p.PhotoMime);
             http.Response.Headers.ETag = etag;
             http.Response.Headers.CacheControl = "private, max-age=86400, must-revalidate";
             var inm = http.Request.Headers.IfNoneMatch.ToString();
@@ -295,7 +295,7 @@ public static class AgentProfileEndpoints
             var hash = await settings.GetAsync<string>(SettingKeys.Signatures.PhotoFrameBlobHash, ct);
             if (string.IsNullOrWhiteSpace(hash)) return Results.NotFound();
             var mime = await settings.GetAsync<string>(SettingKeys.Signatures.PhotoFrameMime, ct);
-            var etag = $"\"{hash}\"";
+            var etag = Servicedesk.Api.Tickets.AttachmentResponse.ETag(hash, mime);
             http.Response.Headers.ETag = etag;
             http.Response.Headers.CacheControl = "private, max-age=86400, must-revalidate";
             var inm = http.Request.Headers.IfNoneMatch.ToString();

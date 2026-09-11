@@ -479,7 +479,7 @@ public static class PortalTicketEndpoints
         HttpContext http, string contentHash, string? mimeType, string? originalFilename, bool inline,
         IBlobStore blobs, IAuditLogger audit, PortalViewer viewer, object auditPayload, CancellationToken ct)
     {
-        var etag = $"\"{contentHash}\"";
+        var etag = Servicedesk.Api.Tickets.AttachmentResponse.ETag(contentHash, mimeType);
         http.Response.Headers.ETag = etag;
         http.Response.Headers.CacheControl = "private, max-age=604800, must-revalidate";
         var ifNoneMatch = http.Request.Headers.IfNoneMatch.ToString();
