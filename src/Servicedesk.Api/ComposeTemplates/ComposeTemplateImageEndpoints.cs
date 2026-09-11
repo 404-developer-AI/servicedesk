@@ -126,7 +126,7 @@ public static class ComposeTemplateImageEndpoints
             if (att.ProcessingState != "Ready" || string.IsNullOrWhiteSpace(att.ContentHash))
                 return Results.NotFound();
 
-            var etag = $"\"{att.ContentHash}\"";
+            var etag = Servicedesk.Api.Tickets.AttachmentResponse.ETag(att.ContentHash, att.MimeType);
             http.Response.Headers.ETag = etag;
             http.Response.Headers.CacheControl = "private, max-age=604800, must-revalidate";
             var ifNoneMatch = http.Request.Headers.IfNoneMatch.ToString();

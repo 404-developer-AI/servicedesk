@@ -92,7 +92,7 @@ public static class TicketMailEndpoints
             // headers incognito browsers fire one GET per <img>. See the
             // sibling comment in TicketAttachmentEndpoints for the full
             // rationale.
-            var etag = $"\"{att.ContentHash}\"";
+            var etag = AttachmentResponse.ETag(att.ContentHash, att.MimeType);
             http.Response.Headers.ETag = etag;
             http.Response.Headers.CacheControl = "private, max-age=604800, must-revalidate";
             var ifNoneMatch = http.Request.Headers.IfNoneMatch.ToString();

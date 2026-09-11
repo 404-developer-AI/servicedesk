@@ -378,7 +378,7 @@ public static class SignatureEndpoints
             var asset = await repo.GetAssetAsync(assetId, ct);
             if (asset is null || asset.SignatureId != id) return Results.NotFound();
 
-            var etag = $"\"{asset.ContentHash}\"";
+            var etag = Servicedesk.Api.Tickets.AttachmentResponse.ETag(asset.ContentHash, asset.MimeType);
             http.Response.Headers.ETag = etag;
             http.Response.Headers.CacheControl = "private, max-age=604800, must-revalidate";
             var ifNoneMatch = http.Request.Headers.IfNoneMatch.ToString();
