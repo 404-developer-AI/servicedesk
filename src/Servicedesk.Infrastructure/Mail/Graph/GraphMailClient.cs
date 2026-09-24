@@ -276,7 +276,23 @@ public sealed class GraphMailClient : IGraphMailClient
             draft.InternetMessageHeaders = headers;
         }
 
-        var created = await graph.Users[message.FromMailbox].Messages.PostAsync(draft, cancellationToken: ct);
+        // Reply threading: when the caller names a message in this mailbox to
+        // answer, the draft is created as a Graph reply to it so Exchange
+        // stamps In-Reply-To / References on the wire (Graph refuses those
+        // as custom headers on a fresh message). Header-strict ticket systems
+        // on the customer side (Kayako, Freshdesk, …) need them to append our
+        // mail to their existing ticket. Any failure falls back to the plain
+        // new-message draft below — threading is an improvement, never a
+        // reason not to deliver.
+        Message? created = null;
+        string? replyFallbackReason = null;
+        if (!string.IsNullOrWhiteSpace(message.ReplyToGraphMessageId))
+        {
+            (created, replyFallbackReason) = await TryCreateReplyDraftAsync(
+                graph, message.FromMailbox, message.ReplyToGraphMessageId!, draft, ct);
+        }
+        var sentAsReply = created is not null;
+        created ??= await graph.Users[message.FromMailbox].Messages.PostAsync(draft, cancellationToken: ct);
         var draftId = created?.Id
             ?? throw new InvalidOperationException($"Graph returned no id for draft in mailbox {message.FromMailbox}.");
         var internetMessageId = created.InternetMessageId;
@@ -328,7 +344,62 @@ public sealed class GraphMailClient : IGraphMailClient
             throw;
         }
 
-        return new GraphSentMailResult(internetMessageId, DateTimeOffset.UtcNow);
+        return new GraphSentMailResult(internetMessageId, DateTimeOffset.UtcNow)
+        {
+            SentAsReply = sentAsReply,
+            ReplyFallbackReason = replyFallbackReason,
+        };
+    }
+
+    /// Creates the outbound draft as a reply to <paramref name="replyToGraphMessageId"/>
+    /// with our full message (subject, body, recipients, Reply-To, custom
+    /// headers) passed in one call, so Exchange only contributes the threading
+    /// headers. Returns (null, reason) when the reply draft cannot be made —
+    /// typically a 404 because the original was deleted from the mailbox — so
+    /// the caller can fall back to a plain draft.
+    private static async Task<(Message? Draft, string? FallbackReason)> TryCreateReplyDraftAsync(
+        GraphServiceClient graph, string mailbox, string replyToGraphMessageId, Message draft, CancellationToken ct)
+    {
+        Message? created;
+        try
+        {
+            created = await graph.Users[mailbox].Messages[replyToGraphMessageId].CreateReply.PostAsync(
+                new Microsoft.Graph.Users.Item.Messages.Item.CreateReply.CreateReplyPostRequestBody
+                {
+                    Message = draft,
+                },
+                cancellationToken: ct);
+        }
+        catch (Microsoft.Graph.Models.ODataErrors.ODataError err)
+        {
+            return (null, $"createReply failed: status={err.ResponseStatusCode} code={err.Error?.Code}");
+        }
+
+        if (string.IsNullOrWhiteSpace(created?.Id))
+            return (null, "createReply returned no draft id");
+
+        // Exchange may copy the original's inline images onto a reply draft
+        // for its own quoted rendering. We replaced the body wholesale (our
+        // composer carries its own quoted history), so anything already on
+        // the fresh draft is an orphan the customer would receive as a stray
+        // attachment. Strip it before our own attachments are added.
+        try
+        {
+            var existing = await graph.Users[mailbox].Messages[created.Id].Attachments
+                .GetAsync(cfg => cfg.QueryParameters.Select = new[] { "id" }, ct);
+            foreach (var att in existing?.Value ?? new List<Attachment>())
+            {
+                if (string.IsNullOrWhiteSpace(att.Id)) continue;
+                await graph.Users[mailbox].Messages[created.Id].Attachments[att.Id].DeleteAsync(cancellationToken: ct);
+            }
+        }
+        catch (Microsoft.Graph.Models.ODataErrors.ODataError err)
+        {
+            await TryDeleteDraftAsync(graph, mailbox, created.Id);
+            return (null, $"reply-draft attachment cleanup failed: status={err.ResponseStatusCode} code={err.Error?.Code}");
+        }
+
+        return (created, null);
     }
 
     private static async Task PostSmallAttachmentAsync(

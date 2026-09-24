@@ -135,7 +135,14 @@ public sealed record GraphOutboundMessage(
     IReadOnlyList<GraphRecipient> Bcc,
     IReadOnlyList<GraphRecipient> ReplyTo,
     IReadOnlyList<GraphOutboundAttachment>? Attachments = null,
-    IReadOnlyList<GraphOutboundHeader>? InternetMessageHeaders = null);
+    IReadOnlyList<GraphOutboundHeader>? InternetMessageHeaders = null)
+{
+    /// Graph id of a message in <see cref="FromMailbox"/> this mail answers.
+    /// When set, the draft is created as a Graph reply so Exchange stamps
+    /// In-Reply-To / References on the wire; on failure the client falls
+    /// back to a plain new message. Null = always a plain new message.
+    public string? ReplyToGraphMessageId { get; init; }
+}
 
 /// One custom RFC-5322 header set on an outbound message.
 public sealed record GraphOutboundHeader(string Name, string Value);
@@ -169,4 +176,12 @@ public sealed record GraphOutboundAttachment(
 /// so the existing threading lookup can match replies back to this mail.
 public sealed record GraphSentMailResult(
     string InternetMessageId,
-    DateTimeOffset SentUtc);
+    DateTimeOffset SentUtc)
+{
+    /// True when the mail went out as a Graph reply (threading headers set).
+    public bool SentAsReply { get; init; }
+
+    /// Why a requested reply draft fell back to a plain new message; null
+    /// when no reply was requested or it succeeded.
+    public string? ReplyFallbackReason { get; init; }
+}

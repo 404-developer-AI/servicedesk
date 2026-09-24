@@ -61,6 +61,14 @@ public interface IMailMessageRepository
     /// Used by outbound-send to populate In-Reply-To + extend References.
     Task<MailThreadAnchor?> GetLatestThreadAnchorAsync(Guid ticketId, CancellationToken ct);
 
+    /// Newest customer-authored inbound mail on this ticket that still has a
+    /// Graph id in <paramref name="mailbox"/> — the message outbound mail
+    /// answers as a Graph reply so In-Reply-To / References go out on the
+    /// wire. Auto-replies are skipped: an out-of-office usually carries no
+    /// References of its own, so answering it would cut the customer's chain.
+    /// Null when there is no such mail (the send falls back to a new message).
+    Task<MailReplyTarget?> GetReplyTargetAsync(Guid ticketId, string mailbox, CancellationToken ct);
+
     /// Lists the to/cc/bcc recipients stored for a given mail. Used by the
     /// timeline enricher to surface them on MailReceived events so the
     /// frontend can pre-fill reply-all recipients.
@@ -150,6 +158,11 @@ public sealed record NewOutboundMailMessage(
 /// For reply / reply-all we need its message_id (In-Reply-To) and, if
 /// present, its References header so we can extend the chain.
 public sealed record MailThreadAnchor(
+    string MessageId,
+    string? References);
+
+public sealed record MailReplyTarget(
+    string GraphMessageId,
     string MessageId,
     string? References);
 

@@ -38,6 +38,12 @@ const SECTIONS: Section[] = [
     ],
   },
   {
+    title: "Reply threading",
+    description:
+      "Mail on an existing ticket goes out as a real reply to the customer's latest mail, so In-Reply-To / References headers are set. Ticket systems on the customer side (Kayako, Freshdesk, Zendesk, …) rely on these to add our reply to their existing ticket. Forwards are never threaded. Falls back to a plain new message when the customer's mail is no longer in the sending mailbox.",
+    keys: ["Mail.ReplyThreadingEnabled"],
+  },
+  {
     title: "Forgotten-attachment warning",
     description:
       "Warn the agent before sending if their own typed message mentions an attachment but none is attached. Only the text the agent typed is scanned — never the quoted original — so replying to a customer who wrote 'attachment' never triggers it. Keywords are case- and accent-insensitive, comma-separated, and matched as substrings (EN + NL).",

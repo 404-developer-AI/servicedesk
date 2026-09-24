@@ -305,4 +305,24 @@ public sealed class MailMessageRepository : IMailMessageRepository
         return await conn.QueryFirstOrDefaultAsync<MailThreadAnchor>(
             new CommandDefinition(sql, new { ticketId }, cancellationToken: ct));
     }
+
+    public async Task<MailReplyTarget?> GetReplyTargetAsync(Guid ticketId, string mailbox, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT graph_message_id  AS GraphMessageId,
+                   message_id        AS MessageId,
+                   references_header AS References
+              FROM mail_messages
+             WHERE ticket_id = @ticketId
+               AND direction = 'Inbound'
+               AND is_auto_submitted = FALSE
+               AND graph_message_id IS NOT NULL
+               AND mailbox_address = @mailbox
+             ORDER BY received_utc DESC, id DESC
+             LIMIT 1
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.QueryFirstOrDefaultAsync<MailReplyTarget>(
+            new CommandDefinition(sql, new { ticketId, mailbox }, cancellationToken: ct));
+    }
 }

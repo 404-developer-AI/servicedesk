@@ -165,6 +165,7 @@ public static class SettingKeys
         public const string MaxOutboundTotalBytes = "Mail.MaxOutboundTotalBytes";
         public const string ForgottenAttachmentEnabled = "Mail.ForgottenAttachmentEnabled";
         public const string ForgottenAttachmentKeywords = "Mail.ForgottenAttachmentKeywords";
+        public const string ReplyThreadingEnabled = "Mail.ReplyThreadingEnabled";
     }
 
     public static class Companies
@@ -1682,6 +1683,8 @@ public static class SettingDefaults
             "When sending a mail (reply/forward/new), warn and ask for confirmation if your own typed message mentions an attachment but no file is attached. Only the text you typed is scanned — never the quoted original — so replying to a customer who wrote 'attachment' never triggers it."),
         new SettingDefault(SettingKeys.Mail.ForgottenAttachmentKeywords, "attach,enclosed,enclosure,bijlage,bijgevoegd,aangehecht", "string", "Mail",
             "Comma-separated keywords (EN + NL) that trigger the forgotten-attachment warning. Matching is case- and accent-insensitive and substring-based, so a stem like 'attach' covers attached/attachment and 'bijlage' covers bijlagen. Leave empty to effectively disable the check."),
+        new SettingDefault(SettingKeys.Mail.ReplyThreadingEnabled, "true", "bool", "Mail",
+            "Send mail on an existing ticket as a real reply to the customer's latest mail, so In-Reply-To / References headers go out. Ticket systems on the customer side (Kayako, Freshdesk, Zendesk, …) need these to add our reply to their existing ticket instead of opening a new one. Falls back to a plain new message when that mail is no longer in the sending mailbox, or when the queue sends from another mailbox than it receives on. Turn off only to restore the old always-new-message behaviour."),
 
         // Companies — v0.0.9.
         new SettingDefault(SettingKeys.Companies.SearchLimit, "25", "int", "Companies",
