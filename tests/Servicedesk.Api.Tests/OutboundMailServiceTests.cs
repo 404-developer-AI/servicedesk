@@ -538,6 +538,84 @@ public sealed class OutboundMailServiceTests
             OriginalFilename: name, IsInline: false, ContentId: null,
             ProcessingState: "Ready", EventId: null);
 
+    // ------------------------------------------------------------------
+    // Reply threading (Mail.ReplyThreadingEnabled). Header-strict ticket
+    // systems (Kayako & co.) only thread on In-Reply-To / References, which
+    // Graph only stamps when the draft is a real reply.
+    // ------------------------------------------------------------------
+
+    private static readonly MailReplyTarget CustomerMail =
+        new("graph-id-customer", "customer-msg@kayako.test", "<our-first@desk.test>");
+
+    private static OutboundMailRequest KindRequest(OutboundMailKind kind)
+        => new(TicketId, AuthorId, kind,
+            To: new[] { new GraphRecipient("customer@example.com", "C") },
+            Cc: Array.Empty<GraphRecipient>(),
+            Bcc: Array.Empty<GraphRecipient>(),
+            Subject: "Re: Disks",
+            BodyHtml: "<p>Hi</p>",
+            AttachmentIds: Array.Empty<Guid>());
+
+    [Theory]
+    [InlineData(OutboundMailKind.Reply)]
+    [InlineData(OutboundMailKind.ReplyAll)]
+    [InlineData(OutboundMailKind.New)]
+    public async Task Reply_threading_sends_as_graph_reply_and_persists_the_wire_chain(OutboundMailKind kind)
+    {
+        var (svc, graph, mail, _, _) = Build();
+        mail.ReplyTarget = CustomerMail;
+        mail.Anchor = new MailThreadAnchor("older-outbound@desk.test", null);
+
+        var result = await svc.SendAsync(KindRequest(kind), default);
+
+        Assert.Equal(OutboundMailStatus.Sent, result.Status);
+        Assert.Equal("graph-id-customer", graph.LastMessage!.ReplyToGraphMessageId);
+        Assert.Equal(MailboxAddress, mail.ReplyTargetMailbox);
+        var row = Assert.Single(mail.Outbound);
+        Assert.Equal("customer-msg@kayako.test", row.InReplyTo);
+        Assert.Equal("<our-first@desk.test> <customer-msg@kayako.test>", row.References);
+    }
+
+    [Fact]
+    public async Task Forward_never_joins_the_customer_thread()
+    {
+        var (svc, graph, mail, _, _) = Build();
+        mail.ReplyTarget = CustomerMail;
+
+        await svc.SendAsync(KindRequest(OutboundMailKind.Forward), default);
+
+        Assert.Null(graph.LastMessage!.ReplyToGraphMessageId);
+        Assert.Null(mail.ReplyTargetMailbox);
+    }
+
+    [Fact]
+    public async Task Reply_threading_off_keeps_the_plain_new_message()
+    {
+        var (svc, graph, mail, _, _) = Build(replyThreading: false);
+        mail.ReplyTarget = CustomerMail;
+
+        await svc.SendAsync(KindRequest(OutboundMailKind.Reply), default);
+
+        Assert.Null(graph.LastMessage!.ReplyToGraphMessageId);
+        Assert.Null(mail.ReplyTargetMailbox);
+    }
+
+    [Fact]
+    public async Task Failed_reply_draft_falls_back_to_the_previous_anchor_bookkeeping()
+    {
+        var (svc, graph, mail, _, _) = Build();
+        graph.FailReply = true;
+        mail.ReplyTarget = CustomerMail;
+        mail.Anchor = new MailThreadAnchor("older-outbound@desk.test", null);
+
+        var result = await svc.SendAsync(KindRequest(OutboundMailKind.Reply), default);
+
+        Assert.Equal(OutboundMailStatus.Sent, result.Status);
+        var row = Assert.Single(mail.Outbound);
+        Assert.Equal("older-outbound@desk.test", row.InReplyTo);
+        Assert.Equal("<older-outbound@desk.test>", row.References);
+    }
+
     private static (
         OutboundMailService svc,
         StubGraph graph,
@@ -548,7 +626,8 @@ public sealed class OutboundMailServiceTests
         long? maxOutboundBytes = null,
         IEnumerable<Guid>? knownAgents = null,
         bool queueAccessAllowed = true,
-        IReadOnlyList<MailMessageRow>? mailRows = null)
+        IReadOnlyList<MailMessageRow>? mailRows = null,
+        bool replyThreading = true)
     {
         var graph = new StubGraph();
         var taxonomy = new StubTaxonomy();
@@ -556,7 +635,7 @@ public sealed class OutboundMailServiceTests
         var mail = new StubMail(mailRows);
         var atts = new StubAttachments(attachments ?? Array.Empty<AttachmentRow>());
         var blobs = new StubBlobs();
-        var settings = new StubSettings(maxOutboundBytes ?? (3L * 1024 * 1024));
+        var settings = new StubSettings(maxOutboundBytes ?? (3L * 1024 * 1024), replyThreading);
         var sla = new StubSla();
         var users = new StubUsers(knownAgents);
         var mentions = new StubMentions();
@@ -584,10 +663,17 @@ public sealed class OutboundMailServiceTests
     private sealed class StubGraph : IGraphMailClient
     {
         public GraphOutboundMessage? LastMessage { get; private set; }
+        /// Simulates Graph refusing the reply draft (original gone) → plain send.
+        public bool FailReply { get; set; }
         public Task<GraphSentMailResult> SendMailAsync(GraphOutboundMessage message, CancellationToken ct)
         {
             LastMessage = message;
-            return Task.FromResult(new GraphSentMailResult("msg-id@graph", DateTimeOffset.UtcNow));
+            var asReply = message.ReplyToGraphMessageId is not null && !FailReply;
+            return Task.FromResult(new GraphSentMailResult("msg-id@graph", DateTimeOffset.UtcNow)
+            {
+                SentAsReply = asReply,
+                ReplyFallbackReason = message.ReplyToGraphMessageId is not null && FailReply ? "createReply failed: status=404" : null,
+            });
         }
         public Task<GraphFullMessage> FetchMessageAsync(string mbx, string id, CancellationToken ct) => throw new NotImplementedException();
         public Task<Stream> FetchRawMessageAsync(string mbx, string id, CancellationToken ct) => throw new NotImplementedException();
@@ -720,7 +806,15 @@ public sealed class OutboundMailServiceTests
             Outbound.Add(row);
             return Task.FromResult(Guid.NewGuid());
         }
-        public Task<MailThreadAnchor?> GetLatestThreadAnchorAsync(Guid t, CancellationToken ct) => Task.FromResult<MailThreadAnchor?>(null);
+        public Task<MailThreadAnchor?> GetLatestThreadAnchorAsync(Guid t, CancellationToken ct) => Task.FromResult(Anchor);
+        public MailThreadAnchor? Anchor { get; set; }
+        public MailReplyTarget? ReplyTarget { get; set; }
+        public string? ReplyTargetMailbox { get; private set; }
+        public Task<MailReplyTarget?> GetReplyTargetAsync(Guid t, string mailbox, CancellationToken ct)
+        {
+            ReplyTargetMailbox = mailbox;
+            return Task.FromResult(ReplyTarget);
+        }
         public Task<IReadOnlyList<MailRecipientRow>> ListRecipientsAsync(Guid m, CancellationToken ct) => Task.FromResult<IReadOnlyList<MailRecipientRow>>(Array.Empty<MailRecipientRow>());
         public Task<MailMessageRow?> GetFirstInboundForTicketAsync(Guid t, CancellationToken ct) => Task.FromResult<MailMessageRow?>(null);
     }
@@ -788,13 +882,19 @@ public sealed class OutboundMailServiceTests
     private sealed class StubSettings : ISettingsService
     {
         private readonly long _maxOutboundBytes;
-        public StubSettings(long maxOutboundBytes) { _maxOutboundBytes = maxOutboundBytes; }
+        private readonly bool _replyThreading;
+        public StubSettings(long maxOutboundBytes, bool replyThreading = true)
+        {
+            _maxOutboundBytes = maxOutboundBytes;
+            _replyThreading = replyThreading;
+        }
         public Task<T> GetAsync<T>(string key, CancellationToken ct = default)
         {
             object value = key switch
             {
                 SettingKeys.Mail.PlusAddressToken => "TCK",
                 SettingKeys.Mail.MaxOutboundTotalBytes => _maxOutboundBytes,
+                SettingKeys.Mail.ReplyThreadingEnabled => _replyThreading,
                 _ => default(T)!,
             };
             return Task.FromResult((T)value!);

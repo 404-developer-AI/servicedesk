@@ -274,6 +274,17 @@ public sealed class OutboundMailService : IOutboundMailService
             preparedBody = SignaturePlacement.StripMarker(preparedBody);
         }
 
+        // Reply threading (Mail.ReplyThreadingEnabled): answer the customer's
+        // latest mail in the sending mailbox as a real Graph reply so the
+        // In-Reply-To / References headers reach header-strict ticket systems.
+        // A forward goes to a third party and never joins the customer thread.
+        MailReplyTarget? replyTarget = null;
+        if (request.Kind != OutboundMailKind.Forward
+            && await _settings.GetAsync<bool>(SettingKeys.Mail.ReplyThreadingEnabled, ct))
+        {
+            replyTarget = await _mail.GetReplyTargetAsync(request.TicketId, fromMailbox, ct);
+        }
+
         var sendResult = await _graph.SendMailAsync(new GraphOutboundMessage(
             FromMailbox: fromMailbox,
             Subject: subject,
@@ -282,7 +293,18 @@ public sealed class OutboundMailService : IOutboundMailService
             Cc: request.Cc,
             Bcc: request.Bcc,
             ReplyTo: new[] { new GraphRecipient(replyToAddress, fromName) },
-            Attachments: graphAttachments.Count > 0 ? graphAttachments : null), ct);
+            Attachments: graphAttachments.Count > 0 ? graphAttachments : null)
+        {
+            ReplyToGraphMessageId = replyTarget?.GraphMessageId,
+        }, ct);
+        LogReplyThreading(_logger, replyTarget, sendResult, request.TicketId);
+
+        // What actually went out on the wire: a real reply carries the
+        // target's id + chain (Exchange builds References that way); a plain
+        // message keeps the pre-existing DB-only anchor bookkeeping.
+        var threadedAnchor = sendResult.SentAsReply
+            ? new MailThreadAnchor(replyTarget!.MessageId, replyTarget.References)
+            : anchor;
 
         // @@-mention filtering (v0.0.12 stap 3): dropped same way as the events
         // path — unknown ids / customer ids / deleted-user ids silently vanish.
@@ -316,7 +338,8 @@ public sealed class OutboundMailService : IOutboundMailService
             cc = request.Cc.Select(r => new { address = r.Address, name = r.Name }),
             bcc = request.Bcc.Select(r => new { address = r.Address, name = r.Name }),
             internet_message_id = sendResult.InternetMessageId,
-            in_reply_to = anchor?.MessageId,
+            in_reply_to = threadedAnchor?.MessageId,
+            sent_as_reply = sendResult.SentAsReply,
             mentionedUserIds = mentionedIds,
             mentionedMailboxIds = mentionedMailboxIds,
         });
@@ -350,8 +373,8 @@ public sealed class OutboundMailService : IOutboundMailService
 
         var mailMessageId = await _mail.InsertOutboundAsync(new NewOutboundMailMessage(
             MessageId: sendResult.InternetMessageId,
-            InReplyTo: anchor?.MessageId,
-            References: ComposeReferences(anchor),
+            InReplyTo: threadedAnchor?.MessageId,
+            References: ComposeReferences(threadedAnchor),
             Subject: subject,
             FromAddress: fromMailbox,
             FromName: fromName,
@@ -442,6 +465,24 @@ public sealed class OutboundMailService : IOutboundMailService
         var local = mailbox[..at];
         var domain = mailbox[(at + 1)..];
         return $"{local}+{token}-{ticketNumber}@{domain}";
+    }
+
+    internal static void LogReplyThreading(
+        ILogger logger, MailReplyTarget? target, GraphSentMailResult result, Guid ticketId)
+    {
+        if (target is null) return;
+        if (result.SentAsReply)
+        {
+            logger.LogInformation(
+                "Outbound mail on ticket {TicketId} sent as reply to {ParentMessageId}.",
+                ticketId, target.MessageId);
+        }
+        else
+        {
+            logger.LogWarning(
+                "Outbound mail on ticket {TicketId} could not reply to {ParentMessageId} ({Reason}); sent as a new message without threading headers.",
+                ticketId, target.MessageId, result.ReplyFallbackReason);
+        }
     }
 
     private static string? ComposeReferences(MailThreadAnchor? anchor)

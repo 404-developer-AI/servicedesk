@@ -159,6 +159,7 @@ public class MailFinalizerTests
         public Task<Guid> InsertAsync(NewMailMessage row, IReadOnlyList<NewMailRecipient> r, IReadOnlyList<NewMailAttachment> a, CancellationToken ct) => throw new NotImplementedException();
         public Task<Guid> InsertOutboundAsync(NewOutboundMailMessage row, IReadOnlyList<NewMailRecipient> r, CancellationToken ct) => throw new NotImplementedException();
         public Task<MailThreadAnchor?> GetLatestThreadAnchorAsync(Guid ticketId, CancellationToken ct) => Task.FromResult<MailThreadAnchor?>(null);
+        public Task<MailReplyTarget?> GetReplyTargetAsync(Guid ticketId, string mailbox, CancellationToken ct) => Task.FromResult<MailReplyTarget?>(null);
         public Task<IReadOnlyList<MailRecipientRow>> ListRecipientsAsync(Guid mailId, CancellationToken ct) => Task.FromResult<IReadOnlyList<MailRecipientRow>>(Array.Empty<MailRecipientRow>());
         public Task<MailMessageRow?> GetFirstInboundForTicketAsync(Guid ticketId, CancellationToken ct) => Task.FromResult<MailMessageRow?>(null);
         public Task AttachToTicketAsync(Guid mailId, Guid ticketId, long eventId, CancellationToken ct) => throw new NotImplementedException();

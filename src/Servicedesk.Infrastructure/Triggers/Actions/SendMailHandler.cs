@@ -9,6 +9,7 @@ using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Mail.Ingest;
+using Servicedesk.Infrastructure.Mail.Outbound;
 using Servicedesk.Infrastructure.Persistence.Companies;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
@@ -194,6 +195,13 @@ internal sealed class SendMailHandler : ITriggerActionHandler
         if (signature is not null)
             wireBody = AppendSignature(bodyHtml, signature.Html);
 
+        // Reply threading (Mail.ReplyThreadingEnabled) — same rule as agent
+        // mail: answer the customer's latest mail in the sending mailbox as a
+        // real Graph reply so header-strict ticket systems keep one thread.
+        MailReplyTarget? replyTarget = null;
+        if (await _settings.GetAsync<bool>(SettingKeys.Mail.ReplyThreadingEnabled, ct))
+            replyTarget = await _mail.GetReplyTargetAsync(ctx.TicketId, fromMailbox!, ct);
+
         var graphMsg = new GraphOutboundMessage(
             FromMailbox: fromMailbox!,
             Subject: subject,
@@ -216,7 +224,10 @@ internal sealed class SendMailHandler : ITriggerActionHandler
                 new GraphOutboundHeader("X-Auto-Submitted", "auto-generated"),
                 new GraphOutboundHeader("X-Auto-Response-Suppress", "All"),
                 new GraphOutboundHeader("X-Servicedesk-Triggered-By", ctx.TriggerId.ToString()),
-            });
+            })
+        {
+            ReplyToGraphMessageId = replyTarget?.GraphMessageId,
+        };
 
         GraphSentMailResult sendResult;
         try
@@ -229,6 +240,11 @@ internal sealed class SendMailHandler : ITriggerActionHandler
             return TriggerActionResult.Failed(Kind, $"Graph send failed: {ex.GetType().Name}: {ex.Message}");
         }
 
+        OutboundMailService.LogReplyThreading(_logger, replyTarget, sendResult, ctx.TicketId);
+        var threadedAnchor = sendResult.SentAsReply
+            ? new MailThreadAnchor(replyTarget!.MessageId, replyTarget.References)
+            : anchor;
+
         var bodyText = HtmlToText(bodyHtml);
         var metadata = JsonSerializer.Serialize(new
         {
@@ -240,7 +256,8 @@ internal sealed class SendMailHandler : ITriggerActionHandler
             subject,
             to = recipients.Select(r => new { address = r.Address, name = r.Name }),
             internet_message_id = sendResult.InternetMessageId,
-            in_reply_to = anchor?.MessageId,
+            in_reply_to = threadedAnchor?.MessageId,
+            sent_as_reply = sendResult.SentAsReply,
         });
 
         var evt = await _tickets.AddEventAsync(ctx.TicketId, new NewTicketEvent(
@@ -263,8 +280,8 @@ internal sealed class SendMailHandler : ITriggerActionHandler
         var mailRecipients = recipients.Select(r => new NewMailRecipient("to", r.Address, r.Name)).ToList();
         await _mail.InsertOutboundAsync(new NewOutboundMailMessage(
             MessageId: sendResult.InternetMessageId,
-            InReplyTo: anchor?.MessageId,
-            References: ComposeReferences(anchor),
+            InReplyTo: threadedAnchor?.MessageId,
+            References: ComposeReferences(threadedAnchor),
             Subject: subject,
             FromAddress: fromMailbox!,
             FromName: fromName,
