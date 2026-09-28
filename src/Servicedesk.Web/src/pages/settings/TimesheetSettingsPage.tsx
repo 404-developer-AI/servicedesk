@@ -73,6 +73,7 @@ const KEY_TIME_ALERT_THRESHOLD = "Timesheet.TimeAlertThresholdMinutes";
 const KEY_TIME_ALERT_EXTRA = "Timesheet.TimeAlertDefaultExtraMinutes";
 const KEY_TIME_ALERT_CONFIRM = "Timesheet.TimeAlertConfirmationText";
 const KEY_TIME_ALERT_DISABLE_PROMPT = "Timesheet.TimeAlertDisableReasonPrompt";
+const KEY_TIME_ALERT_ALLOW_CANCEL = "Timesheet.TimeAlertAllowCancel";
 
 const WEEKDAYS: { iso: number; label: string }[] = [
   { iso: 1, label: "Mon" },
@@ -114,6 +115,7 @@ export function TimesheetSettingsPage() {
   const timeAlertExtraEntry = findEntry(query.data, KEY_TIME_ALERT_EXTRA);
   const timeAlertConfirmEntry = findEntry(query.data, KEY_TIME_ALERT_CONFIRM);
   const timeAlertDisablePromptEntry = findEntry(query.data, KEY_TIME_ALERT_DISABLE_PROMPT);
+  const timeAlertAllowCancelEntry = findEntry(query.data, KEY_TIME_ALERT_ALLOW_CANCEL);
 
   return (
     <div className="flex flex-col gap-6">
@@ -276,6 +278,15 @@ export function TimesheetSettingsPage() {
                 />
               ) : (
                 <MissingEntry keyName={KEY_TIME_ALERT_EXTRA} />
+              )}
+              {timeAlertAllowCancelEntry ? (
+                <ToggleField
+                  entry={timeAlertAllowCancelEntry}
+                  label="Allow Cancel"
+                  hint="When off, the popup has no Cancel button and Esc / clicking outside no longer close it — agents must allow more time or disable hour tracking. Admins can still hold Shift to cancel without logging."
+                />
+              ) : (
+                <MissingEntry keyName={KEY_TIME_ALERT_ALLOW_CANCEL} />
               )}
               {timeAlertConfirmEntry ? (
                 <TextAreaField

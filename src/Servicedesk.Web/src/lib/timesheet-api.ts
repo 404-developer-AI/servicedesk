@@ -346,6 +346,9 @@ export type TicketTimeAlertStatus = {
   trackingDisabled: boolean;
   // v0.0.88 — prompt above the mandatory reason field on the disable form.
   disableReasonPrompt: string;
+  // v0.1.12 — false: no Cancel/Esc/outside-click; only the admin Shift-held
+  // silent dismiss remains (server refuses logged dismissals).
+  allowCancel: boolean;
 };
 
 export const timesheetTicketApi = {

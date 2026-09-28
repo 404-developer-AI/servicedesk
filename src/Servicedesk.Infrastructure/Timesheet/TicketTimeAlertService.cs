@@ -48,6 +48,7 @@ public sealed class TicketTimeAlertService : ITicketTimeAlertService
         var defaultExtra = await _settings.GetAsync<int>(SettingKeys.Timesheet.TimeAlertDefaultExtraMinutes, ct);
         var confirmationText = await _settings.GetAsync<string>(SettingKeys.Timesheet.TimeAlertConfirmationText, ct);
         var disablePrompt = await _settings.GetAsync<string>(SettingKeys.Timesheet.TimeAlertDisableReasonPrompt, ct);
+        var allowCancel = await _settings.GetAsync<bool>(SettingKeys.Timesheet.TimeAlertAllowCancel, ct);
 
         var row = await ReadRowAsync(ticketId, ct);
         if (row is null)
@@ -55,7 +56,8 @@ public sealed class TicketTimeAlertService : ITicketTimeAlertService
             // Ticket gone — report a disabled, empty snapshot rather than throw.
             return new TicketTimeAlertStatus(
                 false, globalThreshold, 0, globalThreshold, 0, globalThreshold, false,
-                defaultExtra, confirmationText ?? string.Empty, false, disablePrompt ?? string.Empty);
+                defaultExtra, confirmationText ?? string.Empty, false, disablePrompt ?? string.Empty,
+                allowCancel);
         }
 
         // A ticket whose tracking was explicitly disabled never warns, whatever
@@ -77,7 +79,8 @@ public sealed class TicketTimeAlertService : ITicketTimeAlertService
             DefaultExtraMinutes: defaultExtra,
             ConfirmationText: confirmationText ?? string.Empty,
             TrackingDisabled: row.TrackingDisabled,
-            DisableReasonPrompt: disablePrompt ?? string.Empty);
+            DisableReasonPrompt: disablePrompt ?? string.Empty,
+            AllowCancel: allowCancel);
     }
 
     public async Task DismissAsync(Guid ticketId, Guid actorUserId, bool silent = false, CancellationToken ct = default)

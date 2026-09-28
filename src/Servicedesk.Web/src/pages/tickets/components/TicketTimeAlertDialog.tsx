@@ -173,25 +173,40 @@ export function TicketTimeAlertDialog({ ticketId, queueId }: Props) {
   if (!status) return null;
 
   const overBy = Math.max(0, status.totalMinutes - status.limitMinutes);
+  // v0.1.12 — Timesheet.TimeAlertAllowCancel. When off there is no logged way
+  // out: Cancel, the X, Esc and outside-click are all gone (the server
+  // refuses logged dismissals too). Admins keep the Shift-held silent path.
+  const allowCancel = status.allowCancel;
+  const showCancel = allowCancel || (isAdmin && shiftHeld);
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        // The agent must make a choice — closing via overlay/Esc counts as a
-        // (logged) dismissal so we don't silently swallow the warning.
-        if (!next && open && !busy) dismiss.mutate(false);
+        // The agent must make a choice — closing via overlay/Esc/X counts as
+        // a (logged) dismissal so we don't silently swallow the warning. With
+        // Cancel disabled the close request is ignored (dialog stays open).
+        if (!next && open && !busy && allowCancel) dismiss.mutate(false);
       }}
     >
       <DialogContent
-        className="glass-panel border-amber-400/30 sm:max-w-lg"
+        className={cn(
+          "glass-panel border-amber-400/30 sm:max-w-lg",
+          !allowCancel && "[&>button]:hidden",
+        )}
         onEscapeKeyDown={(e) => {
           // Admins: Shift+Esc dismisses without logging. A plain Esc falls
-          // through to onOpenChange above (a normal, logged dismissal).
+          // through to onOpenChange above (a normal, logged dismissal) —
+          // unless Cancel is disabled, then it does nothing.
           if (isAdmin && e.shiftKey && open && !busy) {
             e.preventDefault();
             dismiss.mutate(true);
+          } else if (!allowCancel) {
+            e.preventDefault();
           }
+        }}
+        onInteractOutside={(e) => {
+          if (!allowCancel) e.preventDefault();
         }}
       >
         <DialogHeader>
@@ -314,25 +329,38 @@ export function TicketTimeAlertDialog({ ticketId, queueId }: Props) {
                   Disable hour tracking
                 </Button>
                 <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
-                  <Button
-                    variant="ghost"
-                    // Admins: Shift+click cancels without logging. Everyone else
-                    // (and a plain click) gets the normal, logged dismissal —
-                    // the server downgrades a non-admin silent request anyway.
-                    onClick={(e) => dismiss.mutate(isAdmin && e.shiftKey)}
-                    disabled={busy}
-                  >
-                    {isAdmin && shiftHeld ? "Cancel (no log)" : "Cancel"}
-                  </Button>
+                  {showCancel && (
+                    <Button
+                      variant="ghost"
+                      // Admins: Shift+click cancels without logging. Everyone else
+                      // (and a plain click) gets the normal, logged dismissal —
+                      // the server downgrades a non-admin silent request anyway.
+                      // With Cancel disabled the button only exists while an
+                      // admin holds Shift, so it is always the silent path then.
+                      onClick={(e) => dismiss.mutate(isAdmin && (e.shiftKey || !allowCancel))}
+                      disabled={busy}
+                    >
+                      {isAdmin && shiftHeld ? "Cancel (no log)" : "Cancel"}
+                    </Button>
+                  )}
                   <Button onClick={() => setMode("extend")} disabled={busy}>
                     Allow more time…
                   </Button>
                 </div>
               </div>
-              {isAdmin && (
+              {isAdmin && allowCancel && (
                 <p className="text-[11px] leading-snug text-muted-foreground/60">
                   Admin: hold <span className="font-medium text-muted-foreground/80">Shift</span> while
                   clicking Cancel (or press{" "}
+                  <span className="font-medium text-muted-foreground/80">Shift+Esc</span>) to dismiss
+                  without logging it.
+                </p>
+              )}
+              {isAdmin && !allowCancel && (
+                <p className="text-[11px] leading-snug text-muted-foreground/60">
+                  Admin: Cancel is disabled for agents. Hold{" "}
+                  <span className="font-medium text-muted-foreground/80">Shift</span> to reveal
+                  Cancel (or press{" "}
                   <span className="font-medium text-muted-foreground/80">Shift+Esc</span>) to dismiss
                   without logging it.
                 </p>
