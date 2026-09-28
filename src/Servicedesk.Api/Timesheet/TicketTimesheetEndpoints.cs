@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Persistence.Tickets;
+using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Timesheet;
 
 namespace Servicedesk.Api.Timesheet;
@@ -73,19 +74,30 @@ public static class TicketTimesheetEndpoints
         // the next open while still over limit. v0.0.89 — admins may pass
         // ?silent=true to dismiss WITHOUT writing a timeline event. That is
         // authorised here, never trusted from the client: a non-admin's
-        // silent=true is downgraded to a normal, logged dismissal.
+        // silent=true is downgraded to a normal, logged dismissal. v0.1.12 —
+        // with Timesheet.TimeAlertAllowCancel off, logged dismissals are
+        // refused (409) so the agent must extend or disable; only the admin
+        // silent dismiss still passes.
         group.MapPost("/{ticketId:guid}/time-alert/dismiss", async (
             Guid ticketId,
             bool? silent,
             HttpContext http,
             ITicketRepository tickets,
             IQueueAccessService queueAccess,
+            ISettingsService settings,
             ITicketTimeAlertService svc,
             CancellationToken ct) =>
         {
             if (!await HasTicketAccessAsync(ticketId, http, tickets, queueAccess, ct)) return Results.NotFound();
             var (_, role) = ActorContext.Resolve(http);
             var effectiveSilent = silent == true && string.Equals(role, "Admin", StringComparison.Ordinal);
+            if (!effectiveSilent
+                && !await settings.GetAsync<bool>(SettingKeys.Timesheet.TimeAlertAllowCancel, ct))
+            {
+                return Results.Problem(
+                    "Cancel is disabled for this warning — allow more time or disable hour tracking.",
+                    statusCode: 409);
+            }
             await svc.DismissAsync(ticketId, ActorContext.GetUserId(http), effectiveSilent, ct);
             return Results.NoContent();
         })

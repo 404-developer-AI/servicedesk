@@ -15,7 +15,8 @@ public sealed record TicketTimeAlertStatus(
     int DefaultExtraMinutes,    // "allow more time" dialog pre-fill
     string ConfirmationText,    // mandatory-tick label
     bool TrackingDisabled,      // v0.0.88 — tracking turned off for this ticket
-    string DisableReasonPrompt);// v0.0.88 — "disable tracking" reason prompt label
+    string DisableReasonPrompt, // v0.0.88 — "disable tracking" reason prompt label
+    bool AllowCancel);          // v0.1.12 — dialog offers a logged Cancel (Timesheet.TimeAlertAllowCancel)
 
 /// Outcome of an attempt to raise a ticket's hour limit.
 public enum TicketTimeAlertExtendResult

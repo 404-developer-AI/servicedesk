@@ -74,6 +74,27 @@ public sealed class TicketTimesheetQueueAccessTests
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    // v0.1.12 — Timesheet.TimeAlertAllowCancel off: logged dismissals are
+    // refused for everyone; only the admin silent dismiss passes.
+    [Theory]
+    [InlineData("Agent", false, HttpStatusCode.Conflict)]
+    [InlineData("Agent", true, HttpStatusCode.Conflict)]   // silent downgraded for non-admins
+    [InlineData("Admin", false, HttpStatusCode.Conflict)]
+    [InlineData("Admin", true, HttpStatusCode.NoContent)]
+    public async Task Dismiss_with_cancel_disabled_only_allows_admin_silent(
+        string role, bool silent, HttpStatusCode expected)
+    {
+        using var factory = new SecurityBaselineFactory();
+        factory.Settings.Set(SettingKeys.Timesheet.TimeAlertAllowCancel, "false");
+        using var host = WithTicketFakes(factory, hasQueueAccess: true);
+        var client = await AgentClientAsync(factory, host, role);
+
+        var url = $"/api/timesheet/ticket/{TicketId}/time-alert/dismiss" + (silent ? "?silent=true" : "");
+        var response = await SendAsync(client, "POST", url, null);
+
+        Assert.Equal(expected, response.StatusCode);
+    }
+
     // ---- plumbing ----------------------------------------------------------
 
     private static WebApplicationFactoryDerived WithTicketFakes(
@@ -106,10 +127,11 @@ public sealed class TicketTimesheetQueueAccessTests
         public void Dispose() => _inner.Dispose();
     }
 
-    private static async Task<HttpClient> AgentClientAsync(SecurityBaselineFactory factory, WebApplicationFactoryDerived host)
+    private static async Task<HttpClient> AgentClientAsync(
+        SecurityBaselineFactory factory, WebApplicationFactoryDerived host, string role = "Agent")
     {
         var userId = Guid.NewGuid();
-        factory.Sessions.Roles[userId] = "Agent";
+        factory.Sessions.Roles[userId] = role;
         var sessionId = await factory.Sessions.CreateAsync(
             userId, ip: null, userAgent: null, lifetime: TimeSpan.FromHours(1), amr: "pwd");
         var cookieName = await factory.Settings.GetAsync<string>(SettingKeys.Security.SessionCookieName);
@@ -160,7 +182,8 @@ public sealed class TicketTimesheetQueueAccessTests
             => Task.FromResult(new TicketTimeAlertStatus(
                 Enabled: false, ThresholdMinutes: 0, ExtraMinutes: 0, LimitMinutes: 0,
                 TotalMinutes: 0, RemainingMinutes: 0, Exceeded: false, DefaultExtraMinutes: 0,
-                ConfirmationText: string.Empty, TrackingDisabled: false, DisableReasonPrompt: string.Empty));
+                ConfirmationText: string.Empty, TrackingDisabled: false, DisableReasonPrompt: string.Empty,
+                AllowCancel: true));
 
         public Task DismissAsync(Guid ticketId, Guid actorUserId, bool silent = false, CancellationToken ct = default)
             => Task.CompletedTask;

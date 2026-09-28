@@ -1216,6 +1216,13 @@ public static class SettingKeys
         /// explain why tracking is being turned off for this ticket; the reason
         /// is posted as an internal note and logged. Admin-editable.
         public const string TimeAlertDisableReasonPrompt = "Timesheet.TimeAlertDisableReasonPrompt";
+
+        /// v0.1.12 — whether the alert dialog offers a (logged) Cancel. When
+        /// false, agents must either allow more time or disable tracking:
+        /// Cancel, Esc and outside-click are gone and the dismiss endpoint
+        /// refuses logged dismissals. Only the admin Shift-held silent dismiss
+        /// (no timeline event) remains.
+        public const string TimeAlertAllowCancel = "Timesheet.TimeAlertAllowCancel";
     }
 
     /// v0.0.69 — Statistics feature. Status-group definitions used by the
@@ -2185,6 +2192,8 @@ public static class SettingDefaults
             "Why are you disabling hour tracking for this ticket?",
             "string", "Timesheet",
             "Prompt shown above the mandatory reason field when an agent disables hour tracking for a ticket from the alert dialog. The reason is required and is posted as an internal note on the ticket. Edit to match your house wording."),
+        new SettingDefault(SettingKeys.Timesheet.TimeAlertAllowCancel, "true", "bool", "Timesheet",
+            "Whether the hour-limit alert offers a Cancel button. When OFF, agents must either allow more time or disable hour tracking — Cancel, Esc and clicking outside the dialog no longer close it, and logged dismissals are refused server-side. Admins can still hold Shift to dismiss without logging. Default ON."),
 
         // Statistics — v0.0.69. Status-group definitions for the "Hours by
         // status group" metric. Resolved/CWI reuse the back-office sets above;
