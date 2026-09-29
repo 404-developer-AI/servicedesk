@@ -440,6 +440,10 @@ public static class AuthEndpoints
         // v0.0.76 — per-user opt-in for the Contracts page (tile hub; the
         // contract data model lands later). Drives the sidebar nav entry.
         var contractsEnabled = await users.GetContractsEnabledAsync(userId, ct);
+        // v0.1.13 — per-user opt-in for the Insights reporting dashboard.
+        // Drives the sidebar nav entry + route gate; /api/insights enforces
+        // the same flag server-side.
+        var insightsEnabled = await users.GetInsightsEnabledAsync(userId, ct);
         // Per-user opt-in for the Employee Feedback board. Both flags drive the
         // sidebar nav entry + the /feedback route gate; the /api/feedback/*
         // endpoints enforce the resolved access scope. feedbackEnabled = full
@@ -494,6 +498,7 @@ public static class AuthEndpoints
                 statisticsRead,
                 statisticsWrite,
                 contractsEnabled,
+                insightsEnabled,
                 feedbackEnabled,
                 feedbackOwnOnly,
                 adsolutConnected,

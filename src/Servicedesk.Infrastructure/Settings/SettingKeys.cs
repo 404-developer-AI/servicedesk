@@ -1229,6 +1229,14 @@ public static class SettingKeys
     /// "Hours by status group" metric. Resolved/CWI reuse the back-office
     /// Timesheet sets above; QFI/WFQ are new, configured on the same
     /// Settings → Timesheet panel. Stored as a CSV of status ids.
+    /// v0.1.13 — Insights reporting dashboard (per-user feature flag
+    /// users.insights_enabled). Only the opening period is global.
+    public static class Insights
+    {
+        /// Period the page opens on: today | week | month | year.
+        public const string DefaultPeriod = "Insights.DefaultPeriod";
+    }
+
     public static class Statistics
     {
         public const string QfiStatusIds = "Statistics.QfiStatusIds";
@@ -2198,6 +2206,8 @@ public static class SettingDefaults
         // Statistics — v0.0.69. Status-group definitions for the "Hours by
         // status group" metric. Resolved/CWI reuse the back-office sets above;
         // QFI/WFQ are new. CSV of status ids; empty = that group is omitted.
+        new SettingDefault(SettingKeys.Insights.DefaultPeriod, "month", "string", "Insights",
+            "Period the Insights page opens on for everyone: today, week, month or year. Users can switch freely on the page; this is only the starting point."),
         new SettingDefault(SettingKeys.Statistics.QfiStatusIds, "", "string", "Timesheet",
             "Statuses that make up the 'QFI' group in the Statistics 'Hours by status group' metric. Pick statuses by name on the Settings → Timesheet → Statistics status groups panel. Empty = the QFI group is omitted from the chart."),
         new SettingDefault(SettingKeys.Statistics.WfqStatusIds, "", "string", "Timesheet",

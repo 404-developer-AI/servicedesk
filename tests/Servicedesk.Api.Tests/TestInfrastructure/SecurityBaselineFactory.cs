@@ -432,6 +432,12 @@ public sealed class FakeUserService : IUserService
     public Task<bool> GetContractsEnabledAsync(Guid userId, CancellationToken ct = default) =>
         Task.FromResult(false);
 
+    /// Test seam (v0.1.13): user ids that carry the Insights feature flag.
+    public ConcurrentDictionary<Guid, bool> InsightsEnabled { get; } = new();
+
+    public Task<bool> GetInsightsEnabledAsync(Guid userId, CancellationToken ct = default) =>
+        Task.FromResult(InsightsEnabled.ContainsKey(userId));
+
     public Task<bool> GetFeedbackEnabledAsync(Guid userId, CancellationToken ct = default) =>
         Task.FromResult(false);
 

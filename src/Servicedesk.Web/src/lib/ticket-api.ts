@@ -1541,6 +1541,8 @@ export type UserAdminRow = {
   statisticsWrite: boolean;
   // v0.0.76 — per-user opt-in for the Contracts page (tile hub).
   contractsEnabled: boolean;
+  // v0.1.13 — per-user opt-in for the Insights reporting dashboard.
+  insightsEnabled: boolean;
   // Per-user opt-in for the Employee Feedback feature (full access).
   feedbackEnabled: boolean;
   // v0.0.90 — restricted Employee Feedback access (log + see own only).
@@ -1565,6 +1567,7 @@ export type FeatureFlagsUpdate = Partial<{
   statisticsRead: boolean;
   statisticsWrite: boolean;
   contractsEnabled: boolean;
+  insightsEnabled: boolean;
   feedbackEnabled: boolean;
   feedbackOwnOnly: boolean;
 }>;

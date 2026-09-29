@@ -52,6 +52,10 @@ export type AuthUser = {
   /// contract data model lands later). Gates the sidebar nav entry and
   /// the /contracts route.
   contractsEnabled: boolean;
+  /// v0.1.13 — per-user opt-in for the Insights reporting dashboard. Gates
+  /// the sidebar nav entry and the /insights route; /api/insights enforces
+  /// the same flag server-side.
+  insightsEnabled: boolean;
   /// Per-user opt-in for the Employee Feedback feature — FULL access (shared
   /// board). Gates the sidebar nav entry and the /feedback route.
   feedbackEnabled: boolean;

@@ -57,7 +57,8 @@ public sealed class UserAdminService : IUserAdminService
                     u.statistics_write  AS StatisticsWrite,
                     u.contracts_enabled AS ContractsEnabled,
                     u.feedback_enabled  AS FeedbackEnabled,
-                    u.feedback_own_only AS FeedbackOwnOnly
+                    u.feedback_own_only AS FeedbackOwnOnly,
+                    u.insights_enabled  AS InsightsEnabled
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             -- v0.1.0: customer-portal accounts have their own admin surface
@@ -111,7 +112,8 @@ public sealed class UserAdminService : IUserAdminService
                     u.statistics_write  AS StatisticsWrite,
                     u.contracts_enabled AS ContractsEnabled,
                     u.feedback_enabled  AS FeedbackEnabled,
-                    u.feedback_own_only AS FeedbackOwnOnly
+                    u.feedback_own_only AS FeedbackOwnOnly,
+                    u.insights_enabled  AS InsightsEnabled
             FROM users u
             LEFT JOIN user_totp t ON t.user_id = u.id
             WHERE u.id = @id
@@ -844,7 +846,8 @@ public sealed class UserAdminService : IUserAdminService
             && update.StatisticsWrite is null
             && update.ContractsEnabled is null
             && update.FeedbackEnabled is null
-            && update.FeedbackOwnOnly is null)
+            && update.FeedbackOwnOnly is null
+            && update.InsightsEnabled is null)
         {
             return new UpdateFeatureFlagsResult.NoChange();
         }
@@ -892,7 +895,8 @@ public sealed class UserAdminService : IUserAdminService
                 statistics_write = COALESCE(@statisticsWrite, statistics_write),
                 contracts_enabled = COALESCE(@contractsEnabled, contracts_enabled),
                 feedback_enabled = COALESCE(@feedbackEnabled, feedback_enabled),
-                feedback_own_only = COALESCE(@feedbackOwnOnly, feedback_own_only)
+                feedback_own_only = COALESCE(@feedbackOwnOnly, feedback_own_only),
+                insights_enabled = COALESCE(@insightsEnabled, insights_enabled)
             WHERE id = @id
             """,
             new
@@ -914,6 +918,7 @@ public sealed class UserAdminService : IUserAdminService
                 contractsEnabled = update.ContractsEnabled,
                 feedbackEnabled = update.FeedbackEnabled,
                 feedbackOwnOnly = update.FeedbackOwnOnly,
+                insightsEnabled = update.InsightsEnabled,
             },
             tx,
             cancellationToken: ct));
