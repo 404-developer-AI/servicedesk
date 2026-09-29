@@ -14,6 +14,7 @@ import {
   Receipt,
   ShoppingCart,
   BarChart3,
+  ChartColumnStacked,
   PencilRuler,
   FileSignature,
   MessageSquareText,
@@ -77,6 +78,10 @@ const FLAG_GROUPS: Group[] = [
       { key: "statisticsRead", label: "Statistics (view)", icon: BarChart3 },
       { key: "statisticsWrite", label: "Statistics builder", icon: PencilRuler },
     ],
+  },
+  {
+    title: "Insights",
+    flags: [{ key: "insightsEnabled", label: "Insights (reports)", icon: ChartColumnStacked }],
   },
   {
     title: "Contracts",

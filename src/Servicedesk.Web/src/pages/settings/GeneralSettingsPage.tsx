@@ -14,6 +14,7 @@ import {
   Search,
   RefreshCw,
   KeyRound,
+  ChartColumnStacked,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -43,6 +44,7 @@ import { FACTORY_THEME, isUiTheme, type UiTheme } from "@/lib/theme";
 const APP_QUERY_KEY = ["settings", "list", "App"] as const;
 const UI_QUERY_KEY = ["settings", "list", "Ui"] as const;
 const COPILOT_QUERY_KEY = ["settings", "list", "Copilot"] as const;
+const INSIGHTS_QUERY_KEY = ["settings", "list", "Insights"] as const;
 const SEARCH_QUERY_KEY = ["settings", "list", "Search"] as const;
 const DEFAULT_THEME_QUERY_KEY = ["system", "default-theme"] as const;
 const MAINTENANCE_QUERY_KEY = ["system", "maintenance"] as const;
@@ -85,6 +87,10 @@ export function GeneralSettingsPage() {
   const searchSettings = useQuery({
     queryKey: SEARCH_QUERY_KEY,
     queryFn: () => settingsApi.list("Search"),
+  });
+  const insightsSettings = useQuery({
+    queryKey: INSIGHTS_QUERY_KEY,
+    queryFn: () => settingsApi.list("Insights"),
   });
   const { time } = useServerTime();
 
@@ -196,6 +202,11 @@ export function GeneralSettingsPage() {
       <CopilotLauncherSection
         entries={copilotSettings.data}
         loading={copilotSettings.isLoading}
+      />
+
+      <InsightsSection
+        entries={insightsSettings.data}
+        loading={insightsSettings.isLoading}
       />
     </div>
   );
@@ -388,6 +399,92 @@ function CopilotLauncherSection({
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">Copilot settings not available.</p>
+      )}
+    </section>
+  );
+}
+
+const INSIGHTS_PERIODS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "today", label: "Today" },
+  { value: "week", label: "This week" },
+  { value: "month", label: "This month" },
+  { value: "year", label: "This year" },
+];
+
+// v0.1.13 — Insights reporting dashboard. Access is a per-user feature flag
+// (Users → Features); the only global knob is the period the page opens on.
+function InsightsSection({
+  entries,
+  loading,
+}: {
+  entries: SettingEntry[] | undefined;
+  loading: boolean;
+}) {
+  const qc = useQueryClient();
+  const entry = findEntry(entries, "Insights.DefaultPeriod");
+  const current = entry?.value ?? "month";
+
+  const update = useMutation({
+    mutationFn: (value: string) => settingsApi.update("Insights.DefaultPeriod", value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: INSIGHTS_QUERY_KEY });
+      qc.invalidateQueries({ queryKey: ["insights", "config"] });
+    },
+    onError: () => {
+      toast.error("Failed to update Insights.DefaultPeriod");
+    },
+  });
+
+  return (
+    <section className="glass-card p-6">
+      <div className="mb-4 flex items-start gap-3">
+        <div className="rounded-md bg-glass p-2 text-primary">
+          <ChartColumnStacked className="h-5 w-5" />
+        </div>
+        <div className="flex-1">
+          <h2 className="text-base font-semibold text-foreground">Insights</h2>
+          <p className="text-xs text-muted-foreground">
+            The reporting dashboard. Who can open it is a per-user feature (Users → Features →
+            Insights); every figure is limited to the queues that user can access.
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <Skeleton className="h-16 w-full" />
+      ) : entry ? (
+        <FieldShell label="Opening period">
+          <div className="flex flex-wrap gap-2" role="radiogroup">
+            {INSIGHTS_PERIODS.map((p) => {
+              const selected = current === p.value;
+              return (
+                <button
+                  key={p.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  disabled={update.isPending}
+                  onClick={() => update.mutate(p.value)}
+                  className={cn(
+                    "inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                    "disabled:cursor-not-allowed disabled:opacity-50",
+                    selected
+                      ? "border-primary/50 bg-primary/10 text-foreground"
+                      : "border-glass bg-glass text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-1 text-[10px] text-muted-foreground/70">
+            Only the starting point — users can switch period freely on the page.
+          </p>
+        </FieldShell>
+      ) : (
+        <p className="text-sm text-muted-foreground">Insights settings not available.</p>
       )}
     </section>
   );

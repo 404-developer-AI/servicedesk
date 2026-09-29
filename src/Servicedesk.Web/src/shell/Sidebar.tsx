@@ -206,6 +206,11 @@ export function Sidebar() {
     if (item.to === "/statistics" && !user?.statisticsRead) {
       return false;
     }
+    // v0.1.13 — Insights is per-user opt-in (insights_enabled). Role gates
+    // Agent+Admin; the route gate and /api/insights enforce the same flag.
+    if (item.to === "/insights" && !user?.insightsEnabled) {
+      return false;
+    }
     // v0.0.76 — Contracts is per-user opt-in (contracts_enabled). Role gates
     // Agent+Admin; the /contracts route gate enforces the same flag.
     if (item.to === "/contracts" && !user?.contractsEnabled) {

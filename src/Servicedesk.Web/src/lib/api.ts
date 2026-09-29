@@ -78,6 +78,7 @@ export type AuthUserPayload = {
   statisticsRead: boolean;
   statisticsWrite: boolean;
   contractsEnabled: boolean;
+  insightsEnabled: boolean;
   feedbackEnabled: boolean;
   feedbackOwnOnly: boolean;
   adsolutConnected: boolean;

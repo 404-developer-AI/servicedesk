@@ -127,6 +127,11 @@ public interface IUserService
     /// Returns false on missing rows.
     Task<bool> GetContractsEnabledAsync(Guid userId, CancellationToken ct = default);
 
+    /// v0.1.13 — per-user opt-in for the Insights reporting dashboard.
+    /// Drives the sidebar nav entry and gates every /api/insights endpoint.
+    /// Returns false on missing rows.
+    Task<bool> GetInsightsEnabledAsync(Guid userId, CancellationToken ct = default);
+
     /// Per-user opt-in for the Employee Feedback board. True only for FULL
     /// access (feedback_enabled). Drives the /auth/me payload + the sidebar.
     /// Returns false on missing rows. For the authorization boundary on the
@@ -567,6 +572,15 @@ public sealed class UserService : IUserService
     public async Task<bool> GetContractsEnabledAsync(Guid userId, CancellationToken ct = default)
     {
         const string sql = "SELECT contracts_enabled FROM users WHERE id = @id";
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var value = await connection.QuerySingleOrDefaultAsync<bool?>(
+            new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
+        return value ?? false;
+    }
+
+    public async Task<bool> GetInsightsEnabledAsync(Guid userId, CancellationToken ct = default)
+    {
+        const string sql = "SELECT insights_enabled FROM users WHERE id = @id";
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
         var value = await connection.QuerySingleOrDefaultAsync<bool?>(
             new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));

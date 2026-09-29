@@ -5901,6 +5901,26 @@ public sealed class DatabaseBootstrapper : IHostedService
                 INSERT INTO data_migrations (name) VALUES ('v0_1_3_ratelimit_global_default');
             END IF;
         END $do$;
+
+        -- ===================================================================
+        -- v0.1.13 Insights — per-user feature flag + ticket-intake index
+        -- ===================================================================
+        -- Opt-in flag for the Insights reporting dashboard. Same shape as the
+        -- other per-user flags: default FALSE, no backfill, Agent/Admin only
+        -- (the feature-flags update path rejects Customers).
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS insights_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+        -- The "new tickets" report counts tickets per queue inside a
+        -- created_utc window. (queue_id, created_utc) keeps that an
+        -- index-only range scan per queue at the 1M-ticket target. Partial on
+        -- the same predicate the report uses (not deleted; merged tickets DO
+        -- count). The drop removes a pre-release variant that also excluded
+        -- merged tickets, so dev databases converge on the same index.
+        DROP INDEX IF EXISTS ix_tickets_queue_created;
+        CREATE INDEX IF NOT EXISTS ix_tickets_queue_created_live
+            ON tickets (queue_id, created_utc)
+            WHERE is_deleted = FALSE;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

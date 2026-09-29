@@ -36,6 +36,8 @@ public static class SettingValueValidator
             // cookie-header injection primitive.
             SettingKeys.Security.SessionCookieName or SettingKeys.Security.PortalSessionCookieName =>
                 CookieName.IsMatch(value) ? null : "Cookie names may only contain letters, digits, '-' and '_' (max 64 characters).",
+            SettingKeys.Insights.DefaultPeriod =>
+                value is "today" or "week" or "month" or "year" ? null : "Choose today, week, month or year.",
             _ => null,
         };
     }

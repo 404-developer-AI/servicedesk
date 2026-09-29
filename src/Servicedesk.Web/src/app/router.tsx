@@ -2,6 +2,7 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  lazyRouteComponent,
   redirect,
   Outlet,
   useRouterState,
@@ -562,6 +563,22 @@ const statisticsRoute = createRoute({
   component: StatisticsPage,
 });
 
+// v0.1.13 — Insights reporting dashboard. Agent + Admin role gate plus the
+// per-user `insights_enabled` flag (server-sourced via /auth/me); every
+// /api/insights endpoint re-checks the flag. Lazy-loaded so the chart library
+// only ships to users who open the page.
+const insightsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/insights",
+  beforeLoad: (args) => {
+    authGate(["Agent", "Admin"])(args);
+    if (!authedUser()?.insightsEnabled) {
+      throw redirect({ to: "/" });
+    }
+  },
+  component: lazyRouteComponent(() => import("@/pages/insights/InsightsPage"), "InsightsPage"),
+});
+
 // v0.0.76 — Contracts hub (tile launcher; modules land later). Agent + Admin
 // role gate plus the per-user `contracts_enabled` flag, checked here as well
 // as in the sidebar hide: the page has no backend surface yet, so the route
@@ -1089,6 +1106,7 @@ const routeTree = rootRoute.addChildren([
   assetsRoute,
   ordersRoute,
   statisticsRoute,
+  insightsRoute,
   contractsRoute,
   contractArticlesRoute,
   contractsOverviewRoute,

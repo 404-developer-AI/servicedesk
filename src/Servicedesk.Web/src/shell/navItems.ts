@@ -9,6 +9,7 @@ import {
   Server,
   ShoppingCart,
   BarChart3,
+  ChartColumnStacked,
   FileSignature,
   MessageSquareText,
   type LucideIcon,
@@ -126,6 +127,18 @@ export const NAV_ITEMS: readonly NavItem[] = [
     roles: ["Agent", "Admin"],
     comingIn: "",
     description: "Per-technician statistics tiles — worked hours and more, built and assigned by statistics builders.",
+    section: "main",
+  },
+  // v0.1.13 — Insights (reporting dashboard). Role gate is Agent+Admin; the
+  // per-user `insights_enabled` flag is checked in Sidebar.tsx and the
+  // /insights route gate, and /api/insights enforces it server-side.
+  {
+    label: "Insights",
+    to: "/insights",
+    icon: ChartColumnStacked,
+    roles: ["Agent", "Admin"],
+    comingIn: "",
+    description: "Reports on ticket intake — new tickets per day, week, month or year, per queue, exportable to PDF.",
     section: "main",
   },
   // v0.0.76 — Contracts. Tile hub for the upcoming contract modules
