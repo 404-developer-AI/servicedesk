@@ -263,6 +263,42 @@ public sealed class MailIngestServiceTests
         Assert.Empty(tickets.Created);
     }
 
+    [Fact]
+    public async Task Appends_via_our_subject_tag()
+    {
+        var (svc, graph, _, tickets, _) = Build();
+        var existing = Guid.NewGuid();
+        tickets.NumberToId[5321] = existing;
+        graph.Message = NewMessage(messageId: "reply@example", subject: "Re: Printer broken [Ticket#5321]");
+
+        var result = await svc.IngestAsync(QueueId, QueueMailbox, "gid-1", default);
+
+        Assert.Equal(MailIngestOutcome.Appended, result.Outcome);
+        Assert.Equal(existing, result.TicketId);
+    }
+
+    // v0.1.16 fix: a supplier's helpdesk (Freshdesk) replied with its own
+    // subject "Re: Fout: #1100 ...", no plus-address and foreign threading
+    // headers. The error code "#1100" was read as our ticket number and the
+    // reply landed on ticket 1100 of an unrelated customer.
+    [Fact]
+    public async Task A_foreign_hash_number_in_the_subject_never_threads_onto_that_ticket()
+    {
+        var (svc, graph, _, tickets, _) = Build();
+        var unrelated = Guid.NewGuid();
+        tickets.NumberToId[1100] = unrelated;
+        graph.Message = NewMessage(
+            messageId: "freshdesk-reply@example",
+            inReplyTo: "<notification@freshdesk.example>",
+            subject: "Re: Fout: #1100 ElevateDB connectiefout");
+
+        var result = await svc.IngestAsync(QueueId, QueueMailbox, "gid-1", default);
+
+        Assert.Equal(MailIngestOutcome.Created, result.Outcome);
+        Assert.NotEqual(unrelated, result.TicketId);
+        Assert.Single(tickets.Created);
+    }
+
     // v0.0.9 step 3: thread-reply must not re-run the decision tree. The
     // existing ticket already has its own company_id / resolved_via frozen at
     // creation; touching it on every reply would silently migrate tickets

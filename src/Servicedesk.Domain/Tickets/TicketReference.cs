@@ -16,8 +16,9 @@ namespace Servicedesk.Domain.Tickets;
 /// yet anchored to the WHOLE term (see <see cref="TryParseDigits"/>) so a
 /// free-text query such as "printer" is never mistaken for a reference. The
 /// looser <see cref="FindNumberInText"/> is used only where a reference is
-/// embedded in a larger string (an email subject); it requires the <c>#</c> to
-/// be present so a stray "Order 1234" subject does not match.
+/// embedded in a larger string (an email subject); it requires the prefix
+/// itself, never a bare <c>#</c>, so a stray "Order 1234" or "Error #1100"
+/// subject does not match.
 public static class TicketReference
 {
     public const string DefaultPrefix = "Ticket#";
@@ -55,7 +56,16 @@ public static class TicketReference
 
     /// Finds the FIRST ticket reference embedded anywhere in a larger string
     /// (typically an email subject like "Re: Printer broken [Ticket#1234]").
-    /// Requires a literal <c>#</c> so plain numbers in the subject are ignored.
+    /// <para>
+    /// Only our own tag counts: the configured prefix or the factory default
+    /// (older tags from before a prefix rename, migrated Zammad threads). A
+    /// bare <c>#1234</c> is ignored. Customers' subjects are full of hash
+    /// numbers from other systems, like error codes ("Fout: #1100") or other
+    /// helpdesks' ticket numbers, and matching those used to route replies into
+    /// an unrelated ticket of another customer (v0.1.16 fix). When the prefix has no
+    /// letters (e.g. "#"), only the bracketed subject form <c>[#1234]</c> that
+    /// outbound mail emits is accepted.
+    /// </para>
     public static bool FindNumberInText(string? text, string? prefix, out long number, out string digits)
     {
         number = 0;
@@ -95,11 +105,23 @@ public static class TicketReference
     private static Regex EmbeddedRegex(string? prefix)
         => s_embedded.GetOrAdd(prefix ?? string.Empty, static p =>
         {
-            var word = PrefixWord(p);
-            var wordPart = word.Length == 0 ? string.Empty : $"(?:{Regex.Escape(word)}\\s*)?";
-            // The '#' is mandatory here so a bare number in a subject line
-            // ("Invoice 1234") is never treated as a ticket reference.
-            var pattern = $@"{wordPart}#\s*(?<n>\d+)";
-            return new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            var prefixes = new[] { string.IsNullOrEmpty(p) ? DefaultPrefix : p, DefaultPrefix }
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(EmbeddedAlternative);
+            return new Regex(string.Join("|", prefixes), RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         });
+
+    private static string EmbeddedAlternative(string prefix)
+    {
+        var word = PrefixWord(prefix);
+        if (word.Length == 0)
+        {
+            // No word to anchor on: only the bracketed outbound tag, "[#1234]".
+            return $@"\[\s*{Regex.Escape(prefix.Trim())}\s*(?<n>\d+)\s*\]";
+        }
+        // "Ticket#1234" / "Ticket #1234" / "[Ticket#1234]", with the word not
+        // glued onto a longer word ("MyTicket#1") and the number not cut short.
+        var rest = prefix[word.Length..].Trim();
+        return $@"(?<![A-Za-z0-9]){Regex.Escape(word)}\s*{Regex.Escape(rest)}\s*(?<n>\d+)(?!\d)";
+    }
 }
