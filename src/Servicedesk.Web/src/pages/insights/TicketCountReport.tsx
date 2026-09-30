@@ -25,6 +25,9 @@ import {
   type TicketCountBucket,
 } from "@/lib/insights-api";
 import {
+  GRANULARITIES,
+  GRANULARITY_LABEL,
+  PERIODS,
   axisLabel,
   bucketLabel,
   daysBetweenInclusive,
@@ -34,24 +37,8 @@ import {
   slotColor,
 } from "./insightsFormat";
 import { TicketList } from "./TicketList";
+import { DateInput, IconButton, Segmented } from "./InsightsControls";
 import type { ReportFilters } from "./useReportFilters";
-
-const PERIODS: ReadonlyArray<{ value: InsightsPeriod; label: string }> = [
-  { value: "today", label: "Today" },
-  { value: "week", label: "Week" },
-  { value: "month", label: "Month" },
-  { value: "year", label: "Year" },
-  { value: "custom", label: "Custom" },
-];
-
-/** Groupings that make sense per period (finer than the period itself). */
-const GRANULARITIES: Record<InsightsPeriod, InsightsGranularity[]> = {
-  today: ["day"],
-  week: ["day"],
-  month: ["day", "week"],
-  year: ["day", "week", "month"],
-  custom: ["day", "week", "month", "year"],
-};
 
 const OUTCOME_LABEL: Record<ClosedOutcome, string> = {
   resolved: "Resolved",
@@ -69,13 +56,6 @@ const KIND_TEXT: Record<InsightsReportKind, { title: string; description: string
     title: "Closed tickets",
     description: "Counted on the moment a ticket was resolved, closed or merged, for tickets that are still in that state (a reopened ticket is open again). Stacked per queue — click a queue to show or hide it. Deleted tickets are not counted.",
   },
-};
-
-const GRANULARITY_LABEL: Record<InsightsGranularity, string> = {
-  day: "Day",
-  week: "Week",
-  month: "Month",
-  year: "Year",
 };
 
 // Per-viewer convenience: remember which queues were switched off.
@@ -489,94 +469,6 @@ export function TicketCountReportView({
 }
 
 // ---- pieces ---------------------------------------------------------------
-
-function Segmented({
-  ariaLabel,
-  value,
-  options,
-  onChange,
-}: {
-  ariaLabel: string;
-  value: string;
-  options: ReadonlyArray<{ value: string; label: string }>;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div role="radiogroup" aria-label={ariaLabel} className="sd-segmented inline-flex rounded-md border border-glass bg-glass p-0.5">
-      {options.map((o) => {
-        const active = o.value === value;
-        return (
-          <button
-            key={o.value}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            onClick={() => onChange(o.value)}
-            className={cn(
-              "h-7 rounded-[5px] px-3 text-xs font-medium transition-colors",
-              active
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function IconButton({
-  label,
-  onClick,
-  disabled,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      disabled={disabled}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-glass bg-glass text-muted-foreground transition-colors hover:bg-glass-hover hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-    >
-      {children}
-    </button>
-  );
-}
-
-function DateInput({
-  label,
-  value,
-  min,
-  max,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  min?: string;
-  max?: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <input
-      type="date"
-      aria-label={label}
-      value={value}
-      min={min}
-      max={max}
-      onChange={(e) => onChange(e.target.value)}
-      className="h-8 rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus:border-primary/60"
-    />
-  );
-}
 
 function Kpi({
   label,

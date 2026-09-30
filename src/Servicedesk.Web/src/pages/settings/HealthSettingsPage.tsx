@@ -71,6 +71,7 @@ const RETENTION_SETTINGS: ReadonlyArray<{ key: string; label: string }> = [
   { key: "Retention.AttachmentJobsDays", label: "Finished attachment jobs (days)" },
   { key: "Retention.IncidentsDays", label: "Acknowledged incidents (days)" },
   { key: "Retention.BlobDiskSamplesDays", label: "Disk-usage samples (days)" },
+  { key: "Retention.TicketOpenSessionsDays", label: "Ticket open sessions for Insights (days)" },
 ];
 
 const STATUS_BADGE: Record<HealthStatus, { label: string; className: string; icon: React.ReactNode }> = {

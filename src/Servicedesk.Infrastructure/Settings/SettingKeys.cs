@@ -1235,6 +1235,14 @@ public static class SettingKeys
     {
         /// Period the page opens on: today | week | month | year.
         public const string DefaultPeriod = "Insights.DefaultPeriod";
+
+        /// v0.1.14 — how many agents the Agents overview compares side by
+        /// side (1–6; default 3).
+        public const string AgentCompareMax = "Insights.AgentCompareMax";
+
+        /// v0.1.14 — ticket openings shorter than this (seconds) are left
+        /// out of "Opened without action" (0 = show every opening).
+        public const string OpenedNoActionMinSeconds = "Insights.OpenedNoActionMinSeconds";
     }
 
     public static class Statistics
@@ -1265,6 +1273,7 @@ public static class SettingKeys
         public const string AttachmentJobsDays = "Retention.AttachmentJobsDays";
         public const string IncidentsDays = "Retention.IncidentsDays";
         public const string BlobDiskSamplesDays = "Retention.BlobDiskSamplesDays";
+        public const string TicketOpenSessionsDays = "Retention.TicketOpenSessionsDays";
     }
 
     public static class Health
@@ -2012,6 +2021,8 @@ public static class SettingDefaults
             "Days to keep acknowledged Health incidents (the incident archive). Open incidents are never touched. 0 = keep forever."),
         new SettingDefault(SettingKeys.Retention.BlobDiskSamplesDays, "90", "int", "Retention",
             "Days to keep blob-storage disk-usage samples (one row per sampler tick). 0 = keep forever."),
+        new SettingDefault(SettingKeys.Retention.TicketOpenSessionsDays, "365", "int", "Retention",
+            "Days to keep ticket open sessions (when an agent opened a ticket and closed it again from the recent-tickets list), which feed the Insights 'Opened without action' list. Counted from the close moment; a session still open is counted from when it was opened. 0 = keep forever."),
 
         // Health — Security activity monitor (v0.0.18). Replaces "watch the
         // logs yourself". Defaults are tuned for a single-tenant install with
@@ -2208,6 +2219,10 @@ public static class SettingDefaults
         // QFI/WFQ are new. CSV of status ids; empty = that group is omitted.
         new SettingDefault(SettingKeys.Insights.DefaultPeriod, "month", "string", "Insights",
             "Period the Insights page opens on for everyone: today, week, month or year. Users can switch freely on the page; this is only the starting point."),
+        new SettingDefault(SettingKeys.Insights.AgentCompareMax, "3", "int", "Insights",
+            "How many agents the Insights Agents overview can compare side by side (1–6). Default 3."),
+        new SettingDefault(SettingKeys.Insights.OpenedNoActionMinSeconds, "3", "int", "Insights",
+            "Ticket openings shorter than this many seconds are left out of the Insights 'Opened without action' list (0–3600). Default 3; 0 shows every opening, including quick click-throughs."),
         new SettingDefault(SettingKeys.Statistics.QfiStatusIds, "", "string", "Timesheet",
             "Statuses that make up the 'QFI' group in the Statistics 'Hours by status group' metric. Pick statuses by name on the Settings → Timesheet → Statistics status groups panel. Empty = the QFI group is omitted from the chart."),
         new SettingDefault(SettingKeys.Statistics.WfqStatusIds, "", "string", "Timesheet",

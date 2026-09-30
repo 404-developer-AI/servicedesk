@@ -19,6 +19,10 @@ namespace Servicedesk.Api.Insights;
 /// route segment: <c>new-tickets</c> (counted on creation) and
 /// <c>closed-tickets</c> (counted on the close moment, with an optional
 /// <c>outcomes=resolved,closed,merged</c> filter).
+///
+/// v0.1.14 adds the Agents overview under <c>/agents</c>: one to
+/// <c>Insights.AgentCompareMax</c> agents side by side — tickets worked on,
+/// time on tickets, calls — plus each agent's ticket list and a PDF.
 public static class InsightsEndpoints
 {
     private const string PdfExportedEvent = "insights.report.pdf_exported";
@@ -27,6 +31,15 @@ public static class InsightsEndpoints
     /// Page size of the ticket list under a report (and its hard cap).
     private const int ListPageSize = 50;
     private const int ListMaxPageSize = 200;
+
+    /// Per-agent ticket rows in the Agents PDF — a guard against a
+    /// multi-thousand-page document, not a tunable. The PDF says when a
+    /// list was cut.
+    internal const int PdfTicketCap = 500;
+
+    /// Absolute bounds for Insights.AgentCompareMax (the validator agrees).
+    private const int CompareMaxFloor = 1;
+    private const int CompareMaxCeiling = 6;
 
     public static IEndpointRouteBuilder MapInsightsEndpoints(this IEndpointRouteBuilder app)
     {
@@ -38,6 +51,10 @@ public static class InsightsEndpoints
         group.MapGet(KindRoute, GetReport).WithName("InsightsReport").WithOpenApi();
         group.MapGet(KindRoute + "/pdf", ExportPdf).WithName("InsightsReportPdf").WithOpenApi();
         group.MapGet(KindRoute + "/tickets", ListTickets).WithName("InsightsReportTickets").WithOpenApi();
+        group.MapGet("/agents", GetAgentReport).WithName("InsightsAgents").WithOpenApi();
+        group.MapGet("/agents/tickets", ListAgentTickets).WithName("InsightsAgentTickets").WithOpenApi();
+        group.MapGet("/agents/opened", ListOpenedWithoutAction).WithName("InsightsAgentOpened").WithOpenApi();
+        group.MapGet("/agents/pdf", ExportAgentPdf).WithName("InsightsAgentsPdf").WithOpenApi();
 
         return app;
     }
@@ -56,6 +73,8 @@ public static class InsightsEndpoints
             timeZone = clock.TimeZone.Id,
             today = clock.Today,
             maxBuckets = InsightsCalendar.MaxBuckets,
+            maxAgents = await GetCompareMaxAsync(settings, ct),
+            openedMinSeconds = await GetMinOpenSecondsAsync(settings, ct),
         });
     }
 
@@ -172,6 +191,266 @@ public static class InsightsEndpoints
             }),
         });
     }
+
+    // ---- agents overview ---------------------------------------------------
+
+    private static async Task<IResult> GetAgentReport(
+        [AsParameters] ReportQuery query,
+        [FromQuery(Name = "agentIds")] Guid[]? agentIds,
+        HttpContext http, IUserService users, IInsightsService insights, IAgentInsightsService agentInsights,
+        IQueueAccessService queueAccess, ISettingsService settings, CancellationToken ct)
+    {
+        if (await RequireFlagAsync(http, users, ct) is { } deny) return deny;
+
+        var clock = await insights.GetClockAsync(ct);
+        if (!TryResolve(query, clock.Today, out var range, out var granularity, out var error))
+            return Results.BadRequest(new { error });
+
+        var (agents, agentError) = await ResolveAgentsAsync(agentIds, agentInsights, settings, ct);
+        if (agentError is not null) return Results.BadRequest(new { error = agentError });
+
+        var scope = await ResolveScopeAsync(http, queueAccess, ct);
+        var minSeconds = await GetMinOpenSecondsAsync(settings, ct);
+        var report = await agentInsights.GetActivityAsync(agents, range, granularity, clock, scope, minSeconds, ct);
+        return Results.Ok(ToDto(report));
+    }
+
+    private static async Task<IResult> ListAgentTickets(
+        [AsParameters] ReportQuery query,
+        [FromQuery(Name = "agentId")] Guid? agentId,
+        [FromQuery(Name = "sort")] string? sort,
+        [FromQuery(Name = "listOffset")] int? listOffset,
+        [FromQuery(Name = "limit")] int? limit,
+        HttpContext http, IUserService users, IInsightsService insights, IAgentInsightsService agentInsights,
+        IQueueAccessService queueAccess, CancellationToken ct)
+    {
+        if (await RequireFlagAsync(http, users, ct) is { } deny) return deny;
+        if (!TryParseSort(sort, out var order))
+            return Results.BadRequest(new { error = "Unknown sort." });
+
+        var clock = await insights.GetClockAsync(ct);
+        if (!TryResolve(query, clock.Today, out var range, out _, out var error))
+            return Results.BadRequest(new { error });
+
+        if (agentId is not { } id)
+            return Results.BadRequest(new { error = "Pick an agent." });
+        var agents = await agentInsights.ResolveAgentsAsync(new[] { id }, ct);
+        if (agents.Count == 0)
+            return Results.BadRequest(new { error = "Unknown agent." });
+
+        var scope = await ResolveScopeAsync(http, queueAccess, ct);
+        var page = await agentInsights.ListTicketsAsync(
+            id, range, clock, scope, order,
+            Math.Max(0, listOffset ?? 0),
+            Math.Clamp(limit ?? ListPageSize, 1, ListMaxPageSize),
+            ct);
+
+        return Results.Ok(new
+        {
+            total = page.Total,
+            items = page.Items.Select(ToDto),
+        });
+    }
+
+    private static async Task<IResult> ListOpenedWithoutAction(
+        [AsParameters] ReportQuery query,
+        [FromQuery(Name = "agentId")] Guid? agentId,
+        [FromQuery(Name = "listOffset")] int? listOffset,
+        [FromQuery(Name = "limit")] int? limit,
+        HttpContext http, IUserService users, IInsightsService insights, IAgentInsightsService agentInsights,
+        IQueueAccessService queueAccess, ISettingsService settings, CancellationToken ct)
+    {
+        if (await RequireFlagAsync(http, users, ct) is { } deny) return deny;
+
+        var clock = await insights.GetClockAsync(ct);
+        if (!TryResolve(query, clock.Today, out var range, out _, out var error))
+            return Results.BadRequest(new { error });
+
+        if (agentId is not { } id)
+            return Results.BadRequest(new { error = "Pick an agent." });
+        var agents = await agentInsights.ResolveAgentsAsync(new[] { id }, ct);
+        if (agents.Count == 0)
+            return Results.BadRequest(new { error = "Unknown agent." });
+
+        var scope = await ResolveScopeAsync(http, queueAccess, ct);
+        var page = await agentInsights.ListOpenedWithoutActionAsync(
+            id, range, clock, scope, await GetMinOpenSecondsAsync(settings, ct),
+            Math.Max(0, listOffset ?? 0),
+            Math.Clamp(limit ?? ListPageSize, 1, ListMaxPageSize),
+            ct);
+
+        return Results.Ok(new
+        {
+            total = page.Total,
+            items = page.Items.Select(o => new
+            {
+                sessionId = o.SessionId,
+                ticketId = o.TicketId,
+                number = o.Number,
+                subject = o.Subject,
+                company = o.CompanyName,
+                statusName = o.StatusName,
+                statusColor = o.StatusColor,
+                statusCategory = o.StatusCategory,
+                openedUtc = o.OpenedUtc,
+                closedUtc = o.ClosedUtc,
+                closeReason = o.CloseReason,
+                durationSeconds = o.DurationSeconds,
+            }),
+        });
+    }
+
+    private static async Task<IResult> ExportAgentPdf(
+        [AsParameters] ReportQuery query,
+        [FromQuery(Name = "agentIds")] Guid[]? agentIds,
+        [FromQuery(Name = "metric")] string? metric,
+        [FromQuery(Name = "sort")] string? sort,
+        HttpContext http, IUserService users, IInsightsService insights, IAgentInsightsService agentInsights,
+        IQueueAccessService queueAccess, ISettingsService settings, IAuditLogger audit, CancellationToken ct)
+    {
+        if (await RequireFlagAsync(http, users, ct) is { } deny) return deny;
+        if (!TryParseMetric(metric, out var chartMetric))
+            return Results.BadRequest(new { error = "Unknown metric." });
+        if (!TryParseSort(sort, out var order))
+            return Results.BadRequest(new { error = "Unknown sort." });
+
+        var clock = await insights.GetClockAsync(ct);
+        if (!TryResolve(query, clock.Today, out var range, out var granularity, out var error))
+            return Results.BadRequest(new { error });
+
+        var (agents, agentError) = await ResolveAgentsAsync(agentIds, agentInsights, settings, ct);
+        if (agentError is not null) return Results.BadRequest(new { error = agentError });
+
+        var scope = await ResolveScopeAsync(http, queueAccess, ct);
+        var minSeconds = await GetMinOpenSecondsAsync(settings, ct);
+        var report = await agentInsights.GetActivityAsync(agents, range, granularity, clock, scope, minSeconds, ct);
+        var lists = new List<AgentPdfTicketList>(agents.Count);
+        foreach (var agent in agents)
+        {
+            var page = await agentInsights.ListTicketsAsync(agent.Id, range, clock, scope, order, 0, PdfTicketCap, ct);
+            var opened = await agentInsights.ListOpenedWithoutActionAsync(agent.Id, range, clock, scope, minSeconds, 0, PdfTicketCap, ct);
+            lists.Add(new AgentPdfTicketList(agent, page, opened));
+        }
+
+        var (actor, role) = ActorContext.Resolve(http);
+        var pdf = AgentActivityPdfGenerator.Generate(
+            new AgentActivityPdfData(report, chartMetric, lists, DateTime.UtcNow, actor));
+
+        await audit.LogAsync(new AuditEvent(
+            EventType: PdfExportedEvent,
+            Actor: actor, ActorRole: role, Target: "agents",
+            ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString(),
+            Payload: new
+            {
+                from = range.From,
+                to = range.To,
+                granularity = granularity.ToString().ToLowerInvariant(),
+                agents = agents.Select(a => a.Id).ToArray(),
+            }), ct);
+
+        var fileName = string.Create(CultureInfo.InvariantCulture,
+            $"insights-agents-{range.From:yyyy-MM-dd}_{range.To:yyyy-MM-dd}.pdf");
+        return Results.File(pdf, "application/pdf", fileName);
+    }
+
+    /// Validates the agent selection: 1..max distinct ids, each an existing
+    /// Agent/Admin. Any id that does not resolve fails the whole request —
+    /// never a silently shorter comparison.
+    private static async Task<(IReadOnlyList<InsightsAgent> Agents, string? Error)> ResolveAgentsAsync(
+        Guid[]? agentIds, IAgentInsightsService agentInsights, ISettingsService settings, CancellationToken ct)
+    {
+        var ids = (agentIds ?? Array.Empty<Guid>()).Distinct().ToArray();
+        if (ids.Length == 0) return (Array.Empty<InsightsAgent>(), "Pick at least one agent.");
+
+        var max = await GetCompareMaxAsync(settings, ct);
+        if (ids.Length > max)
+            return (Array.Empty<InsightsAgent>(), $"Compare at most {max} agent{(max == 1 ? "" : "s")} at a time.");
+
+        var agents = await agentInsights.ResolveAgentsAsync(ids, ct);
+        return agents.Count == ids.Length
+            ? (agents, null)
+            : (Array.Empty<InsightsAgent>(), "Unknown agent.");
+    }
+
+    private static async Task<int> GetCompareMaxAsync(ISettingsService settings, CancellationToken ct)
+    {
+        int value;
+        try { value = await settings.GetAsync<int>(SettingKeys.Insights.AgentCompareMax, ct); }
+        catch { value = 3; }
+        return Math.Clamp(value, CompareMaxFloor, CompareMaxCeiling);
+    }
+
+    private static async Task<int> GetMinOpenSecondsAsync(ISettingsService settings, CancellationToken ct)
+    {
+        int value;
+        try { value = await settings.GetAsync<int>(SettingKeys.Insights.OpenedNoActionMinSeconds, ct); }
+        catch { value = 3; }
+        return Math.Clamp(value, 0, 3600);
+    }
+
+    internal static bool TryParseSort(string? raw, out AgentTicketSort sort)
+    {
+        switch ((raw ?? "recent").Trim().ToLowerInvariant())
+        {
+            case "recent": sort = AgentTicketSort.Recent; return true;
+            case "period": sort = AgentTicketSort.PeriodTime; return true;
+            case "agent": sort = AgentTicketSort.AgentTime; return true;
+            case "ticket": sort = AgentTicketSort.TicketTime; return true;
+            default: sort = AgentTicketSort.Recent; return false;
+        }
+    }
+
+    internal static bool TryParseMetric(string? raw, out AgentChartMetric metric)
+    {
+        switch ((raw ?? "tickets").Trim().ToLowerInvariant())
+        {
+            case "tickets": metric = AgentChartMetric.Tickets; return true;
+            case "time": metric = AgentChartMetric.Time; return true;
+            case "calls": metric = AgentChartMetric.Calls; return true;
+            default: metric = AgentChartMetric.Tickets; return false;
+        }
+    }
+
+    private static object ToDto(AgentActivityReport r) => new
+    {
+        from = r.Range.From,
+        to = r.Range.To,
+        granularity = r.Granularity.ToString().ToLowerInvariant(),
+        timeZone = r.TimeZoneId,
+        today = r.Today,
+        agents = r.Agents.Select(a => new { id = a.Id, name = a.Name, email = a.Email, role = a.Role, slot = a.Slot }),
+        totals = r.Totals.Select(ToDto),
+        buckets = r.Buckets.Select(b => new { start = b.Start, from = b.From, to = b.To, values = b.Values.Select(ToDto) }),
+    };
+
+    private static object ToDto(AgentActivityTotals t) => new
+    {
+        tickets = t.Tickets,
+        ticketMinutes = t.TicketMinutes,
+        calls = t.Calls,
+        callsIn = t.CallsIn,
+        callsOut = t.CallsOut,
+        callSeconds = t.CallSeconds,
+        openedNoAction = t.OpenedNoAction,
+    };
+
+    private static object ToDto(AgentTicketItem t) => new
+    {
+        id = t.Id,
+        number = t.Number,
+        subject = t.Subject,
+        requester = t.RequesterName,
+        company = t.CompanyName,
+        statusName = t.StatusName,
+        statusColor = t.StatusColor,
+        statusCategory = t.StatusCategory,
+        lastActionUtc = t.LastActionUtc,
+        lastEntryDate = t.LastEntryDate,
+        periodMinutes = t.PeriodMinutes,
+        agentMinutes = t.AgentMinutes,
+        ticketMinutes = t.TicketMinutes,
+    };
 
     // ---- helpers -----------------------------------------------------------
 

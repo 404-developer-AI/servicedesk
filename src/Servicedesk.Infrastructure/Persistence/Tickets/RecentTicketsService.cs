@@ -7,6 +7,12 @@ namespace Servicedesk.Infrastructure.Persistence.Tickets;
 /// same user sees the same list across browsers and devices. Lives next
 /// to the ticket persistence layer because every read enriches the
 /// stored ticket-ids with subject + status snapshot via a single JOIN.
+///
+/// v0.1.14 — every list change also writes <c>ticket_open_sessions</c> in the
+/// same transaction: a ticket entering the list opens a session, leaving it
+/// closes it (<c>removed</c> via the X, <c>cleared</c> via Clear recents,
+/// <c>evicted</c> by the cap). Insights reads those for "Opened without
+/// action". A re-view of a ticket already in the list is the same session.
 public interface IRecentTicketsService
 {
     /// Returns the user's recent-list ordered by position ascending.
@@ -138,7 +144,11 @@ public sealed class RecentTicketsService : IRecentTicketsService
         await connection.ExecuteAsync(new CommandDefinition(
             """
             INSERT INTO user_recent_tickets (user_id, ticket_id, position, added_utc)
-            VALUES (@UserId, @TicketId, @Position, now())
+            VALUES (@UserId, @TicketId, @Position, now());
+
+            INSERT INTO ticket_open_sessions (user_id, ticket_id, opened_utc)
+            VALUES (@UserId, @TicketId, now())
+            ON CONFLICT (user_id, ticket_id) WHERE closed_utc IS NULL DO NOTHING;
             """,
             new { UserId = userId, TicketId = ticketId, Position = nextPosition },
             tx,
@@ -150,15 +160,22 @@ public sealed class RecentTicketsService : IRecentTicketsService
         // shoved to the start, matching the previous in-memory behaviour.
         await connection.ExecuteAsync(new CommandDefinition(
             """
-            DELETE FROM user_recent_tickets
-            WHERE user_id = @UserId
-              AND ticket_id IN (
-                  SELECT ticket_id
-                    FROM user_recent_tickets
-                    WHERE user_id = @UserId
-                    ORDER BY position ASC, added_utc ASC
-                    OFFSET @Cap
-              )
+            WITH evicted AS (
+                DELETE FROM user_recent_tickets
+                WHERE user_id = @UserId
+                  AND ticket_id IN (
+                      SELECT ticket_id
+                        FROM user_recent_tickets
+                        WHERE user_id = @UserId
+                        ORDER BY position ASC, added_utc ASC
+                        OFFSET @Cap
+                  )
+                RETURNING ticket_id
+            )
+            UPDATE ticket_open_sessions s
+               SET closed_utc = now(), close_reason = 'evicted'
+              FROM evicted e
+             WHERE s.user_id = @UserId AND s.ticket_id = e.ticket_id AND s.closed_utc IS NULL
             """,
             new { UserId = userId, Cap = MaxEntriesPerUser },
             tx,
@@ -171,11 +188,22 @@ public sealed class RecentTicketsService : IRecentTicketsService
     public async Task<bool> RemoveAsync(Guid userId, Guid ticketId, CancellationToken ct = default)
     {
         const string sql = """
-            DELETE FROM user_recent_tickets
-            WHERE user_id = @UserId AND ticket_id = @TicketId
+            WITH removed AS (
+                DELETE FROM user_recent_tickets
+                WHERE user_id = @UserId AND ticket_id = @TicketId
+                RETURNING ticket_id
+            ),
+            closed AS (
+                UPDATE ticket_open_sessions s
+                   SET closed_utc = now(), close_reason = 'removed'
+                  FROM removed r
+                 WHERE s.user_id = @UserId AND s.ticket_id = r.ticket_id AND s.closed_utc IS NULL
+                RETURNING s.id
+            )
+            SELECT COUNT(*)::int FROM removed
             """;
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
-        var rows = await connection.ExecuteAsync(new CommandDefinition(
+        var rows = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
             sql,
             new { UserId = userId, TicketId = ticketId },
             cancellationToken: ct));
@@ -184,9 +212,22 @@ public sealed class RecentTicketsService : IRecentTicketsService
 
     public async Task<int> ClearAsync(Guid userId, CancellationToken ct = default)
     {
-        const string sql = "DELETE FROM user_recent_tickets WHERE user_id = @UserId";
+        const string sql = """
+            WITH removed AS (
+                DELETE FROM user_recent_tickets WHERE user_id = @UserId
+                RETURNING ticket_id
+            ),
+            closed AS (
+                UPDATE ticket_open_sessions s
+                   SET closed_utc = now(), close_reason = 'cleared'
+                  FROM removed r
+                 WHERE s.user_id = @UserId AND s.ticket_id = r.ticket_id AND s.closed_utc IS NULL
+                RETURNING s.id
+            )
+            SELECT COUNT(*)::int FROM removed
+            """;
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
-        return await connection.ExecuteAsync(new CommandDefinition(
+        return await connection.ExecuteScalarAsync<int>(new CommandDefinition(
             sql,
             new { UserId = userId },
             cancellationToken: ct));

@@ -1,23 +1,27 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChartColumnStacked, CircleCheckBig, Inbox } from "lucide-react";
+import { ChartColumnStacked, CircleCheckBig, Inbox, Users } from "lucide-react";
 import { insightsApi, type InsightsConfig, type InsightsReportKind } from "@/lib/insights-api";
 import { cn } from "@/lib/utils";
+import { AgentActivityReportView } from "./AgentActivityReport";
 import { TicketCountReportView } from "./TicketCountReport";
 import { useReportFilters } from "./useReportFilters";
 
-const TABS: ReadonlyArray<{ kind: InsightsReportKind; label: string; icon: typeof Inbox }> = [
+type InsightsTab = InsightsReportKind | "agents";
+
+const TABS: ReadonlyArray<{ kind: InsightsTab; label: string; icon: typeof Inbox }> = [
   { kind: "new-tickets", label: "New tickets", icon: Inbox },
   { kind: "closed-tickets", label: "Closed tickets", icon: CircleCheckBig },
+  { kind: "agents", label: "Agents", icon: Users },
 ];
 
 // Per-viewer convenience: reopen on the last overview.
 const TAB_KEY = "sd-insights-tab";
 
-function readTab(): InsightsReportKind {
+function readTab(): InsightsTab {
   try {
     const v = window.localStorage.getItem(TAB_KEY);
-    return v === "closed-tickets" ? "closed-tickets" : "new-tickets";
+    return v === "closed-tickets" || v === "agents" ? v : "new-tickets";
   } catch {
     return "new-tickets";
   }
@@ -26,6 +30,7 @@ function readTab(): InsightsReportKind {
 /// v0.1.13 — Insights: the reporting dashboard. Per-user opt-in
 /// (`insights_enabled`); every figure is scoped server-side to the viewer's
 /// queue access. One tab per overview; the period filter is shared.
+/// v0.1.14 adds the Agents tab (per-agent work, side by side).
 export function InsightsPage() {
   const config = useQuery({
     queryKey: ["insights", "config"],
@@ -43,8 +48,8 @@ export function InsightsPage() {
           </div>
           <h1 className="text-display-md font-semibold text-foreground">Reports</h1>
           <p className="max-w-xl text-sm text-muted-foreground">
-            How work flows into and out of the desk. Every figure respects your queue access and
-            every overview exports to PDF exactly as you see it.
+            How work flows into and out of the desk, and who does it. Every figure respects your
+            queue access and every overview exports to PDF exactly as you see it.
           </p>
         </div>
       </header>
@@ -64,9 +69,9 @@ export function InsightsPage() {
 
 function Reports({ config }: { config: InsightsConfig }) {
   const filters = useReportFilters(config);
-  const [tab, setTab] = React.useState<InsightsReportKind>(readTab);
+  const [tab, setTab] = React.useState<InsightsTab>(readTab);
 
-  function choose(kind: InsightsReportKind) {
+  function choose(kind: InsightsTab) {
     setTab(kind);
     try {
       window.localStorage.setItem(TAB_KEY, kind);
@@ -101,7 +106,11 @@ function Reports({ config }: { config: InsightsConfig }) {
         })}
       </div>
 
-      <TicketCountReportView key={tab} kind={tab} filters={filters} />
+      {tab === "agents" ? (
+        <AgentActivityReportView config={config} filters={filters} />
+      ) : (
+        <TicketCountReportView key={tab} kind={tab} filters={filters} />
+      )}
     </div>
   );
 }
