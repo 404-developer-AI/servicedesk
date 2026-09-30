@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Building2, Clock, FileText, Lock, MessageSquare, Paperclip, User } from "lucide-react";
+import { ArrowDownWideNarrow, ArrowLeft, ArrowUpWideNarrow, Building2, Clock, FileText, Lock, MessageSquare, Paperclip, User } from "lucide-react";
 import { toast } from "sonner";
 import { SafeHtml } from "@/components/SafeHtml";
 import { ApiError, apiErrorMessage } from "@/lib/api";
-import { portalTicketApi, type PortalMessage } from "@/lib/portal-api";
+import { portalPreferencesApi, portalTicketApi, type PortalConversationOrder, type PortalMessage } from "@/lib/portal-api";
 import { cn } from "@/lib/utils";
 import { Eye } from "lucide-react";
 import { PortalComposer, htmlHasText, type PendingFile } from "@/portal/PortalComposer";
@@ -27,6 +27,7 @@ export function PortalTicketDetailPage({ ticketId }: { ticketId: string }) {
   const company = usePortalCompany();
   const me = usePortalMe();
   const readOnly = me.user?.impersonated ?? false;
+  const order = useConversationOrder(readOnly);
   const ticketCompanyId = detail.data?.ticket.companyId ?? null;
   useEffect(() => {
     if (ticketCompanyId && company.active && ticketCompanyId !== company.active.id && company.companies.some((c) => c.id === ticketCompanyId)) {
@@ -66,6 +67,12 @@ export function PortalTicketDetailPage({ ticketId }: { ticketId: string }) {
     }
   }
 
+  const messages = detail.data?.messages;
+  const ordered = useMemo(
+    () => (messages && order.value === "newest" ? [...messages].reverse() : messages ?? []),
+    [messages, order.value],
+  );
+
   if (detail.isLoading) {
     return (
       <div className="space-y-4">
@@ -86,7 +93,47 @@ export function PortalTicketDetailPage({ ticketId }: { ticketId: string }) {
     );
   }
 
-  const { ticket, messages, canReply, replyBlockedReason } = detail.data;
+  const { ticket, canReply, replyBlockedReason } = detail.data;
+  const newestFirst = order.value === "newest";
+
+  const replySection = (
+    <section className="glass-card p-5" data-testid="portal-reply">
+      {readOnly ? (
+        <div className="flex items-start gap-2.5 text-sm text-muted-foreground">
+          <Eye className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>Read-only view — replying is disabled while viewing the portal as this customer.</p>
+        </div>
+      ) : canReply ? (
+        <>
+          <h2 className="mb-3 text-sm font-medium">Reply</h2>
+          <PortalComposer
+            value={reply}
+            onChange={setReply}
+            files={files}
+            onFilesChange={setFiles}
+            placeholder="Write your reply…"
+            disabled={busy !== null}
+            busyLabel={busy}
+            submitLabel="Send reply"
+            onSubmit={submitReply}
+          />
+        </>
+      ) : (
+        <div className="flex items-start gap-2.5 text-sm text-muted-foreground">
+          <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>
+            {replyBlockedReason === "closed"
+              ? "This ticket is closed and no longer accepts replies."
+              : "This ticket is resolved and no longer accepts replies."}{" "}
+            <Link to="/portal/tickets/new" className="font-medium text-primary hover:underline">
+              Open a new ticket
+            </Link>{" "}
+            if you need further help.
+          </p>
+        </div>
+      )}
+    </section>
+  );
 
   return (
     <div className="space-y-5" data-testid="portal-ticket-detail">
@@ -130,56 +177,80 @@ export function PortalTicketDetailPage({ ticketId }: { ticketId: string }) {
       ) : null}
 
       <section className="space-y-3">
-        <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-          <MessageSquare className="h-3.5 w-3.5" /> Conversation
-        </h2>
-        {messages.length === 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+            <MessageSquare className="h-3.5 w-3.5" /> Conversation
+          </h2>
+          <OrderToggle value={order.value} onChange={order.set} />
+        </div>
+        {newestFirst ? replySection : null}
+        {ordered.length === 0 ? (
           <div className="glass-card p-6 text-center text-sm text-muted-foreground">No messages yet.</div>
         ) : (
-          <ol className="space-y-3">
-            {messages.map((m) => (
+          <ol className="space-y-3" data-testid="portal-conversation" data-order={order.value}>
+            {ordered.map((m) => (
               <MessageItem key={m.id} message={m} when={dates.dateTime(m.createdUtc)} />
             ))}
           </ol>
         )}
       </section>
 
-      <section className="glass-card p-5" data-testid="portal-reply">
-        {readOnly ? (
-          <div className="flex items-start gap-2.5 text-sm text-muted-foreground">
-            <Eye className="mt-0.5 h-4 w-4 shrink-0" />
-            <p>Read-only view — replying is disabled while viewing the portal as this customer.</p>
-          </div>
-        ) : canReply ? (
-          <>
-            <h2 className="mb-3 text-sm font-medium">Reply</h2>
-            <PortalComposer
-              value={reply}
-              onChange={setReply}
-              files={files}
-              onFilesChange={setFiles}
-              placeholder="Write your reply…"
-              disabled={busy !== null}
-              busyLabel={busy}
-              submitLabel="Send reply"
-              onSubmit={submitReply}
-            />
-          </>
-        ) : (
-          <div className="flex items-start gap-2.5 text-sm text-muted-foreground">
-            <Lock className="mt-0.5 h-4 w-4 shrink-0" />
-            <p>
-              {replyBlockedReason === "closed"
-                ? "This ticket is closed and no longer accepts replies."
-                : "This ticket is resolved and no longer accepts replies."}{" "}
-              <Link to="/portal/tickets/new" className="font-medium text-primary hover:underline">
-                Open a new ticket
-              </Link>{" "}
-              if you need further help.
-            </p>
-          </div>
-        )}
-      </section>
+      {newestFirst ? null : replySection}
+    </div>
+  );
+}
+
+/** The customer's conversation order: their own choice (kept on the
+ *  account) or the admin default. A shadow session may flip it locally but
+ *  never stores it — the customer's choice stays theirs. */
+function useConversationOrder(readOnly: boolean) {
+  const qc = useQueryClient();
+  const key = ["portal", "preferences", "conversation-order"] as const;
+  const pref = useQuery({ queryKey: key, queryFn: portalPreferencesApi.conversationOrder, staleTime: 5 * 60_000 });
+  const [local, setLocal] = useState<PortalConversationOrder | null>(null);
+  const value: PortalConversationOrder = local ?? pref.data?.order ?? "oldest";
+
+  async function set(next: PortalConversationOrder) {
+    if (next === value) return;
+    setLocal(next);
+    if (readOnly) return;
+    try {
+      const saved = await portalPreferencesApi.setConversationOrder(next);
+      qc.setQueryData(key, saved);
+      setLocal(null);
+    } catch (e) {
+      setLocal(null);
+      toast.error(apiErrorMessage(e) ?? "Could not save your choice.");
+    }
+  }
+
+  return { value, set };
+}
+
+const ORDERS: { key: PortalConversationOrder; label: string; icon: typeof User }[] = [
+  { key: "oldest", label: "Oldest first", icon: ArrowDownWideNarrow },
+  { key: "newest", label: "Newest first", icon: ArrowUpWideNarrow },
+];
+
+function OrderToggle({ value, onChange }: { value: PortalConversationOrder; onChange: (v: PortalConversationOrder) => void }) {
+  return (
+    <div className="inline-flex rounded-lg border border-glass bg-glass p-0.5" role="radiogroup" aria-label="Conversation order">
+      {ORDERS.map((o) => (
+        <button
+          key={o.key}
+          type="button"
+          role="radio"
+          aria-checked={value === o.key}
+          onClick={() => onChange(o.key)}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+            value === o.key ? "bg-glass-strong text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <o.icon className="h-3.5 w-3.5" />
+          {o.label}
+        </button>
+      ))}
     </div>
   );
 }

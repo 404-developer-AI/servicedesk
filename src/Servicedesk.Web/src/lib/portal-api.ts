@@ -234,6 +234,20 @@ export const portalTicketApi = {
   },
 };
 
+// ---- preferences (v0.1.15) ------------------------------------------------
+
+/** Order of the conversation on a portal ticket. */
+export type PortalConversationOrder = "oldest" | "newest";
+/** `user` = the customer's own choice, `default` = the admin default. */
+export type PortalConversationOrderPreference = { order: PortalConversationOrder; source: "user" | "default" };
+
+export const portalPreferencesApi = {
+  conversationOrder: () =>
+    request<PortalConversationOrderPreference>("GET", "/api/portal/preferences/conversation-order"),
+  setConversationOrder: (order: PortalConversationOrder) =>
+    request<PortalConversationOrderPreference>("PUT", "/api/portal/preferences/conversation-order", { order }),
+};
+
 // ---- admin ----------------------------------------------------------------
 
 export type PortalAccountStatus = "PendingVerification" | "PendingApproval" | "Active" | "Rejected" | "Deactivated";

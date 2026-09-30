@@ -768,6 +768,7 @@ app.MapMicrosoftAuthEndpoints();
 app.MapPortalPublicEndpoints();
 app.MapPortalAuthEndpoints();
 app.MapPortalTicketEndpoints();
+app.MapPortalPreferencesEndpoints();
 app.MapPortalAdminEndpoints();
 app.MapAdminUserEndpoints();
 app.MapTaxonomyEndpoints();

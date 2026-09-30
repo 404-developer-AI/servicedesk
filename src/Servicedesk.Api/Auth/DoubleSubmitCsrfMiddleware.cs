@@ -36,6 +36,7 @@ public sealed class DoubleSubmitCsrfMiddleware
     {
         "/api/portal/auth/",
         "/api/portal/tickets/",
+        "/api/portal/preferences/",
     };
 
     /// Which CSRF cookie guards <paramref name="path"/>.

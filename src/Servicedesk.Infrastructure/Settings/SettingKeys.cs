@@ -1492,6 +1492,11 @@ public static class SettingKeys
         /// Resolved (Closed is never writable from the portal).
         public const string AllowReplyOnResolved = "Portal.AllowReplyOnResolved";
 
+        /// v0.1.15 — default order of the conversation on a portal ticket
+        /// ("oldest" | "newest") for customers who have not picked one
+        /// themselves. Their own choice is kept on the account.
+        public const string ConversationOrder = "Portal.ConversationOrder";
+
         /// Short name of the organisation shown in portal mail + pages
         /// (e.g. "Datawolk"). Empty = "Servicedesk".
         public const string OrganisationName = "Portal.OrganisationName";
@@ -2421,6 +2426,8 @@ public static class SettingDefaults
             "Number of tickets per page in the portal ticket list."),
         new SettingDefault(SettingKeys.Portal.AllowReplyOnResolved, "true", "bool", "Portal",
             "Allow customers to reply to tickets in a Resolved status (a reply typically reopens the ticket through your triggers). Closed tickets are never writable from the portal."),
+        new SettingDefault(SettingKeys.Portal.ConversationOrder, "oldest", "string", "Portal",
+            "Default order of the conversation on a portal ticket: 'oldest' (oldest message first, reply box at the bottom) or 'newest' (newest first, reply box at the top). Customers can switch it themselves; their choice is kept on their account."),
         new SettingDefault(SettingKeys.Portal.TurnstileEnabled, "false", "bool", "Portal",
             "Protect the registration form with Cloudflare Turnstile. Requires the site key below and the secret key (stored encrypted). When on and the secret is missing, registration is refused (fail closed)."),
         new SettingDefault(SettingKeys.Portal.TurnstileSiteKey, "", "string", "Portal",

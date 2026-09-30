@@ -267,6 +267,27 @@ public sealed class PortalAccountRepository : IPortalAccountRepository
         return n == 1;
     }
 
+    public async Task<string?> GetConversationOrderAsync(Guid userId, CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
+            "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = @key",
+            new { userId, key = PortalConversationOrder.PreferenceKey }, cancellationToken: ct));
+    }
+
+    public async Task SetConversationOrderAsync(Guid userId, string order, CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(
+            """
+            INSERT INTO user_preferences (user_id, pref_key, pref_value)
+            VALUES (@userId, @key, @order)
+            ON CONFLICT (user_id, pref_key) DO UPDATE
+                SET pref_value = EXCLUDED.pref_value, updated_utc = now()
+            """,
+            new { userId, key = PortalConversationOrder.PreferenceKey, order }, cancellationToken: ct));
+    }
+
     public async Task<PortalViewer?> GetViewerAsync(Guid userId, CancellationToken ct)
     {
         const string sql = """
