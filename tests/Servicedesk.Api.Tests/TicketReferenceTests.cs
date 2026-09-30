@@ -51,7 +51,9 @@ public class TicketReferenceTests
     [Theory]
     [InlineData("Re: Printer broken [Ticket#1234]", "1234")]
     [InlineData("RE: account locked (Ticket#42)", "42")]
-    [InlineData("Fwd: [#9001] still failing", "9001")]
+    [InlineData("re: ticket #77 follow-up", "77")]
+    // Our tag wins over a foreign hash number that comes first in the subject.
+    [InlineData("Re: Fout: #1100 ElevateDB connectiefout [Ticket#5321]", "5321")]
     public void FindNumberInText_extracts_embedded_reference(string subject, string expectedDigits)
     {
         Assert.True(TicketReference.FindNumberInText(subject, "Ticket#", out _, out var digits));
@@ -61,9 +63,34 @@ public class TicketReferenceTests
     [Theory]
     [InlineData("Invoice 1234 overdue")] // bare number in a subject must NOT match
     [InlineData("No reference here")]
-    public void FindNumberInText_requires_a_hash(string subject)
+    // A bare hash number is someone else's reference, never ours (v0.1.16:
+    // a supplier's error code "#1100" hijacked ticket 1100 of another customer).
+    [InlineData("Re: Fout: #1100 ElevateDB connectiefout")]
+    [InlineData("Fwd: [#9001] still failing")]
+    [InlineData("Issue #12 on the printer")]
+    [InlineData("MyTicket#1234")]        // prefix word glued onto a longer word
+    public void FindNumberInText_requires_our_prefix(string subject)
     {
         Assert.False(TicketReference.FindNumberInText(subject, "Ticket#", out _, out _));
+    }
+
+    [Fact]
+    public void FindNumberInText_follows_a_renamed_prefix_and_keeps_the_default()
+    {
+        Assert.True(TicketReference.FindNumberInText("Re: [CASE-55] broken", "CASE-", out var n, out _));
+        Assert.Equal(55, n);
+        // Tags sent before the rename, and migrated Zammad threads, keep threading.
+        Assert.True(TicketReference.FindNumberInText("Re: [Ticket#56]", "CASE-", out n, out _));
+        Assert.Equal(56, n);
+        Assert.False(TicketReference.FindNumberInText("Re: Error #57", "CASE-", out _, out _));
+    }
+
+    [Fact]
+    public void FindNumberInText_with_a_letterless_prefix_needs_the_bracketed_tag()
+    {
+        Assert.True(TicketReference.FindNumberInText("Re: printer [#88]", "#", out var n, out _));
+        Assert.Equal(88, n);
+        Assert.False(TicketReference.FindNumberInText("Re: Error #88", "#", out _, out _));
     }
 
     [Fact]
