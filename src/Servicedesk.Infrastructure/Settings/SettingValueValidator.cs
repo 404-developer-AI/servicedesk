@@ -38,6 +38,12 @@ public static class SettingValueValidator
                 CookieName.IsMatch(value) ? null : "Cookie names may only contain letters, digits, '-' and '_' (max 64 characters).",
             SettingKeys.Insights.DefaultPeriod =>
                 value is "today" or "week" or "month" or "year" ? null : "Choose today, week, month or year.",
+            SettingKeys.Insights.AgentCompareMax =>
+                int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n) && n is >= 1 and <= 6
+                    ? null : "Choose a whole number from 1 to 6.",
+            SettingKeys.Insights.OpenedNoActionMinSeconds =>
+                int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var s) && s is >= 0 and <= 3600
+                    ? null : "Choose a whole number of seconds from 0 to 3600.",
             _ => null,
         };
     }

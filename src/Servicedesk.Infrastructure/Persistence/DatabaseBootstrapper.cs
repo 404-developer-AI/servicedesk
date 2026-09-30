@@ -5921,6 +5921,42 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_tickets_queue_created_live
             ON tickets (queue_id, created_utc)
             WHERE is_deleted = FALSE;
+
+        -- ===================================================================
+        -- v0.1.14 Insights Agents overview — "which tickets did this agent
+        -- work on in this window". (author, created_utc) turns that into a
+        -- range scan per selected agent at the 1M-ticket target; the older
+        -- author-only index cannot bound the time window.
+        -- ===================================================================
+        CREATE INDEX IF NOT EXISTS ix_ticket_events_author_created
+            ON ticket_events (author_user_id, created_utc)
+            WHERE author_user_id IS NOT NULL;
+
+        -- v0.1.14 — ticket open sessions: one row per time an agent put a
+        -- ticket in their recent-tickets sidebar list (opened) until it left
+        -- the list again (closed: removed with the X, the whole list cleared,
+        -- or evicted by the 50-entry cap). Written by RecentTicketsService in
+        -- the same transaction as the list change, on server time. Feeds the
+        -- Insights "Opened without action" list; pruned by the RetentionWorker
+        -- (Retention.TicketOpenSessionsDays). At most one open session per
+        -- (user, ticket).
+        CREATE TABLE IF NOT EXISTS ticket_open_sessions (
+            id            BIGSERIAL   PRIMARY KEY,
+            user_id       UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            ticket_id     UUID        NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            opened_utc    TIMESTAMPTZ NOT NULL DEFAULT now(),
+            closed_utc    TIMESTAMPTZ NULL,
+            close_reason  TEXT        NULL,
+            CONSTRAINT ck_ticket_open_sessions_close
+                CHECK ((closed_utc IS NULL AND close_reason IS NULL)
+                    OR (closed_utc IS NOT NULL AND close_reason IN ('removed', 'cleared', 'evicted')))
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_ticket_open_sessions_open
+            ON ticket_open_sessions (user_id, ticket_id)
+            WHERE closed_utc IS NULL;
+        CREATE INDEX IF NOT EXISTS ix_ticket_open_sessions_user_closed
+            ON ticket_open_sessions (user_id, closed_utc)
+            WHERE closed_utc IS NOT NULL;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

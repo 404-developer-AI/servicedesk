@@ -104,6 +104,18 @@ public sealed class RetentionWorker : BackgroundService
                 LIMIT @BatchSize
             )
             """),
+        // v0.1.14 — Insights "opened without action" source. Closed sessions
+        // age from their close moment; one still open (ticket left in the
+        // sidebar for ages) from when it was opened.
+        new("ticket_open_sessions", SettingKeys.Retention.TicketOpenSessionsDays, """
+            DELETE FROM ticket_open_sessions
+            WHERE id IN (
+                SELECT id FROM ticket_open_sessions
+                WHERE COALESCE(closed_utc, opened_utc) < @Cutoff
+                ORDER BY id
+                LIMIT @BatchSize
+            )
+            """),
         new("blob_disk_samples", SettingKeys.Retention.BlobDiskSamplesDays, """
             DELETE FROM blob_disk_samples
             WHERE id IN (

@@ -1,4 +1,29 @@
-import type { InsightsGranularity, TicketCountBucket, TicketCountReport } from "@/lib/insights-api";
+import type { InsightsGranularity, InsightsPeriod, TicketCountBucket, TicketCountReport } from "@/lib/insights-api";
+
+// Period / grouping choices shared by every overview's filter row.
+export const PERIODS: ReadonlyArray<{ value: InsightsPeriod; label: string }> = [
+  { value: "today", label: "Today" },
+  { value: "week", label: "Week" },
+  { value: "month", label: "Month" },
+  { value: "year", label: "Year" },
+  { value: "custom", label: "Custom" },
+];
+
+/** Groupings that make sense per period (finer than the period itself). */
+export const GRANULARITIES: Record<InsightsPeriod, InsightsGranularity[]> = {
+  today: ["day"],
+  week: ["day"],
+  month: ["day", "week"],
+  year: ["day", "week", "month"],
+  custom: ["day", "week", "month", "year"],
+};
+
+export const GRANULARITY_LABEL: Record<InsightsGranularity, string> = {
+  day: "Day",
+  week: "Week",
+  month: "Month",
+  year: "Year",
+};
 
 // Validated categorical palette (8 slots, fixed order, CVD-checked on the
 // adjacent pairs a stacked bar produces). Light steps match the PDF export
@@ -92,7 +117,7 @@ export function periodTitle(report: Pick<TicketCountReport, "from" | "to">, peri
   }
 }
 
-export function isPartial(b: TicketCountBucket, g: InsightsGranularity): boolean {
+export function isPartial(b: Pick<TicketCountBucket, "start" | "from" | "to">, g: InsightsGranularity): boolean {
   if (g === "day") return false;
   const { y, m, d } = parseDate(b.start);
   const start = new Date(Date.UTC(y, m - 1, d));
@@ -112,3 +137,27 @@ export function daysBetweenInclusive(from: string, to: string): number {
 }
 
 export const nf = new Intl.NumberFormat("en-US");
+
+/** Same as the PDF: "45m", "3h", "12h 30m". */
+export function formatMinutes(minutes: number): string {
+  if (minutes <= 0) return "0m";
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m}m`;
+  return m === 0 ? `${nf.format(h)}h` : `${nf.format(h)}h ${String(m).padStart(2, "0")}m`;
+}
+
+/** Talk time: whole minutes above a minute, seconds below. */
+export function formatSeconds(seconds: number): string {
+  if (seconds <= 0) return "0m";
+  if (seconds < 60) return `${seconds}s`;
+  return formatMinutes(Math.round(seconds / 60));
+}
+
+/** Same as the PDF: "4s", "1m 35s", "1h 30m", "1d 2h". */
+export function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${Math.max(0, seconds)}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
+  if (seconds < 86400) return formatMinutes(Math.floor(seconds / 60));
+  return `${Math.floor(seconds / 86400)}d ${Math.floor((seconds % 86400) / 3600)}h`;
+}

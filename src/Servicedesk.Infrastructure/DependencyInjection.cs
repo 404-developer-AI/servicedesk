@@ -438,6 +438,7 @@ public static class DependencyInjection
         // v0.0.96 — Reporting API (machine-to-machine ticket statistics).
         services.AddSingleton<Reporting.ITicketReportService, Reporting.TicketReportService>();
         services.AddSingleton<Insights.IInsightsService, Insights.InsightsService>();
+        services.AddSingleton<Insights.IAgentInsightsService, Insights.AgentInsightsService>();
         // Default to the no-op notifier; the Api project overrides this
         // with the SignalR-backed implementation.
         services.AddSingleton<Realtime.ITimesheetEntryNotifier, Realtime.NullTimesheetEntryNotifier>();

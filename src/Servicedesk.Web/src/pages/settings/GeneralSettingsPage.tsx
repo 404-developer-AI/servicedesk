@@ -422,6 +422,8 @@ function InsightsSection({
 }) {
   const qc = useQueryClient();
   const entry = findEntry(entries, "Insights.DefaultPeriod");
+  const compareEntry = findEntry(entries, "Insights.AgentCompareMax");
+  const openedMinEntry = findEntry(entries, "Insights.OpenedNoActionMinSeconds");
   const current = entry?.value ?? "month";
 
   const update = useMutation({
@@ -485,6 +487,26 @@ function InsightsSection({
         </FieldShell>
       ) : (
         <p className="text-sm text-muted-foreground">Insights settings not available.</p>
+      )}
+      {!loading && compareEntry && (
+        <div className="mt-4">
+          <SettingField
+            entry={compareEntry}
+            queryKey={INSIGHTS_QUERY_KEY}
+            label="Agents to compare"
+            hint="How many agents the Agents overview can put side by side (1–6)."
+          />
+        </div>
+      )}
+      {!loading && openedMinEntry && (
+        <div className="mt-4">
+          <SettingField
+            entry={openedMinEntry}
+            queryKey={INSIGHTS_QUERY_KEY}
+            label="Opened without action — minimum seconds"
+            hint="Ticket openings shorter than this are left out of the Agents overview's 'Opened without action' list (0–3600). 0 shows every quick click-through. How long the sessions are kept is under Health → Data retention."
+          />
+        </div>
       )}
     </section>
   );
