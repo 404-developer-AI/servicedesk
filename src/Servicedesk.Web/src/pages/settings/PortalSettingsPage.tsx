@@ -84,6 +84,15 @@ export function PortalSettingsPage() {
             <Field entry={e("Portal.OrganisationName")} label="Organisation name" hint="Shown in portal mail and page footers. Empty = Servicedesk." />
             <QueueSettingRow entry={e("Portal.NewTicketQueueId")} label="Queue for new portal tickets" hint="Empty = customers can reply but not create tickets." emptyLabel="Disabled — no ticket creation from the portal" />
             <Field entry={e("Portal.AllowReplyOnResolved")} label="Allow replies on resolved tickets" hint="Closed tickets are never writable from the portal." />
+            <ChoiceSettingRow
+              entry={e("Portal.ConversationOrder")}
+              label="Default conversation order"
+              hint="For customers who have not picked one themselves. Newest first puts the reply box at the top. Their own choice is kept on their account."
+              choices={[
+                { value: "oldest", label: "Oldest first" },
+                { value: "newest", label: "Newest first" },
+              ]}
+            />
             <Field entry={e("Portal.TicketPageSize")} label="Tickets per page" />
             <Field entry={e("Portal.SessionLifetimeHours")} label="Customer session lifetime (hours)" />
             <Field
@@ -270,6 +279,40 @@ function QueueSettingRow({ entry, label, hint, emptyLabel }: { entry: SettingEnt
         {(queues.data ?? []).map((q) => (
           <option key={q.id} value={q.id}>
             {q.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+/// Same shape as QueueSettingRow, over a fixed list of choices.
+function ChoiceSettingRow({ entry, label, hint, choices }: { entry: SettingEntry | undefined; label: string; hint: string; choices: { value: string; label: string }[] }) {
+  const qc = useQueryClient();
+  const save = useMutation({
+    mutationFn: (value: string) => settingsApi.update(entry!.key, value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: PORTAL_QK });
+      toast.success(`${label} updated`);
+    },
+    onError: (err) => toast.error(apiErrorMessage(err) ?? "Save failed"),
+  });
+  if (!entry) return null;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 py-3">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      </div>
+      <select
+        value={entry.value}
+        disabled={save.isPending}
+        onChange={(ev) => save.mutate(ev.target.value)}
+        className="h-9 w-full max-w-xs rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {choices.map((c) => (
+          <option key={c.value} value={c.value}>
+            {c.label}
           </option>
         ))}
       </select>

@@ -3,7 +3,8 @@
 // double-submit middleware can match them. GETs and setup/login are exempt.
 //
 // v0.1.1 — the customer portal rides its own cookie pair, so the token for
-// /api/portal/auth/* and /api/portal/tickets/* lives in XSRF-TOKEN-PORTAL.
+// /api/portal/auth/*, /api/portal/tickets/* and /api/portal/preferences/*
+// lives in XSRF-TOKEN-PORTAL.
 // Everything else — including the agent-side /api/portal/admin/* endpoints —
 // uses the staff cookie. Keep these prefixes in sync with
 // DoubleSubmitCsrfMiddleware.PortalRealmPrefixes.
@@ -12,7 +13,7 @@ const COOKIE_NAME = "XSRF-TOKEN";
 const PORTAL_COOKIE_NAME = "XSRF-TOKEN-PORTAL";
 const HEADER_NAME = "X-XSRF-TOKEN";
 
-const PORTAL_REALM_PREFIXES = ["/api/portal/auth/", "/api/portal/tickets/"];
+const PORTAL_REALM_PREFIXES = ["/api/portal/auth/", "/api/portal/tickets/", "/api/portal/preferences/"];
 
 /// Which cookie guards this request path (defaults to the staff realm).
 export function csrfCookieName(url?: string): string {

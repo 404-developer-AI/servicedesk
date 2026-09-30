@@ -51,6 +51,13 @@ public interface IPortalAccountRepository
     /// Resolves the contact / company / role a customer session maps onto.
     Task<PortalViewer?> GetViewerAsync(Guid userId, CancellationToken ct);
 
+    /// v0.1.15 — the customer's own conversation order (raw stored value,
+    /// null when they never picked one). See <see cref="PortalConversationOrder"/>.
+    Task<string?> GetConversationOrderAsync(Guid userId, CancellationToken ct);
+
+    /// Stores an already-normalized conversation order for the customer.
+    Task SetConversationOrderAsync(Guid userId, string order, CancellationToken ct);
+
     /// Sets contacts.company_role (Member | TicketManager) for a contact
     /// (legacy per-contact value, kept in step with the primary link).
     Task SetContactCompanyRoleAsync(Guid contactId, string companyRole, CancellationToken ct);

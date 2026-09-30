@@ -44,6 +44,9 @@ public static class SettingValueValidator
             SettingKeys.Insights.OpenedNoActionMinSeconds =>
                 int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var s) && s is >= 0 and <= 3600
                     ? null : "Choose a whole number of seconds from 0 to 3600.",
+            SettingKeys.Portal.ConversationOrder =>
+                value is Portal.PortalConversationOrder.Oldest or Portal.PortalConversationOrder.Newest
+                    ? null : "Choose oldest or newest.",
             _ => null,
         };
     }

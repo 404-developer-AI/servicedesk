@@ -25,7 +25,19 @@ public sealed class FakePortalAccountRepository : IPortalAccountRepository
     public Task<bool> RejectAsync(Guid userId, Guid rejectedByUserId, string? reason, CancellationToken ct) => Task.FromResult(false);
     public Task<bool> SetActiveAsync(Guid userId, bool active, CancellationToken ct) => Task.FromResult(false);
     public Task<bool> DeleteAsync(Guid userId, CancellationToken ct) => Task.FromResult(false);
-    public Task<PortalViewer?> GetViewerAsync(Guid userId, CancellationToken ct) => Task.FromResult<PortalViewer?>(null);
+    /// Test seam (v0.1.15) — an Active viewer for endpoints past the gate.
+    public PortalViewer? Viewer { get; set; }
+    public Task<PortalViewer?> GetViewerAsync(Guid userId, CancellationToken ct) =>
+        Task.FromResult(Viewer is { } v && v.UserId == userId ? Viewer : null);
+    /// Test seam (v0.1.15) — stored conversation order per user.
+    public Dictionary<Guid, string> ConversationOrders { get; } = new();
+    public Task<string?> GetConversationOrderAsync(Guid userId, CancellationToken ct) =>
+        Task.FromResult(ConversationOrders.TryGetValue(userId, out var v) ? v : null);
+    public Task SetConversationOrderAsync(Guid userId, string order, CancellationToken ct)
+    {
+        ConversationOrders[userId] = order;
+        return Task.CompletedTask;
+    }
     public Task SetContactCompanyRoleAsync(Guid contactId, string companyRole, CancellationToken ct) => Task.CompletedTask;
     public Task<Guid> CreateTokenAsync(string kind, byte[] tokenHash, string email, Guid? userId, Guid? contactId, Guid? companyId, string? companyRole, string displayName, Guid? createdByUserId, DateTime expiresUtc, CancellationToken ct, string? companyLinksJson = null) => Task.FromResult(Guid.NewGuid());
     public Task<bool> SetPortalRoleAsync(Guid contactId, Guid companyId, string portalRole, CancellationToken ct) => Task.FromResult(false);
