@@ -46,4 +46,10 @@ public enum TicketEventType
     // reply) posted by a customer from the portal. Customer-visible,
     // author_contact_id set, never stamps first_response_utc.
     PortalMessage,
+    // v0.1.17 — the Call-back or Research flag was switched on/off.
+    // Metadata: { flag: "callback" | "research", from, to }.
+    TicketFlagChange,
+    // v0.1.17 — a phone call logged from the Call composer. Internal by
+    // default; the agent may mark it customer-visible.
+    Call,
 }

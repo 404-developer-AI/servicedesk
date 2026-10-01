@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Clock, ExternalLink, MessageCircle, Sparkles } from "lucide-react";
+import { Clock, ExternalLink, Mail, Phone, Sparkles, StickyNote } from "lucide-react";
 import { ticketApi, mentionApi } from "@/lib/ticket-api";
 import { preferencesApi, agentQueueApi } from "@/lib/api";
 import { useAuth } from "@/auth/authStore";
@@ -49,13 +49,28 @@ type AddNoteFormProps = {
   /// (already in a popup).
   isPopup?: boolean;
   /// v0.0.105 — project tickets are internal: the "Reply" (public
-  /// comment) and "Send mail" tabs are hidden, leaving internal notes
-  /// only, and any mail intent falls back to a note. The server refuses
-  /// an outbound send regardless.
+  /// comment) and "Mail" options are hidden, leaving internal notes and
+  /// internal call logs only, and any mail intent falls back to a note.
+  /// The server refuses an outbound send regardless.
   internalOnly?: boolean;
 };
 
-type TabType = "reply" | "note" | "mail";
+/// v0.1.17 — the composer is split into three buttons (Note / Mail / Call).
+/// `tab` keeps the sub-mode: Note covers "note" (internal) + "reply"
+/// (public comment); Mail is "mail"; Call is "call" (internal or visible,
+/// see `callInternal`).
+type TabType = "reply" | "note" | "mail" | "call";
+type ComposerMode = "note" | "mail" | "call";
+
+function modeOf(tab: TabType): ComposerMode {
+  if (tab === "mail") return "mail";
+  if (tab === "call") return "call";
+  return "note";
+}
+
+function isEmptyHtml(html: string | undefined | null) {
+  return !html || !html.trim() || html === "<p></p>";
+}
 
 export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailContext, isPopup = false, internalOnly = false }: AddNoteFormProps) {
   const { user } = useAuth();
@@ -76,27 +91,37 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
   // can both be in progress on the same ticket. Either one auto-expands the
   // composer on open; when both exist, the more recently edited picks the tab.
   const savedMailDraft = useWorkspaceStore.getState().getMailDraft(ticketId);
+  // v0.1.17 — the Call button keeps its own draft slot too.
+  const savedCallDraft = useWorkspaceStore.getState().getCallDraft(ticketId);
   // Popup always starts expanded — no collapsed-button state in that flow.
   const [expanded, setExpanded] = React.useState(
-    isPopup || !!savedDraft || !!savedMailDraft,
+    isPopup || !!savedDraft || !!savedMailDraft || !!savedCallDraft,
   );
   const [tab, setTab] = React.useState<TabType>(() => {
-    if (internalOnly) return "note";
-    if (savedDraft && savedMailDraft) {
-      return savedMailDraft.updatedUtc > savedDraft.updatedUtc
-        ? "mail"
-        : savedDraft.tab;
-    }
-    if (savedMailDraft) return "mail";
-    return savedDraft?.tab ?? "note";
+    // The most recently edited draft decides where the composer reopens.
+    const candidates: Array<{ tab: TabType; at: string }> = [];
+    if (savedDraft) candidates.push({ tab: internalOnly ? "note" : savedDraft.tab, at: savedDraft.updatedUtc });
+    if (savedMailDraft && !internalOnly) candidates.push({ tab: "mail", at: savedMailDraft.updatedUtc });
+    if (savedCallDraft) candidates.push({ tab: "call", at: savedCallDraft.updatedUtc });
+    if (candidates.length === 0) return "note";
+    candidates.sort((a, b) => (a.at < b.at ? 1 : -1));
+    return candidates[0].tab;
   });
-  // Defensive: if a non-note tab was active when the ticket became
+  // v0.1.17 — Call visibility: internal by default, the agent may make the
+  // call log visible to the customer (never on internal-only tickets).
+  const [callInternal, setCallInternal] = React.useState(savedCallDraft?.isInternal ?? true);
+  // Defensive: if a public/mail tab was active when the ticket became
   // internal-only (e.g. it was converted to a project), fall back.
   React.useEffect(() => {
-    if (internalOnly) setTab("note");
+    if (internalOnly) {
+      setTab((t) => (t === "reply" || t === "mail" ? "note" : t));
+      setCallInternal(true);
+    }
   }, [internalOnly]);
-  const [bodyHtml, setBodyHtml] = React.useState(savedDraft?.bodyHtml ?? "");
-  const [initialContent] = React.useState(savedDraft?.bodyHtml ?? "");
+  const startHtml =
+    tab === "call" ? savedCallDraft?.bodyHtml ?? "" : tab === "mail" ? "" : savedDraft?.bodyHtml ?? "";
+  const [bodyHtml, setBodyHtml] = React.useState(startHtml);
+  const [initialContent, setInitialContent] = React.useState(startHtml);
   const [editorKey, setEditorKey] = React.useState(0);
   const [mentionedUserIds, setMentionedUserIds] = React.useState<string[]>([]);
   // v0.0.35-F — handed by RichTextEditor.onEditorReady; used by the
@@ -195,7 +220,8 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
       setEditorReady(false);
       return;
     }
-    if (tab !== "note") return;
+    // v0.1.17 — the Call composer has its own auto-insert template.
+    if (tab !== "note" && tab !== "call") return;
     if (!editorReady) return;
     if (autoInsertAttemptedRef.current) return;
     if (!queueId || !statusId) return;
@@ -203,13 +229,13 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
 
     autoInsertAttemptedRef.current = true;
     let cancelled = false;
+    const forTab = tab;
 
     (async () => {
       try {
-        const { template } = await composeTemplatesApi.defaultForNote(
-          queueId,
-          statusId,
-        );
+        const { template } = await (forTab === "call"
+          ? composeTemplatesApi.defaultForCall(queueId, statusId)
+          : composeTemplatesApi.defaultForNote(queueId, statusId));
         if (cancelled || !template) return;
         // Bail if the agent already started typing while the request was
         // in flight — we never overwrite content.
@@ -220,7 +246,7 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
         if (!editor) return;
         editor.chain().focus().setContent(html).run();
         setBodyHtml(html);
-        updateDraft(html, "note");
+        updateDraft(html, forTab);
       } catch {
         // Silent fail — the agent can still type a note manually. A
         // missing/unreachable endpoint shouldn't block the composer.
@@ -235,13 +261,25 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded, tab, editorReady, queueId, statusId]);
 
-  const isInternal = tab === "note";
+  const isCall = tab === "call";
+  const effectiveCallInternal = internalOnly || callInternal;
+  const isInternal = tab === "note" || (isCall && effectiveCallInternal);
 
   // Sync draft to workspace store on editor changes. The mail tab manages its
-  // own state in <SendMailForm>, so drafts only persist for note/reply.
+  // own state in <SendMailForm>, so drafts only persist for note/reply and
+  // (v0.1.17) for the call log in its own slot.
   const updateDraft = React.useCallback(
-    (html: string, currentTab: TabType) => {
+    (html: string, currentTab: TabType, callIsInternal?: boolean) => {
       if (currentTab === "mail") return;
+      if (currentTab === "call") {
+        const store = useWorkspaceStore.getState();
+        if (!isEmptyHtml(html)) {
+          store.setCallDraft(ticketId, { bodyHtml: html, isInternal: callIsInternal ?? true });
+        } else {
+          store.removeCallDraft(ticketId);
+        }
+        return;
+      }
       const internal = currentTab === "note";
       if (html.trim() && html !== "<p></p>") {
         useWorkspaceStore
@@ -254,18 +292,73 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
     [ticketId],
   );
 
-  const clearDraft = React.useCallback(() => {
-    useWorkspaceStore.getState().removeDraft(ticketId);
-    preferencesApi
-      .deleteWorkspaceKey(`workspace:draft:${ticketId}`)
-      .catch(() => {});
-  }, [ticketId]);
+  const clearDraft = React.useCallback(
+    (forTab: TabType) => {
+      if (forTab === "call") {
+        useWorkspaceStore.getState().removeCallDraft(ticketId);
+        preferencesApi.deleteWorkspaceKey(`workspace:calldraft:${ticketId}`).catch(() => {});
+        return;
+      }
+      useWorkspaceStore.getState().removeDraft(ticketId);
+      preferencesApi
+        .deleteWorkspaceKey(`workspace:draft:${ticketId}`)
+        .catch(() => {});
+    },
+    [ticketId],
+  );
+
+  // v0.1.17 — move between the three composer buttons (and the Note
+  // sub-tabs). Note ↔ Call swap the editor content to the other slot's
+  // draft; Internal note ↔ Reply keep the text, as before.
+  const switchTab = React.useCallback(
+    (next: TabType) => {
+      if (internalOnly && (next === "reply" || next === "mail")) next = "note";
+      const fromMode = modeOf(tab);
+      const toMode = modeOf(next);
+      if (fromMode === toMode || toMode === "mail") {
+        setTab(next);
+        if (toMode === "note") updateDraft(bodyHtml, next);
+        return;
+      }
+      const store = useWorkspaceStore.getState();
+      const html =
+        toMode === "call"
+          ? store.getCallDraft(ticketId)?.bodyHtml ?? ""
+          : store.getDraft(ticketId)?.bodyHtml ?? "";
+      setTab(next);
+      setBodyHtml(html);
+      setInitialContent(html);
+      setMentionedUserIds([]);
+      autoInsertAttemptedRef.current = false;
+      setEditorReady(false);
+      setEditorKey((k) => k + 1);
+    },
+    [internalOnly, tab, bodyHtml, ticketId, updateDraft],
+  );
+
+  /// Open the composer on one of the three buttons. Note reopens the last
+  /// Note sub-tab (internal note or reply).
+  const openMode = React.useCallback(
+    (mode: ComposerMode) => {
+      const target: TabType =
+        mode === "mail"
+          ? "mail"
+          : mode === "call"
+            ? "call"
+            : internalOnly
+              ? "note"
+              : useWorkspaceStore.getState().getDraft(ticketId)?.tab ?? (tab === "reply" ? "reply" : "note");
+      switchTab(target);
+      setExpanded(true);
+    },
+    [internalOnly, switchTab, ticketId, tab],
+  );
 
   const mutation = useMutation({
     mutationFn: () => {
       const { userIds, mailboxIds } = splitMentionIds(mentionedUserIds);
       return ticketApi.addEvent(ticketId, {
-        eventType: isInternal ? "Note" : "Comment",
+        eventType: isCall ? "Call" : isInternal ? "Note" : "Comment",
         bodyHtml: bodyHtml || undefined,
         isInternal,
         attachmentIds: attachments.readyAttachmentIds,
@@ -274,8 +367,11 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
       });
     },
     onSuccess: () => {
-      toast.success(isInternal ? "Note added" : "Reply sent");
-      clearDraft();
+      toast.success(isCall ? "Call logged" : isInternal ? "Note added" : "Reply sent");
+      clearDraft(tab);
+      // A logged call can clear the ticket's Call-back flag server-side
+      // (Tickets.CallbackClearOnCall) — refresh the list so the float moves.
+      if (isCall) queryClient.invalidateQueries({ queryKey: ["tickets"] });
       setBodyHtml("");
       setMentionedUserIds([]);
       attachments.reset();
@@ -381,15 +477,33 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
   }
 
   if (!expanded) {
+    // v0.1.17 — three side-by-side entry points instead of one button.
     return (
-      <button
-        type="button"
-        onClick={() => setExpanded(true)}
-        className="w-full flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border border-glass bg-glass text-muted-foreground/60 hover:bg-glass-hover hover:text-muted-foreground hover:border-glass-strong transition-colors text-sm"
-      >
-        <MessageCircle className="h-4 w-4 shrink-0" />
-        Write an internal note...
-      </button>
+      <div className={cn("sd-composer-launcher grid gap-2", internalOnly ? "grid-cols-2" : "grid-cols-3")}>
+        <ComposerLaunchButton
+          icon={StickyNote}
+          label="Note"
+          hint="Internal note or reply"
+          accent="amber"
+          onClick={() => openMode("note")}
+        />
+        {!internalOnly && (
+          <ComposerLaunchButton
+            icon={Mail}
+            label="Mail"
+            hint="Write a mail"
+            accent="sky"
+            onClick={() => openMode("mail")}
+          />
+        )}
+        <ComposerLaunchButton
+          icon={Phone}
+          label="Call"
+          hint="Log a phone call"
+          accent="violet"
+          onClick={() => openMode("call")}
+        />
+      </div>
     );
   }
 
@@ -400,55 +514,58 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
         "glass-card p-4",
         tab === "note" && "ring-1 ring-amber-500/30",
         tab === "reply" && "ring-1 ring-emerald-500/30",
-        tab === "mail" && "ring-1 ring-sky-500/30"
+        tab === "mail" && "ring-1 ring-sky-500/30",
+        tab === "call" && "ring-1 ring-violet-500/30"
       )}
     >
-      <div className="mb-3 flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => {
-            setTab("note");
-            updateDraft(bodyHtml, "note");
-          }}
-          className={cn(
-            "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-            tab === "note"
-              ? "bg-amber-500/15 text-amber-300 border border-amber-500/30"
-              : "text-muted-foreground hover:text-foreground hover:bg-glass-hover"
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        {/* v0.1.17 — the three composer buttons, side by side. */}
+        <div className="sd-composer-modes inline-flex items-center gap-0.5 rounded-lg border border-glass bg-glass p-0.5" role="tablist">
+          <ModeTab icon={StickyNote} label="Note" active={modeOf(tab) === "note"} accent="amber" onClick={() => openMode("note")} />
+          {!internalOnly && (
+            <ModeTab icon={Mail} label="Mail" active={tab === "mail"} accent="sky" onClick={() => openMode("mail")} />
           )}
-        >
-          Internal note
-        </button>
-        {!internalOnly && (
-          <button
-            type="button"
-            onClick={() => {
-              setTab("reply");
-              updateDraft(bodyHtml, "reply");
-            }}
-            className={cn(
-              "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-              tab === "reply"
-                ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-                : "text-muted-foreground hover:text-foreground hover:bg-glass-hover"
+          <ModeTab icon={Phone} label="Call" active={tab === "call"} accent="violet" onClick={() => openMode("call")} />
+        </div>
+
+        {/* Sub-options of the active button. */}
+        {modeOf(tab) === "note" && (
+          <div className="inline-flex items-center gap-1">
+            <SubTab active={tab === "note"} tone="amber" onClick={() => switchTab("note")}>
+              Internal note
+            </SubTab>
+            {!internalOnly && (
+              <SubTab active={tab === "reply"} tone="emerald" onClick={() => switchTab("reply")}>
+                Reply
+              </SubTab>
             )}
-          >
-            Reply
-          </button>
+          </div>
         )}
-        {!internalOnly && (
-          <button
-            type="button"
-            onClick={() => setTab("mail")}
-            className={cn(
-              "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-              tab === "mail"
-                ? "bg-sky-500/15 text-sky-300 border border-sky-500/30"
-                : "text-muted-foreground hover:text-foreground hover:bg-glass-hover"
+        {tab === "call" && (
+          <div className="inline-flex items-center gap-1">
+            <SubTab
+              active={effectiveCallInternal}
+              tone="amber"
+              onClick={() => {
+                setCallInternal(true);
+                updateDraft(bodyHtml, "call", true);
+              }}
+            >
+              Internal
+            </SubTab>
+            {!internalOnly && (
+              <SubTab
+                active={!effectiveCallInternal}
+                tone="emerald"
+                onClick={() => {
+                  setCallInternal(false);
+                  updateDraft(bodyHtml, "call", false);
+                }}
+              >
+                Visible to customer
+              </SubTab>
             )}
-          >
-            Send mail
-          </button>
+          </div>
         )}
         {!isPopup ? (
           <button
@@ -504,10 +621,14 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
         autoFocus
         onChange={(html) => {
           setBodyHtml(html);
-          updateDraft(html, tab);
+          updateDraft(html, tab, effectiveCallInternal);
         }}
         placeholder={
-          isInternal
+          isCall
+            ? effectiveCallInternal
+              ? "Log the phone call (internal — not visible to customers). Type @@ to tag an agent, :: to insert a template..."
+              : "Log the phone call (visible to the customer). Type @@ to tag an agent, :: to insert a template..."
+            : isInternal
             ? "Add an internal note (not visible to customers). Type @@ to tag an agent, :: to insert a template..."
             : "Write a reply to the customer. Type @@ to tag an agent, :: to insert a template..."
         }
@@ -520,9 +641,11 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
           // Note + reply: only compose-templates surface in the picker. The
           // intake-form chip flow is mail-only (it needs a recipient + send
           // mechanism the internal-note pathway doesn't have).
+          // v0.1.17 — only templates scoped for this composer button.
           const list = await composeTemplatesApi.usableCached(
             queueId ?? null,
             statusId ?? null,
+            isCall ? "call" : "note",
           );
           const needle = q.trim().toLowerCase();
           const filtered = needle
@@ -596,7 +719,7 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
         </div>
       )}
 
-      {user?.role !== "Customer" && aiAssistEnabledForQueue && (
+      {user?.role !== "Customer" && aiAssistEnabledForQueue && !isCall && (
         <div className="mt-2">
           <button
             type="button"
@@ -640,7 +763,7 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
         <button
           type="button"
           onClick={() => {
-            clearDraft();
+            clearDraft(tab);
             setBodyHtml("");
             attachments.reset();
             setEditorKey((k) => k + 1);
@@ -659,7 +782,9 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
           disabled={mutation.isPending}
           className={cn(
             "px-4 py-2 rounded-md text-sm font-medium transition-colors",
-            !isInternal
+            isCall
+              ? "bg-violet-500/20 text-violet-300 border border-violet-500/30 hover:bg-violet-500/30"
+              : !isInternal
               ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30"
               : "bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30",
             mutation.isPending && "opacity-50 cursor-not-allowed"
@@ -667,6 +792,8 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
         >
           {mutation.isPending
             ? "Submitting..."
+            : isCall
+            ? "Log call"
             : isInternal
             ? "Add note"
             : "Add reply"}
@@ -675,6 +802,117 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
         </form>
       )}
     </div>
+  );
+}
+
+// ---- v0.1.17 composer buttons ----
+
+type Accent = "amber" | "sky" | "violet" | "emerald";
+
+const ACCENT_ACTIVE: Record<Accent, string> = {
+  amber: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+  sky: "bg-sky-500/15 text-sky-300 border-sky-500/30",
+  violet: "bg-violet-500/15 text-violet-300 border-violet-500/30",
+  emerald: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+};
+
+const ACCENT_ICON: Record<Accent, string> = {
+  amber: "text-amber-400/80",
+  sky: "text-sky-400/80",
+  violet: "text-violet-400/80",
+  emerald: "text-emerald-400/80",
+};
+
+/// Collapsed-state entry point: one of the three side-by-side buttons.
+function ComposerLaunchButton({
+  icon: Icon,
+  label,
+  hint,
+  accent,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  hint: string;
+  accent: Accent;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={hint}
+      className="sd-composer-launch group flex min-w-0 items-center gap-2.5 rounded-[var(--radius)] border border-glass bg-glass px-3 py-3 text-left text-sm text-muted-foreground transition-colors hover:border-glass-strong hover:bg-glass-hover hover:text-foreground"
+    >
+      <Icon className={cn("h-4 w-4 shrink-0 transition-colors", ACCENT_ICON[accent])} />
+      <span className="min-w-0">
+        <span className="block truncate font-medium text-foreground/85">{label}</span>
+        <span className="block truncate text-[11px] text-muted-foreground/70">{hint}</span>
+      </span>
+    </button>
+  );
+}
+
+/// Expanded-state switch between the three buttons.
+function ModeTab({
+  icon: Icon,
+  label,
+  active,
+  accent,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  active: boolean;
+  accent: Accent;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors",
+        active
+          ? ACCENT_ACTIVE[accent]
+          : "border-transparent text-muted-foreground hover:bg-glass-hover hover:text-foreground",
+      )}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {label}
+    </button>
+  );
+}
+
+/// Sub-option of the active button (Internal note / Reply, Internal /
+/// Visible to customer).
+function SubTab({
+  active,
+  tone,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  tone: Accent;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+        active
+          ? ACCENT_ACTIVE[tone]
+          : "border-transparent text-muted-foreground hover:bg-glass-hover hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 

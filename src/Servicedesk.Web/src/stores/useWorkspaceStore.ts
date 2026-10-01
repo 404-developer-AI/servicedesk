@@ -47,6 +47,15 @@ export type MailDraft = {
   updatedUtc: string;
 };
 
+// v0.1.17 — in-progress phone-call log on the composer's "Call" button. Its
+// own slot so a half-written note, mail and call never overwrite each other.
+export type CallDraft = {
+  ticketId: string;
+  bodyHtml: string;
+  isInternal: boolean;
+  updatedUtc: string;
+};
+
 // Transient (not persisted) — set when the agent clicks Reply / Reply-all /
 // Forward on a specific MailReceived event so <AddNoteForm> + <SendMailForm>
 // can react by expanding, switching to the mail tab and pre-filling from the
@@ -78,6 +87,7 @@ type WorkspaceState = {
   ticketSidePanelPinned: boolean;
   drafts: Record<string, Draft>;
   mailDrafts: Record<string, MailDraft>;
+  callDrafts: Record<string, CallDraft>;
   loaded: boolean;
   pendingMailAction: PendingMailAction | null;
 
@@ -96,6 +106,9 @@ type WorkspaceState = {
   ) => void;
   removeMailDraft: (ticketId: string) => void;
   getMailDraft: (ticketId: string) => MailDraft | undefined;
+  setCallDraft: (ticketId: string, draft: Pick<CallDraft, "bodyHtml" | "isInternal">) => void;
+  removeCallDraft: (ticketId: string) => void;
+  getCallDraft: (ticketId: string) => CallDraft | undefined;
   requestMailAction: (
     intent: Omit<PendingMailAction, "id">,
   ) => void;
@@ -141,6 +154,12 @@ function toEntries(state: WorkspaceState) {
       value: JSON.stringify(mailDraft),
     });
   }
+  for (const callDraft of Object.values(state.callDrafts)) {
+    entries.push({
+      key: `workspace:calldraft:${callDraft.ticketId}`,
+      value: JSON.stringify(callDraft),
+    });
+  }
   return entries;
 }
 
@@ -151,12 +170,14 @@ function fromEntries(entries: Record<string, string>) {
     ticketSidePanelPinned: boolean;
     drafts: Record<string, Draft>;
     mailDrafts: Record<string, MailDraft>;
+    callDrafts: Record<string, CallDraft>;
   } = {
     lastTicketId: null,
     sidebarCollapsed: false,
     ticketSidePanelPinned: false,
     drafts: {},
     mailDrafts: {},
+    callDrafts: {},
   };
 
   for (const [key, value] of Object.entries(entries)) {
@@ -166,6 +187,13 @@ function fromEntries(entries: Record<string, string>) {
       result.sidebarCollapsed = value === "true";
     } else if (key === "workspace:ticketSidePanelPinned") {
       result.ticketSidePanelPinned = value === "true";
+    } else if (key.startsWith("workspace:calldraft:")) {
+      try {
+        const callDraft = JSON.parse(value) as CallDraft;
+        result.callDrafts[callDraft.ticketId] = callDraft;
+      } catch {
+        // ignore corrupt call-draft entries
+      }
     } else if (key.startsWith("workspace:maildraft:")) {
       try {
         const mailDraft = JSON.parse(value) as MailDraft;
@@ -193,6 +221,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   ticketSidePanelPinned: false,
   drafts: {},
   mailDrafts: {},
+  callDrafts: {},
   loaded: false,
   pendingMailAction: null,
 
@@ -253,6 +282,23 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }),
 
   getMailDraft: (ticketId) => get().mailDrafts[ticketId],
+
+  setCallDraft: (ticketId, { bodyHtml, isInternal }) =>
+    set((s) => ({
+      callDrafts: {
+        ...s.callDrafts,
+        [ticketId]: { ticketId, bodyHtml, isInternal, updatedUtc: new Date().toISOString() },
+      },
+    })),
+
+  removeCallDraft: (ticketId) =>
+    set((s) => {
+      if (!s.callDrafts[ticketId]) return s;
+      const { [ticketId]: _, ...rest } = s.callDrafts;
+      return { callDrafts: rest };
+    }),
+
+  getCallDraft: (ticketId) => get().callDrafts[ticketId],
 
   requestMailAction: (intent) =>
     set({

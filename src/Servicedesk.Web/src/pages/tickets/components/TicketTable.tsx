@@ -14,6 +14,7 @@ import { ListChecks } from "lucide-react";
 import type { TicketListItem } from "@/lib/ticket-api";
 import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
 import { colorPillStyle } from "@/lib/colorPill";
+import { flagColors, ticketRowAccentStyle, useTicketFlagSettings } from "@/lib/ticketFlags";
 
 /// v0.0.103 — compact checklist progress next to the subject; amber while
 /// required items are open, emerald once everything is done.
@@ -246,6 +247,8 @@ type TicketTableProps = {
 
 export function TicketTable({ data, onRowClick }: TicketTableProps) {
   const { visibleColumns } = useColumnPrefsStore();
+  const { data: flagSettings } = useTicketFlagSettings();
+  const colors = flagColors(flagSettings);
 
   const columns = ALL_COLUMNS.filter((col) => visibleColumns.includes(col.id!));
 
@@ -278,16 +281,7 @@ export function TicketTable({ data, onRowClick }: TicketTableProps) {
           <tbody>
             {table.getRowModel().rows.map((row) => {
               const orig = row.original;
-              const color = orig.priorityColor || "#6b7280";
-              const accent = !orig.priorityIsDefault && orig.priorityColor;
-              const rowStyle: CSSProperties = {
-                boxShadow: `inset 3px 0 0 0 ${color}`,
-                ...(accent
-                  ? {
-                      backgroundImage: `linear-gradient(to right, ${color}12 0%, ${color}06 30%, transparent 60%)`,
-                    }
-                  : {}),
-              };
+              const rowStyle: CSSProperties = ticketRowAccentStyle(orig, colors);
 
               return (
                 <tr

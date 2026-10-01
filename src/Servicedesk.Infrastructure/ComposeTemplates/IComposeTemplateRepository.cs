@@ -25,12 +25,16 @@ public interface IComposeTemplateRepository
     /// filter entirely (preserves pre-v0.0.42 semantics for callers that
     /// don't know the ticket's status).
     /// </para>
-    Task<IReadOnlyList<ComposeTemplate>> ListForQueueAsync(Guid? queueId, Guid? statusId, CancellationToken ct);
+    /// v0.1.17: <paramref name="kind"/> (when set) keeps only templates whose
+    /// per-kind scope includes that composer.
+    Task<IReadOnlyList<ComposeTemplate>> ListForQueueAsync(Guid? queueId, Guid? statusId, ComposeTemplateKind? kind, CancellationToken ct);
 
     /// v0.0.42 — Picks the single auto-insert template that matches the
     /// ticket's queue + status. Returns <c>null</c> when no candidate
     /// exists. Tie-breaker is most-recently-updated.
-    Task<ComposeTemplate?> FindAutoInsertForNoteAsync(Guid queueId, Guid statusId, CancellationToken ct);
+    /// v0.1.17: generalised to the Call composer (<c>auto_insert_on_call</c>);
+    /// the candidate must also be in scope for that kind.
+    Task<ComposeTemplate?> FindAutoInsertAsync(Guid queueId, Guid statusId, ComposeTemplateKind kind, CancellationToken ct);
 
     Task<Guid> CreateAsync(
         string name,
@@ -41,6 +45,7 @@ public interface IComposeTemplateRepository
         bool autoInsertOnNote,
         Guid? linkedSurveyId,
         Guid? createdBy,
+        ComposeTemplateKindScope kinds,
         CancellationToken ct);
 
     Task UpdateAsync(
@@ -53,6 +58,7 @@ public interface IComposeTemplateRepository
         IReadOnlyList<Guid> statusIds,
         bool autoInsertOnNote,
         Guid? linkedSurveyId,
+        ComposeTemplateKindScope kinds,
         CancellationToken ct);
 
     Task<bool> DeactivateAsync(Guid id, CancellationToken ct);

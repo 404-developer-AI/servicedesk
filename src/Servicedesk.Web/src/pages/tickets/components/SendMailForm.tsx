@@ -733,7 +733,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
           // the other. Compose templates appear first; the picker shows a
           // kind badge so the difference is obvious.
           const [composedRes, intakeRes] = await Promise.allSettled([
-            composeTemplatesApi.usableCached(queueId ?? null),
+            composeTemplatesApi.usableCached(queueId ?? null, null, "mail"),
             intakeFormsApi.listTemplatesCached(false),
           ]);
           const needle = q.trim().toLowerCase();

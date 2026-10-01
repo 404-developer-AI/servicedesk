@@ -766,12 +766,14 @@ public static partial class TicketPdfGenerator
         "MailReceived"     => "Inbound Mail",
         "PortalMessage"    => "Portal Message",
         "Note"             => "Internal Note",
+        "Call"             => "Phone Call",
         "StatusChange"     => "Status Changed",
         "AssignmentChange" => "Assignee Changed",
         "PriorityChange"   => "Priority Changed",
         "QueueChange"      => "Queue Changed",
         "CategoryChange"   => "Category Changed",
         "SystemNote"       => "System",
+        "TicketFlagChange" => "Ticket Flag Changed",
         _                  => eventType,
     };
 

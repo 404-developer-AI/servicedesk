@@ -10,6 +10,7 @@ import {
   ArrowRightCircle,
   UserPlus,
   Flag,
+  Phone,
   Inbox,
   Tag,
   Info,
@@ -311,6 +312,13 @@ const EVENT_CONFIG: Record<string, EventConfig> = {
     dotColor: "bg-amber-500",
     label: "Reply",
   },
+  // v0.1.17 — a phone call logged from the Call composer (internal by
+  // default, optionally customer-visible).
+  Call: {
+    icon: Phone,
+    dotColor: "bg-violet-500",
+    label: "Phone call",
+  },
   Mail: {
     icon: Mail,
     dotColor: "bg-sky-500",
@@ -420,6 +428,8 @@ const EVENT_CONFIG: Record<string, EventConfig> = {
   ProjectReverted: { icon: FolderKanban, dotColor: "bg-glass-strong", label: "Project flag removed" },
   ProjectLinked: { icon: FolderKanban, dotColor: "bg-sky-500", label: "Linked to project" },
   ProjectUnlinked: { icon: FolderKanban, dotColor: "bg-glass-strong", label: "Removed from project" },
+  // v0.1.17 — Call-back / Research flag switched on or off.
+  TicketFlagChange: { icon: Flag, dotColor: "bg-emerald-500", label: "Ticket flag changed" },
 };
 
 /// Event types that are system/audit noise rather than real
@@ -449,6 +459,7 @@ const SYSTEM_EVENT_TYPES = new Set<string>([
   "ProjectReverted",
   "ProjectLinked",
   "ProjectUnlinked",
+  "TicketFlagChange",
 ]);
 
 export function isSystemEvent(event: TicketEvent): boolean {
@@ -466,6 +477,7 @@ const CARD_ACCENT: Record<string, string> = {
   Note: "border-l-blue-500/50",
   Comment: "border-l-emerald-500/40",
   PortalMessage: "border-l-teal-500/50",
+  Call: "border-l-violet-500/60",
 };
 
 function parseMetadata(json: string): Record<string, unknown> {
@@ -741,6 +753,16 @@ function EventBody({ event }: { event: TicketEvent }) {
         <span className="text-sm text-muted-foreground">
           Linked to project
           {number && <span className="text-foreground/80"> #{number}</span>}
+        </span>
+      );
+    }
+
+    case "TicketFlagChange": {
+      const flag = meta.flag === "research" ? "Research" : "Call-back";
+      const on = meta.to === true;
+      return (
+        <span className="text-sm text-muted-foreground">
+          {flag} flag turned <span className="text-foreground/80">{on ? "on" : "off"}</span>
         </span>
       );
     }
@@ -1099,8 +1121,8 @@ function MailHeaderPanel({
 
 /* ─── Editable event card ─── */
 
-const EDITABLE_TYPES = new Set(["Comment", "Note", "Mail"]);
-const PINNABLE_TYPES = new Set(["Comment", "Note", "Mail", "MailReceived", "MailSent"]);
+const EDITABLE_TYPES = new Set(["Comment", "Note", "Mail", "Call"]);
+const PINNABLE_TYPES = new Set(["Comment", "Note", "Mail", "MailReceived", "MailSent", "Call"]);
 
 function TimelineEvent({
   event,
@@ -1300,7 +1322,10 @@ function TimelineEvent({
             //  · visibility → internal events get a warm amber ring + wash so
             //    "the customer can't see this" reads at a glance.
             "group glass-panel p-4 border-l-2 transition-colors",
-            event.isInternal
+            // A phone call keeps its violet accent even when internal, so
+            // it never reads as a plain note; the amber wash below still
+            // marks it internal.
+            event.isInternal && event.eventType !== "Call"
               ? "border-l-amber-500/60"
               : CARD_ACCENT[event.eventType] ?? "border-l-glass-strong",
             // sd-internal-note is a theme hook: Steaan paints the amber-50

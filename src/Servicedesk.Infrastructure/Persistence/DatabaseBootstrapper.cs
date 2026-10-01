@@ -3533,6 +3533,7 @@ public sealed class DatabaseBootstrapper : IHostedService
                 WHEN 'RequesterChange'    THEN 'ticket_requester_changed'
                 WHEN 'Note'               THEN CASE WHEN NEW.is_internal THEN 'ticket_note_internal' ELSE 'ticket_note_public' END
                 WHEN 'Comment'            THEN 'ticket_comment'
+                WHEN 'Call'               THEN 'ticket_call'
                 WHEN 'Mail'               THEN 'ticket_mail_sent'
                 WHEN 'MailSent'           THEN 'ticket_mail_sent'
                 WHEN 'MailReceived'       THEN 'ticket_mail_received'
@@ -3552,6 +3553,7 @@ public sealed class DatabaseBootstrapper : IHostedService
                 WHEN 'ticket_note_internal'       THEN 'added internal note'
                 WHEN 'ticket_note_public'         THEN 'added public note'
                 WHEN 'ticket_comment'             THEN 'added comment'
+                WHEN 'ticket_call'                THEN 'logged a phone call'
                 WHEN 'ticket_mail_sent'           THEN 'sent mail reply'
                 WHEN 'ticket_mail_received'       THEN 'received mail'
                 WHEN 'ticket_system_note'         THEN 'added system note'
@@ -5957,6 +5959,55 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_ticket_open_sessions_user_closed
             ON ticket_open_sessions (user_id, closed_utc)
             WHERE closed_utc IS NOT NULL;
+
+        -- ===================================================================
+        -- v0.1.17 — Call-back + Research ticket flags. Two plain agent-set
+        -- booleans toggled in the ticket's Status panel (call-back also in
+        -- the new-ticket drawer). Internal only: never selected by the
+        -- portal repository. Each toggle writes one TicketFlagChange event
+        -- ({flag, from, to}). The partial indexes back the per-view
+        -- "Call-back / Research tickets only" filters; they stay tiny since
+        -- only flagged rows enter them.
+        -- ===================================================================
+        ALTER TABLE tickets
+            ADD COLUMN IF NOT EXISTS is_callback BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS is_research BOOLEAN NOT NULL DEFAULT FALSE;
+        CREATE INDEX IF NOT EXISTS ix_tickets_is_callback
+            ON tickets (updated_utc DESC, id DESC)
+            WHERE is_callback = TRUE AND is_deleted = FALSE;
+        CREATE INDEX IF NOT EXISTS ix_tickets_is_research
+            ON tickets (updated_utc DESC, id DESC)
+            WHERE is_research = TRUE AND is_deleted = FALSE;
+
+        ALTER TABLE ticket_events DROP CONSTRAINT IF EXISTS chk_ticket_event_type;
+        ALTER TABLE ticket_events ADD CONSTRAINT chk_ticket_event_type
+            CHECK (event_type IN ('Created','Comment','Mail','Note','StatusChange',
+                                  'AssignmentChange','PriorityChange','QueueChange',
+                                  'CategoryChange','SystemNote','MailReceived',
+                                  'MailSent','CompanyAssignment','RequesterChange',
+                                  'IntakeFormSent','IntakeFormSubmitted','IntakeFormExpired',
+                                  'ParentLinked','ParentUnlinked',
+                                  'SurveySent','SurveySubmitted','SurveyExpired',
+                                  'TimeLimitAlertDismissed','TimeLimitExtended',
+                                  'TimeLimitTrackingDisabled','StatusGateDecision',
+                                  'ChecklistAttached','ChecklistDetached','ChecklistCompleted',
+                                  'ChecklistReopened','ChecklistItemChanged','ChecklistCloseBlocked',
+                                  'ProjectConverted','ProjectReverted',
+                                  'ProjectLinked','ProjectUnlinked',
+                                  'PortalMessage','TicketFlagChange','Call')) NOT VALID;
+
+        -- ===================================================================
+        -- v0.1.17 — composer split into Note / Mail / Call. A logged phone
+        -- call is its own article type 'Call' (internal by default, agent may
+        -- make it customer-visible). Compose templates gain a per-kind scope
+        -- (use_for_note/mail/call, default TRUE so existing templates keep
+        -- showing everywhere) and an auto-insert flag for the Call composer.
+        -- ===================================================================
+        ALTER TABLE compose_templates
+            ADD COLUMN IF NOT EXISTS use_for_note        BOOLEAN NOT NULL DEFAULT TRUE,
+            ADD COLUMN IF NOT EXISTS use_for_mail        BOOLEAN NOT NULL DEFAULT TRUE,
+            ADD COLUMN IF NOT EXISTS use_for_call        BOOLEAN NOT NULL DEFAULT TRUE,
+            ADD COLUMN IF NOT EXISTS auto_insert_on_call BOOLEAN NOT NULL DEFAULT FALSE;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

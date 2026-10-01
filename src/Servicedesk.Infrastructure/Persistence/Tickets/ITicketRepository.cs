@@ -299,7 +299,10 @@ public sealed record NewTicket(
     InitialTicketNote? InitialNote = null,
     // v0.0.105 — create the ticket as a project ticket (agent toggled
     // "Project ticket" in the new-ticket drawer). Default off.
-    bool IsProject = false);
+    bool IsProject = false,
+    // v0.1.17 — create with the Call-back flag already on (new-ticket
+    // drawer switch). Research is deliberately not offered at create time.
+    bool IsCallback = false);
 
 public sealed record InitialTicketNote(string BodyHtml, bool IsInternal);
 
@@ -330,7 +333,10 @@ public sealed record TicketFieldUpdate(
     // repository stamps `bulk_batch_id` into the metadata of every change
     // event it writes (StatusChange/QueueChange/…) so the timeline can
     // badge them and the audit trail can correlate the whole batch.
-    Guid? BulkBatchId = null);
+    Guid? BulkBatchId = null,
+    // v0.1.17 — Call-back / Research flags; null = not provided.
+    bool? IsCallback = null,
+    bool? IsResearch = null);
 
 public sealed record NewTicketEvent(
     string EventType,

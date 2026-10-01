@@ -65,7 +65,11 @@ public sealed record Ticket(
     DateTime? ProjectLinkedUtc = null,
     Guid? ProjectLinkedByUserId = null,
     int ProjectSortOrder = 0,
-    DateTime? ProjectPromptDismissedUtc = null);
+    DateTime? ProjectPromptDismissedUtc = null,
+    // v0.1.17 — agent-set flags: Call-back (someone has to call the
+    // customer back) and Research (under investigation). Internal only.
+    bool IsCallback = false,
+    bool IsResearch = false);
 
 public sealed record TicketBody(
     Guid TicketId,

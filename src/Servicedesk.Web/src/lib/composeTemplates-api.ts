@@ -25,6 +25,12 @@ export interface ComposeTemplate {
   /// composer on a ticket that matches this template's queue + status scope.
   /// Tie-breaker between multiple matching templates: most-recently-updated.
   autoInsertOnNote: boolean;
+  /// v0.1.17 — which composer buttons offer this template (Note / Mail /
+  /// Call), plus auto-insert into an empty Call composer.
+  useForNote: boolean;
+  useForMail: boolean;
+  useForCall: boolean;
+  autoInsertOnCall: boolean;
   /// v0.0.38 — optional CSAT survey that fires automatically when an agent
   /// sends a reply/note built from this template. Null = no survey-on-send.
   linkedSurveyId: string | null;
@@ -42,8 +48,12 @@ export interface UsableComposeTemplate {
   queueIds: string[];
   statusIds: string[];
   autoInsertOnNote: boolean;
+  autoInsertOnCall?: boolean;
   linkedSurveyId: string | null;
 }
+
+/// v0.1.17 — the composer a template is requested for.
+export type ComposeTemplateKind = "note" | "mail" | "call";
 
 export interface ComposeTemplateUpsert {
   name: string;
@@ -53,6 +63,10 @@ export interface ComposeTemplateUpsert {
   queueIds: string[];
   statusIds: string[];
   autoInsertOnNote: boolean;
+  useForNote: boolean;
+  useForMail: boolean;
+  useForCall: boolean;
+  autoInsertOnCall: boolean;
   linkedSurveyId: string | null;
 }
 
@@ -123,13 +137,16 @@ export interface ResolveTokenParams {
 /// v0.0.42: `statusId` narrows the result further when supplied.
 /// Standalone (not an object member) so the memoised variant below can
 /// reference it without the object referencing itself in its initializer.
+/// v0.1.17: `kind` keeps only templates scoped for that composer.
 function fetchUsable(
   queueId: string | null,
   statusId?: string | null,
+  kind?: ComposeTemplateKind,
 ): Promise<UsableComposeTemplate[]> {
   const qs = new URLSearchParams();
   if (queueId) qs.set("queueId", queueId);
   if (statusId) qs.set("statusId", statusId);
+  if (kind) qs.set("kind", kind);
   const suffix = qs.toString();
   return request<UsableComposeTemplate[]>(
     "GET",
@@ -170,6 +187,15 @@ export const composeTemplatesApi = {
   /// auto-insert template (if any) for the (queue, status) tuple of an
   /// internal-note composer that's about to be opened empty. `null` =
   /// no matching template, leave the composer blank.
+  /// v0.1.17 — same lookup for the Call composer.
+  defaultForCall: (queueId: string, statusId: string) =>
+    request<{ template: UsableComposeTemplate | null }>(
+      "GET",
+      `/api/compose-templates/default-for-call?queueId=${encodeURIComponent(
+        queueId,
+      )}&statusId=${encodeURIComponent(statusId)}`,
+    ),
+
   defaultForNote: (queueId: string, statusId: string) =>
     request<{ template: UsableComposeTemplate | null }>(
       "GET",

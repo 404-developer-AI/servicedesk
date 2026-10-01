@@ -117,6 +117,8 @@ public sealed class TriggerConditionMatcher : ITriggerConditionMatcher
             // every customer reply.
             TriggerFieldKeys.TicketIsNew => ctx.ChangeSet.IsTicketCreation,
             TriggerFieldKeys.TicketHasLinkedOrder => ctx.HasLinkedOrder,
+            TriggerFieldKeys.TicketIsCallback => ctx.Ticket.IsCallback,
+            TriggerFieldKeys.TicketIsResearch => ctx.Ticket.IsResearch,
             TriggerFieldKeys.TicketTags => Array.Empty<string>(), // tags entity not introduced yet
             TriggerFieldKeys.ArticleSender => ResolveArticleSender(ctx.TriggeringEvent),
             TriggerFieldKeys.ArticleType => ctx.TriggeringEvent?.EventType,

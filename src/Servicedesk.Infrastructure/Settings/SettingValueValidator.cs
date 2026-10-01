@@ -13,6 +13,7 @@ namespace Servicedesk.Infrastructure.Settings;
 public static class SettingValueValidator
 {
     private static readonly Regex CookieName = new("^[A-Za-z0-9_-]{1,64}$", RegexOptions.Compiled);
+    public static readonly Regex HexColor = new("^#[0-9A-Fa-f]{6}$", RegexOptions.Compiled);
 
     /// Returns an error message, or null when the value is acceptable.
     public static string? Validate(SettingDefault def, string value)
@@ -44,6 +45,9 @@ public static class SettingValueValidator
             SettingKeys.Insights.OpenedNoActionMinSeconds =>
                 int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var s) && s is >= 0 and <= 3600
                     ? null : "Choose a whole number of seconds from 0 to 3600.",
+            // Served agent-readable and painted into inline styles.
+            SettingKeys.Tickets.CallbackColor or SettingKeys.Tickets.ResearchColor =>
+                HexColor.IsMatch(value) ? null : "Enter a hex colour like #22c55e.",
             SettingKeys.Portal.ConversationOrder =>
                 value is Portal.PortalConversationOrder.Oldest or Portal.PortalConversationOrder.Newest
                     ? null : "Choose oldest or newest.",

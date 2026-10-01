@@ -58,6 +58,13 @@ export function TemplateEditor({
   const [autoInsertOnNote, setAutoInsertOnNote] = useState(
     existing?.autoInsertOnNote ?? false,
   );
+  // v0.1.17 — which composer buttons offer this template.
+  const [useForNote, setUseForNote] = useState(existing?.useForNote ?? true);
+  const [useForMail, setUseForMail] = useState(existing?.useForMail ?? true);
+  const [useForCall, setUseForCall] = useState(existing?.useForCall ?? true);
+  const [autoInsertOnCall, setAutoInsertOnCall] = useState(
+    existing?.autoInsertOnCall ?? false,
+  );
   const [linkedSurveyId, setLinkedSurveyId] = useState<string | null>(
     existing?.linkedSurveyId ?? null,
   );
@@ -104,7 +111,12 @@ export function TemplateEditor({
         isActive,
         queueIds,
         statusIds,
-        autoInsertOnNote,
+        // An auto-insert only makes sense where the template is offered.
+        autoInsertOnNote: autoInsertOnNote && useForNote,
+        useForNote,
+        useForMail,
+        useForCall,
+        autoInsertOnCall: autoInsertOnCall && useForCall,
         linkedSurveyId,
       };
       return existing
@@ -123,7 +135,8 @@ export function TemplateEditor({
     },
   });
 
-  const canSave = name.trim().length > 0 && !save.isPending;
+  const anyKind = useForNote || useForMail || useForCall;
+  const canSave = name.trim().length > 0 && anyKind && !save.isPending;
 
   const toggleQueue = (queueId: string) => {
     setQueueIds((prev) =>
@@ -350,15 +363,52 @@ export function TemplateEditor({
         )}
       </div>
 
+      <div className="space-y-2 rounded-lg border border-glass-strong bg-glass px-4 py-3">
+        <div className="space-y-0.5">
+          <p className="text-sm font-medium text-foreground">Use for</p>
+          <p className="text-xs text-muted-foreground">
+            Which composer buttons offer this template in the{" "}
+            <code className="rounded bg-glass px-1">::</code> picker. At least
+            one is required.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {(
+            [
+              ["Note", useForNote, setUseForNote],
+              ["Mail", useForMail, setUseForMail],
+              ["Call", useForCall, setUseForCall],
+            ] as const
+          ).map(([label, checked, setChecked]) => (
+            <button
+              key={label}
+              type="button"
+              aria-pressed={checked}
+              onClick={() => setChecked(!checked)}
+              className={
+                checked
+                  ? "rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-foreground"
+                  : "rounded-md border border-glass bg-glass px-3 py-1.5 text-xs text-muted-foreground hover:bg-glass-hover"
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {!anyKind && (
+          <p className="text-xs text-destructive">Pick at least one of Note, Mail or Call.</p>
+        )}
+      </div>
+
       <div className="flex items-start justify-between gap-4 rounded-lg border border-glass-strong bg-glass px-4 py-3">
         <div className="space-y-0.5">
           <p className="text-sm font-medium text-foreground">
-            Auto-insert into the internal-note composer
+            Auto-insert into the Note composer
           </p>
           <p className="text-xs text-muted-foreground">
             When enabled, this template is dropped into the{" "}
             <span className="font-medium text-foreground/80">
-              Write an internal note
+              Note
             </span>{" "}
             composer the first time an agent opens it on a matching ticket —
             but only when the composer is empty (no saved draft). The agent
@@ -368,8 +418,28 @@ export function TemplateEditor({
           </p>
         </div>
         <Switch
-          checked={autoInsertOnNote}
+          checked={autoInsertOnNote && useForNote}
+          disabled={!useForNote}
           onCheckedChange={setAutoInsertOnNote}
+        />
+      </div>
+
+      <div className="flex items-start justify-between gap-4 rounded-lg border border-glass-strong bg-glass px-4 py-3">
+        <div className="space-y-0.5">
+          <p className="text-sm font-medium text-foreground">
+            Auto-insert into the Call composer
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Same as above, for the{" "}
+            <span className="font-medium text-foreground/80">Call</span>{" "}
+            button: the template fills an empty call log on a matching ticket.
+            Requires <span className="font-medium text-foreground/80">Use for: Call</span>.
+          </p>
+        </div>
+        <Switch
+          checked={autoInsertOnCall && useForCall}
+          disabled={!useForCall}
+          onCheckedChange={setAutoInsertOnCall}
         />
       </div>
 

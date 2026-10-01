@@ -20,4 +20,26 @@ public sealed record ComposeTemplate(
     // v0.0.42 — when true, the template is auto-prefilled into the
     // "Write an internal note" composer whenever the agent opens an empty
     // composer on a ticket matching this template's queue/status scope.
-    bool AutoInsertOnNote = false);
+    bool AutoInsertOnNote = false,
+    // v0.1.17 — per-kind scope for the split composer (Note / Mail / Call)
+    // and auto-insert into an empty Call composer. Kinds default on so
+    // pre-v0.1.17 templates keep showing everywhere.
+    bool UseForNote = true,
+    bool UseForMail = true,
+    bool UseForCall = true,
+    bool AutoInsertOnCall = false);
+
+/// v0.1.17 — the composer a template is offered in.
+public enum ComposeTemplateKind
+{
+    Note,
+    Mail,
+    Call,
+}
+
+/// v0.1.17 — per-kind settings carried through create/update.
+public sealed record ComposeTemplateKindScope(
+    bool UseForNote,
+    bool UseForMail,
+    bool UseForCall,
+    bool AutoInsertOnCall);

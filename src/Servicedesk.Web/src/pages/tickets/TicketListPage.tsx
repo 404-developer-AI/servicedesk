@@ -137,6 +137,8 @@ export function TicketListPage() {
       if (typeof vf.search === "string") applied.search = vf.search;
       if (vf.openOnly === true) applied.openOnly = true;
       if (vf.projectsOnly === true) applied.projectsOnly = true;
+      if (vf.callbacksOnly === true) applied.callbacksOnly = true;
+      if (vf.researchOnly === true) applied.researchOnly = true;
       setFilters(applied);
     } catch {
       // bad JSON — ignore, show unfiltered
@@ -171,6 +173,8 @@ export function TicketListPage() {
         sortField: displayConfig.sort?.field,
         sortDirection: displayConfig.sort?.direction,
         priorityFloat: displayConfig.priorityFloat,
+        callbackFloat: displayConfig.callbackFloat,
+        researchFloat: displayConfig.researchFloat,
         stateBucketSort: displayConfig.stateBucketSort,
       };
       return ticketApi.list(query);

@@ -15,6 +15,10 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
         queue_ids           AS QueueIds,
         status_ids          AS StatusIds,
         auto_insert_on_note AS AutoInsertOnNote,
+        use_for_note        AS UseForNote,
+        use_for_mail        AS UseForMail,
+        use_for_call        AS UseForCall,
+        auto_insert_on_call AS AutoInsertOnCall,
         created_utc         AS CreatedUtc,
         updated_utc         AS UpdatedUtc,
         created_by          AS CreatedBy,
@@ -47,8 +51,18 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
         return row is null ? null : MapToDomain(row);
     }
 
-    public async Task<IReadOnlyList<ComposeTemplate>> ListForQueueAsync(Guid? queueId, Guid? statusId, CancellationToken ct)
+    // v0.1.17 — kind → scope column. Constant strings only (never input).
+    private static string KindColumn(ComposeTemplateKind kind) => kind switch
     {
+        ComposeTemplateKind.Note => "use_for_note",
+        ComposeTemplateKind.Mail => "use_for_mail",
+        ComposeTemplateKind.Call => "use_for_call",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+    };
+
+    public async Task<IReadOnlyList<ComposeTemplate>> ListForQueueAsync(Guid? queueId, Guid? statusId, ComposeTemplateKind? kind, CancellationToken ct)
+    {
+        var kindFilter = kind is { } k ? $" AND {KindColumn(k)} = TRUE" : "";
         // queue_ids = '{}' means "any queue", status_ids = '{}' means "any
         // status". When the caller passes a concrete value we union both
         // buckets ("unrestricted OR explicitly contains the value"). When the
@@ -64,7 +78,7 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
                   FROM compose_templates
                   WHERE is_active = TRUE
                     AND cardinality(queue_ids) = 0
-                    AND (@statusId::uuid IS NULL OR cardinality(status_ids) = 0 OR @statusId = ANY(status_ids))
+                    AND (@statusId::uuid IS NULL OR cardinality(status_ids) = 0 OR @statusId = ANY(status_ids)){kindFilter}
                   ORDER BY lower(name)
                   """;
         }
@@ -75,7 +89,7 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
                   FROM compose_templates
                   WHERE is_active = TRUE
                     AND (cardinality(queue_ids) = 0 OR @queueId = ANY(queue_ids))
-                    AND (@statusId::uuid IS NULL OR cardinality(status_ids) = 0 OR @statusId = ANY(status_ids))
+                    AND (@statusId::uuid IS NULL OR cardinality(status_ids) = 0 OR @statusId = ANY(status_ids)){kindFilter}
                   ORDER BY lower(name)
                   """;
         }
@@ -85,8 +99,15 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
         return rows.Select(MapToDomain).ToList();
     }
 
-    public async Task<ComposeTemplate?> FindAutoInsertForNoteAsync(Guid queueId, Guid statusId, CancellationToken ct)
+    public async Task<ComposeTemplate?> FindAutoInsertAsync(Guid queueId, Guid statusId, ComposeTemplateKind kind, CancellationToken ct)
     {
+        var autoColumn = kind switch
+        {
+            ComposeTemplateKind.Note => "auto_insert_on_note",
+            ComposeTemplateKind.Call => "auto_insert_on_call",
+            _ => null,
+        };
+        if (autoColumn is null) return null;
         // Picks the single best-matching auto-insert template for a
         // (queue, status) tuple. Tie-breaker is most-recently-updated, so
         // an admin editing a template makes it "win" deterministically.
@@ -94,7 +115,8 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
             SELECT {SelectColumns}
             FROM compose_templates
             WHERE is_active = TRUE
-              AND auto_insert_on_note = TRUE
+              AND {autoColumn} = TRUE
+              AND {KindColumn(kind)} = TRUE
               AND (cardinality(queue_ids) = 0 OR @queueId = ANY(queue_ids))
               AND (cardinality(status_ids) = 0 OR @statusId = ANY(status_ids))
             ORDER BY updated_utc DESC
@@ -115,13 +137,16 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
         bool autoInsertOnNote,
         Guid? linkedSurveyId,
         Guid? createdBy,
+        ComposeTemplateKindScope kinds,
         CancellationToken ct)
     {
         const string sql = """
             INSERT INTO compose_templates
-                (name, description, body_html, queue_ids, status_ids, auto_insert_on_note, linked_survey_id, created_by)
+                (name, description, body_html, queue_ids, status_ids, auto_insert_on_note, linked_survey_id, created_by,
+                 use_for_note, use_for_mail, use_for_call, auto_insert_on_call)
             VALUES
-                (@name, @description, @bodyHtml, @queueIds, @statusIds, @autoInsertOnNote, @linkedSurveyId, @createdBy)
+                (@name, @description, @bodyHtml, @queueIds, @statusIds, @autoInsertOnNote, @linkedSurveyId, @createdBy,
+                 @useForNote, @useForMail, @useForCall, @autoInsertOnCall)
             RETURNING id
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -137,6 +162,10 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
                 autoInsertOnNote,
                 linkedSurveyId,
                 createdBy,
+                useForNote = kinds.UseForNote,
+                useForMail = kinds.UseForMail,
+                useForCall = kinds.UseForCall,
+                autoInsertOnCall = kinds.AutoInsertOnCall,
             },
             cancellationToken: ct));
     }
@@ -151,6 +180,7 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
         IReadOnlyList<Guid> statusIds,
         bool autoInsertOnNote,
         Guid? linkedSurveyId,
+        ComposeTemplateKindScope kinds,
         CancellationToken ct)
     {
         const string sql = """
@@ -163,6 +193,10 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
                 status_ids = @statusIds,
                 auto_insert_on_note = @autoInsertOnNote,
                 linked_survey_id = @linkedSurveyId,
+                use_for_note = @useForNote,
+                use_for_mail = @useForMail,
+                use_for_call = @useForCall,
+                auto_insert_on_call = @autoInsertOnCall,
                 updated_utc = now()
             WHERE id = @id
             """;
@@ -180,6 +214,10 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
                 statusIds = statusIds.ToArray(),
                 autoInsertOnNote,
                 linkedSurveyId,
+                useForNote = kinds.UseForNote,
+                useForMail = kinds.UseForMail,
+                useForCall = kinds.UseForCall,
+                autoInsertOnCall = kinds.AutoInsertOnCall,
             },
             cancellationToken: ct));
     }
@@ -212,7 +250,11 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
         r.CreatedBy,
         r.LinkedSurveyId,
         r.StatusIds ?? Array.Empty<Guid>(),
-        r.AutoInsertOnNote);
+        r.AutoInsertOnNote,
+        r.UseForNote,
+        r.UseForMail,
+        r.UseForCall,
+        r.AutoInsertOnCall);
 
     // Mutable class for Dapper column-name binding. See the project memo
     // about positional-record-struct null bugs — we avoid those here.
@@ -226,6 +268,10 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
         public Guid[]? QueueIds { get; set; }
         public Guid[]? StatusIds { get; set; }
         public bool AutoInsertOnNote { get; set; }
+        public bool UseForNote { get; set; } = true;
+        public bool UseForMail { get; set; } = true;
+        public bool UseForCall { get; set; } = true;
+        public bool AutoInsertOnCall { get; set; }
         public DateTime CreatedUtc { get; set; }
         public DateTime UpdatedUtc { get; set; }
         public Guid? CreatedBy { get; set; }

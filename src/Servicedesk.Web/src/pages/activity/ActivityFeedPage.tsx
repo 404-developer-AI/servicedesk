@@ -23,6 +23,7 @@ const EVENT_TYPES: readonly { value: string; label: string }[] = [
   { value: "ticket_note_internal", label: "Internal note" },
   { value: "ticket_note_public", label: "Public note" },
   { value: "ticket_comment", label: "Customer reply" },
+  { value: "ticket_call", label: "Phone call" },
   { value: "ticket_mail_sent", label: "Mail sent" },
   { value: "ticket_mail_received", label: "Mail received" },
   { value: "ticket_system_note", label: "System note" },

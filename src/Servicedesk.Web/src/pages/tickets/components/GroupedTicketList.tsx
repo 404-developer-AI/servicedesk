@@ -14,6 +14,13 @@ import { useTheme } from "@/app/ThemeProvider";
 import type { TicketListItem, DisplayConfig } from "@/lib/ticket-api";
 import type { CSSProperties } from "react";
 import { colorPillStyle } from "@/lib/colorPill";
+import {
+  floatBucket,
+  flagColors,
+  ticketRowAccentStyle,
+  useTicketFlagSettings,
+  PRIORITY_FLOAT_COLOR,
+} from "@/lib/ticketFlags";
 
 // ---- Group key helpers ----
 
@@ -47,15 +54,6 @@ type TicketGroup = {
 };
 
 // ---- Per-group (per-state) sorting ----
-
-// A high-priority ticket only floats while it is still New or Open; once it is
-// Pending (or Resolved/Closed) it drops back into the normal list.
-function isFloatable(t: TicketListItem): boolean {
-  return (
-    !t.priorityIsDefault &&
-    (t.statusStateCategory === "New" || t.statusStateCategory === "Open")
-  );
-}
 
 // Numeric sort keys for the per-state group sort. Timestamps become epoch ms;
 // a missing value yields NaN and is always pushed to the end of the group.
@@ -274,7 +272,12 @@ export function GroupedTicketList({
 
   const groupBy = displayConfig.groupBy as GroupByField | null | undefined;
   const hasGrouping = !!groupBy && groupBy in GROUP_BY_FIELD_MAP;
-  const hasPriorityFloat = !!displayConfig.priorityFloat;
+  // v0.1.17 — three float buckets in fixed order (Priority > Call-back >
+  // Research); see floatBucket for the per-ticket rule.
+  const hasAnyFloat =
+    !!displayConfig.priorityFloat || !!displayConfig.callbackFloat || !!displayConfig.researchFloat;
+  const { data: flagSettings } = useTicketFlagSettings();
+  const colors = React.useMemo(() => flagColors(flagSettings), [flagSettings]);
   const taxonomySortMap = useTaxonomySortMap(groupBy);
   const { visibleColumns } = useColumnPrefsStore();
 
@@ -299,23 +302,27 @@ export function GroupedTicketList({
 
   // Build ordered groups
   const orderedGroups = React.useMemo(() => {
-    if (!hasGrouping && !hasPriorityFloat) {
+    if (!hasGrouping && !hasAnyFloat) {
       return [{ key: "__all__", label: "", color: undefined, items }] as TicketGroup[];
     }
 
-    let floatItems: TicketListItem[] = [];
-    let normalItems: TicketListItem[] = items;
-
-    if (hasPriorityFloat) {
-      floatItems = items.filter(isFloatable);
-      normalItems = items.filter((t) => !isFloatable(t));
+    const floatBuckets: TicketListItem[][] = [[], [], []];
+    const normalItems: TicketListItem[] = [];
+    for (const t of items) {
+      const b = hasAnyFloat ? floatBucket(t, displayConfig) : null;
+      if (b === null) normalItems.push(t);
+      else floatBuckets[b].push(t);
     }
 
     const result: TicketGroup[] = [];
-
-    if (floatItems.length > 0) {
-      result.push({ key: "__float__", label: "Priority", color: "#ef4444", items: floatItems });
-    }
+    const floatMeta = [
+      { key: "__float__", label: "Priority", color: PRIORITY_FLOAT_COLOR },
+      { key: "__float_callback__", label: "Call-back", color: colors.callback },
+      { key: "__float_research__", label: "Research", color: colors.research },
+    ];
+    floatBuckets.forEach((bucket, i) => {
+      if (bucket.length > 0) result.push({ ...floatMeta[i], items: bucket });
+    });
 
     if (hasGrouping) {
       const raw = groupTickets(normalItems, groupBy!);
@@ -330,9 +337,9 @@ export function GroupedTicketList({
     }
 
     return result;
-  }, [items, hasGrouping, hasPriorityFloat, groupBy, displayConfig.groupOrder, taxonomySortMap, groupingCfg]);
+  }, [items, hasGrouping, hasAnyFloat, groupBy, displayConfig, taxonomySortMap, groupingCfg, colors]);
 
-  const showGroupHeaders = hasGrouping || hasPriorityFloat;
+  const showGroupHeaders = hasGrouping || hasAnyFloat;
 
   // Displayed order across all groups (collapsed groups included, so a
   // shift-range spanning a collapsed group still selects it — that matches
@@ -469,16 +476,7 @@ export function GroupedTicketList({
                       const row = rowById.get(item.id);
                       if (!row) return null;
 
-                      const pColor = item.priorityColor || "#6b7280";
-                      const accent = !item.priorityIsDefault && item.priorityColor;
-                      const rowStyle: CSSProperties = {
-                        boxShadow: `inset 3px 0 0 0 ${pColor}`,
-                        ...(accent
-                          ? {
-                              backgroundImage: `linear-gradient(to right, ${pColor}12 0%, ${pColor}06 30%, transparent 60%)`,
-                            }
-                          : {}),
-                      };
+                      const rowStyle: CSSProperties = ticketRowAccentStyle(item, colors);
 
                       const isSelected = !!selection && selection.selected.has(item.id);
 

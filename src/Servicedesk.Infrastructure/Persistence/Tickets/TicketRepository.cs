@@ -130,7 +130,9 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             t.company_resolved_via          AS CompanyResolvedVia,
             t.ticket_type_id                AS TicketTypeId,
             t.checklist_required_total      AS ChecklistRequiredTotal,
-            t.checklist_required_done       AS ChecklistRequiredDone
+            t.checklist_required_done       AS ChecklistRequiredDone,
+            t.is_callback                   AS IsCallback,
+            t.is_research                   AS IsResearch
         FROM tickets t
         JOIN queues     q ON q.id = t.queue_id
         JOIN statuses   s ON s.id = t.status_id
@@ -186,6 +188,12 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         if (query.RequesterCompanyId.HasValue) sql.Append(" AND t.company_id = @RequesterCompanyId");
         if (query.OpenOnly) sql.Append(" AND s.state_category NOT IN ('Resolved','Closed')");
         if (query.ProjectsOnly) sql.Append(" AND t.is_project = TRUE");
+        // v0.1.17 — "Call-back / Research tickets only" view filters. Both
+        // set = tickets carrying either flag (a view is one list, not an
+        // intersection the agent would have to reason about).
+        if (query.CallbacksOnly && query.ResearchOnly) sql.Append(" AND (t.is_callback = TRUE OR t.is_research = TRUE)");
+        else if (query.CallbacksOnly) sql.Append(" AND t.is_callback = TRUE");
+        else if (query.ResearchOnly) sql.Append(" AND t.is_research = TRUE");
 
         // Queue-access enforcement: restrict to only the queues the caller
         // is allowed to see. When null (admin), no filter is applied.
@@ -242,7 +250,8 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         // (updated_utc, id) keyset cursor since the bucket key splits the order).
         var hasDynamicSort = query.SortField is not null
             && !string.Equals(query.SortField, "updatedUtc", StringComparison.OrdinalIgnoreCase);
-        var useOffset = hasDynamicSort || query.PriorityFloat || query.OpenFirst || query.StateBucketSort;
+        var anyFloat = query.PriorityFloat || query.CallbackFloat || query.ResearchFloat;
+        var useOffset = hasDynamicSort || anyFloat || query.OpenFirst || query.StateBucketSort;
 
         if (useOffset)
         {
@@ -270,14 +279,25 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             // every group inherits this bucketing without extra work there.
             orderClauses.Add("(CASE WHEN s.state_category = 'Pending' THEN 1 WHEN s.state_category IN ('Resolved','Closed') THEN 2 ELSE 0 END) ASC");
         }
-        if (query.PriorityFloat)
+        if (anyFloat)
         {
-            // Only float non-default-priority tickets that are still New or Open.
-            // A high-priority ticket that has moved to Pending (or Resolved/Closed)
-            // drops back into the normal order among the other rows, matching the
-            // grouped-list client bucketing.
-            orderClauses.Add("(CASE WHEN (NOT p.is_default) AND s.state_category IN ('New','Open') THEN 0 ELSE 1 END)");
-            orderClauses.Add("CASE WHEN (NOT p.is_default) AND s.state_category IN ('New','Open') THEN p.level END ASC");
+            // Float buckets (v0.1.17), only for tickets still New or Open — a
+            // ticket that moved to Pending/Resolved/Closed drops back into the
+            // normal order, matching the grouped-list client bucketing.
+            // Fixed precedence: Priority (non-default) > Call-back > Research;
+            // a ticket lands in the first enabled bucket it qualifies for, so a
+            // prio + call-back ticket sits only in the Priority float. Only the
+            // enabled buckets are emitted; the CASE arms are constants, never
+            // client input.
+            var arms = new List<string>();
+            if (query.PriorityFloat) arms.Add("WHEN NOT p.is_default THEN 0");
+            if (query.CallbackFloat) arms.Add("WHEN t.is_callback THEN 1");
+            if (query.ResearchFloat) arms.Add("WHEN t.is_research THEN 2");
+            orderClauses.Add(
+                "(CASE WHEN s.state_category IN ('New','Open') THEN (CASE " + string.Join(" ", arms) +
+                " ELSE 3 END) ELSE 3 END) ASC");
+            if (query.PriorityFloat)
+                orderClauses.Add("CASE WHEN (NOT p.is_default) AND s.state_category IN ('New','Open') THEN p.level END ASC");
         }
         if (query.SortField is not null && SortFieldMap.TryGetValue(query.SortField, out var sortColumn))
         {
@@ -379,7 +399,9 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                    project_linked_utc AS ProjectLinkedUtc,
                    project_linked_by_user_id AS ProjectLinkedByUserId,
                    project_sort_order AS ProjectSortOrder,
-                   project_prompt_dismissed_utc AS ProjectPromptDismissedUtc
+                   project_prompt_dismissed_utc AS ProjectPromptDismissedUtc,
+                   is_callback AS IsCallback,
+                   is_research AS IsResearch
             FROM tickets WHERE id = @id AND is_deleted = FALSE
             """;
         const string bodySql = """
@@ -556,14 +578,14 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             INSERT INTO tickets (subject, requester_contact_id, assignee_user_id, queue_id,
                                  status_id, priority_id, category_id, source,
                                  company_id, awaiting_company_assignment, company_resolved_via,
-                                 pending_till_utc, ticket_type_id, is_project)
+                                 pending_till_utc, ticket_type_id, is_project, is_callback)
             VALUES (@Subject, @RequesterContactId, @AssigneeUserId, @QueueId,
                     @StatusId, @PriorityId, @CategoryId, @Source,
                     @CompanyId, @AwaitingCompanyAssignment, @CompanyResolvedVia,
                     @PendingTillUtc,
                     COALESCE(@TicketTypeId,
                              (SELECT id FROM ticket_types WHERE code = 'support' LIMIT 1)),
-                    @IsProject)
+                    @IsProject, @IsCallback)
             RETURNING id AS Id, number AS Number, subject AS Subject,
                       requester_contact_id AS RequesterContactId, assignee_user_id AS AssigneeUserId,
                       queue_id AS QueueId, status_id AS StatusId, priority_id AS PriorityId,
@@ -593,7 +615,9 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                       project_linked_utc AS ProjectLinkedUtc,
                       project_linked_by_user_id AS ProjectLinkedByUserId,
                       project_sort_order AS ProjectSortOrder,
-                      project_prompt_dismissed_utc AS ProjectPromptDismissedUtc
+                      project_prompt_dismissed_utc AS ProjectPromptDismissedUtc,
+                      is_callback AS IsCallback,
+                      is_research AS IsResearch
             """;
         const string insertBody = """
             INSERT INTO ticket_bodies (ticket_id, body_text, body_html)
@@ -653,7 +677,8 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         const string readSql = """
             SELECT queue_id AS QueueId, status_id AS StatusId, priority_id AS PriorityId,
                    category_id AS CategoryId, assignee_user_id AS AssigneeUserId,
-                   pending_till_utc AS PendingTillUtc
+                   pending_till_utc AS PendingTillUtc,
+                   is_callback AS IsCallback, is_research AS IsResearch
             FROM tickets WHERE id = @ticketId AND is_deleted = FALSE
             FOR UPDATE
             """;
@@ -760,6 +785,21 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                 new { from = current.AssigneeUserId, to = update.AssigneeUserId, fromName, toName })));
         }
 
+        // v0.1.17 — Call-back / Research flags. Same-value writes are a
+        // no-op (no event), so a double click can't spam the timeline.
+        if (update.IsCallback.HasValue && update.IsCallback.Value != current.IsCallback)
+        {
+            sets.Add("is_callback = @NewIsCallback");
+            events.Add(("TicketFlagChange", System.Text.Json.JsonSerializer.Serialize(
+                new { flag = "callback", from = current.IsCallback, to = update.IsCallback.Value })));
+        }
+        if (update.IsResearch.HasValue && update.IsResearch.Value != current.IsResearch)
+        {
+            sets.Add("is_research = @NewIsResearch");
+            events.Add(("TicketFlagChange", System.Text.Json.JsonSerializer.Serialize(
+                new { flag = "research", from = current.IsResearch, to = update.IsResearch.Value })));
+        }
+
         bool bodyChanged = false;
         if (update.Subject is not null)
         {
@@ -821,6 +861,8 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                 NewAssigneeUserId = update.AssigneeUserId,
                 NewSubject = update.Subject,
                 NewPendingTillUtc = update.PendingTillUtc,
+                NewIsCallback = update.IsCallback,
+                NewIsResearch = update.IsResearch,
             }, tx, cancellationToken: ct));
         }
 
@@ -857,9 +899,11 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                 VALUES (@ticketId, @eventType, @actorUserId,
                         CASE WHEN @bulkBatchId IS NULL THEN @metadata::jsonb
                              ELSE @metadata::jsonb || jsonb_build_object('bulk_batch_id', @bulkBatchId::text) END,
-                        FALSE)
+                        @isInternal)
                 """,
-                new { ticketId, eventType, actorUserId, metadata, bulkBatchId },
+                // v0.1.17 — flag changes are internal-only (defence in depth
+                // on top of the portal's event-type allow-list).
+                new { ticketId, eventType, actorUserId, metadata, bulkBatchId, isInternal = eventType == "TicketFlagChange" },
                 tx, cancellationToken: ct));
         }
 
@@ -1088,8 +1132,8 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             new CommandDefinition(selectSql, new { eventId, ticketId }, tx, cancellationToken: ct));
         if (current.EventType is null) { await tx.RollbackAsync(ct); return null; }
 
-        // Only Comment, Note, and Mail events can be edited
-        if (current.EventType != "Comment" && current.EventType != "Note" && current.EventType != "Mail")
+        // Only Comment, Note, Call and Mail events can be edited
+        if (current.EventType != "Comment" && current.EventType != "Note" && current.EventType != "Mail" && current.EventType != "Call")
         {
             await tx.RollbackAsync(ct);
             return null;
@@ -1259,7 +1303,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
 
     private sealed record TicketFieldSnapshot(
         Guid QueueId, Guid StatusId, Guid PriorityId, Guid? CategoryId, Guid? AssigneeUserId,
-        DateTime? PendingTillUtc);
+        DateTime? PendingTillUtc, bool IsCallback, bool IsResearch);
 
     // v0.0.40 — projection used by the queue auto-flip path in
     // UpdateFieldsAsync. Sealed class (not record) per the project's

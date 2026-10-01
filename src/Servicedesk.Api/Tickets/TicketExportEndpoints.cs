@@ -130,7 +130,7 @@ public static class TicketExportEndpoints
 
     private static bool IsInternalEventType(string eventType) =>
         eventType is "StatusChange" or "AssignmentChange" or "PriorityChange"
-            or "QueueChange" or "CategoryChange" or "SystemNote";
+            or "QueueChange" or "CategoryChange" or "SystemNote" or "TicketFlagChange";
 
     /// Loads inline image attachments for mail events from blob storage.
     /// Returns empty list for non-mail events or when no inline images exist.

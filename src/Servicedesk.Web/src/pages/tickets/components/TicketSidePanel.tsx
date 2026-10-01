@@ -21,6 +21,8 @@ import { CompanyEditDialog } from "@/components/CompanyEditDialog";
 import { TaxonomySelect } from "@/components/TaxonomySelect";
 import { PendingTillField } from "@/components/PendingTillField";
 import { Button } from "@/components/ui/button";
+import { flagColors, useTicketFlagSettings } from "@/lib/ticketFlags";
+import { FlagToggleRow } from "@/components/TicketFlagToggle";
 import { cn } from "@/lib/utils";
 import type {
   Ticket,
@@ -419,6 +421,8 @@ function StatusTab({
   // queue selector entirely (the server refuses moves regardless).
   const projectSettingsQ = useProjectSettings();
   const projectQueuePinned = !!projectSettingsQ.data?.queueId;
+  const { data: flagSettings } = useTicketFlagSettings();
+  const flagColor = flagColors(flagSettings);
   // Pulsing "Contact not linked" warning. Only renders when (a) the admin
   // has the toggle on and (b) the requester has zero current company links.
   const { data: warningSetting } = useQuery({
@@ -578,6 +582,25 @@ function StatusTab({
             color: p.color,
             suffix: !p.isActive ? "— inactive" : undefined,
           }))}
+        />
+      </div>
+
+      {/* v0.1.17 — Call-back / Research flags. Internal only; each toggle is
+          a TicketFlagChange timeline event and feeds the view floats. */}
+      <div className="space-y-1.5">
+        <FlagToggleRow
+          label="Call-back ticket"
+          hint="Someone has to call this customer back. Floats in views with the call-back float on."
+          color={flagColor.callback}
+          checked={ticket.isCallback}
+          onChange={(next) => onUpdate({ isCallback: next })}
+        />
+        <FlagToggleRow
+          label="Research ticket"
+          hint="This ticket is under investigation. Floats in views with the research float on."
+          color={flagColor.research}
+          checked={ticket.isResearch}
+          onChange={(next) => onUpdate({ isResearch: next })}
         />
       </div>
 

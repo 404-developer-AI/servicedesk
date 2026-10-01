@@ -42,6 +42,8 @@ public sealed record TriggerChangeSet(
         TriggerFieldKeys.TicketCompanyId,
         TriggerFieldKeys.TicketSubject,
         TriggerFieldKeys.TicketTags,
+        TriggerFieldKeys.TicketIsCallback,
+        TriggerFieldKeys.TicketIsResearch,
     };
 }
 
@@ -62,6 +64,11 @@ public static class TriggerFieldKeys
     public const string TicketTags = "ticket.tags";
 
     public const string TicketIsNew = "ticket.is_new";
+
+    /// v0.1.17 — the agent-set Call-back / Research ticket flags (columns
+    /// tickets.is_callback / is_research, toggled through the PATCH path).
+    public const string TicketIsCallback = "ticket.is_callback";
+    public const string TicketIsResearch = "ticket.is_research";
 
     /// True when the ticket references at least one Adsolut order — i.e. an
     /// order pill (<c>data-order-id</c>) was inserted via the <c>::</c> picker
