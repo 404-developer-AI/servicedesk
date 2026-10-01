@@ -265,6 +265,8 @@ public sealed class TicketMutationService : ITicketMutationService
         if (update.CategoryId.HasValue) changed.Add(TriggerFieldKeys.TicketCategoryId);
         if (update.AssigneeUserId.HasValue || update.ClearAssignee) changed.Add(TriggerFieldKeys.TicketOwnerId);
         if (update.Subject is not null) changed.Add(TriggerFieldKeys.TicketSubject);
+        if (update.IsCallback.HasValue) changed.Add(TriggerFieldKeys.TicketIsCallback);
+        if (update.IsResearch.HasValue) changed.Add(TriggerFieldKeys.TicketIsResearch);
         return changed;
     }
 

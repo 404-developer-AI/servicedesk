@@ -2,7 +2,7 @@ import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Check, Copy, Download, FileDown, FolderKanban, GitBranch, ListChecks, PanelRightClose, PanelRightOpen, Pencil, X } from "lucide-react";
+import { Check, Copy, Download, FileDown, FolderKanban, GitBranch, ListChecks, Microscope, PanelRightClose, PanelRightOpen, Pencil, PhoneCall, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatTicketRef } from "@/lib/ticketRef";
 import { useTicketReferencePrefix } from "@/hooks/useTicketReferencePrefix";
@@ -44,6 +44,10 @@ import { TicketTimeAlertDialog } from "./components/TicketTimeAlertDialog";
 import { AddNoteForm } from "./components/AddNoteForm";
 import { TicketProjectPanel, useProjectOverview } from "./components/projects/TicketProjectPanel";
 import { ProjectPromptDialog, useProjectSettings } from "./components/projects/ProjectPromptDialog";
+import { CallbackPromptDialog } from "./components/CallbackPromptDialog";
+import { flagColors, useTicketFlagSettings } from "@/lib/ticketFlags";
+import { colorPillStyle } from "@/lib/colorPill";
+import { useTheme } from "@/app/ThemeProvider";
 import { ProjectCloseConfirmDialog } from "./components/projects/ProjectCloseConfirmDialog";
 import { buildMailContext, flattenQueueMailboxes } from "./mailContext";
 import { InTicketSearchProvider, useInTicketSearch } from "./components/InTicketSearch";
@@ -797,6 +801,36 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
     setAlertOpen(false);
   }, [ticketId]);
 
+  // v0.1.17 — call-back prompt on open. Decided once per open of a ticket
+  // (from the flag as loaded), so switching call-back on while the ticket is
+  // open never pops it; it recurs on every later open while the flag is on.
+  const flagSettingsQ = useTicketFlagSettings();
+  const [timeAlertBlocking, setTimeAlertBlocking] = React.useState(true);
+  const [callbackPrompt, setCallbackPrompt] = React.useState<"pending" | "show" | "done">("pending");
+  React.useEffect(() => {
+    setCallbackPrompt("pending");
+    setTimeAlertBlocking(true);
+  }, [ticketId]);
+  const loadedTicketId = data?.ticket?.id;
+  const loadedIsCallback = data?.ticket?.isCallback;
+  React.useEffect(() => {
+    if (callbackPrompt !== "pending" || loadedTicketId !== ticketId) return;
+    // Off by default since the Call button clears the flag itself.
+    if (!flagSettingsQ.isSuccess && !flagSettingsQ.isError) return;
+    const enabled = flagSettingsQ.data?.callbackOpenPromptEnabled ?? false;
+    setCallbackPrompt(enabled && loadedIsCallback ? "show" : "done");
+  }, [callbackPrompt, loadedTicketId, loadedIsCallback, ticketId, flagSettingsQ.isSuccess, flagSettingsQ.isError, flagSettingsQ.data]);
+  const callbackOffMutation = useMutation({
+    mutationFn: () => ticketApi.update(ticketId, { isCallback: false }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["ticket", ticketId], updated);
+      queryClient.invalidateQueries({ queryKey: ["tickets"] });
+      setCallbackPrompt("done");
+      toast.success("Call-back turned off");
+    },
+    onError: () => toast.error("Could not turn off the call-back flag"),
+  });
+
   // v0.0.9 ToDo #4 — auto-open the company-assignment dialog when the ticket
   // was created in the awaiting state (supplier-only or multi-secondary
   // resolution). Agents can also reopen the dialog from the sidepanel banner.
@@ -863,6 +897,17 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
   const projectLinkedByUserName = data.projectLinkedByUserName ?? null;
   const projectLinkedTicketCount = data.projectLinkedTicketCount ?? 0;
 
+  const otherOpenDialog =
+    !!openGate ||
+    openGatesQ.isLoading ||
+    projectPromptQ.isLoading ||
+    (!projectPromptHidden && promptProjects.length > 0) ||
+    alertOpen ||
+    assignOpen ||
+    timeAlertBlocking;
+  const callbackPromptOpen =
+    callbackPrompt === "show" && ticket.isCallback && !otherOpenDialog;
+
   return (
     <>
       <TicketDetailBody
@@ -903,6 +948,7 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         projectTicketNumber={projectTicketNumber}
         projectLinkedByUserName={projectLinkedByUserName}
         projectLinkedTicketCount={projectLinkedTicketCount}
+        onTimeAlertBlockingChange={setTimeAlertBlocking}
       />
       <ChecklistBlockedDialog
         open={checklistBlock !== null}
@@ -956,6 +1002,16 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         linking={linkFromPromptMutation.isPending}
         onLink={(projectTicketId) => linkFromPromptMutation.mutate(projectTicketId)}
         onDecline={declineProjectPrompt}
+      />
+      {/* v0.1.17 — call-back prompt. Last in line: it waits until every
+          other on-open dialog (title review, project link, company alert,
+          company assignment, hour limit) is closed, so dialogs never stack. */}
+      <CallbackPromptDialog
+        open={callbackPromptOpen}
+        color={flagColors(flagSettingsQ.data).callback}
+        submitting={callbackOffMutation.isPending}
+        onTurnOff={() => callbackOffMutation.mutate()}
+        onKeep={() => setCallbackPrompt("done")}
       />
       <ProjectCloseConfirmDialog
         open={projectClosePending !== null}
@@ -1011,6 +1067,7 @@ function TicketDetailBody({
   projectTicketNumber,
   projectLinkedByUserName,
   projectLinkedTicketCount,
+  onTimeAlertBlockingChange,
 }: {
   ticketId: string;
   ticket: any;
@@ -1057,8 +1114,14 @@ function TicketDetailBody({
   projectTicketNumber: string | null;
   projectLinkedByUserName: string | null;
   projectLinkedTicketCount: number;
+  /// v0.1.17 — forwarded from the hour-limit dialog so the page can hold
+  /// the call-back prompt until that dialog is handled.
+  onTimeAlertBlockingChange: (blocking: boolean) => void;
 }) {
   const { matchesEvent, mode, query, registerScope } = useInTicketSearch();
+  const theme = useTheme();
+  const { data: flagSettings } = useTicketFlagSettings();
+  const flagColor = flagColors(flagSettings);
   const checklistSummary = React.useMemo(() => summarizeChecklists(checklists), [checklists]);
 
   // System/audit events (status, assignment, priority, …) are hidden from
@@ -1215,6 +1278,27 @@ function TicketDetailBody({
                   Project #{projectTicketNumber}
                 </Link>
               )}
+              {/* v0.1.17 — Call-back / Research flag badges (internal). */}
+              {ticket.isCallback && (
+                <span
+                  className="flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium"
+                  style={colorPillStyle(flagColor.callback, theme)}
+                  title="Call-back ticket — someone has to call this customer back"
+                >
+                  <PhoneCall className="h-3 w-3" aria-hidden />
+                  Call-back
+                </span>
+              )}
+              {ticket.isResearch && (
+                <span
+                  className="flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium"
+                  style={colorPillStyle(flagColor.research, theme)}
+                  title="Research ticket — under investigation"
+                >
+                  <Microscope className="h-3 w-3" aria-hidden />
+                  Research
+                </span>
+              )}
               <IsoClassificationActions ticket={ticket} />
               {checklistsEnabled && checklistSettings && (
                 <ChecklistHeaderButton
@@ -1280,7 +1364,11 @@ function TicketDetailBody({
         {/* v0.0.87 — per-ticket hour-limit warning (self-gating: only opens
             when the feature is on and the ticket is over its limit). The queue
             drives re-evaluation on open and on queue change. */}
-        <TicketTimeAlertDialog ticketId={ticketId} queueId={ticket.queueId} />
+        <TicketTimeAlertDialog
+          ticketId={ticketId}
+          queueId={ticket.queueId}
+          onBlockingChange={onTimeAlertBlockingChange}
+        />
 
         {/* Static: activity divider */}
         <div className="shrink-0 pb-3">

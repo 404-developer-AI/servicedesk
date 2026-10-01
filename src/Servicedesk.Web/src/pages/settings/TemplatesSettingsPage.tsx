@@ -243,10 +243,22 @@ function TemplateRow({
           <span className="truncate text-sm font-medium text-foreground">
             {template.name}
           </span>
-          {template.autoInsertOnNote && (
+          {/* v0.1.17 — composer scope, shown only when not "everywhere". */}
+          {!(template.useForNote && template.useForMail && template.useForCall) && (
+            <span className="inline-flex items-center rounded-full border border-glass px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+              {[
+                template.useForNote && "Note",
+                template.useForMail && "Mail",
+                template.useForCall && "Call",
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          )}
+          {(template.autoInsertOnNote || template.autoInsertOnCall) && (
             <span
               className="inline-flex items-center gap-1 rounded-full border border-violet-400/30 bg-violet-400/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-violet-200"
-              title="This template auto-fills the internal-note composer when an agent opens it empty on a matching ticket."
+              title="This template auto-fills the Note and/or Call composer when an agent opens it empty on a matching ticket."
             >
               <Sparkles className="h-3 w-3" />
               Auto-insert

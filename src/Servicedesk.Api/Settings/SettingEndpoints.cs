@@ -173,6 +173,34 @@ public static class SettingEndpoints
         .WithName("GetProjectSettings")
         .WithOpenApi();
 
+        // ---- Ticket flag settings (v0.1.17, agent-readable) ----
+        // Colours for the Call-back / Research float groups, row accents and
+        // header badges, plus the call-back prompt on open. Writes are
+        // validated to #rrggbb; the read re-checks so a pre-validation row can
+        // never reach an inline style.
+        app.MapGet("/api/settings/ticket-flags", async (ISettingsService svc, CancellationToken ct) =>
+        {
+            static string Color(string? value, string fallback) =>
+                value is not null && SettingValueValidator.HexColor.IsMatch(value) ? value : fallback;
+            string? callback, research;
+            bool prompt;
+            try { callback = await svc.GetAsync<string>(SettingKeys.Tickets.CallbackColor, ct); }
+            catch { callback = null; }
+            try { research = await svc.GetAsync<string>(SettingKeys.Tickets.ResearchColor, ct); }
+            catch { research = null; }
+            try { prompt = await svc.GetAsync<bool>(SettingKeys.Tickets.CallbackOpenPromptEnabled, ct); }
+            catch { prompt = false; }
+            bool clearOnCall;
+            try { clearOnCall = await svc.GetAsync<bool>(SettingKeys.Tickets.CallbackClearOnCall, ct); }
+            catch { clearOnCall = true; }
+            return Results.Ok(new TicketFlagSettingsDto(
+                Color(callback, "#22c55e"), Color(research, "#3b82f6"), prompt, clearOnCall));
+        })
+        .WithTags("Settings")
+        .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+        .WithName("GetTicketFlagSettings")
+        .WithOpenApi();
+
         // ---- Copilot launcher settings (v0.0.89, agent-readable) ----
         // The nav button needs the enable flag, URL, label and open-mode on the
         // client to render itself. None of these are secret (it is a public
@@ -210,6 +238,8 @@ public static class SettingEndpoints
     public sealed record NotificationsSettings(int PopupDurationSeconds);
     public sealed record MailComposeSettings(bool ForgottenAttachmentEnabled, string ForgottenAttachmentKeywords);
     public sealed record BulkActionsSettings(bool Enabled, int MaxSelection);
+
+    public sealed record TicketFlagSettingsDto(string CallbackColor, string ResearchColor, bool CallbackOpenPromptEnabled, bool CallbackClearOnCall);
 
     public sealed record ProjectSettingsDto(bool Enabled, bool LinkPromptEnabled, string QueueId);
 

@@ -49,6 +49,7 @@ const ARTICLE_TYPE_OPTIONS = [
   { value: "MailSent", label: "Mail sent" },
   { value: "Comment", label: "Comment" },
   { value: "Note", label: "Note" },
+  { value: "Call", label: "Phone call" },
   { value: "PortalMessage", label: "Portal message (customer)" },
 ];
 

@@ -84,6 +84,9 @@ type ViewFilters = {
   /// v0.0.105 — only project tickets, regardless of queue. Lets one view
   /// collect every project across the whole install.
   projectsOnly?: boolean;
+  /// v0.1.17 — only tickets flagged Call-back / Research (both = either).
+  callbacksOnly?: boolean;
+  researchOnly?: boolean;
   search?: string;
 };
 
@@ -105,6 +108,8 @@ function normaliseFilters(raw: LegacyViewFilters): ViewFilters {
       priorityIds && priorityIds.length > 0 ? priorityIds : undefined,
     openOnly: raw.openOnly,
     projectsOnly: raw.projectsOnly,
+    callbacksOnly: raw.callbacksOnly,
+    researchOnly: raw.researchOnly,
     search: raw.search,
   };
 }
@@ -142,6 +147,8 @@ function formatFilters(
     }
     if (f.openOnly) parts.push("Open only");
     if (f.projectsOnly) parts.push("Projects only");
+    if (f.callbacksOnly) parts.push("Call-backs only");
+    if (f.researchOnly) parts.push("Research only");
     if (f.search) parts.push(`Search: "${f.search}"`);
     return parts;
   } catch {
@@ -152,6 +159,8 @@ function formatFilters(
 function formatDisplayConfig(dc: DisplayConfig): string[] {
   const parts: string[] = [];
   if (dc.priorityFloat) parts.push("Priority float");
+  if (dc.callbackFloat) parts.push("Call-back float");
+  if (dc.researchFloat) parts.push("Research float");
   if (dc.groupBy) {
     const opt = GROUP_BY_OPTIONS.find((o) => o.value === dc.groupBy);
     if (opt) parts.push(`Group: ${opt.label}`);
@@ -433,6 +442,8 @@ function ViewDialog({
 
   // Display config state
   const [priorityFloat, setPriorityFloat] = React.useState(initialDc.priorityFloat ?? false);
+  const [callbackFloat, setCallbackFloat] = React.useState(initialDc.callbackFloat ?? false);
+  const [researchFloat, setResearchFloat] = React.useState(initialDc.researchFloat ?? false);
   const [stateBucketSort, setStateBucketSort] = React.useState(initialDc.stateBucketSort ?? false);
   const [groupBy, setGroupBy] = React.useState(initialDc.groupBy ?? "");
   const [groupOrder, setGroupOrder] = React.useState<string[]>(initialDc.groupOrder ?? []);
@@ -456,6 +467,8 @@ function ViewDialog({
     mutationFn: async () => {
       const dc: DisplayConfig = {};
       if (priorityFloat) dc.priorityFloat = true;
+      if (callbackFloat) dc.callbackFloat = true;
+      if (researchFloat) dc.researchFloat = true;
       if (stateBucketSort) dc.stateBucketSort = true;
       if (groupBy) dc.groupBy = groupBy;
       if (groupOrder.length > 0) dc.groupOrder = groupOrder;
@@ -579,6 +592,26 @@ function ViewDialog({
             </label>
           )}
 
+          <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={filters.callbacksOnly ?? false}
+              onChange={(e) => patch({ callbacksOnly: e.target.checked || undefined })}
+              className="rounded border-glass-strong"
+            />
+            Call-back tickets only
+          </label>
+
+          <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={filters.researchOnly ?? false}
+              onChange={(e) => patch({ researchOnly: e.target.checked || undefined })}
+              className="rounded border-glass-strong"
+            />
+            Research tickets only
+          </label>
+
           {/* ---- Columns ---- */}
           <div className="space-y-2 pt-1">
             <div className="flex items-baseline gap-2">
@@ -677,6 +710,26 @@ function ViewDialog({
               </p>
             </div>
             <Switch checked={priorityFloat} onCheckedChange={setPriorityFloat} />
+          </div>
+
+          {/* ---- Display config: Call-back + Research float (v0.1.17) ---- */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-xs font-medium text-muted-foreground">Call-back float</span>
+              <p className="text-[10px] text-muted-foreground/60 leading-tight">
+                Float open call-back tickets to the top, below the priority float
+              </p>
+            </div>
+            <Switch checked={callbackFloat} onCheckedChange={setCallbackFloat} />
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-xs font-medium text-muted-foreground">Research float</span>
+              <p className="text-[10px] text-muted-foreground/60 leading-tight">
+                Float open research tickets to the top, below the call-back float
+              </p>
+            </div>
+            <Switch checked={researchFloat} onCheckedChange={setResearchFloat} />
           </div>
         </div>
 

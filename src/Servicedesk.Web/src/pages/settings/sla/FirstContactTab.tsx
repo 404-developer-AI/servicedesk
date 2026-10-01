@@ -10,6 +10,7 @@ const TRIGGERS = [
   { key: "Mail", label: "Outbound mail", description: "A Mail event (reply to customer)" },
   { key: "Comment", label: "Public reply/comment", description: "Agent writes a non-internal comment" },
   { key: "Note", label: "Internal note", description: "Agent writes an internal note (touch, not a reply)" },
+  { key: "Call", label: "Phone call", description: "Agent logs a phone call from the Call button (internal or visible)" },
   { key: "StatusChange", label: "Status change", description: "Agent moves ticket out of 'New'" },
   { key: "AssignmentChange", label: "Assignee change", description: "Ticket gets picked up / reassigned" },
   { key: "QueueChange", label: "Queue change", description: "Ticket is moved to another queue" },
@@ -32,7 +33,7 @@ export function FirstContactTab() {
         const arr = JSON.parse(entry.value);
         if (Array.isArray(arr)) setSelected(arr);
       } catch {
-        setSelected(["Mail", "Comment"]);
+        setSelected(["Mail", "Comment", "Call"]);
       }
     }
     const pause = q.data.find((e) => e.key === "Sla.PauseOnPending");

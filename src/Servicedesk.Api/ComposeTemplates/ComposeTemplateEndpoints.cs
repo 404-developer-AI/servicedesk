@@ -87,6 +87,11 @@ public static class ComposeTemplateEndpoints
                     req.AutoInsertOnNote ?? false,
                     req.LinkedSurveyId,
                     userId,
+                    new ComposeTemplateKindScope(
+                        req.UseForNote ?? true,
+                        req.UseForMail ?? true,
+                        req.UseForCall ?? true,
+                        req.AutoInsertOnCall ?? false),
                     ct);
             }
             catch (Npgsql.PostgresException pg) when (pg.SqlState == "23505" && pg.ConstraintName == "ux_compose_templates_active_name")
@@ -110,6 +115,10 @@ public static class ComposeTemplateEndpoints
                     queueScope = req.QueueIds?.Count ?? 0,
                     statusScope = req.StatusIds?.Count ?? 0,
                     autoInsertOnNote = req.AutoInsertOnNote ?? false,
+                    useForNote = req.UseForNote ?? true,
+                    useForMail = req.UseForMail ?? true,
+                    useForCall = req.UseForCall ?? true,
+                    autoInsertOnCall = req.AutoInsertOnCall ?? false,
                 }));
 
             var created = await repo.GetAsync(id, ct);
@@ -141,6 +150,11 @@ public static class ComposeTemplateEndpoints
                     req.StatusIds ?? Array.Empty<Guid>(),
                     req.AutoInsertOnNote ?? existing.AutoInsertOnNote,
                     req.LinkedSurveyId,
+                    new ComposeTemplateKindScope(
+                        req.UseForNote ?? existing.UseForNote,
+                        req.UseForMail ?? existing.UseForMail,
+                        req.UseForCall ?? existing.UseForCall,
+                        req.AutoInsertOnCall ?? existing.AutoInsertOnCall),
                     ct);
             }
             catch (Npgsql.PostgresException pg) when (pg.SqlState == "23505" && pg.ConstraintName == "ux_compose_templates_active_name")
@@ -165,6 +179,10 @@ public static class ComposeTemplateEndpoints
                     queueScope = req.QueueIds?.Count ?? 0,
                     statusScope = req.StatusIds?.Count ?? 0,
                     autoInsertOnNote = req.AutoInsertOnNote,
+                    useForNote = req.UseForNote,
+                    useForMail = req.UseForMail,
+                    useForCall = req.UseForCall,
+                    autoInsertOnCall = req.AutoInsertOnCall,
                 }));
 
             var updated = await repo.GetAsync(id, ct);
@@ -208,10 +226,19 @@ public static class ComposeTemplateEndpoints
         // v0.0.42: statusId is also optional; when supplied it narrows the
         // list further so a status-scoped template only shows up while the
         // ticket sits in one of its bound statuses.
+        // v0.1.17: optional kind (note | mail | call) narrows to templates
+        // scoped for that composer; omitted = every kind (legacy callers).
         group.MapGet("/usable", async (
-            Guid? queueId, Guid? statusId, IComposeTemplateRepository repo, CancellationToken ct) =>
+            Guid? queueId, Guid? statusId, string? kind, IComposeTemplateRepository repo, CancellationToken ct) =>
         {
-            var templates = await repo.ListForQueueAsync(queueId, statusId, ct);
+            ComposeTemplateKind? parsedKind = null;
+            if (!string.IsNullOrWhiteSpace(kind))
+            {
+                if (!TryParseKind(kind, out var k))
+                    return Results.BadRequest(new { error = "kind must be 'note', 'mail' or 'call'." });
+                parsedKind = k;
+            }
+            var templates = await repo.ListForQueueAsync(queueId, statusId, parsedKind, ct);
             return Results.Ok(templates.Select(MapUsableDto));
         }).WithName("ListUsableComposeTemplates").WithOpenApi();
 
@@ -223,9 +250,17 @@ public static class ComposeTemplateEndpoints
         group.MapGet("/default-for-note", async (
             Guid queueId, Guid statusId, IComposeTemplateRepository repo, CancellationToken ct) =>
         {
-            var template = await repo.FindAutoInsertForNoteAsync(queueId, statusId, ct);
+            var template = await repo.FindAutoInsertAsync(queueId, statusId, ComposeTemplateKind.Note, ct);
             return Results.Ok(new { template = template is null ? null : MapUsableDto(template) });
         }).WithName("GetDefaultComposeTemplateForNote").WithOpenApi();
+
+        // v0.1.17 — same lookup for the Call composer (auto_insert_on_call).
+        group.MapGet("/default-for-call", async (
+            Guid queueId, Guid statusId, IComposeTemplateRepository repo, CancellationToken ct) =>
+        {
+            var template = await repo.FindAutoInsertAsync(queueId, statusId, ComposeTemplateKind.Call, ct);
+            return Results.Ok(new { template = template is null ? null : MapUsableDto(template) });
+        }).WithName("GetDefaultComposeTemplateForCall").WithOpenApi();
 
         // Token resolution for the :: insert flow. Either ticketId or
         // contactId (or both) must be supplied — empty calls just return
@@ -282,7 +317,23 @@ public static class ComposeTemplateEndpoints
         IReadOnlyList<Guid>? QueueIds,
         IReadOnlyList<Guid>? StatusIds,
         bool? AutoInsertOnNote,
-        Guid? LinkedSurveyId);
+        Guid? LinkedSurveyId,
+        // v0.1.17 — per-kind scope; null = keep (update) / on (create).
+        bool? UseForNote = null,
+        bool? UseForMail = null,
+        bool? UseForCall = null,
+        bool? AutoInsertOnCall = null);
+
+    internal static bool TryParseKind(string value, out ComposeTemplateKind kind)
+    {
+        switch (value.Trim().ToLowerInvariant())
+        {
+            case "note": kind = ComposeTemplateKind.Note; return true;
+            case "mail": kind = ComposeTemplateKind.Mail; return true;
+            case "call": kind = ComposeTemplateKind.Call; return true;
+            default: kind = default; return false;
+        }
+    }
 
     private static string? Validate(UpsertRequest req)
     {
@@ -301,6 +352,10 @@ public static class ComposeTemplateEndpoints
             return $"A template may target at most {MaxStatusAssignments} statuses.";
         if (req.StatusIds is not null && req.StatusIds.Distinct().Count() != req.StatusIds.Count)
             return "statusIds must not contain duplicates.";
+        // v0.1.17 — a template must be offered in at least one composer.
+        // Only checkable when all three are sent (an update may omit them).
+        if (req.UseForNote == false && req.UseForMail == false && req.UseForCall == false)
+            return "A template must be available for at least one of Note, Mail or Call.";
         return null;
     }
 
@@ -316,6 +371,10 @@ public static class ComposeTemplateEndpoints
         queueIds = t.QueueIds,
         statusIds = t.StatusIds ?? Array.Empty<Guid>(),
         autoInsertOnNote = t.AutoInsertOnNote,
+        useForNote = t.UseForNote,
+        useForMail = t.UseForMail,
+        useForCall = t.UseForCall,
+        autoInsertOnCall = t.AutoInsertOnCall,
         linkedSurveyId = t.LinkedSurveyId,
         createdUtc = t.CreatedUtc,
         updatedUtc = t.UpdatedUtc,
@@ -332,6 +391,7 @@ public static class ComposeTemplateEndpoints
         queueIds = t.QueueIds,
         statusIds = t.StatusIds ?? Array.Empty<Guid>(),
         autoInsertOnNote = t.AutoInsertOnNote,
+        autoInsertOnCall = t.AutoInsertOnCall,
         linkedSurveyId = t.LinkedSurveyId,
     };
 }

@@ -102,6 +102,9 @@ export type TicketListItem = {
   /// attached checklists); 0/0 = no checklist.
   checklistRequiredTotal: number;
   checklistRequiredDone: number;
+  /// v0.1.17 — agent-set Call-back / Research flags (float buckets + row accent).
+  isCallback: boolean;
+  isResearch: boolean;
 };
 
 export type TicketPage = {
@@ -178,6 +181,9 @@ export type Ticket = {
   projectLinkedByUserId: string | null;
   projectSortOrder: number;
   projectPromptDismissedUtc: string | null;
+  /// v0.1.17 — agent-set Call-back / Research flags. Internal only.
+  isCallback: boolean;
+  isResearch: boolean;
 };
 
 export type TicketBody = {
@@ -359,6 +365,9 @@ export type TicketListQuery = {
   /// v0.0.105 — restrict to project tickets, regardless of queue (the
   /// "Project tickets only" view filter).
   projectsOnly?: boolean;
+  /// v0.1.17 — "Call-back / Research tickets only" view filters.
+  callbacksOnly?: boolean;
+  researchOnly?: boolean;
   openFirst?: boolean;
   /// v0.0.95 — per-view "Open tickets first": server buckets New/Open above
   /// Pending above Resolved/Closed before applying the sort field.
@@ -366,6 +375,9 @@ export type TicketListQuery = {
   sortField?: string;
   sortDirection?: string;
   priorityFloat?: boolean;
+  /// v0.1.17 — float buckets below the Priority float (fixed precedence).
+  callbackFloat?: boolean;
+  researchFloat?: boolean;
   offset?: number;
   cursorUpdatedUtc?: string;
   cursorId?: string;
@@ -413,6 +425,18 @@ export type CreateTicketRequest = {
   /// v0.0.105 — create as a project ticket (the "Project ticket" toggle
   /// in the new-ticket drawer). Omitted/false = a normal ticket.
   isProject?: boolean;
+  /// v0.1.17 — create with the Call-back flag on (new-ticket drawer).
+  isCallback?: boolean;
+};
+
+// ---- Call-back / Research flags (v0.1.17) ---------------------------
+
+export type TicketFlagSettings = {
+  callbackColor: string;
+  researchColor: string;
+  callbackOpenPromptEnabled: boolean;
+  /// v0.1.17 — logging a call from the Call composer clears the flag.
+  callbackClearOnCall: boolean;
 };
 
 // ---- Project tickets (v0.0.105) -------------------------------------
@@ -534,6 +558,9 @@ export type TicketFieldUpdate = {
   /// gates and returns 409 with code "status_gate_required" if any
   /// required confirmation is missing.
   gateConfirmations?: GateConfirmation[];
+  /// v0.1.17 — Call-back / Research flag toggles.
+  isCallback?: boolean;
+  isResearch?: boolean;
 };
 
 /// v0.0.42 — one matching status-change gate the agent must satisfy
@@ -662,7 +689,7 @@ export type OpenGateMatch = {
 };
 
 export type NewTicketEvent = {
-  eventType: "Comment" | "Note";
+  eventType: "Comment" | "Note" | "Call";
   bodyText?: string;
   bodyHtml?: string;
   isInternal?: boolean;
@@ -739,6 +766,11 @@ export type SendOutboundMailRequest = {
 
 export type DisplayConfig = {
   priorityFloat?: boolean;
+  /// v0.1.17 — Call-back / Research floats. Fixed order below the
+  /// Priority float: Priority > Call-back > Research; a ticket sits only
+  /// in the first enabled bucket it qualifies for.
+  callbackFloat?: boolean;
+  researchFloat?: boolean;
   /// v0.0.95 — "Open tickets first": sort New/Open above Pending above
   /// Resolved/Closed within the chosen sort (and thus within each group).
   stateBucketSort?: boolean;
@@ -1095,11 +1127,15 @@ export const ticketApi = {
     if (query.search) params.set("search", query.search);
     if (query.openOnly) params.set("openOnly", "true");
     if (query.projectsOnly) params.set("projectsOnly", "true");
+    if (query.callbacksOnly) params.set("callbacksOnly", "true");
+    if (query.researchOnly) params.set("researchOnly", "true");
     if (query.openFirst) params.set("openFirst", "true");
     if (query.stateBucketSort) params.set("stateBucketSort", "true");
     if (query.sortField) params.set("sortField", query.sortField);
     if (query.sortDirection) params.set("sortDirection", query.sortDirection);
     if (query.priorityFloat) params.set("priorityFloat", "true");
+    if (query.callbackFloat) params.set("callbackFloat", "true");
+    if (query.researchFloat) params.set("researchFloat", "true");
     if (query.offset != null) params.set("offset", String(query.offset));
     if (query.cursorUpdatedUtc)
       params.set("cursorUpdatedUtc", query.cursorUpdatedUtc);
@@ -1196,6 +1232,8 @@ export const ticketApi = {
   // v0.0.105 — project tickets. Settings gate the whole surface; every
   // mutation is re-validated server-side (queue access + project rules).
   projectSettings: () => request<ProjectSettings>("GET", "/api/settings/projects"),
+  // v0.1.17 — Call-back / Research colours + the call-back prompt flag.
+  ticketFlagSettings: () => request<TicketFlagSettings>("GET", "/api/settings/ticket-flags"),
   revertProject: (id: string) =>
     request<{ isProject: boolean }>("POST", `/api/tickets/${id}/project/revert`),
   linkProject: (id: string, projectTicketId: string) =>

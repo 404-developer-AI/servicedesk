@@ -49,7 +49,13 @@ public sealed record TicketQuery(
     // v0.0.105 — restrict to project tickets, regardless of queue. Used by
     // the "Project tickets only" view filter so one saved view shows every
     // project across the whole install (queue access still applies).
-    bool ProjectsOnly = false);
+    bool ProjectsOnly = false,
+    // v0.1.17 — Call-back / Research floats (per view, below the Priority
+    // float in fixed precedence) and the matching "only" view filters.
+    bool CallbackFloat = false,
+    bool ResearchFloat = false,
+    bool CallbacksOnly = false,
+    bool ResearchOnly = false);
 
 public sealed record TicketListItem(
     Guid Id,
@@ -93,7 +99,10 @@ public sealed record TicketListItem(
     // v0.0.103 - denormalized checklist progress (sum over the ticket's
     // attached checklists, required items only) for the list chip.
     int ChecklistRequiredTotal = 0,
-    int ChecklistRequiredDone = 0);
+    int ChecklistRequiredDone = 0,
+    // v0.1.17 — Call-back / Research flags for the float buckets + row accent.
+    bool IsCallback = false,
+    bool IsResearch = false);
 
 public sealed record TicketPage(
     IReadOnlyList<TicketListItem> Items,

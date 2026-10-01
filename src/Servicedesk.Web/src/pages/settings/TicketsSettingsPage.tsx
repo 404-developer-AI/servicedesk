@@ -504,6 +504,35 @@ function GeneralTab() {
     onError: () => toast.error("Could not update setting"),
   });
 
+  // v0.1.17 — Call-back / Research flags: accent colours (served to agents
+  // via the agent-safe /api/settings/ticket-flags projection) and the
+  // call-back prompt on open. Colours are validated to #rrggbb server-side.
+  const savedCallbackColor = useMemo(
+    () => entries?.find((e) => e.key === "Tickets.CallbackColor")?.value ?? "#22c55e",
+    [entries],
+  );
+  const savedResearchColor = useMemo(
+    () => entries?.find((e) => e.key === "Tickets.ResearchColor")?.value ?? "#3b82f6",
+    [entries],
+  );
+  const callbackPromptEnabled = useMemo(
+    () => (entries?.find((e) => e.key === "Tickets.CallbackOpenPromptEnabled")?.value ?? "false") === "true",
+    [entries],
+  );
+  const callbackClearOnCall = useMemo(
+    () => (entries?.find((e) => e.key === "Tickets.CallbackClearOnCall")?.value ?? "true") === "true",
+    [entries],
+  );
+  const updateFlags = useMutation({
+    mutationFn: ({ key, value }: { key: string; value: string }) => settingsApi.update(key, value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "tickets-general"] });
+      qc.invalidateQueries({ queryKey: ["settings", "ticket-flags"] });
+      toast.success("Setting updated");
+    },
+    onError: () => toast.error("Could not update setting"),
+  });
+
   return (
     <div className="space-y-6">
       <section className="glass-card p-5">
@@ -651,6 +680,56 @@ function GeneralTab() {
       <section className="glass-card p-5">
         <div className="space-y-1">
           <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            Call-back &amp; Research flags
+          </h2>
+          <p className="text-xs text-muted-foreground/70">
+            Agents mark a ticket as Call-back (someone has to call the customer
+            back) or Research (under investigation) from the ticket's Status
+            tab; Call-back can also be set when creating a ticket. Views can
+            float these tickets to the top with the Call-back and Research
+            float switches — always below the Priority float. The colour paints
+            the float group, the accent bar and glow on the ticket row and the
+            badge in the ticket header. Both flags are internal — customers
+            never see them.
+          </p>
+        </div>
+        <div className="mt-4 space-y-3">
+          <FlagColorRow
+            label="Call-back colour"
+            saved={savedCallbackColor}
+            disabled={isLoading || updateFlags.isPending}
+            onSave={(v) => updateFlags.mutate({ key: "Tickets.CallbackColor", value: v })}
+          />
+          <FlagColorRow
+            label="Research colour"
+            saved={savedResearchColor}
+            disabled={isLoading || updateFlags.isPending}
+            onSave={(v) => updateFlags.mutate({ key: "Tickets.ResearchColor", value: v })}
+          />
+          <ToggleRow
+            label="Ask to turn off call-back on open"
+            description="When an agent opens a call-back ticket, ask whether the call-back flag can be turned off. Asked on every open while the flag is on."
+            checked={callbackPromptEnabled}
+            disabled={isLoading || updateFlags.isPending}
+            onCheckedChange={(v) =>
+              updateFlags.mutate({ key: "Tickets.CallbackOpenPromptEnabled", value: v ? "true" : "false" })
+            }
+          />
+          <ToggleRow
+            label="Turn off call-back when a call is logged"
+            description="Logging a phone call with the Call button on a call-back ticket turns the call-back flag off automatically. The change is recorded on the ticket timeline."
+            checked={callbackClearOnCall}
+            disabled={isLoading || updateFlags.isPending}
+            onCheckedChange={(v) =>
+              updateFlags.mutate({ key: "Tickets.CallbackClearOnCall", value: v ? "true" : "false" })
+            }
+          />
+        </div>
+      </section>
+
+      <section className="glass-card p-5">
+        <div className="space-y-1">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
             Project tickets
           </h2>
           <p className="text-xs text-muted-foreground/70">
@@ -708,6 +787,58 @@ function GeneralTab() {
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
+/// v0.1.17 — colour picker + hex input for one flag colour, saved on demand.
+function FlagColorRow({
+  label,
+  saved,
+  disabled,
+  onSave,
+}: {
+  label: string;
+  saved: string;
+  disabled: boolean;
+  onSave: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const value = draft ?? saved;
+  const valid = HEX_COLOR.test(value);
+  const dirty = draft !== null && draft.toLowerCase() !== saved.toLowerCase();
+  return (
+    <div className="space-y-1.5">
+      <span className="text-sm font-medium text-foreground">{label}</span>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          value={valid ? value : saved}
+          disabled={disabled}
+          onChange={(e) => setDraft(e.target.value)}
+          className="h-9 w-12 cursor-pointer rounded-md border border-glass bg-transparent"
+          aria-label={label}
+        />
+        <Input
+          value={value}
+          disabled={disabled}
+          onChange={(e) => setDraft(e.target.value.trim())}
+          className="max-w-[9rem] font-mono text-xs"
+        />
+        <Button
+          type="button"
+          disabled={disabled || !dirty || !valid}
+          onClick={() => {
+            onSave(value);
+            setDraft(null);
+          }}
+        >
+          Save
+        </Button>
+      </div>
+      {!valid && <p className="text-xs text-destructive">Enter a hex colour like #22c55e.</p>}
     </div>
   );
 }

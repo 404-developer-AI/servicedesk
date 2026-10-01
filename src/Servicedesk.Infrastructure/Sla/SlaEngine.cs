@@ -22,7 +22,7 @@ public sealed class SlaEngine : ISlaEngine
 {
     private static readonly HashSet<string> AllowedTriggers = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Mail", "Comment", "Note", "StatusChange", "AssignmentChange", "QueueChange"
+        "Mail", "Comment", "Note", "Call", "StatusChange", "AssignmentChange", "QueueChange"
     };
 
     // The settings UI exposes "Mail" but OutboundMailService writes "MailSent" on

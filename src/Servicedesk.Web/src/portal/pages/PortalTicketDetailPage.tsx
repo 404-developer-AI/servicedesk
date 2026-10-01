@@ -296,6 +296,8 @@ function MessageItem({ message, when }: { message: PortalMessage; when: string }
         <span className="font-medium text-foreground">{mine ? "You" : message.authorName}</span>
         {message.type === "MailReceived" || message.type === "MailSent" ? (
           <span className="rounded border border-glass px-1.5 py-0.5 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">mail</span>
+        ) : message.type === "Call" ? (
+          <span className="rounded border border-glass px-1.5 py-0.5 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">phone call</span>
         ) : null}
         <span className="ml-auto text-muted-foreground">{when}</span>
       </div>

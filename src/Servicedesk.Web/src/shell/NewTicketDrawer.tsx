@@ -17,6 +17,8 @@ import { CompanyAlertDialog } from "@/components/CompanyAlertDialog";
 import { TaxonomySelect } from "@/components/TaxonomySelect";
 import { PendingTillField } from "@/components/PendingTillField";
 import { useProjectSettings } from "@/pages/tickets/components/projects/ProjectPromptDialog";
+import { FlagToggleRow } from "@/components/TicketFlagToggle";
+import { flagColors, useTicketFlagSettings } from "@/lib/ticketFlags";
 import { TicketCompanyAssignmentDialog } from "@/components/TicketCompanyAssignmentDialog";
 import {
   Select,
@@ -57,6 +59,9 @@ const createTicketSchema = z.object({
   // v0.0.105 — create as a project ticket. Only rendered when the
   // Projects.Enabled setting is on; default off.
   isProject: z.boolean().optional(),
+  // v0.1.17 — create with the Call-back flag on. Research is deliberately
+  // not offered here (set it from the ticket's Status tab).
+  isCallback: z.boolean().optional(),
 });
 
 type CreateTicketForm = z.infer<typeof createTicketSchema>;
@@ -221,6 +226,7 @@ export function NewTicketDrawer({
       assigneeUserId: null,
       pendingTillUtc: null,
       isProject: false,
+      isCallback: false,
     },
   });
 
@@ -228,6 +234,7 @@ export function NewTicketDrawer({
   // Projects.Enabled setting is on (the server re-checks on create).
   const projectSettingsQ = useProjectSettings();
   const projectsEnabled = projectSettingsQ.data?.enabled ?? false;
+  const flagSettingsQ = useTicketFlagSettings();
   const projectQueueId = projectSettingsQ.data?.queueId || null;
 
   // With a pinned project queue, ticking "Project ticket" hides the queue
@@ -398,6 +405,7 @@ export function NewTicketDrawer({
         categoryId: initialCategoryId ?? "",
         assigneeUserId: initialAssigneeUserId ?? null,
         pendingTillUtc: null,
+        isCallback: false,
       });
       // The opening-note block is always present now (v0.0.73). A manual
       // trigger / template can seed it; otherwise it starts empty and
@@ -523,6 +531,8 @@ export function NewTicketDrawer({
         newLinkRole: selectedCompanyId && selectedNewLinkRole ? selectedNewLinkRole : undefined,
         // v0.0.105 — project toggle; only sent when actually ticked.
         isProject: data.isProject || undefined,
+        // v0.1.17 — call-back toggle; only sent when switched on.
+        isCallback: data.isCallback || undefined,
       });
 
       // Two-step note for the image case. A failure here must not lose the
@@ -734,6 +744,8 @@ export function NewTicketDrawer({
                             // surface here, scoped to the chosen queue.
                             const list = await composeTemplatesApi.usableCached(
                               watchedQueueId || null,
+                              null,
+                              "note",
                             );
                             const needle = q.trim().toLowerCase();
                             const filtered = needle
@@ -970,6 +982,24 @@ export function NewTicketDrawer({
                           disabled={!taxonomyReady}
                           allowEmpty
                           emptyLabel="None"
+                        />
+                      )}
+                    />
+                  </div>
+
+                  {/* v0.1.17 — create with the Call-back flag on. */}
+                  <div>
+                    <FormLabel>Call-back</FormLabel>
+                    <Controller
+                      name="isCallback"
+                      control={control}
+                      render={({ field }) => (
+                        <FlagToggleRow
+                          label="Call-back ticket"
+                          hint="Someone has to call this customer back. Floats in views with the call-back float on."
+                          color={flagColors(flagSettingsQ.data).callback}
+                          checked={field.value ?? false}
+                          onChange={(next) => field.onChange(next)}
                         />
                       )}
                     />

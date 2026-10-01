@@ -114,6 +114,17 @@ public static class SettingKeys
         // work; each ticket still runs the full single-ticket rule set.
         public const string BulkActionsEnabled = "Tickets.BulkActionsEnabled";
         public const string BulkActionsMaxSelection = "Tickets.BulkActionsMaxSelection";
+
+        // v0.1.17 — Call-back / Research ticket flags: the accent colour each
+        // flag paints on its float group, row and ticket-header badge, and
+        // the "turn call-back off?" prompt when an agent opens a call-back
+        // ticket.
+        public const string CallbackColor = "Tickets.CallbackColor";
+        public const string ResearchColor = "Tickets.ResearchColor";
+        public const string CallbackOpenPromptEnabled = "Tickets.CallbackOpenPromptEnabled";
+        // v0.1.17 — logging a phone call from the Call composer clears the
+        // ticket's Call-back flag.
+        public const string CallbackClearOnCall = "Tickets.CallbackClearOnCall";
     }
 
     /// v0.0.103 — ticket checklists (admin templates attached to tickets as
@@ -1650,6 +1661,14 @@ public static class SettingDefaults
             "Show row checkboxes and the bulk-edit bar on the ticket list so agents can post a note and/or change status, queue, assignee or priority on many tickets at once. Every selected ticket still runs the normal single-ticket rules (queue access, allowed statuses, status gates, triggers, SLA, audit); tickets that fail a rule are skipped and reported. Turn off to hide the selection entirely."),
         new SettingDefault(SettingKeys.Tickets.BulkActionsMaxSelection, "100", "int", "Tickets",
             "Maximum number of tickets one bulk action may touch. The list disables the bulk-edit button above this count and the server rejects larger requests. Bulk actions run synchronously per ticket, so keep this at a size that finishes within a normal request (100 is comfortable; 500 is the hard ceiling)."),
+        new SettingDefault(SettingKeys.Tickets.CallbackColor, "#22c55e", "string", "Tickets",
+            "Colour of the Call-back flag: the Call-back float group in views, the accent bar and glow on the ticket row, and the badge in the ticket header. Hex colour (#rrggbb)."),
+        new SettingDefault(SettingKeys.Tickets.ResearchColor, "#3b82f6", "string", "Tickets",
+            "Colour of the Research flag: the Research float group in views, the accent bar and glow on the ticket row, and the badge in the ticket header. Hex colour (#rrggbb)."),
+        new SettingDefault(SettingKeys.Tickets.CallbackOpenPromptEnabled, "false", "bool", "Tickets",
+            "When an agent opens a ticket marked as Call-back, ask whether the call-back flag should be turned off. Shown on every open while the flag is on. Off by default — logging a call from the Call composer clears the flag instead."),
+        new SettingDefault(SettingKeys.Tickets.CallbackClearOnCall, "true", "bool", "Tickets",
+            "When an agent logs a phone call from the Call composer on a ticket marked as Call-back, turn the call-back flag off automatically (logged on the timeline)."),
         new SettingDefault(SettingKeys.Checklists.Enabled, "true", "bool", "Tickets",
             "Ticket checklists: admins build checklist templates (Settings → Tickets → Checklists), agents attach them to tickets and tick items off inside the ticket, with a per-item log. Turn off to hide every checklist surface; attached checklists are kept and the close block is not enforced while off."),
         new SettingDefault(SettingKeys.Checklists.BlockingStateCategories, "Resolved,Closed", "string", "Tickets",
@@ -1936,9 +1955,9 @@ public static class SettingDefaults
         // timer as met. Holidays auto-sync fetches public holidays for the
         // configured country from date.nager.at and refreshes yearly.
         new SettingDefault(SettingKeys.Sla.FirstContactTriggers,
-            "[\"Mail\",\"Comment\"]",
+            "[\"Mail\",\"Comment\",\"Call\"]",
             "json", "Sla",
-            "Ticket event types that count as first contact and stop the first-response timer. Allowed: Mail, Comment, Note, StatusChange, AssignmentChange, QueueChange."),
+            "Ticket event types that count as first contact and stop the first-response timer. Allowed: Mail, Comment, Note, Call (a phone call logged from the Call composer), StatusChange, AssignmentChange, QueueChange."),
         new SettingDefault(SettingKeys.Sla.PauseOnPending, "true", "bool", "Sla",
             "When the ticket enters status category 'Pending' (waiting on customer), pause the SLA timer."),
         new SettingDefault(SettingKeys.Sla.HolidaysCountryCode, "BE", "string", "Sla",

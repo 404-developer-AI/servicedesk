@@ -56,6 +56,8 @@ public static class TicketEndpoints
             // separated Guids; invalid tokens are silently dropped so a
             // partially valid query still returns a sensible page.
             string? queueIds, string? statusIds, string? priorityIds,
+            // v0.1.17 — Call-back / Research floats + "only" view filters.
+            bool? callbackFloat, bool? researchFloat, bool? callbacksOnly, bool? researchOnly,
             HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess,
             ISettingsService settings, CancellationToken ct) =>
         {
@@ -98,7 +100,11 @@ public static class TicketEndpoints
                 QueueIds: ParseGuidList(queueIds),
                 StatusIds: ParseGuidList(statusIds),
                 PriorityIds: ParseGuidList(priorityIds),
-                ProjectsOnly: projectsOnly ?? false);
+                ProjectsOnly: projectsOnly ?? false,
+                CallbackFloat: callbackFloat ?? false,
+                ResearchFloat: researchFloat ?? false,
+                CallbacksOnly: callbacksOnly ?? false,
+                ResearchOnly: researchOnly ?? false);
             var page = await repo.SearchAsync(q, VisibilityScope.All, null, null, ct);
             return Results.Ok(new
             {
@@ -285,7 +291,8 @@ public static class TicketEndpoints
                 InitialNote: req.InitialNote is { } note && !string.IsNullOrWhiteSpace(note.BodyHtml)
                     ? new InitialTicketNote(note.BodyHtml, note.IsInternal)
                     : null,
-                IsProject: req.IsProject), ct);
+                IsProject: req.IsProject,
+                IsCallback: req.IsCallback), ct);
 
             // Apply the parent link after create so the new ticket exists
             // for the FK + cycle-check. Failure here is logged but does not
@@ -574,7 +581,9 @@ public static class TicketEndpoints
                 Subject: req.Subject?.Trim(),
                 BodyText: req.BodyText,
                 BodyHtml: req.BodyHtml,
-                PendingTillUtc: req.PendingTillUtc);
+                PendingTillUtc: req.PendingTillUtc,
+                IsCallback: req.IsCallback,
+                IsResearch: req.IsResearch);
             var pre = await mutations.PrecheckFieldUpdateAsync(actor, id, requested, ct);
             switch (pre.Check)
             {
@@ -982,12 +991,13 @@ public static class TicketEndpoints
             ITaggingMailboxRepository taggingMailboxes,
             IMentionNotificationService mentionService,
             IComposeTemplateSurveyDispatcher surveyTemplateDispatcher,
+            ISettingsService settings,
             CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(req.EventType))
                 return Results.BadRequest(new { error = "eventType is required." });
-            if (req.EventType != "Comment" && req.EventType != "Note")
-                return Results.BadRequest(new { error = "eventType must be 'Comment' or 'Note'." });
+            if (req.EventType != "Comment" && req.EventType != "Note" && req.EventType != "Call")
+                return Results.BadRequest(new { error = "eventType must be 'Comment', 'Note' or 'Call'." });
 
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var actor = ResolveMutationActor(http);
@@ -1025,7 +1035,9 @@ public static class TicketEndpoints
                 EventType: req.EventType,
                 BodyText: req.BodyText,
                 BodyHtml: req.BodyHtml,
-                IsInternal: req.IsInternal ?? (req.EventType == "Note"),
+                // A Call defaults to internal like a Note; Comment is always
+                // the public side of the Note/Comment pair.
+                IsInternal: req.IsInternal ?? (req.EventType is "Note" or "Call"),
                 AuthorUserId: userId,
                 MetadataJson: metadataJson);
             var evt = await mutations.AddEventAsync(id, input, ct);
@@ -1084,6 +1096,28 @@ public static class TicketEndpoints
             if (req.ComposeTemplateIds is { Count: > 0 } tplIds)
             {
                 await surveyTemplateDispatcher.DispatchForTemplatesAsync(id, tplIds, userId, ct);
+            }
+
+            // v0.1.17 — logging a phone call clears the Call-back flag
+            // (setting Tickets.CallbackClearOnCall). Runs through the normal
+            // field-update path so it gets its TicketFlagChange event, audit,
+            // realtime push and trigger evaluation like a manual toggle.
+            if (req.EventType == "Call" && ticket.Ticket.IsCallback)
+            {
+                bool clearOnCall;
+                try { clearOnCall = await settings.GetAsync<bool>(SettingKeys.Tickets.CallbackClearOnCall, ct); }
+                catch { clearOnCall = true; }
+                if (clearOnCall)
+                {
+                    var clear = new TicketFieldUpdate(IsCallback: false);
+                    if (await mutations.ApplyFieldUpdateAsync(id, clear, userId, ct) is not null)
+                    {
+                        await mutations.PublishFieldUpdateAsync(
+                            actor, id, clear,
+                            auditPayload: new { isCallback = false, reason = "call_logged", callEventId = evt.Id },
+                            changeSet: null, ct);
+                    }
+                }
             }
 
             return Results.Created($"/api/tickets/{id}/events/{evt.Id}", evt);
@@ -2159,7 +2193,9 @@ public static class TicketEndpoints
         string? NewLinkRole = null,
         // v0.0.105 — create as a project ticket (the "Project ticket"
         // toggle in the new-ticket drawer). Default off.
-        bool IsProject = false);
+        bool IsProject = false,
+        // v0.1.17 — create with the Call-back flag on (new-ticket drawer).
+        bool IsCallback = false);
 
     public sealed record InitialNoteRequest(string BodyHtml, bool IsInternal);
 
@@ -2213,7 +2249,11 @@ public static class TicketEndpoints
         // the optional textarea answer. Server re-evaluates the gate set
         // before applying the mutation; missing or empty-required
         // entries cause a 409 + the list of unsatisfied gates.
-        IReadOnlyList<GateConfirmationInput>? GateConfirmations = null);
+        IReadOnlyList<GateConfirmationInput>? GateConfirmations = null,
+        // v0.1.17 — Call-back / Research flag toggles (Status panel and the
+        // call-back prompt on open). Null = not provided.
+        bool? IsCallback = null,
+        bool? IsResearch = null);
 
     /// One agent-supplied confirmation payload for a status-change gate.
     /// The fields are kind-specific:

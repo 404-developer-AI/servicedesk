@@ -92,6 +92,10 @@ public sealed class PortalTicketRepository : IPortalTicketRepository
     public static readonly IReadOnlySet<string> CustomerVisibleEventTypes = new HashSet<string>(StringComparer.Ordinal)
     {
         "PortalMessage", "MailReceived", "MailSent", "Comment", "StatusChange",
+        // v0.1.17 — a phone call the agent explicitly marked customer-visible
+        // (is_internal = FALSE); internal calls are dropped by the is_internal
+        // filter like every other internal row.
+        "Call",
     };
 
     /// List scope — ONE company at a time (the active company in the portal

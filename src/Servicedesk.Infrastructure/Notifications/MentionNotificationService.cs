@@ -250,6 +250,7 @@ public sealed class MentionNotificationService : IMentionNotificationService
         {
             "Note" => "internal note",
             "Comment" => "reply",
+            "Call" => "phone call",
             "MailSent" => "outbound mail",
             _ => source.EventType.ToLowerInvariant(),
         };

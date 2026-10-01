@@ -29,6 +29,10 @@ type Props = {
   ticketId: string;
   /// The ticket's current queue. Drives re-evaluation on queue change.
   queueId: string | null | undefined;
+  /// v0.1.17 — reports whether this dialog is (or may still become) open:
+  /// true while the snapshot loads or the warning shows. Lets the page hold
+  /// later on-open prompts (call-back) back so dialogs never stack.
+  onBlockingChange?: (blocking: boolean) => void;
 };
 
 /// v0.0.87 — per-ticket hour-limit warning. Mounted on the ticket-detail
@@ -39,7 +43,7 @@ type Props = {
 /// internal note), or disables hour tracking for this ticket entirely (v0.0.88,
 /// requires a mandatory reason posted as an internal note). All limit logic is
 /// server-side — this component only renders the server snapshot.
-export function TicketTimeAlertDialog({ ticketId, queueId }: Props) {
+export function TicketTimeAlertDialog({ ticketId, queueId, onBlockingChange }: Props) {
   const queryClient = useQueryClient();
   // v0.0.89 — admins get a Shift-held escape hatch: dismiss the warning
   // without writing a TimeLimitAlertDismissed event. The server is the real
@@ -80,6 +84,10 @@ export function TicketTimeAlertDialog({ ticketId, queueId }: Props) {
   // dialog is open, so there is no global listener cost otherwise.
   const [shiftHeld, setShiftHeld] = React.useState(false);
   const open = Boolean(status?.enabled && status?.exceeded && !handled);
+  const blocking = statusQ.isLoading || open;
+  React.useEffect(() => {
+    onBlockingChange?.(blocking);
+  }, [blocking, onBlockingChange]);
   React.useEffect(() => {
     if (!open || !isAdmin) {
       setShiftHeld(false);
