@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Dapper;
 using Npgsql;
 using Servicedesk.Domain.Search;
@@ -74,7 +73,7 @@ public sealed class TicketSearchSource : ISearchSource
         // word separators (so `*bench`, `bench*`, plain `bench` all behave
         // the same). Empty after sanitization → tsq is NULL and only the
         // number probe applies.
-        var tsqueryText = skipFts ? string.Empty : BuildPrefixTsQuery(normalized);
+        var tsqueryText = skipFts ? string.Empty : TicketTsQuery.BuildPrefix(normalized);
 
         if (string.IsNullOrEmpty(tsqueryText) && numberProbe is null && zammadNumberProbe is null)
             return new SearchGroup(Kind, Array.Empty<SearchHit>(), 0, false);
@@ -288,18 +287,6 @@ public sealed class TicketSearchSource : ISearchSource
         {
             return TicketReference.DefaultPrefix;
         }
-    }
-
-    private static readonly Regex s_tokenPattern = new(@"[\p{L}\p{N}]+", RegexOptions.Compiled);
-
-    private static string BuildPrefixTsQuery(string normalized)
-    {
-        if (string.IsNullOrWhiteSpace(normalized)) return string.Empty;
-
-        var tokens = s_tokenPattern.Matches(normalized)
-            .Select(m => m.Value + ":*");
-
-        return string.Join(" & ", tokens);
     }
 
     private sealed record TicketHitRow(

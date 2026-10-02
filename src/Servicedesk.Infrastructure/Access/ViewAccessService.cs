@@ -36,7 +36,8 @@ public sealed class ViewAccessService : IViewAccessService
             SELECT DISTINCT v.id AS Id, v.user_id AS UserId, v.name AS Name, v.filters::text AS FiltersJson,
                    v.columns AS Columns, v.sort_order AS SortOrder, v.is_shared AS IsShared,
                    v.display_config::text AS DisplayConfigJson,
-                   v.created_utc AS CreatedUtc, v.updated_utc AS UpdatedUtc
+                   v.created_utc AS CreatedUtc, v.updated_utc AS UpdatedUtc,
+                   v.allow_user_columns AS AllowUserColumns
             FROM views v
             WHERE v.id IN (
                 SELECT gv.view_id FROM view_group_views gv

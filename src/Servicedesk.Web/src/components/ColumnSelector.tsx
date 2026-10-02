@@ -1,28 +1,29 @@
 import * as React from "react";
-import { Columns3, RotateCcw } from "lucide-react";
+import { Columns3, Lock, RotateCcw } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useColumnPrefsStore, DEFAULT_COLUMNS } from "@/stores/useColumnPrefsStore";
+import { SortableColumnList } from "@/components/SortableColumnList";
 import { cn } from "@/lib/utils";
 
-const ALL_COLUMNS: { id: string; label: string }[] = [
-  { id: "number", label: "Number" },
-  { id: "subject", label: "Subject" },
-  { id: "requester", label: "Requester" },
-  { id: "companyName", label: "Company" },
-  { id: "queueName", label: "Queue" },
-  { id: "statusName", label: "Status" },
-  { id: "priorityName", label: "Priority" },
-  { id: "categoryName", label: "Category" },
-  { id: "assigneeEmail", label: "Assignee" },
-  { id: "createdUtc", label: "Created" },
-  { id: "updatedUtc", label: "Updated" },
-  { id: "dueUtc", label: "Due" },
-  { id: "pendingTillUtc", label: "Pending till" },
-];
-
+/// Agent column picker for the ticket list. v0.1.18: ordered (drag to
+/// reorder) and hidden entirely when the active view locks its columns —
+/// a quiet hint takes its place so the agent knows why.
 export function ColumnSelector() {
-  const { visibleColumns, toggleColumn, resetToDefaults } = useColumnPrefsStore();
+  const { visibleColumns, setVisibleColumns, resetToDefaults, locked, loaded, activeViewId } = useColumnPrefsStore();
   const [open, setOpen] = React.useState(false);
+
+  if (locked) {
+    return (
+      <span
+        className="sd-columns-locked inline-flex h-8 items-center gap-1.5 px-1 text-xs text-muted-foreground/80"
+        title="The columns and their order are set by this view."
+      >
+        <Lock className="h-3 w-3" />
+        Columns are set by this view
+      </span>
+    );
+  }
+  if (!loaded) return null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -40,28 +41,11 @@ export function ColumnSelector() {
         </button>
       </PopoverTrigger>
 
-      <PopoverContent className="w-52 p-2" align="end">
-        <div className="space-y-0.5">
-          {ALL_COLUMNS.map((col) => {
-            const checked = visibleColumns.includes(col.id);
-            return (
-              <label
-                key={col.id}
-                className="flex items-center gap-2.5 rounded px-2 py-1.5 text-sm cursor-pointer hover:bg-glass-hover transition-colors"
-              >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggleColumn(col.id)}
-                  className="rounded border-glass-strong bg-glass accent-primary"
-                />
-                <span className={checked ? "text-foreground" : "text-muted-foreground"}>
-                  {col.label}
-                </span>
-              </label>
-            );
-          })}
+      <PopoverContent className="w-60 p-2" align="end">
+        <div className="px-1 pb-2 text-[11px] uppercase tracking-wider text-muted-foreground/70">
+          Columns — drag to reorder
         </div>
+        <SortableColumnList value={visibleColumns} onChange={setVisibleColumns} />
 
         <div className="mt-2 border-t border-glass pt-2">
           <button
@@ -73,7 +57,7 @@ export function ColumnSelector() {
             className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
           >
             <RotateCcw className="h-3 w-3" />
-            Reset to defaults
+            {activeViewId ? "Reset to the view's columns" : "Reset to defaults"}
           </button>
         </div>
       </PopoverContent>

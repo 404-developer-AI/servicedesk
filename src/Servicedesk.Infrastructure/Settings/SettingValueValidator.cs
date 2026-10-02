@@ -48,6 +48,12 @@ public static class SettingValueValidator
             // Served agent-readable and painted into inline styles.
             SettingKeys.Tickets.CallbackColor or SettingKeys.Tickets.ResearchColor =>
                 HexColor.IsMatch(value) ? null : "Enter a hex colour like #22c55e.",
+            SettingKeys.Tickets.ViewSearchMinChars =>
+                int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var mc) && mc is >= 1 and <= 10
+                    ? null : "Choose a whole number from 1 to 10.",
+            SettingKeys.Tickets.ViewSearchDebounceMs =>
+                int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var db) && db is >= 0 and <= 2000
+                    ? null : "Choose a whole number of milliseconds from 0 to 2000.",
             SettingKeys.Portal.ConversationOrder =>
                 value is Portal.PortalConversationOrder.Oldest or Portal.PortalConversationOrder.Newest
                     ? null : "Choose oldest or newest.",

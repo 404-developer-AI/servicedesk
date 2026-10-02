@@ -201,6 +201,23 @@ public static class SettingEndpoints
         .WithName("GetTicketFlagSettings")
         .WithOpenApi();
 
+        // ---- Per-view search settings (v0.1.18, agent-readable) ----
+        // The list's search box needs the minimum term length and the typing
+        // pause before a server search. Clamped on read as well as on write.
+        app.MapGet("/api/settings/view-search", async (ISettingsService svc, CancellationToken ct) =>
+        {
+            int minChars, debounceMs;
+            try { minChars = await svc.GetAsync<int>(SettingKeys.Tickets.ViewSearchMinChars, ct); }
+            catch { minChars = 2; }
+            try { debounceMs = await svc.GetAsync<int>(SettingKeys.Tickets.ViewSearchDebounceMs, ct); }
+            catch { debounceMs = 300; }
+            return Results.Ok(new ViewSearchSettingsDto(Math.Clamp(minChars, 1, 10), Math.Clamp(debounceMs, 0, 2000)));
+        })
+        .WithTags("Settings")
+        .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+        .WithName("GetViewSearchSettings")
+        .WithOpenApi();
+
         // ---- Copilot launcher settings (v0.0.89, agent-readable) ----
         // The nav button needs the enable flag, URL, label and open-mode on the
         // client to render itself. None of these are secret (it is a public
@@ -238,6 +255,8 @@ public static class SettingEndpoints
     public sealed record NotificationsSettings(int PopupDurationSeconds);
     public sealed record MailComposeSettings(bool ForgottenAttachmentEnabled, string ForgottenAttachmentKeywords);
     public sealed record BulkActionsSettings(bool Enabled, int MaxSelection);
+
+    public sealed record ViewSearchSettingsDto(int MinChars, int DebounceMs);
 
     public sealed record TicketFlagSettingsDto(string CallbackColor, string ResearchColor, bool CallbackOpenPromptEnabled, bool CallbackClearOnCall);
 

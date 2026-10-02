@@ -91,7 +91,23 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         ["requesterEmail"] = "c.email",
         ["companyName"]    = "COALESCE(co.name, '')",
         ["categoryName"]   = "COALESCE(cat.name, '')",
+        // v0.1.18 — only valid with the TimeLoggedJoin below; SearchAsync
+        // adds it whenever this sort field is requested.
+        ["timeLogged"]     = "COALESCE(tl.minutes, 0)",
     };
+
+    /// v0.1.18 — "Time logged" column: every timesheet entry on the ticket,
+    /// all agents, invoiced flag ignored (same total as the Time-logged panel
+    /// and the hour-limit alert). Display only: a correlated sum, evaluated
+    /// for the returned rows via the partial ix_timesheet_entries_ticket.
+    private const string TimeLoggedExpr =
+        "(SELECT COALESCE(SUM(e.minutes), 0)::int FROM timesheet_entries e WHERE e.ticket_id = t.id)";
+
+    /// Sorting on it needs the value for every candidate row, so it is
+    /// aggregated once and hash-joined instead of looping per ticket.
+    private const string TimeLoggedJoin =
+        " LEFT JOIN (SELECT ticket_id, SUM(minutes)::int AS minutes FROM timesheet_entries" +
+        " WHERE ticket_id IS NOT NULL GROUP BY ticket_id) tl ON tl.ticket_id = t.id";
     // The ticket's company is frozen at intake in t.company_id (v0.0.9 step 3).
     // RequesterCompanyId keeps its name for frontend stability — semantically
     // it is now "the ticket's resolved company id", which for the common case
@@ -132,7 +148,8 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             t.checklist_required_total      AS ChecklistRequiredTotal,
             t.checklist_required_done       AS ChecklistRequiredDone,
             t.is_callback                   AS IsCallback,
-            t.is_research                   AS IsResearch
+            t.is_research                   AS IsResearch,
+            {0}                             AS TimeLoggedMinutes
         FROM tickets t
         JOIN queues     q ON q.id = t.queue_id
         JOIN statuses   s ON s.id = t.status_id
@@ -140,7 +157,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         JOIN contacts   c ON c.id = t.requester_contact_id
         LEFT JOIN companies  co  ON co.id  = t.company_id
         LEFT JOIN users      u   ON u.id   = t.assignee_user_id
-        LEFT JOIN categories cat ON cat.id = t.category_id
+        LEFT JOIN categories cat ON cat.id = t.category_id{1}
         """;
 
     private readonly NpgsqlDataSource _dataSource;
@@ -170,7 +187,13 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
     public async Task<TicketPage> SearchAsync(
         TicketQuery query, VisibilityScope scope, Guid? viewerUserId, Guid? viewerCompanyId, CancellationToken ct)
     {
-        var sql = new StringBuilder(ListSelect);
+        var sortOnTimeLogged = string.Equals(query.SortField, "timeLogged", StringComparison.OrdinalIgnoreCase);
+        var timeProjection = sortOnTimeLogged ? "COALESCE(tl.minutes, 0)"
+            : query.IncludeTimeLogged ? TimeLoggedExpr
+            : "NULL::int";
+        var sql = new StringBuilder(ListSelect
+            .Replace("{0}", timeProjection)
+            .Replace("{1}", sortOnTimeLogged ? TimeLoggedJoin : string.Empty));
         sql.Append(" WHERE t.is_deleted = FALSE");
 
         // Multi-select wins over singular: a saved view that picks "Queue A + B"
@@ -222,6 +245,28 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             sql.Append(" UNION SELECT ticket_id FROM ticket_event_search WHERE search_vector @@ plainto_tsquery('simple', @Search)");
             sql.Append(")");
         }
+
+        // v0.1.18 — per-view search box, "Full" mode. Same UNION hit-set shape
+        // as above (one index path per arm), but prefix-matching like global
+        // search and including the original description (ticket_bodies).
+        var hasFullTs = !string.IsNullOrEmpty(query.FullSearchTsQuery);
+        if (hasFullTs || query.FullSearchNumber is not null)
+        {
+            var arms = new List<string>();
+            if (hasFullTs)
+            {
+                arms.Add("SELECT id FROM tickets WHERE search_vector @@ to_tsquery('simple', @FullSearchTsQuery)");
+                arms.Add("SELECT ticket_id FROM ticket_event_search WHERE search_vector @@ to_tsquery('simple', @FullSearchTsQuery)");
+                arms.Add("SELECT ticket_id FROM ticket_bodies WHERE body_search @@ to_tsquery('simple', @FullSearchTsQuery)");
+            }
+            if (query.FullSearchNumber is not null)
+                arms.Add("SELECT id FROM tickets WHERE number = @FullSearchNumber");
+            sql.Append(" AND t.id IN (").Append(string.Join(" UNION ", arms)).Append(')');
+        }
+
+        // v0.1.18 — "Columns" mode server fallback (whitelisted fields only).
+        var columnParams = new DynamicParameters();
+        TicketColumnSearch.Append(sql, columnParams, query.ColumnSearch, query.ColumnSearchFields);
 
         // Visibility enforcement. Never trust client-supplied scope — this is
         // resolved from the authenticated principal upstream. The filter
@@ -340,11 +385,15 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             QueueIds = query.QueueIds as IEnumerable<Guid>,
             StatusIds = query.StatusIds as IEnumerable<Guid>,
             PriorityIds = query.PriorityIds as IEnumerable<Guid>,
+            FullSearchTsQuery = query.FullSearchTsQuery ?? "",
+            query.FullSearchNumber,
         };
+        var dbParams = new DynamicParameters(parameters);
+        dbParams.AddDynamicParams(columnParams);
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var rows = (await conn.QueryAsync<TicketListItem>(
-            new CommandDefinition(sql.ToString(), parameters, cancellationToken: ct))).ToList();
+            new CommandDefinition(sql.ToString(), dbParams, cancellationToken: ct))).ToList();
 
         if (useOffset)
         {

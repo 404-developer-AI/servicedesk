@@ -55,7 +55,20 @@ public sealed record TicketQuery(
     bool CallbackFloat = false,
     bool ResearchFloat = false,
     bool CallbacksOnly = false,
-    bool ResearchOnly = false);
+    bool ResearchOnly = false,
+    // v0.1.18 — per-view search box. "Full" mode: prefix tsquery text (built
+    // by TicketTsQuery.BuildPrefix) over subject, description and every
+    // article, plus an optional exact ticket-number probe. Independent of
+    // the legacy Search filter a view may carry; both AND together.
+    string? FullSearchTsQuery = null,
+    long? FullSearchNumber = null,
+    // v0.1.18 — "Columns" mode server fallback (list truncated): substring
+    // match on whitelisted visible columns, see TicketColumnSearch.
+    string? ColumnSearch = null,
+    IReadOnlyList<string>? ColumnSearchFields = null,
+    // v0.1.18 — compute the "Time logged" column (sum of every timesheet
+    // entry on the ticket). Only when the column is visible or sorted on.
+    bool IncludeTimeLogged = false);
 
 public sealed record TicketListItem(
     Guid Id,
@@ -102,7 +115,10 @@ public sealed record TicketListItem(
     int ChecklistRequiredDone = 0,
     // v0.1.17 — Call-back / Research flags for the float buckets + row accent.
     bool IsCallback = false,
-    bool IsResearch = false);
+    bool IsResearch = false,
+    // v0.1.18 — total logged minutes (all agents, invoiced or not); null
+    // when the query did not ask for it (IncludeTimeLogged = false).
+    int? TimeLoggedMinutes = null);
 
 public sealed record TicketPage(
     IReadOnlyList<TicketListItem> Items,

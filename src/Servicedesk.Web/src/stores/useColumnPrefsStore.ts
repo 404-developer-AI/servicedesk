@@ -18,6 +18,9 @@ type ColumnPrefsState = {
   source: "user-view" | "view" | "user" | "default" | "fallback";
   activeViewId: string | null;
   loaded: boolean;
+  /// v0.1.18 — the active view locks its column layout: the picker is
+  /// hidden and every mutation below is a no-op (the server refuses too).
+  locked: boolean;
   setVisibleColumns: (columns: string[]) => void;
   toggleColumn: (column: string) => void;
   resetToDefaults: () => void;
@@ -34,15 +37,18 @@ export const useColumnPrefsStore = create<ColumnPrefsState>()((set, get) => ({
   source: "fallback",
   activeViewId: null,
   loaded: false,
+  locked: false,
 
   setVisibleColumns: (columns) => {
+    if (get().locked) return;
     const viewId = get().activeViewId;
     set({ visibleColumns: columns, source: viewId ? "user-view" : "user" });
     saveToServer(columns, viewId);
   },
 
   toggleColumn: (column) => {
-    const { visibleColumns, activeViewId } = get();
+    const { visibleColumns, activeViewId, locked } = get();
+    if (locked) return;
     const next = visibleColumns.includes(column)
       ? visibleColumns.filter((c) => c !== column)
       : [...visibleColumns, column];
@@ -51,6 +57,7 @@ export const useColumnPrefsStore = create<ColumnPrefsState>()((set, get) => ({
   },
 
   resetToDefaults: () => {
+    if (get().locked) return;
     const viewId = get().activeViewId;
     preferencesApi.resetColumns(viewId ?? undefined).then(async () => {
       try {
@@ -75,6 +82,7 @@ export const useColumnPrefsStore = create<ColumnPrefsState>()((set, get) => ({
         source: pref.source,
         activeViewId: viewId ?? null,
         loaded: true,
+        locked: pref.locked === true,
       });
     } catch {
       set({ loaded: true });
