@@ -1342,7 +1342,12 @@ function TicketDetailBody({
 
         {/* v0.0.35-F — time-logged expand panel */}
         <div className="shrink-0 pb-3">
-          <TicketTimesheetPanel ticketId={ticketId} queueId={ticket.queueId} />
+          <TicketTimesheetPanel
+            ticketId={ticketId}
+            queueId={ticket.queueId}
+            ticketNumber={ticket.number}
+            ticketSubject={ticket.subject}
+          />
         </div>
 
         {/* v0.0.103 — always-visible checklist progress (one row per

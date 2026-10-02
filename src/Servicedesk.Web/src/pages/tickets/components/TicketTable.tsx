@@ -5,6 +5,7 @@ import {
   getCoreRowModel,
   flexRender,
   createColumnHelper,
+  type RowData,
 } from "@tanstack/react-table";
 import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
 import { useTheme } from "@/app/ThemeProvider";
@@ -17,7 +18,7 @@ import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
 import { colorPillStyle } from "@/lib/colorPill";
 import { flagColors, ticketRowAccentStyle, useTicketFlagSettings } from "@/lib/ticketFlags";
 import { formatDuration } from "@/lib/timesheet-api";
-import { normalizeLayout } from "@/lib/ticketColumns";
+import { alignClass, normalizeLayout, type ColumnAlign } from "@/lib/ticketColumns";
 import { Highlight } from "./SearchHighlight";
 
 /// v0.0.103 — compact checklist progress next to the subject; amber while
@@ -98,6 +99,13 @@ function ColoredBadge({ label, color, variant = "chip" }: ColoredBadgeProps) {
       {label}
     </span>
   );
+}
+
+declare module "@tanstack/react-table" {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface ColumnMeta<TData extends RowData, TValue> {
+    align?: ColumnAlign;
+  }
 }
 
 const columnHelper = createColumnHelper<TicketListItem>();
@@ -248,6 +256,7 @@ export const ALL_COLUMNS = [
   columnHelper.accessor("timeLoggedMinutes", {
     id: "timeLogged",
     header: "Time logged",
+    meta: { align: "center" },
     cell: (info) => {
       const val = info.getValue();
       if (val == null || val <= 0) return <span className="text-muted-foreground/60">—</span>;
@@ -293,7 +302,7 @@ export function TicketTable({ data, onRowClick }: TicketTableProps) {
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
-                    className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground border-b border-glass"
+                    className={`px-4 py-3 ${alignClass(header.column.columnDef.meta?.align)} text-xs font-medium uppercase tracking-wider text-muted-foreground border-b border-glass`}
                   >
                     {header.isPlaceholder
                       ? null
@@ -316,7 +325,7 @@ export function TicketTable({ data, onRowClick }: TicketTableProps) {
                   onClick={() => onRowClick(orig.id)}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="px-4 py-3 text-sm">
+                    <td key={cell.id} className={`px-4 py-3 text-sm ${alignClass(cell.column.columnDef.meta?.align)}`}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
                   ))}

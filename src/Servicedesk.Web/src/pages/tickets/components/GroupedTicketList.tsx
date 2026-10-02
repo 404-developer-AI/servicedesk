@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-table";
 import { ChevronDown } from "lucide-react";
 import { columnsForLayout } from "./TicketTable";
+import { alignClass } from "@/lib/ticketColumns";
 import { taxonomyApi, settingsApi, type TicketGroupingSettings } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
@@ -411,7 +412,7 @@ export function GroupedTicketList({
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
-                    className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground border-b border-glass"
+                    className={`px-4 py-3 ${alignClass(header.column.columnDef.meta?.align)} text-xs font-medium uppercase tracking-wider text-muted-foreground border-b border-glass`}
                   >
                     {header.isPlaceholder
                       ? null
@@ -501,7 +502,7 @@ export function GroupedTicketList({
                             </td>
                           )}
                           {row.getVisibleCells().map((cell) => (
-                            <td key={cell.id} className="px-4 py-3 text-sm">
+                            <td key={cell.id} className={`px-4 py-3 text-sm ${alignClass(cell.column.columnDef.meta?.align)}`}>
                               {flexRender(cell.column.columnDef.cell, cell.getContext())}
                             </td>
                           ))}
