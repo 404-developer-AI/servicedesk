@@ -210,6 +210,67 @@ export function currentLocalMinutes(): number {
   return d.getHours() * 60 + d.getMinutes();
 }
 
+// ---- Shared entry-draft rules (Tab 1 + ticket "Log time") -------------
+// v0.1.19 — one copy of the client-side rules so every place that creates
+// an entry asks for the same fields. The server re-validates all of it.
+
+/// Fallback first start of the day when preferences haven't loaded.
+export const DEFAULT_DAY_START_MINUTES = 8 * 60 + 30; // 08:30
+
+/// Task a fresh entry starts on: the agent's personal default when it's
+/// set and still active, otherwise the first active task (sort order).
+/// Null only when there is no active task at all.
+export function seedTaskId(
+  tasks: TimesheetTask[],
+  defaultTaskId: string | null | undefined,
+): string | null {
+  if (defaultTaskId) {
+    const preferred = tasks.find((t) => t.id === defaultTaskId && !t.archived);
+    if (preferred) return preferred.id;
+  }
+  const firstActive = tasks.find((t) => !t.archived);
+  return firstActive ? firstActive.id : null;
+}
+
+/// Start of the next entry on a day: the latest end among the agent's
+/// own entries that day, else their day-start preference.
+export function nextStartMinutes(entries: TimesheetEntry[], dayStartMinutes: number): number {
+  return entries.length ? Math.max(...entries.map((e) => e.endMinutes)) : dayStartMinutes;
+}
+
+export function validateEntryDraft(draft: {
+  startMinutes: number | null;
+  endMinutes: number | null;
+  taskId: string | null | undefined;
+  hasTicket: boolean;
+  requiresTicket: boolean;
+  description: string;
+}): Record<string, string> {
+  const errs: Record<string, string> = {};
+  if (draft.startMinutes === null) errs.startMinutes = "Start time is required (HH:MM).";
+  if (draft.endMinutes === null) errs.endMinutes = "End time is required (HH:MM).";
+  if (draft.startMinutes !== null && draft.endMinutes !== null && draft.endMinutes <= draft.startMinutes) {
+    errs.endMinutes = "End must be after start.";
+  }
+  if (!draft.taskId) errs.taskId = "Pick a task.";
+  if (draft.requiresTicket && !draft.hasTicket) errs.ticketId = "This task needs a ticket.";
+  if (draft.description.trim().length === 0) errs.description = "Describe what you did.";
+  return errs;
+}
+
+/// A 422 body `{ errors: [{field, message}] }` → `{ field: message }`.
+export function parseTimesheetFieldErrors(raw: string): Record<string, string> | null {
+  try {
+    const parsed = JSON.parse(raw) as { errors?: TimesheetFieldError[] };
+    if (!parsed.errors || !Array.isArray(parsed.errors)) return null;
+    const map: Record<string, string> = {};
+    for (const e of parsed.errors) map[e.field] = e.message;
+    return map;
+  } catch {
+    return null;
+  }
+}
+
 // ---- Manager (Tab 2 + Tab 3) -----------------------------------------
 //
 // Manager endpoints are gated server-side by the `timesheet_manager`

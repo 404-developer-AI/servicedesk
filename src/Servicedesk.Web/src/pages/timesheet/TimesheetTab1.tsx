@@ -36,8 +36,11 @@ import {
   currentLocalMinutes,
   autoFormatTimeInput,
   type TimesheetEntry,
+  seedTaskId,
+  validateEntryDraft,
+  parseTimesheetFieldErrors,
+  DEFAULT_DAY_START_MINUTES,
   type TimesheetTask,
-  type TimesheetFieldError,
 } from "@/lib/timesheet-api";
 
 /// Tab 1 — eigen registratie. Renders a day-bound grid of entries with
@@ -375,21 +378,6 @@ function draftKey(draft: DraftRow): string {
   return `draft:${draft.entryDate}:${draft.startMinutes ?? "x"}:${draft.taskId}`;
 }
 
-/// Pick the task a fresh Tab-1 row should start on: the agent's personal
-/// default when it's set and still active, otherwise the first active task
-/// (sort order). Returns null only when there is no active task at all.
-function seedTaskId(
-  tasks: TimesheetTask[],
-  defaultTaskId: string | null | undefined,
-): string | null {
-  if (defaultTaskId) {
-    const preferred = tasks.find((t) => t.id === defaultTaskId && !t.archived);
-    if (preferred) return preferred.id;
-  }
-  const firstActive = tasks.find((t) => !t.archived);
-  return firstActive ? firstActive.id : null;
-}
-
 // ---- Row rendering ----------------------------------------------------
 
 function DisplayRow({
@@ -525,7 +513,7 @@ type DraftRow = {
 /// the `/api/timesheet/me/preferences` query is in flight. The real
 /// value (global default + per-user override) comes from the server in
 /// v0.0.35-E.
-const DEFAULT_DAY_START_FALLBACK = 8 * 60 + 30; // 08:30
+const DEFAULT_DAY_START_FALLBACK = DEFAULT_DAY_START_MINUTES;
 
 /// Sentinel for the "no preference" option in the default-task picker.
 /// Radix Select forbids an empty-string item value, so we map this to a
@@ -709,7 +697,7 @@ function EditableRow({
     },
     onError: (err) => {
       if (err instanceof ApiError && err.status === 422) {
-        const parsed = parseApiErrors(err.message);
+        const parsed = parseTimesheetFieldErrors(err.message);
         if (parsed) {
           setErrors(parsed);
           return;
@@ -1088,26 +1076,12 @@ function TicketAutocomplete({
 // ---- Validation helpers ----------------------------------------------
 
 function validateLocal(row: DraftRow, requiresTicket: boolean): Record<string, string> {
-  const errs: Record<string, string> = {};
-  if (row.startMinutes === null) errs.startMinutes = "Start time is required (HH:MM).";
-  if (row.endMinutes === null) errs.endMinutes = "End time is required (HH:MM).";
-  if (row.startMinutes !== null && row.endMinutes !== null && row.endMinutes <= row.startMinutes) {
-    errs.endMinutes = "End must be after start.";
-  }
-  if (!row.taskId) errs.taskId = "Pick a task.";
-  if (requiresTicket && !row.ticket) errs.ticketId = "This task needs a ticket.";
-  if (row.description.trim().length === 0) errs.description = "Describe what you did.";
-  return errs;
-}
-
-function parseApiErrors(raw: string): Record<string, string> | null {
-  try {
-    const parsed = JSON.parse(raw) as { errors?: TimesheetFieldError[] };
-    if (!parsed.errors || !Array.isArray(parsed.errors)) return null;
-    const map: Record<string, string> = {};
-    for (const e of parsed.errors) map[e.field] = e.message;
-    return map;
-  } catch {
-    return null;
-  }
+  return validateEntryDraft({
+    startMinutes: row.startMinutes,
+    endMinutes: row.endMinutes,
+    taskId: row.taskId,
+    hasTicket: !!row.ticket,
+    requiresTicket,
+    description: row.description,
+  });
 }

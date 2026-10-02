@@ -23,6 +23,14 @@ export const TICKET_COLUMNS: ReadonlyArray<{ id: string; label: string }> = [
 
 const KNOWN = new Set(TICKET_COLUMNS.map((c) => c.id));
 
+/// Horizontal alignment a column asks for via its TanStack `meta.align`
+/// (default left). Applied to both the header and the cells.
+export type ColumnAlign = "left" | "center" | "right";
+
+export function alignClass(align: ColumnAlign | undefined): string {
+  return align === "center" ? "text-center" : align === "right" ? "text-right" : "text-left";
+}
+
 export function columnLabel(id: string): string {
   return TICKET_COLUMNS.find((c) => c.id === id)?.label ?? id;
 }

@@ -1,6 +1,9 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, Clock, AlertCircle, Ban, Check, Layers } from "lucide-react";
+import { ChevronDown, Clock, AlertCircle, Ban, Check, Layers, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/auth/authStore";
+import { TicketLogTimeForm } from "./TicketLogTimeForm";
 import { cn } from "@/lib/utils";
 import {
   Tooltip,
@@ -22,13 +25,21 @@ type Props = {
   /// The ticket's current queue — part of the alert query key so the
   /// remaining-time badge re-resolves when the queue changes.
   queueId: string | null | undefined;
+  /// v0.1.19 — shown in the inline "Log time" form title.
+  ticketNumber: number;
+  ticketSubject: string;
 };
 
 /// v0.0.35-F — collapsible panel that lists every timesheet entry linked
 /// to this ticket (across all agents). Collapsed by default so it does
 /// not push the activity feed down on tickets that have no entries yet.
-export function TicketTimesheetPanel({ ticketId, queueId }: Props) {
+export function TicketTimesheetPanel({ ticketId, queueId, ticketNumber, ticketSubject }: Props) {
   const [open, setOpen] = React.useState(false);
+  // v0.1.19 — inline "Log time" form; only for agents with the timesheet
+  // feature (same flag that shows the Timesheet page).
+  const { user } = useAuth();
+  const canLogTime = !!user?.timesheetEnabled;
+  const [logging, setLogging] = React.useState(false);
 
   // v0.0.35 commit H — live-refresh when another agent saves time against
   // this ticket. Piggybacks on the ticket:{id} SignalR group that the
@@ -76,50 +87,73 @@ export function TicketTimesheetPanel({ ticketId, queueId }: Props) {
 
   return (
     <div className="glass-panel overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-3 px-3 py-2 glass-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        aria-expanded={open}
-      >
-        <Clock className="h-4 w-4 shrink-0 text-violet-300/80" />
-        <span className="text-xs uppercase tracking-wider text-muted-foreground shrink-0">
-          Time logged
-        </span>
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 justify-end">
-          {isLoading ? (
-            <span className="text-xs text-muted-foreground/60">Loading…</span>
-          ) : isError ? (
-            <span className="inline-flex items-center gap-1 text-xs text-amber-300/80">
-              <AlertCircle className="h-3.5 w-3.5" />
-              Failed to load
-            </span>
-          ) : count === 0 ? (
-            <span className="text-xs text-muted-foreground/60">
-              No entries yet
-            </span>
-          ) : (
-            <>
-              {/* Per-task breakdown. Collapses to a single "N tasks" pill
-                  (with a hover tooltip listing each task) when there isn't
-                  room to show every badge, so nothing silently disappears.
-                  The total + remaining stay pinned (shrink-0). */}
-              <TaskBreakdownBadges byTask={byTask} />
-              <span className="inline-flex shrink-0 items-center rounded-md border border-violet-400/30 bg-violet-400/10 px-2 py-0.5 text-xs font-medium text-violet-200">
-                {formatDuration(totalMinutes)}
+      <div className="flex items-center gap-2 pr-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="min-w-0 flex-1 flex items-center gap-3 px-3 py-2 glass-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-expanded={open}
+        >
+          <Clock className="h-4 w-4 shrink-0 text-violet-300/80" />
+          <span className="text-xs uppercase tracking-wider text-muted-foreground shrink-0">
+            Time logged
+          </span>
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 justify-end">
+            {isLoading ? (
+              <span className="text-xs text-muted-foreground/60">Loading…</span>
+            ) : isError ? (
+              <span className="inline-flex items-center gap-1 text-xs text-amber-300/80">
+                <AlertCircle className="h-3.5 w-3.5" />
+                Failed to load
               </span>
-            </>
-          )}
-          {alert?.enabled && <RemainingPill alert={alert} />}
-          {alert?.trackingDisabled && <TrackingDisabledPill />}
-          <ChevronDown
-            className={cn(
-              "h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform",
-              open && "rotate-180",
+            ) : count === 0 ? (
+              <span className="text-xs text-muted-foreground/60">
+                No entries yet
+              </span>
+            ) : (
+              <>
+                {/* Per-task breakdown. Collapses to a single "N tasks" pill
+                    (with a hover tooltip listing each task) when there isn't
+                    room to show every badge, so nothing silently disappears.
+                    The total + remaining stay pinned (shrink-0). */}
+                <TaskBreakdownBadges byTask={byTask} />
+                <span className="inline-flex shrink-0 items-center rounded-md border border-violet-400/30 bg-violet-400/10 px-2 py-0.5 text-xs font-medium text-violet-200">
+                  {formatDuration(totalMinutes)}
+                </span>
+              </>
             )}
-          />
-        </div>
-      </button>
+            {alert?.enabled && <RemainingPill alert={alert} />}
+            {alert?.trackingDisabled && <TrackingDisabledPill />}
+            <ChevronDown
+              className={cn(
+                "h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform",
+                open && "rotate-180",
+              )}
+            />
+          </div>
+        </button>
+        {canLogTime && (
+          <Button
+            type="button"
+            size="sm"
+            className="h-7 shrink-0 gap-1 px-2.5 text-xs"
+            onClick={() => setLogging((v) => !v)}
+            aria-expanded={logging}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Log time
+          </Button>
+        )}
+      </div>
+
+      {logging && canLogTime && (
+        <TicketLogTimeForm
+          ticketId={ticketId}
+          ticketNumber={ticketNumber}
+          ticketSubject={ticketSubject}
+          onClose={() => setLogging(false)}
+        />
+      )}
 
       {open && (
         <div className="border-t border-glass">
