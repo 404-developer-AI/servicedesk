@@ -6,7 +6,7 @@ import {
   flexRender,
 } from "@tanstack/react-table";
 import { ChevronDown } from "lucide-react";
-import { ALL_COLUMNS } from "./TicketTable";
+import { columnsForLayout } from "./TicketTable";
 import { taxonomyApi, settingsApi, type TicketGroupingSettings } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
@@ -290,7 +290,7 @@ export function GroupedTicketList({
   });
 
   const columns = React.useMemo(
-    () => ALL_COLUMNS.filter((col) => visibleColumns.includes(col.id!)),
+    () => columnsForLayout(visibleColumns),
     [visibleColumns],
   );
 

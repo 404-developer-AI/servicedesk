@@ -475,6 +475,18 @@ function GeneralTab() {
     onError: () => toast.error("Could not update setting"),
   });
 
+  // v0.1.18 — per-view search box knobs (agent-readable via
+  // /api/settings/view-search; validated + clamped server-side).
+  const updateViewSearch = useMutation({
+    mutationFn: ({ key, value }: { key: string; value: string }) => settingsApi.update(key, value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "tickets-general"] });
+      qc.invalidateQueries({ queryKey: ["settings", "view-search"] });
+      toast.success("Setting updated");
+    },
+    onError: () => toast.error("Could not update setting"),
+  });
+
   // v0.0.105 — project tickets. Both flags are re-enforced server-side on
   // every project endpoint; the agent-safe projection feeds the ticket UI.
   const projectsEnabled = useMemo(
@@ -674,6 +686,41 @@ function GeneralTab() {
             keep this at a size that comfortably finishes (100 is a good default;
             500 is the hard ceiling).
           </p>
+        </div>
+      </section>
+
+      <section className="glass-card p-5">
+        <div className="space-y-1">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            View search
+          </h2>
+          <p className="text-xs text-muted-foreground/70">
+            Views with the search box switched on (Settings → Views → edit a
+            view) show one search field with two modes. Columns filters the
+            loaded tickets instantly on the visible columns; Full also searches
+            descriptions, mails and notes on the server. Both only ever search
+            the tickets in that view.
+          </p>
+        </div>
+        <div className="mt-4 space-y-3">
+          <NumberSettingRow
+            label="Minimum characters"
+            description="Shorter search terms show the whole view."
+            saved={entries?.find((e) => e.key === "Tickets.ViewSearchMinChars")?.value ?? "2"}
+            min={1}
+            max={10}
+            disabled={isLoading || updateViewSearch.isPending}
+            onSave={(v) => updateViewSearch.mutate({ key: "Tickets.ViewSearchMinChars", value: v })}
+          />
+          <NumberSettingRow
+            label="Typing pause before a server search (ms)"
+            description="Used by Full mode, and by Columns mode when the view has more tickets than the list loads. Filtering loaded tickets is always instant."
+            saved={entries?.find((e) => e.key === "Tickets.ViewSearchDebounceMs")?.value ?? "300"}
+            min={0}
+            max={2000}
+            disabled={isLoading || updateViewSearch.isPending}
+            onSave={(v) => updateViewSearch.mutate({ key: "Tickets.ViewSearchDebounceMs", value: v })}
+          />
         </div>
       </section>
 
@@ -2544,5 +2591,64 @@ function TicketTypeDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/// v0.1.18 — a whole-number setting with its own Save button and range
+/// check (the server validates the same range).
+function NumberSettingRow({
+  label,
+  description,
+  saved,
+  min,
+  max,
+  disabled,
+  onSave,
+}: {
+  label: string;
+  description: string;
+  saved: string;
+  min: number;
+  max: number;
+  disabled: boolean;
+  onSave: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const value = draft ?? saved;
+  const num = Number.parseInt(value, 10);
+  const valid = /^\d+$/.test(value.trim()) && num >= min && num <= max;
+  const dirty = draft !== null && draft !== saved;
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-end gap-3">
+        <label className="min-w-0 flex-1 space-y-1.5">
+          <span className="text-sm font-medium text-foreground">{label}</span>
+          <Input
+            type="number"
+            min={min}
+            max={max}
+            value={value}
+            disabled={disabled}
+            onChange={(e) => setDraft(e.target.value)}
+            className="max-w-xs"
+          />
+        </label>
+        <Button
+          type="button"
+          disabled={!dirty || !valid || disabled}
+          onClick={() => {
+            onSave(String(num));
+            setDraft(null);
+          }}
+        >
+          Save
+        </Button>
+      </div>
+      {valid ? (
+        <p className="text-xs text-muted-foreground/70">{description}</p>
+      ) : (
+        <p className="text-xs text-destructive">Enter a whole number between {min} and {max}.</p>
+      )}
+    </div>
   );
 }

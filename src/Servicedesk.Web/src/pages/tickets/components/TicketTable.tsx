@@ -1,3 +1,4 @@
+import type * as React from "react";
 import type { CSSProperties } from "react";
 import {
   useReactTable,
@@ -15,6 +16,9 @@ import type { TicketListItem } from "@/lib/ticket-api";
 import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
 import { colorPillStyle } from "@/lib/colorPill";
 import { flagColors, ticketRowAccentStyle, useTicketFlagSettings } from "@/lib/ticketFlags";
+import { formatDuration } from "@/lib/timesheet-api";
+import { normalizeLayout } from "@/lib/ticketColumns";
+import { Highlight } from "./SearchHighlight";
 
 /// v0.0.103 — compact checklist progress next to the subject; amber while
 /// required items are open, emerald once everything is done.
@@ -59,7 +63,7 @@ function ServerDate({ iso, className }: { iso: string; className?: string }) {
 }
 
 type ColoredBadgeProps = {
-  label: string;
+  label: React.ReactNode;
   color: string;
   /**
    * `chip` (default) = tinted pill. `dot` = coloured dot + plain label —
@@ -103,7 +107,7 @@ export const ALL_COLUMNS = [
     id: "number",
     header: "#",
     cell: (info) => (
-      <span className="font-mono text-primary">#{info.getValue()}</span>
+      <span className="font-mono text-primary"><Highlight text={`#${info.getValue()}`} /></span>
     ),
   }),
   columnHelper.accessor("subject", {
@@ -116,7 +120,7 @@ export const ALL_COLUMNS = [
         <span className="flex max-w-[420px] items-center gap-2 truncate">
           <TicketTypeBadge ticketTypeId={row.ticketTypeId} variant="compact" />
           <span title={val} className="truncate">
-            {val.length > 60 ? `${val.slice(0, 60)}…` : val}
+            <Highlight text={val.length > 60 ? `${val.slice(0, 60)}…` : val} />
           </span>
           {row.checklistRequiredTotal > 0 && (
             <ChecklistChip done={row.checklistRequiredDone} total={row.checklistRequiredTotal} />
@@ -136,7 +140,7 @@ export const ALL_COLUMNS = [
       return (
         <ContactHoverCard contactId={row.requesterContactId}>
           <span className="text-foreground/90">
-            {name || row.requesterEmail}
+            <Highlight text={name || row.requesterEmail} />
           </span>
         </ContactHoverCard>
       );
@@ -146,7 +150,7 @@ export const ALL_COLUMNS = [
     id: "companyName",
     header: "Company",
     cell: (info) => (
-      <span className="text-muted-foreground">{info.getValue() ?? "—"}</span>
+      <span className="text-muted-foreground"><Highlight text={info.getValue() ?? "—"} /></span>
     ),
   }),
   columnHelper.accessor("queueName", {
@@ -158,7 +162,7 @@ export const ALL_COLUMNS = [
       // loading taxonomy. Use a muted generic badge style for now.
       return (
         <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-glass-strong text-foreground/80">
-          {row.queueName}
+          <Highlight text={row.queueName} />
         </span>
       );
     },
@@ -169,7 +173,7 @@ export const ALL_COLUMNS = [
     cell: (info) => {
       const row = info.row.original;
       const color = row.statusColor || "#6b7280";
-      return <ColoredBadge label={row.statusName} color={color} />;
+      return <ColoredBadge label={<Highlight text={row.statusName} />} color={color} />;
     },
   }),
   columnHelper.accessor("priorityName", {
@@ -178,14 +182,14 @@ export const ALL_COLUMNS = [
     cell: (info) => {
       const row = info.row.original;
       const color = row.priorityColor || "#6b7280";
-      return <ColoredBadge label={row.priorityName} color={color} variant="dot" />;
+      return <ColoredBadge label={<Highlight text={row.priorityName} />} color={color} variant="dot" />;
     },
   }),
   columnHelper.accessor("categoryName", {
     id: "categoryName",
     header: "Category",
     cell: (info) => (
-      <span className="text-muted-foreground">{info.getValue() ?? "—"}</span>
+      <span className="text-muted-foreground"><Highlight text={info.getValue() ?? "—"} /></span>
     ),
   }),
   columnHelper.accessor("assigneeEmail", {
@@ -194,7 +198,7 @@ export const ALL_COLUMNS = [
     cell: (info) => {
       const val = info.getValue();
       return val ? (
-        <span className="text-foreground/90">{val}</span>
+        <span className="text-foreground/90"><Highlight text={val} /></span>
       ) : (
         <span className="text-muted-foreground/60 italic">Unassigned</span>
       );
@@ -238,7 +242,28 @@ export const ALL_COLUMNS = [
       return <ServerDate iso={val} className="text-muted-foreground text-xs" />;
     },
   }),
+  // v0.1.18 — total logged time on the ticket (all agents, invoiced or not),
+  // same figure as the Time-logged panel. Only computed server-side while
+  // this column is visible (includeTimeLogged).
+  columnHelper.accessor("timeLoggedMinutes", {
+    id: "timeLogged",
+    header: "Time logged",
+    cell: (info) => {
+      const val = info.getValue();
+      if (val == null || val <= 0) return <span className="text-muted-foreground/60">—</span>;
+      return <span className="tabular-nums text-xs text-foreground/85">{formatDuration(val)}</span>;
+    },
+  }),
 ];
+
+const COLUMN_BY_ID = new Map(ALL_COLUMNS.map((c) => [c.id!, c]));
+
+/// v0.1.18 — column defs in the saved layout order (unknown ids skipped).
+export function columnsForLayout(layout: readonly string[]) {
+  return normalizeLayout(layout)
+    .map((id) => COLUMN_BY_ID.get(id))
+    .filter((c): c is (typeof ALL_COLUMNS)[number] => !!c);
+}
 
 type TicketTableProps = {
   data: TicketListItem[];
@@ -250,7 +275,7 @@ export function TicketTable({ data, onRowClick }: TicketTableProps) {
   const { data: flagSettings } = useTicketFlagSettings();
   const colors = flagColors(flagSettings);
 
-  const columns = ALL_COLUMNS.filter((col) => visibleColumns.includes(col.id!));
+  const columns = columnsForLayout(visibleColumns);
 
   const table = useReactTable({
     data,

@@ -10,4 +10,6 @@ public sealed record View(
     bool IsShared,
     string DisplayConfigJson,
     DateTime CreatedUtc,
-    DateTime UpdatedUtc);
+    DateTime UpdatedUtc,
+    // v0.1.18 — false = column layout is locked to the view for every agent.
+    bool AllowUserColumns = true);

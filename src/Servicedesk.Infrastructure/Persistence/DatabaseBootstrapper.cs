@@ -510,6 +510,12 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- v0.1.0: view display config (sorting, grouping, priority float)
         ALTER TABLE views ADD COLUMN IF NOT EXISTS display_config JSONB NOT NULL DEFAULT '{}'::jsonb;
 
+        -- v0.1.18: per-view column lock. FALSE = every agent sees the view's
+        -- own columns (or the global default layout) and per-user column
+        -- overrides for this view are ignored (kept, not deleted). Default
+        -- TRUE keeps existing views behaving as before.
+        ALTER TABLE views ADD COLUMN IF NOT EXISTS allow_user_columns BOOLEAN NOT NULL DEFAULT TRUE;
+
         -- v0.1.0: indexes for dynamic sort patterns
         CREATE INDEX IF NOT EXISTS ix_tickets_created_id
             ON tickets (created_utc DESC, id DESC) WHERE is_deleted = FALSE;

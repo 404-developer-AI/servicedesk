@@ -105,6 +105,9 @@ export type TicketListItem = {
   /// v0.1.17 — agent-set Call-back / Research flags (float buckets + row accent).
   isCallback: boolean;
   isResearch: boolean;
+  /// v0.1.18 — total logged minutes (all agents); null unless the list was
+  /// requested with includeTimeLogged (the "Time logged" column is visible).
+  timeLoggedMinutes: number | null;
 };
 
 export type TicketPage = {
@@ -382,7 +385,17 @@ export type TicketListQuery = {
   cursorUpdatedUtc?: string;
   cursorId?: string;
   limit?: number;
+  /// v0.1.18 — per-view search box. `full` searches subject, number,
+  /// description and every article server-side; `columns` (server fallback
+  /// for a truncated list) matches `qFields` (visible column ids).
+  q?: string;
+  qMode?: ViewSearchMode;
+  qFields?: string[];
+  /// v0.1.18 — compute the "Time logged" column.
+  includeTimeLogged?: boolean;
 };
+
+export type ViewSearchMode = "columns" | "full";
 
 export type CreateTicketRequest = {
   subject: string;
@@ -777,6 +790,10 @@ export type DisplayConfig = {
   groupBy?: string | null;
   groupOrder?: string[] | null;
   sort?: { field: string; direction: "asc" | "desc" } | null;
+  /// v0.1.18 — show the search box on this view, and the mode it starts in
+  /// until the agent picks one (remembered per agent per view).
+  searchEnabled?: boolean;
+  searchDefaultMode?: ViewSearchMode;
 };
 
 export type View = {
@@ -790,6 +807,8 @@ export type View = {
   displayConfigJson: string;
   createdUtc: string;
   updatedUtc: string;
+  /// v0.1.18 — false = column layout locked to the view for every agent.
+  allowUserColumns: boolean;
 };
 
 export type ViewInput = {
@@ -799,6 +818,7 @@ export type ViewInput = {
   sortOrder?: number;
   isShared?: boolean;
   displayConfigJson?: string;
+  allowUserColumns?: boolean;
 };
 
 // ---- Users ----
@@ -1141,6 +1161,13 @@ export const ticketApi = {
       params.set("cursorUpdatedUtc", query.cursorUpdatedUtc);
     if (query.cursorId) params.set("cursorId", query.cursorId);
     if (query.limit) params.set("limit", String(query.limit));
+    if (query.q) {
+      params.set("q", query.q);
+      params.set("qMode", query.qMode ?? "full");
+      if (query.qMode === "columns" && query.qFields?.length)
+        params.set("qFields", query.qFields.join(","));
+    }
+    if (query.includeTimeLogged) params.set("includeTimeLogged", "true");
     const qs = params.toString();
     return request<TicketPage>("GET", `/api/tickets${qs ? `?${qs}` : ""}`);
   },
@@ -1234,6 +1261,9 @@ export const ticketApi = {
   projectSettings: () => request<ProjectSettings>("GET", "/api/settings/projects"),
   // v0.1.17 — Call-back / Research colours + the call-back prompt flag.
   ticketFlagSettings: () => request<TicketFlagSettings>("GET", "/api/settings/ticket-flags"),
+  // v0.1.18 — per-view search box knobs (min term length, typing pause).
+  viewSearchSettings: () =>
+    request<{ minChars: number; debounceMs: number }>("GET", "/api/settings/view-search"),
   revertProject: (id: string) =>
     request<{ isProject: boolean }>("POST", `/api/tickets/${id}/project/revert`),
   linkProject: (id: string, projectTicketId: string) =>

@@ -58,9 +58,40 @@ public static class TicketEndpoints
             string? queueIds, string? statusIds, string? priorityIds,
             // v0.1.17 — Call-back / Research floats + "only" view filters.
             bool? callbackFloat, bool? researchFloat, bool? callbacksOnly, bool? researchOnly,
+            // v0.1.18 — per-view search box (q + qMode full|columns; qFields =
+            // visible column ids for the columns-mode fallback) and the
+            // opt-in "Time logged" column.
+            string? q, string? qMode, string? qFields, bool? includeTimeLogged,
             HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess,
             ISettingsService settings, CancellationToken ct) =>
         {
+            string? fullTsQuery = null;
+            long? fullNumber = null;
+            string? columnSearch = null;
+            IReadOnlyList<string>? columnFields = null;
+            if (!string.IsNullOrWhiteSpace(q))
+            {
+                if (q.Length > TicketColumnSearch.MaxTermLength)
+                    return Results.BadRequest(new { error = $"Search is limited to {TicketColumnSearch.MaxTermLength} characters." });
+                if (string.Equals(qMode, "columns", StringComparison.Ordinal))
+                {
+                    columnFields = TicketColumnSearch.FilterFields(qFields?.Split(','));
+                    if (columnFields.Count == 0)
+                        return Results.BadRequest(new { error = "No searchable columns given." });
+                    columnSearch = q.Trim();
+                }
+                else if (qMode is null || string.Equals(qMode, "full", StringComparison.Ordinal))
+                {
+                    var normalizedQ = await NormalizeTicketSearchAsync(q, settings, ct);
+                    fullTsQuery = Servicedesk.Infrastructure.Search.TicketTsQuery.BuildPrefix(normalizedQ);
+                    fullNumber = ParseTicketNumberProbe(normalizedQ);
+                }
+                else
+                {
+                    return Results.BadRequest(new { error = "qMode must be 'full' or 'columns'." });
+                }
+            }
+
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
@@ -86,7 +117,7 @@ public static class TicketEndpoints
             catch { maxRows = 1000; }
             if (maxRows < 1) maxRows = 1000;
 
-            var q = new TicketQuery(
+            var query = new TicketQuery(
                 QueueId: queueId, StatusId: statusId, PriorityId: priorityId,
                 AssigneeUserId: assigneeUserId, RequesterContactId: requesterContactId,
                 RequesterCompanyId: companyId,
@@ -104,8 +135,13 @@ public static class TicketEndpoints
                 CallbackFloat: callbackFloat ?? false,
                 ResearchFloat: researchFloat ?? false,
                 CallbacksOnly: callbacksOnly ?? false,
-                ResearchOnly: researchOnly ?? false);
-            var page = await repo.SearchAsync(q, VisibilityScope.All, null, null, ct);
+                ResearchOnly: researchOnly ?? false,
+                FullSearchTsQuery: fullTsQuery,
+                FullSearchNumber: fullNumber,
+                ColumnSearch: columnSearch,
+                ColumnSearchFields: columnFields,
+                IncludeTimeLogged: includeTimeLogged ?? false);
+            var page = await repo.SearchAsync(query, VisibilityScope.All, null, null, ct);
             return Results.Ok(new
             {
                 items = page.Items,
@@ -1959,6 +1995,20 @@ public static class TicketEndpoints
             if (Guid.TryParse(token, out var g)) result.Add(g);
         }
         return result.Count == 0 ? null : result;
+    }
+
+    /// v0.1.18 — a normalized search term that is a clean positive integer is
+    /// also probed against the ticket number (typed bigint, indexed column).
+    internal static long? ParseTicketNumberProbe(string? normalized)
+    {
+        if (string.IsNullOrWhiteSpace(normalized)) return null;
+        var span = normalized.AsSpan().Trim();
+        if (span.Length > 0 && span[0] == '#') span = span[1..];
+        if (span.Length is 0 or > 18) return null;
+        foreach (var c in span)
+            if (c is < '0' or > '9') return null;
+        return long.TryParse(span, global::System.Globalization.NumberStyles.None,
+            global::System.Globalization.CultureInfo.InvariantCulture, out var n) && n > 0 ? n : null;
     }
 
     /// v0.0.57 — normalize a user-typed ticket search so a pasted reference

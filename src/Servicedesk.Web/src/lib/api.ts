@@ -3584,6 +3584,8 @@ export const viewAccessApi = {
 export type ColumnPreference = {
   columns: string;
   source: "user-view" | "view" | "user" | "default";
+  /// v0.1.18 — the view locks its column layout (no column picker).
+  locked: boolean;
 };
 
 export type WorkspaceEntryDto = { key: string; value: string };

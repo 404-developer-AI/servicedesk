@@ -125,6 +125,11 @@ public static class SettingKeys
         // v0.1.17 — logging a phone call from the Call composer clears the
         // ticket's Call-back flag.
         public const string CallbackClearOnCall = "Tickets.CallbackClearOnCall";
+        // v0.1.18 — per-view search box: minimum term length before a search
+        // runs, and the typing pause before a server search (Full mode or the
+        // Columns-mode fallback on a truncated list).
+        public const string ViewSearchMinChars = "Tickets.ViewSearchMinChars";
+        public const string ViewSearchDebounceMs = "Tickets.ViewSearchDebounceMs";
     }
 
     /// v0.0.103 — ticket checklists (admin templates attached to tickets as
@@ -1669,6 +1674,10 @@ public static class SettingDefaults
             "When an agent opens a ticket marked as Call-back, ask whether the call-back flag should be turned off. Shown on every open while the flag is on. Off by default — logging a call from the Call composer clears the flag instead."),
         new SettingDefault(SettingKeys.Tickets.CallbackClearOnCall, "true", "bool", "Tickets",
             "When an agent logs a phone call from the Call composer on a ticket marked as Call-back, turn the call-back flag off automatically (logged on the timeline)."),
+        new SettingDefault(SettingKeys.Tickets.ViewSearchMinChars, "2", "int", "Tickets",
+            "Views with search enabled: the minimum number of characters before the search box starts filtering. Shorter terms show the whole view. 1 to 10."),
+        new SettingDefault(SettingKeys.Tickets.ViewSearchDebounceMs, "300", "int", "Tickets",
+            "Views with search enabled: how long (milliseconds) to wait after the last keystroke before searching on the server — always in Full mode, and in Columns mode when the view has more tickets than the list loads. Filtering already-loaded rows in Columns mode is instant. 0 to 2000."),
         new SettingDefault(SettingKeys.Checklists.Enabled, "true", "bool", "Tickets",
             "Ticket checklists: admins build checklist templates (Settings → Tickets → Checklists), agents attach them to tickets and tick items off inside the ticket, with a per-item log. Turn off to hide every checklist surface; attached checklists are kept and the close block is not enforced while off."),
         new SettingDefault(SettingKeys.Checklists.BlockingStateCategories, "Resolved,Closed", "string", "Tickets",

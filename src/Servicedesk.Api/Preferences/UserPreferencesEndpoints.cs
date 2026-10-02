@@ -19,6 +19,10 @@ public static class UserPreferencesEndpoints
         // GET /api/preferences/columns — cascading resolution:
         // 1. user's per-view override, 2. view's own columns, 3. user's general default,
         // 4. admin global default.
+        // v0.1.18 — a view with allow_user_columns = FALSE skips both user
+        // levels (1 and 3): everyone gets the view's columns, or the admin
+        // default when the view has none. The user rows are kept, so
+        // unlocking the view brings each agent's own layout back.
         group.MapGet("/columns", async (
             Guid? viewId,
             HttpContext http, [FromServices] NpgsqlDataSource dataSource, [FromServices] ISettingsService settings, CancellationToken ct) =>
@@ -26,52 +30,54 @@ public static class UserPreferencesEndpoints
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             await using var conn = await dataSource.OpenConnectionAsync(ct);
 
-            // 1. User's per-view override
+            string? perView = null;
+            ViewColumnRow? view = null;
             if (viewId.HasValue)
             {
-                var perView = await conn.ExecuteScalarAsync<string?>(
+                perView = await conn.ExecuteScalarAsync<string?>(
                     new CommandDefinition(
                         "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = @key",
                         new { userId, key = $"columns:view:{viewId}" }, cancellationToken: ct));
-                if (perView is not null)
-                    return Results.Ok(new ColumnPreference(perView, "user-view"));
-            }
-
-            // 2. View's own columns
-            if (viewId.HasValue)
-            {
-                var viewColumns = await conn.ExecuteScalarAsync<string?>(
+                view = await conn.QueryFirstOrDefaultAsync<ViewColumnRow>(
                     new CommandDefinition(
-                        "SELECT columns FROM views WHERE id = @viewId",
+                        "SELECT columns AS Columns, allow_user_columns AS AllowUserColumns FROM views WHERE id = @viewId",
                         new { viewId }, cancellationToken: ct));
-                if (viewColumns is not null)
-                    return Results.Ok(new ColumnPreference(viewColumns, "view"));
             }
 
-            // 3. User's general column preference
             var userDefault = await conn.ExecuteScalarAsync<string?>(
                 new CommandDefinition(
                     "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = 'columns'",
                     new { userId }, cancellationToken: ct));
-            if (userDefault is not null)
-                return Results.Ok(new ColumnPreference(userDefault, "user"));
-
-            // 4. Admin global default
             var adminDefault = await settings.GetAsync<string>(SettingKeys.Tickets.DefaultColumnLayout, ct);
-            return Results.Ok(new ColumnPreference(adminDefault, "default"));
+
+            return Results.Ok(ColumnPreferenceResolver.Resolve(
+                perView, view?.Columns, view?.AllowUserColumns ?? true, userDefault, adminDefault));
         }).WithName("GetColumnPreference").WithOpenApi();
 
         // PUT /api/preferences/columns — save a column layout.
         // If viewId is provided, saves as a per-view user override; otherwise saves as the general default.
+        // v0.1.18 — refused (409) for a view whose column layout is locked.
         group.MapPut("/columns", async (
             Guid? viewId,
             [FromBody] UpdateColumnPreferenceRequest req,
             HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
+            if (!ColumnPreferenceResolver.IsValidLayout(req.Columns))
+                return Results.BadRequest(new { error = "Columns must be a comma-separated list of column ids." });
+
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var key = viewId.HasValue ? $"columns:view:{viewId}" : "columns";
 
             await using var conn = await dataSource.OpenConnectionAsync(ct);
+            if (viewId.HasValue)
+            {
+                var allow = await conn.ExecuteScalarAsync<bool?>(new CommandDefinition(
+                    "SELECT allow_user_columns FROM views WHERE id = @viewId",
+                    new { viewId }, cancellationToken: ct));
+                if (allow == false)
+                    return Results.Conflict(new { error = "Columns are set by this view." });
+            }
+
             await conn.ExecuteAsync(new CommandDefinition(
                 """
                 INSERT INTO user_preferences (user_id, pref_key, pref_value)
@@ -450,7 +456,12 @@ public static class UserPreferencesEndpoints
         return clean.ToArray();
     }
 
-    public sealed record ColumnPreference(string Columns, string Source);
+    public sealed record ColumnPreference(string Columns, string Source, bool Locked = false);
+    public sealed class ViewColumnRow
+    {
+        public string? Columns { get; init; }
+        public bool AllowUserColumns { get; init; }
+    }
     public sealed record UpdateColumnPreferenceRequest(string Columns);
     public sealed record WorkspaceEntry(string Key, string Value);
     public sealed record SaveWorkspaceRequest(WorkspaceEntry[] Entries);

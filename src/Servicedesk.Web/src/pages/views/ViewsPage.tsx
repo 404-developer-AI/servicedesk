@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { ArrowDown, ArrowUp, ChevronDown, Eye, Pencil, Plus, Trash2 } from "lucide-react";
-import { viewApi, type View, type ViewInput, type DisplayConfig } from "@/lib/ticket-api";
+import { viewApi, type View, type ViewInput, type DisplayConfig, type ViewSearchMode } from "@/lib/ticket-api";
 import { taxonomyApi, type Queue, type Priority, type Status, type Category } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,24 +19,8 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useProjectSettings } from "@/pages/tickets/components/projects/ProjectPromptDialog";
-
-// ---- Column definitions ----
-
-const ALL_COLUMNS: { id: string; label: string }[] = [
-  { id: "number", label: "Number" },
-  { id: "subject", label: "Subject" },
-  { id: "requester", label: "Requester" },
-  { id: "companyName", label: "Company" },
-  { id: "queueName", label: "Queue" },
-  { id: "statusName", label: "Status" },
-  { id: "priorityName", label: "Priority" },
-  { id: "categoryName", label: "Category" },
-  { id: "assigneeEmail", label: "Assignee" },
-  { id: "createdUtc", label: "Created" },
-  { id: "updatedUtc", label: "Updated" },
-  { id: "dueUtc", label: "Due" },
-  { id: "pendingTillUtc", label: "Pending till" },
-];
+import { SortableColumnList } from "@/components/SortableColumnList";
+import { normalizeLayout } from "@/lib/ticketColumns";
 
 // ---- Sort field options ----
 
@@ -54,6 +38,7 @@ const SORT_FIELDS: { value: string; label: string }[] = [
   { value: "requesterEmail", label: "Requester" },
   { value: "companyName", label: "Company" },
   { value: "categoryName", label: "Category" },
+  { value: "timeLogged", label: "Time logged" },
 ];
 
 // ---- Group-by options ----
@@ -170,6 +155,7 @@ function formatDisplayConfig(dc: DisplayConfig): string[] {
     const dir = dc.sort.direction === "asc" ? "\u2191" : "\u2193";
     if (sf) parts.push(`Sort: ${sf.label} ${dir}`);
   }
+  if (dc.searchEnabled) parts.push(`Search (${dc.searchDefaultMode === "full" ? "full" : "columns"})`);
   return parts;
 }
 
@@ -424,7 +410,7 @@ function ViewDialog({
 
   function parseColumns(raw: string | null | undefined): string[] {
     if (!raw) return [];
-    return raw.split(",").map((c) => c.trim()).filter(Boolean);
+    return normalizeLayout(raw.split(","));
   }
 
   const [name, setName] = React.useState(view?.name ?? "");
@@ -451,16 +437,21 @@ function ViewDialog({
   const [sortDirection, setSortDirection] = React.useState<"asc" | "desc">(
     initialDc.sort?.direction ?? "desc",
   );
+  // v0.1.18 — column lock + per-view search box.
+  const [allowUserColumns, setAllowUserColumns] = React.useState(view?.allowUserColumns ?? true);
+  const [searchEnabled, setSearchEnabled] = React.useState(initialDc.searchEnabled ?? false);
+  const [searchDefaultMode, setSearchDefaultMode] = React.useState<ViewSearchMode>(
+    initialDc.searchDefaultMode === "full" ? "full" : "columns",
+  );
 
-  // Reset group order when groupBy changes
-  React.useEffect(() => {
+  // A custom group order only makes sense for the field it was made for, so
+  // picking another "Group by" clears it. Done in the handler, not an effect:
+  // an effect on groupBy also fires on mount and wiped the saved order of
+  // every view opened in the editor.
+  function changeGroupBy(next: string) {
+    if (next === groupBy) return;
+    setGroupBy(next);
     setGroupOrder([]);
-  }, [groupBy]);
-
-  function toggleColumnSelection(id: string) {
-    setSelectedColumns((prev) =>
-      prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id],
-    );
   }
 
   const save = useMutation({
@@ -473,6 +464,10 @@ function ViewDialog({
       if (groupBy) dc.groupBy = groupBy;
       if (groupOrder.length > 0) dc.groupOrder = groupOrder;
       if (sortField) dc.sort = { field: sortField, direction: sortDirection };
+      if (searchEnabled) {
+        dc.searchEnabled = true;
+        dc.searchDefaultMode = searchDefaultMode;
+      }
 
       const input: ViewInput = {
         name,
@@ -480,6 +475,7 @@ function ViewDialog({
         columns: selectedColumns.length > 0 ? selectedColumns.join(",") : null,
         displayConfigJson: JSON.stringify(dc),
         sortOrder: Math.max(0, Math.min(100, Math.trunc(sortOrder))),
+        allowUserColumns,
       };
       if (view) {
         return viewApi.update(view.id, input);
@@ -612,32 +608,54 @@ function ViewDialog({
             Research tickets only
           </label>
 
-          {/* ---- Columns ---- */}
-          <div className="space-y-2 pt-1">
-            <div className="flex items-baseline gap-2">
-              <span className="text-xs font-medium text-muted-foreground">Default columns</span>
-              <span className="text-[10px] text-muted-foreground/60">(leave empty to use global default)</span>
+          {/* ---- Columns (v0.1.18: ordered + optional lock) ---- */}
+          <div className="space-y-2 pt-2 border-t border-glass-strong">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-xs font-medium text-muted-foreground">Columns</span>
+              <span className="text-[10px] text-muted-foreground/60">
+                {selectedColumns.length === 0
+                  ? "None picked — the global default layout is used"
+                  : "Drag to set the order"}
+              </span>
             </div>
-            <div className="flex flex-wrap gap-1.5">
-              {ALL_COLUMNS.map((col) => {
-                const active = selectedColumns.includes(col.id);
-                return (
-                  <button
-                    key={col.id}
-                    type="button"
-                    onClick={() => toggleColumnSelection(col.id)}
-                    className={cn(
-                      "rounded-full border px-2.5 py-0.5 text-[11px] transition-colors select-none",
-                      active
-                        ? "border-primary/50 bg-primary/20 text-foreground"
-                        : "border-glass bg-glass text-muted-foreground hover:border-glass-strong hover:text-foreground",
-                    )}
-                  >
-                    {col.label}
-                  </button>
-                );
-              })}
+            <div className="rounded-md border border-glass bg-glass p-1.5">
+              <SortableColumnList value={selectedColumns} onChange={setSelectedColumns} />
             </div>
+            <div className="flex items-center justify-between pt-1">
+              <div className="space-y-0.5">
+                <span className="text-xs font-medium text-muted-foreground">Agents may choose their own columns</span>
+                <p className="text-[10px] text-muted-foreground/60 leading-tight">
+                  {allowUserColumns
+                    ? "Agents can show, hide and reorder columns for themselves; these columns are their starting point"
+                    : "Everyone sees exactly these columns in this order; agents' own choices are kept but ignored while this is off"}
+                </p>
+              </div>
+              <Switch checked={allowUserColumns} onCheckedChange={setAllowUserColumns} />
+            </div>
+          </div>
+
+          {/* ---- Search box (v0.1.18) ---- */}
+          <div className="space-y-2 pt-2 border-t border-glass-strong">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <span className="text-xs font-medium text-muted-foreground">Search box</span>
+                <p className="text-[10px] text-muted-foreground/60 leading-tight">
+                  Show a search box on this view; it only ever searches the tickets in this view
+                </p>
+              </div>
+              <Switch checked={searchEnabled} onCheckedChange={setSearchEnabled} />
+            </div>
+            {searchEnabled && (
+              <Field label="Starts in">
+                <NativeSelect
+                  value={searchDefaultMode}
+                  onChange={(v) => setSearchDefaultMode(v === "full" ? "full" : "columns")}
+                >
+                  <option value="columns">Columns — instant, matches the visible columns</option>
+                  <option value="full">Full — also searches descriptions, mails and notes</option>
+                </NativeSelect>
+              </Field>
+            )}
           </div>
 
           {/* ---- Display config: Sorting ---- */}
@@ -679,7 +697,7 @@ function ViewDialog({
           <div className="space-y-2 pt-2 border-t border-glass-strong">
             <span className="text-xs font-medium text-muted-foreground">Grouping</span>
             <Field label="Group by">
-              <NativeSelect value={groupBy} onChange={setGroupBy}>
+              <NativeSelect value={groupBy} onChange={changeGroupBy}>
                 {GROUP_BY_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
@@ -826,6 +844,7 @@ function ViewRow({
     dcParts = formatDisplayConfig(JSON.parse(view.displayConfigJson || "{}"));
   } catch { /* ignore */ }
   const summaryParts = [...filterParts, ...dcParts];
+  if (view.allowUserColumns === false) summaryParts.push("Columns locked");
 
   return (
     <div className="rounded-lg border border-glass-strong bg-glass transition-colors hover:bg-glass-hover">

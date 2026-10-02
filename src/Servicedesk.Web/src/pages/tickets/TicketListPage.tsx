@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { Eye, Layers, ShieldAlert, Ticket, X } from "lucide-react";
 import { ColumnSelector } from "@/components/ColumnSelector";
@@ -8,11 +8,26 @@ import { TicketTableSkeleton } from "./components/TicketTable";
 import { GroupedTicketList, type TicketSelection } from "./components/GroupedTicketList";
 import { BulkActionDialog } from "./components/BulkActionDialog";
 import { ticketApi, viewApi } from "@/lib/ticket-api";
-import { agentQueueApi, settingsApi } from "@/lib/api";
+import { agentQueueApi, preferencesApi, settingsApi } from "@/lib/api";
 import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
 import { cn } from "@/lib/utils";
 import { useTicketListRealtime } from "@/hooks/useTicketRealtime";
-import type { TicketListQuery, TicketListItem, DisplayConfig } from "@/lib/ticket-api";
+import type { TicketListQuery, TicketListItem, DisplayConfig, ViewSearchMode } from "@/lib/ticket-api";
+import { rowMatchesColumns, searchableColumns, searchTokens } from "@/lib/ticketColumns";
+import { ViewSearchBar } from "./components/ViewSearchBar";
+import { SearchHighlightContext } from "./components/searchHighlightContext";
+
+const NO_TOKENS: readonly string[] = [];
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = React.useState(value);
+  React.useEffect(() => {
+    if (delayMs <= 0) return;
+    const id = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(id);
+  }, [value, delayMs]);
+  return delayMs <= 0 ? value : debounced;
+}
 
 // v0.0.40 polish — pull a multi-id list from a parsed filtersJson object
 // while falling back to the legacy singular field. Returns undefined when
@@ -119,8 +134,21 @@ export function TicketListPage() {
     staleTime: Infinity,
   });
 
+  // v0.1.18 — an edited view (new updatedUtc, e.g. after an admin saved it
+  // in the editor) is re-applied, and its column layout/lock reloaded.
+  const appliedVersionRef = React.useRef<{ id: string; version: string } | null>(null);
+  React.useEffect(() => {
+    if (!viewData || !viewApplied) return;
+    const applied = appliedVersionRef.current;
+    if (applied && applied.id === viewData.id && applied.version !== viewData.updatedUtc) {
+      setViewApplied(false);
+      useColumnPrefsStore.getState().loadFromServer(viewData.id);
+    }
+  }, [viewData, viewApplied]);
+
   React.useEffect(() => {
     if (!viewData || viewApplied) return;
+    appliedVersionRef.current = { id: viewData.id, version: viewData.updatedUtc };
     try {
       const vf = JSON.parse(viewData.filtersJson) as Record<string, unknown>;
       const applied: TicketListQuery = {};
@@ -161,36 +189,150 @@ export function TicketListPage() {
   // this sidesteps the keyset-cursor drift that live updates caused with paged
   // loading. `truncated` is true when the server signalled there were more
   // rows than the cap, so we can prompt the user to refine their filters.
+  // v0.1.18 — the "Time logged" column is only computed server-side while
+  // it is visible (or sorted on), so the flag is part of the query.
+  const visibleColumns = useColumnPrefsStore((s) => s.visibleColumns);
+  const includeTimeLogged = visibleColumns.includes("timeLogged");
+  const baseQuery = React.useMemo<TicketListQuery>(
+    () => ({
+      ...filters,
+      sortField: displayConfig.sort?.field,
+      sortDirection: displayConfig.sort?.direction,
+      priorityFloat: displayConfig.priorityFloat,
+      callbackFloat: displayConfig.callbackFloat,
+      researchFloat: displayConfig.researchFloat,
+      stateBucketSort: displayConfig.stateBucketSort,
+      includeTimeLogged,
+    }),
+    [filters, displayConfig, includeTimeLogged],
+  );
   const {
     data,
     isLoading: ticketsLoading,
     isError,
   } = useQuery({
-    queryKey: ["tickets", filters, displayConfig],
-    queryFn: () => {
-      const query: TicketListQuery = {
-        ...filters,
-        sortField: displayConfig.sort?.field,
-        sortDirection: displayConfig.sort?.direction,
-        priorityFloat: displayConfig.priorityFloat,
-        callbackFloat: displayConfig.callbackFloat,
-        researchFloat: displayConfig.researchFloat,
-        stateBucketSort: displayConfig.stateBucketSort,
-      };
-      return ticketApi.list(query);
-    },
+    queryKey: ["tickets", filters, displayConfig, includeTimeLogged],
+    queryFn: () => ticketApi.list(baseQuery),
     staleTime: 30_000,
     enabled: viewApplied,
   });
 
   const truncated = !!data?.nextCursor || data?.nextOffset != null;
 
+  // ---- v0.1.18 — per-view search box ----
+  // Columns mode filters the loaded rows in the browser (instant); when the
+  // view is truncated by Tickets.ListPageSize it searches the same columns
+  // on the server instead. Full mode always searches server-side. Both stay
+  // inside the view: the view's filters ride along on every request.
+  const qc = useQueryClient();
+  const searchEnabled = !!viewId && viewApplied && displayConfig.searchEnabled === true;
+  const [searchTerm, setSearchTerm] = React.useState("");
+  const [modeOverride, setModeOverride] = React.useState<ViewSearchMode | null>(null);
+  React.useEffect(() => {
+    setSearchTerm("");
+    setModeOverride(null);
+  }, [viewId]);
+
+  const { data: searchSettings } = useQuery({
+    queryKey: ["settings", "view-search"],
+    queryFn: ticketApi.viewSearchSettings,
+    staleTime: 5 * 60_000,
+    enabled: searchEnabled,
+  });
+  const minChars = searchSettings?.minChars ?? 2;
+  const debounceMs = searchSettings?.debounceMs ?? 300;
+
+  // The last mode an agent picked is remembered per agent per view in the
+  // server-side workspace preferences; the view's default applies until then.
+  const { data: workspacePrefs } = useQuery({
+    queryKey: ["preferences", "workspace"],
+    queryFn: () => preferencesApi.getWorkspace(),
+    staleTime: 60_000,
+    enabled: searchEnabled,
+  });
+  const modePrefKey = viewId ? `workspace:view-search-mode:${viewId}` : null;
+  const rememberedMode = modePrefKey ? workspacePrefs?.[modePrefKey] : undefined;
+  const searchMode: ViewSearchMode =
+    modeOverride ??
+    (rememberedMode === "full" || rememberedMode === "columns"
+      ? rememberedMode
+      : displayConfig.searchDefaultMode === "full"
+        ? "full"
+        : "columns");
+  const changeSearchMode = (next: ViewSearchMode) => {
+    setModeOverride(next);
+    if (!modePrefKey) return;
+    qc.setQueryData<Record<string, string>>(["preferences", "workspace"], (prev) => ({
+      ...(prev ?? {}),
+      [modePrefKey]: next,
+    }));
+    preferencesApi.saveWorkspace([{ key: modePrefKey, value: next }]).catch(() => {
+      /* best-effort: the mode just isn't remembered */
+    });
+  };
+
+  const term = searchEnabled ? searchTerm.trim() : "";
+  const searchActive = term.length >= minChars;
+  const debouncedTerm = useDebouncedValue(term, debounceMs);
+  const searchCols = React.useMemo(() => searchableColumns(visibleColumns), [visibleColumns]);
+  const noSearchableColumns = searchMode === "columns" && searchCols.length === 0;
+  const useServerSearch = searchActive && !noSearchableColumns && (searchMode === "full" || truncated);
+  const serverTermReady = debouncedTerm.length >= minChars;
+
+  const searchQuery = useQuery({
+    queryKey: ["tickets", filters, displayConfig, includeTimeLogged, "search", searchMode, debouncedTerm, searchCols],
+    queryFn: () =>
+      ticketApi.list({
+        ...baseQuery,
+        q: debouncedTerm,
+        qMode: searchMode,
+        qFields: searchMode === "columns" ? searchCols : undefined,
+      }),
+    staleTime: 30_000,
+    enabled: useServerSearch && serverTermReady,
+    placeholderData: (prev) => prev,
+  });
+  const searchTruncated =
+    useServerSearch && (!!searchQuery.data?.nextCursor || searchQuery.data?.nextOffset != null);
+  const searchBusy = useServerSearch && (debouncedTerm !== term || searchQuery.isFetching);
+
+  const columnTokens = React.useMemo(
+    () => (searchActive && searchMode === "columns" ? searchTokens(term) : NO_TOKENS),
+    [searchActive, searchMode, term],
+  );
+
   function handleRowClick(id: string) {
     navigate({ to: "/tickets/$id" as never, params: { id } as never });
   }
 
   const isLoading = ticketsLoading || (!!viewId && !viewApplied);
-  const allItems: TicketListItem[] = data?.items ?? [];
+  const allItems: TicketListItem[] = React.useMemo(() => data?.items ?? [], [data]);
+
+  const items: TicketListItem[] = React.useMemo(() => {
+    if (!searchActive) return allItems;
+    if (noSearchableColumns) return [];
+    const clientFilter = () => allItems.filter((t) => rowMatchesColumns(t, columnTokens, searchCols));
+    if (!useServerSearch) return clientFilter();
+    // Server search in flight with nothing to show yet: in Columns mode the
+    // loaded rows are a fair preview; in Full mode keep the list as is.
+    if (!searchQuery.data) return searchMode === "columns" ? clientFilter() : allItems;
+    return searchQuery.data.items;
+  }, [allItems, searchActive, noSearchableColumns, useServerSearch, searchQuery.data, searchMode, columnTokens, searchCols]);
+
+  let searchStatus: React.ReactNode = null;
+  if (searchEnabled && term.length > 0 && !searchActive) {
+    searchStatus = `Type at least ${minChars} characters to search.`;
+  } else if (searchActive && noSearchableColumns) {
+    searchStatus = "None of the visible columns can be searched. Switch to Full.";
+  } else if (searchActive) {
+    const of = `${items.length}${searchTruncated ? "+" : ""} of ${allItems.length}${truncated ? "+" : ""} tickets`;
+    searchStatus =
+      searchMode === "full"
+        ? `${of} · searched subjects, descriptions, mails and notes`
+        : truncated
+          ? `${of} · searched the whole view on the visible columns`
+          : `${of} · matches highlighted`;
+  }
 
   // ---- v0.0.102 — bulk selection ----
   // Agent-readable knobs: hide the whole selection UI when the admin turned
@@ -216,13 +358,13 @@ export function TicketListPage() {
   // tickets the agent can no longer see.
   React.useEffect(() => {
     if (selected.size === 0) return;
-    const present = new Set(allItems.map((t) => t.id));
+    const present = new Set(items.map((t) => t.id));
     let changed = false;
     for (const id of selected) if (!present.has(id)) { changed = true; break; }
     if (!changed) return;
     setSelected((cur) => new Set([...cur].filter((id) => present.has(id))));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allItems]);
+  }, [items]);
 
   const selection: TicketSelection | undefined = React.useMemo(
     () =>
@@ -250,8 +392,8 @@ export function TicketListPage() {
     [bulkEnabled, selected],
   );
   const selectedItems = React.useMemo(
-    () => (selected.size === 0 ? [] : allItems.filter((t) => selected.has(t.id))),
-    [allItems, selected],
+    () => (selected.size === 0 ? [] : items.filter((t) => selected.has(t.id))),
+    [items, selected],
   );
   const overCap = selectedItems.length > bulkMax;
 
@@ -279,7 +421,7 @@ export function TicketListPage() {
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-3rem)]">
       <header className="flex items-center justify-between gap-4 shrink-0">
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/20 border border-primary/30">
             <PageIcon className="h-4 w-4 text-primary" />
           </div>
@@ -295,8 +437,26 @@ export function TicketListPage() {
             )}
           </div>
         </div>
-        <ColumnSelector />
+        {searchEnabled && (
+          <div className="mx-auto w-full max-w-xl min-w-0 flex-1">
+            <ViewSearchBar
+              value={searchTerm}
+              onChange={setSearchTerm}
+              mode={searchMode}
+              onModeChange={changeSearchMode}
+              busy={searchBusy}
+            />
+          </div>
+        )}
+        <div className="shrink-0">
+          <ColumnSelector />
+        </div>
       </header>
+      {searchStatus && (
+        <p className="-mt-2 shrink-0 text-center text-[11px] text-muted-foreground" aria-live="polite">
+          {searchStatus}
+        </p>
+      )}
 
       {selection && selectedItems.length > 0 && (
         <div
@@ -351,21 +511,47 @@ export function TicketListPage() {
           <div className="glass-card p-8 text-center text-sm text-destructive">
             Failed to load tickets. Please try again.
           </div>
-        ) : allItems.length > 0 ? (
-          <GroupedTicketList
-            items={allItems}
-            displayConfig={displayConfig}
-            onRowClick={handleRowClick}
-            selection={selection}
-            footer={
-              truncated ? (
-                <div className="px-4 py-3 text-center text-xs text-muted-foreground">
-                  Showing the first {allItems.length} tickets. Refine your
-                  filters to narrow the list.
-                </div>
-              ) : undefined
-            }
-          />
+        ) : items.length > 0 ? (
+          <SearchHighlightContext.Provider value={columnTokens}>
+            <GroupedTicketList
+              items={items}
+              displayConfig={displayConfig}
+              onRowClick={handleRowClick}
+              selection={selection}
+              footer={
+                searchActive && searchTruncated ? (
+                  <div className="px-4 py-3 text-center text-xs text-muted-foreground">
+                    Showing the first {items.length} matches. Refine your search
+                    to narrow the list.
+                  </div>
+                ) : !searchActive && truncated ? (
+                  <div className="px-4 py-3 text-center text-xs text-muted-foreground">
+                    Showing the first {allItems.length} tickets. Refine your
+                    filters to narrow the list.
+                  </div>
+                ) : undefined
+              }
+            />
+          </SearchHighlightContext.Provider>
+        ) : searchActive ? (
+          <div className="glass-card p-12 flex flex-col items-center justify-center gap-3 text-center">
+            <Ticket className="h-10 w-10 text-muted-foreground/40" />
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                {searchBusy ? "Searching…" : <>No tickets in this view match &ldquo;{term}&rdquo;</>}
+              </p>
+              {!searchBusy && searchMode === "columns" && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Columns mode only looks at the visible columns.
+                </p>
+              )}
+            </div>
+            {!searchBusy && searchMode === "columns" && (
+              <Button size="sm" variant="outline" onClick={() => changeSearchMode("full")}>
+                Search descriptions, mails and notes too
+              </Button>
+            )}
+          </div>
         ) : (
           <div className="glass-card p-12 flex flex-col items-center justify-center gap-3 text-center">
             <Ticket className="h-10 w-10 text-muted-foreground/40" />

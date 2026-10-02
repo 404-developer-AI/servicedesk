@@ -60,7 +60,7 @@ public static class ViewEndpoints
             if (req.SortOrder is { } so && (so < 0 || so > 100))
                 return Results.BadRequest(new { error = "SortOrder must be between 0 and 100." });
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-            var created = await repo.CreateAsync(userId, req.Name.Trim(), req.FiltersJson ?? "{}", req.Columns, req.SortOrder ?? 0, req.IsShared ?? false, req.DisplayConfigJson ?? "{}", ct);
+            var created = await repo.CreateAsync(userId, req.Name.Trim(), req.FiltersJson ?? "{}", req.Columns, req.SortOrder ?? 0, req.IsShared ?? false, req.DisplayConfigJson ?? "{}", req.AllowUserColumns ?? true, ct);
             viewAccess.InvalidateAllViewCaches();
             return Results.Created($"/api/views/{created.Id}", created);
         }).WithName("CreateView").WithOpenApi()
@@ -73,7 +73,16 @@ public static class ViewEndpoints
                 return Results.BadRequest(new { error = "Name is required." });
             if (req.SortOrder is { } so && (so < 0 || so > 100))
                 return Results.BadRequest(new { error = "SortOrder must be between 0 and 100." });
-            var updated = await repo.UpdateAsync(id, req.Name.Trim(), req.FiltersJson ?? "{}", req.Columns, req.SortOrder ?? 0, req.IsShared ?? false, req.DisplayConfigJson ?? "{}", ct);
+            // v0.1.18 — an update that omits the lock keeps the stored value,
+            // so an older client can never silently unlock a locked view.
+            var allowUserColumns = req.AllowUserColumns;
+            if (allowUserColumns is null)
+            {
+                var existing = await repo.GetAsync(id, ct);
+                if (existing is null) return Results.NotFound();
+                allowUserColumns = existing.AllowUserColumns;
+            }
+            var updated = await repo.UpdateAsync(id, req.Name.Trim(), req.FiltersJson ?? "{}", req.Columns, req.SortOrder ?? 0, req.IsShared ?? false, req.DisplayConfigJson ?? "{}", allowUserColumns.Value, ct);
             if (updated is not null) viewAccess.InvalidateAllViewCaches();
             return updated is null ? Results.NotFound() : Results.Ok(updated);
         }).WithName("UpdateView").WithOpenApi()
@@ -96,5 +105,7 @@ public static class ViewEndpoints
         string? Columns,
         int? SortOrder,
         bool? IsShared,
-        string? DisplayConfigJson);
+        string? DisplayConfigJson,
+        // v0.1.18 — omitted = true (agents may pick their own columns).
+        bool? AllowUserColumns);
 }
