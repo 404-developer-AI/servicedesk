@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Settings;
 
@@ -35,40 +36,45 @@ public sealed class IntakeFormExpiryWorker : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             var intervalMinutes = 15;
-            try
+            using (var run = PerfWorkerRun.Start("intake-expiry"))
             {
-                using var scope = _sp.CreateScope();
-                var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-                intervalMinutes = Math.Max(1, await settings.GetAsync<int>(SettingKeys.IntakeForms.ExpirySweepMinutes, stoppingToken));
-
-                var repo = scope.ServiceProvider.GetRequiredService<IIntakeFormRepository>();
-                var listNotifier = scope.ServiceProvider.GetRequiredService<ITicketListNotifier>();
-
-                var expired = await repo.ExpireStaleAsync(maxBatch: 200, nowUtc: DateTime.UtcNow, stoppingToken);
-                if (expired.Count > 0)
+                try
                 {
-                    _logger.LogInformation("Expired {Count} intake-form instance(s) this sweep.", expired.Count);
-                    foreach (var e in expired)
+                    using var scope = _sp.CreateScope();
+                    var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
+                    intervalMinutes = Math.Max(1, await settings.GetAsync<int>(SettingKeys.IntakeForms.ExpirySweepMinutes, stoppingToken));
+
+                    var repo = scope.ServiceProvider.GetRequiredService<IIntakeFormRepository>();
+                    var listNotifier = scope.ServiceProvider.GetRequiredService<ITicketListNotifier>();
+
+                    var expired = await repo.ExpireStaleAsync(maxBatch: 200, nowUtc: DateTime.UtcNow, stoppingToken);
+                    run.AddItems(expired.Count);
+                    if (expired.Count > 0)
                     {
-                        try
+                        _logger.LogInformation("Expired {Count} intake-form instance(s) this sweep.", expired.Count);
+                        foreach (var e in expired)
                         {
-                            await listNotifier.NotifyUpdatedAsync(e.TicketId, stoppingToken);
-                        }
-                        catch (Exception notifyEx)
-                        {
-                            _logger.LogWarning(notifyEx,
-                                "IntakeFormExpiryWorker: failed to broadcast TicketUpdated for {TicketId}.", e.TicketId);
+                            try
+                            {
+                                await listNotifier.NotifyUpdatedAsync(e.TicketId, stoppingToken);
+                            }
+                            catch (Exception notifyEx)
+                            {
+                                _logger.LogWarning(notifyEx,
+                                    "IntakeFormExpiryWorker: failed to broadcast TicketUpdated for {TicketId}.", e.TicketId);
+                            }
                         }
                     }
                 }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "IntakeFormExpiryWorker iteration failed.");
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    run.Fail(ex);
+                    _logger.LogError(ex, "IntakeFormExpiryWorker iteration failed.");
+                }
             }
 
             try { await Task.Delay(TimeSpan.FromMinutes(intervalMinutes), stoppingToken); }

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Integrations.Veeam;
@@ -39,8 +40,17 @@ public sealed class VeeamSyncWorker : BackgroundService
                 var enabled = await settings.GetAsync<bool>(SettingKeys.Veeam.Enabled, stoppingToken);
                 if (enabled)
                 {
-                    var sync = scope.ServiceProvider.GetRequiredService<IVeeamSyncService>();
-                    await sync.SyncAsync(stoppingToken);
+                    using var run = PerfWorkerRun.Start("veeam-sync");
+                    try
+                    {
+                        var sync = scope.ServiceProvider.GetRequiredService<IVeeamSyncService>();
+                        await sync.SyncAsync(stoppingToken);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        run.Fail(ex);
+                        throw;
+                    }
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

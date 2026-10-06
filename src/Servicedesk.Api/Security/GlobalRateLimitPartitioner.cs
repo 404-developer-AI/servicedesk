@@ -46,7 +46,8 @@ public static class GlobalRateLimitPartitioner
     }
 
     /// Connection plumbing a page needs to (re)establish itself: the SignalR
-    /// negotiate handshakes, the version probe and the maintenance banner.
+    /// negotiate handshakes, the version probe and the maintenance banner —
+    /// plus the performance telemetry batch (own policy, see Program.cs).
     /// These are exempt from the per-session budget (a refresh while the
     /// budget is exhausted must still be able to reconnect its hubs) but do
     /// count toward the per-IP ceiling.
@@ -55,6 +56,14 @@ public static class GlobalRateLimitPartitioner
         var p = ctx.Request.Path.Value ?? string.Empty;
         if (p.StartsWith("/hubs/", StringComparison.OrdinalIgnoreCase)
             && p.EndsWith("/negotiate", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // v0.1.24 — performance telemetry from the SPA has its own per-session
+        // policy ("perf-rum"); it must never spend the agent's API budget.
+        if (HttpMethods.IsPost(ctx.Request.Method)
+            && p.Equals("/api/perf/rum", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }

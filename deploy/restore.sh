@@ -73,6 +73,15 @@ sudo -u postgres psql -d "${PG_APP_DB}" -c \
     "REVOKE ALL ON SCHEMA public FROM PUBLIC;" >/dev/null
 sudo -u postgres psql -d "${PG_APP_DB}" -c \
     "GRANT USAGE, CREATE ON SCHEMA public TO \"${DB_USER}\";" >/dev/null
+# v0.1.24 — Settings → Performance: pg_stat_statements lives per database
+# (the fresh DB needs it again; superuser-only, so not via the app role) and
+# the read-only pg_monitor role. Both idempotent and non-fatal.
+sudo -u postgres psql -d "${PG_APP_DB}" -c \
+    "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;" >/dev/null 2>&1 \
+    || echo "[!] pg_stat_statements could not be created (non-fatal — limited query statistics)."
+sudo -u postgres psql -d "${PG_APP_DB}" -c \
+    "GRANT pg_monitor TO \"${DB_USER}\";" >/dev/null 2>&1 \
+    || echo "[!] Could not grant pg_monitor (non-fatal — limited database statistics)."
 
 # ---- 5. rsync blobs -----------------------------------------------------
 if [[ -d "${BACKUP_DIR}/blobs" ]]; then

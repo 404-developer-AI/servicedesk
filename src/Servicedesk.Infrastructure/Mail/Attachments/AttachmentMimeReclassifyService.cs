@@ -2,6 +2,7 @@ using Dapper;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Storage;
 
 namespace Servicedesk.Infrastructure.Mail.Attachments;
@@ -51,6 +52,7 @@ public sealed class AttachmentMimeReclassifyService : BackgroundService
         try { await Task.Delay(TimeSpan.FromSeconds(3), stoppingToken); }
         catch (OperationCanceledException) { return; }
 
+        using var run = PerfWorkerRun.Start("attachment-mime-reclassify");
         var after = Guid.Empty;
         var verdictByHash = new Dictionary<string, string>(StringComparer.Ordinal);
         var rewritten = 0;
@@ -69,6 +71,7 @@ public sealed class AttachmentMimeReclassifyService : BackgroundService
                 if (rows.Count == 0)
                 {
                     await WriteMarkerAsync(stoppingToken);
+                    run.AddItems(rewritten);
                     _logger.LogInformation(
                         "AttachmentMimeReclassifyService: done — scanned {Scanned} candidate rows, rewrote {Rewritten} MIME types",
                         scanned, rewritten);
@@ -101,6 +104,7 @@ public sealed class AttachmentMimeReclassifyService : BackgroundService
             }
             catch (Exception ex)
             {
+                run.Fail(ex);
                 _logger.LogWarning(ex,
                     "AttachmentMimeReclassifyService batch failed; retrying in {Seconds}s", ErrorBackoff.TotalSeconds);
                 try { await Task.Delay(ErrorBackoff, stoppingToken); }

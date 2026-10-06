@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Mail.Ingest;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
@@ -167,6 +168,7 @@ public sealed class AdsolutSyncWorker : BackgroundService
             return;
         }
 
+        using var run = PerfWorkerRun.Start("adsolut-sync");
         var pullUpdate = await settings.GetAsync<bool>(SettingKeys.Adsolut.SyncPullCompaniesUpdate, ct);
         var pullCreate = await settings.GetAsync<bool>(SettingKeys.Adsolut.SyncPullCompaniesCreate, ct);
         // v0.0.27 — IncludeSuppliers is backend-force OFF until the v0.0.28
@@ -309,15 +311,18 @@ public sealed class AdsolutSyncWorker : BackgroundService
         }
         catch (AdsolutApiException ex)
         {
+            run.Fail(ex);
             errorMessage = ex.UpstreamErrorCode ?? ex.HttpStatus?.ToString() ?? "api_error";
             _logger.LogWarning(ex, "Adsolut sync tick failed mid-pass.");
         }
         catch (Exception ex)
         {
+            run.Fail(ex);
             errorMessage = "tick_exception";
             _logger.LogError(ex, "Adsolut sync tick threw an unexpected exception.");
         }
         stopwatch.Stop();
+        run.AddItems(counts.Upserted);
 
         var newState = new AdsolutSyncState
         {

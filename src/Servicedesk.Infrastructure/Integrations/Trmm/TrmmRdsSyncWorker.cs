@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Integrations.Trmm;
@@ -71,16 +72,30 @@ public sealed class TrmmRdsSyncWorker : BackgroundService
         var sync = scope.ServiceProvider.GetRequiredService<ITrmmRdsSyncService>();
         var notifier = scope.ServiceProvider.GetRequiredService<ITrmmSyncNotifier>();
 
-        var outcome = await sync.RunOnceAsync(trigger, ct);
-        if (outcome.Success)
+        using var run = PerfWorkerRun.Start("trmm-rds-sync");
+        try
         {
-            await notifier.NotifyRemoteDesktopChangedAsync(new
+            var outcome = await sync.RunOnceAsync(trigger, ct);
+            run.AddItems(outcome.Agents);
+            if (outcome.Success)
             {
-                kind = "rds-sync",
-                agents = outcome.Agents,
-                rds = outcome.Rds,
-                attention = outcome.Failed + outcome.NoCheck + outcome.Pending + outcome.Errors,
-            }, ct);
+                await notifier.NotifyRemoteDesktopChangedAsync(new
+                {
+                    kind = "rds-sync",
+                    agents = outcome.Agents,
+                    rds = outcome.Rds,
+                    attention = outcome.Failed + outcome.NoCheck + outcome.Pending + outcome.Errors,
+                }, ct);
+            }
+            else
+            {
+                run.Fail(outcome.ErrorCode ?? "sync_failed");
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            run.Fail(ex);
+            throw;
         }
 
         return TimeSpan.FromMinutes(intervalMinutes);

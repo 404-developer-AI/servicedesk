@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Audit;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
 
@@ -129,6 +130,7 @@ public sealed class AdsolutContactsReconcileWorker : BackgroundService
             return;
         }
 
+        using var run = PerfWorkerRun.Start("adsolut-contacts-reconcile");
         var options = new AdsolutContactsSyncOptions(pullContactsUpdate, pullContactsCreate);
         var stopwatch = Stopwatch.StartNew();
         AdsolutContactsReconcileResult result;
@@ -139,17 +141,20 @@ public sealed class AdsolutContactsReconcileWorker : BackgroundService
         }
         catch (AdsolutApiException ex)
         {
+            run.Fail(ex);
             errorMessage = ex.UpstreamErrorCode ?? ex.HttpStatus?.ToString() ?? "api_error";
             result = new AdsolutContactsReconcileResult();
             _logger.LogWarning(ex, "Adsolut contacts-reconcile tick failed mid-pass.");
         }
         catch (Exception ex)
         {
+            run.Fail(ex);
             errorMessage = "tick_exception";
             result = new AdsolutContactsReconcileResult();
             _logger.LogError(ex, "Adsolut contacts-reconcile tick threw an unexpected exception.");
         }
         stopwatch.Stop();
+        run.AddItems(result.ContactsCreated + result.ContactsUpdated);
 
         await auditLog.LogAsync(new IntegrationAuditEvent(
             Integration: AdsolutEventTypes.Integration,

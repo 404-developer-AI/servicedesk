@@ -539,6 +539,14 @@ ensure_postgres_tuning() {
     sudo -u postgres psql -d "${PG_APP_DB}" -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;" >/dev/null 2>&1 \
         && ok "pg_stat_statements available in ${PG_APP_DB}." \
         || warn "pg_stat_statements could not be created in ${PG_APP_DB} (non-fatal — slow-query inspection unavailable)."
+
+    # v0.1.24 — Settings → Performance reads PostgreSQL's statistics views
+    # (pg_stat_statements of every role, pg_stat_activity, pg_locks, pg_stat_io).
+    # pg_monitor is the predefined READ-ONLY role for exactly that: no write
+    # rights, no superuser, the audit_log REVOKE is unaffected. Idempotent.
+    sudo -u postgres psql -d "${PG_APP_DB}" -c "GRANT pg_monitor TO \"${DB_USER}\";" >/dev/null 2>&1 \
+        && ok "pg_monitor granted to ${DB_USER} (read-only statistics for the Performance page)." \
+        || warn "Could not grant pg_monitor to ${DB_USER} (non-fatal — the Performance page shows limited database statistics)."
 }
 
 # ===========================================================================

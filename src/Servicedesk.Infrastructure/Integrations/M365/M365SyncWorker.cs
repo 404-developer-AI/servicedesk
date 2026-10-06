@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Integrations.M365;
@@ -49,6 +50,7 @@ public sealed class M365SyncWorker : BackgroundService
                     }
                     else
                     {
+                        using var run = PerfWorkerRun.Start("m365-sync");
                         try
                         {
                             var sync = scope.ServiceProvider.GetRequiredService<IM365SyncService>();
@@ -56,6 +58,11 @@ public sealed class M365SyncWorker : BackgroundService
 
                             var store = scope.ServiceProvider.GetRequiredService<IM365TenantStore>();
                             await store.PurgeExpiredConsentStatesAsync(DateTime.UtcNow, stoppingToken);
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            run.Fail(ex);
+                            throw;
                         }
                         finally { System.Threading.Interlocked.Exchange(ref _running, 0); }
                     }

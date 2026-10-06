@@ -1568,6 +1568,89 @@ public static class SettingKeys
         public const string RateLimitRegisterPermitPerWindow = "Portal.RateLimit.Register.PermitPerWindow";
         public const string RateLimitRegisterWindowSeconds = "Portal.RateLimit.Register.WindowSeconds";
     }
+
+    /// Performance monitoring (Settings → Performance). Every hot-path
+    /// collector reads an in-memory snapshot of these (IPerfSettings), never
+    /// the store; the snapshot refreshes every few seconds and immediately
+    /// after a write through the Performance endpoints.
+    public static class Performance
+    {
+        /// "off" | "basic". Diagnose is Basic plus <see cref="DiagnoseUntilUtc"/>.
+        public const string Level = "Performance.Level";
+        /// ISO-8601 UTC moment the Diagnose mode ends on its own. Empty = not in Diagnose.
+        public const string DiagnoseUntilUtc = "Performance.DiagnoseUntilUtc";
+        public const string DiagnoseDefaultMinutes = "Performance.DiagnoseDefaultMinutes";
+        public const string DiagnoseMaxMinutes = "Performance.DiagnoseMaxMinutes";
+
+        public const string CollectorHttp = "Performance.Collectors.Http.Enabled";
+        public const string CollectorDatabase = "Performance.Collectors.Database.Enabled";
+        public const string CollectorPostgres = "Performance.Collectors.Postgres.Enabled";
+        public const string CollectorRuntime = "Performance.Collectors.Runtime.Enabled";
+        public const string CollectorHost = "Performance.Collectors.Host.Enabled";
+        public const string CollectorFrontend = "Performance.Collectors.Frontend.Enabled";
+        public const string CollectorSignalR = "Performance.Collectors.SignalR.Enabled";
+        public const string CollectorWorkers = "Performance.Collectors.Workers.Enabled";
+        public const string CollectorExternal = "Performance.Collectors.External.Enabled";
+
+        public const string RumSamplePercent = "Performance.Rum.SamplePercent";
+        public const string SlowRequestThresholdMs = "Performance.SlowRequestThresholdMs";
+        public const string SlowQueryThresholdMs = "Performance.SlowQueryThresholdMs";
+        public const string NPlusOneThreshold = "Performance.NPlusOneThreshold";
+        public const string ServerTimingEnabled = "Performance.ServerTimingEnabled";
+        public const string PgSnapshotIntervalMinutes = "Performance.PgSnapshotIntervalMinutes";
+        public const string PgSnapshotDiagnoseIntervalMinutes = "Performance.PgSnapshotDiagnoseIntervalMinutes";
+
+        public const string RetentionMinuteDays = "Performance.Retention.MinuteDays";
+        public const string RetentionHourDays = "Performance.Retention.HourDays";
+        public const string RetentionEventDays = "Performance.Retention.EventDays";
+        public const string RetentionPgSnapshotDays = "Performance.Retention.PgSnapshotDays";
+        public const string RetentionTableSnapshotDays = "Performance.Retention.TableSnapshotDays";
+
+        /// Performance budgets for the key flows: "METHOD route=ms", one per
+        /// line. Shown on the Overview with p95 against the target.
+        public const string Budgets = "Performance.Budgets";
+
+        public const string AlertsEnabled = "Performance.Alerts.Enabled";
+        public const string AlertsCooldownHours = "Performance.Alerts.CooldownHours";
+
+        // Finding thresholds (the rule engine behind "Top bottlenecks").
+        public const string FindingRouteP95Ms = "Performance.Findings.RouteP95Ms";
+        public const string FindingRouteMinRequests = "Performance.Findings.RouteMinRequests";
+        public const string FindingDbSharePct = "Performance.Findings.DbSharePct";
+        public const string FindingAppSharePct = "Performance.Findings.AppSharePct";
+        public const string FindingExtSharePct = "Performance.Findings.ExtSharePct";
+        public const string FindingNPlusOneMinRequests = "Performance.Findings.NPlusOneMinRequests";
+        public const string FindingSlowQueryTopN = "Performance.Findings.SlowQueryTopN";
+        public const string FindingSeqScanMinRows = "Performance.Findings.SeqScanMinRows";
+        public const string FindingSeqScanRatio = "Performance.Findings.SeqScanRatio";
+        public const string FindingDeadTuplePct = "Performance.Findings.DeadTuplePct";
+        public const string FindingVacuumStaleDays = "Performance.Findings.VacuumStaleDays";
+        public const string FindingCacheHitPct = "Performance.Findings.CacheHitPct";
+        public const string FindingTempMb = "Performance.Findings.TempMb";
+        public const string FindingIdleInTxSeconds = "Performance.Findings.IdleInTxSeconds";
+        public const string FindingPoolWaitPct = "Performance.Findings.PoolWaitPct";
+        public const string FindingCpuStealPct = "Performance.Findings.CpuStealPct";
+        public const string FindingCpuPct = "Performance.Findings.CpuPct";
+        public const string FindingLoadPctOfCores = "Performance.Findings.LoadPctOfCores";
+        public const string FindingMemAvailablePct = "Performance.Findings.MemAvailablePct";
+        public const string FindingDiskAwaitMs = "Performance.Findings.DiskAwaitMs";
+        public const string FindingDiskUtilPct = "Performance.Findings.DiskUtilPct";
+        public const string FindingDiskFreePct = "Performance.Findings.DiskFreePct";
+        public const string FindingThreadPoolQueuePct = "Performance.Findings.ThreadPoolQueuePct";
+        public const string FindingGcPausePct = "Performance.Findings.GcPausePct";
+        public const string FindingHeapGrowthPct = "Performance.Findings.HeapGrowthPct";
+        public const string FindingNetworkSharePct = "Performance.Findings.NetworkSharePct";
+        public const string FindingLcpMs = "Performance.Findings.LcpMs";
+        public const string FindingInpMs = "Performance.Findings.InpMs";
+        public const string FindingClsMilli = "Performance.Findings.ClsMilli";
+        public const string FindingLongTaskMs = "Performance.Findings.LongTaskMs";
+        public const string FindingLongTasksPerView = "Performance.Findings.LongTasksPerView";
+        public const string FindingApiCallsPerScreen = "Performance.Findings.ApiCallsPerScreen";
+        public const string FindingResponseKb = "Performance.Findings.ResponseKb";
+        public const string FindingWorkerOverlapPct = "Performance.Findings.WorkerOverlapPct";
+        public const string FindingRegressionPct = "Performance.Findings.RegressionPct";
+        public const string FindingExternalErrorPct = "Performance.Findings.ExternalErrorPct";
+    }
 }
 
 public sealed record SettingDefault(
@@ -2513,5 +2596,136 @@ public static class SettingDefaults
             "Maximum registration / forgot-password submissions per IP within the window. Read at startup, a change requires an app restart; a SERVICEDESK_Security__RateLimit__PortalRegister__… environment variable overrides this value."),
         new SettingDefault(SettingKeys.Portal.RateLimitRegisterWindowSeconds, "600", "int", "Portal",
             "Window length in seconds for the portal registration rate limit. Read at startup."),
+        // Performance monitoring — Settings → Performance. Level/Diagnose and
+        // the collector switches reach the hot paths through an in-memory
+        // snapshot (IPerfSettings) that refreshes every few seconds.
+        new SettingDefault(SettingKeys.Performance.Level, "basic", "string", "Performance",
+            "Monitoring level: 'off' (nothing is measured) or 'basic' (per-minute aggregates, well under 1% overhead). Diagnose mode is Basic plus a temporary, self-expiring deep capture started from the Performance page."),
+        new SettingDefault(SettingKeys.Performance.DiagnoseUntilUtc, "", "string", "Performance",
+            "UTC moment (ISO-8601) at which Diagnose mode switches itself back to Basic. Empty = Diagnose is off. Set from the Performance page, not by hand."),
+        new SettingDefault(SettingKeys.Performance.DiagnoseDefaultMinutes, "60", "int", "Performance",
+            "Default duration (minutes) offered when starting Diagnose mode. Clamped 5-1440."),
+        new SettingDefault(SettingKeys.Performance.DiagnoseMaxMinutes, "240", "int", "Performance",
+            "Longest Diagnose run (minutes) an admin can start in one go. Diagnose costs a few percent overhead, so it always ends on its own. Clamped 5-1440."),
+        new SettingDefault(SettingKeys.Performance.CollectorHttp, "true", "bool", "Performance",
+            "Measure API request duration per route (count, percentiles, errors, payload size) and add the Server-Timing header for signed-in staff."),
+        new SettingDefault(SettingKeys.Performance.CollectorDatabase, "true", "bool", "Performance",
+            "Measure database time from inside the app: query count and time per request (Basic) plus per-query fingerprints, N+1 detection and calling code (Diagnose)."),
+        new SettingDefault(SettingKeys.Performance.CollectorPostgres, "true", "bool", "Performance",
+            "Take periodic snapshots of PostgreSQL statistics (pg_stat_statements, table/index usage, cache hit ratio, vacuum state, locks). Needs the pg_monitor grant that deploy/update.sh applies."),
+        new SettingDefault(SettingKeys.Performance.CollectorRuntime, "true", "bool", "Performance",
+            "Sample the .NET runtime every 10 seconds: CPU, memory, garbage collection, thread pool, exceptions, Kestrel connections and the database connection pool."),
+        new SettingDefault(SettingKeys.Performance.CollectorHost, "true", "bool", "Performance",
+            "Sample the Linux host every 10 seconds: CPU incl. steal, load, memory and swap, disk latency/utilisation and free space, container CPU throttling. Not available on non-Linux development machines."),
+        new SettingDefault(SettingKeys.Performance.CollectorFrontend, "true", "bool", "Performance",
+            "Real-user monitoring in the staff app: Core Web Vitals, long tasks, API network-vs-server split, API calls per screen and JS heap. Signed-in agents/admins only, sampled per page load; the customer portal is never measured."),
+        new SettingDefault(SettingKeys.Performance.CollectorSignalR, "true", "bool", "Performance",
+            "Measure realtime traffic: connected clients, hub method duration and broadcast volume per hub."),
+        new SettingDefault(SettingKeys.Performance.CollectorWorkers, "true", "bool", "Performance",
+            "Record every background-worker run (sync jobs, mail polling, retention…) with duration, outcome and item count, so slow periods can be matched to jobs."),
+        new SettingDefault(SettingKeys.Performance.CollectorExternal, "true", "bool", "Performance",
+            "Measure outgoing HTTP calls (Microsoft Graph, Adsolut, Tactical RMM, …) per host: duration, errors and throttling (429)."),
+        new SettingDefault(SettingKeys.Performance.RumSamplePercent, "10", "int", "Performance",
+            "Percentage of staff page loads that send real-user metrics in Basic mode (Diagnose always samples 100%). Clamped 0-100."),
+        new SettingDefault(SettingKeys.Performance.SlowRequestThresholdMs, "1000", "int", "Performance",
+            "A request slower than this (milliseconds) is kept as an individual slow-request trace with its time breakdown. Clamped 50-60000."),
+        new SettingDefault(SettingKeys.Performance.SlowQueryThresholdMs, "200", "int", "Performance",
+            "A query slower than this (milliseconds) on average counts as slow in the Database tab and the findings. Clamped 1-60000."),
+        new SettingDefault(SettingKeys.Performance.NPlusOneThreshold, "5", "int", "Performance",
+            "The same query shape executed this many times inside one request is flagged as an N+1 suspect (Diagnose). Clamped 2-1000."),
+        new SettingDefault(SettingKeys.Performance.ServerTimingEnabled, "true", "bool", "Performance",
+            "Add a Server-Timing header (app/db/external time) to API responses for signed-in agents and admins, so the browser can separate server time from network time. Never sent on sign-in endpoints, the customer portal or anonymous calls."),
+        new SettingDefault(SettingKeys.Performance.PgSnapshotIntervalMinutes, "5", "int", "Performance",
+            "How often (minutes) PostgreSQL statistics are snapshotted in Basic mode. Clamped 1-60."),
+        new SettingDefault(SettingKeys.Performance.PgSnapshotDiagnoseIntervalMinutes, "1", "int", "Performance",
+            "How often (minutes) PostgreSQL statistics are snapshotted while Diagnose mode runs. Clamped 1-60."),
+        new SettingDefault(SettingKeys.Performance.RetentionMinuteDays, "14", "int", "Performance",
+            "Days to keep per-minute metrics. Older data survives as hourly rollups. Clamped 1-90."),
+        new SettingDefault(SettingKeys.Performance.RetentionHourDays, "90", "int", "Performance",
+            "Days to keep hourly rollups (used for periods longer than a few hours and for version comparisons). Clamped 7-730."),
+        new SettingDefault(SettingKeys.Performance.RetentionEventDays, "14", "int", "Performance",
+            "Days to keep individual events: slow-request traces and background-worker runs. Clamped 1-90."),
+        new SettingDefault(SettingKeys.Performance.RetentionPgSnapshotDays, "14", "int", "Performance",
+            "Days to keep PostgreSQL statement and database snapshots. Clamped 1-90."),
+        new SettingDefault(SettingKeys.Performance.RetentionTableSnapshotDays, "180", "int", "Performance",
+            "Days to keep hourly table-size snapshots (the table growth chart). Clamped 7-730."),
+        new SettingDefault(SettingKeys.Performance.Budgets, "GET /api/tickets/{id:guid}=300\nGET /api/tickets=500\nGET /api/search=400", "string", "Performance",
+            "Performance budgets for the key flows, one per line as 'METHOD route-template=milliseconds'. The Overview shows each flow's p95 against its budget. Route templates are listed on the API tab."),
+        new SettingDefault(SettingKeys.Performance.AlertsEnabled, "false", "bool", "Performance",
+            "Raise a Health incident (Health page + its banner) when a critical performance finding appears, e.g. an exhausted connection pool, a nearly full disk or a wraparound risk."),
+        new SettingDefault(SettingKeys.Performance.AlertsCooldownHours, "6", "int", "Performance",
+            "Minimum hours between two alerts for the same finding. Clamped 1-168."),
+        new SettingDefault(SettingKeys.Performance.FindingRouteP95Ms, "1000", "int", "Performance",
+            "Finding: a route whose p95 exceeds this (ms) is analysed for where its time goes (database, own code or external calls)."),
+        new SettingDefault(SettingKeys.Performance.FindingRouteMinRequests, "20", "int", "Performance",
+            "Finding: routes with fewer requests than this in the period are ignored by the latency rules (too little data)."),
+        new SettingDefault(SettingKeys.Performance.FindingDbSharePct, "60", "int", "Performance",
+            "Finding: a slow route spending more than this percentage in database queries is reported as a database problem."),
+        new SettingDefault(SettingKeys.Performance.FindingAppSharePct, "60", "int", "Performance",
+            "Finding: a slow route spending more than this percentage in its own code (not database, not external) is reported as a code problem."),
+        new SettingDefault(SettingKeys.Performance.FindingExtSharePct, "50", "int", "Performance",
+            "Finding: a slow route spending more than this percentage waiting on external APIs is reported as an external-API problem."),
+        new SettingDefault(SettingKeys.Performance.FindingNPlusOneMinRequests, "10", "int", "Performance",
+            "Finding: an N+1 pattern is reported once it occurred in at least this many requests in the period."),
+        new SettingDefault(SettingKeys.Performance.FindingSlowQueryTopN, "5", "int", "Performance",
+            "Finding: the top N queries by total execution time are listed as candidates."),
+        new SettingDefault(SettingKeys.Performance.FindingSeqScanMinRows, "10000", "int", "Performance",
+            "Finding: sequential-scan analysis only applies to tables with at least this many rows."),
+        new SettingDefault(SettingKeys.Performance.FindingSeqScanRatio, "10", "int", "Performance",
+            "Finding: a large table with this many times more sequential scans than index scans in the period suggests a missing index."),
+        new SettingDefault(SettingKeys.Performance.FindingDeadTuplePct, "20", "int", "Performance",
+            "Finding: dead rows above this percentage of live rows on a table means bloat / vacuum is behind."),
+        new SettingDefault(SettingKeys.Performance.FindingVacuumStaleDays, "7", "int", "Performance",
+            "Finding: an actively written table not vacuumed for this many days is reported."),
+        new SettingDefault(SettingKeys.Performance.FindingCacheHitPct, "99", "int", "Performance",
+            "Finding: a buffer cache hit ratio below this percentage means PostgreSQL reads from disk too often (too little RAM / shared_buffers, or bloat)."),
+        new SettingDefault(SettingKeys.Performance.FindingTempMb, "100", "int", "Performance",
+            "Finding: more temporary-file spill than this (MB) in the period means sorts/hashes do not fit in work_mem."),
+        new SettingDefault(SettingKeys.Performance.FindingIdleInTxSeconds, "30", "int", "Performance",
+            "Finding: a session 'idle in transaction' for longer than this (seconds) holds locks and blocks vacuum."),
+        new SettingDefault(SettingKeys.Performance.FindingPoolWaitPct, "5", "int", "Performance",
+            "Finding: when requests waited for a database connection in more than this percentage of samples, the connection pool is too small or connections are held too long."),
+        new SettingDefault(SettingKeys.Performance.FindingCpuStealPct, "5", "int", "Performance",
+            "Finding: CPU steal above this percentage means the hosting provider gives the VPS less CPU than promised."),
+        new SettingDefault(SettingKeys.Performance.FindingCpuPct, "85", "int", "Performance",
+            "Finding: host CPU above this percentage for a sustained part of the period."),
+        new SettingDefault(SettingKeys.Performance.FindingLoadPctOfCores, "150", "int", "Performance",
+            "Finding: load average above this percentage of the core count (150 = 1.5 x cores)."),
+        new SettingDefault(SettingKeys.Performance.FindingMemAvailablePct, "10", "int", "Performance",
+            "Finding: available memory below this percentage of total RAM, or any swap activity."),
+        new SettingDefault(SettingKeys.Performance.FindingDiskAwaitMs, "20", "int", "Performance",
+            "Finding: average disk I/O latency above this (ms) slows PostgreSQL and attachments."),
+        new SettingDefault(SettingKeys.Performance.FindingDiskUtilPct, "80", "int", "Performance",
+            "Finding: disk utilisation above this percentage."),
+        new SettingDefault(SettingKeys.Performance.FindingDiskFreePct, "10", "int", "Performance",
+            "Finding: less free space than this percentage on the root or blob-storage filesystem."),
+        new SettingDefault(SettingKeys.Performance.FindingThreadPoolQueuePct, "20", "int", "Performance",
+            "Finding: a non-empty thread-pool queue in more than this percentage of samples (with a growing thread count) points at blocking code (sync-over-async)."),
+        new SettingDefault(SettingKeys.Performance.FindingGcPausePct, "5", "int", "Performance",
+            "Finding: more than this percentage of wall-clock time paused for garbage collection."),
+        new SettingDefault(SettingKeys.Performance.FindingHeapGrowthPct, "50", "int", "Performance",
+            "Finding: the managed heap growing by more than this percentage across the period (possible memory leak)."),
+        new SettingDefault(SettingKeys.Performance.FindingNetworkSharePct, "50", "int", "Performance",
+            "Finding: when more than this percentage of API time in the browser is network (not server), the connection is the bottleneck."),
+        new SettingDefault(SettingKeys.Performance.FindingLcpMs, "2500", "int", "Performance",
+            "Finding: Largest Contentful Paint p75 above this (ms) - Google's 'needs improvement' line."),
+        new SettingDefault(SettingKeys.Performance.FindingInpMs, "200", "int", "Performance",
+            "Finding: Interaction to Next Paint p75 above this (ms) - the UI reacts sluggishly to clicks and typing."),
+        new SettingDefault(SettingKeys.Performance.FindingClsMilli, "100", "int", "Performance",
+            "Finding: Cumulative Layout Shift p75 above this value / 1000 (100 = 0.1)."),
+        new SettingDefault(SettingKeys.Performance.FindingLongTaskMs, "200", "int", "Performance",
+            "Finding: JavaScript tasks longer than this (ms) block the UI."),
+        new SettingDefault(SettingKeys.Performance.FindingLongTasksPerView, "5", "int", "Performance",
+            "Finding: more long tasks than this per screen view on a route."),
+        new SettingDefault(SettingKeys.Performance.FindingApiCallsPerScreen, "15", "int", "Performance",
+            "Finding: opening one screen fires more API calls than this (waterfalls, over-fetching)."),
+        new SettingDefault(SettingKeys.Performance.FindingResponseKb, "500", "int", "Performance",
+            "Finding: a route whose p95 response size exceeds this (KB) ships too much data."),
+        new SettingDefault(SettingKeys.Performance.FindingWorkerOverlapPct, "50", "int", "Performance",
+            "Finding: API p95 while a background worker runs is this percentage higher than without it."),
+        new SettingDefault(SettingKeys.Performance.FindingRegressionPct, "30", "int", "Performance",
+            "Finding: a route that became this percentage slower (p95) after a version change."),
+        new SettingDefault(SettingKeys.Performance.FindingExternalErrorPct, "5", "int", "Performance",
+            "Finding: an external host answering with errors or throttling (429) in more than this percentage of calls."),
     };
 }

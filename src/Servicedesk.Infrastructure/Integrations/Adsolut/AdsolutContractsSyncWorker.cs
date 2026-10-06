@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Audit;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
@@ -139,6 +140,7 @@ public sealed class AdsolutContractsSyncWorker : BackgroundService
         var modifiedSince = existingState?.LastDeltaSyncUtc is { } d ? new DateTimeOffset(d, TimeSpan.Zero) : (DateTimeOffset?)null;
         var isFullSync = modifiedSince is null;
 
+        using var run = PerfWorkerRun.Start("adsolut-contracts");
         var stopwatch = Stopwatch.StartNew();
         var seen = 0;
         var upserted = 0;
@@ -219,6 +221,7 @@ public sealed class AdsolutContractsSyncWorker : BackgroundService
         }
         catch (AdsolutApiException ex) when (ex.HttpStatus == 429)
         {
+            run.Fail(ex);
             errorMessage = "rate_limited";
             _logger.LogWarning(ex, "Adsolut Contracts hit 429 — pausing pass; will resume from checkpoint.");
             await CheckpointAsync(errorMessage);
@@ -226,16 +229,19 @@ public sealed class AdsolutContractsSyncWorker : BackgroundService
         }
         catch (AdsolutApiException ex)
         {
+            run.Fail(ex);
             errorMessage = ex.UpstreamErrorCode ?? ex.HttpStatus?.ToString() ?? "api_error";
             _logger.LogWarning(ex, "Adsolut Contracts tick failed mid-pass.");
         }
         catch (Exception ex)
         {
+            run.Fail(ex);
             errorMessage = "tick_exception";
             _logger.LogError(ex, "Adsolut Contracts tick threw an unexpected exception.");
         }
 
         stopwatch.Stop();
+        run.AddItems(upserted);
 
         var newState = new AdsolutContractSyncState
         {

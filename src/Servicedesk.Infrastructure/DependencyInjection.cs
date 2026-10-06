@@ -383,6 +383,29 @@ public static class DependencyInjection
         services.AddSingleton<IIncidentLog, IncidentLog>();
         services.AddHostedService<IncidentLogDrainService>();
 
+        // v0.1.24 — Performance monitoring (Settings → Performance).
+        // Collectors record into the in-memory PerfRecorder window; the flush
+        // service writes one batch per minute, the Postgres snapshotter and
+        // the maintenance service (rollups, retention, alerts) run on their
+        // own cadence. The instrumentation hosted service hooks the Npgsql /
+        // HttpClient / Kestrel / SignalR meters, so it starts first.
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<Performance.PerfSettingsProvider>();
+        services.AddSingleton<Performance.IPerfSettings>(sp => sp.GetRequiredService<Performance.PerfSettingsProvider>());
+        services.AddSingleton<Performance.PerfRecorder>();
+        services.AddSingleton<Performance.PerfInstrumentation>();
+        services.AddHostedService(sp => sp.GetRequiredService<Performance.PerfInstrumentation>());
+        services.AddSingleton<Performance.PerfWriter>();
+        services.AddHostedService<Performance.PerfFlushService>();
+        services.AddSingleton<Performance.PgAccessState>();
+        services.AddSingleton<Performance.PgInspector>();
+        services.AddHostedService<Performance.PgSnapshotService>();
+        services.AddSingleton<Performance.PerfQueries>();
+        services.AddSingleton<Performance.PerfDatasetBuilder>();
+        services.AddSingleton<Performance.PerfReportBuilder>();
+        services.AddSingleton<Performance.PerfToolbox>();
+        services.AddHostedService<Performance.PerfMaintenanceService>();
+
         services.AddSingleton<IProtectedSecretStore, ProtectedSecretStore>();
         services.AddSingleton<IQueueInboundMailboxRepository, QueueInboundMailboxRepository>();
         services.AddSingleton<IGraphMailClient, GraphMailClient>();

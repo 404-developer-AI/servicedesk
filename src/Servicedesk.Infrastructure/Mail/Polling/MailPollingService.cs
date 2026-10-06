@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Mail.Ingest;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Settings;
@@ -36,15 +37,19 @@ public sealed class MailPollingService : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             TimeSpan delay;
-            try
+            using (var run = PerfWorkerRun.Start("mail-polling"))
             {
-                delay = await RunCycleAsync(stoppingToken);
-            }
-            catch (OperationCanceledException) { break; }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "MailPollingService cycle crashed — will retry.");
-                delay = TimeSpan.FromSeconds(30);
+                try
+                {
+                    delay = await RunCycleAsync(stoppingToken);
+                }
+                catch (OperationCanceledException) { break; }
+                catch (Exception ex)
+                {
+                    run.Fail(ex);
+                    _logger.LogError(ex, "MailPollingService cycle crashed — will retry.");
+                    delay = TimeSpan.FromSeconds(30);
+                }
             }
 
             await SafeDelayAsync(delay, stoppingToken);

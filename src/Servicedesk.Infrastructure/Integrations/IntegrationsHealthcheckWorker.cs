@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Integrations.Adsolut;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
@@ -78,9 +79,15 @@ public sealed class IntegrationsHealthcheckWorker : BackgroundService
                 }
                 else
                 {
+                    using var run = PerfWorkerRun.Start("integrations-healthcheck");
                     try
                     {
                         await TickAsync(scope.ServiceProvider, stoppingToken);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        run.Fail(ex);
+                        throw;
                     }
                     finally
                     {

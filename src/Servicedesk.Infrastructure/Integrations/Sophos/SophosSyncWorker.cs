@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Integrations.Sophos;
@@ -41,8 +42,17 @@ public sealed class SophosSyncWorker : BackgroundService
                 var enabled = await settings.GetAsync<bool>(SettingKeys.Sophos.Enabled, stoppingToken);
                 if (enabled)
                 {
-                    var sync = scope.ServiceProvider.GetRequiredService<ISophosSyncService>();
-                    await sync.SyncAsync(stoppingToken);
+                    using var run = PerfWorkerRun.Start("sophos-sync");
+                    try
+                    {
+                        var sync = scope.ServiceProvider.GetRequiredService<ISophosSyncService>();
+                        await sync.SyncAsync(stoppingToken);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        run.Fail(ex);
+                        throw;
+                    }
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

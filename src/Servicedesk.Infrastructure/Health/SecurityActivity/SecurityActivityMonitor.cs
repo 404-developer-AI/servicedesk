@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Observability;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Settings;
 
@@ -57,21 +58,25 @@ public sealed class SecurityActivityMonitor : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             TimeSpan interval;
-            try
+            using (var run = PerfWorkerRun.Start("security-activity"))
             {
-                interval = await TickAsync(stoppingToken);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                // Swallow — this loop MUST NOT crash the host. Log + keep
-                // going so a transient Postgres hiccup doesn't disable
-                // monitoring forever.
-                _logger.LogWarning(ex, "Security-activity monitor tick failed; will retry.");
-                interval = TimeSpan.FromSeconds(30);
+                try
+                {
+                    interval = await TickAsync(stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    run.Fail(ex);
+                    // Swallow — this loop MUST NOT crash the host. Log + keep
+                    // going so a transient Postgres hiccup doesn't disable
+                    // monitoring forever.
+                    _logger.LogWarning(ex, "Security-activity monitor tick failed; will retry.");
+                    interval = TimeSpan.FromSeconds(30);
+                }
             }
 
             try

@@ -1,4 +1,5 @@
 import * as React from "react";
+import { Link } from "@tanstack/react-router";
 import { Activity, AlertTriangle, Archive, CheckCircle2, ChevronDown, ChevronRight, Gauge, RadioTower, ShieldAlert, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -169,6 +170,9 @@ export function HealthSettingsPage() {
             Live status of background subsystems. Warnings and errors from
             captured log sources accumulate as incidents until acknowledged.
           </p>
+          <Link to="/settings/performance" className="inline-flex text-xs text-primary hover:underline">
+            Slow rather than broken? Open the Performance dashboard →
+          </Link>
         </div>
         {query.data ? (
           <Badge className={`border text-xs font-normal ${STATUS_BADGE[query.data.status].className}`}>

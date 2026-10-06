@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Sla;
@@ -38,20 +39,31 @@ public sealed class HolidaySyncWorker : BackgroundService
                 var enabled = await settings.GetAsync<bool>(SettingKeys.Sla.HolidaysAutoSync, stoppingToken);
                 if (enabled)
                 {
-                    var schemas = await repo.ListSchemasAsync(stoppingToken);
-                    var year = DateTime.UtcNow.Year;
-                    foreach (var s in schemas)
+                    using var run = PerfWorkerRun.Start("holiday-sync");
+                    try
                     {
-                        if (string.IsNullOrWhiteSpace(s.CountryCode)) continue;
-                        try
+                        var schemas = await repo.ListSchemasAsync(stoppingToken);
+                        var year = DateTime.UtcNow.Year;
+                        foreach (var s in schemas)
                         {
-                            await sync.SyncAsync(s.Id, s.CountryCode, year, stoppingToken);
-                            await sync.SyncAsync(s.Id, s.CountryCode, year + 1, stoppingToken);
+                            if (string.IsNullOrWhiteSpace(s.CountryCode)) continue;
+                            try
+                            {
+                                await sync.SyncAsync(s.Id, s.CountryCode, year, stoppingToken);
+                                await sync.SyncAsync(s.Id, s.CountryCode, year + 1, stoppingToken);
+                                run.AddItems(1);
+                            }
+                            catch (Exception ex)
+                            {
+                                run.Fail(ex);
+                                _logger.LogWarning(ex, "Holiday sync failed for schema {Schema} ({Country}).", s.Id, s.CountryCode);
+                            }
                         }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning(ex, "Holiday sync failed for schema {Schema} ({Country}).", s.Id, s.CountryCode);
-                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        run.Fail(ex);
+                        throw;
                     }
                 }
             }
