@@ -16,12 +16,19 @@ public static class ClaudeEventTypes
     public const string AgentBudgetUpdated = "integration.claude.agent_budget.updated";
     public const string ProposalRequested = "integration.claude.proposal.requested";
 
+    /// An agent generated an AI summary on a ticket (who, which ticket and the
+    /// outcome — never the content).
+    public const string SummaryRequested = "integration.claude.summary.requested";
+
     /// An agent sent a message to the KB chat assistant (audit trail of who
     /// asked, and the outcome — not the content).
     public const string KbChatRequested = "integration.claude.kbchat.requested";
 
     // integration_audit (operational log for Messages API calls)
     public const string ProposalCall = "proposal.call";
+
+    /// Messages API call made for an in-ticket summary.
+    public const string SummaryCall = "summary.call";
 
     /// One Messages API round-trip made inside a KB chat turn (a turn may make
     /// several when the model searches).

@@ -2477,6 +2477,17 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_claude_usage_ticket
             ON claude_usage_log (ticket_id);
 
+        -- v0.1.20 — which Claude feature a row belongs to (proposal | summary
+        -- | kbchat), so the admin overview can split spend per feature. All
+        -- features share one per-agent budget. Pre-existing rows are
+        -- backfilled once: KB chat never carries a ticket, ticket-assist
+        -- always did. New rows always set the column explicitly.
+        ALTER TABLE claude_usage_log
+            ADD COLUMN IF NOT EXISTS feature TEXT NULL;
+        UPDATE claude_usage_log
+           SET feature = CASE WHEN ticket_id IS NULL THEN 'kbchat' ELSE 'proposal' END
+         WHERE feature IS NULL;
+
         -- ===================================================================
         -- v0.0.35 Timesheet — per-user feature flags. Two independent
         -- booleans live directly on the users row (no new role beside

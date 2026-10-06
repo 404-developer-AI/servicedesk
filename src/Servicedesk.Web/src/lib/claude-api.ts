@@ -31,6 +31,12 @@ export type ClaudeUsageAgent = {
   effectiveBudgetCents: number;
   monthSpendMicroEur: number;
   callCount: number;
+  proposalSpendMicroEur: number;
+  proposalCalls: number;
+  summarySpendMicroEur: number;
+  summaryCalls: number;
+  kbChatSpendMicroEur: number;
+  kbChatCalls: number;
 };
 
 export type ClaudeUsage = {
@@ -76,6 +82,19 @@ export type ClaudeProposalRefused = {
 };
 
 export type ClaudeProposalResult = ClaudeProposalSuccess | ClaudeProposalRefused;
+
+export type ClaudeSummarySuccess = {
+  refused?: false;
+  summaryText: string;
+  summaryHtml: string;
+  inputTokens: number;
+  outputTokens: number;
+  costMicroEur: number;
+  monthSpendMicroEur: number;
+  monthBudgetMicroEur: number;
+};
+
+export type ClaudeSummaryResult = ClaudeSummarySuccess | ClaudeProposalRefused;
 
 // ---- Helpers (shared with api.ts patterns) ----
 
@@ -154,5 +173,12 @@ export const claudeTicketApi = {
       "POST",
       `/api/tickets/${encodeURIComponent(ticketId)}/ai-proposal`,
       { attachmentIds },
+    ),
+
+  createTicketSummary: (ticketId: string) =>
+    request<ClaudeSummaryResult>(
+      "POST",
+      `/api/tickets/${encodeURIComponent(ticketId)}/ai-summary`,
+      {},
     ),
 };

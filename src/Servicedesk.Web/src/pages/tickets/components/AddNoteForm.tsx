@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Clock, ExternalLink, Mail, Phone, Sparkles, StickyNote } from "lucide-react";
+import { Clock, ExternalLink, FileText, Mail, Phone, Sparkles, StickyNote } from "lucide-react";
 import { ticketApi, mentionApi } from "@/lib/ticket-api";
 import { preferencesApi, agentQueueApi } from "@/lib/api";
 import { useAuth } from "@/auth/authStore";
@@ -25,6 +25,8 @@ import { Button } from "@/components/ui/button";
 import {
   claudeTicketApi,
   ApiError,
+  type ClaudeProposalSuccess,
+  type ClaudeSummarySuccess,
   type ClaudeTicketImage,
 } from "@/lib/claude-api";
 import { SendMailForm, type MailContext } from "./SendMailForm";
@@ -150,6 +152,10 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
   const [aiImages, setAiImages] = React.useState<ClaudeTicketImage[] | null>(null);
   const [aiImageDialogOpen, setAiImageDialogOpen] = React.useState(false);
   const [aiSelectedIds, setAiSelectedIds] = React.useState<string[]>([]);
+  // v0.1.20 — one-click AI summary (fills the admin template). Asks before
+  // replacing a composer that already has text.
+  const [summaryLoading, setSummaryLoading] = React.useState(false);
+  const [summaryConfirmOpen, setSummaryConfirmOpen] = React.useState(false);
   const queryClient = useQueryClient();
   const attachments = useAttachmentUploads(ticketId);
   const formRef = React.useRef<HTMLDivElement>(null);
@@ -385,6 +391,51 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
     },
   });
 
+  /// Drops AI-generated HTML into the internal-note composer as a draft.
+  function applyAiDraft(html: string) {
+    const editor = editorRef.current;
+    if (editor) {
+      editor.chain().focus().setContent(html).run();
+    }
+    setBodyHtml(html);
+    updateDraft(html, "note");
+    setTab("note");
+    setExpanded(true);
+  }
+
+  /// Shared error toast for the AI proposal + summary calls: budget/gate
+  /// refusals (409, with the spent-of-budget detail), upstream errors (502)
+  /// and everything else.
+  function showAiError(err: unknown, fallback: string) {
+    if (!(err instanceof ApiError)) {
+      toast.error(fallback);
+      return;
+    }
+    const body = err.body as Record<string, unknown> | null;
+    const code = body && typeof body.error === "string" ? body.error : null;
+    const msg = body && typeof body.message === "string" ? body.message : null;
+
+    if (err.status === 409) {
+      const spendMicro =
+        body && typeof body.monthSpendMicroEur === "number"
+          ? body.monthSpendMicroEur as number
+          : null;
+      const budgetMicro =
+        body && typeof body.monthBudgetMicroEur === "number"
+          ? body.monthBudgetMicroEur as number
+          : null;
+      const detail =
+        spendMicro !== null && budgetMicro !== null
+          ? ` (spent €${(spendMicro / 1_000_000).toFixed(2)} of €${(budgetMicro / 1_000_000).toFixed(2)})`
+          : "";
+      toast.error((msg ?? code ?? "Budget limit reached") + detail);
+    } else if (err.status === 502) {
+      toast.error(`AI service error: ${msg ?? "upstream error"}`);
+    } else {
+      toast.error(msg ?? fallback);
+    }
+  }
+
   async function runAiProposal(attachmentIds: string[]) {
     setAiLoading(true);
     try {
@@ -395,50 +446,43 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
         return;
       }
 
-      const { proposalHtml, costMicroEur } = result as import("@/lib/claude-api").ClaudeProposalSuccess;
-      const costDisplay = `€${(costMicroEur / 1_000_000).toFixed(4)}`;
-
-      const editor = editorRef.current;
-      if (editor) {
-        editor.chain().focus().setContent(proposalHtml).run();
-      }
-      setBodyHtml(proposalHtml);
-      updateDraft(proposalHtml, "note");
-      setTab("note");
-      setExpanded(true);
-
-      toast.success(`AI proposal added as a draft note (${costDisplay})`);
+      const { proposalHtml, costMicroEur } = result as ClaudeProposalSuccess;
+      applyAiDraft(proposalHtml);
+      toast.success(`AI proposal added as a draft note (€${(costMicroEur / 1_000_000).toFixed(4)})`);
     } catch (err) {
-      if (err instanceof ApiError) {
-        const body = err.body as Record<string, unknown> | null;
-        const code = body && typeof body.error === "string" ? body.error : null;
-        const msg = body && typeof body.message === "string" ? body.message : null;
-
-        if (err.status === 409) {
-          const spendMicro =
-            body && typeof body.monthSpendMicroEur === "number"
-              ? body.monthSpendMicroEur as number
-              : null;
-          const budgetMicro =
-            body && typeof body.monthBudgetMicroEur === "number"
-              ? body.monthBudgetMicroEur as number
-              : null;
-          const detail =
-            spendMicro !== null && budgetMicro !== null
-              ? ` (spent €${(spendMicro / 1_000_000).toFixed(2)} of €${(budgetMicro / 1_000_000).toFixed(2)})`
-              : "";
-          toast.error((msg ?? code ?? "Budget limit reached") + detail);
-        } else if (err.status === 502) {
-          toast.error(`AI service error: ${msg ?? "upstream error"}`);
-        } else {
-          toast.error(msg ?? "AI proposal failed");
-        }
-      } else {
-        toast.error("AI proposal failed");
-      }
+      showAiError(err, "AI proposal failed");
     } finally {
       setAiLoading(false);
     }
+  }
+
+  async function runAiSummary() {
+    setSummaryLoading(true);
+    try {
+      const result = await claudeTicketApi.createTicketSummary(ticketId);
+
+      if ("refused" in result && result.refused) {
+        toast.warning(result.message);
+        return;
+      }
+
+      const { summaryHtml, costMicroEur } = result as ClaudeSummarySuccess;
+      applyAiDraft(summaryHtml);
+      toast.success(`AI summary added as a draft note (€${(costMicroEur / 1_000_000).toFixed(4)})`);
+    } catch (err) {
+      showAiError(err, "AI summary failed");
+    } finally {
+      setSummaryLoading(false);
+    }
+  }
+
+  function handleSummary() {
+    if (summaryLoading || aiLoading) return;
+    if (!isEmptyHtml(bodyHtml)) {
+      setSummaryConfirmOpen(true);
+      return;
+    }
+    void runAiSummary();
   }
 
   async function handleAskAi() {
@@ -720,10 +764,10 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
       )}
 
       {user?.role !== "Customer" && aiAssistEnabledForQueue && !isCall && (
-        <div className="mt-2">
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
             type="button"
-            disabled={aiLoading}
+            disabled={aiLoading || summaryLoading}
             onClick={handleAskAi}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
@@ -735,8 +779,49 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
             <Sparkles className="h-3.5 w-3.5" />
             {aiLoading ? "Generating…" : "Analyze & propose a solution by AI"}
           </button>
+          <button
+            type="button"
+            disabled={aiLoading || summaryLoading}
+            onClick={handleSummary}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+              "border-amber-400/30 bg-amber-400/10 text-amber-200 hover:bg-amber-400/15",
+              summaryLoading && "opacity-50 cursor-not-allowed",
+            )}
+            title="Generate a compact customer-facing summary of this ticket from the summary template, as a draft internal note"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            {summaryLoading ? "Summarizing…" : "Summary"}
+          </button>
         </div>
       )}
+
+      <Dialog open={summaryConfirmOpen} onOpenChange={setSummaryConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Replace the current draft?</DialogTitle>
+            <DialogDescription>
+              The composer already contains text. The AI summary will replace it.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button size="sm" variant="ghost" onClick={() => setSummaryConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="gap-1.5"
+              onClick={() => {
+                setSummaryConfirmOpen(false);
+                void runAiSummary();
+              }}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              Replace with summary
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {aiImages !== null && (
         <AiImagePickerDialog

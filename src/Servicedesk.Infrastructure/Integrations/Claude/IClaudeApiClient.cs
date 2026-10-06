@@ -8,11 +8,16 @@ namespace Servicedesk.Infrastructure.Integrations.Claude;
 /// the result. Throws <see cref="ClaudeApiException"/> on transport or non-2xx.
 public interface IClaudeApiClient
 {
-    /// Ticket-assist proposal: a single, stateless, tool-free call.
+    /// Ticket-assist call (proposal or summary): a single, stateless,
+    /// tool-free call. <paramref name="auditEventType"/> is the
+    /// <c>integration_audit</c> event type the call is logged under
+    /// (<see cref="ClaudeEventTypes.ProposalCall"/> /
+    /// <see cref="ClaudeEventTypes.SummaryCall"/>).
     Task<ClaudeApiResult> CreateProposalAsync(
         string systemPrompt,
         string userText,
         IReadOnlyList<ClaudeImageInput> images,
+        string auditEventType,
         CancellationToken ct);
 
     /// One round-trip of the KB-chat tool-use loop. <paramref name="messages"/>

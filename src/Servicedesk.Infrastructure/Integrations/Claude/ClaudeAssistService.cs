@@ -53,10 +53,53 @@ public sealed class ClaudeAssistService : IClaudeAssistService
         _logger = logger;
     }
 
-    public async Task<ClaudeProposalResult> GenerateProposalAsync(
+    public Task<ClaudeProposalResult> GenerateProposalAsync(
         Guid ticketId,
         Guid userId,
         IReadOnlyList<Guid> selectedAttachmentIds,
+        CancellationToken ct) =>
+        RunAsync(ClaudeFeatures.Proposal, ticketId, userId, async () =>
+        {
+            var systemPrompt = await _settings.GetAsync<string>(SettingKeys.Claude.SystemPrompt, ct) ?? string.Empty;
+            var maxContextChars = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Claude.MaxContextChars, ct), 1000, 200_000);
+            var userText = await BuildTicketContextAsync(
+                ticketId, "Here is the full content of the ticket to resolve.", maxContextChars, ct);
+            var images = await ResolveImagesAsync(ticketId, selectedAttachmentIds, ct);
+            return (systemPrompt, userText, images);
+        }, ct);
+
+    public Task<ClaudeProposalResult> GenerateSummaryAsync(
+        Guid ticketId,
+        Guid userId,
+        CancellationToken ct) =>
+        RunAsync(ClaudeFeatures.Summary, ticketId, userId, async () =>
+        {
+            var instructions = await _settings.GetAsync<string>(SettingKeys.Claude.SummarySystemPrompt, ct) ?? string.Empty;
+            var template = (await _settings.GetAsync<string>(SettingKeys.Claude.SummaryTemplate, ct) ?? string.Empty).Trim();
+            var systemPrompt = BuildSummarySystemPrompt(instructions, template);
+            var maxContextChars = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Claude.MaxContextChars, ct), 1000, 200_000);
+            var userText = await BuildTicketContextAsync(
+                ticketId, "Here is the full content of the ticket to summarise.", maxContextChars, ct);
+            // Summaries are text-only by design: images are never sent.
+            return (systemPrompt, userText, (IReadOnlyList<ClaudeImageInput>)Array.Empty<ClaudeImageInput>());
+        }, ct);
+
+    /// The admin-editable instructions followed by the admin-editable template.
+    /// Both are trusted (admin-only settings); the ticket stays in the user turn.
+    internal static string BuildSummarySystemPrompt(string instructions, string template) =>
+        instructions.TrimEnd()
+        + "\n\nTemplate (reproduce its headings and formatting exactly; fill in the bullets):\n<template>\n"
+        + template + "\n</template>";
+
+    /// Shared pipeline for every in-ticket assist call: guards (kill-switch,
+    /// key, ZDR, budget — no API call, no cost), prompt assembly via
+    /// <paramref name="buildPrompt"/>, the API call, and usage logging tagged
+    /// with <paramref name="feature"/>.
+    private async Task<ClaudeProposalResult> RunAsync(
+        string feature,
+        Guid ticketId,
+        Guid userId,
+        Func<Task<(string SystemPrompt, string UserText, IReadOnlyList<ClaudeImageInput> Images)>> buildPrompt,
         CancellationToken ct)
     {
         var monthStartUtc = MonthStartUtc(DateTime.UtcNow);
@@ -64,44 +107,42 @@ public sealed class ClaudeAssistService : IClaudeAssistService
         // ---- Guards (no API call, no cost) -----------------------------
         var enabled = await _settings.GetAsync<bool>(SettingKeys.Claude.Enabled, ct);
         if (!enabled)
-            return await BlockedAsync(userId, ticketId, "disabled", ClaudeProposalOutcome.Disabled,
+            return await BlockedAsync(feature, userId, ticketId, "disabled", ClaudeProposalOutcome.Disabled,
                 "The Claude AI assistant is turned off.", monthStartUtc, ct);
 
         var hasKey = await _secrets.HasAsync(ProtectedSecretKeys.ClaudeApiKey, ct);
         if (!hasKey)
-            return await BlockedAsync(userId, ticketId, "not_configured", ClaudeProposalOutcome.NotConfigured,
+            return await BlockedAsync(feature, userId, ticketId, "not_configured", ClaudeProposalOutcome.NotConfigured,
                 "The Claude AI assistant has no API key configured.", monthStartUtc, ct);
 
         var zdrConfirmed = await _settings.GetAsync<bool>(SettingKeys.Claude.ZeroDataRetentionConfirmed, ct);
         if (!zdrConfirmed)
-            return await BlockedAsync(userId, ticketId, "zdr_not_confirmed", ClaudeProposalOutcome.ZdrNotConfirmed,
+            return await BlockedAsync(feature, userId, ticketId, "zdr_not_confirmed", ClaudeProposalOutcome.ZdrNotConfirmed,
                 "Zero data retention has not been confirmed for the Claude organisation.", monthStartUtc, ct);
 
         var effectiveBudgetCents = await ResolveBudgetCentsAsync(userId, ct);
         var budgetMicro = (long)effectiveBudgetCents * 10_000L;
         if (effectiveBudgetCents <= 0)
-            return await BlockedAsync(userId, ticketId, "no_budget", ClaudeProposalOutcome.NoBudget,
+            return await BlockedAsync(feature, userId, ticketId, "no_budget", ClaudeProposalOutcome.NoBudget,
                 "You have no Claude AI budget assigned.", monthStartUtc, ct);
 
         var spendMicro = await _usage.GetMonthSpendMicroEurAsync(userId, monthStartUtc, ct);
         if (spendMicro >= budgetMicro)
         {
-            await _usage.LogAsync(new ClaudeUsageEntry(userId, ticketId, "", 0, 0, 0, 0, "blocked", "budget_exceeded", null), ct);
+            await _usage.LogAsync(new ClaudeUsageEntry(userId, ticketId, "", 0, 0, 0, 0, "blocked", "budget_exceeded", null, feature), ct);
             return new ClaudeProposalResult(ClaudeProposalOutcome.BudgetExceeded, null, null,
                 "Your monthly Claude AI budget is exhausted.", 0, 0, 0, 0, spendMicro, budgetMicro);
         }
 
         // ---- Build the scoped prompt -----------------------------------
-        var systemPrompt = await _settings.GetAsync<string>(SettingKeys.Claude.SystemPrompt, ct) ?? string.Empty;
-        var maxContextChars = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Claude.MaxContextChars, ct), 1000, 200_000);
-        var userText = await BuildTicketContextAsync(ticketId, maxContextChars, ct);
-
-        var images = await ResolveImagesAsync(ticketId, selectedAttachmentIds, ct);
+        var (systemPrompt, userText, images) = await buildPrompt();
+        var isSummary = feature == ClaudeFeatures.Summary;
+        var auditEventType = isSummary ? ClaudeEventTypes.SummaryCall : ClaudeEventTypes.ProposalCall;
 
         // ---- Call + log -------------------------------------------------
         try
         {
-            var result = await _api.CreateProposalAsync(systemPrompt, userText, images, ct);
+            var result = await _api.CreateProposalAsync(systemPrompt, userText, images, auditEventType, ct);
 
             var inputPriceCents = await _settings.GetAsync<int>(SettingKeys.Claude.InputPriceCentsPerMTok, ct);
             var outputPriceCents = await _settings.GetAsync<int>(SettingKeys.Claude.OutputPriceCentsPerMTok, ct);
@@ -111,7 +152,7 @@ public sealed class ClaudeAssistService : IClaudeAssistService
 
             await _usage.LogAsync(new ClaudeUsageEntry(
                 userId, ticketId, result.Model, result.InputTokens, result.OutputTokens,
-                costMicro, images.Count, "ok", refused ? "refusal" : null, result.RequestId), ct);
+                costMicro, images.Count, "ok", refused ? "refusal" : null, result.RequestId, feature), ct);
 
             var newSpend = spendMicro + costMicro;
 
@@ -119,14 +160,17 @@ public sealed class ClaudeAssistService : IClaudeAssistService
             {
                 return new ClaudeProposalResult(
                     ClaudeProposalOutcome.Refused, null, null,
-                    "The assistant declined to produce a proposal for this ticket's content.",
+                    isSummary
+                        ? "The assistant declined to produce a summary for this ticket's content."
+                        : "The assistant declined to produce a proposal for this ticket's content.",
                     result.InputTokens, result.OutputTokens, costMicro, images.Count, newSpend, budgetMicro);
             }
 
+            var text = isSummary ? StripCodeFence(result.Text) : result.Text;
             return new ClaudeProposalResult(
                 ClaudeProposalOutcome.Ok,
-                result.Text,
-                MarkdownToHtml(result.Text),
+                text,
+                MarkdownToHtml(text),
                 null,
                 result.InputTokens, result.OutputTokens, costMicro, images.Count, newSpend, budgetMicro);
         }
@@ -137,9 +181,22 @@ public sealed class ClaudeAssistService : IClaudeAssistService
             // is not billed) so it is visible in the per-agent overview.
             await _usage.LogAsync(new ClaudeUsageEntry(
                 userId, ticketId, "", 0, 0, 0, images.Count, "error",
-                ex.UpstreamErrorCode ?? "api_error", null), ct);
+                ex.UpstreamErrorCode ?? "api_error", null, feature), ct);
             throw;
         }
+    }
+
+    /// Defensive: if the model wraps the filled template in a ``` fence
+    /// despite the instructions, unwrap it so the template's own formatting
+    /// renders instead of a code block.
+    internal static string StripCodeFence(string text)
+    {
+        var t = text.Trim();
+        if (t.Length < 6 || !t.StartsWith("```", StringComparison.Ordinal) || !t.EndsWith("```", StringComparison.Ordinal))
+            return t;
+        var firstNewline = t.IndexOf('\n');
+        if (firstNewline < 0 || firstNewline > t.Length - 4) return t;
+        return t[(firstNewline + 1)..^3].Trim();
     }
 
     // ---- Budget --------------------------------------------------------
@@ -155,17 +212,17 @@ public sealed class ClaudeAssistService : IClaudeAssistService
         new(nowUtc.Year, nowUtc.Month, 1, 0, 0, 0, DateTimeKind.Utc);
 
     private async Task<ClaudeProposalResult> BlockedAsync(
-        Guid userId, Guid ticketId, string code, ClaudeProposalOutcome outcome,
+        string feature, Guid userId, Guid ticketId, string code, ClaudeProposalOutcome outcome,
         string message, DateTime monthStartUtc, CancellationToken ct)
     {
-        await _usage.LogAsync(new ClaudeUsageEntry(userId, ticketId, "", 0, 0, 0, 0, "blocked", code, null), ct);
+        await _usage.LogAsync(new ClaudeUsageEntry(userId, ticketId, "", 0, 0, 0, 0, "blocked", code, null, feature), ct);
         var spend = await _usage.GetMonthSpendMicroEurAsync(userId, monthStartUtc, ct);
         return new ClaudeProposalResult(outcome, null, null, message, 0, 0, 0, 0, spend, 0);
     }
 
     // ---- Ticket context ------------------------------------------------
 
-    private async Task<string> BuildTicketContextAsync(Guid ticketId, int maxChars, CancellationToken ct)
+    private async Task<string> BuildTicketContextAsync(Guid ticketId, string intro, int maxChars, CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
 
@@ -195,7 +252,7 @@ public sealed class ClaudeAssistService : IClaudeAssistService
             new CommandDefinition(eventsSql, new { id = ticketId }, cancellationToken: ct))).ToList();
 
         var sb = new StringBuilder();
-        sb.Append("Here is the full content of the ticket to resolve.\n\n");
+        sb.Append(intro).Append("\n\n");
         if (head is not null)
         {
             sb.Append("Ticket #").Append(head.Number).Append('\n');

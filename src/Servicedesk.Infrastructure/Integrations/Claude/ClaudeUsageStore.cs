@@ -18,10 +18,10 @@ public sealed class ClaudeUsageStore : IClaudeUsageStore
         const string sql = """
             INSERT INTO claude_usage_log
                 (user_id, ticket_id, model, input_tokens, output_tokens,
-                 cost_micro_eur, image_count, outcome, error_code, request_id)
+                 cost_micro_eur, image_count, outcome, error_code, request_id, feature)
             VALUES
                 (@UserId, @TicketId, @Model, @InputTokens, @OutputTokens,
-                 @CostMicroEur, @ImageCount, @Outcome, @ErrorCode, @RequestId)
+                 @CostMicroEur, @ImageCount, @Outcome, @ErrorCode, @RequestId, @Feature)
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition(sql, new
@@ -36,6 +36,7 @@ public sealed class ClaudeUsageStore : IClaudeUsageStore
             entry.Outcome,
             entry.ErrorCode,
             entry.RequestId,
+            entry.Feature,
         }, cancellationToken: ct));
     }
 
@@ -80,7 +81,13 @@ public sealed class ClaudeUsageStore : IClaudeUsageStore
                     u.role_name                       AS RoleName,
                     u.claude_monthly_budget_eur_cents AS BudgetOverrideCents,
                     COALESCE(SUM(l.cost_micro_eur), 0)::bigint AS MonthSpendMicroEur,
-                    COALESCE(SUM(CASE WHEN l.outcome <> 'blocked' THEN 1 ELSE 0 END), 0)::int AS CallCount
+                    COALESCE(SUM(CASE WHEN l.outcome <> 'blocked' THEN 1 ELSE 0 END), 0)::int AS CallCount,
+                    COALESCE(SUM(l.cost_micro_eur) FILTER (WHERE l.feature = 'proposal'), 0)::bigint AS ProposalSpendMicroEur,
+                    COUNT(*) FILTER (WHERE l.feature = 'proposal' AND l.outcome <> 'blocked')::int    AS ProposalCalls,
+                    COALESCE(SUM(l.cost_micro_eur) FILTER (WHERE l.feature = 'summary'), 0)::bigint  AS SummarySpendMicroEur,
+                    COUNT(*) FILTER (WHERE l.feature = 'summary' AND l.outcome <> 'blocked')::int     AS SummaryCalls,
+                    COALESCE(SUM(l.cost_micro_eur) FILTER (WHERE l.feature = 'kbchat'), 0)::bigint   AS KbChatSpendMicroEur,
+                    COUNT(*) FILTER (WHERE l.feature = 'kbchat' AND l.outcome <> 'blocked')::int      AS KbChatCalls
               FROM users u
               LEFT JOIN claude_usage_log l
                      ON l.user_id = u.id AND l.utc >= @monthStart
