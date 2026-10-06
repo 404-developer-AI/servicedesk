@@ -1,6 +1,6 @@
 /**
  * Client build identity + the global fetch wrapper that stamps it onto
- * every API call.
+ * every API call (and, since v0.1.22, refuses /api paths with dot-segments).
  *
  * The wrapper exists so the X-Client-Version header can never be forgotten:
  * the codebase has (deliberately) grown several request helpers next to the
@@ -73,11 +73,32 @@ function isSameOriginApiCall(input: RequestInfo | URL): boolean {
   }
 }
 
+/// A "." or ".." path segment in the raw request string — also percent-encoded
+/// ("%2e") or behind a backslash, which URL parsing treats as "/" for http(s).
+/// API paths never contain one legitimately; one can only come from an
+/// unencoded id/value interpolated into the URL, which the browser would then
+/// resolve to a *different* endpoint (path traversal, e.g. an id of
+/// "../../settings/x" turning a checklist call into a settings call).
+const DOT_SEGMENT = /(^|[/\\])(\.|%2e){1,2}([/\\]|$)/i;
+
+/** True when the raw path part (before ? / #) of an /api request string contains a dot-segment. */
+export function hasDotSegment(raw: string): boolean {
+  const path = raw.split(/[?#]/, 1)[0];
+  return DOT_SEGMENT.test(path);
+}
+
 /** Install once in main.tsx, before anything issues a fetch. */
 export function installClientVersionFetch(): void {
   const originalFetch = window.fetch.bind(window);
 
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    // Defence in depth for every request helper at once: refuse an /api
+    // request whose raw string would be re-routed by dot-segment resolution.
+    // Only string inputs carry the raw form; URL/Request are already resolved.
+    if (typeof input === "string" && (input.startsWith("/api/") || isSameOriginApiCall(input)) && hasDotSegment(input)) {
+      throw new TypeError("Blocked an API request with a dot-segment in its path.");
+    }
+
     let options = init;
     if (BAKED_VERSION !== "dev" && isSameOriginApiCall(input)) {
       const headers = new Headers(

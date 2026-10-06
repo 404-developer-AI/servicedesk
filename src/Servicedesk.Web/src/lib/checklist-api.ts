@@ -147,16 +147,16 @@ export type ChecklistItemInput = {
 export const ticketChecklistApi = {
   settings: () => request<ChecklistSettings>("GET", "/api/settings/checklists"),
   list: (ticketId: string) =>
-    request<{ items: TicketChecklist[] }>("GET", `/api/tickets/${ticketId}/checklists`),
+    request<{ items: TicketChecklist[] }>("GET", `/api/tickets/${encodeURIComponent(ticketId)}/checklists`),
   availableTemplates: (ticketId: string) =>
     request<{ items: AvailableChecklistTemplate[] }>(
       "GET",
-      `/api/tickets/${ticketId}/checklists/available-templates`,
+      `/api/tickets/${encodeURIComponent(ticketId)}/checklists/available-templates`,
     ),
   attach: (ticketId: string, templateId: string) =>
-    request<TicketChecklist>("POST", `/api/tickets/${ticketId}/checklists`, { templateId }),
+    request<TicketChecklist>("POST", `/api/tickets/${encodeURIComponent(ticketId)}/checklists`, { templateId }),
   detach: (ticketId: string, checklistId: string) =>
-    request<void>("DELETE", `/api/tickets/${ticketId}/checklists/${checklistId}`),
+    request<void>("DELETE", `/api/tickets/${encodeURIComponent(ticketId)}/checklists/${encodeURIComponent(checklistId)}`),
   setItemState: (
     ticketId: string,
     itemId: string,
@@ -166,29 +166,29 @@ export const ticketChecklistApi = {
   ) =>
     request<TicketChecklistItem>(
       "PATCH",
-      `/api/tickets/${ticketId}/checklists/items/${itemId}/state`,
+      `/api/tickets/${encodeURIComponent(ticketId)}/checklists/items/${encodeURIComponent(itemId)}/state`,
       { state, reason: reason ?? null, comment: comment ?? null },
     ),
   addComment: (ticketId: string, itemId: string, comment: string) =>
     request<TicketChecklistItem>(
       "POST",
-      `/api/tickets/${ticketId}/checklists/items/${itemId}/comments`,
+      `/api/tickets/${encodeURIComponent(ticketId)}/checklists/items/${encodeURIComponent(itemId)}/comments`,
       { comment },
     ),
   addItem: (ticketId: string, checklistId: string, input: ChecklistItemInput) =>
     request<TicketChecklistItem>(
       "POST",
-      `/api/tickets/${ticketId}/checklists/${checklistId}/items`,
+      `/api/tickets/${encodeURIComponent(ticketId)}/checklists/${encodeURIComponent(checklistId)}/items`,
       input,
     ),
   updateItem: (ticketId: string, itemId: string, input: ChecklistItemInput) =>
-    request<TicketChecklistItem>("PUT", `/api/tickets/${ticketId}/checklists/items/${itemId}`, input),
+    request<TicketChecklistItem>("PUT", `/api/tickets/${encodeURIComponent(ticketId)}/checklists/items/${encodeURIComponent(itemId)}`, input),
   removeItem: (ticketId: string, itemId: string) =>
-    request<void>("DELETE", `/api/tickets/${ticketId}/checklists/items/${itemId}`),
+    request<void>("DELETE", `/api/tickets/${encodeURIComponent(ticketId)}/checklists/items/${encodeURIComponent(itemId)}`),
   itemEvents: (ticketId: string, itemId: string) =>
     request<{ items: ChecklistItemEvent[] }>(
       "GET",
-      `/api/tickets/${ticketId}/checklists/items/${itemId}/events`,
+      `/api/tickets/${encodeURIComponent(ticketId)}/checklists/items/${encodeURIComponent(itemId)}/events`,
     ),
 };
 
@@ -236,14 +236,14 @@ export type ChecklistTemplateInput = {
 
 export const checklistTemplateApi = {
   list: () => request<{ items: ChecklistTemplateSummary[] }>("GET", "/api/settings/checklist-templates"),
-  get: (id: string) => request<ChecklistTemplateDetail>("GET", `/api/settings/checklist-templates/${id}`),
+  get: (id: string) => request<ChecklistTemplateDetail>("GET", `/api/settings/checklist-templates/${encodeURIComponent(id)}`),
   create: (input: ChecklistTemplateInput) =>
     request<ChecklistTemplateDetail>("POST", "/api/settings/checklist-templates", input),
   update: (id: string, input: ChecklistTemplateInput) =>
-    request<ChecklistTemplateDetail>("PUT", `/api/settings/checklist-templates/${id}`, input),
+    request<ChecklistTemplateDetail>("PUT", `/api/settings/checklist-templates/${encodeURIComponent(id)}`, input),
   duplicate: (id: string) =>
-    request<ChecklistTemplateDetail>("POST", `/api/settings/checklist-templates/${id}/duplicate`),
-  remove: (id: string) => request<void>("DELETE", `/api/settings/checklist-templates/${id}`),
+    request<ChecklistTemplateDetail>("POST", `/api/settings/checklist-templates/${encodeURIComponent(id)}/duplicate`),
+  remove: (id: string) => request<void>("DELETE", `/api/settings/checklist-templates/${encodeURIComponent(id)}`),
 };
 
 // ---- helpers shared by bar / header / panel / list chip ----
