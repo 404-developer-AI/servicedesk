@@ -70,9 +70,11 @@ public sealed class PortalMailService : IPortalMailService
         var from = await ResolveFromMailboxAsync(ct);
         if (from is null)
         {
+            // The recipient address is deliberately not logged (customer PII
+            // in application logs); the kind is enough to diagnose config.
             _logger.LogError(
-                "Portal mail ({Kind}) to {Email} not sent: no sender mailbox configured (Portal.FromMailbox / queue mailbox).",
-                kind, toEmail);
+                "Portal mail ({Kind}) not sent: no sender mailbox configured (Portal.FromMailbox / queue mailbox).",
+                kind);
             return false;
         }
 
@@ -134,7 +136,7 @@ public sealed class PortalMailService : IPortalMailService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Portal mail ({Kind}) to {Email} failed to send via Graph.", kind, toEmail);
+            _logger.LogError(ex, "Portal mail ({Kind}) failed to send via Graph.", kind);
             return false;
         }
     }

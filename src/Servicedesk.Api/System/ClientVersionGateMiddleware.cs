@@ -63,7 +63,7 @@ public sealed class ClientVersionGateMiddleware
         // header can never inject fake lines into a plain-text log sink.
         logger.LogWarning(
             "Rejected write from outdated client bundle {ClientVersion} (server {ServerVersion}) on {Method} {Path}",
-            SanitizeForLog(clientVersion), _serverVersion, context.Request.Method, SanitizeForLog(path));
+            SanitizeForLog(clientVersion), _serverVersion, SanitizeForLog(context.Request.Method), SanitizeForLog(path));
 
         context.Response.StatusCode = StatusCodes.Status426UpgradeRequired;
         await context.Response.WriteAsJsonAsync(new

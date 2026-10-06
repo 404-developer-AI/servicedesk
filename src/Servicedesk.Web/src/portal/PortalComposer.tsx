@@ -136,7 +136,10 @@ export function PortalComposer({
   );
 }
 
-/// Strips tags to decide whether the editor holds anything but whitespace.
+/// Decides whether the editor holds anything but whitespace. Parsed with
+/// DOMParser (inert: no scripts run, nothing is rendered) and read back as
+/// textContent, which also decodes entities like &nbsp;.
 export function htmlHasText(html: string): boolean {
-  return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim().length > 0;
+  const text = new DOMParser().parseFromString(html, "text/html").body.textContent ?? "";
+  return text.replace(/ /g, " ").trim().length > 0;
 }
