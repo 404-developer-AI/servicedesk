@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Sla;
@@ -41,53 +42,58 @@ public sealed class SlaRecalcWorker : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             var interval = 60;
-            try
+            using (var run = PerfWorkerRun.Start("sla-recalc"))
             {
-                using var scope = _sp.CreateScope();
-                var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-                interval = Math.Max(15, await settings.GetAsync<int>(SettingKeys.Sla.RecalcIntervalSeconds, stoppingToken));
-                var batch = Math.Clamp(await settings.GetAsync<int>(SettingKeys.Sla.RecalcBatchSize, stoppingToken), 10, 5000);
-
-                var repo = scope.ServiceProvider.GetRequiredService<ISlaRepository>();
-                var engine = scope.ServiceProvider.GetRequiredService<ISlaEngine>();
-
-                if (!catchUpDone)
+                try
                 {
-                    // One-off: resolved-but-open tickets without a state row.
-                    // Loops until the anti-join comes back empty (every recalc
-                    // creates the row, so this converges), bounded per cycle.
-                    var caught = 0;
-                    IReadOnlyList<Guid> missing;
-                    do
+                    using var scope = _sp.CreateScope();
+                    var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
+                    interval = Math.Max(15, await settings.GetAsync<int>(SettingKeys.Sla.RecalcIntervalSeconds, stoppingToken));
+                    var batch = Math.Clamp(await settings.GetAsync<int>(SettingKeys.Sla.RecalcBatchSize, stoppingToken), 10, 5000);
+
+                    var repo = scope.ServiceProvider.GetRequiredService<ISlaRepository>();
+                    var engine = scope.ServiceProvider.GetRequiredService<ISlaEngine>();
+
+                    if (!catchUpDone)
                     {
-                        missing = await repo.ListResolvedWithoutStateAsync(batch, stoppingToken);
-                        foreach (var id in missing)
+                        // One-off: resolved-but-open tickets without a state row.
+                        // Loops until the anti-join comes back empty (every recalc
+                        // creates the row, so this converges), bounded per cycle.
+                        var caught = 0;
+                        IReadOnlyList<Guid> missing;
+                        do
                         {
-                            if (stoppingToken.IsCancellationRequested) break;
-                            await engine.RecalcAsync(id, stoppingToken);
-                        }
-                        caught += missing.Count;
-                    } while (missing.Count == batch && caught < batch * 10 && !stoppingToken.IsCancellationRequested);
-                    catchUpDone = missing.Count < batch;
-                    if (caught > 0)
-                        _logger.LogInformation("SLA recalc: created state rows for {Count} resolved tickets without one.", caught);
-                }
+                            missing = await repo.ListResolvedWithoutStateAsync(batch, stoppingToken);
+                            foreach (var id in missing)
+                            {
+                                if (stoppingToken.IsCancellationRequested) break;
+                                await engine.RecalcAsync(id, stoppingToken);
+                            }
+                            caught += missing.Count;
+                        } while (missing.Count == batch && caught < batch * 10 && !stoppingToken.IsCancellationRequested);
+                        catchUpDone = missing.Count < batch;
+                        if (caught > 0)
+                            _logger.LogInformation("SLA recalc: created state rows for {Count} resolved tickets without one.", caught);
+                    }
 
-                var candidates = await repo.ListRecalcCandidatesAsync(batch, cursor, stoppingToken);
-                foreach (var c in candidates)
-                {
-                    if (stoppingToken.IsCancellationRequested) break;
-                    await engine.RecalcAsync(c.Id, stoppingToken);
+                    var candidates = await repo.ListRecalcCandidatesAsync(batch, cursor, stoppingToken);
+                    run.AddItems(candidates.Count);
+                    foreach (var c in candidates)
+                    {
+                        if (stoppingToken.IsCancellationRequested) break;
+                        await engine.RecalcAsync(c.Id, stoppingToken);
+                    }
+                    // Advance the cursor; a short batch means the pass is complete —
+                    // start over from the least-recently-updated ticket next cycle.
+                    cursor = candidates.Count < batch
+                        ? null
+                        : new SlaRecalcCursor(candidates[^1].UpdatedUtc, candidates[^1].Id);
                 }
-                // Advance the cursor; a short batch means the pass is complete —
-                // start over from the least-recently-updated ticket next cycle.
-                cursor = candidates.Count < batch
-                    ? null
-                    : new SlaRecalcCursor(candidates[^1].UpdatedUtc, candidates[^1].Id);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "SLA recalc worker iteration failed.");
+                catch (Exception ex)
+                {
+                    run.Fail(ex);
+                    _logger.LogError(ex, "SLA recalc worker iteration failed.");
+                }
             }
 
             try { await Task.Delay(TimeSpan.FromSeconds(interval), stoppingToken); }

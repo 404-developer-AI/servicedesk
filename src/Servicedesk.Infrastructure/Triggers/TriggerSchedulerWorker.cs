@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Triggers.Actions;
 
@@ -87,9 +88,15 @@ public sealed class TriggerSchedulerWorker : BackgroundService
                 }
                 else
                 {
+                    using var run = PerfWorkerRun.Start("trigger-scheduler");
                     try
                     {
                         await TickAsync(scope.ServiceProvider, stoppingToken);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        run.Fail(ex);
+                        throw;
                     }
                     finally
                     {

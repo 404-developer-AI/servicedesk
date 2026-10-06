@@ -40,6 +40,9 @@ public sealed class SettingsSearchSource : ISearchSource
             "audit log events actor role target history"),
         new("health", "Health", "/settings/health",
             "health status incidents blob disk mail graph observability"),
+        // v0.1.24 — the Performance dashboard (admin-only, like every entry here).
+        new("performance", "Performance", "/settings/performance",
+            "performance slow latency monitoring diagnose queries database postgres cpu steal memory disk web vitals bottleneck export report"),
     }.AsReadOnly();
 
     public Task<SearchGroup> SearchAsync(

@@ -19,6 +19,7 @@ Self-hosted helpdesk for small and mid-size teams. One install per organisation,
 - **Views** — saved ticket lists with their own filters, grouping, floats and column layout (drag to order, optionally locked so everyone sees the same columns, including a *Time logged* column). Switch on a search box per view: *Columns* filters instantly on what you see, *Full* digs through descriptions, mails and notes — always within that view.
 - **Bulk actions** — select tickets in the list (shift-click ranges, per-group select-all) and post a note or change status / queue / assignee / priority on all of them in one go. Every ticket still runs its normal rules; the ones that don't allow the change are skipped and reported, never forced.
 - **Search** — PostgreSQL `tsvector` + GIN with `pg_trgm` and `unaccent` for fuzzy matching; global Ctrl/Cmd+K palette across tickets, contacts, companies, and settings.
+- **Performance** — an admin page that shows where the app is slow and why: server and hosting, network, code, database queries and maintenance, the browser and background jobs, with an export you can hand to an AI coding assistant. Basic monitoring is on by default and cheap; a time-limited Diagnose mode digs deeper.
 - **Reporting API** — opt-in, key-gated read-only endpoint for external tooling: ticket counts (opened / closed / currently open) plus ticket number + subject lists over any period, with an optional IP allow-list. Off by default; configured from Settings → Reporting API.
 
 ## Requirements

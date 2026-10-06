@@ -49,6 +49,15 @@ public sealed class ClientVersionGateMiddleware
             return;
         }
 
+        // v0.1.24 — performance telemetry is exempt: a background metrics
+        // batch from an old tab must not be what triggers its forced reload
+        // (the payload is whitelist-validated, so an older shape is safe).
+        if (path.Equals("/api/perf/rum", StringComparison.OrdinalIgnoreCase))
+        {
+            await _next(context);
+            return;
+        }
+
         var clientVersion = context.Request.Headers[HeaderName].ToString();
         if (string.IsNullOrEmpty(clientVersion) ||
             string.Equals(clientVersion, _serverVersion, StringComparison.Ordinal))

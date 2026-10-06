@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Integrations.Trmm;
@@ -70,10 +71,24 @@ public sealed class TrmmSyncWorker : BackgroundService
         var sync = scope.ServiceProvider.GetRequiredService<ITrmmSyncService>();
         var notifier = scope.ServiceProvider.GetRequiredService<ITrmmSyncNotifier>();
 
-        var outcome = await sync.RunOnceAsync(trigger, ct);
-        if (outcome.Success)
+        using var run = PerfWorkerRun.Start("trmm-sync");
+        try
         {
-            await notifier.NotifyAssetsChangedAsync(outcome, ct);
+            var outcome = await sync.RunOnceAsync(trigger, ct);
+            run.AddItems(outcome.Agents);
+            if (outcome.Success)
+            {
+                await notifier.NotifyAssetsChangedAsync(outcome, ct);
+            }
+            else
+            {
+                run.Fail(outcome.ErrorCode ?? "sync_failed");
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            run.Fail(ex);
+            throw;
         }
 
         return TimeSpan.FromMinutes(intervalMinutes);

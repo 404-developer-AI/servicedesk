@@ -8,6 +8,7 @@ import {
   Contact,
   Eye,
   FileText,
+  Gauge,
   Mail,
   MessageSquareText,
   Paperclip,
@@ -206,6 +207,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       "Live status of background subsystems — mail polling, Graph credentials, storage. Retry actions and troubleshooting.",
     icon: Activity,
+  },
+  {
+    slug: "performance",
+    label: "Performance",
+    description:
+      "Where the app is slow and why — server, network, code, database, browser and background jobs — with a report export for Claude Code.",
+    icon: Gauge,
   },
 ];
 

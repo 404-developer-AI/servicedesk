@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using Servicedesk.Infrastructure.Audit;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Persistence;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Storage;
@@ -108,6 +109,7 @@ public sealed class ZammadDryRunWorker : BackgroundService
         var audit = scope.ServiceProvider.GetRequiredService<IAuditLogger>();
         var integrationAudit = scope.ServiceProvider.GetRequiredService<IIntegrationAuditLogger>();
 
+        using var run = PerfWorkerRun.Start("zammad-dry-run");
         try
         {
             // Sanity-check: master switch off → mark run as failed
@@ -115,6 +117,7 @@ public sealed class ZammadDryRunWorker : BackgroundService
             var enabled = await settings.GetAsync<bool>(SettingKeys.Zammad.Enabled, stoppingToken);
             if (!enabled)
             {
+                run.Fail("zammad_disabled");
                 await MarkRunFailedAsync(dataSource, runId,
                     "Zammad integration is disabled. Toggle it on first.", stoppingToken);
                 return;
@@ -193,6 +196,7 @@ public sealed class ZammadDryRunWorker : BackgroundService
             }
             catch (ZammadApiException ex)
             {
+                run.Fail(ex);
                 await MarkRunFailedAsync(dataSource, runId,
                     "Could not resolve ticket selection: " + ex.Message, stoppingToken);
                 return;
@@ -250,6 +254,7 @@ public sealed class ZammadDryRunWorker : BackgroundService
                 }
             }
 
+            run.AddItems(totals.Processed);
             await CompleteRunAsync(dataSource, runId, totals, stoppingToken);
             await LogLifecycleAsync(audit, ZammadEventTypes.DryRunFinished, runId, new
             {
@@ -266,6 +271,7 @@ public sealed class ZammadDryRunWorker : BackgroundService
         }
         catch (Exception ex)
         {
+            run.Fail(ex);
             _logger.LogError(ex,
                 "ZammadDryRunWorker crashed processing run {RunId}", runId);
             await MarkRunFailedAsync(dataSource, runId,

@@ -421,6 +421,11 @@ setup_postgres_role_and_db() {
     log "Enabling pg_stat_statements in ${PG_APP_DB} …"
     sudo -u postgres psql -d "${PG_APP_DB}" -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;" >/dev/null         || warn "pg_stat_statements could not be created — slow-query inspection unavailable (non-fatal)."
 
+    # v0.1.24 — read-only access to PostgreSQL's statistics views for
+    # Settings → Performance (predefined role: no write rights, no superuser).
+    sudo -u postgres psql -d "${PG_APP_DB}" -c "GRANT pg_monitor TO \"${DB_USER}\";" >/dev/null \
+        || warn "Could not grant pg_monitor to ${DB_USER} — the Performance page shows limited database statistics (non-fatal)."
+
     ok "Postgres role + database ready."
 }
 

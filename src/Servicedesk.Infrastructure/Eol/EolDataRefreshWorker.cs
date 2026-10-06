@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Eol;
@@ -62,7 +63,18 @@ public sealed class EolDataRefreshWorker : BackgroundService
         if (!enabled) return nextDelay;
 
         var svc = scope.ServiceProvider.GetRequiredService<IEolDataRefreshService>();
-        await svc.RunOnceAsync(trigger, ct);
+        using var run = PerfWorkerRun.Start("eol-refresh");
+        try
+        {
+            var outcome = await svc.RunOnceAsync(trigger, ct);
+            run.AddItems(outcome.WindowsRows + outcome.WindowsServerRows);
+            if (!outcome.Success) run.Fail(outcome.ErrorCode ?? "refresh_failed");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            run.Fail(ex);
+            throw;
+        }
         return nextDelay;
     }
 

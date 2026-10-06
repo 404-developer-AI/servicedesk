@@ -6025,6 +6025,296 @@ public sealed class DatabaseBootstrapper : IHostedService
             ADD COLUMN IF NOT EXISTS use_for_mail        BOOLEAN NOT NULL DEFAULT TRUE,
             ADD COLUMN IF NOT EXISTS use_for_call        BOOLEAN NOT NULL DEFAULT TRUE,
             ADD COLUMN IF NOT EXISTS auto_insert_on_call BOOLEAN NOT NULL DEFAULT FALSE;
+
+        -- ===================================================================
+        -- v0.1.24 — Performance monitoring (Settings → Performance).
+        -- Collectors aggregate in memory and the flush service writes one
+        -- batch per minute (binary COPY) — never a row per request. Every
+        -- *_minute table has an *_hour twin filled by the hourly rollup, so
+        -- long periods read a few thousand rows instead of millions.
+        -- Durations are stored as fixed log-linear histograms (bigint[]):
+        -- histograms are additive, so minute rows roll up into hour rows and
+        -- any period's percentiles stay exact to the bucket. Keys are route
+        -- templates and normalised SQL only — no ids, no values, no users.
+        -- Deliberately regular (logged) tables: the write volume is a few
+        -- hundred rows a minute, so UNLOGGED would save nothing measurable
+        -- while losing the history on every crash and restore. backup.sh
+        -- dumps their structure only (--exclude-table-data='perf_*').
+        -- ===================================================================
+        CREATE OR REPLACE FUNCTION perf_hist_add(a BIGINT[], b BIGINT[]) RETURNS BIGINT[]
+            LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $fn$
+            SELECT CASE
+                WHEN a IS NULL THEN b
+                WHEN b IS NULL THEN a
+                ELSE ARRAY(SELECT COALESCE(a[i], 0) + COALESCE(b[i], 0)
+                           FROM generate_series(1, GREATEST(cardinality(a), cardinality(b))) AS i
+                           ORDER BY i)
+            END
+            $fn$;
+        CREATE OR REPLACE AGGREGATE perf_hist_sum(BIGINT[]) (SFUNC = perf_hist_add, STYPE = BIGINT[]);
+
+        CREATE TABLE IF NOT EXISTS perf_http_minute (
+            bucket_utc    TIMESTAMPTZ      NOT NULL,
+            method        TEXT             NOT NULL,
+            route         TEXT             NOT NULL,
+            status_class  TEXT             NOT NULL,
+            count         BIGINT           NOT NULL,
+            err_count     BIGINT           NOT NULL,
+            sum_ms        DOUBLE PRECISION NOT NULL,
+            max_ms        DOUBLE PRECISION NOT NULL,
+            hist          BIGINT[]         NOT NULL,
+            db_count      BIGINT           NOT NULL,
+            db_ms         DOUBLE PRECISION NOT NULL,
+            ext_ms        DOUBLE PRECISION NOT NULL,
+            pipeline_ms   DOUBLE PRECISION NOT NULL,
+            bytes_sum     BIGINT           NOT NULL,
+            size_hist     BIGINT[]         NOT NULL,
+            users         INTEGER          NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_perf_http_minute_bucket ON perf_http_minute (bucket_utc);
+        CREATE TABLE IF NOT EXISTS perf_http_hour (LIKE perf_http_minute);
+        CREATE INDEX IF NOT EXISTS ix_perf_http_hour_bucket ON perf_http_hour (bucket_utc);
+
+        CREATE TABLE IF NOT EXISTS perf_db_query_minute (
+            bucket_utc    TIMESTAMPTZ      NOT NULL,
+            fingerprint   TEXT             NOT NULL,
+            source        TEXT             NOT NULL,
+            count         BIGINT           NOT NULL,
+            err_count     BIGINT           NOT NULL,
+            sum_ms        DOUBLE PRECISION NOT NULL,
+            max_ms        DOUBLE PRECISION NOT NULL,
+            hist          BIGINT[]         NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_perf_db_query_minute_bucket ON perf_db_query_minute (bucket_utc);
+        CREATE TABLE IF NOT EXISTS perf_db_query_hour (LIKE perf_db_query_minute);
+        CREATE INDEX IF NOT EXISTS ix_perf_db_query_hour_bucket ON perf_db_query_hour (bucket_utc);
+
+        -- One example per query shape: normalised text (no literal values)
+        -- and the first calling method seen, for "where in the code".
+        CREATE TABLE IF NOT EXISTS perf_sql_fingerprint (
+            fingerprint     TEXT        PRIMARY KEY,
+            sql_text        TEXT        NOT NULL,
+            caller          TEXT        NULL,
+            first_seen_utc  TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_seen_utc   TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        -- Generic timed spans: external HTTP per host, SignalR hub methods and
+        -- broadcasts, global-search sources, DB time per source kind.
+        CREATE TABLE IF NOT EXISTS perf_span_minute (
+            bucket_utc    TIMESTAMPTZ      NOT NULL,
+            kind          TEXT             NOT NULL,
+            name          TEXT             NOT NULL,
+            detail        TEXT             NOT NULL,
+            count         BIGINT           NOT NULL,
+            err_count     BIGINT           NOT NULL,
+            sum_ms        DOUBLE PRECISION NOT NULL,
+            max_ms        DOUBLE PRECISION NOT NULL,
+            hist          BIGINT[]         NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_perf_span_minute_bucket ON perf_span_minute (bucket_utc);
+        CREATE TABLE IF NOT EXISTS perf_span_hour (LIKE perf_span_minute);
+        CREATE INDEX IF NOT EXISTS ix_perf_span_hour_bucket ON perf_span_hour (bucket_utc);
+
+        -- Real-user monitoring from the staff SPA (bucketed on server time).
+        CREATE TABLE IF NOT EXISTS perf_rum_minute (
+            bucket_utc    TIMESTAMPTZ      NOT NULL,
+            route         TEXT             NOT NULL,
+            metric        TEXT             NOT NULL,
+            detail        TEXT             NOT NULL,
+            device        TEXT             NOT NULL,
+            connection    TEXT             NOT NULL,
+            count         BIGINT           NOT NULL,
+            sum_value     DOUBLE PRECISION NOT NULL,
+            max_value     DOUBLE PRECISION NOT NULL,
+            hist          BIGINT[]         NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_perf_rum_minute_bucket ON perf_rum_minute (bucket_utc);
+        CREATE TABLE IF NOT EXISTS perf_rum_hour (LIKE perf_rum_minute);
+        CREATE INDEX IF NOT EXISTS ix_perf_rum_hour_bucket ON perf_rum_hour (bucket_utc);
+
+        CREATE TABLE IF NOT EXISTS perf_nplusone_minute (
+            bucket_utc       TIMESTAMPTZ NOT NULL,
+            route            TEXT        NOT NULL,
+            fingerprint      TEXT        NOT NULL,
+            requests         BIGINT      NOT NULL,
+            executions       BIGINT      NOT NULL,
+            max_per_request  BIGINT      NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_perf_nplusone_minute_bucket ON perf_nplusone_minute (bucket_utc);
+
+        CREATE TABLE IF NOT EXISTS perf_slow_request (
+            id           BIGSERIAL        PRIMARY KEY,
+            ts_utc       TIMESTAMPTZ      NOT NULL,
+            method       TEXT             NOT NULL,
+            route        TEXT             NOT NULL,
+            status       INTEGER          NOT NULL,
+            total_ms     DOUBLE PRECISION NOT NULL,
+            db_ms        DOUBLE PRECISION NOT NULL,
+            db_count     BIGINT           NOT NULL,
+            ext_ms       DOUBLE PRECISION NOT NULL,
+            pipeline_ms  DOUBLE PRECISION NOT NULL,
+            gc_count     INTEGER          NOT NULL,
+            bytes        BIGINT           NOT NULL,
+            breakdown    JSONB            NULL,
+            trace_id     TEXT             NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_perf_slow_request_ts ON perf_slow_request (ts_utc);
+
+        CREATE TABLE IF NOT EXISTS perf_worker_run (
+            id           BIGSERIAL        PRIMARY KEY,
+            started_utc  TIMESTAMPTZ      NOT NULL,
+            worker       TEXT             NOT NULL,
+            duration_ms  DOUBLE PRECISION NOT NULL,
+            success      BOOLEAN          NOT NULL,
+            items        BIGINT           NOT NULL,
+            error_kind   TEXT             NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_perf_worker_run_started ON perf_worker_run (started_utc);
+
+        -- One row per minute: runtime + host aggregates of the 10 s samples,
+        -- plus the app version and monitoring level in force (version
+        -- comparisons, "Diagnose was on for x% of the period").
+        CREATE TABLE IF NOT EXISTS perf_runtime_minute (
+            bucket_utc         TIMESTAMPTZ      PRIMARY KEY,
+            app_version        TEXT             NOT NULL,
+            level              TEXT             NOT NULL,
+            samples            INTEGER          NOT NULL,
+            requests           BIGINT           NOT NULL,
+            in_flight_max      BIGINT           NOT NULL,
+            active_users       INTEGER          NOT NULL,
+            overhead_ms        DOUBLE PRECISION NOT NULL,
+            cpu_pct            DOUBLE PRECISION NULL,
+            cpu_pct_max        DOUBLE PRECISION NULL,
+            working_set_mb     DOUBLE PRECISION NOT NULL,
+            gc_heap_mb         DOUBLE PRECISION NOT NULL,
+            gc_heap_mb_max     DOUBLE PRECISION NOT NULL,
+            alloc_mb           DOUBLE PRECISION NOT NULL,
+            gen0               BIGINT           NOT NULL,
+            gen1               BIGINT           NOT NULL,
+            gen2               BIGINT           NOT NULL,
+            gc_pause_ms        DOUBLE PRECISION NOT NULL,
+            interval_ms        DOUBLE PRECISION NOT NULL,
+            tp_threads_avg     DOUBLE PRECISION NOT NULL,
+            tp_threads_max     INTEGER          NOT NULL,
+            tp_queue_avg       DOUBLE PRECISION NOT NULL,
+            tp_queue_max       BIGINT           NOT NULL,
+            tp_queue_samples   INTEGER          NOT NULL,
+            exceptions         BIGINT           NOT NULL,
+            lock_contentions   BIGINT           NOT NULL,
+            kestrel_active_max BIGINT           NOT NULL,
+            kestrel_queued_max BIGINT           NOT NULL,
+            signalr_conn_max   BIGINT           NOT NULL,
+            pool_busy_avg      DOUBLE PRECISION NOT NULL,
+            pool_busy_max      BIGINT           NOT NULL,
+            pool_idle_avg      DOUBLE PRECISION NOT NULL,
+            pool_max           BIGINT           NOT NULL,
+            pool_pending_max   BIGINT           NOT NULL,
+            pool_wait_samples  INTEGER          NOT NULL,
+            pool_timeouts      BIGINT           NOT NULL,
+            host_cpu_pct       DOUBLE PRECISION NULL,
+            host_cpu_max       DOUBLE PRECISION NULL,
+            host_steal_pct     DOUBLE PRECISION NULL,
+            host_iowait_pct    DOUBLE PRECISION NULL,
+            load1              DOUBLE PRECISION NULL,
+            host_cores         INTEGER          NULL,
+            mem_total_mb       DOUBLE PRECISION NULL,
+            mem_available_mb   DOUBLE PRECISION NULL,
+            swap_used_mb       DOUBLE PRECISION NULL,
+            swap_in            DOUBLE PRECISION NULL,
+            swap_out           DOUBLE PRECISION NULL,
+            disk_await_ms      DOUBLE PRECISION NULL,
+            disk_util_pct      DOUBLE PRECISION NULL,
+            cg_throttled_pct   DOUBLE PRECISION NULL,
+            cg_mem_mb          DOUBLE PRECISION NULL,
+            cg_mem_limit_mb    DOUBLE PRECISION NULL,
+            oom_kills          BIGINT           NULL,
+            root_free_pct      DOUBLE PRECISION NULL,
+            blob_free_pct      DOUBLE PRECISION NULL,
+            root_free_gb       DOUBLE PRECISION NULL,
+            blob_free_gb       DOUBLE PRECISION NULL
+        );
+
+        -- PostgreSQL statistics are cumulative; snapshots let the dashboard
+        -- compute deltas for any period (pg_stat_statements is never reset).
+        CREATE TABLE IF NOT EXISTS perf_pg_statement_snapshot (
+            ts_utc        TIMESTAMPTZ      NOT NULL,
+            queryid       BIGINT           NOT NULL,
+            calls         BIGINT           NOT NULL,
+            total_ms      DOUBLE PRECISION NOT NULL,
+            rows          BIGINT           NOT NULL,
+            blks_hit      BIGINT           NOT NULL,
+            blks_read     BIGINT           NOT NULL,
+            temp_written  BIGINT           NOT NULL,
+            mean_ms       DOUBLE PRECISION NOT NULL,
+            stddev_ms     DOUBLE PRECISION NOT NULL,
+            max_ms        DOUBLE PRECISION NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_perf_pg_statement_snapshot_ts ON perf_pg_statement_snapshot (ts_utc);
+        CREATE TABLE IF NOT EXISTS perf_pg_query_text (
+            queryid        BIGINT      PRIMARY KEY,
+            query          TEXT        NOT NULL,
+            last_seen_utc  TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE TABLE IF NOT EXISTS perf_pg_db_snapshot (
+            ts_utc   TIMESTAMPTZ PRIMARY KEY,
+            payload  JSONB       NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS perf_pg_table_snapshot (
+            ts_utc             TIMESTAMPTZ NOT NULL,
+            relname            TEXT        NOT NULL,
+            n_live             BIGINT      NOT NULL,
+            n_dead             BIGINT      NOT NULL,
+            seq_scan           BIGINT      NOT NULL,
+            seq_tup_read       BIGINT      NOT NULL,
+            idx_scan           BIGINT      NOT NULL,
+            n_ins              BIGINT      NOT NULL,
+            n_upd              BIGINT      NOT NULL,
+            n_del              BIGINT      NOT NULL,
+            n_hot_upd          BIGINT      NOT NULL,
+            mod_since_analyze  BIGINT      NOT NULL,
+            heap_read          BIGINT      NOT NULL,
+            heap_hit           BIGINT      NOT NULL,
+            idx_read           BIGINT      NOT NULL,
+            idx_hit            BIGINT      NOT NULL,
+            total_bytes        BIGINT      NOT NULL,
+            table_bytes        BIGINT      NOT NULL,
+            index_bytes        BIGINT      NOT NULL,
+            last_vacuum        TIMESTAMPTZ NULL,
+            last_autovacuum    TIMESTAMPTZ NULL,
+            last_analyze       TIMESTAMPTZ NULL,
+            last_autoanalyze   TIMESTAMPTZ NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_perf_pg_table_snapshot_ts ON perf_pg_table_snapshot (ts_utc);
+
+        -- Timeline markers: app starts (deploys), Diagnose runs and manual
+        -- notes ("added index X") for before/after comparisons.
+        CREATE TABLE IF NOT EXISTS perf_marker (
+            id          BIGSERIAL   PRIMARY KEY,
+            ts_utc      TIMESTAMPTZ NOT NULL DEFAULT now(),
+            kind        TEXT        NOT NULL,
+            label       TEXT        NOT NULL,
+            created_by  TEXT        NULL,
+            CONSTRAINT ck_perf_marker_kind CHECK (kind IN ('deploy','manual','diagnose'))
+        );
+        CREATE INDEX IF NOT EXISTS ix_perf_marker_ts ON perf_marker (ts_utc);
+
+        CREATE TABLE IF NOT EXISTS perf_benchmark (
+            id          BIGSERIAL   PRIMARY KEY,
+            ts_utc      TIMESTAMPTZ NOT NULL DEFAULT now(),
+            payload     JSONB       NOT NULL,
+            created_by  TEXT        NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS perf_rollup_state (
+            name       TEXT        PRIMARY KEY,
+            value_utc  TIMESTAMPTZ NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS perf_alert_state (
+            finding_key     TEXT        PRIMARY KEY,
+            last_alert_utc  TIMESTAMPTZ NOT NULL
+        );
         """;
 
     private readonly NpgsqlDataSource _dataSource;

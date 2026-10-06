@@ -978,6 +978,14 @@ const settingsHealthRoute = createRoute({
   component: HealthSettingsPage,
 });
 
+// v0.1.24 — Performance monitoring dashboard (admin-only like all of /settings).
+// Lazy like Insights: Recharts and the dashboard only load when opened.
+const settingsPerformanceRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "performance",
+  component: lazyRouteComponent(() => import("@/pages/settings/performance/PerformancePage"), "PerformancePage"),
+});
+
 const settingsTicketsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "tickets",
@@ -1155,6 +1163,7 @@ const routeTree = rootRoute.addChildren([
     settingsViewGroupsRoute,
     settingsMailDiagnosticsRoute,
     settingsHealthRoute,
+    settingsPerformanceRoute,
     settingsAuditRoute,
   ]),
   publicIntakeRoute,

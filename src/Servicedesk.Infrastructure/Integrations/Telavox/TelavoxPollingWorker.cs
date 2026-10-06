@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Activity;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Dashboard;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
@@ -247,6 +248,7 @@ public sealed class TelavoxPollingWorker : BackgroundService
         var triggerMode = (await settings.GetAsync<string>(SettingKeys.Telavox.PopupTriggerMode, ct)
             ?? TelavoxCallTransition.Answered).Trim();
 
+        using var run = PerfWorkerRun.Start("telavox-polling");
         var tickStart = Stopwatch.StartNew();
         var pollsAttempted = 0;
         var pollsSucceeded = 0;
@@ -466,6 +468,7 @@ public sealed class TelavoxPollingWorker : BackgroundService
             }
             catch (TelavoxApiException apiEx)
             {
+                run.Fail(apiEx);
                 pollsFailed++;
                 tickOutcome = IntegrationAuditOutcome.Warn;
                 await links.UpdatePollOutcomeAsync(
@@ -484,6 +487,7 @@ public sealed class TelavoxPollingWorker : BackgroundService
             }
             catch (Exception ex)
             {
+                run.Fail(ex);
                 pollsFailed++;
                 tickOutcome = IntegrationAuditOutcome.Warn;
                 await links.UpdatePollOutcomeAsync(
@@ -495,6 +499,7 @@ public sealed class TelavoxPollingWorker : BackgroundService
             }
         }
         tickStart.Stop();
+        run.AddItems(pollsSucceeded);
 
         // Decide whether this tick's accumulated state warrants flushing
         // a coalesced row. Pulled into a separate method so the field-

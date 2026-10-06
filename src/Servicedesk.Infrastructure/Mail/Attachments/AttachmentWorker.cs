@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Mail.Polling;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Storage;
 
@@ -55,26 +56,31 @@ public sealed class AttachmentWorker : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             TimeSpan idle;
-            try
+            using (var run = PerfWorkerRun.Start("attachments"))
             {
-                var ran = await RunOneAsync(stoppingToken);
-                idle = ran ? TimeSpan.Zero : await ReadPollIntervalAsync(stoppingToken);
-
-                // Throttled sweep: when the queue is idle is the cheapest
-                // time to look for finalize-eligible mails that the
-                // per-complete hook missed (e.g. mails without attachments).
-                // Only loop 0 runs the sweeper to avoid duplicate Graph calls.
-                if (index == 0 && DateTime.UtcNow - _lastSweepUtc >= SweepInterval)
+                try
                 {
-                    _lastSweepUtc = DateTime.UtcNow;
-                    await RunSweepAsync(stoppingToken);
+                    var ran = await RunOneAsync(stoppingToken);
+                    if (ran) run.AddItems(1);
+                    idle = ran ? TimeSpan.Zero : await ReadPollIntervalAsync(stoppingToken);
+
+                    // Throttled sweep: when the queue is idle is the cheapest
+                    // time to look for finalize-eligible mails that the
+                    // per-complete hook missed (e.g. mails without attachments).
+                    // Only loop 0 runs the sweeper to avoid duplicate Graph calls.
+                    if (index == 0 && DateTime.UtcNow - _lastSweepUtc >= SweepInterval)
+                    {
+                        _lastSweepUtc = DateTime.UtcNow;
+                        await RunSweepAsync(stoppingToken);
+                    }
                 }
-            }
-            catch (OperationCanceledException) { break; }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "[AttachmentWorker#{Index}] loop crashed — will sleep and retry.", index);
-                idle = TimeSpan.FromSeconds(15);
+                catch (OperationCanceledException) { break; }
+                catch (Exception ex)
+                {
+                    run.Fail(ex);
+                    _logger.LogError(ex, "[AttachmentWorker#{Index}] loop crashed — will sleep and retry.", index);
+                    idle = TimeSpan.FromSeconds(15);
+                }
             }
 
             if (idle > TimeSpan.Zero)

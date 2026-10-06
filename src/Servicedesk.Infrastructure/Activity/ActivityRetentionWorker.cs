@@ -2,6 +2,7 @@ using Dapper;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Activity;
@@ -36,17 +37,21 @@ public sealed class ActivityRetentionWorker : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            try
+            using (var run = PerfWorkerRun.Start("activity-retention"))
             {
-                await PruneAsync(stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "ActivityRetentionWorker tick failed.");
+                try
+                {
+                    await PruneAsync(run, stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    run.Fail(ex);
+                    _logger.LogWarning(ex, "ActivityRetentionWorker tick failed.");
+                }
             }
 
             var intervalHours = await ReadIntervalAsync(stoppingToken);
@@ -58,7 +63,7 @@ public sealed class ActivityRetentionWorker : BackgroundService
         }
     }
 
-    private async Task PruneAsync(CancellationToken stoppingToken)
+    private async Task PruneAsync(PerfWorkerRun run, CancellationToken stoppingToken)
     {
         var retentionDays = await ReadRetentionAsync(stoppingToken);
         var cutoff = DateTimeOffset.UtcNow - TimeSpan.FromDays(retentionDays);
@@ -82,6 +87,8 @@ public sealed class ActivityRetentionWorker : BackgroundService
             totalDeleted += rows;
             if (rows < BatchSize) break;
         }
+
+        run.AddItems(totalDeleted);
 
         if (totalDeleted > 0)
         {

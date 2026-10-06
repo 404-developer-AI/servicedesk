@@ -54,6 +54,18 @@ public static class SettingValueValidator
             SettingKeys.Tickets.ViewSearchDebounceMs =>
                 int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var db) && db is >= 0 and <= 2000
                     ? null : "Choose a whole number of milliseconds from 0 to 2000.",
+            // v0.1.24 — performance monitoring.
+            SettingKeys.Performance.Level =>
+                value is "off" or "basic" ? null : "Choose off or basic (Diagnose is started from the Performance page).",
+            SettingKeys.Performance.DiagnoseUntilUtc =>
+                value.Length == 0 || Performance.PerfSettingsProvider.ParseUtc(value) is not null ? null : "Enter an ISO-8601 UTC timestamp or leave empty.",
+            SettingKeys.Performance.RumSamplePercent =>
+                int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var rum) && rum is >= 0 and <= 100
+                    ? null : "Choose a percentage from 0 to 100.",
+            SettingKeys.Performance.Budgets =>
+                value.Length > 4000 ? "Keep the budget list under 4000 characters."
+                : value.Trim().Length == 0 || Performance.Budget.Parse(value).Count > 0 ? null
+                : "Write one budget per line, like 'GET /api/tickets/{id:guid}=300'.",
             SettingKeys.Portal.ConversationOrder =>
                 value is Portal.PortalConversationOrder.Oldest or Portal.PortalConversationOrder.Newest
                     ? null : "Choose oldest or newest.",

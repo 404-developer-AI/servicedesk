@@ -1,4 +1,5 @@
-import { Outlet } from "@tanstack/react-router";
+import * as React from "react";
+import { Outlet, useRouter } from "@tanstack/react-router";
 import { Toaster } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import { Sidebar } from "@/shell/Sidebar";
@@ -18,6 +19,7 @@ import { settingsApi } from "@/lib/api";
 import { useAuth } from "@/auth/authStore";
 import { useTheme } from "@/app/ThemeProvider";
 import { OrderPillHost } from "@/pages/orders/OrderPillHost";
+import { startRum } from "@/lib/rum";
 
 export function AppShell() {
   usePresenceConnection();
@@ -51,6 +53,15 @@ export function AppShell() {
 
   const secondarySidebar = useSecondarySidebarStore((s) => s.content);
   const { user } = useAuth();
+
+  // v0.1.24 — real-user performance monitoring for staff sessions. The
+  // module asks the server whether (and how often) to report, so it is a
+  // no-op while the Frontend collector is off. Started once per page load.
+  const router = useRouter();
+  const isStaff = user?.role === "Agent" || user?.role === "Admin";
+  React.useEffect(() => {
+    if (isStaff) void startRum(router);
+  }, [isStaff, router]);
   // Sonner palette: Nebula keeps its dark toasts in both modes (they sit on
   // the glass canvas either way); Steaan's flat light surfaces get light
   // toasts so the stack doesn't read as a foreign dark block.

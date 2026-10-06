@@ -47,7 +47,9 @@ chmod 700 "${BACKUP_ROOT}" "${dest}"
 
 # ---- Postgres dump ------------------------------------------------------
 echo "[i] Dumping Postgres database '${PG_APP_DB}' as role ${DB_USER} …"
-sudo -u postgres pg_dump -Fc -d "${PG_APP_DB}" -f "${dest}/servicedesk.dump"
+# v0.1.24 — performance-monitoring tables (perf_*) are dumped structure-only:
+# their data is re-collected within minutes and would only bloat every backup.
+sudo -u postgres pg_dump -Fc -d "${PG_APP_DB}" --exclude-table-data='perf_*' -f "${dest}/servicedesk.dump"
 pg_size="$(du -h "${dest}/servicedesk.dump" | awk '{print $1}')"
 echo "[✓] Postgres dump: ${pg_size}"
 

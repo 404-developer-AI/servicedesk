@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using Servicedesk.Infrastructure.KnowledgeBase;
 using Servicedesk.Infrastructure.Mail.Attachments;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Persistence;
 using Servicedesk.Infrastructure.Persistence.KnowledgeBase;
 using Servicedesk.Infrastructure.Settings;
@@ -94,10 +95,12 @@ public sealed class ZammadKbImportWorker : BackgroundService
         var blobs = scope.ServiceProvider.GetRequiredService<IBlobStore>();
         var sanitizer = scope.ServiceProvider.GetRequiredService<IKbHtmlSanitizer>();
 
+        using var perfRun = PerfWorkerRun.Start("zammad-kb-import");
         try
         {
             if (!await settings.GetAsync<bool>(SettingKeys.Zammad.Enabled, ct))
             {
+                perfRun.Fail("zammad_disabled");
                 await MarkFailedAsync(ds, runId,
                     "Zammad integration is disabled. Toggle it on first.", ct);
                 return;
@@ -196,6 +199,7 @@ public sealed class ZammadKbImportWorker : BackgroundService
                 }
             }
 
+            perfRun.AddItems(totals.Processed);
             await FlushTotalsAsync(ds, runId, totals, ct);
             await SetStatusAsync(ds, runId, "completed", ct);
             await PostgresStatistics.AnalyzeAsync(ds, _logger, ct,
@@ -207,6 +211,7 @@ public sealed class ZammadKbImportWorker : BackgroundService
         }
         catch (Exception ex)
         {
+            perfRun.Fail(ex);
             _logger.LogError(ex, "KB-import run {RunId} failed.", runId);
             await SafeSetFailedAsync(ds, runId, ex.Message, CancellationToken.None);
         }

@@ -2,6 +2,7 @@ using Dapper;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Servicedesk.Infrastructure.Performance;
 
 namespace Servicedesk.Infrastructure.Phones;
 
@@ -56,6 +57,7 @@ public sealed class ContactPhoneBackfillService : BackgroundService
         // — but for a phone like "n/a" or "tbd" the normalizer returns ''
         // and the row stays a forever-candidate. Once the same id comes
         // back in a subsequent batch, we know we're cycling and exit.
+        using var run = PerfWorkerRun.Start("phone-backfill");
         var seen = new HashSet<Guid>();
         var unparseable = 0;
 
@@ -72,6 +74,7 @@ public sealed class ContactPhoneBackfillService : BackgroundService
             }
             catch (Exception ex)
             {
+                run.Fail(ex);
                 _logger.LogWarning(ex, "ContactPhoneBackfillService batch failed; retrying in {Seconds}s", ErrorBackoff.TotalSeconds);
                 try { await Task.Delay(ErrorBackoff, stoppingToken); }
                 catch (OperationCanceledException) { return; }
@@ -79,6 +82,7 @@ public sealed class ContactPhoneBackfillService : BackgroundService
             }
 
             unparseable += outcome.Unparseable;
+            run.AddItems(outcome.Normalised);
 
             if (outcome.Selected == 0)
             {

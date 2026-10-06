@@ -44,6 +44,7 @@ using Servicedesk.Api.Users;
 using Servicedesk.Api.Preferences;
 using Servicedesk.Api.Presence;
 using Servicedesk.Api.Notifications;
+using Servicedesk.Api.Performance;
 using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure;
 using Servicedesk.Infrastructure.Settings;
@@ -148,13 +149,20 @@ builder.Services.AddServicedeskInfrastructure(builder.Configuration);
 // Cookie-backed session auth. The handler reads an opaque session id from the
 // cookie, validates it against the Postgres session store, and hydrates
 // ClaimsPrincipal for downstream authorization policies.
-builder.Services.AddMemoryCache();
+// v0.1.24 — hit/miss counters feed the Performance page (Server tab).
+builder.Services.AddMemoryCache(o => o.TrackStatistics = true);
 builder.Services.AddAuthentication(SessionAuthenticationHandler.SchemeName)
     .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(
         SessionAuthenticationHandler.SchemeName, _ => { });
 
 builder.Services.AddAuthorization(options => options.AddServicedeskPolicies());
-builder.Services.AddSignalR();
+// v0.1.24 — the performance hub filter times hub methods and counts
+// connects; the lifetime-manager decorator counts server broadcasts. Both
+// are inert while the SignalR collector is off.
+builder.Services.AddSignalR(o => Microsoft.AspNetCore.SignalR.HubOptionsExtensions.AddFilter<Servicedesk.Api.Performance.PerfHubFilter>(o));
+builder.Services.AddSingleton(typeof(Microsoft.AspNetCore.SignalR.DefaultHubLifetimeManager<>));
+builder.Services.AddSingleton(typeof(Microsoft.AspNetCore.SignalR.HubLifetimeManager<>),
+    typeof(Servicedesk.Api.Performance.PerfHubLifetimeManager<>));
 // Override the Infrastructure-layer default (no-op) with the SignalR-backed
 // ticket-list notifier so background services (mail ingest) can push updates.
 builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.ITicketListNotifier,
@@ -438,6 +446,24 @@ builder.Services.AddRateLimiter(options =>
         });
     });
 
+    // v0.1.24 — real-user-monitoring batches from the staff SPA. Per session
+    // (IP when anonymous, though the endpoint requires a session): a tab
+    // posts about twice a minute, so 20/min leaves room for several tabs
+    // while bounding a misbehaving client. The endpoint is exempt from the
+    // per-session API budget (GlobalRateLimitPartitioner.IsInfra) so
+    // telemetry never eats into the budget of the agent's real work.
+    options.AddPolicy("perf-rum", ctx =>
+    {
+        var key = GlobalRateLimitPartitioner.SessionOrIpKey(ctx, sessionCookieName, portalCookieName);
+        return RateLimitPartition.GetFixedWindowLimiter("rum:" + key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 20,
+            Window = TimeSpan.FromSeconds(60),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        });
+    });
+
     var reportingPermit = RateLimitValue("Security:RateLimit:Reporting:PermitPerWindow", SettingKeys.Security.RateLimitReportingPermitPerWindow, 30);
     var reportingWindow = RateLimitValue("Security:RateLimit:Reporting:WindowSeconds", SettingKeys.Security.RateLimitReportingWindowSeconds, 60);
     options.AddPolicy("reporting", ctx =>
@@ -538,6 +564,12 @@ var indexNoCache = new Action<Microsoft.AspNetCore.StaticFiles.StaticFileRespons
 app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = indexNoCache });
 app.UseRouting();
 
+// v0.1.24 — performance monitoring. Right after routing so the route
+// template is known, and before the rate limiter/auth/CSRF so their time is
+// measured too (reported as "pipeline"). Static files are served above and
+// never reach it; the monitor's own endpoints and /hubs are skipped inside.
+app.UseMiddleware<Servicedesk.Api.Performance.PerfHttpMiddleware>();
+
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -546,6 +578,9 @@ app.UseMiddleware<DoubleSubmitCsrfMiddleware>();
 // session is an admin's read-only shadow view (amr "impersonated").
 app.UseMiddleware<Servicedesk.Api.Portal.PortalImpersonationReadOnlyMiddleware>();
 app.UseMiddleware<ClientVersionGateMiddleware>(systemInfo);
+// Marks the end of the pipeline: everything above is "pipeline" time on the
+// Performance page, everything after it the endpoint itself.
+app.UseMiddleware<Servicedesk.Api.Performance.PerfPipelineMarkMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
@@ -852,6 +887,8 @@ app.MapActivityEndpoints();
 app.MapUserPreferencesEndpoints();
 app.MapNotificationEndpoints();
 app.MapDevBenchmarkEndpoints(app.Environment);
+app.MapPerformanceEndpoints();
+app.MapPerfRumEndpoints();
 app.MapHub<TicketPresenceHub>("/hubs/presence");
 app.MapHub<UserNotificationHub>("/hubs/notifications");
 app.MapHub<IntegrationsHub>("/hubs/integrations");

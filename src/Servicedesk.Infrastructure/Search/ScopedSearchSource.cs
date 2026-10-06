@@ -23,6 +23,31 @@ public sealed class ScopedSearchSource : ISearchSource
             throw new ArgumentNullException(nameof(principal));
         if (!_inner.IsAvailableFor(principal))
             return Task.FromResult(new SearchGroup(_inner.Kind, Array.Empty<SearchHit>(), 0, false));
-        return _inner.SearchAsync(request, principal, ct);
+        if (!Performance.PerfRuntime.IsOn(Performance.PerfCollector.Http))
+            return _inner.SearchAsync(request, principal, ct);
+        return TimedAsync(request, principal, ct);
+    }
+
+    /// v0.1.24 — global search waits for its slowest source, so each source's
+    /// duration is recorded (Performance → Background & realtime → Search).
+    private async Task<SearchGroup> TimedAsync(SearchRequest request, SearchPrincipal principal, CancellationToken ct)
+    {
+        var start = System.Diagnostics.Stopwatch.GetTimestamp();
+        var failed = false;
+        try
+        {
+            return await _inner.SearchAsync(request, principal, ct);
+        }
+        catch
+        {
+            failed = true;
+            throw;
+        }
+        finally
+        {
+            Performance.PerfRuntime.Recorder?.Current
+                .SpanFor(new Performance.SpanKey("search", _inner.Kind, ""))
+                .Record(System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMilliseconds, failed);
+        }
     }
 }

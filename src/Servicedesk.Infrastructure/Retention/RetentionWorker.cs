@@ -3,6 +3,7 @@ using Dapper;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Retention;
@@ -136,19 +137,23 @@ public sealed class RetentionWorker : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             var intervalHours = 6;
-            try
+            using (var run = PerfWorkerRun.Start("retention"))
             {
-                intervalHours = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Retention.RunIntervalHours, stoppingToken), 1, 168);
-                await SweepAsync(TimeSpan.FromHours(intervalHours), stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "RetentionWorker sweep failed.");
-                _health.RecordFailure(ex.Message);
+                try
+                {
+                    intervalHours = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Retention.RunIntervalHours, stoppingToken), 1, 168);
+                    await SweepAsync(TimeSpan.FromHours(intervalHours), run, stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    run.Fail(ex);
+                    _logger.LogWarning(ex, "RetentionWorker sweep failed.");
+                    _health.RecordFailure(ex.Message);
+                }
             }
 
             try { await Task.Delay(TimeSpan.FromHours(intervalHours), stoppingToken); }
@@ -156,7 +161,7 @@ public sealed class RetentionWorker : BackgroundService
         }
     }
 
-    private async Task SweepAsync(TimeSpan interval, CancellationToken ct)
+    private async Task SweepAsync(TimeSpan interval, PerfWorkerRun run, CancellationToken ct)
     {
         var batchSize = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Retention.BatchSize, ct), 100, 50_000);
         var sw = Stopwatch.StartNew();
@@ -184,6 +189,7 @@ public sealed class RetentionWorker : BackgroundService
         }
 
         sw.Stop();
+        run.AddItems(deleted.Values.Sum());
         _health.RecordRun(deleted, sw.Elapsed, DateTime.UtcNow + interval);
     }
 }
