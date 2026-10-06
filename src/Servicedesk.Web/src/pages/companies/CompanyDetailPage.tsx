@@ -148,7 +148,7 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
               )}
               {company.adsolutId && (
                 <Badge
-                  className="border border-purple-400/30 bg-purple-500/[0.08] text-[10px] font-normal text-purple-200"
+                  className="border border-purple-400/30 bg-purple-500/8 text-[10px] font-normal text-purple-200"
                   title={
                     company.adsolutLastModified
                       ? `Adsolut lastModified: ${new Date(company.adsolutLastModified).toLocaleString()}`
@@ -167,7 +167,7 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
           </div>
         </div>
         {company.alertText && (company.alertOnCreate || company.alertOnOpen) && (
-          <div className="flex max-w-sm items-start gap-2 rounded-md border border-amber-400/30 bg-amber-400/[0.05] px-3 py-2 text-xs text-amber-200">
+          <div className="flex max-w-sm items-start gap-2 rounded-md border border-amber-400/30 bg-amber-400/5 px-3 py-2 text-xs text-amber-200">
             <Bell className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span className="whitespace-pre-wrap">{company.alertText}</span>
           </div>

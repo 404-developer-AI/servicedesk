@@ -242,7 +242,7 @@ function PrefillField({
   onChange: (v: unknown) => void;
 }) {
   const inputCn =
-    "rounded-md border border-glass-strong bg-glass px-3 text-sm text-foreground outline-none focus:border-primary/40 disabled:opacity-60";
+    "rounded-md border border-glass-strong bg-glass px-3 text-sm text-foreground outline-hidden focus:border-primary/40 disabled:opacity-60";
   switch (question.type) {
     case "ShortText":
       return (

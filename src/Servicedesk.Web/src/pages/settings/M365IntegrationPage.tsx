@@ -43,7 +43,7 @@ const STATE_LABEL: Record<
     dot: "bg-glass-strong",
   },
   "not-configured": {
-    tone: "border-amber-400/30 bg-amber-500/[0.08] text-amber-200",
+    tone: "border-amber-400/30 bg-amber-500/8 text-amber-200",
     text: "Not configured",
     dot: "bg-amber-400",
   },

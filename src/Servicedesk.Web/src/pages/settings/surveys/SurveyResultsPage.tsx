@@ -322,7 +322,7 @@ function StatsTiles({ agg }: { agg: SurveyResultsAggregate }) {
       {tiles.map((t) => (
         <div
           key={t.label}
-          className="rounded-lg border border-glass-strong bg-gradient-to-br from-white/[0.03] to-white/[0.01] p-4"
+          className="rounded-lg border border-glass-strong bg-linear-to-br from-white/3 to-white/1 p-4"
         >
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
             {t.label}

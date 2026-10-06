@@ -391,7 +391,7 @@ function FilterBar({
               }
             }}
             title="Leave empty to show all days · Esc clears"
-            className="h-8 rounded-md border border-glass bg-glass px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            className="h-8 rounded-md border border-glass bg-glass px-2 text-sm text-foreground focus:outline-hidden focus:ring-2 focus:ring-ring"
           />
         </FieldGroup>
         <FieldGroup label="User">
@@ -401,7 +401,7 @@ function FilterBar({
               setDraft({ ...draft, userId: v === ALL_USERS ? undefined : v })
             }
           >
-            <SelectTrigger className="h-8 min-w-[12rem] text-sm">
+            <SelectTrigger className="h-8 min-w-48 text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -422,7 +422,7 @@ function FilterBar({
               setDraft({ ...draft, taskId: v === ALL_TASKS ? undefined : v })
             }
           >
-            <SelectTrigger className="h-8 min-w-[10rem] text-sm">
+            <SelectTrigger className="h-8 min-w-40 text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -441,7 +441,7 @@ function FilterBar({
             onChange={(id) => setDraft({ ...draft, ticketId: id })}
           />
         </FieldGroup>
-        <FieldGroup label="Search" className="min-w-[14rem] flex-1">
+        <FieldGroup label="Search" className="min-w-56 flex-1">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -490,7 +490,7 @@ function FilterBar({
               value={String(pageSize)}
               onValueChange={(v) => onPageSizeChange(Number(v))}
             >
-              <SelectTrigger className="h-7 w-[4.25rem] text-xs">
+              <SelectTrigger className="h-7 w-17 text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -538,7 +538,7 @@ function FilterBar({
             >
               <ChevronLeft className="h-3.5 w-3.5" />
             </Button>
-            <span className="min-w-[5rem] text-center font-mono text-foreground/90">
+            <span className="min-w-20 text-center font-mono text-foreground/90">
               {page} / {totalPages}
             </span>
             <Button
@@ -846,7 +846,7 @@ function ManagerEditableRow({
   };
 
   return (
-    <tr className="border-b border-glass bg-primary/[0.04]" onKeyDown={onRowKeyDown}>
+    <tr className="border-b border-glass bg-primary/4" onKeyDown={onRowKeyDown}>
       <td className="px-3 py-2 align-top">
         <Input
           type="date"
@@ -1294,7 +1294,7 @@ function TicketFilterPicker({
 
   if (selected) {
     return (
-      <div className="flex h-8 min-w-[12rem] items-center justify-between gap-2 rounded-md border border-glass bg-glass px-2 text-xs">
+      <div className="flex h-8 min-w-48 items-center justify-between gap-2 rounded-md border border-glass bg-glass px-2 text-xs">
         <span className="truncate font-mono">#{selected.number}</span>
         <button
           type="button"
@@ -1313,7 +1313,7 @@ function TicketFilterPicker({
   }
 
   return (
-    <div className="relative min-w-[12rem]">
+    <div className="relative min-w-48">
       <Input
         ref={inputRef}
         value={query}

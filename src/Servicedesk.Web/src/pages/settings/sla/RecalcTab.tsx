@@ -110,7 +110,7 @@ export function RecalcTab() {
                 value={values[f.key]}
                 onChange={(e) => setValues((prev) => ({ ...prev, [f.key]: e.target.value }))}
                 className={
-                  "rounded-md border bg-background/60 px-2 py-1 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/40 " +
+                  "rounded-md border bg-background/60 px-2 py-1 text-sm text-foreground outline-hidden focus:ring-2 focus:ring-primary/40 " +
                   (bad ? "border-destructive/60" : "border-glass-strong")
                 }
               />

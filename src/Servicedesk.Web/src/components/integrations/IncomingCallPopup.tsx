@@ -157,7 +157,7 @@ export function IncomingCallPopup() {
         exit={{ opacity: 0, x: 16, y: 16 }}
         transition={{ type: "spring", stiffness: 280, damping: 26 }}
         className={cn(
-          "fixed bottom-6 right-6 z-[60] w-[360px] overflow-hidden",
+          "fixed bottom-6 right-6 z-60 w-[360px] overflow-hidden",
           "rounded-2xl border border-glass-strong shadow-2xl",
           "bg-popover/95 backdrop-blur-xl",
           interacting ? "pointer-events-none" : "pointer-events-auto",
@@ -170,8 +170,8 @@ export function IncomingCallPopup() {
           className={cn(
             "h-1 w-full",
             ringing
-              ? "animate-pulse bg-gradient-to-r from-violet-500 via-indigo-500 to-blue-500"
-              : "bg-gradient-to-r from-emerald-500 to-teal-500",
+              ? "animate-pulse bg-linear-to-r from-violet-500 via-indigo-500 to-blue-500"
+              : "bg-linear-to-r from-emerald-500 to-teal-500",
           )}
         />
 

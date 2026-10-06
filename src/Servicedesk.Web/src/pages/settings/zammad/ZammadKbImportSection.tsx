@@ -489,7 +489,7 @@ function ProgressStep({ runId }: { runId: string }) {
         </div>
         <div className="h-2 w-full overflow-hidden rounded-full bg-glass-strong">
           <div
-            className="h-full bg-gradient-to-r from-purple-500 to-sky-400 transition-[width] duration-500"
+            className="h-full bg-linear-to-r from-purple-500 to-sky-400 transition-[width] duration-500"
             style={{ width: `${progress}%` }}
           />
         </div>

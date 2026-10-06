@@ -50,7 +50,7 @@ export function AgentMultiPicker({
           className="sd-agent-chip inline-flex h-8 items-center gap-2 rounded-full border border-glass bg-glass pl-2.5 pr-1 text-xs text-foreground"
         >
           <span className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ backgroundColor: colorFor(i) }} />
-          <span className="max-w-[12rem] truncate" title={label(id)}>{label(id)}</span>
+          <span className="max-w-48 truncate" title={label(id)}>{label(id)}</span>
           <button
             type="button"
             onClick={() => onChange(selected.filter((x) => x !== id))}
@@ -86,7 +86,7 @@ export function AgentMultiPicker({
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Find an agent"
               aria-label="Find an agent"
-              className="h-7 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+              className="h-7 flex-1 bg-transparent text-sm text-foreground outline-hidden placeholder:text-muted-foreground"
             />
           </div>
           <div className="max-h-[300px] overflow-y-auto p-1">

@@ -663,7 +663,7 @@ function HtmlTemplateField({
         className={cn(
           "w-full rounded-md border border-glass bg-glass px-3 py-2",
           "font-mono text-[11px] leading-relaxed text-foreground/90",
-          "focus:outline-none focus:ring-1 focus:ring-violet-400/40 focus:border-violet-400/40",
+          "focus:outline-hidden focus:ring-1 focus:ring-violet-400/40 focus:border-violet-400/40",
           "disabled:opacity-50",
         )}
       />
@@ -959,7 +959,7 @@ function TextAreaField({
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         rows={2}
-        className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+        className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
         disabled={save.isPending}
       />
     </div>

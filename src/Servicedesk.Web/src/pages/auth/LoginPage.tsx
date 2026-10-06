@@ -276,7 +276,7 @@ export function LoginPage() {
                 type="button"
                 onClick={goToPortal}
                 data-testid="choose-customer"
-                className="group flex w-full items-center gap-3 rounded-xl border border-glass bg-gradient-to-br from-accent-purple to-accent-blue p-4 text-left text-white shadow-[0_10px_30px_-12px_hsl(var(--primary)/0.6)] transition-transform hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="group flex w-full items-center gap-3 rounded-xl border border-glass bg-linear-to-br from-accent-purple to-accent-blue p-4 text-left text-white shadow-[0_10px_30px_-12px_hsl(var(--primary)/0.6)] transition-transform hover:scale-[1.01] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/15">
                   <UserRound className="h-5 w-5" />
@@ -291,7 +291,7 @@ export function LoginPage() {
                 type="button"
                 onClick={chooseAgent}
                 data-testid="choose-agent"
-                className="group flex w-full items-center gap-3 rounded-xl border border-glass bg-glass p-4 text-left transition-colors hover:bg-glass-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="group flex w-full items-center gap-3 rounded-xl border border-glass bg-glass p-4 text-left transition-colors hover:bg-glass-hover focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-glass bg-glass-strong text-foreground">
                   <Headset className="h-5 w-5" />
@@ -310,7 +310,7 @@ export function LoginPage() {
           {callbackErrorMessage && stage === "credentials" && (
             <div
               role="alert"
-              className="flex items-start gap-2.5 rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2.5 text-xs text-amber-200"
+              className="flex items-start gap-2.5 rounded-md border border-amber-500/30 bg-amber-500/8 px-3 py-2.5 text-xs text-amber-200"
             >
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
               <div>
@@ -365,7 +365,7 @@ export function LoginPage() {
               </div>
 
               {serverError && (
-                <div className="rounded-md border border-destructive/40 bg-destructive/[0.06] px-3 py-2 text-xs text-destructive/90">
+                <div className="rounded-md border border-destructive/40 bg-destructive/6 px-3 py-2 text-xs text-destructive/90">
                   {serverError}
                 </div>
               )}
@@ -405,7 +405,7 @@ export function LoginPage() {
                 )}
               </div>
               {serverError && (
-                <div className="rounded-md border border-destructive/40 bg-destructive/[0.06] px-3 py-2 text-xs text-destructive/90">
+                <div className="rounded-md border border-destructive/40 bg-destructive/6 px-3 py-2 text-xs text-destructive/90">
                   {serverError}
                 </div>
               )}
@@ -457,7 +457,7 @@ export function LoginPage() {
                 )}
               </div>
               {serverError && (
-                <div className="rounded-md border border-destructive/40 bg-destructive/[0.06] px-3 py-2 text-xs text-destructive/90">
+                <div className="rounded-md border border-destructive/40 bg-destructive/6 px-3 py-2 text-xs text-destructive/90">
                   {serverError}
                 </div>
               )}
@@ -469,7 +469,7 @@ export function LoginPage() {
 
           {stage === "recovery-codes" && recoveryCodes && (
             <div className="space-y-4" data-testid="forced-enroll-recovery">
-              <div className="rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-4 py-3 text-xs text-amber-200">
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/8 px-4 py-3 text-xs text-amber-200">
                 Save these recovery codes somewhere safe. Each one works exactly
                 once and can be used instead of an authenticator code if you lose
                 your device. They are shown only now.

@@ -68,7 +68,7 @@ export function ZammadImportRunsListPage() {
       {query.isLoading ? (
         <Skeleton className="h-48 w-full bg-glass" />
       ) : query.isError ? (
-        <div className="rounded-md border border-rose-400/30 bg-rose-500/[0.08] p-3 text-xs text-rose-200">
+        <div className="rounded-md border border-rose-400/30 bg-rose-500/8 p-3 text-xs text-rose-200">
           Could not load runs — {query.error.message}
         </div>
       ) : (query.data?.items.length ?? 0) === 0 ? (

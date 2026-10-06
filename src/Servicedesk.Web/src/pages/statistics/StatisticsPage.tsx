@@ -214,7 +214,7 @@ function SortableStatTile({
       )}
     >
       {editing && (
-        <div className="pointer-events-none absolute inset-0 z-20 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/[0.03]" />
+        <div className="pointer-events-none absolute inset-0 z-20 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/3" />
       )}
       {editing && (
         <div className="absolute right-3 top-3 z-30 flex items-center gap-1">
@@ -222,7 +222,7 @@ function SortableStatTile({
             type="button"
             onClick={onToggleHidden}
             title={tile.hidden ? "Show tile" : "Hide tile"}
-            className="inline-flex h-7 items-center gap-1 rounded-md border border-glass bg-background/80 px-2 text-[11px] font-medium text-foreground backdrop-blur hover:bg-glass-hover"
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-glass bg-background/80 px-2 text-[11px] font-medium text-foreground backdrop-blur-sm hover:bg-glass-hover"
           >
             {tile.hidden ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
           </button>
@@ -230,7 +230,7 @@ function SortableStatTile({
             type="button"
             onClick={onCycleSize}
             title={`Resize (currently ${tile.size})`}
-            className="inline-flex h-7 items-center gap-1 rounded-md border border-glass bg-background/80 px-2 text-[11px] font-medium text-foreground backdrop-blur hover:bg-glass-hover"
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-glass bg-background/80 px-2 text-[11px] font-medium text-foreground backdrop-blur-sm hover:bg-glass-hover"
           >
             <Maximize2 className="h-3 w-3" />
             {tile.size}
@@ -241,7 +241,7 @@ function SortableStatTile({
             {...listeners}
             title="Drag to reorder"
             aria-label="Drag handle"
-            className="inline-flex h-7 cursor-grab items-center rounded-md border border-glass bg-background/80 px-2 text-[11px] font-medium text-foreground backdrop-blur hover:bg-glass-hover active:cursor-grabbing"
+            className="inline-flex h-7 cursor-grab items-center rounded-md border border-glass bg-background/80 px-2 text-[11px] font-medium text-foreground backdrop-blur-sm hover:bg-glass-hover active:cursor-grabbing"
           >
             ⠿
           </button>

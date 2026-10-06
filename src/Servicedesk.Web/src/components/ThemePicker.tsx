@@ -85,10 +85,10 @@ export function ThemePicker({
               onClick={() => pickFamily(f.id)}
               className={cn(
                 "group relative flex items-start gap-3 rounded-xl border p-3 text-left transition-all",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                 "disabled:cursor-not-allowed disabled:opacity-50",
                 selected
-                  ? "border-primary bg-primary/[0.06] shadow-[inset_0_0_0_1px_hsl(var(--primary))]"
+                  ? "border-primary bg-primary/6 shadow-[inset_0_0_0_1px_hsl(var(--primary))]"
                   : "border-glass bg-glass hover:border-glass-strong hover:bg-glass-hover",
               )}
             >
@@ -131,7 +131,7 @@ export function ThemePicker({
                   "flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
                   "disabled:cursor-not-allowed disabled:opacity-50",
                   mode === m
-                    ? "bg-primary text-primary-foreground shadow-sm"
+                    ? "bg-primary text-primary-foreground shadow-xs"
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >

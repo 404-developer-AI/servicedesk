@@ -135,13 +135,13 @@ export function TicketList({
                         #{t.number}
                       </Link>
                     </td>
-                    <td className="max-w-[28rem] truncate px-3 py-2 text-foreground" title={t.subject}>
+                    <td className="max-w-md truncate px-3 py-2 text-foreground" title={t.subject}>
                       {t.subject}
                     </td>
-                    <td className="max-w-[14rem] truncate px-3 py-2 text-muted-foreground" title={t.requester}>
+                    <td className="max-w-56 truncate px-3 py-2 text-muted-foreground" title={t.requester}>
                       {t.requester || "—"}
                     </td>
-                    <td className="max-w-[14rem] truncate px-3 py-2 text-muted-foreground" title={t.company ?? undefined}>
+                    <td className="max-w-56 truncate px-3 py-2 text-muted-foreground" title={t.company ?? undefined}>
                       {t.company ?? "—"}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2">
@@ -169,7 +169,7 @@ export function TicketList({
               <span className="flex items-center gap-1.5">
                 <span className="text-[10px] uppercase tracking-wider">Per page</span>
                 <Select value={String(pageSize)} onValueChange={(v) => changePageSize(Number(v))}>
-                  <SelectTrigger className="h-7 w-[4.25rem] text-xs">
+                  <SelectTrigger className="h-7 w-17 text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -189,7 +189,7 @@ export function TicketList({
               <PagerButton label="Previous page" onClick={() => goTo(page - 1)} disabled={page <= 1}>
                 <ChevronLeft className="h-3.5 w-3.5" />
               </PagerButton>
-              <span className="min-w-[5rem] text-center font-mono text-foreground/90">
+              <span className="min-w-20 text-center font-mono text-foreground/90">
                 {page} / {totalPages}
               </span>
               <PagerButton label="Next page" onClick={() => goTo(page + 1)} disabled={page >= totalPages}>

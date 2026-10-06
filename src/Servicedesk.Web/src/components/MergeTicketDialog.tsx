@@ -198,10 +198,10 @@ export function MergeTicketDialog({
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 mb-1">
               From
             </div>
-            <div className="text-sm font-medium text-foreground/90 break-words">
+            <div className="text-sm font-medium text-foreground/90 wrap-break-word">
               {sourceLabel}
             </div>
-            <div className="text-xs text-muted-foreground/70 break-words">
+            <div className="text-xs text-muted-foreground/70 wrap-break-word">
               {sourceRequesterEmail ?? "No requester email"}
               {sourceCompanyName ? ` · ${sourceCompanyName}` : ""}
             </div>

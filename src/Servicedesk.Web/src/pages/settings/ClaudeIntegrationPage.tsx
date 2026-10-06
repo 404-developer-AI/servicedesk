@@ -43,12 +43,12 @@ const STATE_LABEL: Record<
     dot: "bg-glass-strong",
   },
   NotConfigured: {
-    tone: "border-amber-400/30 bg-amber-500/[0.08] text-amber-200",
+    tone: "border-amber-400/30 bg-amber-500/8 text-amber-200",
     text: "Not configured",
     dot: "bg-amber-400",
   },
   NeedsZeroDataRetention: {
-    tone: "border-amber-400/30 bg-amber-500/[0.08] text-amber-200",
+    tone: "border-amber-400/30 bg-amber-500/8 text-amber-200",
     text: "ZDR confirmation required",
     dot: "bg-amber-400",
   },
@@ -179,7 +179,7 @@ function TextAreaSettingField({
         spellCheck={!mono}
         disabled={save.isPending}
         className={cn(
-          "w-full resize-y rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60",
+          "w-full resize-y rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60",
           mono && "font-mono text-[13px] leading-relaxed",
         )}
       />

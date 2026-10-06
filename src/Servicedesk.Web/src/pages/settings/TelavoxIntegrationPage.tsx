@@ -66,12 +66,12 @@ const STATE_LABEL: Record<
     dot: "bg-glass-strong",
   },
   NotConfigured: {
-    tone: "border-amber-400/30 bg-amber-500/[0.08] text-amber-200",
+    tone: "border-amber-400/30 bg-amber-500/8 text-amber-200",
     text: "Not configured",
     dot: "bg-amber-400",
   },
   NoCustomerSelected: {
-    tone: "border-amber-400/30 bg-amber-500/[0.08] text-amber-200",
+    tone: "border-amber-400/30 bg-amber-500/8 text-amber-200",
     text: "Pick a customer",
     dot: "bg-amber-400",
   },
@@ -677,7 +677,7 @@ function AgentMappingRow({
         <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50">
           {user.roleName}
           {isManualLink ? (
-            <span className="ml-1.5 inline-flex items-center rounded border border-amber-400/30 bg-amber-500/[0.08] px-1.5 py-0 text-[9px] tracking-wider text-amber-200">
+            <span className="ml-1.5 inline-flex items-center rounded border border-amber-400/30 bg-amber-500/8 px-1.5 py-0 text-[9px] tracking-wider text-amber-200">
               manual
             </span>
           ) : null}

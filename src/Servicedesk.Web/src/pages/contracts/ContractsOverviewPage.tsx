@@ -156,7 +156,7 @@ const ALL_COLUMNS: ColDef[] = [
     defaultVisible: true,
     sortKey: "title",
     render: (r) => (
-      <span className="block max-w-[22rem] truncate text-foreground">{r.description || "—"}</span>
+      <span className="block max-w-88 truncate text-foreground">{r.description || "—"}</span>
     ),
   },
   {
@@ -281,7 +281,7 @@ const ALL_COLUMNS: ColDef[] = [
     align: "left",
     defaultVisible: false,
     render: (r) => (
-      <span className="block max-w-[22rem] truncate text-muted-foreground">{r.memo || "—"}</span>
+      <span className="block max-w-88 truncate text-muted-foreground">{r.memo || "—"}</span>
     ),
   },
   {

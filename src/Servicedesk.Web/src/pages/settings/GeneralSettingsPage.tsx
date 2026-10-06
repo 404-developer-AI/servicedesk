@@ -469,7 +469,7 @@ function InsightsSection({
                   onClick={() => update.mutate(p.value)}
                   className={cn(
                     "inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
-                    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                    "focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring",
                     "disabled:cursor-not-allowed disabled:opacity-50",
                     selected
                       ? "border-primary/50 bg-primary/10 text-foreground"
@@ -684,12 +684,12 @@ function MaintenanceWindowSection({
               rows={3}
               maxLength={500}
               placeholder="e.g. We will be performing scheduled maintenance to upgrade the database. Some features may be temporarily unavailable."
-              className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             />
           </FieldShell>
 
           {(endBeforeStart || endInPast) && (
-            <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2 text-xs text-amber-200">
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/8 px-3 py-2 text-xs text-amber-200">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <div>
                 {endBeforeStart && <p>End time is earlier than start time.</p>}
@@ -817,7 +817,7 @@ function LoginBannerSection({
               rows={3}
               maxLength={LOGIN_BANNER_MESSAGE_MAX}
               placeholder="e.g. Scheduled upgrade Saturday 21:00 — login may be briefly unavailable."
-              className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             />
             <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground/70">
               <span>
@@ -953,10 +953,10 @@ function UpdateModeButton({
       onClick={() => onSelect(value)}
       className={cn(
         "inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
-        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        "focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring",
         "disabled:cursor-not-allowed disabled:opacity-50",
         selected
-          ? "border-emerald-400/60 bg-emerald-100 text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-500/[0.12] dark:text-emerald-100"
+          ? "border-emerald-400/60 bg-emerald-100 text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-500/12 dark:text-emerald-100"
           : "border-glass bg-glass text-muted-foreground hover:text-foreground",
       )}
     >
@@ -995,7 +995,7 @@ function BannerTypeButton({
       onClick={() => onSelect(value)}
       className={cn(
         "inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
-        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        "focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring",
         "disabled:cursor-not-allowed disabled:opacity-50",
         selected
           ? cn(palette.selectedBorder, palette.selectedBg, palette.selectedText)
@@ -1016,7 +1016,7 @@ function LoginBannerPreview({ type, html }: { type: LoginBannerType; html: strin
     <div
       role="status"
       className={cn(
-        "flex items-start gap-3 rounded-[var(--radius)] border px-4 py-3 text-xs backdrop-blur",
+        "flex items-start gap-3 rounded-(--radius) border px-4 py-3 text-xs backdrop-blur-sm",
         palette.previewContainer,
       )}
     >
@@ -1031,7 +1031,7 @@ function LoginBannerPreview({ type, html }: { type: LoginBannerType; html: strin
           {palette.title}
         </p>
         <div
-          className={cn("leading-snug break-words", palette.previewBody)}
+          className={cn("leading-snug wrap-break-word", palette.previewBody)}
           dangerouslySetInnerHTML={wrapper}
         />
       </div>
@@ -1061,11 +1061,11 @@ const LOGIN_BANNER_PREVIEW_PALETTES: Record<
     icon: Info,
     title: "Notice",
     selectedBorder: "border-sky-400/60 dark:border-sky-500/40",
-    selectedBg: "bg-sky-100 dark:bg-sky-500/[0.12]",
+    selectedBg: "bg-sky-100 dark:bg-sky-500/12",
     selectedText: "text-sky-900 dark:text-sky-100",
     selectedIcon: "text-sky-600 dark:text-sky-300",
     previewContainer:
-      "border-sky-400/60 bg-sky-50 dark:border-sky-500/30 dark:bg-sky-500/[0.08]",
+      "border-sky-400/60 bg-sky-50 dark:border-sky-500/30 dark:bg-sky-500/8",
     previewIcon: "text-sky-600 dark:text-sky-300",
     previewLabel: "text-sky-700 dark:text-sky-200/90",
     previewBody:
@@ -1075,11 +1075,11 @@ const LOGIN_BANNER_PREVIEW_PALETTES: Record<
     icon: AlertTriangle,
     title: "Warning",
     selectedBorder: "border-amber-400/60 dark:border-amber-500/40",
-    selectedBg: "bg-amber-100 dark:bg-amber-500/[0.12]",
+    selectedBg: "bg-amber-100 dark:bg-amber-500/12",
     selectedText: "text-amber-900 dark:text-amber-100",
     selectedIcon: "text-amber-600 dark:text-amber-300",
     previewContainer:
-      "border-amber-400/60 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/[0.08]",
+      "border-amber-400/60 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/8",
     previewIcon: "text-amber-600 dark:text-amber-300",
     previewLabel: "text-amber-700 dark:text-amber-200/90",
     previewBody:
@@ -1130,10 +1130,10 @@ function ToggleSwitch({
       onClick={() => onChange(!checked)}
       className={cn(
         "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         "disabled:cursor-not-allowed disabled:opacity-50",
         checked
-          ? "bg-gradient-to-r from-violet-600 to-indigo-600"
+          ? "bg-linear-to-r from-violet-600 to-indigo-600"
           : "bg-glass-strong",
       )}
     >

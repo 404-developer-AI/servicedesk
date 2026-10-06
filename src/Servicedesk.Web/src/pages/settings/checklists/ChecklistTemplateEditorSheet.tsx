@@ -80,7 +80,7 @@ export function ChecklistTemplateEditorSheet({
     <Sheet open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
       <SheetContent
         side="right"
-        className="!w-[min(760px,95vw)] !max-w-none overflow-y-auto bg-popover/95 backdrop-blur-xl border-l border-glass sm:!max-w-none"
+        className="w-[min(760px,95vw)]! max-w-none! overflow-y-auto bg-popover/95 backdrop-blur-xl border-l border-glass sm:max-w-none!"
       >
         <SheetHeader className="space-y-1">
           <SheetTitle>{templateId === "new" ? "New checklist template" : "Edit checklist template"}</SheetTitle>
@@ -255,7 +255,7 @@ function EditorBody({ templateId, maxItems, onClose }: { templateId: string | "n
             rows={2}
             maxLength={4000}
             placeholder="Shown at the top of the checklist on the ticket."
-            className="w-full resize-y rounded-md border border-input bg-background/40 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+            className="w-full resize-y rounded-md border border-input bg-background/40 px-3 py-2 text-sm outline-hidden focus:ring-1 focus:ring-ring"
           />
         </label>
         <div className="grid gap-2 sm:grid-cols-2">
@@ -349,7 +349,7 @@ function EditorBody({ templateId, maxItems, onClose }: { templateId: string | "n
               onChange={(e) => setPasteText(e.target.value)}
               rows={8}
               placeholder={"# Week 1 — Onboarding\nCreate prospect in Adsolut | Back Office | Week 1\nCreate customer folder in Keeper | Back Office | Week 1\n# Week 2\nAnalysis on site | Field Services | Week 2 | https://…"}
-              className="w-full resize-y rounded-md border border-input bg-background/40 px-3 py-2 font-mono text-xs outline-none focus:ring-1 focus:ring-ring"
+              className="w-full resize-y rounded-md border border-input bg-background/40 px-3 py-2 font-mono text-xs outline-hidden focus:ring-1 focus:ring-ring"
             />
             <div className="flex justify-end gap-2">
               <Button type="button" size="sm" variant="ghost" onClick={() => setPasteOpen(false)}>Cancel</Button>
@@ -529,7 +529,7 @@ function ItemEditor({ item, onChange, onRemove }: { item: ItemDraft; onChange: (
               onChange={(e) => onChange({ description: e.target.value })}
               rows={2}
               maxLength={4000}
-              className="w-full resize-y rounded-md border border-input bg-background/40 px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+              className="w-full resize-y rounded-md border border-input bg-background/40 px-2 py-1.5 text-sm outline-hidden focus:ring-1 focus:ring-ring"
             />
           </label>
           <label className="space-y-1">

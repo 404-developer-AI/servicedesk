@@ -147,7 +147,7 @@ export function AdsolutWorkHoursDialog({ open, onClose }: { open: boolean; onClo
         </div>
 
         {!enabled ? (
-          <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-amber-400/20 bg-amber-500/[0.06] p-8 text-center">
+          <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-amber-400/20 bg-amber-500/6 p-8 text-center">
             <AlertTriangle className="h-6 w-6 text-amber-300" />
             <p className="text-sm text-foreground">Sales-receipt mirroring is off.</p>
             <p className="max-w-md text-xs text-muted-foreground">
@@ -211,7 +211,7 @@ export function AdsolutWorkHoursDialog({ open, onClose }: { open: boolean; onClo
                 </div>
               ) : (
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0 z-10 bg-background/95 backdrop-blur">
+                  <thead className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm">
                     <tr className="border-b border-glass text-left text-[11px] uppercase tracking-wider text-muted-foreground/70">
                       <th className="px-3 py-2 font-medium">Code</th>
                       <th className="px-3 py-2 font-medium">Name</th>

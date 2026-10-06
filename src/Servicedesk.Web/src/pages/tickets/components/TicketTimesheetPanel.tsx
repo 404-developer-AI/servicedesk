@@ -91,7 +91,7 @@ export function TicketTimesheetPanel({ ticketId, queueId, ticketNumber, ticketSu
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="min-w-0 flex-1 flex items-center gap-3 px-3 py-2 glass-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="min-w-0 flex-1 flex items-center gap-3 px-3 py-2 glass-hover focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
           aria-expanded={open}
         >
           <Clock className="h-4 w-4 shrink-0 text-violet-300/80" />
@@ -192,7 +192,7 @@ function TaskPill({ t }: { t: TaskAgg }) {
   return (
     <span
       className={cn(
-        "inline-flex max-w-[10rem] shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px]",
+        "inline-flex max-w-40 shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px]",
         t.isAbsence
           ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
           : "border-glass bg-glass text-foreground/80",
@@ -341,7 +341,7 @@ function EntriesGrid({
   return (
     <div className="max-h-[320px] overflow-auto">
       <table className="w-full min-w-[800px] text-xs">
-        <thead className="sticky top-0 bg-background/95 backdrop-blur-sm">
+        <thead className="sticky top-0 bg-background/95 backdrop-blur-xs">
           <tr className="text-left text-muted-foreground">
             <th className="px-3 py-2 font-medium">Agent</th>
             <th className="px-3 py-2 font-medium">Date</th>
@@ -395,7 +395,7 @@ function EntriesGrid({
             </tr>
           ))}
         </tbody>
-        <tfoot className="sticky bottom-0 bg-background/95 backdrop-blur-sm">
+        <tfoot className="sticky bottom-0 bg-background/95 backdrop-blur-xs">
           <tr className="border-t border-glass">
             <td
               colSpan={7}

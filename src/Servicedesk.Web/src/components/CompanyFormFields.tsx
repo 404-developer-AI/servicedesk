@@ -79,7 +79,7 @@ export function CompanyFormFields({
         </Field>
       </div>
 
-      <div className="rounded-md border border-amber-400/20 bg-amber-400/[0.03] p-4">
+      <div className="rounded-md border border-amber-400/20 bg-amber-400/3 p-4">
         <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-amber-300">
           <Bell className="h-3.5 w-3.5" /> Alert / note
         </div>
@@ -88,7 +88,7 @@ export function CompanyFormFields({
             value={form.alertText ?? ""}
             onChange={(e) => setForm((f) => ({ ...f, alertText: e.target.value }))}
             rows={3}
-            className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm outline-none focus:border-glass-strong"
+            className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm outline-hidden focus:border-glass-strong"
           />
         </Field>
         <div className="mt-3 space-y-2">

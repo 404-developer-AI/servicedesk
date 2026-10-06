@@ -109,7 +109,7 @@ function TextPreview({ url }: { url: string }) {
     );
   }
   return (
-    <pre className="max-h-[75vh] overflow-auto whitespace-pre-wrap break-words rounded-md border border-glass bg-black/40 p-4 font-mono text-xs text-foreground/90">
+    <pre className="max-h-[75vh] overflow-auto whitespace-pre-wrap wrap-break-word rounded-md border border-glass bg-black/40 p-4 font-mono text-xs text-foreground/90">
       {state.text}
     </pre>
   );

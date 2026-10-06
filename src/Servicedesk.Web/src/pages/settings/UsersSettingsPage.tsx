@@ -146,7 +146,7 @@ export function UsersSettingsPage() {
       </header>
 
       {!m365Enabled && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.08] px-4 py-3 text-xs text-amber-200">
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/8 px-4 py-3 text-xs text-amber-200">
           <p className="font-medium mb-0.5">Microsoft 365 sign-in is off</p>
           <p className="opacity-90">
             Add / Upgrade-to-M365 actions are disabled until you turn on

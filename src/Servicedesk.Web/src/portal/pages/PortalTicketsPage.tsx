@@ -94,7 +94,7 @@ export function PortalTicketsPage() {
                 }}
                 className={cn(
                   "rounded-md px-3 py-1 text-xs font-medium transition-colors",
-                  filter === f.key ? "bg-glass-strong text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                  filter === f.key ? "bg-glass-strong text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 {f.label}

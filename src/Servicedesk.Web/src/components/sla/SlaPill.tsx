@@ -31,7 +31,7 @@ function pillClasses(remainingMs: number | null, met: boolean, metLate: boolean,
     return "border-red-400/70 bg-red-100/80 text-red-800 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200";
   if (remainingMs < 15 * 60 * 1000)
     return "border-amber-400/70 bg-amber-100/80 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200";
-  return "border-emerald-400/50 bg-emerald-100/70 text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/[0.06] dark:text-emerald-100/80";
+  return "border-emerald-400/50 bg-emerald-100/70 text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/6 dark:text-emerald-100/80";
 }
 
 export function SlaPill({ ticketId, className }: Props) {

@@ -140,7 +140,7 @@ export function ChecklistItemRow({
       className={cn(
         "group/item rounded-md border transition-colors",
         isNext
-          ? "border-amber-400/40 bg-amber-400/[0.06]"
+          ? "border-amber-400/40 bg-amber-400/6"
           : "border-transparent hover:border-glass hover:bg-glass",
         expanded && "border-glass bg-glass",
       )}
@@ -167,7 +167,7 @@ export function ChecklistItemRow({
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="min-w-0 flex-1 text-left focus-visible:outline-none"
+          className="min-w-0 flex-1 text-left focus-visible:outline-hidden"
           aria-expanded={expanded}
         >
           <span
@@ -284,7 +284,7 @@ export function ChecklistItemRow({
                 rows={2}
                 maxLength={2000}
                 placeholder="e.g. customer has no on-prem server"
-                className="w-full resize-y rounded-md border border-glass bg-background/40 px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+                className="w-full resize-y rounded-md border border-glass bg-background/40 px-2 py-1.5 text-sm outline-hidden focus:ring-1 focus:ring-ring"
               />
               <div className="flex justify-end gap-2">
                 <Button type="button" size="sm" variant="ghost" onClick={() => { setNaMode(false); setNaReason(""); }}>
@@ -378,7 +378,7 @@ function Chip({
     <span
       title={title}
       className={cn(
-        "inline-flex items-center gap-1 rounded px-1.5 py-[1px] text-[10px] font-medium leading-4",
+        "inline-flex items-center gap-1 rounded px-1.5 py-px text-[10px] font-medium leading-4",
         tone === "sky" && "border border-sky-400/25 bg-sky-400/10 text-sky-200",
         tone === "violet" && "border border-violet-400/25 bg-violet-400/10 text-violet-200",
         tone === "muted" && "border border-glass bg-glass text-muted-foreground/70",
@@ -460,7 +460,7 @@ function EditItemForm({
         rows={2}
         maxLength={4000}
         placeholder="Description (optional)"
-        className="w-full resize-y rounded-md border border-glass bg-background/40 px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+        className="w-full resize-y rounded-md border border-glass bg-background/40 px-2 py-1.5 text-sm outline-hidden focus:ring-1 focus:ring-ring"
       />
       <Input value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} maxLength={2000} placeholder="https://… (optional link)" className="h-8 text-sm" />
       <div className="flex justify-end gap-2">

@@ -1,8 +1,182 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..800&display=swap");
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* ─── Tailwind CSS v4 setup ───────────────────────────────────────────────
+   Cascade layout (deliberate, keeps the v3 cascade the UI was built on):
+   - theme   → Tailwind's design tokens (CSS variables).
+   - base    → our v3 Preflight (styles/preflight-v3.css, see the note there)
+               + the token sets below.
+   - utilities → ONE layer holding, in this order: our component classes
+               (glass-card, legibility overrides, …), Tailwind's generated
+               utilities, then the app CSS + Steaan overrides. Inside a single
+               layer specificity and source order decide, exactly as in the
+               unlayered v3 build — so a component class still loses to a
+               utility on a tie, and the (0,2,0)/(0,3,0) Steaan selectors
+               still out-rank utilities. Do NOT move app CSS outside a layer:
+               unlayered CSS beats every layered utility regardless of
+               specificity. Do NOT use `@layer components`: it would make
+               every component rule lose to every utility. */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "./styles/palette-v3.css";
+@import "./styles/preflight-v3.css" layer(base);
+@import "tw-animate-css";
+
+/* `.dark` on <html> drives Nebula dark. `:is()` (not `:where()`) keeps the
+   v3 specificity of `dark:` utilities. */
+@custom-variant dark (&:is(.dark *));
+
+/* Tokens resolve per element (`inline`), same as the v3 config's
+   hsl(var(--x)) values. Glass colours live in the background/border/divide
+   namespaces only, as in v3, so they don't leak into text/ring/fill. Note:
+   unlike v3, an opacity modifier on them (bg-glass/40) now renders
+   (color-mix), multiplying the alpha already baked into the variable. */
+@theme inline {
+  --font-sans: Inter, system-ui, sans-serif;
+  --font-display: Inter, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-border: hsl(var(--border));
+  --color-ring: hsl(var(--ring));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-accent-purple: hsl(265 89% 70%);
+  --color-accent-blue: hsl(220 89% 65%);
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-input: hsl(var(--input));
+
+  --background-color-glass: hsl(var(--glass-bg));
+  --background-color-glass-strong: hsl(var(--glass-bg-strong));
+  --background-color-glass-hover: hsl(var(--glass-hover));
+  --background-color-overlay: hsl(var(--overlay));
+  --border-color-glass: hsl(var(--glass-border));
+  --border-color-glass-strong: hsl(var(--glass-border-strong));
+  --divide-color-glass: hsl(var(--glass-border));
+  --divide-color-glass-strong: hsl(var(--glass-border-strong));
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  /* v3 line-heights for the text-* scale. v4 ships them as unitless ratios
+     (text-sm = calc(1.25 / 0.875)), which descendants inherit as a ratio:
+     a text-[11px] child of a text-sm parent then gets 15.7px instead of
+     v3's inherited 20px, shrinking rows and buttons across the app. The
+     absolute rem values inherit exactly as in v3. */
+  --text-xs--line-height: 1rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
+  --text-5xl--line-height: 1;
+  --text-6xl--line-height: 1;
+  --text-7xl--line-height: 1;
+  --text-8xl--line-height: 1;
+  --text-9xl--line-height: 1;
+
+  --text-display-2xl: 4.5rem;
+  --text-display-2xl--line-height: 1.02;
+  --text-display-2xl--letter-spacing: -0.035em;
+  --text-display-xl: 3.5rem;
+  --text-display-xl--line-height: 1.05;
+  --text-display-xl--letter-spacing: -0.03em;
+  --text-display-lg: 2.75rem;
+  --text-display-lg--line-height: 1.08;
+  --text-display-lg--letter-spacing: -0.028em;
+  --text-display-md: 2.125rem;
+  --text-display-md--line-height: 1.1;
+  --text-display-md--letter-spacing: -0.025em;
+  --text-display-sm: 1.625rem;
+  --text-display-sm--line-height: 1.15;
+  --text-display-sm--letter-spacing: -0.022em;
+
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+    to {
+      height: 0;
+    }
+  }
+}
+
+/* ─── v3 semantics for space-* / divide-* ─────────────────────────────────
+   v4 moved these to `:where(.x > :not(:last-child))` (zero specificity, gap on
+   the bottom/right of each non-last child). v3 put it on the top/left of
+   every non-hidden child after the first, at (0,3,0), overriding a child's
+   own margin/border in that axis. ~800 call sites were laid out against the
+   v3 behaviour, so these utilities restore it: the (0,3,0) rule wins over
+   the v4 rule, and the (0,0,1) reset cancels v4's trailing margin/border on
+   the first child while still losing to a class on that child. */
+@utility space-y-* {
+  & > :not([hidden]) ~ :not([hidden]) {
+    margin-top: calc(var(--spacing) * --value(number));
+    margin-top: --value([length]);
+    margin-bottom: 0;
+  }
+  :where(&) > :not(template) {
+    margin-block-end: 0;
+  }
+}
+@utility space-x-* {
+  & > :not([hidden]) ~ :not([hidden]) {
+    margin-left: calc(var(--spacing) * --value(number));
+    margin-left: --value([length]);
+    margin-right: 0;
+  }
+  :where(&) > :not(template) {
+    margin-inline-end: 0;
+  }
+}
+@utility divide-y {
+  & > :not([hidden]) ~ :not([hidden]) {
+    border-top-width: 1px;
+    border-bottom-width: 0;
+  }
+  :where(&) > :not(template) {
+    border-bottom-width: 0;
+  }
+}
+@utility divide-x {
+  & > :not([hidden]) ~ :not([hidden]) {
+    border-left-width: 1px;
+    border-right-width: 0;
+  }
+  :where(&) > :not(template) {
+    border-right-width: 0;
+  }
+}
+@utility divide-* {
+  & > :not([hidden]) ~ :not([hidden]) {
+    border-color: --value(--divide-color-*, --border-color-*, --color-*);
+  }
+}
 
 @layer base {
   /* Light is the factory default — see CLAUDE.md / ARCHITECTURE.md. The
@@ -187,7 +361,7 @@
   }
 }
 
-@layer components {
+@layer utilities {
   /* In-ticket search highlights. The <mark> is inserted by the DOM walker
      in InTicketSearch; the .itsearch-current class marks the hit currently
      centered in the viewport (Enter / F3 step through). Yellow/amber works
@@ -326,7 +500,28 @@
   :root:not(.dark) .bg-emerald-500\/15  { background-color: rgb(16 185 129 / 0.22); }
   :root:not(.dark) .bg-amber-500\/15    { background-color: rgb(245 158 11 / 0.25); }
   :root:not(.dark) .bg-rose-500\/15     { background-color: rgb(244 63 94 / 0.22); }
+  /* v3 generated these hover: variants of the overrides above automatically
+     (classes in a v3 components layer accepted variants); v4 doesn't, so the
+     ones in use are spelled out. */
+  :root:not(.dark) .hover\:text-amber-100:hover,
+  :root:not(.dark) .hover\:text-amber-200:hover,
+  :root:not(.dark) .hover\:text-amber-300:hover    { color: rgb(180 83 9); }   /* amber-700 */
+  :root:not(.dark) .hover\:text-emerald-200:hover,
+  :root:not(.dark) .hover\:text-emerald-300:hover  { color: rgb(4 120 87); }   /* emerald-700 */
+  :root:not(.dark) .hover\:text-violet-200:hover   { color: rgb(109 40 217); } /* violet-700 */
+  :root:not(.dark) .hover\:bg-emerald-500\/10:hover { background-color: rgb(16 185 129 / 0.18); }
+  :root:not(.dark) .hover\:bg-rose-500\/10:hover    { background-color: rgb(244 63 94 / 0.18); }
+  :root:not(.dark) .hover\:bg-red-500\/10:hover     { background-color: rgb(239 68 68 / 0.18); }
+  :root:not(.dark) .hover\:bg-emerald-500\/15:hover { background-color: rgb(16 185 129 / 0.22); }
 }
+
+/* Tailwind's generated utilities — between the component classes above
+   and the app/theme CSS below (see the cascade note at the top). */
+@layer utilities {
+  @tailwind utilities;
+}
+
+@layer utilities {
 
 /* ─── Glassmorphism scrollbars ─── */
 
@@ -645,19 +840,21 @@
 /* The signature purple→blue gradient (sidebar "+", new-ticket submit,
    setup wizard CTA, call popup, KB chat) becomes solid teal. Tailwind's
    gradient utilities only set the stop variables, so redefining both stops
-   to the same colour is all it takes. */
+   to the same colour is all it takes. v4 registers the stop variables as
+   typed <color> properties and appends the stop positions itself: set
+   plain colours only (a value with a position appended would be invalid
+   and fall back to transparent). */
 .theme-steaan .from-accent-purple {
-  --tw-gradient-from: hsl(var(--primary)) var(--tw-gradient-from-position);
-  --tw-gradient-to: hsl(var(--primary)) var(--tw-gradient-to-position);
-  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+  --tw-gradient-from: hsl(var(--primary));
+  --tw-gradient-to: hsl(var(--primary));
 }
 .theme-steaan .to-accent-blue {
-  --tw-gradient-to: hsl(var(--primary)) var(--tw-gradient-to-position);
+  --tw-gradient-to: hsl(var(--primary));
 }
 .theme-steaan .from-accent-purple:hover,
 .theme-steaan .to-accent-blue:hover {
-  --tw-gradient-from: hsl(var(--steaan-primary-hover)) var(--tw-gradient-from-position);
-  --tw-gradient-to: hsl(var(--steaan-primary-hover)) var(--tw-gradient-to-position);
+  --tw-gradient-from: hsl(var(--steaan-primary-hover));
+  --tw-gradient-to: hsl(var(--steaan-primary-hover));
 }
 
 /* Sidebar: a full-height white column with a right hairline instead of the
@@ -791,19 +988,19 @@
 :root.theme-steaan .hover\:bg-violet-400\/15:hover {
   background-color: hsl(var(--primary) / 0.15);
 }
-:root.theme-steaan .bg-purple-500\/\[0\.04\],
-:root.theme-steaan .bg-purple-500\/\[0\.05\],
-:root.theme-steaan .bg-violet-500\/\[0\.05\] {
+:root.theme-steaan .bg-purple-500\/4,
+:root.theme-steaan .bg-purple-500\/5,
+:root.theme-steaan .bg-violet-500\/5 {
   background-color: hsl(var(--primary) / 0.06);
 }
-:root.theme-steaan .bg-purple-500\/\[0\.08\] {
+:root.theme-steaan .bg-purple-500\/8 {
   background-color: hsl(var(--primary) / 0.08);
 }
-:root.theme-steaan .bg-purple-500\/\[0\.12\],
-:root.theme-steaan .bg-violet-500\/\[0\.12\] {
+:root.theme-steaan .bg-purple-500\/12,
+:root.theme-steaan .bg-violet-500\/12 {
   background-color: hsl(var(--primary) / 0.12);
 }
-:root.theme-steaan .bg-purple-500\/\[0\.13\] {
+:root.theme-steaan .bg-purple-500\/13 {
   background-color: hsl(var(--primary) / 0.13);
 }
 :root.theme-steaan .border-indigo-400\/20,
@@ -845,14 +1042,13 @@
 :root.theme-steaan .from-violet-500\/90,
 :root.theme-steaan .from-violet-600,
 :root.theme-steaan .hover\:from-violet-500:hover {
-  --tw-gradient-from: hsl(var(--primary)) var(--tw-gradient-from-position);
-  --tw-gradient-to: hsl(var(--primary)) var(--tw-gradient-to-position);
-  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+  --tw-gradient-from: hsl(var(--primary));
+  --tw-gradient-to: hsl(var(--primary));
 }
-:root.theme-steaan .hover\:bg-purple-500\/\[0\.16\]:hover {
+:root.theme-steaan .hover\:bg-purple-500\/16:hover {
   background-color: hsl(var(--primary) / 0.16);
 }
-:root.theme-steaan .hover\:bg-violet-500\/\[0\.18\]:hover {
+:root.theme-steaan .hover\:bg-violet-500\/18:hover {
   background-color: hsl(var(--primary) / 0.18);
 }
 :root.theme-steaan .hover\:text-purple-100:hover,
@@ -869,7 +1065,7 @@
 :root.theme-steaan .hover\:to-indigo-500:hover,
 :root.theme-steaan .to-indigo-600,
 :root.theme-steaan .to-indigo-600\/90 {
-  --tw-gradient-to: hsl(var(--primary)) var(--tw-gradient-to-position);
+  --tw-gradient-to: hsl(var(--primary));
 }
 :root.theme-steaan .ring-violet-400\/50 {
   --tw-ring-color: hsl(var(--primary) / 0.5);
@@ -891,15 +1087,17 @@
   color: hsl(var(--steaan-primary-hover));
 }
 :root.theme-steaan .via-indigo-500 {
-  --tw-gradient-stops: var(--tw-gradient-from), hsl(var(--primary)) var(--tw-gradient-via-position), var(--tw-gradient-to);
+  --tw-gradient-via: hsl(var(--primary));
 }
 :root.theme-steaan .from-violet-500.to-blue-500,
 :root.theme-steaan .from-violet-600.to-blue-500,
 :root.theme-steaan .from-purple-500.to-sky-400 {
-  --tw-gradient-to: hsl(var(--primary)) var(--tw-gradient-to-position);
+  --tw-gradient-to: hsl(var(--primary));
 }
 /* Purple glow shadows under gate-dialog CTAs / the date-picker day cell. */
 :root.theme-steaan [class*="rgba(124,58,237"],
 :root.theme-steaan [class*="rgba(139,92,246"] {
   box-shadow: var(--steaan-shadow-sm);
 }
+
+} /* end @layer utilities (app + Steaan CSS) */

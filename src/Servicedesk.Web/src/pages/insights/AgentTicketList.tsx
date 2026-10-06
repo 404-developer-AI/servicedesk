@@ -110,7 +110,7 @@ export function AgentTicketList({
                 style={on ? { borderBottomColor: colorFor(a.slot) } : undefined}
               >
                 <span className="h-2.5 w-2.5 rounded-[3px]" style={{ backgroundColor: colorFor(a.slot) }} />
-                <span className="max-w-[14rem] truncate">{a.name}</span>
+                <span className="max-w-56 truncate">{a.name}</span>
                 <span className="rounded-full bg-glass px-1.5 text-[11px] tabular-nums text-muted-foreground">
                   {nf.format((view === "worked" ? totals[i]?.tickets : totals[i]?.openedNoAction) ?? 0)}
                 </span>
@@ -233,8 +233,8 @@ function AgentOpened({ agentId, params }: { agentId: string; params: ReportParam
                     #{o.number}
                   </Link>
                 </td>
-                <td className="max-w-[26rem] truncate px-3 py-2 text-foreground" title={o.subject}>{o.subject}</td>
-                <td className="max-w-[12rem] truncate px-3 py-2 text-muted-foreground" title={o.company ?? undefined}>
+                <td className="max-w-104 truncate px-3 py-2 text-foreground" title={o.subject}>{o.subject}</td>
+                <td className="max-w-48 truncate px-3 py-2 text-muted-foreground" title={o.company ?? undefined}>
                   {o.company ?? "—"}
                 </td>
                 <td className="whitespace-nowrap px-3 py-2">
@@ -303,7 +303,7 @@ function Pager({
         <span className="flex items-center gap-1.5">
           <span className="text-[10px] uppercase tracking-wider">Per page</span>
           <Select value={String(pageSize)} onValueChange={(v) => onPageSize(Number(v))}>
-            <SelectTrigger className="h-7 w-[4.25rem] text-xs">
+            <SelectTrigger className="h-7 w-17 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -321,7 +321,7 @@ function Pager({
         <PagerButton label="Previous page" onClick={() => onPage(page - 1)} disabled={page <= 1}>
           <ChevronLeft className="h-3.5 w-3.5" />
         </PagerButton>
-        <span className="min-w-[5rem] text-center font-mono text-foreground/90">{page} / {totalPages}</span>
+        <span className="min-w-20 text-center font-mono text-foreground/90">{page} / {totalPages}</span>
         <PagerButton label="Next page" onClick={() => onPage(page + 1)} disabled={page >= totalPages}>
           <ChevronRight className="h-3.5 w-3.5" />
         </PagerButton>
@@ -413,8 +413,8 @@ function AgentTickets({
                     #{t.number}
                   </Link>
                 </td>
-                <td className="max-w-[26rem] truncate px-3 py-2 text-foreground" title={t.subject}>{t.subject}</td>
-                <td className="max-w-[12rem] truncate px-3 py-2 text-muted-foreground" title={t.company ?? undefined}>
+                <td className="max-w-104 truncate px-3 py-2 text-foreground" title={t.subject}>{t.subject}</td>
+                <td className="max-w-48 truncate px-3 py-2 text-muted-foreground" title={t.company ?? undefined}>
                   {t.company ?? "—"}
                 </td>
                 <td className="whitespace-nowrap px-3 py-2">

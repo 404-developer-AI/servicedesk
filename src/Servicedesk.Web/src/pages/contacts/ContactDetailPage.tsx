@@ -491,7 +491,7 @@ function PortalRoleToggle({ contactId, option }: { contactId: string; option: Co
             onClick={() => current !== opt.v && save.mutate(opt.v)}
             className={cn(
               "rounded px-2 py-0.5 text-[11px] font-medium transition-colors",
-              current === opt.v ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              current === opt.v ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
             )}
           >
             {opt.label}

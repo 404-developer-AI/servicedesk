@@ -102,7 +102,7 @@ export function IntegrationAuditLog({ integration }: Props) {
 
   if (query.isError) {
     return (
-      <div className="rounded-md border border-rose-400/30 bg-rose-500/[0.08] p-3 text-xs text-rose-200">
+      <div className="rounded-md border border-rose-400/30 bg-rose-500/8 p-3 text-xs text-rose-200">
         Could not load audit log — {query.error.message}
       </div>
     );

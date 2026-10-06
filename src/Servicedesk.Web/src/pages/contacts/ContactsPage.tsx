@@ -347,7 +347,7 @@ function CompanyFilterPicker({
         <button
           type="button"
           className={cn(
-            "h-9 px-3 rounded-[var(--radius)] border border-glass bg-glass text-sm",
+            "h-9 px-3 rounded-(--radius) border border-glass bg-glass text-sm",
             "hover:bg-glass-hover transition-colors text-left min-w-[180px]",
             "flex items-center justify-between gap-2",
           )}

@@ -524,6 +524,11 @@ export function RichTextEditor({
   return (
     <>
       <style>{`
+        /* Same cascade layer as the app CSS in index.css (Tailwind v4): an
+           unlayered block would beat every utility regardless of
+           specificity. Inside the layer, document order keeps it after the
+           stylesheet, as before. */
+        @layer utilities {
         .rte-content .ProseMirror {
           outline: none;
         }
@@ -679,11 +684,12 @@ export function RichTextEditor({
           max-height: var(--rte-max-height, 320px);
           overflow-y: auto;
         }
+        } /* @layer utilities */
       `}</style>
 
       <div
         className={cn(
-          "rounded-[var(--radius)] border border-glass bg-glass overflow-hidden",
+          "rounded-(--radius) border border-glass bg-glass overflow-hidden",
           className
         )}
       >

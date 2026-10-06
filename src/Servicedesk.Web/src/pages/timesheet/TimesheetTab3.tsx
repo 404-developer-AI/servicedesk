@@ -229,7 +229,7 @@ function renderWeeks(
         key={`wk-${anchorKey}`}
         className={cn(
           "border-b border-glass",
-          failed ? "bg-red-500/[0.06]" : "bg-glass",
+          failed ? "bg-red-500/6" : "bg-glass",
         )}
       >
         <td
@@ -339,7 +339,7 @@ function DayRow({
     <tr
       className={cn(
         "border-b border-glass last:border-b-0",
-        status === "missing" && "bg-red-500/[0.04]",
+        status === "missing" && "bg-red-500/4",
         isWeekend && "text-muted-foreground/70",
       )}
     >
@@ -477,14 +477,14 @@ function UserPicker({
 }) {
   if (users.length === 0) {
     return (
-      <div className="flex h-8 min-w-[14rem] items-center rounded-md border border-glass bg-glass px-3 text-sm text-muted-foreground">
+      <div className="flex h-8 min-w-56 items-center rounded-md border border-glass bg-glass px-3 text-sm text-muted-foreground">
         No timesheet users
       </div>
     );
   }
   return (
     <Select value={value || undefined} onValueChange={onChange}>
-      <SelectTrigger className="h-8 min-w-[14rem] text-sm">
+      <SelectTrigger className="h-8 min-w-56 text-sm">
         <SelectValue placeholder="Select agent…" />
       </SelectTrigger>
       <SelectContent>
@@ -502,7 +502,7 @@ function MonthLabel({ year, month }: { year: number; month: number }) {
   const d = new Date(year, month - 1, 1);
   const label = d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
   return (
-    <span className="min-w-[10rem] px-2 text-center text-sm font-medium text-foreground">
+    <span className="min-w-40 px-2 text-center text-sm font-medium text-foreground">
       {label}
     </span>
   );

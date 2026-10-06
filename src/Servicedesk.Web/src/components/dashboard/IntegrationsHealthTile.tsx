@@ -315,7 +315,7 @@ function AdsolutCoverageStrip() {
                   search: undefined,
                   page: undefined,
                 }}
-                className="inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-500/[0.08] px-2 py-0.5 text-amber-200 hover:bg-amber-500/[0.15]"
+                className="inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-500/8 px-2 py-0.5 text-amber-200 hover:bg-amber-500/[0.15]"
               >
                 <span className="tabular-nums font-medium">{cell.value}</span>
                 <span>{cell.label}</span>

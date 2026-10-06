@@ -193,7 +193,7 @@ export function AgentActivityReportView({ config, filters }: { config: InsightsC
               <IconButton label="Previous period" onClick={() => setOffset((o) => o - 1)} disabled={offset <= -120}>
                 <ChevronLeft className="h-4 w-4" />
               </IconButton>
-              <span className="min-w-[10rem] px-1 text-center text-sm font-medium tabular-nums text-foreground">
+              <span className="min-w-40 px-1 text-center text-sm font-medium tabular-nums text-foreground">
                 {report ? periodTitle(report, period) : "…"}
               </span>
               <IconButton label="Next period" onClick={() => setOffset((o) => Math.min(0, o + 1))} disabled={offset >= 0}>
@@ -224,7 +224,7 @@ export function AgentActivityReportView({ config, filters }: { config: InsightsC
               type="button"
               onClick={exportPdf}
               disabled={!report || exporting}
-              className="sd-insights-export inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="sd-insights-export inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-xs transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
               Export PDF
@@ -389,7 +389,7 @@ export function AgentActivityReportView({ config, filters }: { config: InsightsC
               </ResponsiveContainer>
               {chartEmpty && (
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                  <span className="rounded-md border border-glass bg-popover px-3 py-1.5 text-xs text-muted-foreground shadow-sm">
+                  <span className="rounded-md border border-glass bg-popover px-3 py-1.5 text-xs text-muted-foreground shadow-xs">
                     Nothing recorded in this period
                   </span>
                 </div>
@@ -494,7 +494,7 @@ function AgentTooltip({
   if (!active || !row) return null;
   const b = row.bucket;
   return (
-    <div className="min-w-[13rem] rounded-[var(--radius)] border border-glass bg-popover p-3 text-xs text-popover-foreground shadow-md">
+    <div className="min-w-52 rounded-(--radius) border border-glass bg-popover p-3 text-xs text-popover-foreground shadow-md">
       <div className="mb-2 flex items-baseline justify-between gap-4">
         <span className="font-semibold">{bucketLabel(b.start, granularity)}</span>
         {isPartial(b, granularity) && <span className="text-[10px] text-muted-foreground">partial</span>}

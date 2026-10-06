@@ -173,8 +173,8 @@ export function DateTimePicker({
           type="button"
           disabled={disabled}
           className={cn(
-            "group flex h-9 w-full items-center gap-2 rounded-md border border-glass bg-glass px-3 text-left text-sm font-mono shadow-sm transition-colors",
-            "hover:bg-glass-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            "group flex h-9 w-full items-center gap-2 rounded-md border border-glass bg-glass px-3 text-left text-sm font-mono shadow-xs transition-colors",
+            "hover:bg-glass-hover focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring",
             "disabled:cursor-not-allowed disabled:opacity-50",
             !hasValue && "text-muted-foreground",
             className,
@@ -263,7 +263,7 @@ export function DateTimePicker({
                   isToday && !isSelected &&
                     "bg-glass-strong font-semibold text-foreground ring-1 ring-inset ring-white/15",
                   isSelected &&
-                    "bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-[0_0_12px_-2px_rgba(139,92,246,0.6)]",
+                    "bg-linear-to-br from-violet-600 to-indigo-600 text-white shadow-[0_0_12px_-2px_rgba(139,92,246,0.6)]",
                   beforeMin && "cursor-not-allowed opacity-30",
                 )}
               >
@@ -303,7 +303,7 @@ export function DateTimePicker({
             <button
               type="button"
               onClick={() => handleOpenChange(false)}
-              className="rounded-md bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-1 text-xs font-medium text-white shadow-sm transition-opacity hover:opacity-90"
+              className="rounded-md bg-linear-to-r from-violet-600 to-indigo-600 px-3 py-1 text-xs font-medium text-white shadow-xs transition-opacity hover:opacity-90"
             >
               Done
             </button>
@@ -363,7 +363,7 @@ function NumericSpinner({
           (e.target as HTMLInputElement).blur();
         }
       }}
-      className="h-7 w-10 rounded border border-glass bg-glass text-center font-mono text-xs tabular-nums text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+      className="h-7 w-10 rounded border border-glass bg-glass text-center font-mono text-xs tabular-nums text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring"
     />
   );
 }

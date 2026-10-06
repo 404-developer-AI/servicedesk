@@ -67,7 +67,7 @@ export function ZammadMappingSection({ ready }: Props) {
     return (
       <section className="space-y-2 rounded-xl border border-glass-strong bg-glass p-5">
         <SectionHeader />
-        <div className="rounded-md border border-amber-400/20 bg-amber-500/[0.05] p-3 text-xs text-amber-200">
+        <div className="rounded-md border border-amber-400/20 bg-amber-500/5 p-3 text-xs text-amber-200">
           Save a base URL + token and toggle <span className="font-mono">Zammad.Enabled</span>{" "}
           on first. Mappings load live from Zammad.
         </div>
@@ -90,7 +90,7 @@ export function ZammadMappingSection({ ready }: Props) {
     return (
       <section className="space-y-3 rounded-xl border border-glass-strong bg-glass p-5">
         <SectionHeader />
-        <div className="rounded-md border border-rose-400/30 bg-rose-500/[0.08] p-3 text-xs text-rose-200">
+        <div className="rounded-md border border-rose-400/30 bg-rose-500/8 p-3 text-xs text-rose-200">
           Could not load mappings — {overview.error.message}
         </div>
       </section>
@@ -152,14 +152,14 @@ function SectionHeader(props?: {
       {total > 0 ? (
         <Badge
           variant="outline"
-          className="border-amber-400/30 bg-amber-500/[0.08] text-amber-200"
+          className="border-amber-400/30 bg-amber-500/8 text-amber-200"
         >
           {total} unmapped
         </Badge>
       ) : (
         <Badge
           variant="outline"
-          className="border-emerald-400/30 bg-emerald-500/[0.08] text-emerald-200"
+          className="border-emerald-400/30 bg-emerald-500/8 text-emerald-200"
         >
           All mapped
         </Badge>

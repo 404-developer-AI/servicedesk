@@ -203,7 +203,7 @@ export function GraphSection() {
                 hint="Browser-origin for this install. Production: the public HTTPS URL behind nginx (e.g. https://desk.example.com). Dev: the Vite dev-server origin (e.g. http://localhost:5173). Required so the callback redirect lands on the SPA, not the bare Kestrel port."
               />
               {microsoftEnabled && !publicBaseSet && (
-                <div className="rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2 text-[11px] text-amber-200">
+                <div className="rounded-md border border-amber-500/30 bg-amber-500/8 px-3 py-2 text-[11px] text-amber-200">
                   M365 login is on but <span className="font-mono">App.PublicBaseUrl</span>{" "}
                   is empty. After a successful Azure sign-in the browser will
                   land on a 404 — fill this in and match it with the redirect
@@ -214,7 +214,7 @@ export function GraphSection() {
           )}
 
           {!isFullyConfigured && (
-            <div className="mb-3 rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2 text-[11px] text-amber-200">
+            <div className="mb-3 rounded-md border border-amber-500/30 bg-amber-500/8 px-3 py-2 text-[11px] text-amber-200">
               Fill in Tenant ID, Client ID and the client secret above before enabling.
             </div>
           )}

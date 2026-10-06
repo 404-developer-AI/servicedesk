@@ -255,7 +255,7 @@ export function RecipientInput({
             }, 120);
           }}
           placeholder={value.length === 0 ? placeholder : ""}
-          className="flex-1 min-w-[8rem] bg-transparent px-1 py-0.5 text-sm focus:outline-none"
+          className="flex-1 min-w-32 bg-transparent px-1 py-0.5 text-sm focus:outline-hidden"
         />
       </div>
 

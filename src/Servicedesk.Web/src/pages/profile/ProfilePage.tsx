@@ -50,7 +50,7 @@ export function ProfilePage() {
           <dt className="text-muted-foreground">Role</dt>
           <dd>{user?.role}</dd>
           <dt className="text-muted-foreground">Session class</dt>
-          <dd className="font-mono text-[11px] uppercase tracking-[0.1em]">{user?.amr}</dd>
+          <dd className="font-mono text-[11px] uppercase tracking-widest">{user?.amr}</dd>
         </dl>
       </section>
 

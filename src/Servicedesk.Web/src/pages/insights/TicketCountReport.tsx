@@ -255,7 +255,7 @@ export function TicketCountReportView({
             <IconButton label="Previous period" onClick={() => setOffset((o) => o - 1)} disabled={offset <= -120}>
               <ChevronLeft className="h-4 w-4" />
             </IconButton>
-            <span className="min-w-[10rem] px-1 text-center text-sm font-medium tabular-nums text-foreground">
+            <span className="min-w-40 px-1 text-center text-sm font-medium tabular-nums text-foreground">
               {report ? periodTitle(report, period) : "…"}
             </span>
             <IconButton label="Next period" onClick={() => setOffset((o) => Math.min(0, o + 1))} disabled={offset >= 0}>
@@ -285,7 +285,7 @@ export function TicketCountReportView({
                     title={on && outcomes.length === 1 ? "At least one outcome stays selected" : undefined}
                     className={cn(
                       "h-7 rounded-[5px] px-3 text-xs font-medium transition-colors",
-                      on ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                      on ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
                     )}
                   >
                     {OUTCOME_LABEL[o]}
@@ -312,7 +312,7 @@ export function TicketCountReportView({
             type="button"
             onClick={exportPdf}
             disabled={!report || visible.length === 0 || exporting}
-            className="sd-insights-export inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="sd-insights-export inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow-xs transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
             Export PDF
@@ -438,7 +438,7 @@ export function TicketCountReportView({
               </ResponsiveContainer>
               {summary && summary.total === 0 && (
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                  <span className="rounded-md border border-glass bg-popover px-3 py-1.5 text-xs text-muted-foreground shadow-sm">
+                  <span className="rounded-md border border-glass bg-popover px-3 py-1.5 text-xs text-muted-foreground shadow-xs">
                     {visible.length === 0 ? "All queues are switched off" : `No ${text.title.toLowerCase()} in this period`}
                   </span>
                 </div>
@@ -548,7 +548,7 @@ function QueueToggles({
                 className="h-2.5 w-2.5 rounded-[3px] border-2"
                 style={{ backgroundColor: on ? color : "transparent", borderColor: color }}
               />
-              <span className={cn("max-w-[14rem] truncate", !on && "line-through decoration-muted-foreground/40")}>
+              <span className={cn("max-w-56 truncate", !on && "line-through decoration-muted-foreground/40")}>
                 {q.name}
               </span>
               <span className="tabular-nums text-muted-foreground">{nf.format(totals.get(q.id) ?? 0)}</span>
@@ -620,7 +620,7 @@ function ChartTooltip({
     .reverse(); // top of the stack first
   const total = lines.reduce((acc, l) => acc + l.n, 0);
   return (
-    <div className="min-w-[12rem] rounded-[var(--radius)] border border-glass bg-popover p-3 text-xs text-popover-foreground shadow-md">
+    <div className="min-w-48 rounded-(--radius) border border-glass bg-popover p-3 text-xs text-popover-foreground shadow-md">
       <div className="mb-2 flex items-baseline justify-between gap-4">
         <span className="font-semibold">{bucketLabel(b.start, granularity)}</span>
         {isPartial(b, granularity) && <span className="text-[10px] text-muted-foreground">partial</span>}
@@ -786,7 +786,7 @@ function SortHeader({
         type="button"
         onClick={() => onSort(col)}
         className={cn(
-          "inline-flex max-w-[12rem] items-center gap-1.5 text-[11px] uppercase tracking-[0.06em] transition-colors hover:text-foreground",
+          "inline-flex max-w-48 items-center gap-1.5 text-[11px] uppercase tracking-[0.06em] transition-colors hover:text-foreground",
           active || strong ? "text-foreground" : "text-muted-foreground",
         )}
       >

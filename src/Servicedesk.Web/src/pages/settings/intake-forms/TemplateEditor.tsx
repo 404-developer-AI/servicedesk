@@ -186,7 +186,7 @@ export function TemplateEditor({
             onChange={(e) => setName(e.target.value)}
             maxLength={200}
             placeholder="e.g. Intake — laptop"
-            className="h-9 rounded-md border border-glass-strong bg-glass px-3 text-sm text-foreground outline-none focus:border-primary/40"
+            className="h-9 rounded-md border border-glass-strong bg-glass px-3 text-sm text-foreground outline-hidden focus:border-primary/40"
           />
         </label>
         <label className="flex flex-col gap-1.5">
@@ -197,7 +197,7 @@ export function TemplateEditor({
             onChange={(e) => setDescription(e.target.value)}
             maxLength={2000}
             placeholder="Optional — shown at the top of the public form"
-            className="h-9 rounded-md border border-glass-strong bg-glass px-3 text-sm text-foreground outline-none focus:border-primary/40"
+            className="h-9 rounded-md border border-glass-strong bg-glass px-3 text-sm text-foreground outline-hidden focus:border-primary/40"
           />
         </label>
       </div>
@@ -242,7 +242,7 @@ export function TemplateEditor({
                     })
                   }
                 >
-                  <SelectTrigger className="h-8 w-auto min-w-[12rem] border-glass bg-glass text-sm focus:border-glass-strong focus:bg-glass-strong focus:ring-0">
+                  <SelectTrigger className="h-8 w-auto min-w-48 border-glass bg-glass text-sm focus:border-glass-strong focus:bg-glass-strong focus:ring-0">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="border-glass bg-popover/80 backdrop-blur-xl">
@@ -293,7 +293,7 @@ export function TemplateEditor({
                       updateQuestion(q.clientId, { label: e.target.value })
                     }
                     maxLength={500}
-                    className="h-9 rounded-md border border-glass-strong bg-glass px-3 text-sm text-foreground outline-none focus:border-primary/40"
+                    className="h-9 rounded-md border border-glass-strong bg-glass px-3 text-sm text-foreground outline-hidden focus:border-primary/40"
                   />
                 </label>
                 <label className="flex flex-col gap-1">
@@ -305,13 +305,13 @@ export function TemplateEditor({
                       updateQuestion(q.clientId, { helpText: e.target.value })
                     }
                     maxLength={2000}
-                    className="h-9 rounded-md border border-glass-strong bg-glass px-3 text-sm text-foreground outline-none focus:border-primary/40"
+                    className="h-9 rounded-md border border-glass-strong bg-glass px-3 text-sm text-foreground outline-hidden focus:border-primary/40"
                   />
                 </label>
               </div>
 
               {q.type !== "SectionHeader" && (
-                <div className="mt-3 grid gap-3 md:grid-cols-[auto,1fr,1fr]">
+                <div className="mt-3 grid gap-3 md:grid-cols-[auto_1fr_1fr]">
                   <label className="flex items-center gap-2 text-sm text-muted-foreground">
                     <input
                       type="checkbox"
@@ -333,7 +333,7 @@ export function TemplateEditor({
                           defaultValue: e.target.value,
                         })
                       }
-                      className="h-9 rounded-md border border-glass-strong bg-glass px-3 text-sm text-foreground outline-none focus:border-primary/40"
+                      className="h-9 rounded-md border border-glass-strong bg-glass px-3 text-sm text-foreground outline-hidden focus:border-primary/40"
                     />
                   </label>
                   <label className="flex flex-col gap-1">
@@ -428,7 +428,7 @@ function DropdownOptionsEditor({
       )}
       <ul className="flex flex-col gap-2">
         {value.map((opt, idx) => (
-          <li key={idx} className="grid gap-2 md:grid-cols-[1fr,1fr,auto]">
+          <li key={idx} className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
             <input
               type="text"
               placeholder="Value (stored)"
@@ -439,7 +439,7 @@ function DropdownOptionsEditor({
                 onChange(next);
               }}
               maxLength={200}
-              className="h-8 rounded-md border border-glass-strong bg-glass px-2 text-sm text-foreground outline-none focus:border-primary/40"
+              className="h-8 rounded-md border border-glass-strong bg-glass px-2 text-sm text-foreground outline-hidden focus:border-primary/40"
             />
             <input
               type="text"
@@ -451,7 +451,7 @@ function DropdownOptionsEditor({
                 onChange(next);
               }}
               maxLength={200}
-              className="h-8 rounded-md border border-glass-strong bg-glass px-2 text-sm text-foreground outline-none focus:border-primary/40"
+              className="h-8 rounded-md border border-glass-strong bg-glass px-2 text-sm text-foreground outline-hidden focus:border-primary/40"
             />
             <Button
               variant="ghost"

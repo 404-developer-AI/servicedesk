@@ -242,7 +242,7 @@ export function CommentThreadDrawer({
               }}
               rows={6}
               placeholder="Write a comment…"
-              className="min-h-[7.5rem] flex-1 resize-y rounded-lg border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary/40 focus:outline-none"
+              className="min-h-30 flex-1 resize-y rounded-lg border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary/40 focus:outline-hidden"
             />
             <Button
               size="sm"
@@ -284,7 +284,7 @@ function MessageBubble({ message, mine }: { message: CommentMessage; mine: boole
     <div className={cn("flex flex-col gap-1", mine ? "items-end" : "items-start")}>
       <div
         className={cn(
-          "max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm",
+          "max-w-[85%] whitespace-pre-wrap wrap-break-word rounded-2xl px-3 py-2 text-sm",
           mine
             ? "rounded-br-sm bg-primary/15 text-foreground"
             : "rounded-bl-sm border border-glass bg-glass text-foreground",

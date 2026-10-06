@@ -113,7 +113,7 @@ export function LinkParentDialog({
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 mb-1">
               Sub ticket
             </div>
-            <div className="text-sm font-medium text-foreground/90 break-words">
+            <div className="text-sm font-medium text-foreground/90 wrap-break-word">
               {sourceLabel}
             </div>
           </div>

@@ -815,7 +815,7 @@ function GeneralTab() {
               onChange={(e) =>
                 updateProjects.mutate({ key: "Projects.QueueId", value: e.target.value })
               }
-              className="h-9 w-full max-w-xs rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="h-9 w-full max-w-xs rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             >
               <option value="">Not pinned — projects can sit in any queue</option>
               {(projectQueues ?? []).map((q) => (
@@ -872,7 +872,7 @@ function FlagColorRow({
           value={value}
           disabled={disabled}
           onChange={(e) => setDraft(e.target.value.trim())}
-          className="max-w-[9rem] font-mono text-xs"
+          className="max-w-36 font-mono text-xs"
         />
         <Button
           type="button"
@@ -1287,7 +1287,7 @@ function QueueDialog({
                     timeAlertMode: e.target.value as "inherit" | "on" | "off",
                   }))
                 }
-                className="h-9 w-full rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="h-9 w-full rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <option value="inherit">Inherit global setting</option>
                 <option value="on">Always on for this queue</option>
@@ -1942,7 +1942,7 @@ function StatusDialog({
               onChange={(e) =>
                 setForm((f) => ({ ...f, stateCategory: e.target.value as StatusStateCategory }))
               }
-              className="h-9 w-full rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus:border-primary/60"
+              className="h-9 w-full rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-hidden focus:border-primary/60"
             >
               {STATE_CATEGORIES.map((c) => (
                 <option key={c} value={c} className="bg-background">
@@ -2173,7 +2173,7 @@ function CategoryDialog({
               onChange={(e) =>
                 setForm((f) => ({ ...f, parentId: e.target.value || null }))
               }
-              className="h-9 w-full rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus:border-primary/60"
+              className="h-9 w-full rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-hidden focus:border-primary/60"
             >
               <option value="" className="bg-background">
                 — top level —

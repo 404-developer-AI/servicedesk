@@ -79,7 +79,7 @@ export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, Intak
       <div
         className={cn(
           "min-w-[min(40rem,90vw)] max-w-[min(56rem,90vw)] max-h-72 overflow-auto",
-          "rounded-[var(--radius)] border border-glass",
+          "rounded-(--radius) border border-glass",
           "bg-popover/95 backdrop-blur-xl shadow-2xl",
           "py-1 text-sm",
         )}

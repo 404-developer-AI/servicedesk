@@ -298,7 +298,7 @@ export function SendReportModal({
                   <label className="text-xs font-medium text-muted-foreground">Recipients</label>
 
                   {!hasReportingContacts && (
-                    <div className="flex items-start gap-2 rounded-md border border-amber-400/20 bg-amber-500/[0.06] p-3 text-xs text-amber-200">
+                    <div className="flex items-start gap-2 rounded-md border border-amber-400/20 bg-amber-500/6 p-3 text-xs text-amber-200">
                       <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
                       <span>
                         No reporting contacts set for this company. Star a contact below to designate them, or add a free-form address.
@@ -430,7 +430,7 @@ export function SendReportModal({
                 {preview && (
                   <div className="space-y-3">
                     {preview.warnings.length > 0 && (
-                      <div className="rounded-lg border border-amber-400/20 bg-amber-500/[0.06] p-3">
+                      <div className="rounded-lg border border-amber-400/20 bg-amber-500/6 p-3">
                         <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-amber-200">
                           <AlertTriangle className="h-3.5 w-3.5" />
                           Warnings

@@ -30,10 +30,10 @@ function ToggleSwitch({
       onClick={() => onChange(!checked)}
       className={cn(
         "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         "disabled:cursor-not-allowed disabled:opacity-50",
         checked
-          ? "bg-gradient-to-r from-violet-600 to-indigo-600"
+          ? "bg-linear-to-r from-violet-600 to-indigo-600"
           : "bg-glass-strong",
       )}
     >
@@ -110,7 +110,7 @@ export function SettingField({ entry, queryKey, label, hint, readOnly }: Props) 
                   <button
                     type="button"
                     aria-label="Show description"
-                    className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/40 transition-colors hover:text-muted-foreground/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/40 transition-colors hover:text-muted-foreground/80 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
                   >
                     <Info className="h-3 w-3" />
                   </button>
@@ -118,7 +118,7 @@ export function SettingField({ entry, queryKey, label, hint, readOnly }: Props) 
                 <TooltipContent
                   side="right"
                   align="start"
-                  className="max-w-sm whitespace-normal border border-glass bg-popover/95 text-xs leading-relaxed text-muted-foreground shadow-xl backdrop-blur"
+                  className="max-w-sm whitespace-normal border border-glass bg-popover/95 text-xs leading-relaxed text-muted-foreground shadow-xl backdrop-blur-sm"
                 >
                   {description}
                 </TooltipContent>
@@ -140,14 +140,14 @@ export function SettingField({ entry, queryKey, label, hint, readOnly }: Props) 
                   aria-label="Reset to default"
                   disabled={save.isPending}
                   onClick={resetToDefault}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-glass hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-glass hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                 </button>
               </TooltipTrigger>
               <TooltipContent
                 side="left"
-                className="border border-glass bg-popover/95 text-xs text-muted-foreground shadow-xl backdrop-blur"
+                className="border border-glass bg-popover/95 text-xs text-muted-foreground shadow-xl backdrop-blur-sm"
               >
                 Reset to default
               </TooltipContent>

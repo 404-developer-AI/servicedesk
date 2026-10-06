@@ -12,7 +12,7 @@ type TicketFiltersProps = {
 };
 
 const SELECT_CLASS =
-  "h-8 px-2 text-sm rounded-md border border-glass bg-glass text-foreground outline-none focus:border-primary/60 cursor-pointer";
+  "h-8 px-2 text-sm rounded-md border border-glass bg-glass text-foreground outline-hidden focus:border-primary/60 cursor-pointer";
 
 export function TicketFilters({ filters, onChange }: TicketFiltersProps) {
   const [searchInput, setSearchInput] = React.useState(filters.search ?? "");

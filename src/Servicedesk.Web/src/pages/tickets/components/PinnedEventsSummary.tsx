@@ -126,7 +126,7 @@ function PinnedItem({
                   setEditingRemark(false);
                 }
               }}
-              className="flex-1 min-w-0 rounded border border-glass bg-glass px-2 py-1 text-xs text-foreground outline-none focus:border-primary/50"
+              className="flex-1 min-w-0 rounded border border-glass bg-glass px-2 py-1 text-xs text-foreground outline-hidden focus:border-primary/50"
               autoFocus
             />
             <button
@@ -222,7 +222,7 @@ export function PinnedEventsSummary({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="w-full flex items-center gap-2 rounded-[var(--radius)] border px-3 py-2 text-sm transition-colors border-amber-400/60 bg-amber-100/80 text-amber-800 hover:bg-amber-100 hover:border-amber-500/70 dark:border-amber-500/20 dark:bg-amber-500/[0.04] dark:text-amber-300/80 dark:hover:bg-amber-500/[0.08] dark:hover:border-amber-500/30"
+          className="w-full flex items-center gap-2 rounded-(--radius) border px-3 py-2 text-sm transition-colors border-amber-400/60 bg-amber-100/80 text-amber-800 hover:bg-amber-100 hover:border-amber-500/70 dark:border-amber-500/20 dark:bg-amber-500/4 dark:text-amber-300/80 dark:hover:bg-amber-500/8 dark:hover:border-amber-500/30"
         >
           <Pin className="h-3.5 w-3.5 shrink-0" />
           <span className="font-medium">{label}</span>

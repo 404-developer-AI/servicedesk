@@ -131,7 +131,7 @@ export function ContractM365Page() {
 
       {!companies.isLoading && !companies.isError && items.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-[14rem] flex-1 sm:max-w-sm">
+          <div className="relative min-w-56 flex-1 sm:max-w-sm">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
@@ -448,7 +448,7 @@ function ArticleSelectionDialog({
                 className="inline-flex items-center gap-1.5 rounded-full border border-glass-strong bg-glass px-2.5 py-1 text-xs text-foreground transition-colors hover:bg-glass-hover"
               >
                 <span className="font-mono text-[11px] text-muted-foreground">{a.code ?? "—"}</span>
-                <span className="max-w-[14rem] truncate">{a.name || a.code || "—"}</span>
+                <span className="max-w-56 truncate">{a.name || a.code || "—"}</span>
                 <X className="h-3 w-3 text-muted-foreground" />
               </button>
             ))}
@@ -548,7 +548,7 @@ function ArticleSelectionDialog({
                     {on && <Check className="h-3 w-3" />}
                     <span className="font-mono text-[11px]">{s.code}</span>
                     {s.description && (
-                      <span className="max-w-[12rem] truncate">{s.description}</span>
+                      <span className="max-w-48 truncate">{s.description}</span>
                     )}
                     <span className="tabular-nums text-muted-foreground/70">{s.count}</span>
                   </button>

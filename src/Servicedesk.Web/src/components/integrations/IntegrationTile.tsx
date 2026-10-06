@@ -12,7 +12,7 @@ const STATUS_STYLES: Record<
     label: "Online",
   },
   warning: {
-    pill: "border-amber-400/30 bg-amber-500/[0.08] text-amber-200",
+    pill: "border-amber-400/30 bg-amber-500/8 text-amber-200",
     dot: "bg-amber-400",
     label: "Warning",
   },
@@ -91,7 +91,7 @@ export function IntegrationTile({
       </div>
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/70 px-4 text-center opacity-0 backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100"
+        className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/70 px-4 text-center opacity-0 backdrop-blur-xs transition-opacity duration-200 group-hover:opacity-100"
       >
         <span className="text-sm font-semibold text-foreground">{name}</span>
       </div>

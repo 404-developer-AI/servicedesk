@@ -182,7 +182,7 @@ export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
           />
 
           {isCreate && (
-            <div className="flex items-start gap-2 rounded-lg border border-amber-300/30 bg-amber-300/[0.06] px-3 py-2 text-xs text-amber-200">
+            <div className="flex items-start gap-2 rounded-lg border border-amber-300/30 bg-amber-300/6 px-3 py-2 text-xs text-amber-200">
               <ImageOff className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <div>
                 <span className="font-medium">Image uploads are unavailable until the draft is saved.</span>{" "}
@@ -239,7 +239,7 @@ export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
               onChange={(e) => setEditorNotes(e.target.value)}
               placeholder="Internal context for editors. Never shown to customers."
               rows={3}
-              className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm outline-none focus:border-glass-strong"
+              className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm outline-hidden focus:border-glass-strong"
             />
           </div>
         </div>

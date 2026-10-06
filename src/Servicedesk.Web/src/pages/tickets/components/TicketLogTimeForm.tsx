@@ -177,7 +177,7 @@ export function TicketLogTimeForm({
   };
 
   return (
-    <div className="sd-log-time border-t border-glass bg-primary/[0.03] px-4 pb-4 pt-3" onKeyDown={onKeyDown}>
+    <div className="sd-log-time border-t border-glass bg-primary/3 px-4 pb-4 pt-3" onKeyDown={onKeyDown}>
       {/* Title */}
       <div className="flex items-center justify-between gap-3">
         <h3 className="min-w-0 truncate text-[15px] font-semibold text-foreground">
@@ -258,7 +258,7 @@ export function TicketLogTimeForm({
             {totalMinutes !== null ? formatDuration(totalMinutes) : "—"}
           </div>
         </div>
-        <div className="ml-auto flex max-w-[15rem] items-start gap-2 rounded-lg border border-sky-400/30 bg-sky-400/10 px-3 py-2 text-xs leading-snug text-foreground/80">
+        <div className="ml-auto flex max-w-60 items-start gap-2 rounded-lg border border-sky-400/30 bg-sky-400/10 px-3 py-2 text-xs leading-snug text-foreground/80">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-500" />
           <span>
             The start time is filled in automatically from your <strong>latest timesheet entry</strong>.
@@ -278,7 +278,7 @@ export function TicketLogTimeForm({
               disabled={!tasksQ.isSuccess}
               className={cn(
                 "h-9 w-full rounded-md border bg-glass pl-9 pr-3 text-sm text-foreground",
-                "focus:outline-none focus:ring-1 focus:ring-ring",
+                "focus:outline-hidden focus:ring-1 focus:ring-ring",
                 "[&_option]:bg-popover [&_option]:text-popover-foreground",
                 errors.taskId ? "border-destructive" : "border-glass",
               )}
@@ -303,7 +303,7 @@ export function TicketLogTimeForm({
             placeholder="What did you do?"
             className={cn(
               "h-9 w-full rounded-md border bg-glass px-3 text-sm text-foreground placeholder:text-muted-foreground",
-              "focus:outline-none focus:ring-1 focus:ring-ring",
+              "focus:outline-hidden focus:ring-1 focus:ring-ring",
               errors.description ? "border-destructive" : "border-glass",
             )}
           />
@@ -357,7 +357,7 @@ function TimeField({
           }}
           className={cn(
             "h-9 w-full rounded-md border bg-glass pl-9 pr-3 text-sm tabular-nums text-foreground",
-            "focus:outline-none focus:ring-1 focus:ring-ring",
+            "focus:outline-hidden focus:ring-1 focus:ring-ring",
             error ? "border-destructive" : "border-glass",
           )}
         />

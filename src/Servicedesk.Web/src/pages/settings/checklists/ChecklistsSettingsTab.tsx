@@ -243,7 +243,7 @@ export function ChecklistsSettingsTab({ initialTemplateId }: { initialTemplateId
                       ) : (
                         <span className="flex flex-wrap gap-1">
                           {t.queueIds.map((q) => (
-                            <span key={q} className="rounded border border-glass bg-glass px-1.5 py-[1px] text-[11px] text-muted-foreground">
+                            <span key={q} className="rounded border border-glass bg-glass px-1.5 py-px text-[11px] text-muted-foreground">
                               {queueName(q)}
                             </span>
                           ))}

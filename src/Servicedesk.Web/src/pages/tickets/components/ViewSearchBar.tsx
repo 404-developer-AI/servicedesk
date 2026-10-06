@@ -73,7 +73,7 @@ export function ViewSearchBar({
           maxLength={200}
           placeholder={placeholder}
           aria-label="Search this view"
-          className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
+          className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-hidden placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
         />
         {value ? (
           <button
@@ -114,7 +114,7 @@ export function ViewSearchBar({
                 className={cn(
                   "rounded px-2 py-0.5 text-[11px] font-medium transition-colors",
                   active
-                    ? "bg-primary/15 text-primary shadow-sm"
+                    ? "bg-primary/15 text-primary shadow-xs"
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >

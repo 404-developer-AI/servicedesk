@@ -69,7 +69,7 @@ export function AuditLogPage() {
                   setEventType(e.target.value);
                   setCursor(undefined);
                 }}
-                className="h-9 rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus:border-primary/60"
+                className="h-9 rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-hidden focus:border-primary/60"
               >
                 {EVENT_TYPES.map((t) => (
                   <option key={t} value={t} className="bg-background">

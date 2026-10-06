@@ -253,7 +253,7 @@ function GroupNode({
         <select
           value={group.op}
           onChange={(e) => setOp(e.target.value as ConditionGroup["op"])}
-          className="rounded-md border border-glass bg-glass px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
+          className="rounded-md border border-glass bg-glass px-2 py-1 text-xs text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
         >
           <option value="AND">All must match (AND)</option>
           <option value="OR">Any may match (OR)</option>
@@ -383,7 +383,7 @@ function LeafRow({
       <select
         value={leaf.field}
         onChange={(e) => setField(e.target.value)}
-        className="min-w-[10rem] rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
+        className="min-w-40 rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
       >
         {fields.map((f) => (
           <option key={f.key} value={f.key}>{f.label}</option>
@@ -392,7 +392,7 @@ function LeafRow({
       <select
         value={leaf.operator}
         onChange={(e) => onChange({ ...leaf, operator: e.target.value })}
-        className="rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
+        className="rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
       >
         {applicableOps.map((o) => (
           <option key={o} value={o}>{prettifyOp(o)}</option>
@@ -474,7 +474,7 @@ function ValueInput({
       <select
         value={typeof value === "string" ? value : ""}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
+        className="rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
       >
         <option value="">—</option>
         {SENDER_OPTIONS.map((o) => (
@@ -501,7 +501,7 @@ function ValueInput({
               .filter(Boolean),
           )
         }
-        className="min-w-[12rem] rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+        className="min-w-48 rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring"
       />
     );
   }
@@ -516,7 +516,7 @@ function ValueInput({
       <select
         value={typeof value === "string" ? value : ""}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
+        className="rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
       >
         <option value="">—</option>
         {ARTICLE_TYPE_OPTIONS.map((o) => (
@@ -531,7 +531,7 @@ function ValueInput({
       value={typeof value === "string" ? value : ""}
       onChange={(e) => onChange(e.target.value)}
       placeholder="value"
-      className="min-w-[12rem] rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+      className="min-w-48 rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring"
     />
   );
 }
@@ -562,7 +562,7 @@ function BooleanValueInput({
     <select
       value={normalized}
       onChange={(e) => onChange(e.target.value)}
-      className="rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
+      className="rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
     >
       <option value="true">true</option>
       <option value="false">false</option>
@@ -586,7 +586,7 @@ function TaxonomySelect({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="min-w-[10rem] flex items-center justify-between gap-2 rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          className="min-w-40 flex items-center justify-between gap-2 rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring"
         >
           <span className={cn(!selected && "text-muted-foreground/60")}>
             {selected?.name ?? "Select…"}

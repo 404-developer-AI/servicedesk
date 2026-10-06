@@ -176,7 +176,7 @@ function AgentList({
   onSelect: (userId: string) => void;
 }) {
   return (
-    <ul className="max-h-[26rem] space-y-1 overflow-y-auto pr-1">
+    <ul className="max-h-104 space-y-1 overflow-y-auto pr-1">
       {agents.map((a) => {
         const ticketCount = (a.viewing ? 1 : 0) + a.recent.length;
         const isSelected = a.userId === selectedUserId;
@@ -268,7 +268,7 @@ function AgentTickets({ agent }: { agent: AgentActivity | null }) {
   const hasAny = agent.viewing !== null || agent.recent.length > 0;
   if (!hasAny) {
     return (
-      <div className="flex min-h-[10rem] flex-col items-center justify-center gap-1 rounded-lg border border-glass bg-glass px-4 py-6 text-center">
+      <div className="flex min-h-40 flex-col items-center justify-center gap-1 rounded-lg border border-glass bg-glass px-4 py-6 text-center">
         <p className="text-sm text-foreground/80">{agent.email}</p>
         <p className="text-xs text-muted-foreground">
           {agent.online ? "No active or recent tickets." : "Currently offline."}

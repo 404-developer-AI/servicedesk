@@ -282,7 +282,7 @@ function SubsystemCard({
           {subsystem.details.map((d, i) => (
             <div key={i} className="contents">
               <dt className="text-muted-foreground">{d.label}</dt>
-              <dd className="text-foreground break-words">{d.value ?? "—"}</dd>
+              <dd className="text-foreground wrap-break-word">{d.value ?? "—"}</dd>
             </div>
           ))}
         </dl>
@@ -409,7 +409,7 @@ function IncidentEntry({
               {new Date(incident.lastOccurredUtc).toLocaleString()}
             </span>
           </div>
-          <p className="whitespace-pre-wrap break-words text-foreground/90">{incident.message}</p>
+          <p className="whitespace-pre-wrap wrap-break-word text-foreground/90">{incident.message}</p>
           {incident.details ? (
             <button
               type="button"

@@ -86,7 +86,7 @@ export function ContactPicker({
           <button
             type="button"
             className={cn(
-              "h-9 px-3 rounded-[var(--radius)] border border-glass bg-glass text-sm",
+              "h-9 px-3 rounded-(--radius) border border-glass bg-glass text-sm",
               "hover:bg-glass-hover transition-colors w-full text-left",
               "flex items-center justify-between gap-2",
               !displayLabel && "text-muted-foreground",
@@ -116,7 +116,7 @@ export function ContactPicker({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search contacts…"
-              className="flex h-9 w-full bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground"
+              className="flex h-9 w-full bg-transparent px-2 text-sm outline-hidden placeholder:text-muted-foreground"
             />
             {isFetching && (
               <div className="h-3 w-3 animate-spin rounded-full border border-glass-strong border-t-white/60" />

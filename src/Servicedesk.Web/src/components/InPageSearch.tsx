@@ -174,7 +174,7 @@ function SearchBar({
 
   return (
     <div
-      className="fixed top-6 left-1/2 z-50 w-[min(640px,90vw)] -translate-x-1/2 rounded-xl border border-glass bg-background/95 p-2 shadow-2xl backdrop-blur ring-1 ring-inset ring-white/5"
+      className="fixed top-6 left-1/2 z-50 w-[min(640px,90vw)] -translate-x-1/2 rounded-xl border border-glass bg-background/95 p-2 shadow-2xl backdrop-blur-sm ring-1 ring-inset ring-white/5"
       role="dialog"
       aria-label={placeholder}
     >
@@ -194,7 +194,7 @@ function SearchBar({
             }
           }}
           placeholder={placeholder}
-          className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          className="flex-1 bg-transparent text-sm outline-hidden placeholder:text-muted-foreground"
         />
 
         <div className="flex items-center rounded-md border border-glass bg-glass p-0.5 text-xs">

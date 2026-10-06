@@ -12,7 +12,7 @@ export function Highlight({ text }: { text: string }) {
   ranges.forEach(([s, e], i) => {
     if (s > at) parts.push(text.slice(at, s));
     parts.push(
-      <mark key={i} className="sd-search-hit rounded-[3px] bg-primary/20 px-[1px] text-inherit">
+      <mark key={i} className="sd-search-hit rounded-[3px] bg-primary/20 px-px text-inherit">
         {text.slice(s, e)}
       </mark>,
     );

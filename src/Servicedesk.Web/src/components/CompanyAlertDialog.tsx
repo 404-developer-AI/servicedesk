@@ -35,7 +35,7 @@ export function CompanyAlertDialog({ alert, open, onClose }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="rounded-md border border-amber-400/20 bg-amber-400/[0.05] px-4 py-3 text-sm text-amber-100">
+        <div className="rounded-md border border-amber-400/20 bg-amber-400/5 px-4 py-3 text-sm text-amber-100">
           <div className="whitespace-pre-wrap">{alert.alertText}</div>
         </div>
 
