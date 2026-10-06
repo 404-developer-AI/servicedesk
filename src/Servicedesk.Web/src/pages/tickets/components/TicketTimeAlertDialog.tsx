@@ -288,7 +288,7 @@ export function TicketTimeAlertDialog({ ticketId, queueId, onBlockingChange }: P
                 rows={2}
                 disabled={busy}
                 placeholder="Add context for the team — posted as an internal note on this ticket."
-                className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+                className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
               />
             </div>
           </div>
@@ -315,7 +315,7 @@ export function TicketTimeAlertDialog({ ticketId, queueId, onBlockingChange }: P
                 disabled={busy}
                 autoFocus
                 placeholder="Required — posted as an internal note on this ticket."
-                className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+                className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
               />
             </div>
           </div>

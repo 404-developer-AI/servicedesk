@@ -275,7 +275,7 @@ function QuestionField({
   ) : null;
 
   const baseInputCn = cn(
-    "rounded-md border bg-glass px-3 text-sm text-foreground outline-none focus:border-primary/40",
+    "rounded-md border bg-glass px-3 text-sm text-foreground outline-hidden focus:border-primary/40",
     error ? "border-red-400/50" : "border-glass-strong",
   );
 

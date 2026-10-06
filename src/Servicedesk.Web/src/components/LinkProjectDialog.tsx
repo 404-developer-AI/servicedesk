@@ -107,7 +107,7 @@ export function LinkProjectDialog({ open, source, onClose, onLinked }: Props) {
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 mb-1">
               Ticket
             </div>
-            <div className="text-sm font-medium text-foreground/90 break-words">
+            <div className="text-sm font-medium text-foreground/90 wrap-break-word">
               {sourceLabel}
             </div>
           </div>

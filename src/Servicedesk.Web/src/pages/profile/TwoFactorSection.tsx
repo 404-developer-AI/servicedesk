@@ -134,7 +134,7 @@ export function TwoFactorSection() {
           className={
             "rounded-full border px-2.5 py-0.5 text-[10px] uppercase tracking-[0.14em] " +
             (enabled
-              ? "border-emerald-400/30 bg-emerald-400/[0.08] text-emerald-200/90"
+              ? "border-emerald-400/30 bg-emerald-400/8 text-emerald-200/90"
               : "border-glass bg-glass text-muted-foreground")
           }
         >
@@ -257,7 +257,7 @@ export function TwoFactorSection() {
 
       {stage === "done" && recoveryCodes && (
         <div className="space-y-3">
-          <div className="rounded-md border border-amber-400/30 bg-amber-400/[0.06] px-4 py-3 text-xs text-amber-100/90">
+          <div className="rounded-md border border-amber-400/30 bg-amber-400/6 px-4 py-3 text-xs text-amber-100/90">
             Save these recovery codes somewhere safe. Each one works exactly once
             and can be used instead of an authenticator code if you lose your
             device. They are shown only now.

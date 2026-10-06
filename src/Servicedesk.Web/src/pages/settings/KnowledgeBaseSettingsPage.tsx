@@ -554,7 +554,7 @@ function SectionDialog({
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Short description (optional, plain text)"
             rows={3}
-            className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm outline-none focus:border-glass-strong"
+            className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm outline-hidden focus:border-glass-strong"
           />
         </div>
         <DialogFooter>

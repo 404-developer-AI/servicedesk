@@ -502,7 +502,7 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
             value={introHtml}
             onChange={(e) => setIntroHtml(e.target.value)}
             rows={4}
-            className="w-full resize-y rounded-md border border-glass-strong bg-glass px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40"
+            className="w-full resize-y rounded-md border border-glass-strong bg-glass px-3 py-2 text-sm text-foreground outline-hidden focus:border-primary/40"
             placeholder="Optional — leave blank for no intro paragraph."
           />
         </div>
@@ -533,7 +533,7 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
             value={thankYouMessage}
             onChange={(e) => setThankYouMessage(e.target.value)}
             rows={3}
-            className="w-full resize-y rounded-md border border-glass-strong bg-glass px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40"
+            className="w-full resize-y rounded-md border border-glass-strong bg-glass px-3 py-2 text-sm text-foreground outline-hidden focus:border-primary/40"
             placeholder="Shown after the customer submits."
             maxLength={5000}
           />
@@ -544,7 +544,7 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
             value={expiredMessage}
             onChange={(e) => setExpiredMessage(e.target.value)}
             rows={3}
-            className="w-full resize-y rounded-md border border-glass-strong bg-glass px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40"
+            className="w-full resize-y rounded-md border border-glass-strong bg-glass px-3 py-2 text-sm text-foreground outline-hidden focus:border-primary/40"
             placeholder="Shown when the survey link has expired."
             maxLength={5000}
           />
@@ -555,7 +555,7 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
             value={notFoundMessage}
             onChange={(e) => setNotFoundMessage(e.target.value)}
             rows={3}
-            className="w-full resize-y rounded-md border border-glass-strong bg-glass px-3 py-2 text-sm text-foreground outline-none focus:border-primary/40"
+            className="w-full resize-y rounded-md border border-glass-strong bg-glass px-3 py-2 text-sm text-foreground outline-hidden focus:border-primary/40"
             placeholder="Shown when the token does not match a known survey."
             maxLength={5000}
           />

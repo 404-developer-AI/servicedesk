@@ -598,7 +598,7 @@ export function FeedbackPage() {
 // ---- Shared select class (glass style matching TicketFilters) -------------
 
 const SELECT_CLASS =
-  "h-8 rounded-md border border-glass bg-glass px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring min-w-[10rem]";
+  "h-8 rounded-md border border-glass bg-glass px-2 text-sm text-foreground focus:outline-hidden focus:ring-2 focus:ring-ring min-w-40";
 
 // ---- Field group label ----------------------------------------------------
 
@@ -1052,7 +1052,7 @@ function EditableRow({
         <select
           value={targetUserId}
           onChange={(e) => setTargetUserId(e.target.value)}
-          className={cn(SELECT_CLASS, "min-w-[10rem]")}
+          className={cn(SELECT_CLASS, "min-w-40")}
         >
           <option value="">— Unassigned —</option>
           {employees.map((emp) => (
@@ -1070,7 +1070,7 @@ function EditableRow({
           type="date"
           value={entryDate}
           onChange={(e) => setEntryDate(e.target.value)}
-          className="h-8 rounded-md border border-glass bg-glass px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          className="h-8 rounded-md border border-glass bg-glass px-2 text-sm text-foreground focus:outline-hidden focus:ring-2 focus:ring-ring"
         />
         {fieldErrors.entryDate && (
           <span className="text-xs text-destructive">{fieldErrors.entryDate}</span>
@@ -1111,7 +1111,7 @@ function EditableRow({
       <select
         value={workPointTypeId}
         onChange={(e) => setWorkPointTypeId(e.target.value)}
-        className={cn(SELECT_CLASS, "min-w-[9rem]")}
+        className={cn(SELECT_CLASS, "min-w-36")}
       >
         <option value="">— None —</option>
         {workPointTypes.map((t) => (
@@ -1154,7 +1154,7 @@ function EditableRow({
       </div>
     ),
     ticket: (
-      <div className="min-w-[12rem]">
+      <div className="min-w-48">
         <TicketAutocomplete
           value={ticket}
           disabled={false}
@@ -1236,7 +1236,7 @@ function RichTextPreviewCell({
         type="button"
         onClick={() => setOpen(true)}
         title={`View ${label}`}
-        className="max-w-[14rem] truncate text-left text-xs text-foreground/80 hover:text-foreground hover:underline cursor-pointer"
+        className="max-w-56 truncate text-left text-xs text-foreground/80 hover:text-foreground hover:underline cursor-pointer"
       >
         {preview.slice(0, 80)}{preview.length > 80 ? "…" : ""}
       </button>
@@ -1282,7 +1282,7 @@ function RichTextCellEditor({
         type="button"
         onClick={onOpen}
         className={cn(
-          "flex h-8 min-w-[10rem] max-w-[16rem] items-center rounded-md border border-glass bg-glass px-2 text-left text-sm transition-colors hover:bg-glass-hover",
+          "flex h-8 min-w-40 max-w-[16rem] items-center rounded-md border border-glass bg-glass px-2 text-left text-sm transition-colors hover:bg-glass-hover",
           preview ? "text-foreground" : "text-muted-foreground italic",
         )}
       >

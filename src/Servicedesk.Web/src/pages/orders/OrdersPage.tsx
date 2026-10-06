@@ -104,7 +104,7 @@ const ALL_COLUMNS: ColDef[] = [
     label: "Description",
     align: "left",
     defaultVisible: true,
-    render: (r) => <span className="block max-w-[22rem] truncate text-muted-foreground">{r.remark || "—"}</span>,
+    render: (r) => <span className="block max-w-88 truncate text-muted-foreground">{r.remark || "—"}</span>,
   },
   {
     id: "status",

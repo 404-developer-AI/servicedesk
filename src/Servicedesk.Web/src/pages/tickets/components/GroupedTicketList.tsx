@@ -486,7 +486,7 @@ export function GroupedTicketList({
                           key={row.id}
                           className={cn(
                             "border-b border-glass hover:bg-glass-hover cursor-pointer transition-colors",
-                            isSelected && "bg-primary/[0.07] hover:bg-primary/[0.1]",
+                            isSelected && "bg-primary/[0.07] hover:bg-primary/10",
                           )}
                           style={rowStyle}
                           onClick={() => onRowClick(item.id)}

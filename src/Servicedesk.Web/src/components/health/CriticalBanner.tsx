@@ -22,7 +22,7 @@ export function CriticalBanner() {
   if (role !== "Admin" || data?.status !== "Critical") return null;
 
   return (
-    <div className="border-b border-rose-500/40 bg-rose-950/60 px-6 py-2 text-sm text-rose-100 backdrop-blur">
+    <div className="border-b border-rose-500/40 bg-rose-950/60 px-6 py-2 text-sm text-rose-100 backdrop-blur-sm">
       <div className="flex items-center gap-3">
         <AlertTriangle className="h-4 w-4 shrink-0 text-rose-300" />
         <span className="flex-1">

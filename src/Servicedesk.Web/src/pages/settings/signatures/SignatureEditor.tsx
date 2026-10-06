@@ -180,7 +180,7 @@ function TextBlockEditor({
         placeholder="HTML content — use Insert variable to add {{agent.*}} tokens"
         className={cn(
           "w-full resize-y rounded-md border border-input bg-glass px-3 py-2 font-mono text-xs text-foreground",
-          "placeholder:text-muted-foreground/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          "placeholder:text-muted-foreground/50 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring",
         )}
       />
     </div>

@@ -324,7 +324,7 @@ function MonthLabel({ year, month, all }: { year: number; month: number; all: bo
     ? "All months"
     : d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
   return (
-    <span className="min-w-[9rem] px-2 text-center text-sm font-medium text-foreground">
+    <span className="min-w-36 px-2 text-center text-sm font-medium text-foreground">
       {label}
     </span>
   );
@@ -770,7 +770,7 @@ function ReceiptRow({
           // Highlight the row you clicked open with the purple accent so it
           // clearly reads as "selected" — distinct from the neutral hover. The
           // expanded detail panel below keeps its own (un-highlighted) styling.
-          expanded ? "bg-purple-500/[0.13] hover:bg-purple-500/[0.16]" : "hover:bg-glass-hover",
+          expanded ? "bg-purple-500/13 hover:bg-purple-500/16" : "hover:bg-glass-hover",
         )}
         onClick={onToggle}
       >
@@ -813,7 +813,7 @@ function ReceiptRow({
       </tr>
 
       {expanded && (
-        <tr className="border-b border-glass bg-purple-500/[0.05]">
+        <tr className="border-b border-glass bg-purple-500/5">
           <td colSpan={colCount} className="px-6 py-4">
             {detail.isLoading ? (
               <Skeleton className="h-20 w-full" />
@@ -977,7 +977,7 @@ function HoursCell({ receipt }: { receipt: AdsolutSalesReceiptHeader }) {
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center rounded-full border border-purple-400/30 bg-purple-500/[0.12] px-2.5 py-0.5 text-xs tabular-nums text-purple-200 transition-colors hover:bg-purple-500/20"
+          className="inline-flex items-center rounded-full border border-purple-400/30 bg-purple-500/12 px-2.5 py-0.5 text-xs tabular-nums text-purple-200 transition-colors hover:bg-purple-500/20"
           title="Show hours per task"
         >
           {formatMinutes(receipt.totalMinutes)}
@@ -1023,7 +1023,7 @@ function HoursCell({ receipt }: { receipt: AdsolutSalesReceiptHeader }) {
     {grouped && (
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="inline-flex items-center gap-0.5 rounded-full border border-amber-400/30 bg-amber-500/[0.12] px-1.5 py-0.5 text-[10px] tabular-nums text-amber-200">
+          <span className="inline-flex items-center gap-0.5 rounded-full border border-amber-400/30 bg-amber-500/12 px-1.5 py-0.5 text-[10px] tabular-nums text-amber-200">
             <Receipt className="h-2.5 w-2.5" />
             {receipt.ticketReceiptCount}
           </span>
@@ -1060,7 +1060,7 @@ function BrutoPriceCell({ receipt }: { receipt: AdsolutSalesReceiptHeader }) {
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center rounded-full border border-emerald-400/30 bg-emerald-500/[0.12] px-2.5 py-0.5 text-xs tabular-nums text-emerald-200 transition-colors hover:bg-emerald-500/20"
+          className="inline-flex items-center rounded-full border border-emerald-400/30 bg-emerald-500/12 px-2.5 py-0.5 text-xs tabular-nums text-emerald-200 transition-colors hover:bg-emerald-500/20"
           title="Show gross price per task"
         >
           {formatMoney(receipt.brutoPrice, receipt.currencyIso)}

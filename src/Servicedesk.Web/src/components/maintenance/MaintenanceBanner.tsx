@@ -42,9 +42,9 @@ export function MaintenanceBanner({ variant = "shell", className }: Props) {
     return (
       <div
         className={cn(
-          "mx-auto mb-4 flex w-full max-w-[420px] items-start gap-3 rounded-[var(--radius)] border px-4 py-3 text-xs backdrop-blur",
+          "mx-auto mb-4 flex w-full max-w-[420px] items-start gap-3 rounded-(--radius) border px-4 py-3 text-xs backdrop-blur-sm",
           "border-amber-400/60 bg-amber-50 text-amber-900",
-          "dark:border-amber-500/30 dark:bg-amber-500/[0.08] dark:text-amber-100",
+          "dark:border-amber-500/30 dark:bg-amber-500/8 dark:text-amber-100",
           className,
         )}
         role="status"
@@ -63,9 +63,9 @@ export function MaintenanceBanner({ variant = "shell", className }: Props) {
   return (
     <div
       className={cn(
-        "border-b px-6 py-2 text-sm backdrop-blur",
+        "border-b px-6 py-2 text-sm backdrop-blur-sm",
         "border-amber-400/60 bg-amber-50 text-amber-900",
-        "dark:border-amber-500/30 dark:bg-gradient-to-r dark:from-amber-500/[0.10] dark:via-amber-500/[0.07] dark:to-transparent dark:text-amber-100",
+        "dark:border-amber-500/30 dark:bg-linear-to-r dark:from-amber-500/10 dark:via-amber-500/[0.07] dark:to-transparent dark:text-amber-100",
         className,
       )}
       role="status"

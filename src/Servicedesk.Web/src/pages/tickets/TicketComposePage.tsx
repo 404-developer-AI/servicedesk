@@ -89,7 +89,7 @@ export function TicketComposePage({ ticketId }: { ticketId: string }) {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-10 border-b border-glass bg-background/95 px-5 py-3 backdrop-blur">
+      <header className="sticky top-0 z-10 border-b border-glass bg-background/95 px-5 py-3 backdrop-blur-sm">
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">

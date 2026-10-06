@@ -48,7 +48,7 @@ const STATE_LABEL: Record<AdsolutState, { tone: string; text: string; dot: strin
     dot: "bg-glass-strong",
   },
   not_connected: {
-    tone: "border-amber-400/30 bg-amber-500/[0.08] text-amber-200",
+    tone: "border-amber-400/30 bg-amber-500/8 text-amber-200",
     text: "Not connected",
     dot: "bg-amber-400",
   },
@@ -58,7 +58,7 @@ const STATE_LABEL: Record<AdsolutState, { tone: string; text: string; dot: strin
     dot: "bg-emerald-400",
   },
   sync_failing: {
-    tone: "border-amber-400/30 bg-amber-500/[0.08] text-amber-200",
+    tone: "border-amber-400/30 bg-amber-500/8 text-amber-200",
     text: "Sync failing",
     dot: "bg-amber-400",
   },
@@ -397,7 +397,7 @@ export function AdsolutIntegrationPage() {
     const s = debugResult.status;
     if (s === 0) return "border-rose-400/40 bg-rose-500/10 text-rose-300";
     if (s >= 200 && s < 300) return "border-emerald-400/30 bg-emerald-500/10 text-emerald-300";
-    if (s >= 400 && s < 500) return "border-amber-400/30 bg-amber-500/[0.08] text-amber-200";
+    if (s >= 400 && s < 500) return "border-amber-400/30 bg-amber-500/8 text-amber-200";
     return "border-rose-400/40 bg-rose-500/10 text-rose-300";
   })();
 
@@ -416,7 +416,7 @@ export function AdsolutIntegrationPage() {
   const httpStatusTone = (s: number) => {
     if (s === 0) return "border-rose-400/40 bg-rose-500/10 text-rose-300";
     if (s >= 200 && s < 300) return "border-emerald-400/30 bg-emerald-500/10 text-emerald-300";
-    if (s >= 400 && s < 500) return "border-amber-400/30 bg-amber-500/[0.08] text-amber-200";
+    if (s >= 400 && s < 500) return "border-amber-400/30 bg-amber-500/8 text-amber-200";
     return "border-rose-400/40 bg-rose-500/10 text-rose-300";
   };
 
@@ -441,7 +441,7 @@ export function AdsolutIntegrationPage() {
     const s = putPreview.getStatus;
     if (s === 0) return "border-rose-400/40 bg-rose-500/10 text-rose-300";
     if (s >= 200 && s < 300) return "border-emerald-400/30 bg-emerald-500/10 text-emerald-300";
-    if (s >= 400 && s < 500) return "border-amber-400/30 bg-amber-500/[0.08] text-amber-200";
+    if (s >= 400 && s < 500) return "border-amber-400/30 bg-amber-500/8 text-amber-200";
     return "border-rose-400/40 bg-rose-500/10 text-rose-300";
   })();
   const putResultStatusTone = (() => {
@@ -449,7 +449,7 @@ export function AdsolutIntegrationPage() {
     const s = putResult.status;
     if (s === 0) return "border-rose-400/40 bg-rose-500/10 text-rose-300";
     if (s >= 200 && s < 300) return "border-emerald-400/30 bg-emerald-500/10 text-emerald-300";
-    if (s >= 400 && s < 500) return "border-amber-400/30 bg-amber-500/[0.08] text-amber-200";
+    if (s >= 400 && s < 500) return "border-amber-400/30 bg-amber-500/8 text-amber-200";
     return "border-rose-400/40 bg-rose-500/10 text-rose-300";
   })();
   const putGetFormatted = useMemo(() => {
@@ -523,7 +523,7 @@ export function AdsolutIntegrationPage() {
   const s = status.data;
   if (!s) {
     return (
-      <div className="rounded-md border border-rose-400/30 bg-rose-500/[0.08] p-4 text-sm text-rose-200">
+      <div className="rounded-md border border-rose-400/30 bg-rose-500/8 p-4 text-sm text-rose-200">
         Could not load Adsolut status. Refresh the page or check the API logs.
       </div>
     );
@@ -585,7 +585,7 @@ export function AdsolutIntegrationPage() {
         </header>
 
         {!canConnect && (
-          <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2 text-[11px] text-amber-200">
+          <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/8 px-3 py-2 text-[11px] text-amber-200">
             Fill in <span className="font-mono">Adsolut.ClientId</span> and the client secret
             below before connecting. Wolters Kluwer must also have a redirect URI of{" "}
             <span className="font-mono">{s.redirectUri}</span> registered for this client.
@@ -803,13 +803,13 @@ export function AdsolutIntegrationPage() {
           {administrations.isLoading ? (
             <Skeleton className="h-10 w-full" />
           ) : administrations.isError ? (
-            <div className="rounded-md border border-rose-400/30 bg-rose-500/[0.08] px-3 py-2 text-xs text-rose-200">
+            <div className="rounded-md border border-rose-400/30 bg-rose-500/8 px-3 py-2 text-xs text-rose-200">
               Could not list dossiers — refresh-token may be expired. Try Test refresh first.
             </div>
           ) : (
             <div className="space-y-3">
               {s.administrationId ? (
-                <div className="rounded-md border border-emerald-400/30 bg-emerald-500/[0.06] px-3 py-2 text-xs text-emerald-200">
+                <div className="rounded-md border border-emerald-400/30 bg-emerald-500/6 px-3 py-2 text-xs text-emerald-200">
                   Active dossier:{" "}
                   <span className="font-mono">
                     {administrations.data?.items.find((a) => a.id === s.administrationId)?.name ??
@@ -825,7 +825,7 @@ export function AdsolutIntegrationPage() {
                   })()}
                 </div>
               ) : (
-                <div className="rounded-md border border-amber-400/30 bg-amber-500/[0.08] px-3 py-2 text-xs text-amber-200">
+                <div className="rounded-md border border-amber-400/30 bg-amber-500/8 px-3 py-2 text-xs text-amber-200">
                   No dossier picked yet — sync ticks are paused. Choose one below to start
                   pulling Customers from Adsolut.
                 </div>
@@ -1019,7 +1019,7 @@ export function AdsolutIntegrationPage() {
             <div>
               <h3 className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-widest text-muted-foreground/70">
                 Suppliers
-                <span className="rounded-full border border-amber-400/30 bg-amber-500/[0.08] px-2 py-0.5 text-[9px] uppercase tracking-wider text-amber-200">
+                <span className="rounded-full border border-amber-400/30 bg-amber-500/8 px-2 py-0.5 text-[9px] uppercase tracking-wider text-amber-200">
                   In development
                 </span>
               </h3>
@@ -1107,7 +1107,7 @@ export function AdsolutIntegrationPage() {
                   className={cn(
                     "rounded px-3 py-1 capitalize transition-colors",
                     debugKind === k
-                      ? "bg-glass-strong text-foreground shadow-sm"
+                      ? "bg-glass-strong text-foreground shadow-xs"
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
@@ -1168,7 +1168,7 @@ export function AdsolutIntegrationPage() {
                 >
                   <Copy className="h-3.5 w-3.5" />
                 </Button>
-                <pre className="max-h-[28rem] overflow-auto rounded-md border border-glass-strong bg-black/30 p-3 pr-10 font-mono text-[11px] leading-relaxed text-foreground/90">
+                <pre className="max-h-112 overflow-auto rounded-md border border-glass-strong bg-black/30 p-3 pr-10 font-mono text-[11px] leading-relaxed text-foreground/90">
                   {debugFormattedBody || "(empty body)"}
                 </pre>
               </div>
@@ -1283,7 +1283,7 @@ export function AdsolutIntegrationPage() {
                     >
                       <Copy className="h-3.5 w-3.5" />
                     </Button>
-                    <pre className="max-h-[20rem] overflow-auto rounded-md border border-glass-strong bg-black/30 p-3 pr-10 font-mono text-[11px] leading-relaxed text-foreground/90">
+                    <pre className="max-h-80 overflow-auto rounded-md border border-glass-strong bg-black/30 p-3 pr-10 font-mono text-[11px] leading-relaxed text-foreground/90">
                       {erpFormatBody(a.body) || "(empty body)"}
                     </pre>
                   </div>
@@ -1375,7 +1375,7 @@ export function AdsolutIntegrationPage() {
                   >
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
-                  <pre className="max-h-[20rem] overflow-auto rounded-md border border-glass-strong bg-black/30 p-3 pr-10 font-mono text-[11px] leading-relaxed text-foreground/90">
+                  <pre className="max-h-80 overflow-auto rounded-md border border-glass-strong bg-black/30 p-3 pr-10 font-mono text-[11px] leading-relaxed text-foreground/90">
                     {putGetFormatted || "(empty body)"}
                   </pre>
                 </div>
@@ -1418,7 +1418,7 @@ export function AdsolutIntegrationPage() {
                     onChange={(e) => setPutBodyDraft(e.target.value)}
                     spellCheck={false}
                     className={cn(
-                      "block w-full resize-y rounded-md border bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-foreground/90 focus:outline-none focus:ring-1 focus:ring-primary/40",
+                      "block w-full resize-y rounded-md border bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-foreground/90 focus:outline-hidden focus:ring-1 focus:ring-primary/40",
                       putBodyParses || putBodyDraft.trim().length === 0
                         ? "border-glass-strong"
                         : "border-amber-400/40",
@@ -1441,7 +1441,7 @@ export function AdsolutIntegrationPage() {
                   </div>
                 </div>
               ) : (
-                <div className="rounded-md border border-amber-400/30 bg-amber-500/[0.08] px-3 py-2 text-[11px] text-amber-200">
+                <div className="rounded-md border border-amber-400/30 bg-amber-500/8 px-3 py-2 text-[11px] text-amber-200">
                   No PUT body produced — the upstream GET did not return a parseable
                   customer object.
                   {putPreview.putBuildError && (
@@ -1482,7 +1482,7 @@ export function AdsolutIntegrationPage() {
                     >
                       <Copy className="h-3.5 w-3.5" />
                     </Button>
-                    <pre className="max-h-[20rem] overflow-auto rounded-md border border-glass-strong bg-black/30 p-3 pr-10 font-mono text-[11px] leading-relaxed text-foreground/90">
+                    <pre className="max-h-80 overflow-auto rounded-md border border-glass-strong bg-black/30 p-3 pr-10 font-mono text-[11px] leading-relaxed text-foreground/90">
                       {putResultFormatted || "(empty body)"}
                     </pre>
                   </div>
@@ -1556,7 +1556,7 @@ export function AdsolutIntegrationPage() {
                         externalTokenMinutesLeft > 5
                           ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-300"
                           : externalTokenMinutesLeft > 0
-                            ? "border-amber-400/30 bg-amber-500/[0.08] text-amber-200"
+                            ? "border-amber-400/30 bg-amber-500/8 text-amber-200"
                             : "border-rose-400/40 bg-rose-500/10 text-rose-300",
                       )}
                     >
@@ -2609,7 +2609,7 @@ function CoverageTile({
               "group flex items-center justify-between rounded-md border px-3 py-2 transition-colors",
               c.count === 0
                 ? "border-glass-strong bg-glass text-muted-foreground/70 hover:text-muted-foreground"
-                : "border-amber-400/30 bg-amber-500/[0.06] text-amber-200 hover:bg-amber-500/[0.10]",
+                : "border-amber-400/30 bg-amber-500/6 text-amber-200 hover:bg-amber-500/[0.10]",
             )}
           >
             <span className="flex flex-col">

@@ -209,7 +209,7 @@ function SortableTile({
       )}
     >
       {editing && (
-        <div className="absolute inset-0 z-20 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/[0.03] pointer-events-none" />
+        <div className="absolute inset-0 z-20 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/3 pointer-events-none" />
       )}
       {editing && (
         <div className="absolute right-3 top-3 z-30 flex items-center gap-1">
@@ -217,7 +217,7 @@ function SortableTile({
             type="button"
             onClick={onCycleSize}
             title={`Resize (currently ${size})`}
-            className="inline-flex h-7 items-center gap-1 rounded-md border border-glass bg-background/80 px-2 text-[11px] font-medium text-foreground backdrop-blur hover:bg-glass-hover"
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-glass bg-background/80 px-2 text-[11px] font-medium text-foreground backdrop-blur-sm hover:bg-glass-hover"
           >
             <Maximize2 className="h-3 w-3" />
             {size}
@@ -228,7 +228,7 @@ function SortableTile({
             {...listeners}
             title="Drag to reorder"
             aria-label="Drag handle"
-            className="inline-flex h-7 cursor-grab items-center rounded-md border border-glass bg-background/80 px-2 text-[11px] font-medium text-foreground backdrop-blur hover:bg-glass-hover active:cursor-grabbing"
+            className="inline-flex h-7 cursor-grab items-center rounded-md border border-glass bg-background/80 px-2 text-[11px] font-medium text-foreground backdrop-blur-sm hover:bg-glass-hover active:cursor-grabbing"
           >
             ⠿
           </button>

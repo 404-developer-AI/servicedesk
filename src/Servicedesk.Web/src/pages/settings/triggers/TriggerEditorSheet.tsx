@@ -46,7 +46,7 @@ export function TriggerEditorSheet({ triggerId, metadata, onClose }: Props) {
     <Sheet open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
       <SheetContent
         side="right"
-        className="!w-[min(720px,95vw)] !max-w-none overflow-y-auto bg-popover/95 backdrop-blur-xl border-l border-glass sm:!max-w-none"
+        className="w-[min(720px,95vw)]! max-w-none! overflow-y-auto bg-popover/95 backdrop-blur-xl border-l border-glass sm:max-w-none!"
       >
         <SheetHeader className="space-y-1">
           <SheetTitle>{triggerId === "new" ? "New trigger" : "Edit trigger"}</SheetTitle>
@@ -278,7 +278,7 @@ function EditorBody({
             onChange={(e) => setDescription(e.target.value)}
             placeholder="What does this trigger do, and why was it added?"
             rows={2}
-            className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+            className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
           />
         </Field>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -305,7 +305,7 @@ function EditorBody({
           <select
             value={activatorPair}
             onChange={(e) => setActivatorPair(e.target.value)}
-            className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
+            className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
           >
             {metadata.activatorPairs.map((p) => (
               <option key={p} value={p}>{prettifyActivator(p)}</option>
@@ -317,7 +317,7 @@ function EditorBody({
             <select
               value={manualTicketTypeId ?? ""}
               onChange={(e) => setManualTicketTypeId(e.target.value || null)}
-              className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
+              className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
             >
               <option value="">— select a ticket type —</option>
               {(ticketTypesQ.data ?? []).filter((t) => t.isActive).map((t) => (
@@ -412,7 +412,7 @@ function EditorBody({
         <Button
           onClick={() => save.mutate()}
           disabled={!canSave}
-          className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-[0_0_20px_rgba(124,58,237,0.3)]"
+          className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-[0_0_20px_rgba(124,58,237,0.3)]"
         >
           <Save className="h-4 w-4" />
           {save.isPending ? "Saving…" : "Save"}

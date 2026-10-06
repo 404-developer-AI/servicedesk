@@ -152,7 +152,7 @@ export function AdsolutScopesPicker({ entry, queryKey, needsReconnect }: Props) 
 
   if (!entry) {
     return (
-      <div className="rounded-md border border-rose-400/30 bg-rose-500/[0.08] px-3 py-2 text-xs text-rose-200">
+      <div className="rounded-md border border-rose-400/30 bg-rose-500/8 px-3 py-2 text-xs text-rose-200">
         Could not load Adsolut.Scopes setting.
       </div>
     );
@@ -198,7 +198,7 @@ export function AdsolutScopesPicker({ entry, queryKey, needsReconnect }: Props) 
           </div>
         </div>
         {needsReconnect && (
-          <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-amber-400/40 bg-amber-500/[0.12] px-2.5 py-0.5 text-xs text-amber-200">
+          <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-amber-400/40 bg-amber-500/12 px-2.5 py-0.5 text-xs text-amber-200">
             <AlertTriangle className="h-3 w-3" />
             Reconnect required
           </span>
@@ -252,7 +252,7 @@ export function AdsolutScopesPicker({ entry, queryKey, needsReconnect }: Props) 
         </div>
       ) : (
         <div className="space-y-3 px-4 py-4">
-          <div className="rounded-md border border-amber-400/30 bg-amber-500/[0.08] px-3 py-2 text-[11px] text-amber-200">
+          <div className="rounded-md border border-amber-400/30 bg-amber-500/8 px-3 py-2 text-[11px] text-amber-200">
             Advanced — paste a raw space-separated scope list. Use this only
             when Wolters Kluwer has documented a scope the picker doesn't
             know about yet. Unknown scopes are preserved as-is on save.

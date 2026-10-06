@@ -172,7 +172,7 @@ export function AddCompanyContactDialog({
           </div>
 
           {role === "primary" && target && (
-            <p className="rounded-md border border-amber-400/20 bg-amber-500/[0.06] p-3 text-xs text-amber-200">
+            <p className="rounded-md border border-amber-400/20 bg-amber-500/6 p-3 text-xs text-amber-200">
               If this contact already has a primary link elsewhere, that link will be
               atomically demoted to <em>secondary</em>. Historic tickets stay on the old
               company thanks to the frozen <code>tickets.company_id</code>.
@@ -217,7 +217,7 @@ function RoleTile({
   hint: string;
 }) {
   const baseByRole: Record<ContactCompanyRole, string> = {
-    primary: "border-purple-400/20 bg-purple-500/[0.04] text-purple-200/80",
+    primary: "border-purple-400/20 bg-purple-500/4 text-purple-200/80",
     secondary: "border-sky-400/20 text-sky-200/70",
     supplier: "border-amber-400/20 text-amber-200/70",
   };

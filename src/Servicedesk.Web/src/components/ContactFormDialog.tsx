@@ -51,7 +51,7 @@ const ROLE_TILES: {
     role: "primary",
     label: "Primary",
     hint: "Main contact for this company",
-    className: "border-purple-400/20 bg-purple-500/[0.04] text-purple-200/80",
+    className: "border-purple-400/20 bg-purple-500/4 text-purple-200/80",
     activeClassName: "border-purple-400/60 bg-purple-500/20 text-purple-100",
   },
   {
@@ -376,7 +376,7 @@ function CompanyLinkPicker({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search active companies…"
-          className="h-9 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          className="h-9 flex-1 bg-transparent text-sm outline-hidden placeholder:text-muted-foreground"
         />
       </div>
       {(matches ?? []).length > 0 && (

@@ -70,7 +70,7 @@ export function CompanyLinkPicker({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search companies…"
             spellCheck={false}
-            className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/60"
+            className="w-full bg-transparent text-sm text-foreground outline-hidden placeholder:text-muted-foreground/60"
           />
         </div>
         <div className="max-h-64 overflow-y-auto p-1">

@@ -39,7 +39,7 @@ export function AgentPicker({
         <button
           type="button"
           className={cn(
-            "h-9 px-3 rounded-[var(--radius)] border border-glass bg-glass text-sm",
+            "h-9 px-3 rounded-(--radius) border border-glass bg-glass text-sm",
             "hover:bg-glass-hover transition-colors w-full text-left",
             "flex items-center justify-between gap-2",
             !selectedAgent && "text-muted-foreground",

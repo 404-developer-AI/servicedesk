@@ -62,7 +62,7 @@ export function SetupWizardPage() {
         className="glass-card w-full max-w-[520px] overflow-hidden"
       >
         <div className="flex items-center gap-3 border-b border-glass px-7 pt-6 pb-5">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[calc(var(--radius)-4px)] bg-gradient-to-br from-accent-purple to-accent-blue shadow-[0_0_22px_-4px_hsl(var(--primary)/0.6)]">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[calc(var(--radius)-4px)] bg-linear-to-br from-accent-purple to-accent-blue shadow-[0_0_22px_-4px_hsl(var(--primary)/0.6)]">
             <Sparkles className="h-5 w-5 text-white" />
           </div>
           <div className="min-w-0">
@@ -162,7 +162,7 @@ export function SetupWizardPage() {
               </div>
 
               {serverError && (
-                <div className="rounded-md border border-destructive/40 bg-destructive/[0.06] px-3 py-2 text-xs text-destructive/90">
+                <div className="rounded-md border border-destructive/40 bg-destructive/6 px-3 py-2 text-xs text-destructive/90">
                   {serverError}
                 </div>
               )}
@@ -175,7 +175,7 @@ export function SetupWizardPage() {
 
           {step === "done" && (
             <>
-              <div className="flex items-center gap-3 rounded-md border border-emerald-400/20 bg-emerald-400/[0.04] px-4 py-3 text-sm text-emerald-200/90">
+              <div className="flex items-center gap-3 rounded-md border border-emerald-400/20 bg-emerald-400/4 px-4 py-3 text-sm text-emerald-200/90">
                 <CheckCircle2 className="h-5 w-5 text-emerald-400" />
                 Admin account created. You're signed in.
               </div>

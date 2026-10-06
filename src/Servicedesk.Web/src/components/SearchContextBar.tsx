@@ -84,7 +84,7 @@ export function SearchContextBar({ ticketId }: { ticketId: string }) {
       <div
         className={cn(
           "glass-card flex items-center gap-2 px-3 py-1.5",
-          "border border-glass bg-glass backdrop-blur",
+          "border border-glass bg-glass backdrop-blur-sm",
         )}
       >
         <button

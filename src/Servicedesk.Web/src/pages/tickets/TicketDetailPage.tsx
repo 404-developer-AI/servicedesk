@@ -73,7 +73,7 @@ function LoadingSkeleton() {
         <Skeleton className="h-24 w-full" />
       </div>
       <div className="w-[320px] shrink-0 space-y-4">
-        <Skeleton className="h-[480px] w-full rounded-[var(--radius)]" />
+        <Skeleton className="h-[480px] w-full rounded-(--radius)" />
       </div>
     </div>
   );
@@ -186,7 +186,7 @@ function EditableSubject({
           if (e.key === "Enter") save();
           if (e.key === "Escape") cancel();
         }}
-        className="flex-1 min-w-0 text-2xl font-semibold tracking-tight text-foreground leading-tight bg-transparent border-b-2 border-primary/60 outline-none py-0.5"
+        className="flex-1 min-w-0 text-2xl font-semibold tracking-tight text-foreground leading-tight bg-transparent border-b-2 border-primary/60 outline-hidden py-0.5"
       />
       <button
         type="button"
@@ -247,7 +247,7 @@ function EditableDescription({
         <button
           type="button"
           onClick={() => setEditing(true)}
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border border-glass bg-glass text-muted-foreground/60 hover:bg-glass-hover hover:text-muted-foreground hover:border-glass-strong transition-colors text-sm"
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-(--radius) border border-glass bg-glass text-muted-foreground/60 hover:bg-glass-hover hover:text-muted-foreground hover:border-glass-strong transition-colors text-sm"
         >
           <Pencil className="h-4 w-4 shrink-0" />
           Add a description...
@@ -257,7 +257,7 @@ function EditableDescription({
 
     return (
       <div
-        className="group relative rounded-[var(--radius)] border border-glass bg-glass px-4 py-3 cursor-pointer hover:bg-glass-hover hover:border-glass-strong transition-colors max-h-32 overflow-y-auto"
+        className="group relative rounded-(--radius) border border-glass bg-glass px-4 py-3 cursor-pointer hover:bg-glass-hover hover:border-glass-strong transition-colors max-h-32 overflow-y-auto"
         onClick={() => setEditing(true)}
         title="Click to edit description"
       >
@@ -271,14 +271,14 @@ function EditableDescription({
           content={html ?? text}
           editable={false}
           minHeight="0px"
-          className="border-none bg-transparent !rounded-none"
+          className="border-none bg-transparent rounded-none!"
         />
       </div>
     );
   }
 
   return (
-    <div className="rounded-[var(--radius)] border border-glass bg-glass p-4 space-y-3">
+    <div className="rounded-(--radius) border border-glass bg-glass p-4 space-y-3">
       <RichTextEditor
         content={draftHtml}
         onChange={setDraftHtml}
@@ -1611,7 +1611,7 @@ function SplitBanners({
   return (
     <div className="shrink-0 pb-3 space-y-2">
       {isSplit && ticket.splitFromTicketId && (
-        <div className="rounded-md border border-sky-400/30 bg-sky-500/[0.06] px-3 py-2.5 flex items-start gap-2">
+        <div className="rounded-md border border-sky-400/30 bg-sky-500/6 px-3 py-2.5 flex items-start gap-2">
           <GitBranch className="h-4 w-4 shrink-0 mt-0.5 text-sky-300/90" />
           <div className="text-sm text-sky-100/90">
             This ticket was split from{" "}

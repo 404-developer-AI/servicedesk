@@ -59,7 +59,7 @@ export function PortalComposer({
 
   return (
     <div
-      className={cn("space-y-3", dragOver && "ring-2 ring-primary/40 rounded-[var(--radius)]")}
+      className={cn("space-y-3", dragOver && "ring-2 ring-primary/40 rounded-(--radius)")}
       onDragOver={(e) => {
         e.preventDefault();
         if (!disabled) setDragOver(true);

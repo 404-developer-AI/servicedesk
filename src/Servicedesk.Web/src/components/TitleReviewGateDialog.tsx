@@ -151,7 +151,7 @@ export function TitleReviewGateDialog({ gate, onConfirm, onDismiss, submitting }
                 </a>
               ) : null}
             </div>
-            <div className="relative min-h-[5rem] min-w-0 flex-1 overflow-auto rounded-md border border-glass bg-glass px-3 py-2">
+            <div className="relative min-h-20 min-w-0 flex-1 overflow-auto rounded-md border border-glass bg-glass px-3 py-2">
               {requestDanger ? (
                 <div
                   className="rich-prose rich-prose-sm"
@@ -181,7 +181,7 @@ export function TitleReviewGateDialog({ gate, onConfirm, onDismiss, submitting }
                 handleConfirm();
               }
             }}
-            className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+            className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
           />
         </div>
 
@@ -217,7 +217,7 @@ export function TitleReviewGateDialog({ gate, onConfirm, onDismiss, submitting }
             <Button
               onClick={handleConfirm}
               disabled={!canConfirm}
-              className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-[0_0_20px_rgba(124,58,237,0.3)]"
+              className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-[0_0_20px_rgba(124,58,237,0.3)]"
             >
               {gate.confirmLabel}
             </Button>

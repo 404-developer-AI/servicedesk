@@ -108,12 +108,12 @@ function ShownItem({ id, position, onHide }: { id: string; position: number; onH
       style={style}
       className={cn(
         "flex items-center gap-2 rounded-md px-1.5 py-1 text-sm",
-        isDragging ? "relative z-10 bg-glass-strong shadow-sm" : "hover:bg-glass-hover",
+        isDragging ? "relative z-10 bg-glass-strong shadow-xs" : "hover:bg-glass-hover",
       )}
     >
       <button
         type="button"
-        className="cursor-grab touch-none rounded text-muted-foreground/50 hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 active:cursor-grabbing"
+        className="cursor-grab touch-none rounded text-muted-foreground/50 hover:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary/50 active:cursor-grabbing"
         aria-label={`Move ${columnLabel(id)} (position ${position})`}
         {...attributes}
         {...listeners}

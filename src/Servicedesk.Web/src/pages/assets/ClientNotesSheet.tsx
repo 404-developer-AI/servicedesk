@@ -187,7 +187,7 @@ export function ClientNotesSheet({
                         value={editDraft}
                         onChange={(e) => setEditDraft(e.target.value)}
                         rows={3}
-                        className="w-full resize-y rounded-md border border-glass bg-glass-strong px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/50"
+                        className="w-full resize-y rounded-md border border-glass bg-glass-strong px-2 py-1.5 text-sm text-foreground outline-hidden focus:border-primary/50"
                       />
                       <div className="flex justify-end gap-1">
                         <Button
@@ -210,7 +210,7 @@ export function ClientNotesSheet({
                       </div>
                     </div>
                   ) : (
-                    <p className="whitespace-pre-wrap break-words text-foreground">{n.body}</p>
+                    <p className="whitespace-pre-wrap wrap-break-word text-foreground">{n.body}</p>
                   )}
                 </article>
               ))
@@ -230,7 +230,7 @@ export function ClientNotesSheet({
               rows={3}
               placeholder="Add a note for this client…"
               className={cn(
-                "w-full resize-y rounded-md border border-glass bg-glass-strong px-2 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-primary/50",
+                "w-full resize-y rounded-md border border-glass bg-glass-strong px-2 py-1.5 text-sm text-foreground outline-hidden placeholder:text-muted-foreground/60 focus:border-primary/50",
               )}
             />
             <div className="flex items-center justify-between">

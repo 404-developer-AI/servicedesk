@@ -199,7 +199,7 @@ function ActionCard({
     <div className={cn(
       "rounded-lg border px-4 py-3",
       isUnknown
-        ? "border-amber-400/30 bg-amber-400/[0.04]"
+        ? "border-amber-400/30 bg-amber-400/4"
         : "border-glass-strong bg-glass",
     )}>
       <header className="mb-3 flex items-center gap-2">
@@ -346,7 +346,7 @@ function ActionForm({
             onChange={(e) =>
               onChange({ ...action, user_id: e.target.value.trim() || null })
             }
-            className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm font-mono text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+            className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm font-mono text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
           />
         </FieldRow>
       );
@@ -392,7 +392,7 @@ function ActionForm({
                 value={action.value}
                 onChange={(e) => onChange({ ...action, value: e.target.value })}
                 placeholder="2026-04-30T17:00:00Z"
-                className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm font-mono text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+                className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm font-mono text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
               />
             </FieldRow>
           )}
@@ -403,7 +403,7 @@ function ActionForm({
                 value={action.value}
                 onChange={(e) => onChange({ ...action, value: e.target.value })}
                 placeholder="P1D, PT4H, P3DT12H…"
-                className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm font-mono text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+                className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm font-mono text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
               />
             </FieldRow>
           )}
@@ -422,7 +422,7 @@ function ActionForm({
                       business_days: Math.max(0, Number.parseInt(e.target.value || "0", 10) || 0),
                     })
                   }
-                  className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm font-mono text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring"
                 />
               </FieldRow>
               <FieldRow label="Wake-up time (local)">
@@ -430,7 +430,7 @@ function ActionForm({
                   type="time"
                   value={action.wake_at_local}
                   onChange={(e) => onChange({ ...action, wake_at_local: e.target.value || "08:00" })}
-                  className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-ring [color-scheme:dark]"
+                  className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm font-mono text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring scheme-dark"
                 />
               </FieldRow>
               <FieldRow label="Schedule" className="sm:col-span-3">
@@ -503,7 +503,7 @@ function ActionForm({
                 onChange={(e) =>
                   onChange({ ...action, to: `address:${e.target.value}` })
                 }
-                className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+                className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
               />
             </FieldRow>
           )}
@@ -581,7 +581,7 @@ function TitleReviewFields({
           value={action.title}
           onChange={(e) => onChange({ ...action, title: e.target.value })}
           placeholder="Review the ticket title"
-          className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+          className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
         />
       </FieldRow>
 
@@ -601,7 +601,7 @@ function TitleReviewFields({
             onChange={(e) => onChange({ ...action, message: e.target.value })}
             rows={2}
             placeholder="Is this title suitable? Adjust it if needed."
-            className="mt-2 w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+            className="mt-2 w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
           />
         )}
       </FieldRow>
@@ -625,7 +625,7 @@ function TitleReviewFields({
             value={action.field_label}
             onChange={(e) => onChange({ ...action, field_label: e.target.value })}
             placeholder="Ticket title"
-            className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+            className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
           />
         </FieldRow>
         <FieldRow label="Approve button label">
@@ -634,7 +634,7 @@ function TitleReviewFields({
             value={action.confirm_label}
             onChange={(e) => onChange({ ...action, confirm_label: e.target.value })}
             placeholder="This title is suitable"
-            className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+            className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
           />
         </FieldRow>
       </div>
@@ -686,7 +686,7 @@ function SendSurveyFields({
             onChange({ ...action, ttl_days_override: next });
           }}
           placeholder="Survey-level default"
-          className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+          className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
         />
       </FieldRow>
       <FieldRow label="Recipient override (optional)">
@@ -700,7 +700,7 @@ function SendSurveyFields({
             })
           }
           placeholder="Defaults to the ticket requester's email"
-          className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+          className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
         />
       </FieldRow>
       <p className="text-[11px] text-muted-foreground/80">
@@ -733,7 +733,7 @@ function CreateLinkedTicketFields({
           value={action.subject_template}
           onChange={(e) => onChange({ ...action, subject_template: e.target.value })}
           placeholder='e.g. "#{ticket.company.name} — replacement order"'
-          className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+          className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
         />
       </FieldRow>
       <FieldRow label="Description (body) template">
@@ -969,7 +969,7 @@ function NativeSelect({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
+      className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
     >
       {children}
     </select>
@@ -1063,7 +1063,7 @@ function PromptConfirmFields({
           value={action.title}
           onChange={(e) => onChange({ ...action, title: e.target.value })}
           placeholder="Confirm ticket close"
-          className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+          className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
         />
       </FieldRow>
 
@@ -1083,7 +1083,7 @@ function PromptConfirmFields({
             onChange={(e) => onChange({ ...action, message: e.target.value })}
             rows={3}
             placeholder="Did you complete every required step before closing?"
-            className="mt-2 w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+            className="mt-2 w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
           />
         )}
       </FieldRow>
@@ -1106,7 +1106,7 @@ function PromptConfirmFields({
             value={action.confirm_label}
             onChange={(e) => onChange({ ...action, confirm_label: e.target.value })}
             placeholder="Yes, completed"
-            className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+            className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
           />
         </FieldRow>
         <FieldRow label="Cancel button label">
@@ -1115,7 +1115,7 @@ function PromptConfirmFields({
             value={action.cancel_label}
             onChange={(e) => onChange({ ...action, cancel_label: e.target.value })}
             placeholder="Cancel"
-            className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+            className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
           />
         </FieldRow>
       </div>
@@ -1196,7 +1196,7 @@ function RequireContactCompanyFields({
           value={action.title}
           onChange={(e) => onChange({ ...action, title: e.target.value })}
           placeholder="Link company first"
-          className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+          className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
         />
       </FieldRow>
 
@@ -1216,7 +1216,7 @@ function RequireContactCompanyFields({
             onChange={(e) => onChange({ ...action, message: e.target.value })}
             rows={3}
             placeholder="This contact is not linked to a company. Pick a company and a role to continue."
-            className="mt-2 w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+            className="mt-2 w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
           />
         )}
       </FieldRow>
@@ -1232,7 +1232,7 @@ function RequireContactCompanyFields({
             value={action.confirm_label}
             onChange={(e) => onChange({ ...action, confirm_label: e.target.value })}
             placeholder="Link & continue"
-            className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+            className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
           />
         </FieldRow>
         <FieldRow label="Cancel button label">
@@ -1241,7 +1241,7 @@ function RequireContactCompanyFields({
             value={action.cancel_label}
             onChange={(e) => onChange({ ...action, cancel_label: e.target.value })}
             placeholder="Cancel"
-            className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+            className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
           />
         </FieldRow>
       </div>
@@ -1429,7 +1429,7 @@ function PromptQuestionCard({
           value={question.key}
           onChange={(e) => onChange({ ...question, key: e.target.value.trim() })}
           placeholder="key"
-          className="w-24 rounded-md border border-glass bg-glass px-2 py-1 text-xs font-mono text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+          className="w-24 rounded-md border border-glass bg-glass px-2 py-1 text-xs font-mono text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
           title="Token name for #{prompt.<key>} — lowercase, alphanumeric + underscore."
         />
         <div className="ml-auto flex items-center gap-1">
@@ -1468,7 +1468,7 @@ function PromptQuestionCard({
             : question.type === "choice"
               ? "What do you want to do?"
               : "Add a short summary of what you did"}
-          className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+          className="w-full rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
         />
       </FieldRow>
 
@@ -1543,7 +1543,7 @@ function PromptChoiceOptionsEditor({
             value={opt.label}
             onChange={(e) => update(idx, { ...opt, label: e.target.value })}
             placeholder="Close it — order delivered"
-            className="flex-1 rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+            className="flex-1 rounded-md border border-glass bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 focus:ring-ring"
           />
           <div className="w-40 shrink-0">
             <NativeSelect
@@ -1615,7 +1615,7 @@ function PromptYesNoButtonField({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         className={cn(
-          "w-full rounded-md border bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 disabled:opacity-40",
+          "w-full rounded-md border bg-glass px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-1 disabled:opacity-40",
           visible ? accent : "border-glass",
         )}
       />

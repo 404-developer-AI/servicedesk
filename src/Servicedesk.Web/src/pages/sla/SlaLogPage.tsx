@@ -115,7 +115,7 @@ export function SlaLogPage() {
           value={queueId || ALL_QUEUES}
           onValueChange={(v) => setQueueId(v === ALL_QUEUES ? "" : v)}
         >
-          <SelectTrigger className="h-9 min-w-[10rem] text-sm">
+          <SelectTrigger className="h-9 min-w-40 text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -129,7 +129,7 @@ export function SlaLogPage() {
           value={priorityId || ALL_PRIORITIES}
           onValueChange={(v) => setPriorityId(v === ALL_PRIORITIES ? "" : v)}
         >
-          <SelectTrigger className="h-9 min-w-[10rem] text-sm">
+          <SelectTrigger className="h-9 min-w-40 text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -143,7 +143,7 @@ export function SlaLogPage() {
           value={statusId || ALL_STATUSES}
           onValueChange={(v) => setStatusId(v === ALL_STATUSES ? "" : v)}
         >
-          <SelectTrigger className="h-9 min-w-[10rem] text-sm">
+          <SelectTrigger className="h-9 min-w-40 text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

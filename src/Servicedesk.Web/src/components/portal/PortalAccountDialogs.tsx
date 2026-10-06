@@ -46,11 +46,11 @@ export const STATUS_LABEL: Record<PortalAccountStatus, string> = {
 export function PortalStatusChip({ status, className }: { status: PortalAccountStatus; className?: string }) {
   const tone =
     status === "Active"
-      ? "border-emerald-500/30 bg-emerald-500/[0.08] text-emerald-700 dark:text-emerald-300"
+      ? "border-emerald-500/30 bg-emerald-500/8 text-emerald-700 dark:text-emerald-300"
       : status === "PendingApproval"
         ? "border-amber-500/30 bg-amber-500/[0.10] text-amber-700 dark:text-amber-300"
         : status === "PendingVerification"
-          ? "border-sky-500/30 bg-sky-500/[0.08] text-sky-700 dark:text-sky-300"
+          ? "border-sky-500/30 bg-sky-500/8 text-sky-700 dark:text-sky-300"
           : "border-glass bg-glass text-muted-foreground";
   return (
     <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium", tone, className)}>
@@ -99,7 +99,7 @@ function RoleToggle({ value, onChange, disabled }: { value: RoleOption; onChange
           onClick={() => onChange(opt.v)}
           className={cn(
             "rounded px-2 py-1 text-[11px] font-medium transition-colors",
-            value === opt.v ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+            value === opt.v ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
           )}
         >
           {opt.label}
@@ -283,7 +283,7 @@ export function PortalRejectDialog({
           rows={3}
           maxLength={1000}
           placeholder="Reason (optional, internal)"
-          className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
         />
         <DialogFooter>
           <Button variant="ghost" onClick={onClose} disabled={reject.isPending}>

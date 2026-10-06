@@ -703,7 +703,7 @@ export function SendMailForm({ ticketId, queueId, context, initialIntent, onSent
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             placeholder="Subject"
-            className="flex-1 bg-glass border border-glass rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-glass-strong"
+            className="flex-1 bg-glass border border-glass rounded-md px-2.5 py-1.5 text-sm focus:outline-hidden focus:border-glass-strong"
           />
         </div>
       </div>

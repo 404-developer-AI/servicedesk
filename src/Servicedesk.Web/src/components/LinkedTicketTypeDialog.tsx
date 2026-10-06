@@ -119,7 +119,7 @@ export function LinkedTicketTypeDialog({
                 onClick={() => onSelect(preset)}
                 className={cn(
                   "group relative flex items-start gap-3 rounded-lg border border-glass-strong bg-glass px-4 py-3 text-left transition",
-                  "hover:border-primary/40 hover:bg-primary/[0.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+                  "hover:border-primary/40 hover:bg-primary/6 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-primary/40",
                 )}
               >
                 <div

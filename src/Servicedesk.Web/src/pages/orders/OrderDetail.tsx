@@ -93,7 +93,7 @@ export function OrderDetail({ data, dense = false }: { data: AdsolutOrderDetail;
 
       {lines.length > 0 ? (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[64rem] text-xs">
+          <table className="w-full min-w-5xl text-xs">
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground/60">
                 <th className="py-1.5 pr-3 font-medium">Article</th>
@@ -138,7 +138,7 @@ export function OrderDetail({ data, dense = false }: { data: AdsolutOrderDetail;
                 return (
                   <tr key={l.id} className="border-t border-glass align-top">
                     <td className="py-1.5 pr-3 font-mono text-muted-foreground">{l.productCode ?? "—"}</td>
-                    <td className="max-w-[22rem] py-1.5 pr-3 text-foreground">
+                    <td className="max-w-88 py-1.5 pr-3 text-foreground">
                       <span className="block whitespace-pre-line">{l.description || "—"}</span>
                     </td>
                     <td className="py-1.5 pr-3 text-right tabular-nums">{formatNumber(l.quantity)}</td>
@@ -201,7 +201,7 @@ function SupplierOrdersBlock({
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[48rem] text-xs">
+          <table className="w-full min-w-3xl text-xs">
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground/60">
                 <th className="py-1.5 pr-3 font-medium">Article</th>

@@ -233,7 +233,7 @@ export function ContractM365CompanyPage({ companyId }: { companyId: string }) {
       />
 
       {data?.lastError && (status === "needs_reconsent" || status === "error") && (
-        <div className="flex items-start gap-2.5 rounded-lg border border-amber-400/20 bg-amber-500/[0.06] p-3 text-xs text-amber-200">
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-400/20 bg-amber-500/6 p-3 text-xs text-amber-200">
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
           <div>
             <p className="font-medium">
