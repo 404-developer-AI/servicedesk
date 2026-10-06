@@ -29,6 +29,11 @@ public static class TicketClaudeEndpoints
         group.MapPost("/{id:guid}/ai-proposal", CreateProposal)
             .WithName("CreateTicketAiProposal").WithOpenApi();
 
+        // v0.1.20 — one-click summary that fills the admin template. Same
+        // queue scoping, per-queue switch, budget and usage log as above.
+        group.MapPost("/{id:guid}/ai-summary", CreateSummary)
+            .WithName("CreateTicketAiSummary").WithOpenApi();
+
         // Lists the ticket's image attachments so the agent can tick which
         // screenshots to send. Same queue-scoping as the proposal call.
         group.MapGet("/{id:guid}/ai-proposal/images", ListImages)
@@ -126,6 +131,65 @@ public static class TicketClaudeEndpoints
         IAuditLogger audit,
         CancellationToken ct)
     {
+        var attachmentIds = (req?.AttachmentIds ?? Array.Empty<Guid>())
+            .Distinct()
+            .Take(MaxAttachmentIds)
+            .ToList();
+
+        return await RunAsync(id, http, tickets, queueAccess, taxonomy, audit,
+            ClaudeEventTypes.ProposalRequested,
+            userId => assist.GenerateProposalAsync(id, userId, attachmentIds, ct),
+            r => Results.Ok(new
+            {
+                proposalText = r.ProposalText,
+                proposalHtml = r.ProposalHtml,
+                inputTokens = r.InputTokens,
+                outputTokens = r.OutputTokens,
+                costMicroEur = r.CostMicroEur,
+                imageCount = r.ImageCount,
+                monthSpendMicroEur = r.MonthSpendMicroEur,
+                monthBudgetMicroEur = r.MonthBudgetMicroEur,
+            }), ct);
+    }
+
+    private static Task<IResult> CreateSummary(
+        Guid id,
+        HttpContext http,
+        ITicketRepository tickets,
+        IQueueAccessService queueAccess,
+        ITaxonomyRepository taxonomy,
+        IClaudeAssistService assist,
+        IAuditLogger audit,
+        CancellationToken ct) =>
+        RunAsync(id, http, tickets, queueAccess, taxonomy, audit,
+            ClaudeEventTypes.SummaryRequested,
+            userId => assist.GenerateSummaryAsync(id, userId, ct),
+            r => Results.Ok(new
+            {
+                summaryText = r.ProposalText,
+                summaryHtml = r.ProposalHtml,
+                inputTokens = r.InputTokens,
+                outputTokens = r.OutputTokens,
+                costMicroEur = r.CostMicroEur,
+                monthSpendMicroEur = r.MonthSpendMicroEur,
+                monthBudgetMicroEur = r.MonthBudgetMicroEur,
+            }), ct);
+
+    /// Shared authorize → per-queue gate → generate → audit → HTTP mapping for
+    /// the in-ticket assist calls. Only the generate step and the success body
+    /// differ between proposal and summary.
+    private static async Task<IResult> RunAsync(
+        Guid id,
+        HttpContext http,
+        ITicketRepository tickets,
+        IQueueAccessService queueAccess,
+        ITaxonomyRepository taxonomy,
+        IAuditLogger audit,
+        string auditEventType,
+        Func<Guid, Task<ClaudeProposalResult>> generate,
+        Func<ClaudeProposalResult, IResult> okBody,
+        CancellationToken ct)
+    {
         var ticket = await tickets.GetByIdAsync(id, ct);
         if (ticket is null) return Results.NotFound();
 
@@ -140,7 +204,7 @@ public static class TicketClaudeEndpoints
         var queue = await taxonomy.GetQueueAsync(ticket.Ticket.QueueId, ct);
         if (queue is null || !queue.AiAssistEnabled)
         {
-            await WriteAuditAsync(audit, http, id, "queue_disabled", ct);
+            await WriteAuditAsync(audit, http, auditEventType, id, "queue_disabled", ct);
             return Results.Json(new
             {
                 error = "queue_disabled",
@@ -148,19 +212,14 @@ public static class TicketClaudeEndpoints
             }, statusCode: 409);
         }
 
-        var attachmentIds = (req?.AttachmentIds ?? Array.Empty<Guid>())
-            .Distinct()
-            .Take(MaxAttachmentIds)
-            .ToList();
-
         ClaudeProposalResult result;
         try
         {
-            result = await assist.GenerateProposalAsync(id, userId, attachmentIds, ct);
+            result = await generate(userId);
         }
         catch (ClaudeApiException ex)
         {
-            await WriteAuditAsync(audit, http, id, "error", ct);
+            await WriteAuditAsync(audit, http, auditEventType, id, "error", ct);
             return Results.Json(new
             {
                 error = "upstream_error",
@@ -170,21 +229,11 @@ public static class TicketClaudeEndpoints
             }, statusCode: 502);
         }
 
-        await WriteAuditAsync(audit, http, id, result.Outcome.ToString(), ct);
+        await WriteAuditAsync(audit, http, auditEventType, id, result.Outcome.ToString(), ct);
 
         return result.Outcome switch
         {
-            ClaudeProposalOutcome.Ok => Results.Ok(new
-            {
-                proposalText = result.ProposalText,
-                proposalHtml = result.ProposalHtml,
-                inputTokens = result.InputTokens,
-                outputTokens = result.OutputTokens,
-                costMicroEur = result.CostMicroEur,
-                imageCount = result.ImageCount,
-                monthSpendMicroEur = result.MonthSpendMicroEur,
-                monthBudgetMicroEur = result.MonthBudgetMicroEur,
-            }),
+            ClaudeProposalOutcome.Ok => okBody(result),
             ClaudeProposalOutcome.Refused => Results.Ok(new
             {
                 refused = true,
@@ -207,11 +256,11 @@ public static class TicketClaudeEndpoints
     }
 
     private static async Task WriteAuditAsync(
-        IAuditLogger audit, HttpContext http, Guid ticketId, string outcome, CancellationToken ct)
+        IAuditLogger audit, HttpContext http, string eventType, Guid ticketId, string outcome, CancellationToken ct)
     {
         var (actor, role) = ActorContext.Resolve(http);
         await audit.LogAsync(new AuditEvent(
-            EventType: ClaudeEventTypes.ProposalRequested,
+            EventType: eventType,
             Actor: actor,
             ActorRole: role,
             Target: $"ticket:{ticketId}",

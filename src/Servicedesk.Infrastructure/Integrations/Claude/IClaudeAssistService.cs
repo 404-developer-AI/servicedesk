@@ -13,4 +13,12 @@ public interface IClaudeAssistService
         Guid userId,
         IReadOnlyList<Guid> selectedAttachmentIds,
         CancellationToken ct);
+
+    /// In-ticket "Summary": fills the admin-editable summary template from the
+    /// ticket's text (never images) under the same guards, budget and usage
+    /// log as the proposal. The result's proposal fields carry the summary.
+    Task<ClaudeProposalResult> GenerateSummaryAsync(
+        Guid ticketId,
+        Guid userId,
+        CancellationToken ct);
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -8,8 +8,10 @@ import {
   Bot,
   CheckCircle2,
   DollarSign,
+  FileText,
   KeyRound,
   MessageCircleQuestion,
+  RotateCcw,
   Settings2,
   Trash2,
   Users,
@@ -81,6 +83,108 @@ function FieldOrSkeleton({
     );
   }
   return <SettingField entry={entry} queryKey={queryKey} label={label} hint={hint} />;
+}
+
+/// Full-width multi-line editor for long text settings (the summary template
+/// and its prompt) — the shared SettingField is a single-line input, which
+/// would flatten the template's line breaks. Saves on blur, Reset restores the
+/// registered default.
+function TextAreaSettingField({
+  entry,
+  label,
+  hint,
+  rows,
+  mono,
+}: {
+  entry: SettingEntry | undefined;
+  label: string;
+  hint: string;
+  rows: number;
+  mono?: boolean;
+}) {
+  const qc = useQueryClient();
+  const [draft, setDraft] = useState(entry?.value ?? "");
+  useEffect(() => setDraft(entry?.value ?? ""), [entry?.value]);
+
+  const save = useMutation({
+    mutationFn: (value: string) => settingsApi.update(entry!.key, value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: SETTINGS_QK });
+      toast.success(`${label} updated`);
+    },
+    onError: () => {
+      toast.error(`Failed to update ${label}`);
+      setDraft(entry?.value ?? "");
+    },
+  });
+
+  if (!entry) {
+    return (
+      <div className="flex items-center justify-between gap-4 py-3 text-xs text-muted-foreground/60">
+        <span>{label}</span>
+        <span className="italic">missing</span>
+      </div>
+    );
+  }
+
+  const commit = (next: string) => {
+    if (next === entry.value) return;
+    if (next.trim().length === 0) {
+      toast.error(`${label} cannot be empty`);
+      setDraft(entry.value);
+      return;
+    }
+    save.mutate(next);
+  };
+
+  const isModified = entry.value !== entry.defaultValue;
+
+  return (
+    <div className="border-b border-glass py-3 last:border-b-0">
+      <div className="mb-2 flex items-start justify-between gap-4">
+        <div className="min-w-0 space-y-0.5">
+          <p className="text-sm font-medium text-foreground">{label}</p>
+          <p className="max-w-2xl text-xs text-muted-foreground/70">{hint}</p>
+          <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/40">
+            {entry.key}
+          </p>
+        </div>
+        {isModified && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 shrink-0 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+            disabled={save.isPending}
+            onClick={() => {
+              setDraft(entry.defaultValue);
+              commit(entry.defaultValue);
+            }}
+          >
+            <RotateCcw className="h-3 w-3" />
+            Reset to default
+          </Button>
+        )}
+      </div>
+      <textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => commit(draft)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            setDraft(entry.value);
+            e.currentTarget.blur();
+          }
+        }}
+        rows={rows}
+        spellCheck={!mono}
+        disabled={save.isPending}
+        className={cn(
+          "w-full resize-y rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60",
+          mono && "font-mono text-[13px] leading-relaxed",
+        )}
+      />
+    </div>
+  );
 }
 
 function microEurToDisplay(microEur: number): string {
@@ -319,6 +423,42 @@ export function ClaudeIntegrationPage() {
         )}
       </section>
 
+      {/* ---- Summary ----------------------------------------- */}
+      <section className="space-y-1 rounded-xl border border-glass-strong bg-glass p-5">
+        <div className="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+          <FileText className="h-4 w-4 text-muted-foreground" />
+          Ticket summary
+        </div>
+        <p className="mb-3 max-w-2xl text-xs text-muted-foreground/70">
+          The Summary button next to "Analyze &amp; propose" fills the template below
+          from the ticket's text (never images) in one click and drops the result into
+          the internal-note composer as a draft. Shares the switches, model, budget and
+          usage log above.
+        </p>
+        {settingsList.isLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-24 w-full bg-glass" />
+            <Skeleton className="h-24 w-full bg-glass" />
+          </div>
+        ) : (
+          <>
+            <TextAreaSettingField
+              entry={findEntry(settingsList.data, "Claude.SummaryTemplate")}
+              label="Summary template"
+              hint="Use **bold** lines as section headings with '- ' bullets underneath. The AI keeps headings, order and formatting exactly as written and only fills in the bullets — add or remove a section here to change every future summary."
+              rows={14}
+              mono
+            />
+            <TextAreaSettingField
+              entry={findEntry(settingsList.data, "Claude.SummarySystemPrompt")}
+              label="Summary instructions"
+              hint="Prompt sent before the template: customer-facing tone, compact bullets, strict template fidelity, and no internal or sensitive details copied from internal notes. The template is appended automatically; ticket content is always sent as data."
+              rows={8}
+            />
+          </>
+        )}
+      </section>
+
       {/* ---- Images ------------------------------------------ */}
       <section className="space-y-1 rounded-xl border border-glass-strong bg-glass p-5">
         <div className="mb-3 text-sm font-medium text-foreground">Images</div>
@@ -525,7 +665,9 @@ function UsageTable({
             <th className="pb-2 pr-4 font-medium">Agent</th>
             <th className="pb-2 pr-4 font-medium">Role</th>
             <th className="pb-2 pr-4 font-medium text-right">This month</th>
-            <th className="pb-2 pr-4 font-medium text-right">Calls</th>
+            <th className="pb-2 pr-4 font-medium text-right">Proposals</th>
+            <th className="pb-2 pr-4 font-medium text-right">Summaries</th>
+            <th className="pb-2 pr-4 font-medium text-right">KB chat</th>
             <th className="pb-2 font-medium text-right">Monthly budget (€)</th>
           </tr>
         </thead>
@@ -611,9 +753,9 @@ function UsageRow({
           </span>
         )}
       </td>
-      <td className="py-3 pr-4 text-right font-mono text-muted-foreground">
-        {agent.callCount}
-      </td>
+      <FeatureUsageCell calls={agent.proposalCalls} spendMicroEur={agent.proposalSpendMicroEur} />
+      <FeatureUsageCell calls={agent.summaryCalls} spendMicroEur={agent.summarySpendMicroEur} />
+      <FeatureUsageCell calls={agent.kbChatCalls} spendMicroEur={agent.kbChatSpendMicroEur} />
       <td className="py-3 text-right">
         <div className="inline-flex items-center gap-1.5">
           <Input
@@ -640,5 +782,19 @@ function UsageRow({
         </div>
       </td>
     </tr>
+  );
+}
+
+/// Calls + spend for one Claude feature in the usage table.
+function FeatureUsageCell({ calls, spendMicroEur }: { calls: number; spendMicroEur: number }) {
+  return (
+    <td className="py-3 pr-4 text-right font-mono text-muted-foreground">
+      {calls}
+      {spendMicroEur > 0 && (
+        <span className="ml-1 text-xs text-muted-foreground/50">
+          · {microEurToDisplay(spendMicroEur)}
+        </span>
+      )}
+    </td>
   );
 }

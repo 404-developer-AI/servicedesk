@@ -87,7 +87,7 @@ public sealed class KbChatService : IKbChatService
         var spendMicro = await _usage.GetMonthSpendMicroEurAsync(userId, monthStartUtc, ct);
         if (spendMicro >= budgetMicro)
         {
-            await _usage.LogAsync(new ClaudeUsageEntry(userId, null, "", 0, 0, 0, 0, "blocked", "budget_exceeded", null), ct);
+            await _usage.LogAsync(new ClaudeUsageEntry(userId, null, "", 0, 0, 0, 0, "blocked", "budget_exceeded", null, ClaudeFeatures.KbChat), ct);
             return new KbChatResult(KbChatOutcome.BudgetExceeded, null, null,
                 "Your monthly Claude AI budget is exhausted.",
                 Array.Empty<KbChatCitation>(), 0, 0, 0, spendMicro, budgetMicro);
@@ -173,7 +173,7 @@ public sealed class KbChatService : IKbChatService
             var costMicro = ((long)totalInput * inputPriceCents + (long)totalOutput * outputPriceCents) / 100L;
 
             await _usage.LogAsync(new ClaudeUsageEntry(
-                userId, null, model, totalInput, totalOutput, costMicro, 0, "ok", null, turn.RequestId), ct);
+                userId, null, model, totalInput, totalOutput, costMicro, 0, "ok", null, turn.RequestId, ClaudeFeatures.KbChat), ct);
 
             var replyText = string.IsNullOrWhiteSpace(turn.Text)
                 ? "I could not find anything about that in the knowledge base."
@@ -193,7 +193,7 @@ public sealed class KbChatService : IKbChatService
         {
             await _usage.LogAsync(new ClaudeUsageEntry(
                 userId, null, model, totalInput, totalOutput, 0, 0, "error",
-                ex.UpstreamErrorCode ?? "api_error", null), ct);
+                ex.UpstreamErrorCode ?? "api_error", null, ClaudeFeatures.KbChat), ct);
             throw;
         }
     }
@@ -351,7 +351,7 @@ public sealed class KbChatService : IKbChatService
     private async Task<KbChatResult> BlockedAsync(
         Guid userId, string code, KbChatOutcome outcome, string message, DateTime monthStartUtc, CancellationToken ct)
     {
-        await _usage.LogAsync(new ClaudeUsageEntry(userId, null, "", 0, 0, 0, 0, "blocked", code, null), ct);
+        await _usage.LogAsync(new ClaudeUsageEntry(userId, null, "", 0, 0, 0, 0, "blocked", code, null, ClaudeFeatures.KbChat), ct);
         var spend = await _usage.GetMonthSpendMicroEurAsync(userId, monthStartUtc, ct);
         return new KbChatResult(outcome, null, null, message, Array.Empty<KbChatCitation>(), 0, 0, 0, spend, 0);
     }

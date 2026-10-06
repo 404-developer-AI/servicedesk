@@ -49,14 +49,38 @@ public sealed record ClaudeProposalResult(
     long MonthSpendMicroEur,
     long MonthBudgetMicroEur);
 
-/// Per-agent monthly usage row for the admin overview.
-public sealed record ClaudeAgentUsage(
-    Guid UserId,
-    string Email,
-    string RoleName,
-    int? BudgetOverrideCents,
-    long MonthSpendMicroEur,
-    int CallCount);
+/// Which Claude feature a usage row belongs to. Stored verbatim in
+/// <c>claude_usage_log.feature</c> so the admin overview can split spend per
+/// feature; all three share the one per-agent monthly budget.
+public static class ClaudeFeatures
+{
+    /// In-ticket "Analyze &amp; propose a solution by AI".
+    public const string Proposal = "proposal";
+
+    /// In-ticket "Summary" — fills the admin-editable summary template.
+    public const string Summary = "summary";
+
+    /// Floating knowledge-base chat assistant.
+    public const string KbChat = "kbchat";
+}
+
+/// Per-agent monthly usage row for the admin overview. Totals plus a split
+/// per <see cref="ClaudeFeatures"/> value (calls exclude blocked attempts).
+public sealed class ClaudeAgentUsage
+{
+    public Guid UserId { get; set; }
+    public string Email { get; set; } = string.Empty;
+    public string RoleName { get; set; } = string.Empty;
+    public int? BudgetOverrideCents { get; set; }
+    public long MonthSpendMicroEur { get; set; }
+    public int CallCount { get; set; }
+    public long ProposalSpendMicroEur { get; set; }
+    public int ProposalCalls { get; set; }
+    public long SummarySpendMicroEur { get; set; }
+    public int SummaryCalls { get; set; }
+    public long KbChatSpendMicroEur { get; set; }
+    public int KbChatCalls { get; set; }
+}
 
 // ---- KB chat assistant (tool-use, multi-turn) ----------------------------
 
@@ -82,7 +106,8 @@ public sealed record ClaudeChatResult(
     string Model,
     string? RequestId);
 
-/// One row to append to <c>claude_usage_log</c>.
+/// One row to append to <c>claude_usage_log</c>. <see cref="Feature"/> is one
+/// of the <see cref="ClaudeFeatures"/> constants.
 public sealed record ClaudeUsageEntry(
     Guid? UserId,
     Guid? TicketId,
@@ -93,4 +118,5 @@ public sealed record ClaudeUsageEntry(
     int ImageCount,
     string Outcome,
     string? ErrorCode,
-    string? RequestId);
+    string? RequestId,
+    string Feature);

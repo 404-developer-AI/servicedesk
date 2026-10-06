@@ -42,6 +42,7 @@ public sealed class ClaudeApiClient : IClaudeApiClient
         string systemPrompt,
         string userText,
         IReadOnlyList<ClaudeImageInput> images,
+        string auditEventType,
         CancellationToken ct)
     {
         var apiKey = await _secrets.GetAsync(ProtectedSecretKeys.ClaudeApiKey, ct);
@@ -87,7 +88,7 @@ public sealed class ClaudeApiClient : IClaudeApiClient
                     : IntegrationAuditOutcome.Error;
                 await _audit.LogAsync(new IntegrationAuditEvent(
                     Integration: ClaudeEventTypes.Integration,
-                    EventType: ClaudeEventTypes.ProposalCall,
+                    EventType: auditEventType,
                     Outcome: outcome,
                     Endpoint: url,
                     HttpStatus: status,
@@ -103,7 +104,7 @@ public sealed class ClaudeApiClient : IClaudeApiClient
             var parsed = ParseSuccess(responseBody, model, requestId);
             await _audit.LogAsync(new IntegrationAuditEvent(
                 Integration: ClaudeEventTypes.Integration,
-                EventType: ClaudeEventTypes.ProposalCall,
+                EventType: auditEventType,
                 Outcome: IntegrationAuditOutcome.Ok,
                 Endpoint: url,
                 HttpStatus: status,
@@ -132,7 +133,7 @@ public sealed class ClaudeApiClient : IClaudeApiClient
             stopwatch.Stop();
             await _audit.LogAsync(new IntegrationAuditEvent(
                 Integration: ClaudeEventTypes.Integration,
-                EventType: ClaudeEventTypes.ProposalCall,
+                EventType: auditEventType,
                 Outcome: IntegrationAuditOutcome.Warn,
                 Endpoint: url,
                 HttpStatus: null,

@@ -142,6 +142,12 @@ public static class ClaudeEndpoints
                 effectiveBudgetCents = r.BudgetOverrideCents ?? defaultBudgetCents,
                 monthSpendMicroEur = r.MonthSpendMicroEur,
                 callCount = r.CallCount,
+                proposalSpendMicroEur = r.ProposalSpendMicroEur,
+                proposalCalls = r.ProposalCalls,
+                summarySpendMicroEur = r.SummarySpendMicroEur,
+                summaryCalls = r.SummaryCalls,
+                kbChatSpendMicroEur = r.KbChatSpendMicroEur,
+                kbChatCalls = r.KbChatCalls,
             }),
         });
     }

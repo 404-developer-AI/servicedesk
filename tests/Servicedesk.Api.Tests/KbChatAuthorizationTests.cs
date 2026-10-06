@@ -93,7 +93,7 @@ public sealed class KbChatAuthorizationTests
         public bool Called { get; private set; }
 
         public Task<ClaudeApiResult> CreateProposalAsync(
-            string systemPrompt, string userText, IReadOnlyList<ClaudeImageInput> images, CancellationToken ct)
+            string systemPrompt, string userText, IReadOnlyList<ClaudeImageInput> images, string auditEventType, CancellationToken ct)
         {
             Called = true;
             throw new InvalidOperationException("must not be called");
