@@ -200,7 +200,7 @@ export function TimesheetTab1() {
                 setEditingId(null);
                 setDraftRow(null);
               }}
-              className="rounded-md border border-glass bg-glass px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              className="rounded-md border border-glass bg-glass px-2 py-1 text-sm text-foreground focus:outline-hidden focus:ring-2 focus:ring-ring"
             />
             <Button
               size="sm"
@@ -411,7 +411,7 @@ function DisplayRow({
     <tr
       className={cn(
         "border-b border-glass last:border-b-0 hover:bg-glass-hover",
-        mismatch && "bg-red-500/[0.06] hover:bg-red-500/[0.09]",
+        mismatch && "bg-red-500/6 hover:bg-red-500/9",
       )}
     >
       <td
@@ -448,7 +448,7 @@ function DisplayRow({
       <td className="px-3 py-2">
         <TaskPill name={entry.taskName} isAbsence={entry.taskIsAbsence} />
       </td>
-      <td className="px-3 py-2 text-foreground/90 break-words whitespace-pre-wrap">{entry.description}</td>
+      <td className="px-3 py-2 text-foreground/90 wrap-break-word whitespace-pre-wrap">{entry.description}</td>
       <td className="px-3 py-2 font-mono text-xs text-foreground/90">
         {formatDuration(entry.minutes)}
       </td>
@@ -728,7 +728,7 @@ function EditableRow({
   };
 
   return (
-    <tr ref={trRef} className="border-b border-glass bg-primary/[0.04]" onKeyDown={onRowKeyDown}>
+    <tr ref={trRef} className="border-b border-glass bg-primary/4" onKeyDown={onRowKeyDown}>
       <td className="px-3 py-2 align-top">
         <Input
           value={startText}

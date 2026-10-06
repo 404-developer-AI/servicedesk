@@ -113,7 +113,7 @@ export function ActivityFeedPage() {
             <select
               value={eventType}
               onChange={(e) => { setEventType(e.target.value); setCursor(undefined); }}
-              className="h-9 rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus:border-primary/60"
+              className="h-9 rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-hidden focus:border-primary/60"
             >
               {EVENT_TYPES.map((t) => (
                 <option key={t.value} value={t.value} className="bg-background">
@@ -129,7 +129,7 @@ export function ActivityFeedPage() {
               type="date"
               value={fromDate}
               onChange={(e) => { setFromDate(e.target.value); setCursor(undefined); }}
-              className="h-9 rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus:border-primary/60"
+              className="h-9 rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-hidden focus:border-primary/60"
             />
           </label>
 
@@ -139,7 +139,7 @@ export function ActivityFeedPage() {
               type="date"
               value={toDate}
               onChange={(e) => { setToDate(e.target.value); setCursor(undefined); }}
-              className="h-9 rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus:border-primary/60"
+              className="h-9 rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-hidden focus:border-primary/60"
             />
           </label>
 

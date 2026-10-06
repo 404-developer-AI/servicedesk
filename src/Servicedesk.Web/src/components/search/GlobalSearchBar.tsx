@@ -217,7 +217,7 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
                 setTimeout(() => setOpen(false), 120);
               }}
               placeholder="Search…"
-              className="flex-1 min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              className="flex-1 min-w-0 bg-transparent text-sm outline-hidden placeholder:text-muted-foreground"
             />
             <kbd className="shrink-0 rounded border border-glass px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
               ⌘K
@@ -234,7 +234,7 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
               width: anchorRect.width,
             }}
             className={cn(
-              "z-50 overflow-hidden rounded-xl border border-glass bg-background/95 shadow-2xl backdrop-blur",
+              "z-50 overflow-hidden rounded-xl border border-glass bg-background/95 shadow-2xl backdrop-blur-sm",
               "ring-1 ring-inset ring-white/5",
             )}
             onMouseDown={(e) => e.preventDefault()}
@@ -254,7 +254,7 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
                       setTimeout(() => setOpen(false), 120);
                     }}
                     placeholder="Search…"
-                    className="flex-1 min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                    className="flex-1 min-w-0 bg-transparent text-sm outline-hidden placeholder:text-muted-foreground"
                   />
                 </div>
               </div>

@@ -273,7 +273,7 @@ function QueueSettingRow({ entry, label, hint, emptyLabel }: { entry: SettingEnt
         value={entry.value}
         disabled={save.isPending || queues.isLoading}
         onChange={(ev) => save.mutate(ev.target.value)}
-        className="h-9 w-full max-w-xs rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="h-9 w-full max-w-xs rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
       >
         <option value="">{emptyLabel}</option>
         {(queues.data ?? []).map((q) => (
@@ -308,7 +308,7 @@ function ChoiceSettingRow({ entry, label, hint, choices }: { entry: SettingEntry
         value={entry.value}
         disabled={save.isPending}
         onChange={(ev) => save.mutate(ev.target.value)}
-        className="h-9 w-full max-w-xs rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="h-9 w-full max-w-xs rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
       >
         {choices.map((c) => (
           <option key={c.value} value={c.value}>
@@ -346,7 +346,7 @@ function PrioritySettingRow({ entry, label, hint, emptyLabel }: { entry: Setting
         value={entry.value}
         disabled={save.isPending || priorities.isLoading}
         onChange={(ev) => save.mutate(ev.target.value)}
-        className="h-9 w-full max-w-xs rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="h-9 w-full max-w-xs rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
       >
         <option value="">{emptyLabel}</option>
         {options.map((p) => (
@@ -400,7 +400,7 @@ function TextAreaSetting({ entry, label, hint, rows }: { entry: SettingEntry | u
         disabled={save.isPending}
         rows={rows}
         spellCheck={false}
-        className="w-full rounded-md border border-glass bg-glass px-3 py-2 font-mono text-[11px] leading-relaxed text-foreground/90 outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+        className="w-full rounded-md border border-glass bg-glass px-3 py-2 font-mono text-[11px] leading-relaxed text-foreground/90 outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
       />
     </div>
   );

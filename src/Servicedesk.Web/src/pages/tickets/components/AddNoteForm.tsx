@@ -927,7 +927,7 @@ function ComposerLaunchButton({
       type="button"
       onClick={onClick}
       title={hint}
-      className="sd-composer-launch group flex min-w-0 items-center gap-2.5 rounded-[var(--radius)] border border-glass bg-glass px-3 py-3 text-left text-sm text-muted-foreground transition-colors hover:border-glass-strong hover:bg-glass-hover hover:text-foreground"
+      className="sd-composer-launch group flex min-w-0 items-center gap-2.5 rounded-(--radius) border border-glass bg-glass px-3 py-3 text-left text-sm text-muted-foreground transition-colors hover:border-glass-strong hover:bg-glass-hover hover:text-foreground"
     >
       <Icon className={cn("h-4 w-4 shrink-0 transition-colors", ACCENT_ICON[accent])} />
       <span className="min-w-0">

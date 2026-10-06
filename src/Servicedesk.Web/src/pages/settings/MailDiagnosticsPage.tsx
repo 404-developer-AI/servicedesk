@@ -330,7 +330,7 @@ function AttachmentRow({
         )}
       </div>
       {a.job?.lastError && (
-        <pre className="whitespace-pre-wrap break-words rounded-md border border-rose-500/20 bg-rose-500/5 p-2 text-[11px] text-rose-200">
+        <pre className="whitespace-pre-wrap wrap-break-word rounded-md border border-rose-500/20 bg-rose-500/5 p-2 text-[11px] text-rose-200">
           {a.job.lastError}
         </pre>
       )}

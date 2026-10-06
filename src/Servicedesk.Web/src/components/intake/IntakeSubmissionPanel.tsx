@@ -167,7 +167,7 @@ function SubmissionTable({ view }: { view: IntakeFormAgentView }) {
               return (
                 <div
                   key={q.id}
-                  className="grid gap-0.5 md:grid-cols-[auto,1fr] md:gap-3"
+                  className="grid gap-0.5 md:grid-cols-[auto_1fr] md:gap-3"
                 >
                   <dt className="text-xs text-muted-foreground/80">
                     {q.label}

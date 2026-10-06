@@ -163,7 +163,7 @@ export function EntityTicketsList(props: Props) {
             <Skeleton className="h-12 w-full" />
           </div>
         ) : isError ? (
-          <p className="rounded-md border border-red-500/20 bg-red-500/[0.04] p-3 text-sm text-red-300">
+          <p className="rounded-md border border-red-500/20 bg-red-500/4 p-3 text-sm text-red-300">
             Could not load tickets. Try refreshing.
           </p>
         ) : items.length === 0 ? (

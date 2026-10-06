@@ -194,7 +194,7 @@ export function ZammadImportRunDetailPage() {
   }
   if (detail.isError) {
     return (
-      <div className="rounded-md border border-rose-400/30 bg-rose-500/[0.08] p-3 text-xs text-rose-200">
+      <div className="rounded-md border border-rose-400/30 bg-rose-500/8 p-3 text-xs text-rose-200">
         Could not load run — {detail.error.message}
       </div>
     );
@@ -236,7 +236,7 @@ export function ZammadImportRunDetailPage() {
             {canStartImport ? (
               <Button
                 size="sm"
-                className="h-8 bg-emerald-500/[0.15] text-emerald-100 hover:bg-emerald-500/[0.25] border border-emerald-400/40"
+                className="h-8 bg-emerald-500/[0.15] text-emerald-100 hover:bg-emerald-500/25 border border-emerald-400/40"
                 variant="outline"
                 onClick={() => setImportConfirmOpen(true)}
                 title={`Promote this dry-run to a real import — ${totals.mapped} ticket(s) will be created.`}
@@ -286,7 +286,7 @@ export function ZammadImportRunDetailPage() {
       </div>
 
       {summary.errorMessage ? (
-        <div className="flex gap-2 rounded-md border border-rose-400/30 bg-rose-500/[0.08] p-3 text-xs text-rose-200">
+        <div className="flex gap-2 rounded-md border border-rose-400/30 bg-rose-500/8 p-3 text-xs text-rose-200">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <div>
             <div className="font-medium">Run aborted</div>
@@ -559,7 +559,7 @@ function FilterChip({
       className={cn(
         "rounded-full border px-2.5 py-1 text-[11px] transition",
         active
-          ? "border-violet-400/40 bg-violet-500/[0.12] text-violet-100"
+          ? "border-violet-400/40 bg-violet-500/12 text-violet-100"
           : "border-glass bg-glass text-muted-foreground hover:border-glass-strong hover:text-foreground",
       )}
     >
@@ -694,7 +694,7 @@ function RecordRow({
                 e.stopPropagation();
                 onCreateContact(row.id, contactEmail, zammadCustomerId);
               }}
-              className="inline-flex items-center gap-1 rounded border border-violet-400/30 bg-violet-500/[0.10] px-1.5 py-0.5 text-[10px] text-violet-200 hover:border-violet-400/50 hover:bg-violet-500/[0.18]"
+              className="inline-flex items-center gap-1 rounded border border-violet-400/30 bg-violet-500/[0.10] px-1.5 py-0.5 text-[10px] text-violet-200 hover:border-violet-400/50 hover:bg-violet-500/18"
               title={`Create contact for ${contactEmail}`}
             >
               <UserPlus className="h-3 w-3" />

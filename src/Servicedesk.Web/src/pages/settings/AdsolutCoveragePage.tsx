@@ -195,7 +195,7 @@ export function AdsolutCoveragePage() {
               className={cn(
                 "rounded px-3 py-1 capitalize transition-colors",
                 tab === t
-                  ? "bg-glass-strong text-foreground shadow-sm"
+                  ? "bg-glass-strong text-foreground shadow-xs"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -221,7 +221,7 @@ export function AdsolutCoveragePage() {
                 className={cn(
                   "rounded px-3 py-1 transition-colors",
                   active
-                    ? "bg-glass-strong text-foreground shadow-sm"
+                    ? "bg-glass-strong text-foreground shadow-xs"
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >
@@ -333,13 +333,13 @@ function CompaniesTable({ bucket, search, page, onPageChange }: CompaniesTablePr
       {list.isLoading ? (
         <Skeleton className="h-32 w-full" />
       ) : items.length === 0 ? (
-        <div className="rounded-md border border-emerald-400/20 bg-emerald-500/[0.04] p-4 text-xs text-emerald-300">
+        <div className="rounded-md border border-emerald-400/20 bg-emerald-500/4 p-4 text-xs text-emerald-300">
           Nothing in this bucket — all companies are covered.
         </div>
       ) : (
         <div className="space-y-2">
           {bucket === "drift" && (
-            <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-400/20 bg-amber-500/[0.04] px-3 py-2 text-[11px] text-amber-200">
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-400/20 bg-amber-500/4 px-3 py-2 text-[11px] text-amber-200">
               <span>{selected.size} selected</span>
               <Button
                 size="sm"
@@ -607,13 +607,13 @@ function ContactsTable({ bucket, search, page, onPageChange }: ContactsTableProp
       {list.isLoading ? (
         <Skeleton className="h-32 w-full" />
       ) : items.length === 0 ? (
-        <div className="rounded-md border border-emerald-400/20 bg-emerald-500/[0.04] p-4 text-xs text-emerald-300">
+        <div className="rounded-md border border-emerald-400/20 bg-emerald-500/4 p-4 text-xs text-emerald-300">
           Nothing in this bucket — all contacts are covered.
         </div>
       ) : (
         <div className="space-y-2">
           {driftBucket && (
-            <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-400/20 bg-amber-500/[0.04] px-3 py-2 text-[11px] text-amber-200">
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-400/20 bg-amber-500/4 px-3 py-2 text-[11px] text-amber-200">
               <span>{selected.size} selected</span>
               <Button
                 size="sm"

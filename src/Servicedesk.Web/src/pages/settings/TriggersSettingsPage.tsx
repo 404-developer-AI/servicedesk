@@ -292,7 +292,7 @@ export function TriggersSettingsPage({ initialEditId }: { initialEditId?: string
           </Button>
           <Button
             onClick={() => setEditing("new")}
-            className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-[0_0_20px_rgba(124,58,237,0.3)]"
+            className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-[0_0_20px_rgba(124,58,237,0.3)]"
           >
             <Plus className="h-4 w-4" />
             New trigger

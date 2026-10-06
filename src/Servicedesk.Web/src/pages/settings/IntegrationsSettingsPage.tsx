@@ -220,9 +220,9 @@ export function IntegrationsSettingsPage() {
       </header>
 
       {noneConfigured ? (
-        <div className="rounded-lg border border-glass-strong bg-gradient-to-br from-white/[0.04] to-white/[0.01] p-5">
+        <div className="rounded-lg border border-glass-strong bg-linear-to-br from-white/4 to-white/1 p-5">
           <div className="flex items-start gap-3">
-            <div className="rounded-md border border-primary/20 bg-primary/[0.08] p-2 text-primary">
+            <div className="rounded-md border border-primary/20 bg-primary/8 p-2 text-primary">
               <Sparkles className="h-4 w-4" />
             </div>
             <div className="flex-1 space-y-1">

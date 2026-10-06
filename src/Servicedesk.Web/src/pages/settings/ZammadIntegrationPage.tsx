@@ -65,7 +65,7 @@ const STATE_LABEL: Record<
     dot: "bg-glass-strong",
   },
   NotConfigured: {
-    tone: "border-amber-400/30 bg-amber-500/[0.08] text-amber-200",
+    tone: "border-amber-400/30 bg-amber-500/8 text-amber-200",
     text: "Not configured",
     dot: "bg-amber-400",
   },
@@ -337,7 +337,7 @@ export function ZammadIntegrationPage() {
         </div>
 
         {lastTest && (
-          <div className="rounded-md border border-emerald-400/20 bg-emerald-500/[0.05] p-3 text-xs">
+          <div className="rounded-md border border-emerald-400/20 bg-emerald-500/5 p-3 text-xs">
             <div className="flex items-center gap-2 text-emerald-300">
               <CheckCircle2 className="h-3.5 w-3.5" />
               Last successful test {new Date(lastTest.at).toLocaleString()}
@@ -570,7 +570,7 @@ function TicketPickerSection({ ready }: { ready: boolean }) {
       </p>
 
       {!ready ? (
-        <div className="rounded-md border border-amber-400/20 bg-amber-500/[0.05] p-3 text-xs text-amber-200">
+        <div className="rounded-md border border-amber-400/20 bg-amber-500/5 p-3 text-xs text-amber-200">
           Save a base URL + token and toggle <span className="font-mono">Zammad.Enabled</span> on
           first. The picker reads Zammad live.
         </div>
@@ -933,7 +933,7 @@ function MultiSelectFilter({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="max-h-72 w-64 overflow-y-auto border-glass-strong bg-popover/95 p-2 backdrop-blur"
+        className="max-h-72 w-64 overflow-y-auto border-glass-strong bg-popover/95 p-2 backdrop-blur-sm"
       >
         {loading ? (
           <div className="space-y-1">
@@ -1019,7 +1019,7 @@ function ResultTable({
   }
   if (error) {
     return (
-      <div className="rounded-md border border-rose-400/30 bg-rose-500/[0.08] p-3 text-xs text-rose-200">
+      <div className="rounded-md border border-rose-400/30 bg-rose-500/8 p-3 text-xs text-rose-200">
         Search failed — {apiErrorMessage(error) ?? error.message}
       </div>
     );
@@ -1053,7 +1053,7 @@ function ResultTable({
                 key={t.id}
                 className={cn(
                   "border-b border-glass last:border-b-0",
-                  checked ? "bg-violet-500/[0.05]" : "",
+                  checked ? "bg-violet-500/5" : "",
                   "hover:bg-glass-hover",
                 )}
               >

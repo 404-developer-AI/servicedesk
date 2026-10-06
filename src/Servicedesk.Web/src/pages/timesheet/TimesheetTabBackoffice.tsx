@@ -645,7 +645,7 @@ function renderCell(
     case "number":
       return <span className="font-mono text-xs text-muted-foreground">#{row.ticketNumber}</span>;
     case "subject":
-      return <span className="block max-w-[28rem] truncate text-foreground">{row.subject}</span>;
+      return <span className="block max-w-md truncate text-foreground">{row.subject}</span>;
     case "customer":
       return <span className="text-muted-foreground">{row.companyName ?? "—"}</span>;
     case "hours":
@@ -722,7 +722,7 @@ function HoursCell({ row }: { row: BackofficeTicket }) {
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center rounded-full border border-purple-400/30 bg-purple-500/[0.12] px-2.5 py-0.5 text-xs tabular-nums text-purple-200 transition-colors hover:bg-purple-500/20"
+          className="inline-flex items-center rounded-full border border-purple-400/30 bg-purple-500/12 px-2.5 py-0.5 text-xs tabular-nums text-purple-200 transition-colors hover:bg-purple-500/20"
           title="Show hours per task"
         >
           {formatMinutes(row.totalMinutes)}
@@ -934,7 +934,7 @@ function MonthLabel({ year, month }: { year: number; month: number }) {
   const d = new Date(year, month - 1, 1);
   const label = d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
   return (
-    <span className="min-w-[10rem] px-2 text-center text-sm font-medium text-foreground">
+    <span className="min-w-40 px-2 text-center text-sm font-medium text-foreground">
       {label}
     </span>
   );

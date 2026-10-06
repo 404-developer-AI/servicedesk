@@ -60,7 +60,7 @@ export function NotificationsWidget({ collapsed }: Props) {
               type="button"
               title={hasPending ? `${pendingCount} pending tag${pendingCount === 1 ? "" : "s"}` : "No pending tags"}
               className={cn(
-                "flex w-full items-center gap-2 rounded-[var(--radius)] border border-glass bg-glass px-3 py-2 text-left transition-colors",
+                "flex w-full items-center gap-2 rounded-(--radius) border border-glass bg-glass px-3 py-2 text-left transition-colors",
                 "hover:bg-glass-hover",
               )}
             >
@@ -79,7 +79,7 @@ export function NotificationsWidget({ collapsed }: Props) {
             </button>
           )}
         </PopoverTrigger>
-        <PopoverContent side="right" align="end" className="w-[22rem] p-0">
+        <PopoverContent side="right" align="end" className="w-88 p-0">
           <NotificationPanel items={items} loading={isLoading} />
         </PopoverContent>
       </Popover>

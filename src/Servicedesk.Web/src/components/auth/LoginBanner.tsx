@@ -43,7 +43,7 @@ export function LoginBanner({ className }: Props) {
     <div
       role="status"
       className={cn(
-        "mx-auto mb-4 flex w-full max-w-[420px] items-start gap-3 rounded-[var(--radius)] border px-4 py-3 text-xs backdrop-blur",
+        "mx-auto mb-4 flex w-full max-w-[420px] items-start gap-3 rounded-(--radius) border px-4 py-3 text-xs backdrop-blur-sm",
         palette.container,
         className,
       )}
@@ -54,7 +54,7 @@ export function LoginBanner({ className }: Props) {
           {palette.title}
         </p>
         <div
-          className={cn("leading-snug break-words", palette.body)}
+          className={cn("leading-snug wrap-break-word", palette.body)}
           dangerouslySetInnerHTML={{ __html: html }}
         />
       </div>
@@ -79,7 +79,7 @@ const PALETTES: Record<LoginBannerType, Palette> = {
   info: {
     container:
       "border-sky-400/50 bg-sky-50 text-sky-900 " +
-      "dark:border-sky-500/30 dark:bg-sky-500/[0.08] dark:text-sky-100",
+      "dark:border-sky-500/30 dark:bg-sky-500/8 dark:text-sky-100",
     icon: Info,
     icon_: "text-sky-600 dark:text-sky-300",
     label: "text-sky-700 dark:text-sky-200/90",
@@ -91,7 +91,7 @@ const PALETTES: Record<LoginBannerType, Palette> = {
   warning: {
     container:
       "border-amber-400/60 bg-amber-50 text-amber-900 " +
-      "dark:border-amber-500/30 dark:bg-amber-500/[0.08] dark:text-amber-100",
+      "dark:border-amber-500/30 dark:bg-amber-500/8 dark:text-amber-100",
     icon: AlertTriangle,
     icon_: "text-amber-600 dark:text-amber-300",
     label: "text-amber-700 dark:text-amber-200/90",

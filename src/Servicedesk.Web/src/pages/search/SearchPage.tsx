@@ -101,7 +101,7 @@ export function SearchPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="What are you looking for?"
-            className="w-full rounded-xl border border-glass bg-glass px-4 py-3 text-base outline-none ring-1 ring-inset ring-white/5 focus:ring-white/20"
+            className="w-full rounded-xl border border-glass bg-glass px-4 py-3 text-base outline-hidden ring-1 ring-inset ring-white/5 focus:ring-white/20"
           />
         </form>
 
@@ -109,7 +109,7 @@ export function SearchPage() {
           value={activeType}
           onChange={(e) => updateUrl({ type: e.target.value, offset: 0 })}
           aria-label="Search in"
-          className="rounded-xl border border-glass bg-glass px-4 py-3 text-base text-foreground outline-none ring-1 ring-inset ring-white/5 focus:ring-white/20 cursor-pointer sm:w-56"
+          className="rounded-xl border border-glass bg-glass px-4 py-3 text-base text-foreground outline-hidden ring-1 ring-inset ring-white/5 focus:ring-white/20 cursor-pointer sm:w-56"
         >
           {typeOptions.map((t) => (
             <option key={t} value={t} className="bg-background">
@@ -122,7 +122,7 @@ export function SearchPage() {
           value={activeSort}
           onChange={(e) => updateUrl({ sort: e.target.value as SearchSort, offset: 0 })}
           aria-label="Sort by"
-          className="rounded-xl border border-glass bg-glass px-4 py-3 text-base text-foreground outline-none ring-1 ring-inset ring-white/5 focus:ring-white/20 cursor-pointer sm:w-48"
+          className="rounded-xl border border-glass bg-glass px-4 py-3 text-base text-foreground outline-hidden ring-1 ring-inset ring-white/5 focus:ring-white/20 cursor-pointer sm:w-48"
         >
           {SORT_OPTIONS.filter((o) => !o.ticketsOnly || activeType === "tickets").map((o) => (
             <option key={o.value} value={o.value} className="bg-background">

@@ -145,7 +145,7 @@ export function FeatureFlagsDropdown({
       </PopoverTrigger>
 
       <PopoverContent
-        className="flex max-h-[28rem] w-72 flex-col overflow-hidden p-0"
+        className="flex max-h-112 w-72 flex-col overflow-hidden p-0"
         align="end"
         side="bottom"
       >

@@ -178,7 +178,7 @@ export function TicketChecklistPanel({
         <>
           {/* Checklist switcher */}
           {checklists.length > 1 && (
-            <div className="flex gap-1.5 overflow-x-auto border-b border-glass px-3 py-2 [scrollbar-width:thin]">
+            <div className="flex gap-1.5 overflow-x-auto border-b border-glass px-3 py-2 scrollbar-thin">
               {checklists.map((c) => {
                 const complete = c.completedUtc !== null;
                 return (
@@ -306,7 +306,7 @@ export function TicketChecklistPanel({
           </div>
 
           {/* Items */}
-          <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 [scrollbar-width:thin]">
+          <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 scrollbar-thin">
             {groups.map((g) => {
               const key = g.section?.id ?? `__${g.kind}`;
               const isCollapsed = collapsed.has(key);
@@ -326,7 +326,7 @@ export function TicketChecklistPanel({
                           return n;
                         })
                       }
-                      className="sticky top-0 z-[1] mb-1 flex w-full items-center gap-2 rounded-md bg-background/60 px-2 py-1.5 text-left backdrop-blur-sm glass-hover"
+                      className="sticky top-0 z-1 mb-1 flex w-full items-center gap-2 rounded-md bg-background/60 px-2 py-1.5 text-left backdrop-blur-xs glass-hover"
                       aria-expanded={!isCollapsed}
                     >
                       <ChevronDown className={cn("h-3.5 w-3.5 text-muted-foreground/60 transition-transform", isCollapsed && "-rotate-90")} />
@@ -486,7 +486,7 @@ function AddItemInline({
             rows={2}
             maxLength={4000}
             placeholder="Description (optional)"
-            className="w-full resize-y rounded-md border border-glass bg-background/40 px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+            className="w-full resize-y rounded-md border border-glass bg-background/40 px-2 py-1.5 text-sm outline-hidden focus:ring-1 focus:ring-ring"
           />
           <Input value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} maxLength={2000} placeholder="https://… (optional link)" className="h-8 text-sm bg-background/40" />
         </>

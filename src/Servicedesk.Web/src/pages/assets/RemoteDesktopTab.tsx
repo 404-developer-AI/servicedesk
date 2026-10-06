@@ -194,7 +194,7 @@ export function RemoteDesktopTab({
       </div>
 
       {(disabled || (data && neverSynced)) && (
-        <div className="rounded-lg border border-amber-400/30 bg-amber-500/[0.08] p-4 text-sm text-amber-200">
+        <div className="rounded-lg border border-amber-400/30 bg-amber-500/8 p-4 text-sm text-amber-200">
           <div className="flex items-start gap-3">
             <Plug className="mt-0.5 h-4 w-4 shrink-0" />
             <div className="flex-1">

@@ -29,7 +29,7 @@ export function Segmented({
             className={cn(
               "h-7 rounded-[5px] px-3 text-xs font-medium transition-colors",
               active
-                ? "bg-background text-foreground shadow-sm"
+                ? "bg-background text-foreground shadow-xs"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -87,7 +87,7 @@ export function DateInput({
       min={min}
       max={max}
       onChange={(e) => onChange(e.target.value)}
-      className="h-8 rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-none focus:border-primary/60"
+      className="h-8 rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-hidden focus:border-primary/60"
     />
   );
 }

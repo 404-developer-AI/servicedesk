@@ -63,8 +63,8 @@ export const MentionList = React.forwardRef<MentionListHandle, MentionListProps>
     return (
       <div
         className={cn(
-          "min-w-[16rem] max-w-[22rem] max-h-64 overflow-auto",
-          "rounded-[var(--radius)] border border-glass",
+          "min-w-[16rem] max-w-88 max-h-64 overflow-auto",
+          "rounded-(--radius) border border-glass",
           "bg-popover/95 backdrop-blur-xl shadow-2xl",
           "py-1 text-sm",
         )}

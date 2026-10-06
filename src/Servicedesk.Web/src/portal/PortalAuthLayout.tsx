@@ -65,7 +65,7 @@ export function PortalAuthLayout({ title, subtitle, children, footer, wide, test
             {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}
           </div>
           {config.data && !config.data.enabled ? (
-            <div className="rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2.5 text-xs">
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/8 px-3 py-2.5 text-xs">
               The customer portal is not available at the moment.
             </div>
           ) : (
@@ -98,7 +98,7 @@ export function FormError({ message }: { message: string | null }) {
   return (
     <div
       role="alert"
-      className="rounded-md border border-destructive/40 bg-destructive/[0.06] px-3 py-2 text-xs text-destructive/90"
+      className="rounded-md border border-destructive/40 bg-destructive/6 px-3 py-2 text-xs text-destructive/90"
     >
       {message}
     </div>
@@ -111,7 +111,7 @@ export function FormNotice({ children, tone = "info" }: { children: ReactNode; t
       className={cn(
         "rounded-md border px-3 py-2.5 text-xs",
         tone === "success"
-          ? "border-emerald-500/30 bg-emerald-500/[0.08] text-foreground"
+          ? "border-emerald-500/30 bg-emerald-500/8 text-foreground"
           : "border-glass bg-glass text-foreground",
       )}
     >

@@ -77,8 +77,8 @@ export function PortalTicketDetailPage({ ticketId }: { ticketId: string }) {
     return (
       <div className="space-y-4">
         <div className="h-6 w-40 animate-pulse rounded bg-glass" />
-        <div className="h-28 animate-pulse rounded-[var(--radius)] bg-glass" />
-        <div className="h-40 animate-pulse rounded-[var(--radius)] bg-glass" />
+        <div className="h-28 animate-pulse rounded-(--radius) bg-glass" />
+        <div className="h-40 animate-pulse rounded-(--radius) bg-glass" />
       </div>
     );
   }
@@ -244,7 +244,7 @@ function OrderToggle({ value, onChange }: { value: PortalConversationOrder; onCh
           onClick={() => onChange(o.key)}
           className={cn(
             "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-            value === o.key ? "bg-glass-strong text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+            value === o.key ? "bg-glass-strong text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
           )}
         >
           <o.icon className="h-3.5 w-3.5" />
@@ -283,7 +283,7 @@ function MessageItem({ message, when }: { message: PortalMessage; when: string }
   const agent = message.kind === "agent";
   return (
     <li className={cn("glass-card overflow-hidden", agent && "sd-portal-agent-message border-primary/30")}>
-      <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-glass px-4 py-2 text-xs", agent ? "bg-primary/[0.06]" : "bg-glass")}>
+      <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-glass px-4 py-2 text-xs", agent ? "bg-primary/6" : "bg-glass")}>
         <span
           className={cn(
             "inline-flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold",

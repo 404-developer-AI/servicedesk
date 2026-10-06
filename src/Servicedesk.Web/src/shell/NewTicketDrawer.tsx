@@ -660,8 +660,8 @@ export function NewTicketDrawer({
     <Drawer.Root open={open} onOpenChange={setOpen}>
       {children && <Drawer.Trigger asChild>{children}</Drawer.Trigger>}
       <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
-        <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[90vh] max-w-5xl flex-col rounded-t-[var(--radius)] border border-glass bg-background/90 backdrop-blur-xl">
+        <Drawer.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs" />
+        <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[90vh] max-w-5xl flex-col rounded-t-(--radius) border border-glass bg-background/90 backdrop-blur-xl">
           <Drawer.Title className="sr-only">New ticket</Drawer.Title>
           <Drawer.Description className="sr-only">
             Create a new support ticket.
@@ -1061,7 +1061,7 @@ export function NewTicketDrawer({
                 <Button
                   type="submit"
                   disabled={isPending || !taxonomyReady}
-                  className="bg-gradient-to-r from-accent-purple to-accent-blue text-white hover:opacity-90 transition-opacity border-0"
+                  className="bg-linear-to-r from-accent-purple to-accent-blue text-white hover:opacity-90 transition-opacity border-0"
                 >
                   {isPending ? (
                     <>

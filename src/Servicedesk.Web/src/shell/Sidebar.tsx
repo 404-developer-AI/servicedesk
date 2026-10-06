@@ -522,7 +522,7 @@ export function Sidebar() {
               type="button"
               title="New ticket"
               aria-label="New ticket"
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-glass bg-gradient-to-br from-accent-purple to-accent-blue text-white shadow-[0_6px_20px_-8px_hsl(var(--primary)/0.55)] transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-glass bg-linear-to-br from-accent-purple to-accent-blue text-white shadow-[0_6px_20px_-8px_hsl(var(--primary)/0.55)] transition-transform hover:scale-[1.03] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Plus className="h-4 w-4" />
             </button>
@@ -618,7 +618,7 @@ export function Sidebar() {
                 type="button"
                 title="New ticket"
                 aria-label="New ticket"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-glass bg-gradient-to-br from-accent-purple to-accent-blue text-white shadow-[0_6px_18px_-8px_hsl(var(--primary)/0.55)] transition-transform hover:scale-[1.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-glass bg-linear-to-br from-accent-purple to-accent-blue text-white shadow-[0_6px_18px_-8px_hsl(var(--primary)/0.55)] transition-transform hover:scale-[1.05] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <Plus className="h-4 w-4" />
               </button>

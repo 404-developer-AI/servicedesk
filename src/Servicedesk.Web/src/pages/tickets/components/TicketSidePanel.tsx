@@ -273,7 +273,7 @@ export function TicketSidePanel({
                   className={cn(
                     "shrink-0 px-2.5 flex items-center justify-center transition-colors border-l border-glass",
                     pinned
-                      ? "text-primary hover:text-primary/80 bg-primary/[0.08]"
+                      ? "text-primary hover:text-primary/80 bg-primary/8"
                       : "text-muted-foreground/50 hover:text-foreground hover:bg-glass-hover",
                   )}
                 >
@@ -704,7 +704,7 @@ function StatusTab({
             className={cn(
               "flex w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs transition-colors",
               showSystemEvents
-                ? "border-primary/40 bg-primary/[0.08] text-foreground"
+                ? "border-primary/40 bg-primary/8 text-foreground"
                 : "border-glass bg-glass text-muted-foreground hover:bg-glass-hover hover:text-foreground",
             )}
           >

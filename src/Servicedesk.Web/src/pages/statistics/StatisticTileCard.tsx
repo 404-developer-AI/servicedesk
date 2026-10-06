@@ -195,7 +195,7 @@ function BarBody({
               ) : (
                 <>
                   <div
-                    className="h-full shrink-0 bg-gradient-to-r from-primary/70 to-primary"
+                    className="h-full shrink-0 bg-linear-to-r from-primary/70 to-primary"
                     style={{ width: `${(p.value / max) * 100}%`, minWidth: p.value > 0 ? 2 : 0 }}
                   />
                   {twoSeries && (
@@ -213,7 +213,7 @@ function BarBody({
             <span
               className={cn(
                 "shrink-0 text-right font-mono tabular-nums text-foreground",
-                segmentMode || twoSeries ? "w-[4.5rem]" : "w-12",
+                segmentMode || twoSeries ? "w-18" : "w-12",
               )}
             >
               {segmentMode

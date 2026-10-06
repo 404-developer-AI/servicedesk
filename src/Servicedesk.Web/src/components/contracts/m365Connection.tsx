@@ -14,7 +14,7 @@ const STATUS: Record<
   },
   needs_reconsent: {
     label: "Needs re-consent",
-    pill: "border-amber-400/30 bg-amber-500/[0.08] text-amber-200",
+    pill: "border-amber-400/30 bg-amber-500/8 text-amber-200",
     dot: "bg-amber-400",
   },
   error: {

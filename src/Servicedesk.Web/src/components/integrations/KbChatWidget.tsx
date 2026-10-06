@@ -197,9 +197,9 @@ function ChatLauncher() {
         onPointerUp={onPointerUp}
         style={{ left: pos.x, top: pos.y }}
         className={cn(
-          "fixed z-[58] flex h-14 w-14 touch-none select-none items-center justify-center rounded-full",
+          "fixed z-58 flex h-14 w-14 touch-none select-none items-center justify-center rounded-full",
           "border border-glass-strong shadow-2xl backdrop-blur-xl",
-          "bg-gradient-to-br from-violet-500/90 to-indigo-600/90 text-white",
+          "bg-linear-to-br from-violet-500/90 to-indigo-600/90 text-white",
           "transition-transform hover:scale-105 active:scale-95",
           open && "ring-2 ring-violet-400/50",
         )}
@@ -274,7 +274,7 @@ function ChatPanel({
       transition={{ type: "spring", stiffness: 320, damping: 28 }}
       style={{ ...style, transformOrigin: origin }}
       className={cn(
-        "fixed z-[59] flex max-h-[70vh] w-[380px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden",
+        "fixed z-59 flex max-h-[70vh] w-[380px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden",
         "rounded-2xl border border-glass-strong shadow-2xl",
         "bg-popover/95 backdrop-blur-xl",
       )}
@@ -282,7 +282,7 @@ function ChatPanel({
       aria-label="Knowledge-base assistant"
     >
       {/* Gradient strip — keeps it from feeling generic-AI-default. */}
-      <div className="h-1 w-full bg-gradient-to-r from-violet-500 via-indigo-500 to-blue-500" />
+      <div className="h-1 w-full bg-linear-to-r from-violet-500 via-indigo-500 to-blue-500" />
 
       <header className="flex items-center justify-between gap-3 px-4 py-3">
         <div className="flex items-center gap-2">
@@ -342,8 +342,8 @@ function ChatPanel({
             placeholder="Ask a question…"
             rows={1}
             className={cn(
-              "max-h-28 min-h-[2.25rem] flex-1 resize-none rounded-lg border border-glass bg-glass px-3 py-2 text-sm",
-              "text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-violet-400/40",
+              "max-h-28 min-h-9 flex-1 resize-none rounded-lg border border-glass bg-glass px-3 py-2 text-sm",
+              "text-foreground placeholder:text-muted-foreground/50 focus:outline-hidden focus:ring-1 focus:ring-violet-400/40",
             )}
           />
           <button

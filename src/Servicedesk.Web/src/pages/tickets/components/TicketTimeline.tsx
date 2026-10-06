@@ -236,7 +236,7 @@ function CollapsibleBody({
           )}
         </div>
         {collapsed ? (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background via-background/80 to-transparent" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-linear-to-t from-background via-background/80 to-transparent" />
         ) : null}
       </div>
       {overflows ? (
@@ -1272,7 +1272,7 @@ function TimelineEvent({
     <div id={`event-${event.id}`} className="relative pl-6">
       <span
         className={cn(
-          "absolute -left-[9px] top-3 w-4 h-4 rounded-full border-2 border-background flex items-center justify-center",
+          "absolute left-[-9px] top-3 w-4 h-4 rounded-full border-2 border-background flex items-center justify-center",
           config.dotColor
         )}
       >
@@ -1331,8 +1331,8 @@ function TimelineEvent({
             // sd-internal-note is a theme hook: Steaan paints the amber-50
             // card through it, the Nebula themes leave it unstyled.
             event.isInternal
-              ? "sd-internal-note ring-1 ring-amber-500/30 bg-amber-500/[0.04]"
-              : event.eventType === "MailReceived" && "bg-sky-500/[0.05]"
+              ? "sd-internal-note ring-1 ring-amber-500/30 bg-amber-500/4"
+              : event.eventType === "MailReceived" && "bg-sky-500/5"
           )}
         >
           <div className="flex items-center justify-between gap-2 mb-2">
@@ -1580,7 +1580,7 @@ function TimelineEvent({
                   if (e.key === "Enter") pinMutation.mutate(pinRemark);
                 }}
                 placeholder="Why is this important?"
-                className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/50"
+                className="w-full rounded-md border border-glass bg-glass px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 outline-hidden focus:border-primary/50"
                 autoFocus
               />
             </div>
@@ -1671,7 +1671,7 @@ export function TicketTimeline({ ticketId, ticketNumber, events, pinnedEventIds 
 // ---- Log employee feedback (from a timeline item) -------------------------
 
 const FEEDBACK_SELECT_CLASS =
-  "h-9 w-full rounded-md border border-glass bg-glass px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring";
+  "h-9 w-full rounded-md border border-glass bg-glass px-2 text-sm text-foreground focus:outline-hidden focus:ring-2 focus:ring-ring";
 
 function logFeedbackToday(time: ReturnType<typeof useServerTime>["time"]): string {
   const pad = (n: number) => String(n).padStart(2, "0");
