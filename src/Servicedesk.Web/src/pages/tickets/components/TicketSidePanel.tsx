@@ -428,7 +428,7 @@ function StatusTab({
   const { data: warningSetting } = useQuery({
     queryKey: ["settings", "tickets-warnings"],
     queryFn: () => settingsApi.list("Tickets"),
-    staleTime: 60_000,
+    staleTime: 5 * 60_000, // v0.1.25 — global config, not per ticket
   });
   const showContactNotLinkedSetting = React.useMemo(
     () =>
@@ -1075,6 +1075,10 @@ function RelationshipsBlock({
 function LinkedTicketLauncher({ ticket }: { ticket: Ticket }) {
   const [typeDialogOpen, setTypeDialogOpen] = React.useState(false);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
+  // Mounted from the first open on (keeps the close animation) — never
+  // before, so a closed drawer costs no queries.
+  const [drawerUsed, setDrawerUsed] = React.useState(false);
+  if (drawerOpen && !drawerUsed) setDrawerUsed(true);
   const [prefill, setPrefill] = React.useState<LinkedTicketPrefill | null>(null);
   const [loadingPrefill, setLoadingPrefill] = React.useState(false);
 
@@ -1126,7 +1130,9 @@ function LinkedTicketLauncher({ ticket }: { ticket: Ticket }) {
         loading={presetsQ.isLoading || loadingPrefill}
         onSelect={(preset) => handleSelect(preset.triggerId)}
       />
-      <NewTicketDrawer
+      {/* v0.1.25 — mounted only when used: a closed drawer still ran its
+          taxonomy/settings queries on every ticket open. */}
+      {(drawerUsed || prefill) && <NewTicketDrawer
         initialContactId={prefill?.requesterContactId ?? ticket.requesterContactId}
         initialQueueId={prefill?.queueId ?? ticket.queueId}
         parentTicketId={ticket.id}
@@ -1140,7 +1146,7 @@ function LinkedTicketLauncher({ ticket }: { ticket: Ticket }) {
         initialNote={prefill?.initialNote ?? undefined}
         open={drawerOpen}
         onOpenChange={handleDrawerOpenChange}
-      />
+      />}
     </>
   );
 }

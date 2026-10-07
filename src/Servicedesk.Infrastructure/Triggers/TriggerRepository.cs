@@ -283,6 +283,37 @@ public sealed class TriggerRepository : ITriggerRepository
         return rows.ToList();
     }
 
+    public async Task RecordRunsAsync(IReadOnlyList<TriggerRunRecord> records, CancellationToken ct)
+    {
+        if (records.Count == 0) return;
+        // Same INSERT as RecordRunAsync, one statement per row, one round-trip.
+        const string sql = """
+            INSERT INTO trigger_runs
+                (trigger_id, ticket_id, ticket_event_id, outcome,
+                 applied_changes, error_class, error_message)
+            VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var batch = new NpgsqlBatch(conn);
+        foreach (var r in records)
+        {
+            batch.BatchCommands.Add(new NpgsqlBatchCommand(sql)
+            {
+                Parameters =
+                {
+                    new() { Value = r.TriggerId },
+                    new() { Value = r.TicketId },
+                    new() { Value = (object?)r.TicketEventId ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bigint },
+                    new() { Value = OutcomeToDb(r.Outcome) },
+                    new() { Value = (object?)r.AppliedChangesJson ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text },
+                    new() { Value = (object?)r.ErrorClass ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text },
+                    new() { Value = (object?)r.ErrorMessage ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text },
+                },
+            });
+        }
+        await batch.ExecuteNonQueryAsync(ct);
+    }
+
     public async Task RecordRunAsync(TriggerRunRecord record, CancellationToken ct)
     {
         const string sql = """

@@ -54,40 +54,45 @@ public sealed class SlaRecalcWorker : BackgroundService
                     var repo = scope.ServiceProvider.GetRequiredService<ISlaRepository>();
                     var engine = scope.ServiceProvider.GetRequiredService<ISlaEngine>();
 
-                    if (!catchUpDone)
+                    // v0.1.25 — Sla.Enabled off: idle. Reset the cursor and
+                    // the catch-up so switching it back on starts a fresh
+                    // full pass over the open tickets.
+                    if (!await engine.IsEnabledAsync(stoppingToken))
                     {
-                        // One-off: resolved-but-open tickets without a state row.
-                        // Loops until the anti-join comes back empty (every recalc
-                        // creates the row, so this converges), bounded per cycle.
-                        var caught = 0;
-                        IReadOnlyList<Guid> missing;
-                        do
+                        cursor = null;
+                        catchUpDone = false;
+                    }
+                    else
+                    {
+                        if (!catchUpDone)
                         {
-                            missing = await repo.ListResolvedWithoutStateAsync(batch, stoppingToken);
-                            foreach (var id in missing)
+                            // One-off: resolved-but-open tickets without a state row.
+                            // Loops until the anti-join comes back empty (every recalc
+                            // creates the row, so this converges), bounded per cycle.
+                            var caught = 0;
+                            IReadOnlyList<Guid> missing;
+                            do
                             {
-                                if (stoppingToken.IsCancellationRequested) break;
-                                await engine.RecalcAsync(id, stoppingToken);
-                            }
-                            caught += missing.Count;
-                        } while (missing.Count == batch && caught < batch * 10 && !stoppingToken.IsCancellationRequested);
-                        catchUpDone = missing.Count < batch;
-                        if (caught > 0)
-                            _logger.LogInformation("SLA recalc: created state rows for {Count} resolved tickets without one.", caught);
-                    }
+                                missing = await repo.ListResolvedWithoutStateAsync(batch, stoppingToken);
+                                await engine.RecalcManyAsync(missing, stoppingToken);
+                                caught += missing.Count;
+                            } while (missing.Count == batch && caught < batch * 10 && !stoppingToken.IsCancellationRequested);
+                            catchUpDone = missing.Count < batch;
+                            if (caught > 0)
+                                _logger.LogInformation("SLA recalc: created state rows for {Count} resolved tickets without one.", caught);
+                        }
 
-                    var candidates = await repo.ListRecalcCandidatesAsync(batch, cursor, stoppingToken);
-                    run.AddItems(candidates.Count);
-                    foreach (var c in candidates)
-                    {
-                        if (stoppingToken.IsCancellationRequested) break;
-                        await engine.RecalcAsync(c.Id, stoppingToken);
+                        var candidates = await repo.ListRecalcCandidatesAsync(batch, cursor, stoppingToken);
+                        run.AddItems(candidates.Count);
+                        // v0.1.25 — one bulk read + one bulk write per batch
+                        // instead of a few round-trips per ticket.
+                        await engine.RecalcManyAsync(candidates.Select(c => c.Id).ToList(), stoppingToken);
+                        // Advance the cursor; a short batch means the pass is complete —
+                        // start over from the least-recently-updated ticket next cycle.
+                        cursor = candidates.Count < batch
+                            ? null
+                            : new SlaRecalcCursor(candidates[^1].UpdatedUtc, candidates[^1].Id);
                     }
-                    // Advance the cursor; a short batch means the pass is complete —
-                    // start over from the least-recently-updated ticket next cycle.
-                    cursor = candidates.Count < batch
-                        ? null
-                        : new SlaRecalcCursor(candidates[^1].UpdatedUtc, candidates[^1].Id);
                 }
                 catch (Exception ex)
                 {

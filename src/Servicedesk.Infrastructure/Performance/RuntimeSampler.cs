@@ -53,9 +53,52 @@ public sealed class RuntimeSampler
     {
         if (Interlocked.Exchange(ref _subscribed, 1) == 0)
         {
-            AppDomain.CurrentDomain.FirstChanceException += (_, _) => Interlocked.Increment(ref _firstChanceExceptions);
+            AppDomain.CurrentDomain.FirstChanceException += (_, e) =>
+            {
+                Interlocked.Increment(ref _firstChanceExceptions);
+                CountType(e.Exception);
+            };
         }
     }
+
+    // v0.1.25 — first-chance exceptions by type (the report showed ~1,200 an
+    // hour without saying which). Type names only — never messages, which
+    // can carry data. In Diagnose the throwing class is added. Counts are
+    // cumulative since app start, capped at MaxExceptionTypes keys.
+    private const int MaxExceptionTypes = 200;
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> ExceptionsByType = new(StringComparer.Ordinal);
+    private static readonly DateTime CountingSinceUtc = DateTime.UtcNow;
+    [ThreadStatic] private static bool _inHandler;
+
+    private static void CountType(Exception ex)
+    {
+        // Anything thrown in here would raise FirstChanceException again.
+        if (_inHandler) return;
+        _inHandler = true;
+        try
+        {
+            var key = ex.GetType().FullName ?? ex.GetType().Name;
+            if (PerfRuntime.Settings?.Level == PerfLevel.Diagnose
+                && ex.TargetSite?.DeclaringType?.FullName is { } origin)
+            {
+                key += " @ " + origin;
+            }
+            if (ExceptionsByType.Count >= MaxExceptionTypes && !ExceptionsByType.ContainsKey(key)) key = "other";
+            ExceptionsByType.AddOrUpdate(key, 1, static (_, v) => v + 1);
+        }
+        catch
+        {
+            // never let counting disturb the throwing code
+        }
+        finally
+        {
+            _inHandler = false;
+        }
+    }
+
+    /// Top first-chance exception types since app start.
+    public static (DateTime SinceUtc, IReadOnlyList<KeyValuePair<string, long>> Types) ExceptionTypes(int top) =>
+        (CountingSinceUtc, ExceptionsByType.OrderByDescending(kv => kv.Value).Take(top).ToList());
 
     public RuntimeSample Sample(DateTimeOffset nowUtc, PerfGauges gauges, long inFlight, HostSample? host)
     {

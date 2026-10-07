@@ -137,23 +137,26 @@ public static class UserPreferencesEndpoints
                 return Results.BadRequest("All keys must start with 'workspace:'.");
 
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+
+            // v0.1.25 — one statement for the whole snapshot instead of one
+            // upsert per key (up to 154 per save in the Performance monitor).
+            // Last value wins for a key sent twice (ON CONFLICT cannot touch
+            // the same row twice in one statement), and unchanged values are
+            // not rewritten, so a save with nothing new produces no dead rows.
+            var latest = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var entry in req.Entries) latest[entry.Key] = entry.Value;
+
             await using var conn = await dataSource.OpenConnectionAsync(ct);
-            await using var tx = await conn.BeginTransactionAsync(ct);
-
-            foreach (var entry in req.Entries)
-            {
-                await conn.ExecuteAsync(new CommandDefinition(
-                    """
-                    INSERT INTO user_preferences (user_id, pref_key, pref_value)
-                    VALUES (@userId, @key, @value)
-                    ON CONFLICT (user_id, pref_key) DO UPDATE
-                        SET pref_value = @value, updated_utc = now()
-                    """,
-                    new { userId, key = entry.Key, value = entry.Value },
-                    transaction: tx, cancellationToken: ct));
-            }
-
-            await tx.CommitAsync(ct);
+            await conn.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO user_preferences (user_id, pref_key, pref_value)
+                SELECT @userId, k, v FROM unnest(@keys::text[], @values::text[]) AS e(k, v)
+                ON CONFLICT (user_id, pref_key) DO UPDATE
+                    SET pref_value = EXCLUDED.pref_value, updated_utc = now()
+                    WHERE user_preferences.pref_value IS DISTINCT FROM EXCLUDED.pref_value
+                """,
+                new { userId, keys = latest.Keys.ToArray(), values = latest.Values.ToArray() },
+                cancellationToken: ct));
             return Results.NoContent();
         }).WithName("SaveWorkspacePreferences").WithOpenApi();
 

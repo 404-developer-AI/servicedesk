@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -27,7 +28,7 @@ public sealed class AuditLogger : IAuditLogger
         INSERT INTO audit_log
             (utc, actor, actor_role, event_type, target, client_ip, user_agent, payload, prev_hash, entry_hash)
         VALUES
-            (@Utc, @Actor, @ActorRole, @EventType, @Target, @ClientIp, @UserAgent, @Payload::jsonb, @PrevHash, @EntryHash)
+            ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
         """;
 
     private const string SelectLastHashSql = """
@@ -56,60 +57,123 @@ public sealed class AuditLogger : IAuditLogger
         var keyBase64 = _secrets.GetRequired("Audit:HashKey");
         var key = DecodeKey(keyBase64);
 
-        var utc = DateTimeOffset.UtcNow;
-        var payloadJson = evt.Payload is null
-            ? "{}"
-            : JsonSerializer.Serialize(evt.Payload);
+        var pending = new PendingEntry(
+            evt,
+            DateTimeOffset.UtcNow,
+            evt.Payload is null ? "{}" : JsonSerializer.Serialize(evt.Payload),
+            key);
+        _queue.Enqueue(pending);
 
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        // v0.1.25 — group commit. The chain needs one writer at a time (the
+        // advisory lock), so concurrent callers used to queue on the lock one
+        // transaction + fsync each: opening a ticket with 20 inline images
+        // meant 20 serialised audit transactions, ~51 ms average lock wait
+        // in the Performance monitor. Now whoever gets the gate writes every
+        // entry queued so far in ONE transaction (same lock, same chaining
+        // order, same rows); the others find their entry already committed.
+        // Every caller still returns only after its own row is durable, so
+        // "audited before the response" is unchanged.
+        await _flushGate.WaitAsync(CancellationToken.None);
+        try
+        {
+            if (!pending.Done.Task.IsCompleted)
+                await FlushQueuedAsync();
+        }
+        finally
+        {
+            _flushGate.Release();
+        }
+        await pending.Done.Task;
+    }
+
+    private const int MaxEntriesPerTransaction = 200;
+
+    private readonly ConcurrentQueue<PendingEntry> _queue = new();
+    private readonly SemaphoreSlim _flushGate = new(1, 1);
+
+    private sealed record PendingEntry(AuditEvent Evt, DateTimeOffset Utc, string PayloadJson, byte[] Key)
+    {
+        public TaskCompletionSource Done { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    /// Drains the queue in transactions of up to <see cref="MaxEntriesPerTransaction"/>.
+    /// Runs under <see cref="_flushGate"/>, never with a caller's
+    /// cancellation token: one request aborting must not fail the audit rows
+    /// of the other requests in the same batch.
+    private async Task FlushQueuedAsync()
+    {
+        while (!_queue.IsEmpty)
+        {
+            var batch = new List<PendingEntry>();
+            while (batch.Count < MaxEntriesPerTransaction && _queue.TryDequeue(out var e)) batch.Add(e);
+            if (batch.Count == 0) return;
+            try
+            {
+                await WriteBatchAsync(batch);
+                foreach (var e in batch) e.Done.TrySetResult();
+            }
+            catch (Exception ex)
+            {
+                foreach (var e in batch) e.Done.TrySetException(ex);
+            }
+        }
+    }
+
+    private async Task WriteBatchAsync(IReadOnlyList<PendingEntry> entries)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
 
         await connection.ExecuteAsync(
             new CommandDefinition(
                 "SELECT pg_advisory_xact_lock(@key)",
                 new { key = AuditLockKey },
-                transaction,
-                cancellationToken: cancellationToken));
+                transaction));
 
         var prevHash = await connection.QueryFirstOrDefaultAsync<byte[]?>(
             new CommandDefinition(
                 SelectLastHashSql,
-                transaction: transaction,
-                cancellationToken: cancellationToken))
+                transaction: transaction))
             ?? GenesisHash;
 
-        var entryHash = ComputeHash(
-            key,
-            prevHash,
-            utc,
-            evt.Actor,
-            evt.ActorRole,
-            evt.EventType,
-            evt.Target,
-            evt.ClientIp,
-            evt.UserAgent,
-            payloadJson);
+        // Chain in queue order: each entry's prev_hash is the previous
+        // entry's entry_hash, exactly as consecutive single writes would.
+        await using var batch = new NpgsqlBatch(connection, transaction);
+        foreach (var p in entries)
+        {
+            var evt = p.Evt;
+            var entryHash = ComputeHash(
+                p.Key,
+                prevHash,
+                p.Utc,
+                evt.Actor,
+                evt.ActorRole,
+                evt.EventType,
+                evt.Target,
+                evt.ClientIp,
+                evt.UserAgent,
+                p.PayloadJson);
 
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                InsertSql,
-                new
+            batch.BatchCommands.Add(new NpgsqlBatchCommand(InsertSql)
+            {
+                Parameters =
                 {
-                    Utc = utc,
-                    Actor = evt.Actor ?? "",
-                    ActorRole = evt.ActorRole ?? "",
-                    evt.EventType,
-                    evt.Target,
-                    evt.ClientIp,
-                    evt.UserAgent,
-                    Payload = payloadJson,
-                    PrevHash = prevHash,
-                    EntryHash = entryHash,
+                    new() { Value = p.Utc },
+                    new() { Value = evt.Actor ?? "" },
+                    new() { Value = evt.ActorRole ?? "" },
+                    new() { Value = evt.EventType },
+                    new() { Value = (object?)evt.Target ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text },
+                    new() { Value = (object?)evt.ClientIp ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text },
+                    new() { Value = (object?)evt.UserAgent ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text },
+                    new() { Value = p.PayloadJson },
+                    new() { Value = prevHash },
+                    new() { Value = entryHash },
                 },
-                transaction,
-                cancellationToken: cancellationToken));
-
-        await transaction.CommitAsync(cancellationToken);
+            });
+            prevHash = entryHash;
+        }
+        await batch.ExecuteNonQueryAsync();
+        await transaction.CommitAsync();
     }
 
     internal static byte[] ComputeHash(

@@ -62,6 +62,9 @@ function scheduleReorder(ticketIds: string[]) {
   }, 300);
 }
 
+const REPOST_AFTER_MS = 60_000;
+let lastPosted: { id: string; at: number } | null = null;
+
 export const useRecentTicketsStore = create<RecentTicketsState>()((set, get) => ({
   recentTickets: [],
   loaded: false,
@@ -89,6 +92,12 @@ export const useRecentTicketsStore = create<RecentTicketsState>()((set, get) => 
         recentTickets: [...s.recentTickets, ticket].slice(-MAX_RECENT),
       };
     });
+    // v0.1.25 — the detail page calls addTicket again whenever the ticket
+    // or its status data re-renders (statuses loading, edits, realtime
+    // refetches); the server only needs to hear about the open once.
+    const now = Date.now();
+    if (lastPosted?.id === ticket.id && now - lastPosted.at < REPOST_AFTER_MS) return;
+    lastPosted = { id: ticket.id, at: now };
     recentTicketsApi.add(ticket.id).catch(() => {
       // Same best-effort discipline — the server is the source of truth
       // and the next hydrate will reconcile a failed write.

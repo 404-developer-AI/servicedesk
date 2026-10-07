@@ -68,12 +68,12 @@ public sealed class StatusGateService : IStatusGateService
     public async Task<IReadOnlyList<MatchedStatusGate>> FindMatchingAsync(
         Guid ticketId, Guid targetStatusId, CancellationToken ct)
     {
-        var detail = await _tickets.GetByIdAsync(ticketId, ct);
+        var detail = await _tickets.GetCoreAsync(ticketId, ct);
         if (detail is null) return Array.Empty<MatchedStatusGate>();
 
         // No gate ever applies when the target equals the current status —
         // a no-op status change must not surface a confirmation dialog.
-        if (detail.Ticket.StatusId == targetStatusId) return Array.Empty<MatchedStatusGate>();
+        if (detail.StatusId == targetStatusId) return Array.Empty<MatchedStatusGate>();
 
         IReadOnlyList<TriggerRow> rows;
         try
@@ -100,7 +100,7 @@ public sealed class StatusGateService : IStatusGateService
         bool? cachedHasOrder = null;
         async Task<bool> GetHasLinkedOrderAsync()
         {
-            cachedHasOrder ??= await _orders.HasLinkedOrderAsync(detail.Ticket.Id, ct);
+            cachedHasOrder ??= await _orders.HasLinkedOrderAsync(detail.Id, ct);
             return cachedHasOrder.Value;
         }
 
@@ -108,7 +108,7 @@ public sealed class StatusGateService : IStatusGateService
         {
             if (!requesterLoaded)
             {
-                cachedRequester = await _companies.GetContactAsync(detail.Ticket.RequesterContactId, ct);
+                cachedRequester = await _companies.GetContactAsync(detail.RequesterContactId, ct);
                 requesterLoaded = true;
             }
             if (cachedRequester is null) return (null, 0);
@@ -136,7 +136,7 @@ public sealed class StatusGateService : IStatusGateService
             if (gate is null) continue;
 
             if (gate.ToStatusId != targetStatusId) continue;
-            if (gate.FromStatusId.HasValue && gate.FromStatusId.Value != detail.Ticket.StatusId)
+            if (gate.FromStatusId.HasValue && gate.FromStatusId.Value != detail.StatusId)
                 continue;
 
             JsonDocument condDoc;
@@ -157,7 +157,7 @@ public sealed class StatusGateService : IStatusGateService
                 }
                 var ctx = new TriggerEvaluationContext(
                     TicketId: ticketId,
-                    Ticket: detail.Ticket,
+                    Ticket: detail,
                     TriggeringEvent: null,
                     ChangeSet: new TriggerChangeSet(
                         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -205,12 +205,12 @@ public sealed class StatusGateService : IStatusGateService
     {
         if (string.IsNullOrWhiteSpace(gate.NoteTemplate)) return null;
 
-        var detail = await _tickets.GetByIdAsync(ticketId, ct);
+        var detail = await _tickets.GetCoreAsync(ticketId, ct);
         if (detail is null) return null;
 
         var ctx = new TriggerEvaluationContext(
             TicketId: ticketId,
-            Ticket: detail.Ticket,
+            Ticket: detail,
             TriggeringEvent: null,
             ChangeSet: new TriggerChangeSet(
                 new HashSet<string>(StringComparer.OrdinalIgnoreCase),

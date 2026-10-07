@@ -91,10 +91,10 @@ public sealed class OutboundMailService : IOutboundMailService
         if (string.IsNullOrWhiteSpace(request.BodyHtml))
             return OutboundMailResult.Invalid("Body is required.");
 
-        var detail = await _tickets.GetByIdAsync(request.TicketId, ct);
+        var detail = await _tickets.GetCoreAsync(request.TicketId, ct);
         if (detail is null) return OutboundMailResult.NotFound();
 
-        var queue = await _taxonomy.GetQueueAsync(detail.Ticket.QueueId, ct);
+        var queue = await _taxonomy.GetQueueAsync(detail.QueueId, ct);
         var fromMailbox = FirstNonEmpty(queue?.OutboundMailboxAddress, queue?.InboundMailboxAddress);
         if (string.IsNullOrWhiteSpace(fromMailbox))
             return OutboundMailResult.MissingMailbox();
@@ -104,7 +104,7 @@ public sealed class OutboundMailService : IOutboundMailService
         // still routes back to this ticket via MailIngestService.ResolveExistingTicket.
         var plusToken = await _settings.GetAsync<string>(SettingKeys.Mail.PlusAddressToken, ct);
         if (string.IsNullOrWhiteSpace(plusToken)) plusToken = "TCK";
-        var replyToAddress = BuildPlusAddress(fromMailbox, plusToken, detail.Ticket.Number);
+        var replyToAddress = BuildPlusAddress(fromMailbox, plusToken, detail.Number);
         var fromName = !string.IsNullOrWhiteSpace(queue?.Name) ? queue!.Name : fromMailbox;
 
         var anchor = await _mail.GetLatestThreadAnchorAsync(request.TicketId, ct);
@@ -116,7 +116,7 @@ public sealed class OutboundMailService : IOutboundMailService
         // so the tag reads "[Ticket#1234]".
         var refPrefix = await _settings.GetAsync<string>(SettingKeys.Tickets.ReferencePrefix, ct);
         if (string.IsNullOrWhiteSpace(refPrefix)) refPrefix = TicketReference.DefaultPrefix;
-        var subject = NormalizeSubject(request.Subject, detail.Ticket.Number, refPrefix);
+        var subject = NormalizeSubject(request.Subject, detail.Number, refPrefix);
 
         // Compose-template inline images (v0.0.92). A template body can carry
         // <img> tags pointing at the shared template-image endpoint
@@ -160,10 +160,12 @@ public sealed class OutboundMailService : IOutboundMailService
             if (totalCap <= 0) totalCap = 25 * 1024 * 1024;
 
             long running = 0;
-            foreach (var attId in attachmentIds.Distinct())
+            // v0.1.25 — all rows in one round-trip (was one query per id).
+            var distinctIds = attachmentIds.Distinct().ToList();
+            var rowsById = await _attachments.GetByIdsAsync(distinctIds, ct);
+            foreach (var attId in distinctIds)
             {
-                var row = await _attachments.GetByIdAsync(attId, ct);
-                if (row is null) continue;
+                if (!rowsById.TryGetValue(attId, out var row)) continue;
                 if (row.OwnerKind != "Ticket" || row.OwnerId != request.TicketId) continue;
                 if (row.EventId is not null) continue;
                 if (row.ProcessingState != "Ready" || string.IsNullOrWhiteSpace(row.ContentHash)) continue;
@@ -249,7 +251,7 @@ public sealed class OutboundMailService : IOutboundMailService
         // nothing. Legacy clients (no preload) keep the append-at-the-bottom
         // behaviour.
         var signature = await _signatures.ComposeForQueueAsync(
-            detail.Ticket.QueueId, request.AuthorUserId, isReply: anchor is not null, ct);
+            detail.QueueId, request.AuthorUserId, isReply: anchor is not null, ct);
         if (request.SignaturePreloaded)
         {
             if (signature is not null && SignaturePlacement.HasMarker(preparedBody))
@@ -429,9 +431,9 @@ public sealed class OutboundMailService : IOutboundMailService
             var sourceUser = await _users.FindByIdAsync(request.AuthorUserId, ct);
             await _mentions.PublishAsync(new MentionNotificationSource(
                 TicketId: request.TicketId,
-                TicketNumber: detail.Ticket.Number,
-                TicketSubject: detail.Ticket.Subject,
-                QueueId: detail.Ticket.QueueId,
+                TicketNumber: detail.Number,
+                TicketSubject: detail.Subject,
+                QueueId: detail.QueueId,
                 EventId: evt.Id,
                 EventType: evt.EventType,
                 SourceUserId: request.AuthorUserId,
@@ -551,9 +553,10 @@ public sealed class OutboundMailService : IOutboundMailService
             return new MaterializedTemplateImages(body, Array.Empty<Guid>());
 
         var newIds = new List<Guid>(imageIds.Count);
+        var images = await _attachments.GetByIdsAsync(imageIds, ct);
         foreach (var imageId in imageIds)
         {
-            var image = await _attachments.GetByIdAsync(imageId, ct);
+            images.TryGetValue(imageId, out var image);
             if (image is null
                 || image.OwnerKind != "ComposeTemplateImage"
                 || image.ProcessingState != "Ready"
@@ -669,19 +672,46 @@ public sealed class OutboundMailService : IOutboundMailService
         var ids = new List<Guid>();
         var replacements = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         // Per-send memo so the same image referenced twice (quote + body)
-        // resolves once and maps onto one copy.
-        var resolvedCopies = new Dictionary<Guid, Guid>();
+        // resolves once and maps onto one copy. A null value = "copy still
+        // to be created" (filled in after the batched insert below).
+        var resolvedCopies = new Dictionary<Guid, Guid?>();
         var accessByTicket = new Dictionary<Guid, bool>();
+        var pendingCopies = new List<(AttachmentRow Row, List<string> RawRefs)>();
+        // Row id → the row id whose pending copy it shares (identical bytes).
+        var aliasOf = new Dictionary<Guid, Guid>();
+
+        // v0.1.25 — a reply quoting a long thread carries dozens of inline
+        // images; every lookup below used to be one query per image (465
+        // queries in one send in the Performance monitor). The rows, the
+        // mail → ticket links and the event → ticket links are now fetched
+        // in three round-trips up front and the copies inserted in one batch.
+        // The checks themselves, and their order, are unchanged.
+        var rowsById = await _attachments.GetByIdsAsync(refs.Select(r => r.AttachmentId).Distinct().ToList(), ct);
+        var mailTickets = await _mail.GetTicketIdsAsync(
+            refs.Where(r => r.MailMessageId is not null).Select(r => r.MailMessageId!.Value).Distinct().ToList(), ct);
+        var eventPairs = refs
+            .Where(r => r.MailMessageId is null
+                        && rowsById.TryGetValue(r.AttachmentId, out var er) && er.EventId.HasValue)
+            .Select(r => (r.TicketId, rowsById[r.AttachmentId].EventId!.Value))
+            .Distinct()
+            .ToList();
+        var eventsOwned = await _tickets.EventsBelongToTicketsAsync(eventPairs, ct);
 
         foreach (var r in refs)
         {
             if (resolvedCopies.TryGetValue(r.AttachmentId, out var existingCopy))
             {
-                replacements[r.Raw] = TicketAttachmentUrl(request.TicketId, existingCopy);
+                if (existingCopy is { } copied)
+                    replacements[r.Raw] = TicketAttachmentUrl(request.TicketId, copied);
+                else
+                {
+                    var target = aliasOf.TryGetValue(r.AttachmentId, out var alias) ? alias : r.AttachmentId;
+                    pendingCopies.First(p => p.Row.Id == target).RawRefs.Add(r.Raw);
+                }
                 continue;
             }
 
-            var row = await _attachments.GetByIdAsync(r.AttachmentId, ct);
+            rowsById.TryGetValue(r.AttachmentId, out var row);
             if (row is null
                 || row.ProcessingState != "Ready"
                 || string.IsNullOrWhiteSpace(row.ContentHash)
@@ -710,14 +740,13 @@ public sealed class OutboundMailService : IOutboundMailService
             if (r.MailMessageId is { } mailId)
             {
                 if (row.OwnerKind != "Mail" || row.OwnerId != mailId) continue;
-                var mailRow = await _mail.GetByIdAsync(mailId, ct);
-                chainOk = mailRow is not null && mailRow.TicketId == r.TicketId;
+                chainOk = mailTickets.TryGetValue(mailId, out var mailTicketId) && mailTicketId == r.TicketId;
             }
             else
             {
                 var ownsDirect = row.OwnerKind == "Ticket" && row.OwnerId == r.TicketId && row.EventId is null;
                 var ownsViaEvent = row.EventId.HasValue
-                    && await _tickets.EventBelongsToTicketAsync(r.TicketId, row.EventId.Value, ct);
+                    && eventsOwned.Contains((r.TicketId, row.EventId.Value));
                 chainOk = ownsDirect || ownsViaEvent;
             }
             if (!chainOk) continue;
@@ -730,11 +759,11 @@ public sealed class OutboundMailService : IOutboundMailService
                     allowed = false;
                     if (!string.IsNullOrWhiteSpace(request.AuthorRole))
                     {
-                        var source = await _tickets.GetByIdAsync(r.TicketId, ct);
+                        var source = await _tickets.GetCoreAsync(r.TicketId, ct);
                         if (source is not null)
                         {
                             allowed = await _queueAccess.HasQueueAccessAsync(
-                                request.AuthorUserId, request.AuthorRole, source.Ticket.QueueId, ct);
+                                request.AuthorUserId, request.AuthorRole, source.QueueId, ct);
                         }
                     }
                     accessByTicket[r.TicketId] = allowed;
@@ -749,16 +778,44 @@ public sealed class OutboundMailService : IOutboundMailService
             }
 
             // Case 2/3 — re-stage the bytes on this ticket. Content-addressed
-            // store: a metadata row only.
-            var copyId = await _attachments.CreateUploadedAsync(new NewUploadedAttachment(
-                TicketId: request.TicketId,
-                ContentHash: row.ContentHash!,
-                SizeBytes: row.SizeBytes,
-                MimeType: row.MimeType,
-                OriginalFilename: row.OriginalFilename), ct);
-            ids.Add(copyId);
-            resolvedCopies[row.Id] = copyId;
-            replacements[r.Raw] = TicketAttachmentUrl(request.TicketId, copyId);
+            // store: a metadata row only. Collected here, inserted below in
+            // one batch. v0.1.25: a quoted thread repeats the same picture
+            // (a signature logo in every quoted mail) under a different
+            // attachment id per mail; identical bytes + type now share ONE
+            // copy, so the image is uploaded to Graph and sent once instead
+            // of once per quoted mail. Only rows that already passed every
+            // check above are merged.
+            resolvedCopies[row.Id] = null;
+            var sameBytes = pendingCopies.FindIndex(p =>
+                string.Equals(p.Row.ContentHash, row.ContentHash, StringComparison.Ordinal)
+                && string.Equals(p.Row.MimeType, row.MimeType, StringComparison.OrdinalIgnoreCase));
+            if (sameBytes >= 0)
+            {
+                pendingCopies[sameBytes].RawRefs.Add(r.Raw);
+                aliasOf[row.Id] = pendingCopies[sameBytes].Row.Id;
+            }
+            else
+            {
+                pendingCopies.Add((row, new List<string> { r.Raw }));
+            }
+        }
+
+        if (pendingCopies.Count > 0)
+        {
+            var copyIds = await _attachments.CreateUploadedManyAsync(pendingCopies
+                .Select(p => new NewUploadedAttachment(
+                    TicketId: request.TicketId,
+                    ContentHash: p.Row.ContentHash!,
+                    SizeBytes: p.Row.SizeBytes,
+                    MimeType: p.Row.MimeType,
+                    OriginalFilename: p.Row.OriginalFilename))
+                .ToList(), ct);
+            for (var i = 0; i < pendingCopies.Count; i++)
+            {
+                ids.Add(copyIds[i]);
+                foreach (var raw in pendingCopies[i].RawRefs)
+                    replacements[raw] = TicketAttachmentUrl(request.TicketId, copyIds[i]);
+            }
         }
 
         if (replacements.Count == 0)

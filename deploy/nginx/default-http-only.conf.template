@@ -35,6 +35,12 @@ server {
     gzip_vary on;
     gzip_types text/plain text/css application/json application/javascript application/xml+rss application/xml text/javascript;
     gzip_min_length 1024;
+    # v0.1.25 — also compress when the request arrived through a proxy
+    # (corporate proxies add a Via header; nginx then skips gzip by
+    # default) and a slightly higher level: ticket JSON is 200-800 KB
+    # uncompressed and compresses ~10x.
+    gzip_proxied any;
+    gzip_comp_level 5;
 
     client_max_body_size 50M;
 

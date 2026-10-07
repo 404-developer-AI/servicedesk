@@ -416,9 +416,57 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         }
     }
 
+    public async Task<Ticket?> GetCoreAsync(Guid id, CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.QueryFirstOrDefaultAsync<Ticket>(new CommandDefinition(
+            TicketCoreSql, new { id }, cancellationToken: ct));
+    }
+
+    public async Task<TicketEvent?> GetEventAsync(Guid ticketId, long eventId, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT e.id AS Id, e.ticket_id AS TicketId, e.event_type AS EventType,
+                   e.author_user_id AS AuthorUserId, e.author_contact_id AS AuthorContactId,
+                   COALESCE(au.email, NULLIF(CONCAT_WS(' ', ac.first_name, ac.last_name), ''), e.metadata->>'authorName') AS AuthorName,
+                   e.body_text AS BodyText, e.body_html AS BodyHtml,
+                   e.metadata::text AS MetadataJson, e.is_internal AS IsInternal,
+                   e.created_utc AS CreatedUtc,
+                   e.edited_utc AS EditedUtc, e.edited_by_user_id AS EditedByUserId
+            FROM ticket_events e
+            LEFT JOIN users    au ON au.id = e.author_user_id
+            LEFT JOIN contacts ac ON ac.id = e.author_contact_id
+            WHERE e.id = @eventId AND e.ticket_id = @ticketId
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.QueryFirstOrDefaultAsync<TicketEvent>(new CommandDefinition(
+            sql, new { ticketId, eventId }, cancellationToken: ct));
+    }
+
     public async Task<TicketDetail?> GetByIdAsync(Guid id, CancellationToken ct)
     {
-        const string ticketSql = """
+        const string ticketSql = TicketCoreSql;
+        const string bodySql = """
+            SELECT ticket_id AS TicketId, body_text AS BodyText, body_html AS BodyHtml
+            FROM ticket_bodies WHERE ticket_id = @id
+            """;
+        const string eventsSql = """
+            SELECT e.id AS Id, e.ticket_id AS TicketId, e.event_type AS EventType,
+                   e.author_user_id AS AuthorUserId, e.author_contact_id AS AuthorContactId,
+                   COALESCE(au.email, NULLIF(CONCAT_WS(' ', ac.first_name, ac.last_name), ''), e.metadata->>'authorName') AS AuthorName,
+                   e.body_text AS BodyText, e.body_html AS BodyHtml,
+                   e.metadata::text AS MetadataJson, e.is_internal AS IsInternal,
+                   e.created_utc AS CreatedUtc,
+                   e.edited_utc AS EditedUtc, e.edited_by_user_id AS EditedByUserId
+            FROM ticket_events e
+            LEFT JOIN users    au ON au.id = e.author_user_id
+            LEFT JOIN contacts ac ON ac.id = e.author_contact_id
+            WHERE e.ticket_id = @id ORDER BY e.created_utc, e.id
+            """;
+        return await LoadDetailAsync(ticketSql, bodySql, eventsSql, id, ct);
+    }
+
+    private const string TicketCoreSql = """
             SELECT id AS Id, number AS Number, subject AS Subject,
                    requester_contact_id AS RequesterContactId, assignee_user_id AS AssigneeUserId,
                    queue_id AS QueueId, status_id AS StatusId, priority_id AS PriorityId,
@@ -453,24 +501,10 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                    is_research AS IsResearch
             FROM tickets WHERE id = @id AND is_deleted = FALSE
             """;
-        const string bodySql = """
-            SELECT ticket_id AS TicketId, body_text AS BodyText, body_html AS BodyHtml
-            FROM ticket_bodies WHERE ticket_id = @id
-            """;
-        const string eventsSql = """
-            SELECT e.id AS Id, e.ticket_id AS TicketId, e.event_type AS EventType,
-                   e.author_user_id AS AuthorUserId, e.author_contact_id AS AuthorContactId,
-                   COALESCE(au.email, NULLIF(CONCAT_WS(' ', ac.first_name, ac.last_name), ''), e.metadata->>'authorName') AS AuthorName,
-                   e.body_text AS BodyText, e.body_html AS BodyHtml,
-                   e.metadata::text AS MetadataJson, e.is_internal AS IsInternal,
-                   e.created_utc AS CreatedUtc,
-                   e.edited_utc AS EditedUtc, e.edited_by_user_id AS EditedByUserId
-            FROM ticket_events e
-            LEFT JOIN users    au ON au.id = e.author_user_id
-            LEFT JOIN contacts ac ON ac.id = e.author_contact_id
-            WHERE e.ticket_id = @id ORDER BY e.created_utc, e.id
-            """;
 
+    private async Task<TicketDetail?> LoadDetailAsync(
+        string ticketSql, string bodySql, string eventsSql, Guid id, CancellationToken ct)
+    {
         const string pinsSql = """
             SELECT p.id AS Id, p.event_id AS EventId, p.ticket_id AS TicketId,
                    p.pinned_by_user_id AS PinnedByUserId,
@@ -1378,6 +1412,28 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             "SELECT state_category FROM statuses WHERE id = @id",
             new { id = statusId }, tx, cancellationToken: ct));
         return cat == "Pending";
+    }
+
+    public async Task<IReadOnlySet<(Guid TicketId, long EventId)>> EventsBelongToTicketsAsync(
+        IReadOnlyCollection<(Guid TicketId, long EventId)> pairs, CancellationToken ct)
+    {
+        var ok = new HashSet<(Guid TicketId, long EventId)>();
+        if (pairs.Count == 0) return ok;
+        var eventIds = pairs.Select(p => p.EventId).Distinct().ToArray();
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<EventTicketRow>(new CommandDefinition(
+            "SELECT id AS EventId, ticket_id AS TicketId FROM ticket_events WHERE id = ANY(@eventIds)",
+            new { eventIds }, cancellationToken: ct));
+        var owner = rows.ToDictionary(r => r.EventId, r => r.TicketId);
+        foreach (var p in pairs)
+            if (owner.TryGetValue(p.EventId, out var t) && t == p.TicketId) ok.Add(p);
+        return ok;
+    }
+
+    private sealed class EventTicketRow
+    {
+        public long EventId { get; set; }
+        public Guid TicketId { get; set; }
     }
 
     public async Task<bool> EventBelongsToTicketAsync(Guid ticketId, long eventId, CancellationToken ct)

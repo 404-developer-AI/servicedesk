@@ -348,6 +348,8 @@ export type RuntimePoint = {
 };
 
 export type HostResponse = {
+  /** v0.1.25 — first-chance exceptions by type name, since app start. */
+  exceptionTypes?: { sinceUtc: string; types: { type: string; count: number }[] };
   hostSupported: boolean;
   processorCount: number;
   os: string;
@@ -374,7 +376,7 @@ export type FrontendResponse = {
     longTasks: number;
   }[];
   scripts: { script: string; count: number; totalMs: number; maxMs: number }[];
-  api: { route: string; count: number; totalP75: number; serverP75: number; networkP75: number; networkPct: number }[];
+  api: { route: string; count: number; totalP75: number; serverP75: number; networkP75: number; networkPct: number; queueP75?: number; queuePct?: number }[];
   navigation: { metric: string; p75: number | null; count: number }[];
   breakdown: { dimension: string; value: string; count: number }[];
   heap: { t: string; mb: number }[];

@@ -648,7 +648,29 @@ public static class PerfFindings
         {
             var pct = 100 * avail / rt.MemTotalMb.Value;
             var swapping = rt.SwapActivity is > 100;
-            if (pct < t.MemAvailablePct || swapping)
+            // v0.1.25 — Linux also swaps out idle pages while plenty of RAM is
+            // free (swappiness). That is not memory pressure: only report it
+            // as such when available memory is actually low; otherwise a
+            // low-impact note.
+            var pressure = pct < t.MemAvailablePct;
+            if (!pressure && swapping)
+            {
+                f.Add(new PerfFinding(
+                    "memory", PerfCategory.Hosting, PerfSeverity.Info,
+                    "Some memory is swapped out, but RAM is not short",
+                    "The OS moved rarely used pages to swap while enough memory stayed available. That is normal Linux behaviour; it only hurts when those pages are needed again.",
+                    new[]
+                    {
+                        new PerfEvidence("Min available", $"{avail:0} MB of {rt.MemTotalMb:0} MB"),
+                        new PerfEvidence("Swap used (max)", $"{rt.SwapUsedMaxMb ?? 0:0} MB"),
+                        new PerfEvidence("Swap pages in/out", PerfFormat.Count((long)(rt.SwapActivity ?? 0))),
+                    },
+                    "vm.swappiness lets the kernel swap idle pages early.",
+                    "Nothing to do unless available memory also drops. Optionally lower vm.swappiness (e.g. 10) on the host.",
+                    Array.Empty<PerfCodeRef>(),
+                    apiMs * 0.01));
+            }
+            else if (pressure)
             {
                 f.Add(new PerfFinding(
                     "memory", PerfCategory.Hosting, swapping ? PerfSeverity.Critical : PerfSeverity.Warning,
@@ -801,6 +823,27 @@ public static class PerfFindings
             var totalMs = total.Sum(x => x.SumValue);
             var networkMs = network.Sum(x => x.SumValue);
             var share = totalMs <= 0 ? 0 : 100 * networkMs / totalMs;
+            // v0.1.25 — browser-side queueing (too many calls at once) is
+            // measured apart and no longer counted as network.
+            var queueMs = d.RumOf("api_queue").Sum(x => x.SumValue);
+            var queueShare = totalMs <= 0 ? 0 : 100 * queueMs / totalMs;
+            if (queueShare > t.NetworkSharePct / 2)
+            {
+                f.Add(new PerfFinding(
+                    "browser-queue", PerfCategory.Frontend, queueShare > 40 ? PerfSeverity.Warning : PerfSeverity.Info,
+                    $"{PerfFormat.Pct(queueShare)} of API time is spent queued in the browser",
+                    "The browser holds requests back while too many are in flight at once; they wait before they are even sent.",
+                    new[]
+                    {
+                        new PerfEvidence("API calls measured", PerfFormat.Count(calls)),
+                        new PerfEvidence("Queue share", PerfFormat.Pct(queueShare)),
+                        new PerfEvidence("Avg queued per call", PerfFormat.Ms(queueMs / Math.Max(1, calls))),
+                    },
+                    "Screens that fire many API calls at the same moment, or HTTP/1.1 between browser and server.",
+                    "Reduce the calls per screen (combine or defer them); check the protocol breakdown on the Frontend tab is h2.",
+                    Array.Empty<PerfCodeRef>(),
+                    queueMs * 0.5));
+            }
             if (share > t.NetworkSharePct)
             {
                 f.Add(new PerfFinding(
@@ -812,6 +855,7 @@ public static class PerfFindings
                         new PerfEvidence("API calls measured", PerfFormat.Count(calls)),
                         new PerfEvidence("Network share", PerfFormat.Pct(share)),
                         new PerfEvidence("Avg network per call", PerfFormat.Ms(networkMs / Math.Max(1, network.Sum(x => x.Count)))),
+                        new PerfEvidence("Queued in the browser (excluded)", PerfFormat.Pct(queueShare)),
                     },
                     "Slow or distant user connections (Wi-Fi, mobile, VPN), proxy overhead, or large responses.",
                     "Check the connection-type breakdown on the Frontend tab; reduce payload sizes and the number of calls per screen. If users are remote, the hosting location matters.",
@@ -1050,7 +1094,11 @@ public static class PerfFindings
                 0));
         }
 
-        if (d.Runtime.OverheadMsPerRequest > 1)
+        // v0.1.25 — Diagnose captures every query plus its calling code, which
+        // costs more by design; judge the overhead against the level that ran.
+        var diagnoseShare = d.Runtime.Minutes == 0 ? 0 : (double)d.Runtime.DiagnoseMinutes / d.Runtime.Minutes;
+        var overheadLimit = diagnoseShare > 0.5 ? 5.0 : 1.0;
+        if (d.Runtime.OverheadMsPerRequest > overheadLimit)
         {
             f.Add(new PerfFinding(
                 "overhead", PerfCategory.Code, PerfSeverity.Info,

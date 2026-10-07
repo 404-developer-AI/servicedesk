@@ -88,7 +88,7 @@ public sealed class TicketChecklistService : ITicketChecklistService
     private static bool IsAdmin(TicketMutationActor actor)
         => string.Equals(actor.Role, "Admin", StringComparison.OrdinalIgnoreCase);
 
-    private async Task<TicketDetail> RequireTicketAsync(TicketMutationActor actor, Guid ticketId, CancellationToken ct)
+    private async Task<Ticket> RequireTicketAsync(TicketMutationActor actor, Guid ticketId, CancellationToken ct)
     {
         var access = await _mutations.PrecheckAccessAsync(actor, ticketId, ct);
         if (access.Check != TicketMutationCheck.Ok || access.Ticket is null)
@@ -115,7 +115,7 @@ public sealed class TicketChecklistService : ITicketChecklistService
         var settings = await _settings.GetAsync(ct);
         if (!settings.Enabled) return Array.Empty<ChecklistTemplateSummary>();
         var ticket = await RequireTicketAsync(actor, ticketId, ct);
-        return await _templates.ListAvailableForQueueAsync(ticket.Ticket.QueueId, ct);
+        return await _templates.ListAvailableForQueueAsync(ticket.QueueId, ct);
     }
 
     public async Task<TicketChecklistView> AttachAsync(TicketMutationActor actor, Guid ticketId, Guid templateId, CancellationToken ct)
@@ -125,7 +125,7 @@ public sealed class TicketChecklistService : ITicketChecklistService
 
         var template = await _templates.GetAsync(templateId, ct);
         if (template is null || !template.IsActive
-            || (template.QueueIds.Count > 0 && !template.QueueIds.Contains(ticket.Ticket.QueueId)))
+            || (template.QueueIds.Count > 0 && !template.QueueIds.Contains(ticket.QueueId)))
         {
             // Inactive or out of scope for this ticket's queue is the same
             // answer as "no such template" — the picker never offered it.

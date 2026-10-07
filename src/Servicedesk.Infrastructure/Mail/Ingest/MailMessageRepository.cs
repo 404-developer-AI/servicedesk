@@ -46,6 +46,22 @@ public sealed class MailMessageRepository : IMailMessageRepository
             new CommandDefinition(sql, new { id }, cancellationToken: ct));
     }
 
+    public async Task<IReadOnlyDictionary<Guid, Guid?>> GetTicketIdsAsync(IReadOnlyCollection<Guid> mailIds, CancellationToken ct)
+    {
+        if (mailIds.Count == 0) return new Dictionary<Guid, Guid?>();
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<MailTicketRow>(new CommandDefinition(
+            "SELECT id AS MailId, ticket_id AS TicketId FROM mail_messages WHERE id = ANY(@ids)",
+            new { ids = mailIds.Distinct().ToArray() }, cancellationToken: ct));
+        return rows.ToDictionary(r => r.MailId, r => r.TicketId);
+    }
+
+    private sealed class MailTicketRow
+    {
+        public Guid MailId { get; set; }
+        public Guid? TicketId { get; set; }
+    }
+
     public async Task<MailMessageRow?> GetByTicketEventIdAsync(long ticketEventId, CancellationToken ct)
     {
         var sql = SelectColumns + " FROM mail_messages WHERE ticket_event_id = @ticketEventId";

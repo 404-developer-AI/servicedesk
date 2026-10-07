@@ -173,11 +173,11 @@ public static class TicketTimesheetEndpoints
         IQueueAccessService queueAccess,
         CancellationToken ct)
     {
-        var ticket = await tickets.GetByIdAsync(ticketId, ct);
+        var ticket = await tickets.GetCoreAsync(ticketId, ct);
         if (ticket is null) return false;
         var userId = ActorContext.GetUserId(http);
         var (_, role) = ActorContext.Resolve(http);
-        return await queueAccess.HasQueueAccessAsync(userId, role, ticket.Ticket.QueueId, ct);
+        return await queueAccess.HasQueueAccessAsync(userId, role, ticket.QueueId, ct);
     }
 
     /// Body of the "allow more time" action. The optional note is posted as an

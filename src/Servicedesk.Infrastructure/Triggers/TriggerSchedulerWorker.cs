@@ -204,6 +204,12 @@ public sealed class TriggerSchedulerWorker : BackgroundService
     private static async Task RunEscalationsAsync(
         ITriggerRepository repo, ITriggerService triggerService, ISettingsService settings, CancellationToken ct)
     {
+        // v0.1.25 — Sla.Enabled off: the stored deadlines are frozen and
+        // possibly stale, so SLA escalation / warning triggers never fire.
+        bool slaEnabled;
+        try { slaEnabled = await settings.GetAsync<bool>(SettingKeys.Sla.Enabled, ct); }
+        catch { slaEnabled = true; }
+        if (!slaEnabled) return;
 
         // Escalation candidates: SLA deadline elapsed.
         var escalations = await repo.ListEscalationCandidatesAsync(CandidateLimit, ct);

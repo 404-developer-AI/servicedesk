@@ -269,12 +269,12 @@ public static class TicketEndpoints
             {
                 if (parentId == Guid.Empty)
                     return Results.BadRequest(new { error = "parentTicketId is empty." });
-                var parent = await tickets.GetByIdAsync(parentId, ct);
+                var parent = await tickets.GetCoreAsync(parentId, ct);
                 if (parent is null)
                     return Results.BadRequest(new { error = "Parent ticket not found." });
-                if (!await queueAccess.HasQueueAccessAsync(userId, userRole, parent.Ticket.QueueId, ct))
+                if (!await queueAccess.HasQueueAccessAsync(userId, userRole, parent.QueueId, ct))
                     return Results.Json(new { error = "You do not have access to the parent ticket's queue." }, statusCode: 403);
-                if (parent.Ticket.MergedIntoTicketId is not null)
+                if (parent.MergedIntoTicketId is not null)
                     return Results.Conflict(new { error = "Parent ticket is merged.", code = "parent_is_merged" });
             }
 
@@ -402,9 +402,9 @@ public static class TicketEndpoints
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
-            var current = await tickets.GetByIdAsync(id, ct);
+            var current = await tickets.GetCoreAsync(id, ct);
             if (current is null) return Results.NotFound();
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, current.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, current.QueueId, ct))
                 return Results.NotFound();
 
             var matches = await gates.FindMatchingAsync(id, toStatusId, ct);
@@ -428,9 +428,9 @@ public static class TicketEndpoints
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
-            var current = await tickets.GetByIdAsync(id, ct);
+            var current = await tickets.GetCoreAsync(id, ct);
             if (current is null) return Results.NotFound();
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, current.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, current.QueueId, ct))
                 return Results.NotFound();
 
             var gate = await gates.FindMatchingAsync(id, ct);
@@ -670,7 +670,7 @@ public static class TicketEndpoints
             // can re-open the dialog without retrying the matching probe.
             IReadOnlyList<MatchedStatusGate> matchedGates = pre.Gates;
             var confirmedGates = new List<ConfirmedGate>();
-            if (req.StatusId.HasValue && req.StatusId.Value != current.Ticket.StatusId)
+            if (req.StatusId.HasValue && req.StatusId.Value != current.StatusId)
             {
                 if (matchedGates.Count > 0)
                 {
@@ -873,9 +873,9 @@ public static class TicketEndpoints
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
-            var current = await tickets.GetByIdAsync(id, ct);
+            var current = await tickets.GetCoreAsync(id, ct);
             if (current is null) return Results.NotFound();
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, current.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, current.QueueId, ct))
                 return Results.NotFound();
 
             // v0.0.51 — validate the company + handle the learn-flow link
@@ -883,7 +883,7 @@ public static class TicketEndpoints
             // Failure responses (400/409) come back before we touch the
             // ticket so a rejected role can't leave an orphan link behind.
             var linkChoice = await ApplyTicketCompanyChoiceAsync(
-                companies, current.Ticket.RequesterContactId, req.CompanyId, req.NewLinkRole, ct);
+                companies, current.RequesterContactId, req.CompanyId, req.NewLinkRole, ct);
             if (linkChoice.ErrorResult is not null) return linkChoice.ErrorResult;
 
             var targetCompany = await companies.GetCompanyAsync(req.CompanyId, ct);
@@ -897,9 +897,9 @@ public static class TicketEndpoints
             // (multiple secondaries, mixed, etc.). Agents overriding an already
             // resolved ticket get reason='override'.
             string reason;
-            if (current.Ticket.AwaitingCompanyAssignment)
+            if (current.AwaitingCompanyAssignment)
             {
-                var links = await companies.ListContactLinksAsync(current.Ticket.RequesterContactId, ct);
+                var links = await companies.ListContactLinksAsync(current.RequesterContactId, ct);
                 reason = links.All(l => l.Role == "supplier") && links.Count > 0
                     ? "supplier_only"
                     : "ambiguous_secondary";
@@ -924,10 +924,10 @@ public static class TicketEndpoints
                 {
                     companyId = req.CompanyId,
                     companyName = targetCompany.Name,
-                    previousCompanyId = current.Ticket.CompanyId,
+                    previousCompanyId = current.CompanyId,
                     reason,
                     newLinkRole = linkChoice.NewLinkCreated ? req.NewLinkRole : null,
-                    contactId = current.Ticket.RequesterContactId,
+                    contactId = current.RequesterContactId,
                 }));
 
             var ticketIdStr = id.ToString();
@@ -962,9 +962,9 @@ public static class TicketEndpoints
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
-            var current = await tickets.GetByIdAsync(id, ct);
+            var current = await tickets.GetCoreAsync(id, ct);
             if (current is null) return Results.NotFound();
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, current.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, current.QueueId, ct))
                 return Results.NotFound();
 
             var contact = await companies.GetContactAsync(req.ContactId, ct);
@@ -995,9 +995,9 @@ public static class TicketEndpoints
                 UserAgent: http.Request.Headers.UserAgent.ToString(),
                 Payload: new
                 {
-                    fromContactId = current.Ticket.RequesterContactId,
+                    fromContactId = current.RequesterContactId,
                     toContactId = req.ContactId,
-                    fromCompanyId = current.Ticket.CompanyId,
+                    fromCompanyId = current.CompanyId,
                     toCompanyId = resolution.CompanyId,
                     resolvedVia = resolution.ResolvedVia,
                     awaiting = resolution.Awaiting,
@@ -1113,9 +1113,9 @@ public static class TicketEndpoints
                 var sourceEmail = http.User.FindFirst(ClaimTypes.Email)?.Value ?? string.Empty;
                 await mentionService.PublishAsync(new MentionNotificationSource(
                     TicketId: id,
-                    TicketNumber: ticket.Ticket.Number,
-                    TicketSubject: ticket.Ticket.Subject,
-                    QueueId: ticket.Ticket.QueueId,
+                    TicketNumber: ticket.Number,
+                    TicketSubject: ticket.Subject,
+                    QueueId: ticket.QueueId,
                     EventId: evt.Id,
                     EventType: evt.EventType,
                     SourceUserId: userId,
@@ -1138,7 +1138,7 @@ public static class TicketEndpoints
             // (setting Tickets.CallbackClearOnCall). Runs through the normal
             // field-update path so it gets its TicketFlagChange event, audit,
             // realtime push and trigger evaluation like a manual toggle.
-            if (req.EventType == "Call" && ticket.Ticket.IsCallback)
+            if (req.EventType == "Call" && ticket.IsCallback)
             {
                 bool clearOnCall;
                 try { clearOnCall = await settings.GetAsync<bool>(SettingKeys.Tickets.CallbackClearOnCall, ct); }
@@ -1169,16 +1169,16 @@ public static class TicketEndpoints
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
-            var ticket = await tickets.GetByIdAsync(id, ct);
+            var ticket = await tickets.GetCoreAsync(id, ct);
             if (ticket is null) return Results.NotFound();
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.QueueId, ct))
                 return Results.NotFound();
 
             // v0.0.105 — project tickets are internal: no outbound mail from
             // a project. The composer hides the mail tab; this is the server
             // gate for stale clients. Only enforced while projects are on —
             // switching the feature off returns the ticket to normal rules.
-            if (ticket.Ticket.IsProject)
+            if (ticket.IsProject)
             {
                 bool projectsOn;
                 try { projectsOn = await settings.GetAsync<bool>(SettingKeys.Projects.Enabled, ct); }
@@ -1272,16 +1272,16 @@ public static class TicketEndpoints
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
-            var ticket = await tickets.GetByIdAsync(id, ct);
+            var ticket = await tickets.GetCoreAsync(id, ct);
             if (ticket is null) return Results.NotFound();
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.QueueId, ct))
                 return Results.NotFound();
 
             if (!await settings.GetAsync<bool>(SettingKeys.Signatures.ComposerPreload, ct))
                 return Results.Ok(new { html = (string?)null });
 
             var html = await signatures.ComposePreviewForQueueAsync(
-                ticket.Ticket.QueueId, userId, isReply: reply ?? false, ct);
+                ticket.QueueId, userId, isReply: reply ?? false, ct);
             return Results.Ok(new { html });
         }).WithName("GetComposeSignature").WithOpenApi();
 
@@ -1317,9 +1317,9 @@ public static class TicketEndpoints
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             // Queue-access check via parent ticket
-            var ticket = await tickets.GetByIdAsync(id, ct);
+            var ticket = await tickets.GetCoreAsync(id, ct);
             if (ticket is null) return Results.NotFound();
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.QueueId, ct))
                 return Results.NotFound();
             var input = new UpdateTicketEvent(
                 BodyText: req.BodyText,
@@ -1353,9 +1353,9 @@ public static class TicketEndpoints
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
             // Queue-access check via parent ticket
-            var ticket = await tickets.GetByIdAsync(id, ct);
+            var ticket = await tickets.GetCoreAsync(id, ct);
             if (ticket is null) return Results.NotFound();
-            if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.QueueId, ct))
                 return Results.NotFound();
 
             var revisions = await tickets.GetEventRevisionsAsync(id, eventId, ct);
@@ -1372,9 +1372,9 @@ public static class TicketEndpoints
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
-            var ticket = await tickets.GetByIdAsync(id, ct);
+            var ticket = await tickets.GetCoreAsync(id, ct);
             if (ticket is null) return Results.NotFound();
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.QueueId, ct))
                 return Results.NotFound();
 
             var pin = await tickets.PinEventAsync(id, eventId, userId, req.Remark ?? "", ct);
@@ -1402,9 +1402,9 @@ public static class TicketEndpoints
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
-            var ticket = await tickets.GetByIdAsync(id, ct);
+            var ticket = await tickets.GetCoreAsync(id, ct);
             if (ticket is null) return Results.NotFound();
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.QueueId, ct))
                 return Results.NotFound();
 
             var deleted = await tickets.UnpinEventAsync(id, eventId, ct);
@@ -1432,9 +1432,9 @@ public static class TicketEndpoints
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
-            var ticket = await tickets.GetByIdAsync(id, ct);
+            var ticket = await tickets.GetCoreAsync(id, ct);
             if (ticket is null) return Results.NotFound();
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, ticket.QueueId, ct))
                 return Results.NotFound();
 
             var pin = await tickets.UpdatePinRemarkAsync(id, eventId, req.Remark, ct);
@@ -1515,15 +1515,15 @@ public static class TicketEndpoints
             // Both tickets must be visible to the actor through queue-access.
             // Admins bypass; agents who can't see one side get a 404 so we
             // don't leak which ticket exists in a forbidden queue.
-            var source = await tickets.GetByIdAsync(id, ct);
+            var source = await tickets.GetCoreAsync(id, ct);
             if (source is null) return Results.NotFound();
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, source.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, source.QueueId, ct))
                 return Results.NotFound();
 
-            var target = await tickets.GetByIdAsync(req.TargetTicketId, ct);
+            var target = await tickets.GetCoreAsync(req.TargetTicketId, ct);
             if (target is null)
                 return Results.BadRequest(new { error = "Target ticket not found." });
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, target.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, target.QueueId, ct))
                 return Results.Json(
                     new { error = "You do not have access to the target ticket's queue.", code = "queue_forbidden" },
                     statusCode: 403);
@@ -1628,15 +1628,15 @@ public static class TicketEndpoints
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
-            var source = await tickets.GetByIdAsync(id, ct);
+            var source = await tickets.GetCoreAsync(id, ct);
             if (source is null) return Results.NotFound();
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, source.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, source.QueueId, ct))
                 return Results.NotFound();
 
-            var parent = await tickets.GetByIdAsync(req.ParentTicketId, ct);
+            var parent = await tickets.GetCoreAsync(req.ParentTicketId, ct);
             if (parent is null)
                 return Results.BadRequest(new { error = "Parent ticket not found." });
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, parent.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, parent.QueueId, ct))
                 return Results.Json(
                     new { error = "You do not have access to the parent ticket's queue.", code = "queue_forbidden" },
                     statusCode: 403);
@@ -1680,8 +1680,8 @@ public static class TicketEndpoints
                 Payload: new
                 {
                     parentTicketId = req.ParentTicketId,
-                    parentNumber = parent.Ticket.Number,
-                    sourceNumber = source.Ticket.Number,
+                    parentNumber = parent.Number,
+                    sourceNumber = source.Number,
                 }));
 
             // Push to both ticket SignalR groups so any open detail tab
@@ -1694,7 +1694,7 @@ public static class TicketEndpoints
             return Results.Ok(new
             {
                 parentTicketId = req.ParentTicketId,
-                parentNumber = parent.Ticket.Number,
+                parentNumber = parent.Number,
             });
         }).WithName("LinkTicketParent").WithOpenApi();
 
@@ -1707,12 +1707,12 @@ public static class TicketEndpoints
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
-            var source = await tickets.GetByIdAsync(id, ct);
+            var source = await tickets.GetCoreAsync(id, ct);
             if (source is null) return Results.NotFound();
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, source.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, source.QueueId, ct))
                 return Results.NotFound();
 
-            var previousParentId = source.Ticket.ParentTicketId;
+            var previousParentId = source.ParentTicketId;
             var ok = await tickets.UnlinkParentAsync(id, userId, ct);
             if (!ok) return Results.NotFound();
 
@@ -1750,14 +1750,14 @@ public static class TicketEndpoints
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
-            var source = await tickets.GetByIdAsync(id, ct);
+            var source = await tickets.GetCoreAsync(id, ct);
             if (source is null) return Results.NotFound();
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, source.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, source.QueueId, ct))
                 return Results.NotFound();
             // Merged tickets hide the picker entirely in the side panel.
             // Defensive: also return empty here so a stale UI cache can
             // never produce a usable prefill for a frozen ticket.
-            if (source.Ticket.MergedIntoTicketId is not null)
+            if (source.MergedIntoTicketId is not null)
                 return Results.Ok(Array.Empty<LinkedTicketPresetSummary>());
 
             var list = await presets.ListAvailablePresetsAsync(id, ct);
@@ -1778,11 +1778,11 @@ public static class TicketEndpoints
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
-            var source = await tickets.GetByIdAsync(id, ct);
+            var source = await tickets.GetCoreAsync(id, ct);
             if (source is null) return Results.NotFound();
-            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, source.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, userRole, source.QueueId, ct))
                 return Results.NotFound();
-            if (source.Ticket.MergedIntoTicketId is not null)
+            if (source.MergedIntoTicketId is not null)
                 return Results.Conflict(new { error = "Parent ticket is merged.", code = "parent_is_merged" });
 
             var prefill = await presets.ResolvePrefillAsync(triggerId, id, userId, ct);

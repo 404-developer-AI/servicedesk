@@ -154,9 +154,8 @@ public sealed class LinkedTicketPresetService : ILinkedTicketPresetService
         var type = await _taxonomy.GetTicketTypeAsync(typeId, ct);
         if (type is null || !type.IsActive) return null;
 
-        var parent = await _tickets.GetByIdAsync(parentTicketId, ct);
-        if (parent is null) return null;
-        var parentTicket = parent.Ticket;
+        var parentTicket = await _tickets.GetCoreAsync(parentTicketId, ct);
+        if (parentTicket is null) return null;
 
         var action = ExtractCreateLinkedTicketAction(trigger.ActionsJson);
         if (action is null)

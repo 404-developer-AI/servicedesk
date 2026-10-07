@@ -254,6 +254,17 @@ public sealed class PerfReportBuilder
             new[] { "Max in-flight requests", rt.InFlightMax.ToString(C) },
         });
 
+        // v0.1.25 — which exceptions (type names only; the throwing class is
+        // added while Diagnose runs). Process-wide since app start, not
+        // limited to the report period.
+        var (exSince, exTypes) = RuntimeSampler.ExceptionTypes(15);
+        if (exTypes.Count > 0)
+        {
+            sb.AppendLine($"First-chance exceptions by type since app start ({Local(exSince)}):").AppendLine();
+            Table(sb, new[] { "Exception type", "Count" },
+                exTypes.Select(kv => new[] { $"`{Safe(kv.Key)}`", PerfFormat.Count(kv.Value) }));
+        }
+
         sb.AppendLine("## Frontend (real users)");
         var views = d.RumOf("view").ToDictionary(v => v.Route, v => v.Count);
         var vitalRoutes = d.Rum.Where(r => r.Metric is "lcp" or "inp" or "cls" or "ttfb" or "fcp").Select(r => r.Route).Distinct()

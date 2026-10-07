@@ -19,7 +19,7 @@ export function useProjectSettings() {
   return useQuery<ProjectSettings>({
     queryKey: projectSettingsKey,
     queryFn: ticketApi.projectSettings,
-    staleTime: 60_000,
+    staleTime: 5 * 60_000, // v0.1.25 — admin edits invalidate this key
   });
 }
 

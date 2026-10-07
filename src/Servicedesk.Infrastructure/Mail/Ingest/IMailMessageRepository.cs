@@ -6,6 +6,17 @@ public interface IMailMessageRepository
 
     Task<MailMessageRow?> GetByIdAsync(Guid id, CancellationToken ct);
 
+    /// v0.1.25 — mail id → owning ticket id for several mails in one
+    /// round-trip (ownership checks on the outbound-mail path). Missing mails
+    /// are absent; a mail without a ticket maps to null.
+    async Task<IReadOnlyDictionary<Guid, Guid?>> GetTicketIdsAsync(IReadOnlyCollection<Guid> mailIds, CancellationToken ct)
+    {
+        var result = new Dictionary<Guid, Guid?>();
+        foreach (var id in mailIds.Distinct())
+            if (await GetByIdAsync(id, ct) is { } row) result[id] = row.TicketId;
+        return result;
+    }
+
     /// Returns the mail row linked to a given ticket-timeline event, or null
     /// when the event has no mail (e.g. a non-mail event). Used by the
     /// timeline enricher to surface the From/To/Cc/Bcc header on outbound

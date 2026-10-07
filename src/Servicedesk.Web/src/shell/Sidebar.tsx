@@ -211,6 +211,10 @@ export function Sidebar() {
     if (item.to === "/insights" && !user?.insightsEnabled) {
       return false;
     }
+    // v0.1.25 — SLA switched off globally (Settings → SLA): no SLA log.
+    if (item.to === "/sla-log" && user?.slaEnabled === false) {
+      return false;
+    }
     // v0.0.76 — Contracts is per-user opt-in (contracts_enabled). Role gates
     // Agent+Admin; the /contracts route gate enforces the same flag.
     if (item.to === "/contracts" && !user?.contractsEnabled) {

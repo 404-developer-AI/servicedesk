@@ -222,6 +222,9 @@ export function RichTextEditor({
       inline: false,
       HTMLAttributes: {
         class: "max-w-full h-auto rounded-md",
+        // v0.1.25 — like the timeline images: off-screen description
+        // images no longer load (and audit) on every ticket open.
+        loading: "lazy",
       },
     }),
   ] as Array<ReturnType<typeof StarterKit.configure> | unknown>;

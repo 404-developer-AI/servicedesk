@@ -123,10 +123,17 @@ type WorkspaceState = {
 // entry set (all drafts included) every time, whether or not anything had
 // changed — one redundant write per ticket open, which added up under the
 // per-session rate-limit budget. An unchanged set is now a no-op.
-let lastSavedSignature: string | null = null;
+// v0.1.25 — and only the entries whose value changed since the last save are
+// sent: the full set (every open draft) was up to 154 rows per save in the
+// Performance monitor, for usually one changed key.
+const lastSaved = new Map<string, string>();
 
-function signatureOf(entries: Array<{ key: string; value: string }>): string {
-  return JSON.stringify(entries);
+function changedEntries(entries: Array<{ key: string; value: string }>) {
+  return entries.filter((e) => lastSaved.get(e.key) !== e.value);
+}
+
+function markSaved(entries: Array<{ key: string; value: string }>) {
+  for (const e of entries) lastSaved.set(e.key, e.value);
 }
 
 function toEntries(state: WorkspaceState) {
@@ -235,9 +242,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     // expectation is that the next ticket-open already respects the change,
     // even on a different tab. Other workspace fields rely on the periodic
     // auto-save in useWorkspaceAutoSave.
-    preferencesApi.fireAndForgetWorkspaceSave([
-      { key: "workspace:ticketSidePanelPinned", value: String(pinned) },
-    ]);
+    const entry = { key: "workspace:ticketSidePanelPinned", value: String(pinned) };
+    markSaved([entry]);
+    preferencesApi.fireAndForgetWorkspaceSave([entry]);
   },
 
   setDraft: (ticketId, { bodyHtml, isInternal, tab }) =>
@@ -314,33 +321,30 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       set({ ...parsed, loaded: true });
       // What we just loaded *is* the server state — the first flush after
       // load must not re-send it unchanged.
-      lastSavedSignature = signatureOf(toEntries(get()));
+      lastSaved.clear();
+      markSaved(toEntries(get()));
     } catch {
       set({ loaded: true });
     }
   },
 
   flush: async () => {
-    const entries = toEntries(get());
+    const entries = changedEntries(toEntries(get()));
     if (entries.length === 0) return;
-    const signature = signatureOf(entries);
-    if (signature === lastSavedSignature) return;
     try {
       await preferencesApi.saveWorkspace(entries);
-      lastSavedSignature = signature;
+      markSaved(entries);
     } catch {
       // silent — best-effort persistence
     }
   },
 
   flushSync: () => {
-    const entries = toEntries(get());
+    const entries = changedEntries(toEntries(get()));
     if (entries.length === 0) return;
-    const signature = signatureOf(entries);
-    if (signature === lastSavedSignature) return;
     // Optimistic: keepalive saves can't be awaited on unload. A lost save
     // is re-sent on the next change anyway.
-    lastSavedSignature = signature;
+    markSaved(entries);
     preferencesApi.fireAndForgetWorkspaceSave(entries);
   },
 }));

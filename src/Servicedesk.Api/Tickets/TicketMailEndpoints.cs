@@ -27,12 +27,12 @@ public static class TicketMailEndpoints
             IBlobStore blobs, IQueueAccessService queueAccess, IAuditLogger audit,
             CancellationToken ct) =>
         {
-            var ticket = await tickets.GetByIdAsync(id, ct);
+            var ticket = await tickets.GetCoreAsync(id, ct);
             if (ticket is null) return Results.NotFound();
 
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
-            if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.QueueId, ct))
                 return Results.NotFound();
 
             var row = await mail.GetByIdAsync(mailMessageId, ct);
@@ -68,12 +68,12 @@ public static class TicketMailEndpoints
             IQueueAccessService queueAccess, IAuditLogger audit,
             CancellationToken ct) =>
         {
-            var ticket = await tickets.GetByIdAsync(id, ct);
+            var ticket = await tickets.GetCoreAsync(id, ct);
             if (ticket is null) return Results.NotFound();
 
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
-            if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.QueueId, ct))
                 return Results.NotFound();
 
             var att = await attachments.GetByIdAsync(attachmentId, ct);

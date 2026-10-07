@@ -35,10 +35,10 @@ public sealed class TicketBulkActionServiceTests
         var checklistId = Guid.NewGuid();
 
         var mutations = new FakeMutations();
-        mutations.Verdicts[okId] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(okId, 1), Array.Empty<MatchedStatusGate>());
+        mutations.Verdicts[okId] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(okId, 1).Ticket, Array.Empty<MatchedStatusGate>());
         mutations.Verdicts[noAccessId] = FieldUpdatePrecheck.Fail(TicketMutationCheck.NoAccess);
         mutations.Verdicts[scopeId] = FieldUpdatePrecheck.Fail(TicketMutationCheck.StatusNotInQueueScope);
-        mutations.Verdicts[gateId] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(gateId, 4), new[] { Gate() });
+        mutations.Verdicts[gateId] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(gateId, 4).Ticket, new[] { Gate() });
         mutations.Verdicts[missingId] = FieldUpdatePrecheck.Fail(TicketMutationCheck.NotFound);
         mutations.Verdicts[checklistId] = FieldUpdatePrecheck.Blocked(new[]
         {
@@ -77,7 +77,7 @@ public sealed class TicketBulkActionServiceTests
     {
         var id = Guid.NewGuid();
         var mutations = new FakeMutations();
-        mutations.Verdicts[id] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(id, 7), Array.Empty<MatchedStatusGate>());
+        mutations.Verdicts[id] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(id, 7).Ticket, Array.Empty<MatchedStatusGate>());
         var svc = Build(mutations, new RecordingAudit());
 
         var result = await svc.ExecuteAsync(Actor,
@@ -97,8 +97,8 @@ public sealed class TicketBulkActionServiceTests
         var boom = Guid.NewGuid();
         var fine = Guid.NewGuid();
         var mutations = new FakeMutations();
-        mutations.Verdicts[boom] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(boom, 1), Array.Empty<MatchedStatusGate>());
-        mutations.Verdicts[fine] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(fine, 2), Array.Empty<MatchedStatusGate>());
+        mutations.Verdicts[boom] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(boom, 1).Ticket, Array.Empty<MatchedStatusGate>());
+        mutations.Verdicts[fine] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(fine, 2).Ticket, Array.Empty<MatchedStatusGate>());
         mutations.ThrowOnApply.Add(boom);
         var svc = Build(mutations, new RecordingAudit());
 
@@ -155,7 +155,7 @@ public sealed class TicketBulkActionServiceTests
     {
         var id = Guid.NewGuid();
         var mutations = new FakeMutations();
-        mutations.Verdicts[id] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(id, 1), Array.Empty<MatchedStatusGate>());
+        mutations.Verdicts[id] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(id, 1).Ticket, Array.Empty<MatchedStatusGate>());
         var svc = Build(mutations, new RecordingAudit());
 
         var result = await svc.ExecuteAsync(Actor, Request(new[] { id, id, id }, message: "<p>x</p>"), default);
@@ -178,7 +178,7 @@ public sealed class TicketBulkActionServiceTests
     {
         var withStatus = Guid.NewGuid();
         var mutations = new FakeMutations();
-        mutations.Verdicts[withStatus] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(withStatus, 1), Array.Empty<MatchedStatusGate>());
+        mutations.Verdicts[withStatus] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(withStatus, 1).Ticket, Array.Empty<MatchedStatusGate>());
         var svc = Build(mutations, new RecordingAudit());
         var till = new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc);
 
@@ -232,7 +232,7 @@ public sealed class TicketBulkActionServiceTests
             if (ThrowOnApply.Contains(ticketId)) throw new InvalidOperationException("boom");
             Applied.Add((ticketId, update));
             Order.Add("fields");
-            return Task.FromResult(Verdicts[ticketId].Ticket);
+            return Task.FromResult<TicketDetail?>(Detail(ticketId, Verdicts[ticketId].Ticket!.Number));
         }
 
         public Task PublishFieldUpdateAsync(TicketMutationActor actor, Guid ticketId, TicketFieldUpdate update, object auditPayload, TriggerChangeSet? changeSet, CancellationToken ct)

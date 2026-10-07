@@ -97,6 +97,31 @@ export function ServerTab({ period, status }: { period: PeriodQuery; status: Per
         <EdgeCheckPanel />
       </div>
 
+      {d.exceptionTypes && d.exceptionTypes.types.length > 0 ? (
+        <Panel
+          title="Exceptions by type"
+          info="First-chance exceptions counted by type name since the app started (not limited to the selected period). Messages are never recorded. While Diagnose runs, the class that threw is added after the @."
+        >
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-muted-foreground">
+                <th className="pb-1.5 font-medium">Type</th>
+                <th className="pb-1.5 text-right font-medium">Count</th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.exceptionTypes.types.map((x) => (
+                <tr key={x.type} className="border-t border-glass">
+                  <td className="py-1.5 pr-3 font-mono text-[11px] text-foreground break-all">{x.type}</td>
+                  <td className="py-1.5 text-right tabular-nums whitespace-nowrap">{fmtCount(x.count)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="mt-2 text-[11px] text-muted-foreground">Since {fmtTime(d.exceptionTypes.sinceUtc, true)}.</p>
+        </Panel>
+      ) : null}
+
       <p className="text-[11px] text-muted-foreground">
         {d.os} · .NET {d.dotnet} · {d.processorCount} cores visible to the app{status ? ` · version ${status.appVersion}` : ""}.
         Exceptions in period: {fmtCount(n("exceptions"))} · lock contentions: {fmtCount(n("lockContentions"))} · Gen 2 GCs: {fmtCount(n("gen2"))}.

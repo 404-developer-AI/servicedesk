@@ -46,8 +46,10 @@ public sealed class HttpRouteStats
     public double AvgDbQueries => Count == 0 ? 0 : (double)DbCount / Count;
     public double AvgKb => Count == 0 ? 0 : Bytes / 1024.0 / Count;
     public double P95Kb => PerfHistogram.Percentile(SizeHist, 95);
-    public double DbSharePct => SumMs <= 0 ? 0 : 100 * DbMs / SumMs;
-    public double ExtSharePct => SumMs <= 0 ? 0 : 100 * ExtMs / SumMs;
+    // v0.1.25 — capped at 100: a request that runs queries in parallel
+    // (global search) can wait on the database longer than its own duration.
+    public double DbSharePct => SumMs <= 0 ? 0 : Math.Min(100, 100 * DbMs / SumMs);
+    public double ExtSharePct => SumMs <= 0 ? 0 : Math.Min(100, 100 * ExtMs / SumMs);
     public double PipelineSharePct => SumMs <= 0 ? 0 : 100 * PipelineMs / SumMs;
     public double AppSharePct => Math.Max(0, 100 - DbSharePct - ExtSharePct - PipelineSharePct);
     public string Key => Method + " " + Route;

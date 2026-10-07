@@ -96,7 +96,8 @@ public sealed class TicketSearchSource : ISearchSource
                            CASE WHEN @numberProbe IS NOT NULL AND t.number = @numberProbe THEN 10.0 ELSE 0 END,
                            CASE WHEN @zammadNumberProbe IS NOT NULL AND t.zammad_ticket_number = @zammadNumberProbe THEN 8.0 ELSE 0 END
                        ) AS rank,
-                       NULL::text AS body_snippet
+                       NULL::text AS snip_kind,
+                       NULL::bigint AS snip_ref
                 FROM tickets t
                 WHERE t.is_deleted = FALSE
                   AND (@skipQueueFilter OR t.queue_id = ANY(@allowedQueues))
@@ -110,9 +111,8 @@ public sealed class TicketSearchSource : ISearchSource
                 SELECT t.id, t.number, t.subject, t.queue_id, t.updated_utc,
                        t.requester_contact_id,
                        ts_rank_cd(tes.search_vector, (SELECT tsq FROM q)) AS rank,
-                       ts_headline('simple', tes.normalized_text,
-                                   (SELECT tsq FROM q),
-                                   'MaxFragments=1, MaxWords=18, MinWords=5, ShortWord=2') AS body_snippet
+                       'e' AS snip_kind,
+                       tes.event_id AS snip_ref
                 FROM ticket_event_search tes
                 JOIN tickets t ON t.id = tes.ticket_id
                 WHERE t.is_deleted = FALSE
@@ -127,9 +127,8 @@ public sealed class TicketSearchSource : ISearchSource
                 SELECT t.id, t.number, t.subject, t.queue_id, t.updated_utc,
                        t.requester_contact_id,
                        ts_rank_cd(tb.body_search, (SELECT tsq FROM q)) AS rank,
-                       ts_headline('simple', tb.body_text,
-                                   (SELECT tsq FROM q),
-                                   'MaxFragments=1, MaxWords=18, MinWords=5, ShortWord=2') AS body_snippet
+                       'b' AS snip_kind,
+                       NULL::bigint AS snip_ref
                 FROM ticket_bodies tb
                 JOIN tickets t ON t.id = tb.ticket_id
                 WHERE t.is_deleted = FALSE
@@ -137,16 +136,23 @@ public sealed class TicketSearchSource : ISearchSource
                   AND (SELECT tsq FROM q) IS NOT NULL
                   AND tb.body_search @@ (SELECT tsq FROM q)
             ),
+            -- v0.1.25: the snippet is no longer built here. ts_headline
+            -- re-parses the whole text, and running it for every matching
+            -- event (thousands for a common word) before the LIMIT pushed
+            -- searches into the 5 s source timeout. Each ticket remembers
+            -- its best-ranked body hit instead; the snippet is rendered at
+            -- the very end for the returned page only.
             ranked AS (
                 SELECT id, number, subject, queue_id, updated_utc, requester_contact_id,
                        MAX(rank) AS rank,
-                       MAX(body_snippet) AS body_snippet
+                       (array_agg(snip_kind ORDER BY rank DESC) FILTER (WHERE snip_kind IS NOT NULL))[1] AS snip_kind,
+                       (array_agg(snip_ref ORDER BY rank DESC) FILTER (WHERE snip_kind IS NOT NULL))[1] AS snip_ref
                 FROM hits
                 GROUP BY id, number, subject, queue_id, updated_utc, requester_contact_id
             ),
             enriched AS (
                 SELECT r.id, r.number, r.subject, r.queue_id, r.updated_utc,
-                       r.rank, r.body_snippet,
+                       r.rank, r.snip_kind, r.snip_ref,
                        COALESCE(s.state_category IN ('Resolved','Closed'), FALSE) AS is_closed,
                        COALESCE(c.first_name || ' ' || c.last_name, c.email, '') AS requester_name,
                        COALESCE(co.name, '')  AS company_name,
@@ -171,13 +177,51 @@ public sealed class TicketSearchSource : ISearchSource
                        COUNT(*) OVER () AS total_hits
                 FROM enriched e
             )
+            """;
+
+        // Tail is assembled from fixed constants only (quick split vs a
+        // whitelisted ORDER BY per SearchSort) — no user input is ever
+        // concatenated into the SQL. The page is cut first (`page`), then
+        // the snippets are rendered for those rows only.
+        string pageFilter;
+        string orderBy;
+        if (request.QuickMode)
+        {
+            // Dropdown: top-N open AND top-N closed, open section first.
+            pageFilter = "WHERE w.rn <= @limit";
+            orderBy = "w.is_closed ASC, w.rn ASC";
+        }
+        else
+        {
+            orderBy = request.Sort switch
+            {
+                SearchSort.Newest => "w.updated_utc DESC, w.id DESC",
+                SearchSort.Oldest => "w.updated_utc ASC, w.id ASC",
+                SearchSort.Status => "w.is_closed ASC, w.rank DESC, w.updated_utc DESC, w.id DESC",
+                _ => "w.rank DESC, w.updated_utc DESC, w.id DESC",
+            };
+            pageFilter = $"ORDER BY {orderBy} LIMIT @limit OFFSET @offset";
+        }
+        var tail = $"""
+            ,
+            page AS (
+                SELECT w.* FROM windowed w
+                {pageFilter}
+            )
             SELECT w.id             AS "Id",
                    w.number         AS "Number",
                    w.subject        AS "Subject",
                    w.queue_id       AS "QueueId",
                    w.updated_utc    AS "UpdatedUtc",
                    w.rank::double precision AS "Rank",
-                   w.body_snippet   AS "BodySnippet",
+                   CASE w.snip_kind
+                       WHEN 'e' THEN (SELECT ts_headline('simple', tes.normalized_text, (SELECT tsq FROM q),
+                                                         'MaxFragments=1, MaxWords=18, MinWords=5, ShortWord=2')
+                                      FROM ticket_event_search tes WHERE tes.event_id = w.snip_ref)
+                       WHEN 'b' THEN (SELECT ts_headline('simple', tb.body_text, (SELECT tsq FROM q),
+                                                         'MaxFragments=1, MaxWords=18, MinWords=5, ShortWord=2')
+                                      FROM ticket_bodies tb WHERE tb.ticket_id = w.id)
+                   END              AS "BodySnippet",
                    w.is_closed      AS "IsClosed",
                    w.total_hits     AS "TotalHits",
                    w.partition_total AS "PartitionTotal",
@@ -187,37 +231,9 @@ public sealed class TicketSearchSource : ISearchSource
                    w.status_color   AS "StatusColor",
                    w.created_utc    AS "CreatedUtc",
                    w.closed_utc     AS "ClosedUtc"
-            FROM windowed w
+            FROM page w
+            ORDER BY {orderBy};
             """;
-
-        // Tail is assembled from fixed constants only (quick split vs a
-        // whitelisted ORDER BY per SearchSort) — no user input is ever
-        // concatenated into the SQL.
-        string tail;
-        if (request.QuickMode)
-        {
-            // Dropdown: top-N open AND top-N closed, open section first.
-            tail = """
-
-                WHERE w.rn <= @limit
-                ORDER BY w.is_closed ASC, w.rn ASC;
-                """;
-        }
-        else
-        {
-            var orderBy = request.Sort switch
-            {
-                SearchSort.Newest => "w.updated_utc DESC, w.id DESC",
-                SearchSort.Oldest => "w.updated_utc ASC, w.id ASC",
-                SearchSort.Status => "w.is_closed ASC, w.rank DESC, w.updated_utc DESC, w.id DESC",
-                _ => "w.rank DESC, w.updated_utc DESC, w.id DESC",
-            };
-            tail = $"""
-
-                ORDER BY {orderBy}
-                LIMIT @limit OFFSET @offset;
-                """;
-        }
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var rows = (await conn.QueryAsync<TicketHitRow>(new CommandDefinition(sql + tail, new

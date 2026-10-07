@@ -113,13 +113,12 @@ public sealed class SurveyDispatchService : ISurveyDispatchService
 
     public async Task<SurveyDispatchOutcome> DispatchAsync(SurveyDispatchRequest request, CancellationToken ct)
     {
-        var ticketDetail = await _tickets.GetByIdAsync(request.TicketId, ct);
-        if (ticketDetail is null)
+        var ticket = await _tickets.GetCoreAsync(request.TicketId, ct);
+        if (ticket is null)
         {
             return new SurveyDispatchOutcome(SurveyDispatchStatus.Skipped,
                 Reason: nameof(DispatchSkipReason.TicketNotFound));
         }
-        var ticket = ticketDetail.Ticket;
 
         var survey = await _surveys.GetAsync(request.SurveyId, ct);
         if (survey is null)

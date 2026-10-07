@@ -68,10 +68,10 @@ public static class TicketProjectEndpoints
             var access = await CheckAccessAsync(id, http, tickets, queueAccess, ct);
             if (access.Error is not null) return access.Error;
 
-            var target = await tickets.GetByIdAsync(req.ProjectTicketId, ct);
+            var target = await tickets.GetCoreAsync(req.ProjectTicketId, ct);
             if (target is null)
                 return Results.BadRequest(new { error = "Project ticket not found." });
-            if (!await queueAccess.HasQueueAccessAsync(access.UserId, access.Role, target.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(access.UserId, access.Role, target.QueueId, ct))
                 return Results.Json(
                     new { error = "You do not have access to the project ticket's queue.", code = "queue_forbidden" },
                     statusCode: 403);
@@ -129,7 +129,7 @@ public static class TicketProjectEndpoints
                 return ProjectsDisabled();
             var access = await CheckAccessAsync(id, http, tickets, queueAccess, ct);
             if (access.Error is not null) return access.Error;
-            if (!access.Ticket!.Ticket.IsProject)
+            if (!access.Ticket!.IsProject)
                 return Results.Conflict(new { error = "This ticket is not a project.", code = "not_a_project" });
 
             await projects.ReorderAsync(id, req.OrderedTicketIds, ct);
@@ -208,7 +208,7 @@ public static class TicketProjectEndpoints
         return app;
     }
 
-    private sealed record AccessCheck(Guid UserId, string Role, TicketDetail? Ticket, IResult? Error);
+    private sealed record AccessCheck(Guid UserId, string Role, Servicedesk.Domain.Tickets.Ticket? Ticket, IResult? Error);
 
     /// Shared preamble: resolve actor, load the ticket, enforce queue
     /// access (404 when hidden, so existence is not leaked).
@@ -219,9 +219,9 @@ public static class TicketProjectEndpoints
         var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
         var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
-        var detail = await tickets.GetByIdAsync(ticketId, ct);
+        var detail = await tickets.GetCoreAsync(ticketId, ct);
         if (detail is null) return new AccessCheck(userId, role, null, Results.NotFound());
-        if (!await queueAccess.HasQueueAccessAsync(userId, role, detail.Ticket.QueueId, ct))
+        if (!await queueAccess.HasQueueAccessAsync(userId, role, detail.QueueId, ct))
             return new AccessCheck(userId, role, null, Results.NotFound());
         return new AccessCheck(userId, role, detail, null);
     }

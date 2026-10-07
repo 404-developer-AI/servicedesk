@@ -164,11 +164,15 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
   // for the conversation. Tokens live with the ticket; mutations elsewhere
   // (contact rename, company assignment) invalidate the ticket key, which
   // is enough since the next render-cycle will refetch.
-  const tokensQ = useQuery({
+  // v0.1.25 — only once the composer is opened (it starts collapsed, and
+  // this was one of ~26 calls on every ticket open). The auto-insert below
+  // fetches the same query itself when it runs before this resolves.
+  const tokensQuery = {
     queryKey: ["compose-templates", "resolve", { ticketId }],
     queryFn: () => composeTemplatesApi.resolveTokens({ ticketId }),
     staleTime: 60_000,
-  });
+  };
+  const tokensQ = useQuery({ ...tokensQuery, enabled: expanded });
   const composeTokens = tokensQ.data?.tokens;
 
   // Scroll the bottom of the form flush with the viewport bottom so the
@@ -247,7 +251,9 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
         // in flight — we never overwrite content.
         if (bodyHtml && bodyHtml.trim() && bodyHtml !== "<p></p>") return;
 
-        const html = substituteComposeTokens(template.bodyHtml, composeTokens);
+        const tokens = composeTokens ?? (await queryClient.fetchQuery(tokensQuery).catch(() => null))?.tokens;
+        if (cancelled) return;
+        const html = substituteComposeTokens(template.bodyHtml, tokens);
         const editor = editorRef.current;
         if (!editor) return;
         editor.chain().focus().setContent(html).run();
