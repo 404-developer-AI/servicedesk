@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dateFormat";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -202,7 +203,7 @@ function PublicSurveyForm({
         )}
         <p className="flex items-center gap-1 text-xs text-muted-foreground/70">
           <Clock className="h-3 w-3" />
-          {new Date(view.expiresUtc).toLocaleString()}
+          {formatDateTime(view.expiresUtc)}
         </p>
       </header>
 

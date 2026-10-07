@@ -1,3 +1,4 @@
+import { formatDate } from "@/lib/dateFormat";
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -1226,5 +1227,5 @@ function formatRelative(utc: string): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days}d ago`;
-  return date.toLocaleDateString();
+  return formatDate(date);
 }

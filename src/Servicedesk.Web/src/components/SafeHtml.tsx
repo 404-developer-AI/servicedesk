@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import DOMPurify from "dompurify";
 import { cn } from "@/lib/utils";
+import { stripBaseTags } from "@/lib/sanitize";
 
 type SafeHtmlProps = {
   html: string;
@@ -15,7 +16,7 @@ type SafeHtmlProps = {
 /// re-fetch from the server every time the parent re-renders.
 export function SafeHtml({ html, className }: SafeHtmlProps) {
   const wrapper = useMemo(() => {
-    const clean = DOMPurify.sanitize(html ?? "", {
+    const clean = DOMPurify.sanitize(stripBaseTags(html ?? ""), {
       USE_PROFILES: { html: true },
       // Strip everything the server-side sanitizer would also reject —
       // belt-and-braces. The server is the authoritative gate; this is just

@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dateFormat";
 import * as React from "react";
 import { useMutation } from "@tanstack/react-query";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -368,7 +369,7 @@ function TablesView({ period }: { period: PeriodQuery }) {
       align: "right",
       render: (t) => {
         const last = [t.lastVacuum, t.lastAutovacuum].filter(Boolean).sort().pop() ?? null;
-        return <span className="text-muted-foreground" title={last ? new Date(last).toLocaleString() : "never"}>{fmtAgo(last, Date.now())}</span>;
+        return <span className="text-muted-foreground" title={last ? formatDateTime(last, undefined, true) : "never"}>{fmtAgo(last, Date.now())}</span>;
       },
       sortValue: (t) => [t.lastVacuum, t.lastAutovacuum].filter(Boolean).sort().pop() ?? "",
     },
@@ -425,7 +426,7 @@ function TablesView({ period }: { period: PeriodQuery }) {
                 <Tooltip content={(props) => {
                   const row = props.payload?.[0]?.payload as Record<string, number> | undefined;
                   if (!props.active || !row) return null;
-                  return <ChartTooltipBox title={new Date(row.t).toLocaleString()} rows={growth.map((g, i) => ({ label: g.name, value: fmtBytes(row[g.name]), color: pal.slot(i) }))} />;
+                  return <ChartTooltipBox title={formatDateTime(row.t, undefined, true)} rows={growth.map((g, i) => ({ label: g.name, value: fmtBytes(row[g.name]), color: pal.slot(i) }))} />;
                 }} />
                 {growth.map((g, i) => (
                   <Line key={g.name} type="monotone" dataKey={g.name} stroke={pal.slot(i)} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />

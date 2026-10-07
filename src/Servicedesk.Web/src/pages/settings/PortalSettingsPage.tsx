@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dateFormat";
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -23,7 +24,7 @@ import { SettingField } from "@/components/settings/SettingField";
 import { settingsApi, taxonomyApi, type SettingEntry, apiErrorMessage } from "@/lib/api";
 import { portalAdminApi, type PortalAccount, type PortalAccountStatus, type PortalInvitation } from "@/lib/portal-api";
 import { useAuth } from "@/auth/authStore";
-import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { useServerTimeZone } from "@/hooks/useServerTime";
 import { cn } from "@/lib/utils";
 import {
   PORTAL_ADMIN_QK,
@@ -490,8 +491,8 @@ function AccountsPanel() {
   const { user } = useAuth();
   const isAdmin = user?.role === "Admin";
   const invalidate = usePortalAdminInvalidate();
-  const { time } = useServerTime();
-  const fmt = (iso: string | null) => (!iso ? "—" : time ? toServerLocal(iso, time.offsetMinutes) : new Date(iso).toLocaleString());
+  const tz = useServerTimeZone();
+  const fmt = (iso: string | null) => formatDateTime(iso, tz);
   const [tab, setTab] = React.useState<Tab>("PendingApproval");
   const [search, setSearch] = React.useState("");
   const [inviteOpen, setInviteOpen] = React.useState(false);

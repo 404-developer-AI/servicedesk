@@ -1,3 +1,4 @@
+import { formatDayMonthTime } from "@/lib/dateFormat";
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -42,16 +43,7 @@ const CONTEXT_LABEL: Record<BackofficeContext, string> = {
 };
 
 function formatStamp(iso: string): string {
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
+  return formatDayMonthTime(iso);
 }
 
 /// Shared chat panel for the Timesheet → Comments feature. Used from the

@@ -1,3 +1,4 @@
+import { formatDateTimeMedium } from "@/lib/dateFormat";
 import * as React from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -59,17 +60,7 @@ function isContactsBucket(v: string | undefined): v is AdsolutCoverageContactsBu
 
 function fmtDate(iso: string | null | undefined) {
   if (!iso) return "—";
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
+  return formatDateTimeMedium(iso);
 }
 
 const isUuid = (v: string) =>

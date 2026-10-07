@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dateFormat";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { MonitorSmartphone } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -156,7 +157,7 @@ export function FrontendTab({ period }: { period: PeriodQuery }) {
                   <Tooltip content={(props) => {
                     const row = props.payload?.[0]?.payload as { t: number; mb: number } | undefined;
                     if (!props.active || !row) return null;
-                    return <ChartTooltipBox title={new Date(row.t).toLocaleString()} rows={[{ label: "JS heap", value: `${fmtNum(row.mb)} MB`, color: pal.slot(0) }]} />;
+                    return <ChartTooltipBox title={formatDateTime(row.t, undefined, true)} rows={[{ label: "JS heap", value: `${fmtNum(row.mb)} MB`, color: pal.slot(0) }]} />;
                   }} />
                   <Area type="monotone" dataKey="mb" stroke={pal.slot(0)} strokeWidth={2} fill={pal.slot(0)} fillOpacity={0.12} isAnimationActive={false} />
                 </AreaChart>

@@ -1,3 +1,4 @@
+import { formatDateTimeMedium } from "@/lib/dateFormat";
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -36,17 +37,7 @@ type WorkHoursFilter = "all" | "yes" | "no";
 
 function formatDateTime(iso: string | null | undefined) {
   if (!iso) return "—";
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
+  return formatDateTimeMedium(iso);
 }
 
 /// Scrollable pop-up to manage which Adsolut catalogue products count as

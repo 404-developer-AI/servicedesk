@@ -204,6 +204,20 @@ export function useServerNowMs(stepMs = 60_000): number | null {
   return useSyncExternalStore(subscribe, getStepSnapshot, getNullSnapshot);
 }
 
+function getTimeZoneSnapshot(): string | null {
+  return snapshot.time?.timezone ?? null;
+}
+
+/**
+ * The server's IANA display time zone (App.TimeZone, e.g. "Europe/Brussels");
+ * null until the first sync. Does not tick. Pair with the formatters in
+ * `lib/dateFormat.ts` — a zone id (unlike a fixed offset) is DST-correct for
+ * past and future dates.
+ */
+export function useServerTimeZone(): string | null {
+  return useSyncExternalStore(subscribe, getTimeZoneSnapshot, getNullSnapshot);
+}
+
 /** Non-reactive read of the current server time, for one-off use in handlers. */
 export function getServerTimeSnapshot(): ServerTime | null {
   return snapshot.time;

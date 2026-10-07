@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dateFormat";
 import * as React from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -9,7 +10,7 @@ import { apiErrorMessage } from "@/lib/api";
 import { portalAdminApi } from "@/lib/portal-api";
 import { contactApi, type Contact } from "@/lib/ticket-api";
 import { useAuth } from "@/auth/authStore";
-import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { useServerTimeZone } from "@/hooks/useServerTime";
 import {
   PortalAccountActions,
   PortalApproveDialog,
@@ -27,8 +28,8 @@ export function PortalAccountCard({ contact }: { contact: Contact }) {
   const isAdmin = user?.role === "Admin";
   const q = usePortalAccountForContact(contact.id);
   const invalidate = usePortalAdminInvalidate();
-  const { time } = useServerTime();
-  const fmt = (iso: string | null) => (!iso ? "—" : time ? toServerLocal(iso, time.offsetMinutes) : new Date(iso).toLocaleString());
+  const tz = useServerTimeZone();
+  const fmt = (iso: string | null) => formatDateTime(iso, tz);
   const [inviteOpen, setInviteOpen] = React.useState(false);
   const [approveOpen, setApproveOpen] = React.useState(false);
   const [rejectOpen, setRejectOpen] = React.useState(false);

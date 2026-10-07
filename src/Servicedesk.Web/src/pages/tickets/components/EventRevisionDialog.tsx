@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { ticketApi, type TicketEventRevision } from "@/lib/ticket-api";
 import { Skeleton } from "@/components/ui/skeleton";
+import { stripBaseTags } from "@/lib/sanitize";
 
 type EventRevisionDialogProps = {
   ticketId: string;
@@ -37,7 +38,7 @@ function RevisionEntry({
   const danger = React.useMemo(
     () =>
       revision.bodyHtmlBefore
-        ? { __html: DOMPurify.sanitize(revision.bodyHtmlBefore) as unknown as string }
+        ? { __html: DOMPurify.sanitize(stripBaseTags(revision.bodyHtmlBefore)) as unknown as string }
         : null,
     [revision.bodyHtmlBefore],
   );

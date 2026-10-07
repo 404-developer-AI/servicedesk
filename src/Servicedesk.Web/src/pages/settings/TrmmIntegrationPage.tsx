@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dateFormat";
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -54,8 +55,7 @@ const STATE_LABEL: Record<
 
 function formatWhen(iso: string | null): string {
   if (!iso) return "never";
-  const d = new Date(iso);
-  return d.toLocaleString();
+  return formatDateTime(iso);
 }
 
 export function TrmmIntegrationPage() {

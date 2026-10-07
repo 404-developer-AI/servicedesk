@@ -1,3 +1,4 @@
+import { formatDate } from "@/lib/dateFormat";
 import { useEffect, useState, type CSSProperties } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -405,8 +406,7 @@ function eolChipLabel(status: AssetEolStatus): string {
 
 function formatEolTooltip(eolUtc: string | null, status: AssetEolStatus): string {
   if (!eolUtc) return "No end-of-life data available";
-  const d = new Date(eolUtc);
-  const label = d.toLocaleDateString();
+  const label = formatDate(eolUtc);
   if (status === "expired") return `End of support: ${label} (past)`;
   if (status === "soon")    return `End of support: ${label}`;
   return `End of support: ${label}`;

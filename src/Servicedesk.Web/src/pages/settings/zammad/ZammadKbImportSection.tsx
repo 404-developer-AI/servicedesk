@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dateFormat";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -584,7 +585,7 @@ function RunsHistoryTable({
           {history.map((r) => (
             <tr key={r.id}>
               <td className="py-1.5 text-xs text-muted-foreground">
-                {new Date(r.startedUtc).toLocaleString()}
+                {formatDateTime(r.startedUtc)}
               </td>
               <td className="py-1.5">{r.sourceKbName ?? "—"}</td>
               <td className="py-1.5">

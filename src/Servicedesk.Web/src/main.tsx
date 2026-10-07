@@ -1,3 +1,5 @@
+// Must be the first import: configures zod before any schema runs.
+import "@/lib/zodConfig";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";

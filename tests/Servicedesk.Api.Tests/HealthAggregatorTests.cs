@@ -7,6 +7,7 @@ using Servicedesk.Infrastructure.Mail.Polling;
 using Servicedesk.Infrastructure.Observability;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Secrets;
+using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Storage;
 using Xunit;
 
@@ -388,6 +389,40 @@ public sealed class HealthAggregatorTests
         Assert.Equal(HealthStatus.Warning, graph.Status);
     }
 
+    [Fact]
+    public async Task Timestamps_render_in_configured_display_zone()
+    {
+        var snap = new InMemorySecurityActivitySnapshot();
+        snap.Set(new SecurityActivitySnapshot(
+            EvaluatedUtc: new DateTime(2026, 10, 7, 18, 46, 43, DateTimeKind.Utc),
+            Window: TimeSpan.FromHours(1),
+            Status: HealthStatus.Ok,
+            Summary: "ok",
+            Categories: Array.Empty<SecurityActivityCategoryResult>(),
+            MonitorEnabled: true));
+
+        var agg = Build(new List<Queue>(), new List<QueueInboundMailbox>(), hasSecret: true,
+            securityActivity: snap, timeZone: "Europe/Brussels");
+
+        var report = await agg.CollectAsync(CancellationToken.None);
+
+        var sec = report.Subsystems.Single(s => s.Key == "security-activity");
+        Assert.Contains(sec.Details, d => d.Label == "Window" && d.Value.EndsWith("evaluated 07/10/2026 - 20:46"));
+    }
+
+    private sealed class StubSettings : ISettingsService
+    {
+        private readonly string _timeZone;
+        public StubSettings(string timeZone) => _timeZone = timeZone;
+        public Task EnsureDefaultsAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<T> GetAsync<T>(string key, CancellationToken cancellationToken = default)
+            => Task.FromResult((T)(object)_timeZone);
+        public Task SetAsync<T>(string key, T value, string actor, string actorRole, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+        public Task<IReadOnlyList<SettingEntry>> ListAsync(string? category = null, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<SettingEntry>>(Array.Empty<SettingEntry>());
+    }
+
     private static HealthAggregator Build(
         IReadOnlyList<Queue> queues,
         IReadOnlyList<QueueInboundMailbox> sources,
@@ -399,7 +434,8 @@ public sealed class HealthAggregatorTests
         ITlsCertReader? tlsCert = null,
         ICertRenewalTrigger? certRenewal = null,
         TlsCertHealthOptions? tlsOptions = null,
-        ISecurityActivitySnapshot? securityActivity = null)
+        ISecurityActivitySnapshot? securityActivity = null,
+        string timeZone = "UTC")
         => new(
             new StubInboundRepo(sources),
             new StubTaxonomyRepo(queues),
@@ -411,7 +447,8 @@ public sealed class HealthAggregatorTests
             certRenewal ?? new StubCertRenewalTrigger(null),
             Options.Create(tlsOptions ?? new TlsCertHealthOptions()),
             securityActivity ?? new InMemorySecurityActivitySnapshot(),
-            new Servicedesk.Infrastructure.Retention.RetentionHealth());
+            new Servicedesk.Infrastructure.Retention.RetentionHealth(),
+            new StubSettings(timeZone));
 
     private sealed class StubIncidentLog : IIncidentLog
     {

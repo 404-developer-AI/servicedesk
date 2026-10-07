@@ -1,3 +1,4 @@
+import { formatDateTime, formatDayMonthTime } from "@/lib/dateFormat";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -42,7 +43,7 @@ function SlaCell({
   if (target === null) return <span className="text-muted-foreground/40">No policy</span>;
 
   const deadlineLabel = deadline
-    ? new Date(deadline).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+    ? formatDayMonthTime(deadline)
     : null;
 
   if (consumed !== null) {
@@ -209,7 +210,7 @@ export function SlaLogPage() {
                     <td className="px-3 py-2 text-muted-foreground">{row.priorityName}</td>
                     <td className="px-3 py-2 text-muted-foreground">{row.statusName}</td>
                     <td className="px-3 py-2 text-xs text-muted-foreground">
-                      {new Date(row.createdUtc).toLocaleString()}
+                      {formatDateTime(row.createdUtc)}
                     </td>
                     <td className="px-3 py-2 text-right text-xs">
                       <SlaCell

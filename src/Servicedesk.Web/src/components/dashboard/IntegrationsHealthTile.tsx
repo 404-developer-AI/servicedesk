@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dateFormat";
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -430,7 +431,7 @@ function NextSyncHint({ iso }: { iso: string }) {
   if (Number.isNaN(target)) return null;
   const phrase = formatRelative(target - Date.now());
   return (
-    <p className="text-[11px] text-muted-foreground/70" title={new Date(iso).toLocaleString()}>
+    <p className="text-[11px] text-muted-foreground/70" title={formatDateTime(iso, undefined, true)}>
       Next sync {phrase}
     </p>
   );
@@ -569,7 +570,7 @@ function MirrorCard({
           <span className="text-muted-foreground">Last sync</span>
           <span
             className="font-medium text-foreground"
-            title={lastSyncUtc ? new Date(lastSyncUtc).toLocaleString() : undefined}
+            title={lastSyncUtc ? formatDateTime(lastSyncUtc, undefined, true) : undefined}
           >
             {lastSyncUtc ? formatRelative(new Date(lastSyncUtc).getTime() - Date.now()) : "never"}
           </span>

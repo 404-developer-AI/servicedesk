@@ -1,3 +1,4 @@
+import { formatDateMedium, formatDateTimeMedium, formatMonthYear } from "@/lib/dateFormat";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -74,26 +75,12 @@ type BoFilter = "all" | "checked" | "unchecked";
 
 function formatDate(iso: string | null | undefined) {
   if (!iso) return "—";
-  try {
-    return new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "2-digit" }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
+  return formatDateMedium(iso);
 }
 
 function formatDateTime(iso: string | null | undefined) {
   if (!iso) return "—";
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
+  return formatDateTimeMedium(iso);
 }
 
 function formatMoney(value: number | null | undefined, currency: string | null | undefined) {
@@ -319,10 +306,7 @@ function mergeConfig(raw: string | undefined): ColConfig[] {
 // ---- month switcher label ---------------------------------------------
 
 function MonthLabel({ year, month, all }: { year: number; month: number; all: boolean }) {
-  const d = new Date(year, month - 1, 1);
-  const label = all
-    ? "All months"
-    : d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const label = all ? "All months" : formatMonthYear(year, month);
   return (
     <span className="min-w-36 px-2 text-center text-sm font-medium text-foreground">
       {label}
@@ -489,7 +473,7 @@ export function TimesheetTabAdsolut() {
         <div>
           <h2 className="text-display-sm font-semibold text-foreground">Sales receipts</h2>
           <p className="text-xs text-muted-foreground">
-            {total.toLocaleString()} verkoopbonnen mirrored from Adsolut
+            {total.toLocaleString()} sales receipts mirrored from Adsolut
           </p>
         </div>
       </div>

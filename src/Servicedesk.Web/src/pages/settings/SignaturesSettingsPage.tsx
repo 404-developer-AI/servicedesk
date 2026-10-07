@@ -1,3 +1,4 @@
+import { formatDateTime, formatDate } from "@/lib/dateFormat";
 import { type ChangeEvent, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -625,7 +626,7 @@ function MyProfileCard() {
 
           {profile?.entraSyncedUtc && (
             <p className="text-[11px] text-muted-foreground/50">
-              Last synced from Entra: {new Date(profile.entraSyncedUtc).toLocaleString()}
+              Last synced from Entra: {formatDateTime(profile.entraSyncedUtc)}
             </p>
           )}
         </div>
@@ -989,7 +990,7 @@ function TeamProfileUserRow({
             </span>
             {profile.entraSyncedUtc && (
               <span className="text-[10px] text-muted-foreground/50">
-                Entra synced {new Date(profile.entraSyncedUtc).toLocaleDateString()}
+                Entra synced {formatDate(profile.entraSyncedUtc)}
               </span>
             )}
           </div>

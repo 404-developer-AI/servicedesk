@@ -1,3 +1,4 @@
+import { formatDateTime as formatServerDateTime } from "@/lib/dateFormat";
 import { useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
@@ -24,18 +25,7 @@ const OUTCOME_TONE: Record<IntegrationAuditOutcome, { dot: string; text: string;
 };
 
 function formatDateTime(iso: string) {
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
+  return formatServerDateTime(iso, undefined, true);
 }
 
 function tryPretty(json: string): string {

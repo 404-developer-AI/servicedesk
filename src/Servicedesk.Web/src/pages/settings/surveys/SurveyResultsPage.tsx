@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dateFormat";
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -209,7 +210,7 @@ export function SurveyResultsPage({ surveyId }: { surveyId: string }) {
                       </span>
                     </td>
                     <td className="py-2 text-muted-foreground">
-                      {new Date(inv.sentUtc).toLocaleString()}
+                      {formatDateTime(inv.sentUtc)}
                     </td>
                     <td className="py-2">
                       <StatusBadge
@@ -481,8 +482,8 @@ function ResponseDetailBody({ detail }: { detail: SurveyResponseDetail }) {
         </div>
         <div className="text-xs text-muted-foreground/70">
           Sent to {detail.sentToEmail} ·{" "}
-          {new Date(detail.sentUtc).toLocaleString()} · submitted{" "}
-          {new Date(detail.submittedUtc).toLocaleString()}
+          {formatDateTime(detail.sentUtc)} · submitted{" "}
+          {formatDateTime(detail.submittedUtc)}
         </div>
       </header>
 

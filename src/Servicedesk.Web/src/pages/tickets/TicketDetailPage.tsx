@@ -1,3 +1,4 @@
+import { formatDate } from "@/lib/dateFormat";
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -51,6 +52,7 @@ import { useTheme } from "@/app/ThemeProvider";
 import { ProjectCloseConfirmDialog } from "./components/projects/ProjectCloseConfirmDialog";
 import { buildMailContext, flattenQueueMailboxes } from "./mailContext";
 import { InTicketSearchProvider, useInTicketSearch } from "./components/InTicketSearch";
+import { stripBaseTags } from "@/lib/sanitize";
 
 type TicketDetailPageProps = {
   ticketId: string;
@@ -1159,7 +1161,7 @@ function TicketDetailBody({
     const parser = new DOMParser();
     for (const html of htmls) {
       parser
-        .parseFromString(html, "text/html")
+        .parseFromString(stripBaseTags(html), "text/html")
         .querySelectorAll("[data-order-id]")
         .forEach((el) => {
           const id = el.getAttribute("data-order-id")?.toLowerCase();
@@ -1624,7 +1626,7 @@ function SplitBanners({
             </Link>
             {ticket.splitFromUtc && (
               <>
-                {" "}on {new Date(ticket.splitFromUtc).toLocaleDateString()}
+                {" "}on {formatDate(ticket.splitFromUtc)}
               </>
             )}
             {splitFromUserName && (

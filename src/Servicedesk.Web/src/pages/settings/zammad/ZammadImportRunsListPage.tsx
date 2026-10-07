@@ -1,3 +1,4 @@
+import { formatDateTimeMedium } from "@/lib/dateFormat";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, ListTree } from "lucide-react";
@@ -21,17 +22,7 @@ const STATUS_TONE: Record<ZammadImportRunStatus, { dot: string; text: string }> 
 
 function formatDateTime(iso: string | null) {
   if (!iso) return "—";
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
+  return formatDateTimeMedium(iso);
 }
 
 export function ZammadImportRunsListPage() {

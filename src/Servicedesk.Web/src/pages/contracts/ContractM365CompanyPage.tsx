@@ -1,3 +1,4 @@
+import { formatDateTimeMedium } from "@/lib/dateFormat";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -437,17 +438,7 @@ function BackupBadge({
 /// Absolute, server-sourced backup timestamp for the Protected pill hover.
 function formatBackupStamp(iso: string | null): string {
   if (!iso) return "unknown";
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
+  return formatDateTimeMedium(iso);
 }
 
 /// Sophos spam-filter verdict for one mailbox. Protected = its address is in

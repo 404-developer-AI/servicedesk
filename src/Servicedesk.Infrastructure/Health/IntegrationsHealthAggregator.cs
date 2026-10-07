@@ -87,23 +87,24 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
     public async Task<IntegrationsHealthReport> CollectAsync(CancellationToken ct)
     {
         var integrations = new List<IntegrationHealth>();
+        var tz = await HealthTimeFormat.ResolveDisplayZoneAsync(_settings, ct);
 
-        var adsolut = await BuildAdsolutAsync(ct);
+        var adsolut = await BuildAdsolutAsync(tz, ct);
         if (adsolut is not null) integrations.Add(adsolut);
 
-        var telavox = await BuildTelavoxAsync(ct);
+        var telavox = await BuildTelavoxAsync(tz, ct);
         if (telavox is not null) integrations.Add(telavox);
 
-        var zammad = await BuildZammadAsync(ct);
+        var zammad = await BuildZammadAsync(tz, ct);
         if (zammad is not null) integrations.Add(zammad);
 
-        var m365 = await BuildM365Async(ct);
+        var m365 = await BuildM365Async(tz, ct);
         if (m365 is not null) integrations.Add(m365);
 
-        var sophos = await BuildSophosAsync(ct);
+        var sophos = await BuildSophosAsync(tz, ct);
         if (sophos is not null) integrations.Add(sophos);
 
-        var veeam = await BuildVeeamAsync(ct);
+        var veeam = await BuildVeeamAsync(tz, ct);
         if (veeam is not null) integrations.Add(veeam);
 
         var rollup = integrations.Aggregate(HealthStatus.Ok,
@@ -113,7 +114,7 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
 
     // ---- Adsolut --------------------------------------------------------
 
-    private async Task<IntegrationHealth?> BuildAdsolutAsync(CancellationToken ct)
+    private async Task<IntegrationHealth?> BuildAdsolutAsync(TimeZoneInfo tz, CancellationToken ct)
     {
         var clientId = (await _settings.GetAsync<string>(SettingKeys.Adsolut.ClientId, ct) ?? string.Empty).Trim();
         var hasClientSecret = await _secrets.HasAsync(ProtectedSecretKeys.AdsolutClientSecret, ct);
@@ -127,9 +128,9 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
         var syncState = await _adsolutSyncState.GetAsync(ct);
 
         var connectionCheck = BuildAdsolutConnectionCheck(hasRefreshToken, connection,
-            warnDays: await ResolveWarnDaysAsync(ct));
+            warnDays: await ResolveWarnDaysAsync(ct), tz: tz);
         var syncCheck = BuildAdsolutSyncCheck(hasRefreshToken, connection, syncState,
-            intervalMinutes: await ResolveSyncIntervalAsync(ct));
+            intervalMinutes: await ResolveSyncIntervalAsync(ct), tz: tz);
 
         var checks = new[] { connectionCheck, syncCheck };
         var rollup = checks.Aggregate(HealthStatus.Ok, (acc, c) => c.Status > acc ? c.Status : acc);
@@ -173,7 +174,8 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
     private static SubsystemHealth BuildAdsolutConnectionCheck(
         bool hasRefreshToken,
         AdsolutConnection? connection,
-        int warnDays)
+        int warnDays,
+        TimeZoneInfo tz)
     {
         var details = new List<HealthDetail>();
         var actions = new List<HealthAction>();
@@ -235,21 +237,21 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
             connection?.AuthorizedEmail ?? connection?.AuthorizedSubject ?? "(unknown subject)"));
         if (connection?.AuthorizedUtc is { } authorized)
         {
-            details.Add(new HealthDetail("Authorized at", authorized.ToString("u")));
+            details.Add(new HealthDetail("Authorized at", HealthTimeFormat.Local(authorized, tz)));
         }
         if (connection?.LastRefreshedUtc is { } lastRefreshed)
         {
-            details.Add(new HealthDetail("Last refreshed", lastRefreshed.ToString("u")));
+            details.Add(new HealthDetail("Last refreshed", HealthTimeFormat.Local(lastRefreshed, tz)));
         }
         if (slidingExpiry is { } exp)
         {
             details.Add(new HealthDetail(
                 "Refresh window expires",
-                $"{exp:u} ({(daysLeftRounded is null ? "?" : daysLeftRounded.ToString())} day(s))"));
+                $"{HealthTimeFormat.Local(exp, tz)} ({(daysLeftRounded is null ? "?" : daysLeftRounded.ToString())} day(s))"));
         }
         if (!string.IsNullOrEmpty(lastError))
         {
-            var when = connection?.LastRefreshErrorUtc is { } errTs ? errTs.ToString("u") : "(unknown time)";
+            var when = connection?.LastRefreshErrorUtc is { } errTs ? HealthTimeFormat.Local(errTs, tz) : "(unknown time)";
             details.Add(new HealthDetail("Last refresh error", $"{lastError} at {when}"));
         }
 
@@ -271,7 +273,8 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
         bool hasRefreshToken,
         AdsolutConnection? connection,
         AdsolutSyncState? syncState,
-        int intervalMinutes)
+        int intervalMinutes,
+        TimeZoneInfo tz)
     {
         var details = new List<HealthDetail>();
         var actions = new List<HealthAction>();
@@ -330,27 +333,27 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
         else
         {
             status = HealthStatus.Ok;
-            summary = $"Last sync OK at {lastDelta.Value:u}.";
+            summary = $"Last sync OK at {HealthTimeFormat.Local(lastDelta.Value, tz)}.";
         }
 
         if (lastDelta is { } ld)
         {
-            details.Add(new HealthDetail("Last delta sync", ld.ToString("u")));
+            details.Add(new HealthDetail("Last delta sync", HealthTimeFormat.Local(ld, tz)));
         }
         if (syncState?.LastFullSyncUtc is { } lf)
         {
-            details.Add(new HealthDetail("Last full sync", lf.ToString("u")));
+            details.Add(new HealthDetail("Last full sync", HealthTimeFormat.Local(lf, tz)));
         }
         var nextSync = ComputeNextSyncUtc(lastDelta, intervalMinutes);
-        details.Add(new HealthDetail("Next sync", nextSync.ToString("u")));
+        details.Add(new HealthDetail("Next sync", HealthTimeFormat.Local(nextSync, tz)));
         if (!string.IsNullOrEmpty(syncState?.LastError))
         {
-            var when = syncState.LastErrorUtc is { } et ? et.ToString("u") : "(unknown time)";
+            var when = syncState.LastErrorUtc is { } et ? HealthTimeFormat.Local(et, tz) : "(unknown time)";
             details.Add(new HealthDetail("Last error", $"{syncState.LastError} at {when}"));
         }
         if (ack is { } a)
         {
-            details.Add(new HealthDetail("Acknowledged at", a.ToString("u")));
+            details.Add(new HealthDetail("Acknowledged at", HealthTimeFormat.Local(a, tz)));
         }
         details.Add(new HealthDetail("Tick interval", $"{intervalMinutes} minute(s)"));
 
@@ -405,7 +408,7 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
     /// Any of these three missing → tile hidden, exactly like the polling
     /// worker silently skips. This keeps a freshly-installed instance from
     /// showing an empty Telavox card.
-    private async Task<IntegrationHealth?> BuildTelavoxAsync(CancellationToken ct)
+    private async Task<IntegrationHealth?> BuildTelavoxAsync(TimeZoneInfo tz, CancellationToken ct)
     {
         var enabled = await _settings.GetAsync<bool>(SettingKeys.Telavox.Enabled, ct);
         var hasPartnerToken = await _secrets.HasAsync(ProtectedSecretKeys.TelavoxPartnerToken, ct);
@@ -426,15 +429,13 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
         var windowStart = await _settings.GetAsync<string>(SettingKeys.Telavox.PollWindowStart, ct);
         var windowEnd = await _settings.GetAsync<string>(SettingKeys.Telavox.PollWindowEnd, ct);
         var windowDays = await _settings.GetAsync<string>(SettingKeys.Telavox.PollWindowDays, ct);
-        var tzId = await _settings.GetAsync<string>(SettingKeys.App.TimeZone, ct);
-        var tz = ResolveTimeZone(tzId);
         var nowLocal = TimeZoneInfo.ConvertTime(DateTime.UtcNow, tz);
         var inWindow = TelavoxPollWindow.IsInPollWindow(nowLocal, windowStart, windowEnd, windowDays);
 
         var links = await _telavoxLinks.ListAsync(ct);
 
         var connectionCheck = BuildTelavoxConnectionCheck(customerId, inWindow, windowStart, windowEnd);
-        var pollingCheck = BuildTelavoxPollingCheck(links, pollInterval, inWindow);
+        var pollingCheck = BuildTelavoxPollingCheck(links, pollInterval, inWindow, tz);
 
         var checks = new[] { connectionCheck, pollingCheck };
         var rollup = checks.Aggregate(HealthStatus.Ok, (acc, c) => c.Status > acc ? c.Status : acc);
@@ -482,7 +483,8 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
     private static SubsystemHealth BuildTelavoxPollingCheck(
         IReadOnlyList<TelavoxAgentLink> links,
         int pollIntervalSeconds,
-        bool inWindow)
+        bool inWindow,
+        TimeZoneInfo tz)
     {
         var details = new List<HealthDetail>
         {
@@ -549,7 +551,7 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
 
         if (lastPoll is { } lp)
         {
-            details.Add(new HealthDetail("Last poll (any agent)", lp.ToString("u")));
+            details.Add(new HealthDetail("Last poll (any agent)", HealthTimeFormat.Local(lp, tz)));
         }
         if (errorLinks.Count > 0)
         {
@@ -571,19 +573,6 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
             Actions: Array.Empty<HealthAction>());
     }
 
-    /// Same defensive resolver as <see cref="TelavoxPollingWorker"/> — keep
-    /// the two in sync so the tile and the worker agree about which
-    /// timezone the working-hours window is being evaluated in.
-    private static TimeZoneInfo ResolveTimeZone(string id)
-    {
-        if (!string.IsNullOrWhiteSpace(id))
-        {
-            try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
-            catch { /* Invalid IANA id — fall through. */ }
-        }
-        return TimeZoneInfo.Local;
-    }
-
     // ---- Zammad --------------------------------------------------------
 
     /// Visibility rule mirrors Telavox: only surface the tile when the
@@ -597,7 +586,7 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
     /// than a steady-state sync — so the tile shows a single Connection
     /// check + a Recent runs check that lists the latest import-run's
     /// outcome (or "no runs yet" on a freshly-configured install).
-    private async Task<IntegrationHealth?> BuildZammadAsync(CancellationToken ct)
+    private async Task<IntegrationHealth?> BuildZammadAsync(TimeZoneInfo tz, CancellationToken ct)
     {
         var enabled = await _settings.GetAsync<bool>(SettingKeys.Zammad.Enabled, ct);
         if (!enabled) return null;
@@ -607,7 +596,7 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
         var hasToken = await _secrets.HasAsync(ProtectedSecretKeys.ZammadToken, ct);
 
         var connectionCheck = BuildZammadConnectionCheck(baseUrl, hasToken);
-        var runsCheck = await BuildZammadRunsCheckAsync(ct);
+        var runsCheck = await BuildZammadRunsCheckAsync(tz, ct);
 
         var checks = new[] { connectionCheck, runsCheck };
         var rollup = checks.Aggregate(HealthStatus.Ok,
@@ -657,7 +646,7 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
     /// the admin notices; a cancelled or completed run stays green. No
     /// staleness check — migration is episodic by definition, so a gap of
     /// days between runs is the normal state once the bulk import is done.
-    private async Task<SubsystemHealth> BuildZammadRunsCheckAsync(CancellationToken ct)
+    private async Task<SubsystemHealth> BuildZammadRunsCheckAsync(TimeZoneInfo tz, CancellationToken ct)
     {
         const string sql = """
             SELECT id              AS Id,
@@ -707,11 +696,11 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
         var label = last.Kind == "import" ? "Import" : "Dry-run";
         var details = new List<HealthDetail>
         {
-            new("Last run", $"{label} {last.Status} (started {last.StartedUtc:u})"),
+            new("Last run", $"{label} {last.Status} (started {HealthTimeFormat.Local(last.StartedUtc, tz)})"),
         };
         if (last.FinishedUtc is { } fin)
         {
-            details.Add(new HealthDetail("Finished", fin.ToString("u")));
+            details.Add(new HealthDetail("Finished", HealthTimeFormat.Local(fin, tz)));
         }
         if (!string.IsNullOrEmpty(last.ErrorMessage))
         {
@@ -724,7 +713,7 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
             "failed" => $"Last {label.ToLowerInvariant()} failed — see the run history.",
             "running" => $"{label} in progress…",
             "cancelled" => $"Last {label.ToLowerInvariant()} was cancelled.",
-            "completed" => $"Last {label.ToLowerInvariant()} completed at {last.FinishedUtc:u}.",
+            "completed" => $"Last {label.ToLowerInvariant()} completed at {(last.FinishedUtc is { } done ? HealthTimeFormat.Local(done, tz) : "(unknown time)")}.",
             _ => $"Last {label.ToLowerInvariant()} is {last.Status}.",
         };
         return new SubsystemHealth(
@@ -779,7 +768,7 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
     /// only surface the tile once the multi-tenant app is enabled and fully
     /// configured (tenant id + client id + secret). The per-customer connect
     /// state then lives inside the Connection check.
-    private async Task<IntegrationHealth?> BuildM365Async(CancellationToken ct)
+    private async Task<IntegrationHealth?> BuildM365Async(TimeZoneInfo tz, CancellationToken ct)
     {
         var enabled = await _settings.GetAsync<bool>(SettingKeys.M365.Enabled, ct);
         var tenantId = (await _settings.GetAsync<string>(SettingKeys.M365.TenantId, ct) ?? string.Empty).Trim();
@@ -806,7 +795,7 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
         }
 
         var connectionCheck = BuildM365ConnectionCheck(agg);
-        var syncCheck = BuildM365SyncCheck(agg, interval);
+        var syncCheck = BuildM365SyncCheck(agg, interval, tz);
         var checks = new[] { connectionCheck, syncCheck };
         var rollup = checks.Aggregate(HealthStatus.Ok, (acc, c) => c.Status > acc ? c.Status : acc);
 
@@ -875,7 +864,7 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
             Actions: Array.Empty<HealthAction>());
     }
 
-    private static SubsystemHealth BuildM365SyncCheck(M365AggregateRow agg, int intervalMinutes)
+    private static SubsystemHealth BuildM365SyncCheck(M365AggregateRow agg, int intervalMinutes, TimeZoneInfo tz)
     {
         if (agg.LinkCount == 0)
         {
@@ -912,7 +901,7 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
         else
         {
             status = HealthStatus.Ok;
-            summary = $"Last sync OK at {agg.LastCheckedUtc.Value:u}.";
+            summary = $"Last sync OK at {HealthTimeFormat.Local(agg.LastCheckedUtc.Value, tz)}.";
         }
 
         var details = new List<HealthDetail>
@@ -921,8 +910,8 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
             new("Mailboxes mirrored", agg.MailboxCount.ToString()),
         };
         if (agg.LastCheckedUtc is { } lcd)
-            details.Add(new HealthDetail("Last sync", lcd.ToString("u")));
-        details.Add(new HealthDetail("Next sync", ComputeNextSyncUtc(agg.LastCheckedUtc, intervalMinutes).ToString("u")));
+            details.Add(new HealthDetail("Last sync", HealthTimeFormat.Local(lcd, tz)));
+        details.Add(new HealthDetail("Next sync", HealthTimeFormat.Local(ComputeNextSyncUtc(agg.LastCheckedUtc, intervalMinutes), tz)));
         details.Add(new HealthDetail("Tick interval", $"{intervalMinutes} minute(s)"));
 
         return new SubsystemHealth(
@@ -936,7 +925,7 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
 
     // ---- Sophos Central ------------------------------------------------
 
-    private async Task<IntegrationHealth?> BuildSophosAsync(CancellationToken ct)
+    private async Task<IntegrationHealth?> BuildSophosAsync(TimeZoneInfo tz, CancellationToken ct)
     {
         var enabled = await _settings.GetAsync<bool>(SettingKeys.Sophos.Enabled, ct);
         var hasClientId = await _secrets.HasAsync(ProtectedSecretKeys.SophosClientId, ct);
@@ -963,7 +952,7 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
             new("Protected mailboxes", (sync?.MailboxCount ?? 0).ToString()),
         };
         var syncCheck = BuildSingletonSyncCheck(
-            "sophos-sync", sync?.LastCheckedUtc, sync?.LastError, interval, counters);
+            "sophos-sync", sync?.LastCheckedUtc, sync?.LastError, interval, counters, tz);
 
         var checks = new[] { connectionCheck, syncCheck };
         var rollup = checks.Aggregate(HealthStatus.Ok, (acc, c) => c.Status > acc ? c.Status : acc);
@@ -984,7 +973,7 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
 
     // ---- Veeam ---------------------------------------------------------
 
-    private async Task<IntegrationHealth?> BuildVeeamAsync(CancellationToken ct)
+    private async Task<IntegrationHealth?> BuildVeeamAsync(TimeZoneInfo tz, CancellationToken ct)
     {
         var enabled = await _settings.GetAsync<bool>(SettingKeys.Veeam.Enabled, ct);
         var baseUrl = (await _settings.GetAsync<string>(SettingKeys.Veeam.BaseUrl, ct) ?? string.Empty).Trim();
@@ -1016,7 +1005,7 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
             new("Backup objects", (sync?.ObjectCount ?? 0).ToString()),
         };
         var syncCheck = BuildSingletonSyncCheck(
-            "veeam-sync", sync?.LastCheckedUtc, sync?.LastError, interval, counters);
+            "veeam-sync", sync?.LastCheckedUtc, sync?.LastError, interval, counters, tz);
 
         var checks = new[] { connectionCheck, syncCheck };
         var rollup = checks.Aggregate(HealthStatus.Ok, (acc, c) => c.Status > acc ? c.Status : acc);
@@ -1048,7 +1037,8 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
         DateTime? lastCheckedUtc,
         string? lastError,
         int intervalMinutes,
-        List<HealthDetail> counters)
+        List<HealthDetail> counters,
+        TimeZoneInfo tz)
     {
         var now = DateTime.UtcNow;
         var staleThreshold = TimeSpan.FromMinutes(Math.Max(1, intervalMinutes) * DefaultStaleIntervalMultiplier);
@@ -1075,12 +1065,12 @@ public sealed class IntegrationsHealthAggregator : IIntegrationsHealthAggregator
         else
         {
             status = HealthStatus.Ok;
-            summary = $"Last sync OK at {lastCheckedUtc.Value:u}.";
+            summary = $"Last sync OK at {HealthTimeFormat.Local(lastCheckedUtc.Value, tz)}.";
         }
 
         if (lastCheckedUtc is { } lcd)
-            counters.Add(new HealthDetail("Last sync", lcd.ToString("u")));
-        counters.Add(new HealthDetail("Next sync", ComputeNextSyncUtc(lastCheckedUtc, intervalMinutes).ToString("u")));
+            counters.Add(new HealthDetail("Last sync", HealthTimeFormat.Local(lcd, tz)));
+        counters.Add(new HealthDetail("Next sync", HealthTimeFormat.Local(ComputeNextSyncUtc(lastCheckedUtc, intervalMinutes), tz)));
         counters.Add(new HealthDetail("Tick interval", $"{intervalMinutes} minute(s)"));
         if (hasError)
             counters.Add(new HealthDetail("Last error", lastError!));

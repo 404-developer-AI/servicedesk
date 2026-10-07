@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dateFormat";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { CheckCircle2, Cpu, Info, Loader2, Play, ShieldCheck, TriangleAlert } from "lucide-react";
@@ -167,7 +168,7 @@ function MetricChart({
               <Tooltip content={(props) => {
                 const row = props.payload?.[0]?.payload as (RuntimePoint & { ts: number }) | undefined;
                 if (!props.active || !row) return null;
-                return <ChartTooltipBox title={new Date(row.ts).toLocaleString()} rows={present.map((d) => ({ label: d.label, value: fmt(row[d.key] as number | null), color: pal.slot(d.slot) }))} />;
+                return <ChartTooltipBox title={formatDateTime(row.ts, undefined, true)} rows={present.map((d) => ({ label: d.label, value: fmt(row[d.key] as number | null), color: pal.slot(d.slot) }))} />;
               }} />
               {present.map((d) => (
                 <Line key={String(d.key)} type="monotone" dataKey={d.key} stroke={pal.slot(d.slot)} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
@@ -219,7 +220,7 @@ function BenchmarkPanel({ benchmarks }: { benchmarks: { id: number; t: string; c
             <tbody>
               {benchmarks.map((b) => (
                 <tr key={b.id} className="border-t border-glass">
-                  <td className="py-1.5 pr-3 text-muted-foreground">{new Date(b.t).toLocaleString()}</td>
+                  <td className="py-1.5 pr-3 text-muted-foreground">{formatDateTime(b.t)}</td>
                   <td className="py-1.5 pr-3 text-right tabular-nums">{fmtNum(val(b.result, "cpuSha256MbPerSec"), 0)}</td>
                   <td className="py-1.5 pr-3 text-right tabular-nums">{fmtMs(val(b.result, "diskFsyncMsAvg"))}</td>
                   <td className="py-1.5 pr-3 text-right tabular-nums">{val(b.result, "diskWriteMbPerSec") === null ? "—" : `${fmtNum(val(b.result, "diskWriteMbPerSec"))} MB/s`}</td>

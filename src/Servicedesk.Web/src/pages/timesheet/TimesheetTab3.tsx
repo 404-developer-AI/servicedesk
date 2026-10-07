@@ -12,6 +12,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { formatMonthYear, serverTodayIso } from "@/lib/dateFormat";
+import { useServerNowMs, useServerTimeZone } from "@/hooks/useServerTime";
 import {
   timesheetManagerApi,
   timesheetPreferencesApi,
@@ -37,10 +39,21 @@ export function TimesheetTab3() {
   const users = usersQuery.data ?? [];
 
   const [userId, setUserId] = React.useState<string>("");
-  const [{ year, month }, setYM] = React.useState(() => {
-    const d = new Date();
-    return { year: d.getFullYear(), month: d.getMonth() + 1 };
-  });
+
+  // "Today" and the default month come from the server clock in the app
+  // time zone — never the browser's (project rule: server-based timing).
+  // Re-evaluated per minute so a page left open across midnight rolls over.
+  const tz = useServerTimeZone();
+  const nowMs = useServerNowMs();
+  const todayIso = nowMs === null ? null : serverTodayIso(tz, nowMs);
+  // null = "follow the current server month".
+  const [pickedYM, setYM] = React.useState<{ year: number; month: number } | null>(null);
+  const currentYM = todayIso
+    ? { year: Number(todayIso.slice(0, 4)), month: Number(todayIso.slice(5, 7)) }
+    : null;
+  const ym = pickedYM ?? currentYM;
+  const year = ym?.year ?? 0;
+  const month = ym?.month ?? 0;
 
   // Default to the first user as soon as the list loads.
   React.useEffect(() => {
@@ -50,7 +63,7 @@ export function TimesheetTab3() {
   const monthQuery = useQuery({
     queryKey: ["timesheet", "manager", "month", userId, year, month],
     queryFn: () => timesheetManagerApi.getMonth(userId, year, month),
-    enabled: !!userId,
+    enabled: !!userId && ym !== null,
   });
 
   // v0.0.35-E — per-user effective preferences. While the request is in
@@ -68,6 +81,7 @@ export function TimesheetTab3() {
   const totals = computeTotals(data?.days ?? [], prefs);
 
   const goMonth = (delta: number) => {
+    if (!ym) return;
     let y = year;
     let m = month + delta;
     if (m < 1) {
@@ -80,7 +94,7 @@ export function TimesheetTab3() {
     setYM({ year: y, month: m });
   };
 
-  const exportUrl = userId
+  const exportUrl = userId && ym
     ? timesheetManagerApi.exportCsvUrl(userId, year, month)
     : "#";
 
@@ -99,7 +113,7 @@ export function TimesheetTab3() {
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <MonthLabel year={year} month={month} />
+            <MonthLabel ym={ym} />
             <Button
               size="sm"
               variant="ghost"
@@ -112,10 +126,7 @@ export function TimesheetTab3() {
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => {
-                const d = new Date();
-                setYM({ year: d.getFullYear(), month: d.getMonth() + 1 });
-              }}
+              onClick={() => setYM(null)}
               className="h-8 px-2 text-xs"
             >
               This month
@@ -123,7 +134,7 @@ export function TimesheetTab3() {
           </div>
         </div>
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <Badge className="border border-glass bg-glass font-normal">
+          <Badge className="border border-glass bg-glass font-normal text-foreground">
             Work {formatDuration(totals.work)}
           </Badge>
           <Badge className="border border-amber-400/30 bg-amber-400/10 font-normal text-amber-200">
@@ -167,7 +178,7 @@ export function TimesheetTab3() {
                 </td>
               </tr>
             )}
-            {!monthQuery.isLoading && data && renderWeeks(data.days, prefs)}
+            {!monthQuery.isLoading && data && renderWeeks(data.days, prefs, todayIso)}
           </tbody>
           {!monthQuery.isLoading && data && (
             <tfoot>
@@ -206,6 +217,7 @@ export function TimesheetTab3() {
 function renderWeeks(
   days: MonthDayRollup[],
   prefs: TimesheetPreferences,
+  todayIso: string | null,
 ): React.ReactNode[] {
   // Group consecutive days into ISO weeks (Mon..Sun). When the week
   // changes we emit a subtotal row before continuing.
@@ -286,6 +298,7 @@ function renderWeeks(
         workDaysJs={workDaysJs}
         targetDayMinutes={prefs.targetMinutesPerDay}
         absenceOvershoot={dayOvershoot}
+        isFuture={todayIso !== null && d.date > todayIso}
       />,
     );
 
@@ -307,12 +320,16 @@ function DayRow({
   workDaysJs,
   targetDayMinutes,
   absenceOvershoot,
+  isFuture,
 }: {
   day: MonthDayRollup;
   date: Date;
   workDaysJs: Set<number>;
   targetDayMinutes: number;
   absenceOvershoot: boolean;
+  /// After the server's today: nothing is "missing" yet. (d.date and
+  /// todayIso are both yyyy-MM-dd, so string comparison is date order.)
+  isFuture: boolean;
 }) {
   const wd = date.getDay();
   const isWorkingDay = workDaysJs.has(wd);
@@ -327,7 +344,9 @@ function DayRow({
   const covered = day.workMinutes + day.absenceMinutes;
   const status: TargetStatus = !isWorkingDay
     ? "weekend"
-    : !filled
+    : isFuture && !filled
+      ? "future"
+      : !filled
       ? "missing"
       : covered < targetDayMinutes
         ? "under"
@@ -430,10 +449,10 @@ function DayRow({
   );
 }
 
-type TargetStatus = "weekend" | "missing" | "under" | "on" | "over";
+type TargetStatus = "weekend" | "future" | "missing" | "under" | "on" | "over";
 
 function TargetPill({ status }: { status: TargetStatus }) {
-  if (status === "weekend") {
+  if (status === "weekend" || status === "future") {
     return <span className="text-[10px] text-muted-foreground/40">—</span>;
   }
   if (status === "missing") {
@@ -482,8 +501,11 @@ function UserPicker({
       </div>
     );
   }
+  // Always controlled: "" shows the placeholder. Passing undefined until the
+  // first user loaded flipped Radix from uncontrolled to controlled and
+  // logged a React warning.
   return (
-    <Select value={value || undefined} onValueChange={onChange}>
+    <Select value={value} onValueChange={onChange}>
       <SelectTrigger className="h-8 min-w-56 text-sm">
         <SelectValue placeholder="Select agent…" />
       </SelectTrigger>
@@ -498,9 +520,9 @@ function UserPicker({
   );
 }
 
-function MonthLabel({ year, month }: { year: number; month: number }) {
-  const d = new Date(year, month - 1, 1);
-  const label = d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+function MonthLabel({ ym }: { ym: { year: number; month: number } | null }) {
+  // English, locale-independent ("October 2026", not the browser's "oktober").
+  const label = ym ? formatMonthYear(ym.year, ym.month) : "…";
   return (
     <span className="min-w-40 px-2 text-center text-sm font-medium text-foreground">
       {label}

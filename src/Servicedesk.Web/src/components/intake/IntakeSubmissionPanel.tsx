@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dateFormat";
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -143,7 +144,7 @@ function SubmissionTable({ view }: { view: IntakeFormAgentView }) {
         </span>
         {view.instance.submittedUtc && (
           <span className="text-[11px] text-muted-foreground/60">
-            {new Date(view.instance.submittedUtc).toLocaleString()}
+            {formatDateTime(view.instance.submittedUtc)}
           </span>
         )}
       </div>
