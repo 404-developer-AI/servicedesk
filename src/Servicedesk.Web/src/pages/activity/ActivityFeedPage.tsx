@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 import { useActivityFeedSignalR } from "@/hooks/useActivityFeedSignalR";
 
 /// Whitelist of event-type filter options. Kept in this file so it stays
@@ -79,8 +79,8 @@ export function ActivityFeedPage() {
     queryFn: () => activityApi.list(query),
   });
 
-  const { time: serverTime } = useServerTime();
-  const offsetMinutes = serverTime?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offsetMinutes = serverOffsetMinutes ?? 0;
 
   function openTicket(ticketId: string) {
     navigate({ to: "/tickets/$ticketId" as never, params: { ticketId } as never });

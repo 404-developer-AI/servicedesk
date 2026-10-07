@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { useServerTime, toServerLocalDate } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, toServerLocalDate } from "@/hooks/useServerTime";
 
 /// Landing page for the standalone KB. Three regions: search bar at the top,
 /// section tree on the left, featured + recent on the right. The search box
@@ -183,8 +183,8 @@ function SectionTreeNode({ node, depth }: { node: KbSectionNode; depth: number }
 }
 
 function UpdatedDate({ iso }: { iso: string }) {
-  const { time } = useServerTime();
-  return <>Updated {toServerLocalDate(iso, time?.offsetMinutes ?? 0)}</>;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  return <>Updated {toServerLocalDate(iso, serverOffsetMinutes ?? 0)}</>;
 }
 
 function RecentRow({ item }: { item: KbArticleListItem }) {

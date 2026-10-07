@@ -242,6 +242,19 @@ public sealed class PerfRumTests
         Assert.Equal("unknown", key.Connection);
         Assert.Equal(120, agg.MaxValue, 3);
     }
+
+    [Fact]
+    public void ClsTarget_KeepsTailwindSelectors_ButNeverAQueryString()
+    {
+        var window = new PerfWindow(DateTimeOffset.UtcNow);
+        PerfRumEndpoints.Ingest(Payload(
+            Item("cls_target", "/tickets/$ticketId", 0.07, "div.flex.flex-col>div.text-muted-foreground/60.w-[50%]"),
+            Item("cls_target", "/tickets/$ticketId", 0.01, "a/b?token=secret")), window);
+
+        Assert.Contains(window.Rum.Keys, k => k.Metric == "cls_target" && k.Detail == "div.flex.flex-col>div.text-muted-foreground/n.w-[n%]");
+        Assert.Contains(window.Rum.Keys, k => k.Metric == "cls_target" && k.Detail == "other");
+        Assert.DoesNotContain(window.Rum.Keys, k => k.Detail.Contains("token"));
+    }
 }
 
 public sealed class PerfSignalRTests

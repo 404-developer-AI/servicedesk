@@ -19,7 +19,7 @@ import {
   type KbSectionNode,
 } from "@/lib/kb-api";
 import { useCurrentRole } from "@/hooks/useCurrentRole";
-import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SafeHtml } from "@/components/SafeHtml";
@@ -37,8 +37,8 @@ export function KbArticlePage({ articleId }: Props) {
   const queryClient = useQueryClient();
   const role = useCurrentRole();
   const isAdmin = role === "Admin";
-  const { time: serverTime } = useServerTime();
-  const offset = serverTime?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offset = serverOffsetMinutes ?? 0;
 
   const { data, isLoading } = useQuery({
     queryKey: ["kb", "article", articleId, "body"],

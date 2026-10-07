@@ -748,6 +748,8 @@ export const settingsApi = {
     request<BulkActionsSettings>("GET", "/api/settings/bulk-actions"),
   copilot: () =>
     request<CopilotSettings>("GET", "/api/settings/copilot"),
+  ticketWarnings: () =>
+    request<{ showContactNotLinked: boolean }>("GET", "/api/settings/ticket-warnings"),
 };
 
 // ---- Microsoft Graph admin ----

@@ -98,7 +98,10 @@ export function TicketTimesheetPanel({ ticketId, queueId, ticketNumber, ticketSu
           <span className="text-xs uppercase tracking-wider text-muted-foreground shrink-0">
             Time logged
           </span>
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 justify-end">
+          {/* min-h = one chip (border + py-0.5 + text-xs): the "Loading…"
+              text is 6px shorter, and that grow shifted the whole timeline
+              below (v0.1.27, the ticket page's main CLS source). */}
+          <div className="flex min-h-5.5 min-w-0 flex-1 items-center gap-1.5 justify-end">
             {isLoading ? (
               <span className="text-xs text-muted-foreground/60">Loading…</span>
             ) : isError ? (

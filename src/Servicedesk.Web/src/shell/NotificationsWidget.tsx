@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { notificationApi, type UserNotification } from "@/lib/notification-api";
-import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 
 type Props = {
   collapsed: boolean;
@@ -111,8 +111,8 @@ function NotificationPanel({
 }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const serverTime = useServerTime();
-  const offsetMinutes = serverTime.time?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offsetMinutes = serverOffsetMinutes ?? 0;
 
   const markViewed = useMutation({
     mutationFn: (id: string) => notificationApi.markViewed(id),

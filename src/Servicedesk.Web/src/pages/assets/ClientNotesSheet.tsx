@@ -17,7 +17,7 @@ import {
   type RemoteDesktopClientNote,
 } from "@/lib/api";
 import { useAuth } from "@/auth/authStore";
-import { toServerLocal, useServerTime } from "@/hooks/useServerTime";
+import { toServerLocal, useServerOffsetMinutes } from "@/hooks/useServerTime";
 import { cn } from "@/lib/utils";
 
 export type NotesTarget = Pick<
@@ -42,8 +42,8 @@ export function ClientNotesSheet({
   const { user } = useAuth();
   const myId = user?.id ?? "";
   const isAdmin = user?.role === "Admin";
-  const { time: serverTime } = useServerTime();
-  const offsetMinutes = serverTime?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offsetMinutes = serverOffsetMinutes ?? 0;
 
   const clientId = target?.trmmClientId ?? null;
   const notes = useQuery({

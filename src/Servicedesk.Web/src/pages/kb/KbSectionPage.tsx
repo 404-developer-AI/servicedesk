@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { StatusPill } from "@/pages/kb/KbHomePage";
 import { InPageSearchProvider, useInPageSearch } from "@/components/InPageSearch";
-import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 
 type Props = { sectionId: string };
 
@@ -30,8 +30,8 @@ function SectionContent({ sectionId }: Props) {
   const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState<KbArticleStatus | "All">("All");
   const { matchesText, mode, query, registerScope } = useInPageSearch();
-  const { time: serverTime } = useServerTime();
-  const offset = serverTime?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offset = serverOffsetMinutes ?? 0;
 
   const { data: section, isLoading: sectionLoading } = useQuery({
     queryKey: ["kb", "section", sectionId],

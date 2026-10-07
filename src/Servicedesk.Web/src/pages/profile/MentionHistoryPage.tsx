@@ -7,7 +7,7 @@ import {
   type UserNotification,
   type NotificationHistoryCursor,
 } from "@/lib/notification-api";
-import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 import { cn } from "@/lib/utils";
 
 /// v0.0.12 stap 4 — full history of tags received by the current user.
@@ -20,8 +20,8 @@ export function MentionHistoryPage() {
   const [pages, setPages] = React.useState<UserNotification[]>([]);
   const [cursor, setCursor] = React.useState<NotificationHistoryCursor | null>(null);
   const [nextCursor, setNextCursor] = React.useState<NotificationHistoryCursor | null>(null);
-  const serverTime = useServerTime();
-  const offsetMinutes = serverTime.time?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offsetMinutes = serverOffsetMinutes ?? 0;
 
   const query = useQuery({
     queryKey: ["notifications", "history", cursor?.id ?? "first"],

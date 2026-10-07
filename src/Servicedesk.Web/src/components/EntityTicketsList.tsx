@@ -4,7 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Search, Ticket as TicketIcon } from "lucide-react";
 import { ticketApi, type TicketListItem, type TicketListQuery } from "@/lib/ticket-api";
 import { useTicketListRealtime } from "@/hooks/useTicketRealtime";
-import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -222,8 +222,8 @@ function TicketRow({
   scope: "contact" | "company" | "search";
   onOpen: () => void;
 }) {
-  const { time } = useServerTime();
-  const offset = time?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offset = serverOffsetMinutes ?? 0;
   const requesterName =
     [t.requesterFirstName, t.requesterLastName].filter(Boolean).join(" ").trim() ||
     t.requesterEmail;
@@ -269,7 +269,7 @@ function TicketRow({
         )}
       </span>
       <span className="hidden w-20 shrink-0 text-right text-[11px] text-muted-foreground/70 sm:inline">
-        {time ? toServerLocal(t.updatedUtc, offset) : "…"}
+        {serverOffsetMinutes !== null ? toServerLocal(t.updatedUtc, offset) : "…"}
       </span>
     </button>
   );

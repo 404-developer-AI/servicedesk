@@ -201,6 +201,21 @@ public static class SettingEndpoints
         .WithName("GetTicketFlagSettings")
         .WithOpenApi();
 
+        // ---- Ticket warnings (v0.1.27, agent-readable) ----
+        // The side panel read Tickets.ShowContactNotLinkedWarning through the
+        // admin-only list, so agents got a 403 and never saw the warning.
+        app.MapGet("/api/settings/ticket-warnings", async (ISettingsService svc, CancellationToken ct) =>
+        {
+            bool contactNotLinked;
+            try { contactNotLinked = await svc.GetAsync<bool>(SettingKeys.Tickets.ShowContactNotLinkedWarning, ct); }
+            catch { contactNotLinked = true; }
+            return Results.Ok(new TicketWarningsSettingsDto(contactNotLinked));
+        })
+        .WithTags("Settings")
+        .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+        .WithName("GetTicketWarningsSettings")
+        .WithOpenApi();
+
         // ---- Per-view search settings (v0.1.18, agent-readable) ----
         // The list's search box needs the minimum term length and the typing
         // pause before a server search. Clamped on read as well as on write.
@@ -257,6 +272,7 @@ public static class SettingEndpoints
     public sealed record BulkActionsSettings(bool Enabled, int MaxSelection);
 
     public sealed record ViewSearchSettingsDto(int MinChars, int DebounceMs);
+    public sealed record TicketWarningsSettingsDto(bool ShowContactNotLinked);
 
     public sealed record TicketFlagSettingsDto(string CallbackColor, string ResearchColor, bool CallbackOpenPromptEnabled, bool CallbackClearOnCall);
 

@@ -25,7 +25,7 @@ import {
 } from "@/lib/ticket-api";
 import { cn } from "@/lib/utils";
 import { PendingTillField } from "@/components/PendingTillField";
-import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 
 /// Sentinel option id for "clear the assignee" — never collides with a user id.
 const UNASSIGN = "__unassign__";
@@ -134,8 +134,8 @@ export function BulkActionDialog({ open, onOpenChange, selected, onCompleted }: 
     [statusId, statuses],
   );
   const [pendingTillUtc, setPendingTillUtc] = React.useState<string | null>(null);
-  const { time: serverTime } = useServerTime();
-  const offsetMinutes = serverTime?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offsetMinutes = serverOffsetMinutes ?? 0;
   React.useEffect(() => {
     if (!selectedStatusIsPending) setPendingTillUtc(null);
   }, [selectedStatusIsPending]);

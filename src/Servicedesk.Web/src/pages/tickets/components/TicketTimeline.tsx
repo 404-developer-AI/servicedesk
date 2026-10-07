@@ -1,6 +1,6 @@
 import * as React from "react";
 import DOMPurify from "dompurify";
-import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, getServerTimeSnapshot, type ServerTime, toServerLocal } from "@/hooks/useServerTime";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -176,6 +176,70 @@ function SafeHtml({ html }: { html: string }) {
 /// barely exceeds the cap doesn't get a needless toggle. Re-measures
 /// on body-change and when inline images finish loading (they can
 /// significantly bump the rendered height after first paint).
+// v0.1.27 — long threads: every mail body was sanitised, parsed and measured
+// on the first render (#1532 on dev: 130 bodies of up to 100 KB, ~57k DOM
+// nodes, 2.4 s main-thread task). Large bodies now mount when they come near
+// the viewport, and the rest one per idle slice afterwards — so the first
+// paint is fast and Ctrl+F still finds everything a moment later. Until then
+// a placeholder keeps the exact collapsed footprint (cap + "Read more"), so
+// nothing shifts when the real body replaces it.
+const COLLAPSED_MAX_PX = 360;
+const LAZY_BODY_MIN_CHARS = 8_000;
+const LAZY_BODY_ROOT_MARGIN = "1200px 0px";
+
+const idleMountQueue: Array<() => void> = [];
+let idleMountScheduled = false;
+
+function scheduleIdleMount(): void {
+  if (idleMountScheduled || idleMountQueue.length === 0) return;
+  idleMountScheduled = true;
+  const run = () => {
+    idleMountScheduled = false;
+    // One body per slice: each mount is its own short React commit.
+    idleMountQueue.shift()?.();
+    scheduleIdleMount();
+  };
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(run, { timeout: 2000 });
+  } else {
+    window.setTimeout(run, 16);
+  }
+}
+
+function useDeferredBodyMount(enabled: boolean) {
+  const ref = React.useRef<HTMLDivElement>(null);
+  const [ready, setReady] = React.useState(!enabled);
+  React.useEffect(() => {
+    if (ready) return;
+    let done = false;
+    const mount = () => {
+      if (done) return;
+      done = true;
+      setReady(true);
+    };
+    const el = ref.current;
+    let io: IntersectionObserver | null = null;
+    if (el && typeof IntersectionObserver === "function") {
+      io = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((e) => e.isIntersecting)) mount();
+        },
+        { rootMargin: LAZY_BODY_ROOT_MARGIN },
+      );
+      io.observe(el);
+    }
+    idleMountQueue.push(mount);
+    scheduleIdleMount();
+    return () => {
+      done = true;
+      io?.disconnect();
+      const i = idleMountQueue.indexOf(mount);
+      if (i >= 0) idleMountQueue.splice(i, 1);
+    };
+  }, [ready]);
+  return { ref, ready, mountNow: () => setReady(true) };
+}
+
 function CollapsibleBody({
   html,
   text,
@@ -183,10 +247,42 @@ function CollapsibleBody({
   html: string | null | undefined;
   text: string | null | undefined;
 }) {
-  const COLLAPSED_MAX_PX = 360;
+  const deferred = useDeferredBodyMount((html?.length ?? 0) >= LAZY_BODY_MIN_CHARS);
+  const [expandOnMount, setExpandOnMount] = React.useState(false);
+  if (!deferred.ready) {
+    return (
+      <div ref={deferred.ref}>
+        <div className="relative overflow-hidden" style={{ height: COLLAPSED_MAX_PX }}>
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-linear-to-t from-background via-background/80 to-transparent" />
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setExpandOnMount(true);
+            deferred.mountNow();
+          }}
+          className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80"
+        >
+          Read more…
+        </button>
+      </div>
+    );
+  }
+  return <MountedBody html={html} text={text} initiallyExpanded={expandOnMount} />;
+}
+
+function MountedBody({
+  html,
+  text,
+  initiallyExpanded,
+}: {
+  html: string | null | undefined;
+  text: string | null | undefined;
+  initiallyExpanded: boolean;
+}) {
   const SLACK_PX = 16;
   const ref = React.useRef<HTMLDivElement>(null);
-  const [expanded, setExpanded] = React.useState(false);
+  const [expanded, setExpanded] = React.useState(initiallyExpanded);
   const [overflows, setOverflows] = React.useState(false);
 
   React.useLayoutEffect(() => {
@@ -1143,8 +1239,8 @@ function TimelineEvent({
   // the timeline; the backend scopes what each one can read back.
   const feedbackEnabled = (user?.feedbackEnabled || user?.feedbackOwnOnly) ?? false;
   const [logFeedbackOpen, setLogFeedbackOpen] = React.useState(false);
-  const { time: serverTime } = useServerTime();
-  const offset = serverTime?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offset = serverOffsetMinutes ?? 0;
   const fmtDate = (iso: string) => toServerLocal(iso, offset);
   const [editing, setEditing] = React.useState(false);
   const [draftHtml, setDraftHtml] = React.useState(
@@ -1673,7 +1769,7 @@ export function TicketTimeline({ ticketId, ticketNumber, events, pinnedEventIds 
 const FEEDBACK_SELECT_CLASS =
   "h-9 w-full rounded-md border border-glass bg-glass px-2 text-sm text-foreground focus:outline-hidden focus:ring-2 focus:ring-ring";
 
-function logFeedbackToday(time: ReturnType<typeof useServerTime>["time"]): string {
+function logFeedbackToday(time: ServerTime | null): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   if (!time) {
     const d = new Date();
@@ -1697,10 +1793,10 @@ function LogFeedbackDialog({
   eventId: number;
 }) {
   const queryClient = useQueryClient();
-  const { time } = useServerTime();
-
+  // Read once when needed — a ticking subscription here re-rendered every
+  // timeline event each second.
   const [targetUserId, setTargetUserId] = React.useState("");
-  const [entryDate, setEntryDate] = React.useState(() => logFeedbackToday(time));
+  const [entryDate, setEntryDate] = React.useState(() => logFeedbackToday(getServerTimeSnapshot()));
   const [workPointTypeId, setWorkPointTypeId] = React.useState("");
   const [bodyHtml, setBodyHtml] = React.useState("");
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
@@ -1709,7 +1805,7 @@ function LogFeedbackDialog({
   React.useEffect(() => {
     if (open) {
       setTargetUserId("");
-      setEntryDate(logFeedbackToday(time));
+      setEntryDate(logFeedbackToday(getServerTimeSnapshot()));
       setWorkPointTypeId("");
       setBodyHtml("");
       setFieldErrors({});
