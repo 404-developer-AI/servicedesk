@@ -9,6 +9,7 @@ import { bootstrapAuth } from "@/auth/bootstrap";
 import { installClientVersionFetch } from "@/lib/clientVersion";
 import { installSessionExpiryHandler } from "@/lib/sessionExpiry";
 import { installExternalLinkTargets } from "@/lib/externalLinks";
+import { installRemoteImageBlock } from "@/lib/remoteImages";
 
 // Must run before the first fetch (bootstrapAuth below) so every API call —
 // central helper, feature-local helpers, uploads, SignalR negotiate — carries
@@ -18,6 +19,7 @@ installClientVersionFetch();
 // Links inside rendered mail/note/KB HTML open in a new tab (DOMPurify strips
 // `target`, so without this a link navigated the app tab away).
 installExternalLinkTargets();
+installRemoteImageBlock();
 
 const queryClient = new QueryClient({
   defaultOptions: {

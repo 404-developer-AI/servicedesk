@@ -16,7 +16,7 @@
 // `flushSeconds` and when the tab is hidden, via fetch(keepalive) — not
 // sendBeacon, because the double-submit CSRF header has to ride along.
 
-import { onCLS, onFCP, onINP, onLCP, onTTFB, type Metric } from "web-vitals";
+import { onCLS, onFCP, onINP, onLCP, onTTFB, type Metric } from "web-vitals/attribution";
 import { csrfHeader } from "@/lib/csrf";
 import { SERVER_RECONNECTED_EVENT } from "@/lib/appUpdate";
 
@@ -134,7 +134,13 @@ export async function startRum(router: RouterLike): Promise<void> {
   const vital = (name: string) => (m: Metric) => push({ m: name, r: initialRoute, v: m.value });
   onLCP(vital("lcp"));
   onINP(vital("inp"));
-  onCLS(vital("cls"));
+  onCLS((m) => {
+    push({ m: "cls", r: initialRoute, v: m.value });
+    // v0.1.26 — which element moved most (a CSS selector, no content), so a
+    // jumping page can be traced to its cause. The server masks digits.
+    const target = m.attribution?.largestShiftTarget;
+    if (target && m.value > 0) push({ m: "cls_target", r: initialRoute, d: target.slice(0, 120), v: m.value });
+  });
   onFCP(vital("fcp"));
   onTTFB(vital("ttfb"));
 
@@ -162,16 +168,25 @@ export async function startRum(router: RouterLike): Promise<void> {
   let screenBytes = 0;
   let screenOpen = true;
   let screenTimer: number | undefined;
+  // v0.1.26 — the first screen of a page load also carries the app's own
+  // start-up calls (session, settings, navigation, …); it is reported as
+  // load_api_calls so screen_api_calls measures in-app screen opens only.
+  let screenIsPageLoad = true;
   let navStart = 0;
 
   const closeScreen = () => {
     if (!screenOpen) return;
     screenOpen = false;
     window.clearTimeout(screenTimer);
-    push({ m: "screen_api_calls", r: screenRoute, v: screenCalls });
-    push({ m: "screen_api_kb", r: screenRoute, v: screenBytes / 1024 });
+    if (screenIsPageLoad) {
+      push({ m: "load_api_calls", r: screenRoute, v: screenCalls });
+    } else {
+      push({ m: "screen_api_calls", r: screenRoute, v: screenCalls });
+      push({ m: "screen_api_kb", r: screenRoute, v: screenBytes / 1024 });
+    }
   };
-  const openScreen = (route: string) => {
+  const openScreen = (route: string, pageLoad = false) => {
+    screenIsPageLoad = pageLoad;
     screenRoute = route;
     screenCalls = 0;
     screenBytes = 0;
@@ -179,7 +194,7 @@ export async function startRum(router: RouterLike): Promise<void> {
     push({ m: "view", r: route, v: 1 });
     screenTimer = window.setTimeout(closeScreen, SCREEN_WINDOW_MS);
   };
-  openScreen(initialRoute);
+  openScreen(initialRoute, true);
 
   router.subscribe("onBeforeNavigate", () => {
     navStart = performance.now();

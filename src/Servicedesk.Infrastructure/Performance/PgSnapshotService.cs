@@ -15,7 +15,7 @@ public sealed class PgSnapshotService : BackgroundService
     private readonly IPerfSettings _settings;
     private readonly ILogger<PgSnapshotService> _logger;
     private DateTimeOffset _lastStatements = DateTimeOffset.MinValue;
-    private DateTimeOffset _lastTablesHour = DateTimeOffset.MinValue;
+    private DateTimeOffset _lastTablesCheck = DateTimeOffset.MinValue;
     private DateTimeOffset _lastAccessCheck = DateTimeOffset.MinValue;
     private DateTimeOffset _lastErrorLog = DateTimeOffset.MinValue;
 
@@ -91,11 +91,21 @@ public sealed class PgSnapshotService : BackgroundService
             await _inspector.SnapshotDatabaseAsync(now, ct);
         }
 
-        var hour = new DateTimeOffset(now.Year, now.Month, now.Day, now.Hour, 0, 0, TimeSpan.Zero);
-        if (hour > _lastTablesHour)
+        // v0.1.26 — table snapshots every 60 min (15 in Diagnose), measured
+        // against the newest STORED snapshot rather than an in-memory clock:
+        // after a restart or "Delete all measurements" a fresh baseline is
+        // taken at once. Period deltas need a snapshot at (or before) the
+        // start of the period; without one the report used to fall back to
+        // the cumulative counters since the last statistics reset.
+        var tablesEvery = TimeSpan.FromMinutes(_settings.Level == PerfLevel.Diagnose ? 15 : 60);
+        if (now - _lastTablesCheck >= TimeSpan.FromMinutes(1))
         {
-            _lastTablesHour = hour;
-            await _inspector.SnapshotTablesAsync(now, ct);
+            _lastTablesCheck = now;
+            var last = await _inspector.LastTableSnapshotAsync(ct);
+            if (last is null || now - last.Value >= tablesEvery - TimeSpan.FromSeconds(30))
+            {
+                await _inspector.SnapshotTablesAsync(now, ct);
+            }
         }
     }
 }

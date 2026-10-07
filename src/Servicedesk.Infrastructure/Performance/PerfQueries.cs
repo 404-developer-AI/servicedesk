@@ -665,16 +665,18 @@ public sealed class PerfQueries
                        (SELECT max(ts_utc) FROM perf_pg_table_snapshot WHERE ts_utc <= @To) AS e
             )
             SELECT e.relname AS Name, e.n_live AS Rows, e.n_dead AS Dead,
-                   GREATEST(e.seq_scan - COALESCE(s.seq_scan, 0), 0) AS SeqScan,
-                   GREATEST(e.seq_tup_read - COALESCE(s.seq_tup_read, 0), 0) AS SeqTupRead,
-                   GREATEST(e.idx_scan - COALESCE(s.idx_scan, 0), 0) AS IdxScan,
-                   GREATEST((e.n_ins + e.n_upd + e.n_del) - COALESCE(s.n_ins + s.n_upd + s.n_del, 0), 0) AS Writes,
+                   (s.relname IS NOT NULL) AS HasBaseline,
+                   CASE WHEN s.relname IS NULL THEN 0 ELSE GREATEST(e.seq_scan - s.seq_scan, 0) END AS SeqScan,
+                   CASE WHEN s.relname IS NULL THEN 0 ELSE GREATEST(e.seq_tup_read - s.seq_tup_read, 0) END AS SeqTupRead,
+                   CASE WHEN s.relname IS NULL THEN 0 ELSE GREATEST(e.idx_scan - s.idx_scan, 0) END AS IdxScan,
+                   CASE WHEN s.relname IS NULL THEN 0
+                        ELSE GREATEST((e.n_ins + e.n_upd + e.n_del) - (s.n_ins + s.n_upd + s.n_del), 0) END AS Writes,
                    e.total_bytes AS TotalBytes,
                    e.total_bytes - COALESCE(s.total_bytes, e.total_bytes) AS BytesGrowth,
                    e.n_live - COALESCE(s.n_live, e.n_live) AS RowsGrowth,
-                   CASE WHEN (e.heap_hit - COALESCE(s.heap_hit, 0)) + (e.heap_read - COALESCE(s.heap_read, 0)) > 0
-                        THEN 100.0 * (e.heap_hit - COALESCE(s.heap_hit, 0))
-                             / ((e.heap_hit - COALESCE(s.heap_hit, 0)) + (e.heap_read - COALESCE(s.heap_read, 0)))
+                   CASE WHEN s.relname IS NOT NULL AND (e.heap_hit - s.heap_hit) + (e.heap_read - s.heap_read) > 0
+                        THEN 100.0 * (e.heap_hit - s.heap_hit)
+                             / ((e.heap_hit - s.heap_hit) + (e.heap_read - s.heap_read))
                    END AS HitPct
             FROM b
             JOIN perf_pg_table_snapshot e ON e.ts_utc = b.e

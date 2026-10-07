@@ -275,6 +275,16 @@ public sealed class PgInspector
         }
     }
 
+    /// v0.1.26 — time of the newest stored table snapshot (null when none, e.g.
+    /// right after "Delete all measurements").
+    public async Task<DateTimeOffset?> LastTableSnapshotAsync(CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var ts = await conn.ExecuteScalarAsync<DateTime?>(new CommandDefinition(
+            "SELECT max(ts_utc) FROM perf_pg_table_snapshot", cancellationToken: ct));
+        return ts is null ? null : new DateTimeOffset(DateTime.SpecifyKind(ts.Value, DateTimeKind.Utc));
+    }
+
     public async Task SnapshotTablesAsync(DateTimeOffset ts, CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);

@@ -199,7 +199,8 @@ public sealed class PerfReportBuilder
                 {
                     $"`{t.Name}`", PerfFormat.Count(t.Rows), Pct(t.Rows == 0 ? 0 : 100.0 * t.Dead / t.Rows), PerfFormat.Bytes(t.TotalBytes),
                     bloat.TryGetValue(t.Name, out var b) ? PerfFormat.Pct(b.BloatPct) : "–",
-                    PerfFormat.Count(delta?.SeqScan ?? 0), PerfFormat.Count(delta?.IdxScan ?? 0),
+                    delta is { HasBaseline: true } ? PerfFormat.Count(delta.SeqScan) : "–",
+                    delta is { HasBaseline: true } ? PerfFormat.Count(delta.IdxScan) : "–",
                     PerfFormat.Date(t.LastAutovacuum), PerfFormat.Date(t.LastAutoanalyze),
                 };
             }));
@@ -276,7 +277,7 @@ public sealed class PerfReportBuilder
         else
         {
             RumStats? Get(string route, string metric) => d.Rum.FirstOrDefault(x => x.Route == route && x.Metric == metric);
-            Table(sb, new[] { "Route", "Views", "LCP p75", "INP p75", "CLS p75", "TTFB p75", "Long tasks", "API calls/screen p75" },
+            Table(sb, new[] { "Route", "Views", "LCP p75", "INP p75", "CLS p75", "TTFB p75", "Long tasks", "API calls/screen p75", "API calls on page load p75" },
                 vitalRoutes.Select(r => new[]
                 {
                     $"`{Safe(r)}`", PerfFormat.Count(views.GetValueOrDefault(r)),
@@ -286,10 +287,26 @@ public sealed class PerfReportBuilder
                     Get(r, "ttfb") is { } ttfb ? PerfFormat.Ms(ttfb.P75) : "–",
                     PerfFormat.Count(d.Rum.Where(x => x.Route == r && x.Metric == "long_task").Sum(x => x.Count)),
                     Get(r, "screen_api_calls") is { } calls ? calls.P75.ToString("0", C) : "–",
+                    Get(r, "load_api_calls") is { } load ? load.P75.ToString("0", C) : "–",
                 }));
             var apiTotal = d.RumOf("api_total").Sum(x => x.SumValue);
             var apiNet = d.RumOf("api_network").Sum(x => x.SumValue);
             if (apiTotal > 0) sb.AppendLine($"Network share of API time in the browser: {PerfFormat.Pct(100 * apiNet / apiTotal)}.").AppendLine();
+
+            // v0.1.26 — which element moved most when a page jumped (CSS
+            // selector of web-vitals' largest shift target; digits masked).
+            var shifts = d.RumOf("cls_target").Where(x => x.Detail != "")
+                .OrderByDescending(x => x.SumValue).Take(10).ToList();
+            if (shifts.Count > 0)
+            {
+                sb.AppendLine("Layout shift sources (element that moved most, per page load):").AppendLine();
+                Table(sb, new[] { "Route", "Element", "Page loads", "CLS max" },
+                    shifts.Select(x => new[]
+                    {
+                        $"`{Safe(x.Route)}`", $"`{Safe(x.Detail)}`", PerfFormat.Count(x.Count),
+                        (x.MaxValue / 1000).ToString("0.00", C),
+                    }));
+            }
         }
         if (d.Bundle is { } bundle)
         {
@@ -367,6 +384,8 @@ public sealed class PerfReportBuilder
             if ((d.Options.Collectors & flag) != flag || d.Options.BaseLevel == PerfLevel.Off) gaps.Add($"Collector '{label}' is switched off.");
         }
         if (!d.HostSupported) gaps.Add("Host metrics are only available on Linux.");
+        if (d.TableDeltas.Count > 0 && d.TableDeltas.All(x => !x.HasBaseline))
+            gaps.Add("No table-statistics snapshot at the start of this period (snapshots run hourly, every 15 min in Diagnose): per-table scans and writes for the period are not available, and the table-scan and vacuum findings were skipped.");
         if (d.PgAccess.StatStatementsReason is { } reason) gaps.Add(reason);
         if (d.Runtime.DiagnoseMinutes == 0) gaps.Add("Diagnose mode did not run in this period: no per-query fingerprints, N+1 detection or query callers.");
         gaps.AddRange(d.Gaps.Select(g => $"Section '{g}' could not be read."));

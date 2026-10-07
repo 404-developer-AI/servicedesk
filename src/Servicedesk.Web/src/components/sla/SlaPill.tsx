@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Clock, PauseCircle } from "lucide-react";
 import { slaApi, type TicketSlaState } from "@/lib/api";
 import { useServerTime } from "@/hooks/useServerTime";
+import { useAuth } from "@/auth/authStore";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -36,13 +37,18 @@ function pillClasses(remainingMs: number | null, met: boolean, metLate: boolean,
 
 export function SlaPill({ ticketId, className }: Props) {
   const { time } = useServerTime();
+  const { user } = useAuth();
+  // v0.1.26 — SLA switched off (Settings → SLA): no polling at all; the
+  // server would only answer "no state" every minute.
+  const slaOn = user?.slaEnabled !== false;
   const { data, isLoading } = useQuery({
     queryKey: ["sla", "ticket", ticketId],
     queryFn: () => slaApi.ticketState(ticketId),
     refetchInterval: 60_000,
+    enabled: slaOn,
   });
 
-  if (isLoading || !data || !time) return null;
+  if (!slaOn || isLoading || !data || !time) return null;
   const state = data as TicketSlaState;
   const nowMs = new Date(time.utc).getTime();
 
