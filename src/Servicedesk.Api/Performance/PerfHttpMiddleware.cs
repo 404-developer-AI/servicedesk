@@ -63,7 +63,11 @@ public sealed class PerfHttpMiddleware
         var scope = new PerfRequestScope(method, route, diagnose, start);
         PerfContext.Request = scope;
         var gcBefore = GC.CollectionCount(0);
-        _recorder.RequestStarted();
+        // v0.1.26 — in-flight counts API requests only: after a deploy every
+        // browser fetches dozens of (now split) static chunks at once, which
+        // read as "84 requests in flight" without any server work behind it.
+        var countsInFlight = route.StartsWith("/api/", StringComparison.Ordinal);
+        if (countsInFlight) _recorder.RequestStarted();
 
         var counting = CountingResponseBody.Install(context);
         var options = _settings.Options;
@@ -101,7 +105,7 @@ public sealed class PerfHttpMiddleware
             }
             finally
             {
-                _recorder.RequestEnded();
+                if (countsInFlight) _recorder.RequestEnded();
                 PerfContext.Request = null;
                 _recorder.AddOverhead(Stopwatch.GetTimestamp() - endStart);
             }

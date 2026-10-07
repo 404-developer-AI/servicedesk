@@ -27,6 +27,19 @@ public static class PhoneE164
             return false;
         }
 
+        // v0.1.26 — cheap pre-check before libphonenumber, which signals
+        // "not a number" by throwing: withheld caller ids ("anonymous",
+        // "unknown") and stray text are common on the call path and each
+        // one cost a first-chance exception. Fewer than 3 or more than 17
+        // digits can never be a valid number.
+        var digits = 0;
+        foreach (var ch in raw) if (char.IsAsciiDigit(ch)) digits++;
+        if (digits < 3 || digits > 17)
+        {
+            e164 = string.Empty;
+            return false;
+        }
+
         try
         {
             var number = Util.Parse(raw, defaultRegion);

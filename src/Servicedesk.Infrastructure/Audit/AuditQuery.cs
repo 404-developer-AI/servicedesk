@@ -190,28 +190,37 @@ public sealed class AuditQueryService : IAuditQuery
                    AND utc >= @from
                    AND utc <  @to
             )
-            SELECT label AS Label, COUNT(*)::int AS Cnt FROM hits GROUP BY label ORDER BY Cnt DESC, label LIMIT @limit;
-            SELECT ip AS Label, COUNT(*)::int AS Cnt FROM hits GROUP BY ip ORDER BY Cnt DESC, ip LIMIT @limit;
-            SELECT COUNT(DISTINCT ip)::int FROM hits;
+            SELECT 'target' AS Kind, label AS Label, COUNT(*)::int AS Cnt FROM hits GROUP BY label
+            UNION ALL
+            SELECT 'source' AS Kind, ip AS Label, COUNT(*)::int AS Cnt FROM hits GROUP BY ip
             """;
+        // v0.1.26 — ONE statement. This used to be three statements sharing
+        // the `hits` CTE, but a CTE only exists for its own statement: the
+        // second one always failed ("relation hits does not exist"), so the
+        // Health card never showed what/who was behind a burst.
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
-        await using var multi = await connection.QueryMultipleAsync(new CommandDefinition(sql, new
+        var rows = (await connection.QueryAsync<TopRow>(new CommandDefinition(sql, new
         {
             types = eventTypes.ToArray(),
             from = fromUtc,
             to = toUtc,
-            limit,
-        }, cancellationToken: cancellationToken));
+        }, cancellationToken: cancellationToken))).ToList();
 
-        var targets = (await multi.ReadAsync<TopRow>()).Select(r => new AuditTopItem(r.Label, r.Cnt)).ToList();
-        var sources = (await multi.ReadAsync<TopRow>()).Select(r => new AuditTopItem(r.Label, r.Cnt)).ToList();
-        var distinct = await multi.ReadSingleAsync<int>();
-        return new AuditTopBreakdown(targets, sources, distinct);
+        static List<AuditTopItem> Top(IEnumerable<TopRow> rows, int limit) => rows
+            .OrderByDescending(r => r.Cnt).ThenBy(r => r.Label, StringComparer.Ordinal)
+            .Take(limit).Select(r => new AuditTopItem(r.Label, r.Cnt)).ToList();
+
+        var sourceRows = rows.Where(r => r.Kind == "source").ToList();
+        return new AuditTopBreakdown(
+            Top(rows.Where(r => r.Kind == "target"), limit),
+            Top(sourceRows, limit),
+            sourceRows.Count);
     }
 
     private sealed class TopRow
     {
+        public string Kind { get; set; } = string.Empty;
         public string Label { get; set; } = string.Empty;
         public int Cnt { get; set; }
     }

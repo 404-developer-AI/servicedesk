@@ -22,6 +22,8 @@ public static partial class PerfRumEndpoints
     {
         // Core Web Vitals
         "lcp", "inp", "cls", "fcp", "ttfb",
+        // v0.1.26 — CLS attribution: detail = the selector of the element that shifted most
+        "cls_target",
         // Navigation timing of the initial load
         "nav_dns", "nav_tcp", "nav_tls", "nav_ttfb", "nav_download", "nav_dom", "nav_load",
         // API calls (detail = API route): browser total, server part (Server-Timing), network part,
@@ -30,7 +32,7 @@ public static partial class PerfRumEndpoints
         // Main-thread blocking
         "long_task", "loaf",
         // SPA navigation
-        "route_change", "view", "screen_api_calls", "screen_api_kb",
+        "route_change", "view", "screen_api_calls", "screen_api_kb", "load_api_calls",
         // Long-lived tabs
         "js_heap_mb",
         // Realtime + transport
@@ -106,7 +108,7 @@ public static partial class PerfRumEndpoints
             var detail = Detail(item.M, item.D);
             if (detail is null) continue;
             // CLS is unitless (0..~1): stored ×1000 so the shared histogram fits.
-            var value = item.M == "cls" ? Math.Min(item.V, 100) * 1000 : item.V;
+            var value = item.M is "cls" or "cls_target" ? Math.Min(item.V, 100) * 1000 : item.V;
             window.RumFor(new RumKey(route, item.M, detail, device, connection)).Record(value);
             accepted++;
         }
@@ -123,6 +125,11 @@ public static partial class PerfRumEndpoints
             case "api_queue":
                 var api = PerfRedactor.Route(raw);
                 return api is not null && api.StartsWith("/api/", StringComparison.Ordinal) ? api : null;
+            case "cls_target":
+                // A CSS selector only (no text content); digit runs are masked so an
+                // element id carrying a number can never identify a record.
+                if (string.IsNullOrEmpty(raw) || !Selector().IsMatch(raw)) return "other";
+                return Digits().Replace(raw, "n");
             case "loaf":
             case "long_task":
                 if (string.IsNullOrEmpty(raw)) return "";
@@ -137,6 +144,12 @@ public static partial class PerfRumEndpoints
     // A chunk file name or "function@chunk" — never a URL with a query string.
     [GeneratedRegex(@"^[A-Za-z0-9_.\-@$/]{1,80}$")]
     private static partial Regex ScriptName();
+
+    [GeneratedRegex(@"^[A-Za-z0-9_.#>:\-\s\[\]=""'()*+~,]{1,120}$")]
+    private static partial Regex Selector();
+
+    [GeneratedRegex(@"\d+")]
+    private static partial Regex Digits();
 
     [GeneratedRegex(@"^(h2|h3|http/1\.0|http/1\.1|http/2|http/3)$")]
     private static partial Regex Protocol();

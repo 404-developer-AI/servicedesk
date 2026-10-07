@@ -140,6 +140,10 @@ public sealed class TableDelta
     public long BytesGrowth { get; set; }
     public long RowsGrowth { get; set; }
     public double? HitPct { get; set; }
+    /// v0.1.26 — false when no snapshot exists at/before the period start:
+    /// the delta columns are then 0 ("no data"), never the cumulative
+    /// counters since the statistics reset.
+    public bool HasBaseline { get; set; }
 }
 
 public sealed class GrowthPoint

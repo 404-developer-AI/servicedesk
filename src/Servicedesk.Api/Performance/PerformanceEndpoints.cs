@@ -210,6 +210,9 @@ public static class PerformanceEndpoints
                 tables = tables.Select(x =>
                 {
                     deltas.TryGetValue(x.Name, out var d);
+                    // v0.1.26 — no snapshot at the period start: show "no data"
+                    // instead of zeros (and never the cumulative counters).
+                    if (d is { HasBaseline: false }) d = null;
                     bloat.TryGetValue(x.Name, out var b);
                     var heapTotal = x.HeapHit + x.HeapRead;
                     return new
