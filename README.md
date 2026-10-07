@@ -1,35 +1,75 @@
 # Servicedesk
 
-Self-hosted helpdesk for small and mid-size teams. One install per organisation, runs on a single Ubuntu host, integrates with Microsoft 365 mail. Tickets, comments, attachments, and audit history stay on your own box.
+A self-hosted helpdesk for IT service teams. One install per organisation, on a single Ubuntu host, with Microsoft 365 mail built in. Tickets, mail, attachments and the audit trail stay on your own server.
 
-## Stack
+![Ticket view](docs/screenshots/ticket.jpg)
 
-- **Backend** — ASP.NET Core 8 (C#), Dapper-first with raw parameterised SQL on hot paths, EF Core for CRUD.
-- **Frontend** — React 18 + TypeScript + Vite, bundled into the production container.
-- **Database** — PostgreSQL 16, native on the host (not Docker — deliberate). Schema is bootstrapped idempotently on app start.
-- **Realtime** — SignalR over WebSockets (ticket presence, live list updates, mention notifications).
-- **Mail** — Microsoft Graph, app-only auth, polling intake. Outbound is draft-then-send so the Graph `internetMessageId` is persisted for reply-threading.
-- **Auth** — custom session auth (Argon2id, optional TOTP 2FA, encrypted recovery codes) plus single-tenant Microsoft 365 OIDC for agents/admins. Customers sign in through their own portal flow (password + mandatory authenticator app).
-- **Customer portal** — customers follow their own tickets (or every ticket of their company, for ticket managers), reply, attach files and open new requests at `/portal`. Self-registration with email confirmation and an approval step for your team, or invite contacts straight from their contact page. Optional Cloudflare Turnstile on the registration form.
-- **Reverse proxy** — Nginx (in Docker) with TLS via Let's Encrypt (Certbot).
-- **UI** — Tailwind + shadcn/ui + Framer Motion. Two looks, picked per user: "Steaan" (flat, light, teal — the default) and "Nebula" (the glassmorphism one, light or dark). Inter variable font.
-- **Checklists** — admins build checklist templates (sections, steps, team/timing labels, manual links, required or optional), agents attach them to a ticket and tick them off right inside the ticket — docked panel or a pop-out window for a second screen — with a per-step log, comments, own steps and "not applicable, because…". A checklist can block resolving/closing until it's done, and the progress is visible in the ticket header, above the activity feed and in the ticket list.
-- **Call-back & Research flags** — flip a ticket to *Call-back* or *Research* with one switch, give each flag its own colour, and let views float them to the top right under the priority tickets. Logging the call with the **Call** button turns the call-back off again.
-- **Note · Mail · Call** — three buttons under every ticket: write an internal note or reply, send a mail, or log a phone call (internal, or visible to the customer). Templates can be scoped to each one.
-- **Views** — saved ticket lists with their own filters, grouping, floats and column layout (drag to order, optionally locked so everyone sees the same columns, including a *Time logged* column). Switch on a search box per view: *Columns* filters instantly on what you see, *Full* digs through descriptions, mails and notes — always within that view.
-- **Bulk actions** — select tickets in the list (shift-click ranges, per-group select-all) and post a note or change status / queue / assignee / priority on all of them in one go. Every ticket still runs its normal rules; the ones that don't allow the change are skipped and reported, never forced.
-- **Search** — PostgreSQL `tsvector` + GIN with `pg_trgm` and `unaccent` for fuzzy matching; global Ctrl/Cmd+K palette across tickets, contacts, companies, and settings.
-- **Performance** — an admin page that shows where the app is slow and why: server and hosting, network, code, database queries and maintenance, the browser and background jobs, with an export you can hand to an AI coding assistant. Basic monitoring is on by default and cheap; a time-limited Diagnose mode digs deeper.
-- **Reporting API** — opt-in, key-gated read-only endpoint for external tooling: ticket counts (opened / closed / currently open) plus ticket number + subject lists over any period, with an optional IP allow-list. Off by default; configured from Settings → Reporting API.
+<p align="center">
+  <img src="docs/screenshots/ticket-list.jpg" alt="Ticket list" width="49%">
+  <img src="docs/screenshots/dashboard.jpg" alt="Dashboard" width="49%">
+</p>
+
+## Features
+
+**Tickets and mail**
+- Mail to your support mailbox becomes a ticket; replies thread back onto it, in both directions.
+- Note, Mail and Call buttons on every ticket — internal notes, outgoing mail and logged phone calls, each with its own templates.
+- Checklists per ticket (from admin templates) that can block closing until the required steps are done.
+- Project tickets that group related tickets, with their logged time rolled up.
+- Triggers, SLA targets, call-back and research flags, merge and split, and bulk actions on many tickets at once.
+
+**Finding things**
+- Saved views with their own filters, grouping, column layout and an optional search box.
+- Global search (Ctrl/Cmd+K) across tickets, contacts, companies, knowledge base and settings — always limited to what the user may see.
+
+**For your customers**
+- A customer portal where contacts follow their tickets, reply and open new requests. Sign-in requires an authenticator app; new registrations are approved by your team.
+
+**For your team**
+- Time tracking on tickets, with a monthly overview and export.
+- A knowledge base, dashboards and Insights reports.
+- Live updates: see who is working on a ticket, and lists refresh by themselves.
+
+**Integrations** (each optional and off by default)
+- Microsoft 365 — mail (Microsoft Graph) and single sign-on for staff.
+- Accounting sync (Wolters Kluwer Adsolut), Telavox call pop-ups, Tactical RMM assets, and a one-time import from Zammad.
+
+**Administration**
+- Everything tunable lives on a searchable Settings page — no config files to edit.
+- A health page, a tamper-evident audit log, and a performance page that shows where time is spent.
+- Two themes per user: *Steaan* (flat and light, the default) and *Nebula* (light or dark).
+
+## Screenshots
+
+**Customer portal** — customers see the tickets of their company and follow the conversation.
+
+<p align="center">
+  <img src="docs/screenshots/portal-tickets.jpg" alt="Customer portal: ticket list" width="49%">
+  <img src="docs/screenshots/portal-ticket.jpg" alt="Customer portal: ticket conversation" width="49%">
+</p>
+
+**Settings** — every option lives on one searchable Settings page, each with a short explanation.
+
+<p align="center">
+  <img src="docs/screenshots/settings-tickets.jpg" alt="Ticket settings" width="49%">
+  <img src="docs/screenshots/settings-portal.jpg" alt="Customer portal settings" width="49%">
+</p>
+
+**Performance** — shows where time is spent, from the server to the browser.
+
+![Performance page](docs/screenshots/performance.jpg)
+
+*All screenshots use anonymised demo data.*
+
+## Built with
+
+ASP.NET Core 8 (C#) · PostgreSQL · React 19 + TypeScript · Tailwind CSS · SignalR · Docker Compose + Nginx
 
 ## Requirements
 
-- **OS** — Ubuntu **24.04 LTS** (Noble). The one-liner depends on PostgreSQL 16 being available in the default apt repos, which is only true from 24.04 onwards. On Ubuntu 22.04 the installer will fail at `apt-get install postgresql-16` unless you add the PGDG repo by hand first.
-- **Architecture** — `x86_64` / `amd64`.
-- **Privileges** — root, or a user with passwordless `sudo`.
-- **Network** — public DNS A-record pointing at the host (Let's Encrypt requirement). Inbound `80` and `443` reachable.
-- **Domain + admin email** — collected at install-time (the email is the Let's Encrypt account contact).
-- **Microsoft 365 tenant** — optional, only for Graph mail intake and OIDC sign-in. Can be configured post-install.
+- **Ubuntu 24.04 LTS** (`x86_64`), with root or passwordless `sudo`.
+- A public DNS record pointing at the host, with ports `80` and `443` open (for Let's Encrypt).
+- Optional: a Microsoft 365 tenant for mail and sign-in — can be set up after installation.
 
 ## Install
 
@@ -39,35 +79,19 @@ One command on a fresh host:
 bash <(curl -sSL https://raw.githubusercontent.com/404-developer-AI/servicedesk/main/deploy/install.sh)
 ```
 
-You'll be prompted for the domain, an admin email, whether to enable TLS, and a few PostgreSQL details. Sensible defaults fill in the rest. All prompts can be pre-answered via environment variables for unattended runs (see the comment block at the top of `deploy/install.sh`).
+The installer asks for the domain, an admin email and a few database details, then sets up Docker, PostgreSQL (on the host), the app with Nginx, and TLS certificates. It can be re-run safely. At the end it prints a one-time link to create the first admin account.
 
-The installer is idempotent — re-running on a healthy install is safe; every step checks state before acting. Secrets are generated only on first run; an existing `/etc/servicedesk/secrets.env` is never overwritten.
+The host firewall and SSH configuration are left untouched — open `80` and `443` (and `22` for yourself) on whatever firewall you use.
 
-### What gets installed
-
-- **Docker Engine + Compose plugin** from Docker's official APT repo.
-- **PostgreSQL 16** (native, host-side) plus client tools. The installer pins `listen_addresses`, locks `pg_hba.conf` to the Docker bridge subnet, and provisions an application role + database.
-- **The app** under `/opt/servicedesk` — repo cloned, app + Nginx containers built and started via Docker Compose, with a content-addressed blob bind-mount at `/var/lib/servicedesk/blobs`.
-- **Nginx** (in Docker) as the reverse proxy with TLS termination and security headers.
-- **Certbot** + Let's Encrypt when TLS is enabled, plus a `systemd` path-unit (`servicedesk-cert-renew.path`) so the in-container app can trigger renewals without holding host privileges.
-- **`chrony`** if the system clock is skewed (fresh VPS images often need a nudge before Let's Encrypt will issue).
-- **`/etc/servicedesk/secrets.env`** with generated master keys (data-protection, audit hash key, DB password). Mode `600`, root-owned.
-- **Audit-log lockdown** — once the schema is bootstrapped, `UPDATE`/`DELETE` on `audit_log` is revoked from the application role.
-- **An admin-setup URL** printed at the end of the run. Open it in a browser to create the first admin account; the URL self-expires after first use.
-
-The host firewall and SSH hardening are intentionally **not** touched — they are policy decisions that belong with whoever provisions the box. Open ports `80` and `443` (and `22` for your own access) on whatever firewall you already run.
-
-Full walkthrough, prerequisites, and troubleshooting: [`docs/deployment-runbook.md`](docs/deployment-runbook.md). Microsoft Graph configuration: [`docs/microsoft-graph-setup.md`](docs/microsoft-graph-setup.md).
+More detail: [deployment runbook](docs/deployment-runbook.md) · [Microsoft Graph setup](docs/microsoft-graph-setup.md)
 
 ## Update
-
-Same one-liner pattern. Always offers a pre-update backup, and auto-rolls-back if the new version doesn't come up healthy:
 
 ```bash
 bash <(curl -sSL https://raw.githubusercontent.com/404-developer-AI/servicedesk/main/deploy/update.sh)
 ```
 
-Users who have the app open during an update don't need to do anything: open sessions detect the new version within seconds and refresh themselves at a safe moment (or show a "new version" banner — admin's choice), staying logged in throughout. The server also refuses writes from an outdated session, so a missed refresh can never corrupt data.
+Offers a backup first and rolls back automatically if the new version does not start cleanly. Users who have the app open are moved to the new version on their own, without losing their session.
 
 ## Backup and restore
 
@@ -76,43 +100,39 @@ sudo /opt/servicedesk/deploy/backup.sh
 sudo /opt/servicedesk/deploy/restore.sh /var/backups/servicedesk/<timestamp>
 ```
 
-The backup script captures the PostgreSQL dump and the blob store together, so a restore is always self-consistent. Cadence advice and disaster-recovery checklist: [`docs/backup-runbook.md`](docs/backup-runbook.md).
+A backup holds the database and the stored files together, so a restore is always consistent. See the [backup runbook](docs/backup-runbook.md).
 
 ## Local development
 
-Dev runs bare-metal — no Docker required. PostgreSQL native on Windows, macOS, or Linux; ASP.NET Core on Kestrel; Vite on its own port with a proxy to the API.
+No Docker needed: PostgreSQL runs natively, the API on Kestrel and the frontend on Vite.
 
 ```bash
-# 1. Install PostgreSQL natively and create a dev DB + role.
-#    Schema is bootstrapped automatically on first run.
+# 1. Create a PostgreSQL database and role; the schema is created on first run.
 
-# 2. Set the dev secrets via user-secrets (not .env — that's production-only):
+# 2. Development secrets (user-secrets, not .env):
 dotnet user-secrets --project src/Servicedesk.Api set "ConnectionStrings:Postgres" "Host=localhost;Database=servicedesk_dev;Username=sd_dev;Password=..."
-dotnet user-secrets --project src/Servicedesk.Api set "Audit:HashKey"             "$(openssl rand -base64 32)"
-dotnet user-secrets --project src/Servicedesk.Api set "DataProtection:MasterKey"  "$(openssl rand -base64 32)"
+dotnet user-secrets --project src/Servicedesk.Api set "Audit:HashKey"            "$(openssl rand -base64 32)"
+dotnet user-secrets --project src/Servicedesk.Api set "DataProtection:MasterKey" "$(openssl rand -base64 32)"
 
-# 3. Run the backend on :5080
+# 3. API on :5080
 dotnet run --project src/Servicedesk.Api
 
-# 4. In a second terminal, run the frontend on :5173 (with /api proxy to :5080)
+# 4. Frontend on :5173 (proxies /api and /hubs to the API)
 cd src/Servicedesk.Web
 npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`. The Vite proxy forwards `/api/*` and `/hubs/*` to Kestrel.
-
 ## Security
 
-- Parameterised SQL only (no string concatenation).
-- Argon2id password hashing, optional TOTP 2FA, encrypted recovery codes.
-- Anti-CSRF (double-submit cookie + header), HSTS, CSP, rate limiting on auth and abuse-prone endpoints.
-- Sensitive fields encrypted at rest via ASP.NET Data Protection.
-- Append-only, hash-chained audit log; mutation rights revoked from the app role at install time.
+- Parameterised SQL only; input validated at every boundary.
+- Argon2id passwords, TOTP two-factor authentication, Microsoft 365 sign-in for staff.
+- HTTPS with HSTS, Content-Security-Policy, CSRF protection and rate limiting.
+- Secrets and sensitive fields encrypted at rest.
+- Append-only, hash-chained audit log.
+
+To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## License
 
-Licensed under the Apache License, Version 2.0 — see [LICENSE](LICENSE).
-
-Provided as is, without warranty or liability of any kind. See [SECURITY.md](SECURITY.md)
-for how to report a vulnerability.
+Apache License 2.0 — see [LICENSE](LICENSE). Provided as is, without warranty of any kind.
