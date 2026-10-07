@@ -394,63 +394,28 @@ public static class AuthEndpoints
         var amr = httpContext.User.FindFirst(SessionAuthenticationHandler.AmrClaimType)?.Value ?? AmrPassword;
         var twoFactorEnabled = await totp.IsEnabledAsync(userId, ct);
 
-        // v0.0.35 — surface the Timesheet feature flags so the frontend
-        // can decide whether to render the menu item without a second
-        // round-trip. Lives on IUserService so the test fakes don't
-        // need a real NpgsqlDataSource for the auth-endpoint surface.
-        var flags = await users.GetTimesheetFlagsAsync(userId, ct);
-        // v0.0.40 — same pattern for the ISO 27001 workflow flags. The
-        // ticket-detail page reads these to decide which classification
-        // buttons to render.
-        var isoFlags = await users.GetIsoFlagsAsync(userId, ct);
-        // v0.0.40 polish — KB access is per-user opt-in. Sidebar + Settings
-        // nav rail both gate on this flag.
-        var kbEnabled = await users.GetKbEnabledAsync(userId, ct);
-        // Sidebar feature flag. Default true on missing rows so a
-        // session that outlives a deleted user is harmless.
-        var searchEnabled = await users.GetSearchEnabledAsync(userId, ct);
-        // v0.0.42 — per-user opt-in for the agent activity feed. Drives
-        // the dashboard tile + /admin/activity nav visibility and the
-        // SignalR hub's group enrollment.
-        var activityFeedEnabled = await users.GetActivityFeedEnabledAsync(userId, ct);
-        // v0.0.52 — per-user opt-in for the Assets page (Tactical RMM
-        // mirror). Drives the sidebar nav entry. Backend /api/assets
-        // routes carry RequireAgent so the gate is enforced on both ends.
-        var assetsEnabled = await users.GetAssetsEnabledAsync(userId, ct);
-        // Per-user opt-in for the Adsolut timesheet tab. Paired below with
-        // the live Adsolut connection state — the tab only renders when
-        // both are true.
-        var adsolutTimesheetEnabled = await users.GetAdsolutTimesheetEnabledAsync(userId, ct);
-        // v0.0.59 — per-user opt-in for the Adsolut Orders feature (navbar
-        // overview under Assets, ticket "Sync orders" button, "::" order
-        // linking). Paired below with the live Adsolut connection state — the
-        // overview only renders when both are true.
-        var adsolutOrdersEnabled = await users.GetAdsolutOrdersEnabledAsync(userId, ct);
-        // v0.0.56 — per-user opt-in for the back-office Resolved + CWI
-        // timesheet tabs. Gates the two tabs in the SPA; the underlying
-        // /api/timesheet/backoffice endpoints carry RequireAgent so the
-        // gate is feature-visibility, not security authorization.
-        var timesheetBackofficeEnabled = await users.GetTimesheetBackofficeEnabledAsync(userId, ct);
-        // v0.0.69 — per-user opt-in for the Statistics feature. Read gates the
-        // page + its assigned tiles; write gates the tile-builder. The
-        // underlying /api/statistics endpoints enforce the same flags so this
-        // is feature-visibility, not the security boundary.
-        var statisticsRead = await users.GetStatisticsReadEnabledAsync(userId, ct);
-        var statisticsWrite = await users.GetStatisticsWriteEnabledAsync(userId, ct);
-        // v0.0.76 — per-user opt-in for the Contracts page (tile hub; the
-        // contract data model lands later). Drives the sidebar nav entry.
-        var contractsEnabled = await users.GetContractsEnabledAsync(userId, ct);
-        // v0.1.13 — per-user opt-in for the Insights reporting dashboard.
-        // Drives the sidebar nav entry + route gate; /api/insights enforces
-        // the same flag server-side.
-        var insightsEnabled = await users.GetInsightsEnabledAsync(userId, ct);
-        // Per-user opt-in for the Employee Feedback board. Both flags drive the
-        // sidebar nav entry + the /feedback route gate; the /api/feedback/*
-        // endpoints enforce the resolved access scope. feedbackEnabled = full
-        // access (shared board); feedbackOwnOnly = restricted (log + see own).
-        var feedbackAccess = await users.GetFeedbackAccessAsync(userId, ct);
-        var feedbackEnabled = feedbackAccess.Enabled;
-        var feedbackOwnOnly = feedbackAccess.OwnOnly;
+        // Every per-user feature flag (timesheet, ISO, KB, search, activity
+        // feed, assets, Adsolut tabs, statistics, contracts, insights,
+        // feedback) in ONE query — this endpoint runs on every page load and
+        // used to issue one query per flag (v0.1.24, found by the
+        // Performance monitor). Each flag is feature-visibility for the SPA;
+        // the API endpoints behind them enforce the same flags server-side.
+        var f = await users.GetFeatureFlagsAsync(userId, ct);
+        var flags = f.Timesheet;
+        var isoFlags = f.Iso;
+        var kbEnabled = f.KbEnabled;
+        var searchEnabled = f.SearchEnabled;
+        var activityFeedEnabled = f.ActivityFeedEnabled;
+        var assetsEnabled = f.AssetsEnabled;
+        var adsolutTimesheetEnabled = f.AdsolutTimesheetEnabled;
+        var adsolutOrdersEnabled = f.AdsolutOrdersEnabled;
+        var timesheetBackofficeEnabled = f.TimesheetBackofficeEnabled;
+        var statisticsRead = f.StatisticsRead;
+        var statisticsWrite = f.StatisticsWrite;
+        var contractsEnabled = f.ContractsEnabled;
+        var insightsEnabled = f.InsightsEnabled;
+        var feedbackEnabled = f.Feedback.Enabled;
+        var feedbackOwnOnly = f.Feedback.OwnOnly;
         // Whether the Adsolut integration is connected (configured + valid
         // refresh token, no refresh error). Resolved here so a non-admin
         // agent can gate the Adsolut timesheet tab without the admin-only

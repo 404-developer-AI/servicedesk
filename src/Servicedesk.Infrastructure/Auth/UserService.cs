@@ -147,6 +147,34 @@ public interface IUserService
     /// authorization boundary for the /api/feedback/* endpoints.
     Task<FeedbackAccessInfo> GetFeedbackAccessAsync(Guid userId, CancellationToken ct = default);
 
+    /// v0.1.24 — every per-user feature flag in one read. /api/auth/me runs
+    /// on every page load and used to issue one query per flag (14 round
+    /// trips); <see cref="UserService"/> answers this with a single SELECT.
+    /// The default implementation composes the single-flag calls so test
+    /// fakes keep working unchanged — the defaults for a missing row are
+    /// therefore identical to theirs.
+    async Task<UserFeatureFlags> GetFeatureFlagsAsync(Guid userId, CancellationToken ct = default)
+    {
+        var timesheet = await GetTimesheetFlagsAsync(userId, ct);
+        var iso = await GetIsoFlagsAsync(userId, ct);
+        var feedback = await GetFeedbackAccessAsync(userId, ct);
+        return new UserFeatureFlags(
+            timesheet,
+            iso,
+            await GetKbEnabledAsync(userId, ct),
+            await GetSearchEnabledAsync(userId, ct),
+            await GetActivityFeedEnabledAsync(userId, ct),
+            await GetAssetsEnabledAsync(userId, ct),
+            await GetAdsolutTimesheetEnabledAsync(userId, ct),
+            await GetAdsolutOrdersEnabledAsync(userId, ct),
+            await GetTimesheetBackofficeEnabledAsync(userId, ct),
+            await GetStatisticsReadEnabledAsync(userId, ct),
+            await GetStatisticsWriteEnabledAsync(userId, ct),
+            await GetContractsEnabledAsync(userId, ct),
+            await GetInsightsEnabledAsync(userId, ct),
+            feedback);
+    }
+
     /// Loads the per-user feature flags that gate availability of
     /// feature-flagged global-search sources (Orders, Contracts family,
     /// Employee Feedback, …) in a single round-trip. Returns the set of
@@ -180,6 +208,23 @@ public readonly record struct FeedbackAccessInfo(bool Enabled, bool OwnOnly)
 
 /// Per-user Timesheet feature flags. Empty struct-y record so the call
 /// stays cheap and we don't allocate a class for two booleans.
+/// v0.1.24 — all per-user feature flags, as read in one query for /api/auth/me.
+public sealed record UserFeatureFlags(
+    TimesheetFlags Timesheet,
+    IsoFlags Iso,
+    bool KbEnabled,
+    bool SearchEnabled,
+    bool ActivityFeedEnabled,
+    bool AssetsEnabled,
+    bool AdsolutTimesheetEnabled,
+    bool AdsolutOrdersEnabled,
+    bool TimesheetBackofficeEnabled,
+    bool StatisticsRead,
+    bool StatisticsWrite,
+    bool ContractsEnabled,
+    bool InsightsEnabled,
+    FeedbackAccessInfo Feedback);
+
 public readonly record struct TimesheetFlags(bool Enabled, bool Manager)
 {
     public static TimesheetFlags None => default;
@@ -594,6 +639,75 @@ public sealed class UserService : IUserService
         var value = await connection.QuerySingleOrDefaultAsync<bool?>(
             new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
         return value ?? false;
+    }
+
+    public async Task<UserFeatureFlags> GetFeatureFlagsAsync(Guid userId, CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT COALESCE(timesheet_enabled, FALSE)            AS TimesheetEnabled,
+                   COALESCE(timesheet_manager, FALSE)            AS TimesheetManager,
+                   COALESCE(is_iso_mgm, FALSE)                   AS IsoMgm,
+                   COALESCE(is_iso_dpo, FALSE)                   AS IsoDpo,
+                   COALESCE(kb_enabled, FALSE)                   AS KbEnabled,
+                   COALESCE(search_enabled, TRUE)                AS SearchEnabled,
+                   COALESCE(activity_feed_enabled, FALSE)        AS ActivityFeedEnabled,
+                   COALESCE(assets_enabled, FALSE)               AS AssetsEnabled,
+                   COALESCE(adsolut_timesheet_enabled, FALSE)    AS AdsolutTimesheetEnabled,
+                   COALESCE(adsolut_orders_enabled, FALSE)       AS AdsolutOrdersEnabled,
+                   COALESCE(timesheet_backoffice_enabled, FALSE) AS TimesheetBackofficeEnabled,
+                   COALESCE(statistics_read, FALSE)              AS StatisticsRead,
+                   COALESCE(statistics_write, FALSE)             AS StatisticsWrite,
+                   COALESCE(contracts_enabled, FALSE)            AS ContractsEnabled,
+                   COALESCE(insights_enabled, FALSE)             AS InsightsEnabled,
+                   COALESCE(feedback_enabled, FALSE)             AS FeedbackEnabled,
+                   COALESCE(feedback_own_only, FALSE)            AS FeedbackOwnOnly
+            FROM users WHERE id = @id
+            """;
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var r = await connection.QuerySingleOrDefaultAsync<FeatureFlagsRow>(
+            new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
+        if (r is null)
+        {
+            // Same defaults as the single-flag reads: off, except search.
+            return new UserFeatureFlags(TimesheetFlags.None, IsoFlags.None, false, true, false, false,
+                false, false, false, false, false, false, false, default);
+        }
+        return new UserFeatureFlags(
+            new TimesheetFlags(r.TimesheetEnabled, r.TimesheetManager),
+            new IsoFlags(r.IsoMgm, r.IsoDpo),
+            r.KbEnabled,
+            r.SearchEnabled,
+            r.ActivityFeedEnabled,
+            r.AssetsEnabled,
+            r.AdsolutTimesheetEnabled,
+            r.AdsolutOrdersEnabled,
+            r.TimesheetBackofficeEnabled,
+            r.StatisticsRead,
+            r.StatisticsWrite,
+            r.ContractsEnabled,
+            r.InsightsEnabled,
+            new FeedbackAccessInfo(r.FeedbackEnabled, r.FeedbackOwnOnly));
+    }
+
+    private sealed class FeatureFlagsRow
+    {
+        public bool TimesheetEnabled { get; set; }
+        public bool TimesheetManager { get; set; }
+        public bool IsoMgm { get; set; }
+        public bool IsoDpo { get; set; }
+        public bool KbEnabled { get; set; }
+        public bool SearchEnabled { get; set; }
+        public bool ActivityFeedEnabled { get; set; }
+        public bool AssetsEnabled { get; set; }
+        public bool AdsolutTimesheetEnabled { get; set; }
+        public bool AdsolutOrdersEnabled { get; set; }
+        public bool TimesheetBackofficeEnabled { get; set; }
+        public bool StatisticsRead { get; set; }
+        public bool StatisticsWrite { get; set; }
+        public bool ContractsEnabled { get; set; }
+        public bool InsightsEnabled { get; set; }
+        public bool FeedbackEnabled { get; set; }
+        public bool FeedbackOwnOnly { get; set; }
     }
 
     public async Task<FeedbackAccessInfo> GetFeedbackAccessAsync(Guid userId, CancellationToken ct = default)
