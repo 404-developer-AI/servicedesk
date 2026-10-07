@@ -52,6 +52,14 @@ public interface ITriggerRepository
     /// 200×/day".
     Task RecordRunAsync(TriggerRunRecord record, CancellationToken ct);
 
+    /// v0.1.25 — several run rows in one round-trip. The evaluator buffers
+    /// the no-match rows of one pass (one per active trigger, ~17 per ticket
+    /// change in the Performance monitor) and writes them together.
+    async Task RecordRunsAsync(IReadOnlyList<TriggerRunRecord> records, CancellationToken ct)
+    {
+        foreach (var r in records) await RecordRunAsync(r, ct);
+    }
+
     /// Scheduler scan — Blok 5. Returns (ticket, trigger) pairs whose
     /// <c>tickets.pending_till_utc</c> has elapsed and that have not yet
     /// fired an applied/failed run since that boundary. Pairs are deduped

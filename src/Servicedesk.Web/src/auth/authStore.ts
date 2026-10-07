@@ -79,6 +79,10 @@ export type AuthUser = {
   /// The ThemeProvider syncs from this on bootstrap so the first
   /// authenticated paint matches the saved choice across devices.
   effectiveTheme: UiTheme;
+  /// v0.1.25 — global SLA master switch (Settings → SLA). Off hides the SLA
+  /// log nav entry and the Due values; the server stops calculating. Treat
+  /// a missing value as on.
+  slaEnabled?: boolean;
 };
 
 export type DashboardTileSize = "small" | "medium" | "wide" | "full";

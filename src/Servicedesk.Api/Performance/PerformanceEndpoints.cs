@@ -314,8 +314,15 @@ public static class PerformanceEndpoints
             var summary = await q.RuntimeSummaryAsync(f, t, cpuHigh, loadHigh, ct);
             var series = await q.RuntimeSeriesAsync(f, t, PerfQueries.StepFor(t - f), ct);
             var benchmarks = await toolbox.BenchmarksAsync(ct);
+            var (exSince, exTypes) = RuntimeSampler.ExceptionTypes(15);
             return Results.Ok(new
             {
+                // v0.1.25 — type names only, since app start.
+                exceptionTypes = new
+                {
+                    sinceUtc = exSince,
+                    types = exTypes.Select(kv => new { type = PerfRedactor.Text(kv.Key), count = kv.Value }),
+                },
                 hostSupported = HostMetricsReader.IsSupported,
                 processorCount = Environment.ProcessorCount,
                 os = Environment.OSVersion.ToString(),
@@ -433,11 +440,12 @@ public static class PerformanceEndpoints
                     totalMs = R(g.Sum(x => x.SumValue)),
                     maxMs = R(g.Max(x => x.MaxValue)),
                 }).OrderByDescending(x => x.totalMs).Take(25),
-                api = rum.Where(r => r.Metric is "api_total" or "api_server" or "api_network").GroupBy(r => r.Detail).Select(g =>
+                api = rum.Where(r => r.Metric is "api_total" or "api_server" or "api_network" or "api_queue").GroupBy(r => r.Detail).Select(g =>
                 {
                     var total = Merge(g.Where(x => x.Metric == "api_total"));
                     var server = Merge(g.Where(x => x.Metric == "api_server"));
                     var network = Merge(g.Where(x => x.Metric == "api_network"));
+                    var queue = Merge(g.Where(x => x.Metric == "api_queue"));
                     return new
                     {
                         route = g.Key,
@@ -446,6 +454,8 @@ public static class PerformanceEndpoints
                         serverP75 = server is null ? 0 : R(server.Value.P75),
                         networkP75 = network is null ? 0 : R(network.Value.P75),
                         networkPct = total is { Sum: > 0 } && network is not null ? R(100 * network.Value.Sum / total.Value.Sum, 1) : 0,
+                        queueP75 = queue is null ? 0 : R(queue.Value.P75),
+                        queuePct = total is { Sum: > 0 } && queue is not null ? R(100 * queue.Value.Sum / total.Value.Sum, 1) : 0,
                     };
                 }).OrderByDescending(x => x.count).Take(50),
                 navigation = new[] { "nav_dns", "nav_tcp", "nav_tls", "nav_ttfb", "nav_download", "nav_dom", "nav_load" }.Select(m =>

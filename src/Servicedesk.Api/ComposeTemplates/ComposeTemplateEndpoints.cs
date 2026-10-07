@@ -282,9 +282,9 @@ public static class ComposeTemplateEndpoints
             {
                 var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
                 var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
-                var ticket = await tickets.GetByIdAsync(ticketGuid, ct);
+                var ticket = await tickets.GetCoreAsync(ticketGuid, ct);
                 if (ticket is null) return Results.NotFound();
-                if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.Ticket.QueueId, ct))
+                if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.QueueId, ct))
                     return Results.NotFound();
 
                 tokens = await resolver.ResolveForTicketAsync(ticketGuid, agentEmail, ct);

@@ -26,8 +26,11 @@ public static class SlaEndpoints
         MapDashboardEndpoints(admin);
 
         // Ticket-state lookup is allowed for any agent who can see the ticket.
-        app.MapGet("/api/sla/tickets/{ticketId:guid}", async (Guid ticketId, ISlaRepository repo, CancellationToken ct) =>
+        app.MapGet("/api/sla/tickets/{ticketId:guid}", async (Guid ticketId, ISlaRepository repo, ISlaEngine engine, CancellationToken ct) =>
         {
+            // v0.1.25 — Sla.Enabled off: the stored state is frozen, so the
+            // ticket shows no SLA at all instead of stale deadlines.
+            if (!await engine.IsEnabledAsync(ct)) return Results.Json<TicketSlaState?>(null);
             var state = await repo.GetStateAsync(ticketId, ct);
             // "No SLA state" (no policy applies) is a normal answer, not an
             // error — Results.Json so a null state serializes as a JSON null

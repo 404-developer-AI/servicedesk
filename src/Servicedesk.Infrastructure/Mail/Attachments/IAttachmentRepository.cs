@@ -7,6 +7,26 @@ public interface IAttachmentRepository
 {
     Task<AttachmentRow?> GetByIdAsync(Guid id, CancellationToken ct);
 
+    /// v0.1.25 — several rows in one round-trip (missing ids are simply
+    /// absent from the result). The outbound-mail path resolved every inline
+    /// image of a quoted thread one query at a time (164 in one send).
+    async Task<IReadOnlyDictionary<Guid, AttachmentRow>> GetByIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct)
+    {
+        var result = new Dictionary<Guid, AttachmentRow>();
+        foreach (var id in ids.Distinct())
+            if (await GetByIdAsync(id, ct) is { } row) result[id] = row;
+        return result;
+    }
+
+    /// v0.1.25 — <see cref="CreateUploadedAsync"/> for several rows in one
+    /// round-trip; the returned ids are in input order.
+    async Task<IReadOnlyList<Guid>> CreateUploadedManyAsync(IReadOnlyList<NewUploadedAttachment> inputs, CancellationToken ct)
+    {
+        var ids = new List<Guid>(inputs.Count);
+        foreach (var input in inputs) ids.Add(await CreateUploadedAsync(input, ct));
+        return ids;
+    }
+
     /// Every Ready attachment owned by a given mail. Used by the HTML renderer
     /// to resolve <c>cid:</c> references and by the timeline to list files.
     Task<IReadOnlyList<AttachmentRow>> ListByMailAsync(Guid mailId, CancellationToken ct);

@@ -39,12 +39,12 @@ public static class TicketAttachmentEndpoints
             CancellationToken ct) =>
         {
             // Queue-access first — return 404 to avoid leaking ticket existence.
-            var ticket = await tickets.GetByIdAsync(id, ct);
+            var ticket = await tickets.GetCoreAsync(id, ct);
             if (ticket is null) return Results.NotFound();
 
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
-            if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.QueueId, ct))
                 return Results.NotFound();
 
             var stored = await StoreUploadedFileAsync(http, id, attachments, blobs, settings, ct);
@@ -91,12 +91,12 @@ public static class TicketAttachmentEndpoints
             IAttachmentRepository attachments, IBlobStore blobs,
             IAuditLogger audit, CancellationToken ct) =>
         {
-            var ticket = await tickets.GetByIdAsync(id, ct);
+            var ticket = await tickets.GetCoreAsync(id, ct);
             if (ticket is null) return Results.NotFound();
 
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
-            if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.Ticket.QueueId, ct))
+            if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.QueueId, ct))
                 return Results.NotFound();
 
             var att = await attachments.GetByIdAsync(attachmentId, ct);

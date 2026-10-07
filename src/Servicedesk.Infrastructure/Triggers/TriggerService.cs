@@ -108,9 +108,14 @@ public sealed class TriggerService : ITriggerService
         }
         if (triggers.Count == 0) return;
 
-        TicketDetail? detail = null;
+        // v0.1.25 — the ticket row + only the triggering event, instead of
+        // the full detail (every event's HTML) per pass and again after
+        // every applied trigger.
+        Ticket? ticket = null;
         TicketEvent? triggeringEvent = null;
-
+        var deferredSkips = new List<TriggerRunRecord>();
+        try
+        {
         foreach (var trigger in triggers)
         {
             if (!Enum.TryParse<TriggerActivatorMode>(trigger.ActivatorMode, ignoreCase: true, out var mode))
@@ -153,20 +158,21 @@ public sealed class TriggerService : ITriggerService
                 finally { cheap?.Dispose(); }
             }
 
-            detail ??= await _tickets.GetByIdAsync(ticketId, ct);
-            if (detail is null)
+            if (ticket is null)
             {
-                _logger.LogWarning("Ticket {TicketId} disappeared mid-evaluation; aborting trigger pass.", ticketId);
-                return;
-            }
-            if (triggeringEvent is null && ticketEventId.HasValue)
-            {
-                triggeringEvent = detail.Events.FirstOrDefault(e => e.Id == ticketEventId.Value);
+                ticket = await _tickets.GetCoreAsync(ticketId, ct);
+                if (ticket is null)
+                {
+                    _logger.LogWarning("Ticket {TicketId} disappeared mid-evaluation; aborting trigger pass.", ticketId);
+                    return;
+                }
+                if (ticketEventId.HasValue)
+                    triggeringEvent = await _tickets.GetEventAsync(ticketId, ticketEventId.Value, ct);
             }
 
             var (_, results) = await RunOneTriggerAsync(
-                trigger, detail.Ticket, triggeringEvent,
-                ticketEventId, changeSet, scheduledBoundaryUtc: null, ct);
+                trigger, ticket, triggeringEvent,
+                ticketEventId, changeSet, scheduledBoundaryUtc: null, ct, deferredSkips);
 
             var applied = results.Any(r => r.Status == TriggerActionStatus.Applied);
             if (applied)
@@ -190,16 +196,29 @@ public sealed class TriggerService : ITriggerService
                 // trigger in the alphabetical list sees the new state.
                 // Without this, two cooperating triggers (set_priority
                 // then condition-on-priority) wouldn't compose.
-                detail = await _tickets.GetByIdAsync(ticketId, ct);
-                if (detail is null)
+                ticket = await _tickets.GetCoreAsync(ticketId, ct);
+                if (ticket is null)
                 {
                     _logger.LogWarning("Ticket {TicketId} disappeared after trigger {TriggerId} applied actions.",
                         ticketId, trigger.Id);
                     return;
                 }
                 triggeringEvent = ticketEventId.HasValue
-                    ? detail.Events.FirstOrDefault(e => e.Id == ticketEventId.Value)
+                    ? await _tickets.GetEventAsync(ticketId, ticketEventId.Value, ct)
                     : null;
+            }
+        }
+        }
+        finally
+        {
+            if (deferredSkips.Count > 0)
+            {
+                try { await _repo.RecordRunsAsync(deferredSkips, CancellationToken.None); }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to record {Count} skipped trigger_run rows for ticket {TicketId}.",
+                        deferredSkips.Count, ticketId);
+                }
             }
         }
     }
@@ -363,7 +382,7 @@ public sealed class TriggerService : ITriggerService
             return new TriggerScheduledRunResult(TriggerRunOutcome.Failed, ChainShouldClear: false);
         }
 
-        var detail = await _tickets.GetByIdAsync(ticketId, ct);
+        var detail = await _tickets.GetCoreAsync(ticketId, ct);
         if (detail is null)
         {
             _logger.LogWarning("Ticket {TicketId} disappeared before scheduled trigger evaluation.", ticketId);
@@ -371,7 +390,7 @@ public sealed class TriggerService : ITriggerService
         }
 
         var (outcome, results) = await RunOneTriggerAsync(
-            trigger, detail.Ticket, triggeringEvent: null,
+            trigger, detail, triggeringEvent: null,
             ticketEventId: null, TriggerChangeSet.Empty,
             scheduledBoundaryUtc: boundaryUtc, ct);
 
@@ -406,7 +425,7 @@ public sealed class TriggerService : ITriggerService
         var trigger = await _repo.GetByIdAsync(triggerId, ct);
         if (trigger is null) return null;
 
-        var detail = await _tickets.GetByIdAsync(ticketId, ct);
+        var detail = await _tickets.GetCoreAsync(ticketId, ct);
         if (detail is null) return null;
 
         JsonDocument? condDoc = null;
@@ -427,14 +446,14 @@ public sealed class TriggerService : ITriggerService
             }
 
             var ctx = new TriggerEvaluationContext(
-                detail.Ticket.Id,
-                detail.Ticket,
+                detail.Id,
+                detail,
                 TriggeringEvent: null,
                 TriggerChangeSet.Empty,
                 DateTime.UtcNow,
                 trigger.Id)
             {
-                HasLinkedOrder = await ResolveHasLinkedOrderAsync(condDoc.RootElement, detail.Ticket.Id, ct),
+                HasLinkedOrder = await ResolveHasLinkedOrderAsync(condDoc.RootElement, detail.Id, ct),
             };
 
             bool matched;
@@ -492,7 +511,8 @@ public sealed class TriggerService : ITriggerService
         long? ticketEventId,
         TriggerChangeSet changeSet,
         DateTime? scheduledBoundaryUtc,
-        CancellationToken ct)
+        CancellationToken ct,
+        List<TriggerRunRecord>? deferredSkips = null)
     {
         JsonDocument? condDoc = null;
         JsonDocument? actionsDoc = null;
@@ -529,9 +549,15 @@ public sealed class TriggerService : ITriggerService
             var matched = _matcher.Matches(condDoc.RootElement, ctx);
             if (!matched)
             {
-                await SafeRecordAsync(new TriggerRunRecord(
+                var skip = new TriggerRunRecord(
                     trigger.Id, ticket.Id, ticketEventId,
-                    TriggerRunOutcome.SkippedNoMatch, null, null, null), ct);
+                    TriggerRunOutcome.SkippedNoMatch, null, null, null);
+                // v0.1.25 — inside an evaluation pass the no-match rows are
+                // buffered and written in one batch when the pass ends;
+                // applied/failed rows (the audit trail) are still written
+                // immediately.
+                if (deferredSkips is not null) deferredSkips.Add(skip);
+                else await SafeRecordAsync(skip, ct);
                 return (TriggerRunOutcome.SkippedNoMatch, Array.Empty<TriggerActionResult>());
             }
 

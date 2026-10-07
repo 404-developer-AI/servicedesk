@@ -342,22 +342,70 @@ public sealed class SlaRepository : ISlaRepository
 
     public async Task<bool> UpsertStateAsync(TicketSlaState s, CancellationToken ct)
     {
-        // v0.0.101: the DO UPDATE only fires when a value other than the two
-        // recalc timestamps differs (row-wise IS DISTINCT FROM handles NULLs).
-        // The periodic sweep re-derives identical state for most tickets;
-        // rewriting the row anyway was pure dead-tuple churn on a table that
-        // every ticket open reads. last_recalc_utc/updated_utc therefore mean
-        // "last time the SLA state actually changed".
-        const string sql = """
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var batch = new NpgsqlBatch(conn);
+        batch.BatchCommands.Add(StateUpsertCommand(s));
+        return await batch.ExecuteNonQueryAsync(ct) > 0;
+    }
+
+    public async Task WriteStatesAsync(IReadOnlyList<SlaStateWrite> writes, CancellationToken ct)
+    {
+        if (writes.Count == 0) return;
+        // v0.1.25 — the sweep's writes for a whole batch in one round-trip
+        // (state upserts + the two tickets mirrors), instead of one to three
+        // round-trips per ticket.
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var batch = new NpgsqlBatch(conn);
+        foreach (var w in writes)
+        {
+            batch.BatchCommands.Add(StateUpsertCommand(w.State));
+            if (w.MirrorFirstResponseUtc is { } fr)
+            {
+                batch.BatchCommands.Add(new NpgsqlBatchCommand(
+                    "UPDATE tickets SET first_response_utc = $1 WHERE id = $2 AND first_response_utc IS NULL")
+                {
+                    Parameters = { new() { Value = fr }, new() { Value = w.State.TicketId } },
+                });
+            }
+            if (w.DueChanged)
+            {
+                batch.BatchCommands.Add(new NpgsqlBatchCommand(
+                    "UPDATE tickets SET due_utc = $1 WHERE id = $2 AND due_utc IS DISTINCT FROM $1")
+                {
+                    Parameters = { Param(w.Due), new() { Value = w.State.TicketId } },
+                });
+            }
+        }
+        await batch.ExecuteNonQueryAsync(ct);
+    }
+
+    private static NpgsqlParameter Param(object? value) => new() { Value = value ?? DBNull.Value };
+
+    private static NpgsqlBatchCommand StateUpsertCommand(TicketSlaState s) => new(StateUpsertSql)
+    {
+        Parameters =
+        {
+            Param(s.TicketId), Param(s.PolicyId), Param(s.FirstResponseDeadlineUtc), Param(s.ResolutionDeadlineUtc),
+            Param(s.FirstResponseMetUtc), Param(s.ResolutionMetUtc),
+            Param(s.FirstResponseBusinessMinutes), Param(s.ResolutionBusinessMinutes),
+            Param(s.IsPaused), Param(s.PausedSinceUtc), Param(s.PausedAccumMinutes), Param(s.LastRecalcUtc),
+        },
+    };
+
+    // v0.0.101: the DO UPDATE only fires when a value other than the two
+    // recalc timestamps differs (row-wise IS DISTINCT FROM handles NULLs).
+    // The periodic sweep re-derives identical state for most tickets;
+    // rewriting the row anyway was pure dead-tuple churn on a table that
+    // every ticket open reads. last_recalc_utc/updated_utc therefore mean
+    // "last time the SLA state actually changed". Positional parameters so
+    // the same statement serves the single upsert and the sweep's batch.
+    private const string StateUpsertSql = """
             INSERT INTO ticket_sla_state
                 (ticket_id, policy_id, first_response_deadline_utc, resolution_deadline_utc,
                  first_response_met_utc, resolution_met_utc,
                  first_response_business_minutes, resolution_business_minutes,
                  is_paused, paused_since_utc, paused_accum_minutes, last_recalc_utc, updated_utc)
-            VALUES (@TicketId, @PolicyId, @FirstResponseDeadlineUtc, @ResolutionDeadlineUtc,
-                    @FirstResponseMetUtc, @ResolutionMetUtc,
-                    @FirstResponseBusinessMinutes, @ResolutionBusinessMinutes,
-                    @IsPaused, @PausedSinceUtc, @PausedAccumMinutes, @LastRecalcUtc, now())
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now())
             ON CONFLICT (ticket_id) DO UPDATE SET
                 policy_id = EXCLUDED.policy_id,
                 first_response_deadline_utc = EXCLUDED.first_response_deadline_utc,
@@ -383,9 +431,6 @@ public sealed class SlaRepository : ISlaRepository
                    EXCLUDED.resolution_business_minutes, EXCLUDED.is_paused,
                    EXCLUDED.paused_since_utc, EXCLUDED.paused_accum_minutes)
             """;
-        await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        return await conn.ExecuteAsync(new CommandDefinition(sql, s, cancellationToken: ct)) > 0;
-    }
 
     public async Task<IReadOnlyList<SlaRecalcCandidate>> ListRecalcCandidatesAsync(int limit, SlaRecalcCursor? after, CancellationToken ct)
     {

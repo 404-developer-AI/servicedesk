@@ -157,7 +157,7 @@ public sealed class FirstOpenGateService : IFirstOpenGateService
         if (trigger is null || !trigger.IsActive) return;
         if (trigger.ActivatorKind != "gate" || trigger.ActivatorMode != "first_open") return;
 
-        var detail = await _tickets.GetByIdAsync(ticketId, ct);
+        var detail = await _tickets.GetCoreAsync(ticketId, ct);
         if (detail is null) return;
 
         JsonDocument actionsDoc;
@@ -172,7 +172,7 @@ public sealed class FirstOpenGateService : IFirstOpenGateService
         {
             var ctx = new TriggerEvaluationContext(
                 TicketId: ticketId,
-                Ticket: detail.Ticket,
+                Ticket: detail,
                 TriggeringEvent: null,
                 ChangeSet: new TriggerChangeSet(
                     new HashSet<string>(StringComparer.OrdinalIgnoreCase), ArticleAdded: false),

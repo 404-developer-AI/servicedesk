@@ -53,7 +53,7 @@ public enum TicketMutationCheck
 /// negotiates confirmations with the agent, a bulk action skips the ticket.
 public sealed record FieldUpdatePrecheck(
     TicketMutationCheck Check,
-    TicketDetail? Ticket,
+    Ticket? Ticket,
     IReadOnlyList<MatchedStatusGate> Gates,
     IReadOnlyList<ChecklistBlocker>? ChecklistBlockers = null)
 {
@@ -65,7 +65,10 @@ public sealed record FieldUpdatePrecheck(
 }
 
 /// Result of <see cref="ITicketMutationService.PrecheckAccessAsync"/>.
-public sealed record AccessPrecheck(TicketMutationCheck Check, TicketDetail? Ticket);
+/// v0.1.25: carries the ticket row only (no body/events) - every consumer
+/// reads core fields, and loading every event's HTML per mutation showed up
+/// in the Performance monitor.
+public sealed record AccessPrecheck(TicketMutationCheck Check, Ticket? Ticket);
 
 /// The one place the agent-side ticket mutation rules live (v0.0.102).
 ///
@@ -158,9 +161,9 @@ public sealed class TicketMutationService : ITicketMutationService
 
     public async Task<AccessPrecheck> PrecheckAccessAsync(TicketMutationActor actor, Guid ticketId, CancellationToken ct)
     {
-        var current = await _tickets.GetByIdAsync(ticketId, ct);
+        var current = await _tickets.GetCoreAsync(ticketId, ct);
         if (current is null) return new AccessPrecheck(TicketMutationCheck.NotFound, null);
-        if (!await _queueAccess.HasQueueAccessAsync(actor.UserId, actor.Role, current.Ticket.QueueId, ct))
+        if (!await _queueAccess.HasQueueAccessAsync(actor.UserId, actor.Role, current.QueueId, ct))
             return new AccessPrecheck(TicketMutationCheck.NoAccess, null);
         return new AccessPrecheck(TicketMutationCheck.Ok, current);
     }
@@ -174,7 +177,7 @@ public sealed class TicketMutationService : ITicketMutationService
         var current = access.Ticket;
 
         // Moving queues requires access to the destination too.
-        if (update.QueueId.HasValue && update.QueueId != current.Ticket.QueueId)
+        if (update.QueueId.HasValue && update.QueueId != current.QueueId)
         {
             if (!await _queueAccess.HasQueueAccessAsync(actor.UserId, actor.Role, update.QueueId.Value, ct))
                 return FieldUpdatePrecheck.Fail(TicketMutationCheck.TargetQueueNoAccess);
@@ -182,7 +185,7 @@ public sealed class TicketMutationService : ITicketMutationService
             // v0.0.105 — project tickets are pinned to the configured project
             // queue: any move to a different queue is refused (single-ticket
             // and bulk share this rule by construction).
-            if (current.Ticket.IsProject)
+            if (current.IsProject)
             {
                 var pinned = await ProjectQueuePin.GetPinnedQueueIdAsync(_settings, ct);
                 if (pinned is Guid pin && update.QueueId.Value != pin)
@@ -196,7 +199,7 @@ public sealed class TicketMutationService : ITicketMutationService
         // current queue when the queue isn't changing.
         if (update.StatusId.HasValue)
         {
-            var targetQueueId = update.QueueId ?? current.Ticket.QueueId;
+            var targetQueueId = update.QueueId ?? current.QueueId;
             var targetQueue = await _taxonomy.GetQueueAsync(targetQueueId, ct);
             if (targetQueue is not null
                 && targetQueue.AllowedStatusIds is { Count: > 0 } allowed
@@ -209,7 +212,7 @@ public sealed class TicketMutationService : ITicketMutationService
         // v0.0.103 — checklist close block. A hard rule, not a gate: no
         // confirmation can satisfy it, the agent has to finish (or n/a) the
         // required items first. Only when the status actually changes.
-        if (update.StatusId.HasValue && update.StatusId.Value != current.Ticket.StatusId)
+        if (update.StatusId.HasValue && update.StatusId.Value != current.StatusId)
         {
             var blockers = await _checklistGuard.FindBlockersAsync(ticketId, update.StatusId.Value, ct);
             if (blockers.Count > 0)
@@ -219,7 +222,7 @@ public sealed class TicketMutationService : ITicketMutationService
         // v0.0.42 — status-gate probe. Only when the status actually changes;
         // a same-value update is a no-op the matcher already filters.
         IReadOnlyList<MatchedStatusGate> gates = Array.Empty<MatchedStatusGate>();
-        if (update.StatusId.HasValue && update.StatusId.Value != current.Ticket.StatusId)
+        if (update.StatusId.HasValue && update.StatusId.Value != current.StatusId)
             gates = await _gates.FindMatchingAsync(ticketId, update.StatusId.Value, ct);
 
         return new FieldUpdatePrecheck(TicketMutationCheck.Ok, current, gates);

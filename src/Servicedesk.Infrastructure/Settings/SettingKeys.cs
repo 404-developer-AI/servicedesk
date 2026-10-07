@@ -945,6 +945,12 @@ public static class SettingKeys
 
     public static class Sla
     {
+        /// v0.1.25 — master switch. Off = no SLA calculation anywhere (ticket
+        /// mutations, the sweep worker), no SLA escalation / warning
+        /// triggers, and the SLA surfaces (ticket pill, Due values, SLA log
+        /// nav) are hidden. Stored state is kept, so turning it back on
+        /// resumes where it stopped (the sweep refreshes open tickets).
+        public const string Enabled = "Sla.Enabled";
         public const string FirstContactTriggers = "Sla.FirstContact.Triggers";
         public const string PauseOnPending = "Sla.PauseOnPending";
         public const string HolidaysCountryCode = "Sla.Holidays.CountryCode";
@@ -2062,6 +2068,8 @@ public static class SettingDefaults
         // the ticket_events CHECK enum; any listed event marks the first-response
         // timer as met. Holidays auto-sync fetches public holidays for the
         // configured country from date.nager.at and refreshes yearly.
+        new SettingDefault(SettingKeys.Sla.Enabled, "true", "bool", "Sla",
+            "Master switch for SLA. Off: no SLA deadlines are calculated (not on ticket changes, not by the background sweep), SLA escalation and escalation-warning triggers do not fire, and the SLA pill, Due values and SLA log are hidden. Existing SLA data is kept; turning it back on recalculates open tickets within a few minutes."),
         new SettingDefault(SettingKeys.Sla.FirstContactTriggers,
             "[\"Mail\",\"Comment\",\"Call\"]",
             "json", "Sla",

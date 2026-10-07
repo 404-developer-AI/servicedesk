@@ -12,7 +12,7 @@ export function useChecklistSettings() {
   return useQuery<ChecklistSettings>({
     queryKey: checklistSettingsKey,
     queryFn: ticketChecklistApi.settings,
-    staleTime: 60_000,
+    staleTime: 5 * 60_000, // v0.1.25 — admin edits invalidate this key
   });
 }
 

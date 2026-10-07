@@ -156,7 +156,7 @@ public sealed class TicketBulkActionService : ITicketBulkActionService
                 // field changes it degrades to exactly the access check.
                 var pre = await _mutations.PrecheckFieldUpdateAsync(
                     actor, ticketId, fieldUpdate ?? new TicketFieldUpdate(), ct);
-                number = pre.Ticket?.Ticket.Number;
+                number = pre.Ticket?.Number;
                 var reason = pre.Check switch
                 {
                     TicketMutationCheck.Ok => pre.Gates.Count > 0 ? TicketBulkSkipReason.GateRequired : null,

@@ -450,7 +450,7 @@ public sealed class TicketChecklistServiceTests
 
         public Task<AccessPrecheck> PrecheckAccessAsync(TicketMutationActor actor, Guid ticketId, CancellationToken ct)
             => Task.FromResult(_tickets.TryGetValue(ticketId, out var d)
-                ? new AccessPrecheck(TicketMutationCheck.Ok, d)
+                ? new AccessPrecheck(TicketMutationCheck.Ok, d.Ticket)
                 : new AccessPrecheck(TicketMutationCheck.NotFound, null));
 
         public Task<FieldUpdatePrecheck> PrecheckFieldUpdateAsync(TicketMutationActor actor, Guid ticketId, TicketFieldUpdate update, CancellationToken ct) => throw new NotImplementedException();

@@ -87,6 +87,7 @@ export type AuthUserPayload = {
   // 'steaan' since v0.0.108). ThemeProvider uses this as the source of truth
   // on bootstrap.
   effectiveTheme: UiTheme;
+  slaEnabled?: boolean;
 };
 
 export type MeResponse = {

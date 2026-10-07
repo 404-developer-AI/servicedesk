@@ -1806,6 +1806,12 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_integration_audit_outcome_utc
             ON integration_audit (outcome, utc DESC)
             WHERE outcome <> 'ok';
+        -- v0.1.25 — the healthcheck worker's retention sweep deletes by
+        -- (event_type, utc) every few minutes; without this index each
+        -- sweep read the whole table (~475k rows, ~80 ms, found by the
+        -- Performance monitor).
+        CREATE INDEX IF NOT EXISTS ix_integration_audit_event_type_utc
+            ON integration_audit (event_type, utc);
 
         -- v0.0.26 — Adsolut Companies pull. Two columns on companies that
         -- track the Adsolut linkage (adsolut_id is the canonical FK once

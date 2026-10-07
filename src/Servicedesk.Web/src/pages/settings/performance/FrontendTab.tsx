@@ -65,11 +65,12 @@ export function FrontendTab({ period }: { period: PeriodQuery }) {
     {
       key: "split",
       header: "Network share",
-      info: "Part of the browser time spent outside the server: connection, latency, download. High = the user's connection or distance is the bottleneck.",
+      info: "Part of the browser time spent outside the server: connection, latency, download. High = the user's connection or distance is the bottleneck. Time the request waited in the browser before it was sent (too many calls at once) is shown apart as Queued.",
       render: (r) => (
         <div className="flex min-w-32 items-center gap-2">
           <SplitBar className="flex-1" parts={[
-            { key: "server", label: "Server", value: 100 - r.networkPct, color: pal.slot(0) },
+            { key: "server", label: "Server", value: Math.max(0, 100 - r.networkPct - (r.queuePct ?? 0)), color: pal.slot(0) },
+            { key: "queue", label: "Queued", value: r.queuePct ?? 0, color: pal.slot(2) },
             { key: "net", label: "Network", value: r.networkPct, color: pal.slot(1) },
           ]} />
           <span className="w-10 text-right tabular-nums text-muted-foreground">{fmtPct(r.networkPct)}</span>

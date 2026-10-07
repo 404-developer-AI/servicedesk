@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-table";
 import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
 import { useTheme } from "@/app/ThemeProvider";
+import { useAuth } from "@/auth/authStore";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TicketTypeBadge } from "@/components/TicketTypeBadge";
 import { ContactHoverCard } from "@/components/ContactHoverCard";
@@ -73,6 +74,16 @@ type ColoredBadgeProps = {
    */
   variant?: "chip" | "dot";
 };
+
+/// Due = the SLA resolution deadline mirror. v0.1.25: with SLA switched off
+/// the stored value is frozen, so it is not shown at all.
+function DueCell({ iso }: { iso: string | null }) {
+  const { user } = useAuth();
+  const { time } = useServerTime();
+  if (!iso || user?.slaEnabled === false) return <span className="text-muted-foreground/60">—</span>;
+  const isPast = !!time && new Date(iso).getTime() < new Date(time.utc).getTime();
+  return <ServerDate iso={iso} className={isPast ? "text-red-400 text-xs" : "text-muted-foreground text-xs"} />;
+}
 
 function ColoredBadge({ label, color, variant = "chip" }: ColoredBadgeProps) {
   // Status/priority colours are database-provided hex strings, so the
@@ -229,14 +240,7 @@ export const ALL_COLUMNS = [
   columnHelper.accessor("dueUtc", {
     id: "dueUtc",
     header: "Due",
-    cell: (info) => {
-      const val = info.getValue();
-      if (!val) return <span className="text-muted-foreground/60">—</span>;
-      const isPast = new Date(val).getTime() < Date.now();
-      return (
-        <ServerDate iso={val} className={isPast ? "text-red-400 text-xs" : "text-muted-foreground text-xs"} />
-      );
-    },
+    cell: (info) => <DueCell iso={info.getValue()} />,
   }),
   // v0.0.74 — pending-till (snooze). Rendered as a plain future date; an
   // elapsed value is cleared by the scheduler, so no overdue/red treatment

@@ -24,6 +24,8 @@ export function AgentPicker({
   const { data: agents } = useQuery({
     queryKey: ["agents"],
     queryFn: userApi.listAgents,
+    // v0.1.25 — the agent list rarely changes; was refetched on every ticket open.
+    staleTime: 5 * 60_000,
   })
 
   const selectedAgent = agents?.find((a) => a.id === value) ?? null

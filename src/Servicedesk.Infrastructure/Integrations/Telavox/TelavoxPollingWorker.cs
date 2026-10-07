@@ -247,6 +247,9 @@ public sealed class TelavoxPollingWorker : BackgroundService
 
         var triggerMode = (await settings.GetAsync<string>(SettingKeys.Telavox.PopupTriggerMode, ct)
             ?? TelavoxCallTransition.Answered).Trim();
+        var pollIntervalSeconds = Math.Max(1, await settings.GetAsync<int>(SettingKeys.Telavox.PollIntervalSeconds, ct));
+        // Half of IntegrationsHealthAggregator's staleness threshold.
+        var outcomeRefresh = TimeSpan.FromSeconds(Math.Max(pollIntervalSeconds * 4, 30) / 2.0);
 
         using var run = PerfWorkerRun.Start("telavox-polling");
         var tickStart = Stopwatch.StartNew();
@@ -287,15 +290,27 @@ public sealed class TelavoxPollingWorker : BackgroundService
 
                 // Persist the new baseline first so a SignalR push failure
                 // (rare, but possible) can't cause a duplicate fire on the
-                // next tick from the same edge.
-                await callState.UpsertAsync(
-                    link.UserId,
-                    decision.NewBaseline.LastCallId,
-                    decision.NewBaseline.LastState,
-                    decision.NewBaseline.LastDirection,
-                    decision.NewBaseline.AnsweredAtUtc,
-                    decision.NewBaseline.LastSeenUtc,
-                    ct);
+                // next tick from the same edge. v0.1.25: only when the call
+                // state actually moved — an idle agent used to cost one
+                // upsert per poll (~2,000 an hour). last_seen_utc therefore
+                // means "last state change"; nothing reads it as a heartbeat.
+                var nb = decision.NewBaseline;
+                var baselineUnchanged = prior is not null
+                    && prior.LastCallId == nb.LastCallId
+                    && prior.LastState == nb.LastState
+                    && prior.LastDirection == nb.LastDirection
+                    && prior.AnsweredAtUtc == nb.AnsweredAtUtc;
+                if (!baselineUnchanged)
+                {
+                    await callState.UpsertAsync(
+                        link.UserId,
+                        nb.LastCallId,
+                        nb.LastState,
+                        nb.LastDirection,
+                        nb.AnsweredAtUtc,
+                        nb.LastSeenUtc,
+                        ct);
+                }
 
                 if (IsRingingState(decision.NewBaseline.LastState))
                     anyRinging = true;
@@ -462,9 +477,20 @@ public sealed class TelavoxPollingWorker : BackgroundService
                 }
 
                 pollsSucceeded++;
-                await links.UpdatePollOutcomeAsync(
-                    link.UserId, DateTime.UtcNow, lastPollError: null,
-                    consecutiveErrors: 0, ct);
+                // v0.1.25 — a healthy link only refreshes last_poll_utc every
+                // half staleness window (the Health page flags polling as
+                // stale after max(4 × interval, 30 s)), instead of one UPDATE
+                // per agent per poll. Error transitions are written at once.
+                var stillFresh = link.ConsecutiveErrors == 0
+                    && link.LastPollError is null
+                    && link.LastPollUtc is { } lastPoll
+                    && DateTime.UtcNow - lastPoll < outcomeRefresh;
+                if (!stillFresh)
+                {
+                    await links.UpdatePollOutcomeAsync(
+                        link.UserId, DateTime.UtcNow, lastPollError: null,
+                        consecutiveErrors: 0, ct);
+                }
             }
             catch (TelavoxApiException apiEx)
             {

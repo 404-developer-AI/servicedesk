@@ -34,6 +34,53 @@ public sealed class AttachmentRepository : IAttachmentRepository
             new CommandDefinition(sql, new { id }, cancellationToken: ct));
     }
 
+    public async Task<IReadOnlyDictionary<Guid, AttachmentRow>> GetByIdsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0) return new Dictionary<Guid, AttachmentRow>();
+        var sql = SelectColumns + " FROM attachments WHERE id = ANY(@ids)";
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<AttachmentRow>(
+            new CommandDefinition(sql, new { ids = ids.Distinct().ToArray() }, cancellationToken: ct));
+        return rows.ToDictionary(r => r.Id);
+    }
+
+    public async Task<IReadOnlyList<Guid>> CreateUploadedManyAsync(IReadOnlyList<NewUploadedAttachment> inputs, CancellationToken ct)
+    {
+        if (inputs.Count == 0) return Array.Empty<Guid>();
+        // One statement per row (same INSERT as CreateUploadedAsync) sent as a
+        // single batch, so each RETURNING result maps back to its input.
+        const string sql = """
+            INSERT INTO attachments
+                (content_hash, size_bytes, mime_type, original_filename,
+                 owner_kind, owner_id, is_inline, content_id, processing_state)
+            VALUES ($1, $2, $3, $4, 'Ticket', $5, FALSE, NULL, 'Ready')
+            RETURNING id
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var batch = new NpgsqlBatch(conn);
+        foreach (var i in inputs)
+        {
+            batch.BatchCommands.Add(new NpgsqlBatchCommand(sql)
+            {
+                Parameters =
+                {
+                    new() { Value = i.ContentHash },
+                    new() { Value = i.SizeBytes },
+                    new() { Value = i.MimeType },
+                    new() { Value = i.OriginalFilename },
+                    new() { Value = i.TicketId },
+                },
+            });
+        }
+        var ids = new List<Guid>(inputs.Count);
+        await using var reader = await batch.ExecuteReaderAsync(ct);
+        do
+        {
+            while (await reader.ReadAsync(ct)) ids.Add(reader.GetGuid(0));
+        } while (await reader.NextResultAsync(ct));
+        return ids;
+    }
+
     public async Task<IReadOnlyList<AttachmentRow>> ListByMailAsync(Guid mailId, CancellationToken ct)
     {
         var sql = SelectColumns + " FROM attachments WHERE owner_kind = 'Mail' AND owner_id = @mailId ORDER BY created_utc, id";
@@ -241,30 +288,38 @@ public sealed class AttachmentRepository : IAttachmentRepository
         const string sql = """
             UPDATE attachments
                SET owner_kind = 'Mail',
-                   owner_id   = @MailMessageId,
-                   event_id   = @TicketEventId,
-                   is_inline  = @IsInline,
-                   content_id = @ContentId
-             WHERE id = @AttachmentId
+                   owner_id   = $1,
+                   event_id   = $2,
+                   is_inline  = $3,
+                   content_id = $4
+             WHERE id = $5
                AND owner_kind = 'Ticket'
-               AND owner_id   = @TicketId
+               AND owner_id   = $6
                AND processing_state = 'Ready'
             """;
+        // v0.1.25 — still one UPDATE per row (same statement, same guards),
+        // but sent as one batch inside the transaction: one round-trip
+        // instead of one per attachment (78 in one send in the Performance
+        // monitor).
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
-        var moved = 0;
+        await using var batch = new NpgsqlBatch(conn, tx);
         foreach (var a in assignments)
         {
-            moved += await conn.ExecuteAsync(new CommandDefinition(sql, new
+            batch.BatchCommands.Add(new NpgsqlBatchCommand(sql)
             {
-                a.AttachmentId,
-                MailMessageId = mailMessageId,
-                TicketEventId = ticketEventId,
-                TicketId = ticketId,
-                a.IsInline,
-                a.ContentId,
-            }, tx, cancellationToken: ct));
+                Parameters =
+                {
+                    new() { Value = mailMessageId },
+                    new() { Value = ticketEventId },
+                    new() { Value = a.IsInline },
+                    new() { Value = (object?)a.ContentId ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text },
+                    new() { Value = a.AttachmentId },
+                    new() { Value = ticketId },
+                },
+            });
         }
+        var moved = await batch.ExecuteNonQueryAsync(ct);
         await tx.CommitAsync(ct);
         return moved;
     }

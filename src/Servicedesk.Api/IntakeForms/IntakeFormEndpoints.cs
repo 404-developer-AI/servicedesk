@@ -229,8 +229,8 @@ public static class IntakeFormEndpoints
             // Resolve ticket number for the file name + PDF header. The
             // ticket was already fetched during the access check, but we
             // look it up cheaply here to keep the helper independent.
-            var ticket = await tickets.GetByIdAsync(ticketId, ct);
-            var ticketNumber = ticket?.Ticket.Number ?? 0;
+            var ticket = await tickets.GetCoreAsync(ticketId, ct);
+            var ticketNumber = ticket?.Number ?? 0;
 
             byte[] bytes;
             try
@@ -553,9 +553,9 @@ public static class IntakeFormEndpoints
     {
         var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
         var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
-        var ticket = await tickets.GetByIdAsync(ticketId, ct);
+        var ticket = await tickets.GetCoreAsync(ticketId, ct);
         if (ticket is null) return false;
-        return await queueAccess.HasQueueAccessAsync(userId, role, ticket.Ticket.QueueId, ct);
+        return await queueAccess.HasQueueAccessAsync(userId, role, ticket.QueueId, ct);
     }
 
     private static async Task<string?> ValidateTemplateRequestAsync(

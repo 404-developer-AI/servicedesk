@@ -440,6 +440,12 @@ public static class AuthEndpoints
         var dataSource = httpContext.RequestServices.GetService<Npgsql.NpgsqlDataSource>();
         var effectiveTheme = await ResolveEffectiveThemeAsync(userId, dataSource, settings, ct);
 
+        // v0.1.25 — global SLA switch (in-memory setting, no query): the SPA
+        // hides the SLA log nav and the Due values when it is off.
+        bool slaEnabled;
+        try { slaEnabled = await settings.GetAsync<bool>(SettingKeys.Sla.Enabled, ct); }
+        catch { slaEnabled = true; }
+
         return Results.Ok(new
         {
             user = new
@@ -469,6 +475,7 @@ public static class AuthEndpoints
                 adsolutConnected,
                 dashboardTiles = tiles.Select(t => new { tileId = t.TileId, size = t.Size }).ToList(),
                 effectiveTheme,
+                slaEnabled,
             },
             serverTimeUtc = DateTimeOffset.UtcNow,
         });

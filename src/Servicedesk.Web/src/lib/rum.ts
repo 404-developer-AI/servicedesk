@@ -223,8 +223,14 @@ export async function startRum(router: RouterLike): Promise<void> {
         push({ m: "api_total", r: route, d: detail, v: total });
         const server = e.serverTiming?.find((s) => s.name === "total")?.duration;
         if (typeof server === "number" && server >= 0) {
+          // v0.1.25 — time the request waited inside the browser (connection
+          // pool full, many parallel calls) before it was sent. It used to be
+          // counted as "network"; it is a client-side cost, reported apart.
+          const sentFrom = Math.max(e.connectEnd || 0, e.fetchStart || 0);
+          const queued = e.requestStart > 0 ? Math.max(0, e.requestStart - sentFrom) : 0;
           push({ m: "api_server", r: route, d: detail, v: server });
-          push({ m: "api_network", r: route, d: detail, v: Math.max(0, total - server) });
+          push({ m: "api_queue", r: route, d: detail, v: queued });
+          push({ m: "api_network", r: route, d: detail, v: Math.max(0, total - server - queued) });
         }
         if (e.nextHopProtocol && protocolSamples++ % 20 === 0) {
           push({ m: "protocol", r: route, d: e.nextHopProtocol, v: 1 });

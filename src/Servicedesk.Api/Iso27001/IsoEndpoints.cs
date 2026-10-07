@@ -135,13 +135,13 @@ public static class IsoEndpoints
         // 4. Load ticket + queue-access gate (same 404-leak pattern as
         //    the rest of the ticket endpoints — unauthorized callers get
         //    NotFound, never a hint that the ticket exists).
-        var detail = await tickets.GetByIdAsync(ticketId, ct);
+        var detail = await tickets.GetCoreAsync(ticketId, ct);
         if (detail is null) return Results.NotFound();
-        if (!await queueAccess.HasQueueAccessAsync(userId, userRole, detail.Ticket.QueueId, ct))
+        if (!await queueAccess.HasQueueAccessAsync(userId, userRole, detail.QueueId, ct))
             return Results.NotFound();
 
         // 5. Queue + status match the workflow's expected stage.
-        if (detail.Ticket.QueueId != configuredQueueId)
+        if (detail.QueueId != configuredQueueId)
             return Results.Conflict(new { error = "Ticket is not in the ISO 27001 queue.", code = "wrong_queue" });
 
         var statuses = await taxonomy.ListStatusesAsync(ct);
@@ -149,13 +149,13 @@ public static class IsoEndpoints
         var toStatus = statuses.FirstOrDefault(s => string.Equals(s.Slug, targetSlug, StringComparison.OrdinalIgnoreCase));
         if (fromStatus is null || toStatus is null)
             return Results.Conflict(new { error = "ISO 27001 statuses are missing from the taxonomy.", code = "statuses_missing" });
-        if (detail.Ticket.StatusId != fromStatus.Id)
+        if (detail.StatusId != fromStatus.Id)
             return Results.Conflict(new
             {
                 error = $"Expected status '{fromStatus.Name}', current status is different.",
                 code = "wrong_status",
                 expectedStatusId = fromStatus.Id,
-                actualStatusId = detail.Ticket.StatusId,
+                actualStatusId = detail.StatusId,
             });
 
         // 6. Write the internal note FIRST. If the status flip fails
@@ -197,7 +197,7 @@ public static class IsoEndpoints
             UserAgent: http.Request.Headers.UserAgent.ToString(),
             Payload: new
             {
-                ticketNumber = detail.Ticket.Number,
+                ticketNumber = detail.Number,
                 fromStatus = fromStatus.Name,
                 toStatus = toStatus.Name,
                 motivation = trimmed,

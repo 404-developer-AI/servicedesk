@@ -6,6 +6,19 @@ public interface ITicketRepository
 {
     Task<TicketPage> SearchAsync(TicketQuery query, VisibilityScope scope, Guid? viewerUserId, Guid? viewerCompanyId, CancellationToken ct);
     Task<TicketDetail?> GetByIdAsync(Guid id, CancellationToken ct);
+    /// v0.1.25 — just the ticket row (no body, events or pins). Use it
+    /// wherever only <c>TicketDetail.Ticket</c> is read — access checks,
+    /// queue/status lookups. The Performance monitor showed attachment
+    /// downloads, checklists and PATCH loading every event's full HTML (avg
+    /// ~220 KB) only to read the queue id. The default falls back to the
+    /// full load so test fakes keep working.
+    async Task<Ticket?> GetCoreAsync(Guid id, CancellationToken ct)
+        => (await GetByIdAsync(id, ct))?.Ticket;
+    /// v0.1.25 — one timeline event of a ticket (same projection as the
+    /// events in <see cref="GetByIdAsync"/>), null when it does not exist on
+    /// that ticket.
+    async Task<TicketEvent?> GetEventAsync(Guid ticketId, long eventId, CancellationToken ct)
+        => (await GetByIdAsync(ticketId, ct))?.Events.FirstOrDefault(e => e.Id == eventId);
     Task<Ticket> CreateAsync(NewTicket input, CancellationToken ct);
     Task<TicketDetail?> UpdateFieldsAsync(Guid ticketId, TicketFieldUpdate update, Guid actorUserId, CancellationToken ct);
     /// Manual company assignment (v0.0.9 ToDo #4). Sets company_id, clears
@@ -51,6 +64,17 @@ public interface ITicketRepository
     /// ticket the agent is viewing — returns false when the join doesn't
     /// hold so the endpoint can 404 instead of leaking the pair.
     Task<bool> EventBelongsToTicketAsync(Guid ticketId, long eventId, CancellationToken ct);
+
+    /// v0.1.25 — the batched form of <see cref="EventBelongsToTicketAsync"/>:
+    /// returns the (ticket, event) pairs that hold, in one round-trip.
+    async Task<IReadOnlySet<(Guid TicketId, long EventId)>> EventsBelongToTicketsAsync(
+        IReadOnlyCollection<(Guid TicketId, long EventId)> pairs, CancellationToken ct)
+    {
+        var ok = new HashSet<(Guid TicketId, long EventId)>();
+        foreach (var p in pairs.Distinct())
+            if (await EventBelongsToTicketAsync(p.TicketId, p.EventId, ct)) ok.Add(p);
+        return ok;
+    }
     Task<IReadOnlyDictionary<Guid, int>> GetOpenCountsByQueueAsync(CancellationToken ct);
     Task<int> InsertFakeBatchAsync(int count, CancellationToken ct);
 

@@ -46,6 +46,10 @@ public interface ISlaRepository
     /// same values for most tickets and used to rewrite every row every
     /// cycle. Returns true when a row was inserted/updated.
     Task<bool> UpsertStateAsync(TicketSlaState state, CancellationToken ct);
+    /// v0.1.25 — the sweep's bulk write: every state upsert (same
+    /// change-only rule as above) plus the first_response_utc / due_utc
+    /// mirrors on tickets, in one round-trip.
+    Task WriteStatesAsync(IReadOnlyList<SlaStateWrite> writes, CancellationToken ct);
     /// v0.0.101 — keyset page over the tickets the periodic sweep should
     /// revisit: not deleted, not closed, not resolved (a resolved ticket's
     /// SLA numbers are frozen until it is reopened, and reopening is a field
@@ -65,6 +69,9 @@ public interface ISlaRepository
 }
 
 public sealed record SlaResolvedPolicy(SlaPolicy Policy, BusinessHoursSchema? Schema);
+
+public sealed record SlaStateWrite(
+    TicketSlaState State, DateTime? MirrorFirstResponseUtc, bool DueChanged, DateTime? Due);
 
 public sealed record SlaRecalcCandidate(Guid Id, DateTime UpdatedUtc);
 

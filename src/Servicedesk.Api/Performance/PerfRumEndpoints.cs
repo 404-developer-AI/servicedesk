@@ -24,8 +24,9 @@ public static partial class PerfRumEndpoints
         "lcp", "inp", "cls", "fcp", "ttfb",
         // Navigation timing of the initial load
         "nav_dns", "nav_tcp", "nav_tls", "nav_ttfb", "nav_download", "nav_dom", "nav_load",
-        // API calls (detail = API route): browser total, server part (Server-Timing), network part
-        "api_total", "api_server", "api_network",
+        // API calls (detail = API route): browser total, server part (Server-Timing), network part,
+        // and (v0.1.25) time queued in the browser before the request went out
+        "api_total", "api_server", "api_network", "api_queue",
         // Main-thread blocking
         "long_task", "loaf",
         // SPA navigation
@@ -119,6 +120,7 @@ public static partial class PerfRumEndpoints
             case "api_total":
             case "api_server":
             case "api_network":
+            case "api_queue":
                 var api = PerfRedactor.Route(raw);
                 return api is not null && api.StartsWith("/api/", StringComparison.Ordinal) ? api : null;
             case "loaf":

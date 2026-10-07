@@ -1,6 +1,11 @@
 import { useState } from "react";
-import { Clock, Flag, Globe2, RefreshCw, Timer } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Clock, Flag, Globe2, Power, RefreshCw, Timer } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { settingsApi } from "@/lib/api";
+import { authStore } from "@/auth/authStore";
+import { Switch } from "@/components/ui/switch";
 import { BusinessHoursTab } from "./sla/BusinessHoursTab";
 import { HolidaysTab } from "./sla/HolidaysTab";
 import { PoliciesTab } from "./sla/PoliciesTab";
@@ -16,6 +21,57 @@ const TABS: { id: Tab; label: string; icon: typeof Timer; description: string }[
   { id: "first-contact", label: "First contact", icon: Timer, description: "Which events stop the first-response timer" },
   { id: "recalc", label: "Recalc worker", icon: RefreshCw, description: "Sweep cadence, batch size and policy cache" },
 ];
+
+const SLA_LIST_KEY = ["settings", "list", "Sla"] as const;
+
+/// v0.1.25 — the Sla.Enabled master switch. Off stops every SLA calculation
+/// server-side and pauses SLA escalation triggers; nothing is deleted.
+function SlaMasterSwitch() {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: SLA_LIST_KEY, queryFn: () => settingsApi.list("Sla") });
+  const enabled = q.data?.find((e) => e.key === "Sla.Enabled")?.value !== "false";
+  const save = useMutation({
+    mutationFn: (next: boolean) => settingsApi.update("Sla.Enabled", next ? "true" : "false"),
+    onSuccess: (_d, next) => {
+      toast.success(next ? "SLA switched on — open tickets are recalculated within a few minutes" : "SLA switched off");
+      void qc.invalidateQueries({ queryKey: SLA_LIST_KEY });
+      void qc.invalidateQueries({ queryKey: ["sla"] });
+      // Nav entry + Due values follow the flag without a reload.
+      const cur = authStore.get();
+      if (cur.user) authStore.patch({ user: { ...cur.user, slaEnabled: next } });
+    },
+    onError: (e: Error) => toast.error(`Save failed: ${e.message}`),
+  });
+
+  return (
+    <section
+      className={cn(
+        "flex flex-wrap items-start justify-between gap-4 rounded-lg border p-5",
+        enabled ? "border-glass-strong bg-glass" : "border-amber-500/40 bg-amber-500/5",
+      )}
+    >
+      <div className="flex min-w-0 max-w-2xl gap-3">
+        <Power className={cn("mt-0.5 h-5 w-5 shrink-0", enabled ? "text-primary" : "text-amber-600 dark:text-amber-300")} />
+        <div className="space-y-1">
+          <h2 className="text-sm font-semibold text-foreground">
+            SLA calculation {enabled ? "on" : "off"}
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            {enabled
+              ? "Deadlines are calculated on every ticket change and refreshed by the background worker. Switch off to stop all SLA work: no calculation, no SLA escalation or warning triggers, and the SLA pill, Due values and SLA log are hidden."
+              : "Nothing is calculated and SLA escalation / warning triggers do not fire. Existing SLA data is kept — switching back on recalculates the open tickets within a few minutes."}
+          </p>
+        </div>
+      </div>
+      <Switch
+        checked={enabled}
+        disabled={q.isLoading || save.isPending}
+        onCheckedChange={(v) => save.mutate(v)}
+        aria-label="SLA calculation"
+      />
+    </section>
+  );
+}
 
 export function SlaSettingsPage() {
   const [tab, setTab] = useState<Tab>("hours");
@@ -33,6 +89,8 @@ export function SlaSettingsPage() {
           timing is computed server-side against the selected business-hours schema.
         </p>
       </header>
+
+      <SlaMasterSwitch />
 
       <nav className="flex flex-wrap gap-2">
         {TABS.map((t) => {
