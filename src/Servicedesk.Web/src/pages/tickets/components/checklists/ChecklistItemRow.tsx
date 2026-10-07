@@ -19,7 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 import {
   ticketChecklistApi,
   checklistErrorMessage,
@@ -53,8 +53,8 @@ export function ChecklistItemRow({
   const [editMode, setEditMode] = React.useState(false);
   const [comment, setComment] = React.useState("");
   const [confirmRemove, setConfirmRemove] = React.useState(false);
-  const { time: serverTime } = useServerTime();
-  const offset = serverTime?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offset = serverOffsetMinutes ?? 0;
   const fmt = (iso: string) => toServerLocal(iso, offset);
 
   const invalidate = () => {

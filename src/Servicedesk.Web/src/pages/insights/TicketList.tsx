@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useTheme } from "@/app/ThemeProvider";
-import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 import { colorPillStyle } from "@/lib/colorPill";
 import { insightsApi, type InsightsReportKind, type ReportParams } from "@/lib/insights-api";
 import { cn } from "@/lib/utils";
@@ -46,8 +46,8 @@ export function TicketList({
   disabled: boolean;
 }) {
   const theme = useTheme();
-  const { time } = useServerTime();
-  const offsetMinutes = time?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offsetMinutes = serverOffsetMinutes ?? 0;
 
   const [pageSize, setPageSize] = React.useState(readPageSize);
   // The page belongs to one filter: a new period / queue selection / page
@@ -153,7 +153,7 @@ export function TicketList({
                       </span>
                     </td>
                     <td className="whitespace-nowrap px-5 py-2 text-right text-xs tabular-nums text-muted-foreground">
-                      {time ? toServerLocal(t.momentUtc, offsetMinutes) : "…"}
+                      {serverOffsetMinutes !== null ? toServerLocal(t.momentUtc, offsetMinutes) : "…"}
                     </td>
                   </tr>
                 ))}

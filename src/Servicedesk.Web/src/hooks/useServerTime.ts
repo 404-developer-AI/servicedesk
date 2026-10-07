@@ -169,3 +169,42 @@ export function toServerLocalDate(iso: string, offsetMinutes: number): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
 }
+
+// v0.1.27 — selective subscriptions. useServerTime() re-renders its caller
+// every second (the wall-clock tick); most callers only need the server's
+// UTC offset, and re-rendering e.g. every timeline event or ticket-list row
+// at 1 Hz cost 100–250 ms of main thread per second on a long ticket.
+// These return primitives, so useSyncExternalStore skips the re-render
+// until the value itself changes.
+
+function getOffsetSnapshot(): number | null {
+  return snapshot.time?.offsetMinutes ?? null;
+}
+
+function getNullSnapshot(): null {
+  return null;
+}
+
+/** The server's UTC offset in minutes (null until the first sync); does not tick. */
+export function useServerOffsetMinutes(): number | null {
+  return useSyncExternalStore(subscribe, getOffsetSnapshot, getNullSnapshot);
+}
+
+/**
+ * Server "now" in UTC ms, floored to `stepMs` (default one minute): the
+ * caller re-renders only when that bucket changes. Null until the first sync.
+ */
+export function useServerNowMs(stepMs = 60_000): number | null {
+  const getStepSnapshot = () => {
+    const t = snapshot.time;
+    if (!t) return null;
+    const ms = new Date(t.utc).getTime();
+    return Math.floor(ms / stepMs) * stepMs;
+  };
+  return useSyncExternalStore(subscribe, getStepSnapshot, getNullSnapshot);
+}
+
+/** Non-reactive read of the current server time, for one-off use in handlers. */
+export function getServerTimeSnapshot(): ServerTime | null {
+  return snapshot.time;
+}

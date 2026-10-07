@@ -8,7 +8,7 @@ import { searchApi, type SearchHit } from "@/lib/api";
 import { sanitizeSnippet } from "@/lib/sanitize";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/authStore";
-import { useServerTime, toServerLocalDate } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, toServerLocalDate } from "@/hooks/useServerTime";
 import { KIND_ORDER, labelForKind, hitHref } from "@/components/search/searchMeta";
 import { ContactHoverCard } from "@/components/ContactHoverCard";
 
@@ -31,8 +31,8 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
   const { user } = useAuth();
   // Server offset for the created/closed dates on ticket hits — display
   // only, the timestamps themselves are server-provided.
-  const { time: serverTime } = useServerTime();
-  const serverOffset = serverTime?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const serverOffset = serverOffsetMinutes ?? 0;
 
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");

@@ -103,6 +103,18 @@ function detectConnection(): string {
   return nav.connection?.effectiveType ?? "unknown";
 }
 
+/** "tag.class1.class2" of an element and its parent — structure only, no text. */
+function shortSelector(el: Element): string {
+  const part = (e: Element) =>
+    e.tagName.toLowerCase() +
+    Array.from(e.classList)
+      .slice(0, 3)
+      .map((c) => "." + c)
+      .join("");
+  const parent = el.parentElement;
+  return (parent ? part(parent) + ">" : "") + part(el);
+}
+
 export async function startRum(router: RouterLike): Promise<void> {
   if (started || typeof window === "undefined" || typeof PerformanceObserver === "undefined") return;
   started = true;
@@ -134,11 +146,30 @@ export async function startRum(router: RouterLike): Promise<void> {
   const vital = (name: string) => (m: Metric) => push({ m: name, r: initialRoute, v: m.value });
   onLCP(vital("lcp"));
   onINP(vital("inp"));
+  // v0.1.27 — web-vitals builds the selector when it reports (page hide),
+  // by which time the shifted node is often gone (a loading placeholder), so
+  // no cls_target ever arrived. Remember the selector of the largest shift
+  // while its nodes are still in the DOM, as a fallback.
+  let largestShift = 0;
+  let largestShiftSelector: string | undefined;
+  try {
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries() as Array<PerformanceEntry & { value: number; hadRecentInput: boolean; sources?: Array<{ node?: Node | null }> }>) {
+        if (e.hadRecentInput || e.value <= largestShift) continue;
+        const node = e.sources?.find((s) => s.node instanceof Element)?.node as Element | undefined;
+        if (!node) continue;
+        largestShift = e.value;
+        largestShiftSelector = shortSelector(node);
+      }
+    }).observe({ type: "layout-shift", buffered: true });
+  } catch {
+    // Layout Instability API unavailable
+  }
   onCLS((m) => {
     push({ m: "cls", r: initialRoute, v: m.value });
     // v0.1.26 — which element moved most (a CSS selector, no content), so a
     // jumping page can be traced to its cause. The server masks digits.
-    const target = m.attribution?.largestShiftTarget;
+    const target = m.attribution?.largestShiftTarget || largestShiftSelector;
     if (target && m.value > 0) push({ m: "cls_target", r: initialRoute, d: target.slice(0, 120), v: m.value });
   });
   onFCP(vital("fcp"));

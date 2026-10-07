@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { agentQueueApi, ordersApi, settingsApi, taxonomyApi } from "@/lib/api";
-import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 import { AgentPicker } from "@/components/AgentPicker";
 import { ContactFormDialog } from "@/components/ContactFormDialog";
 import { AddContactLinkDialog } from "@/components/AddContactLinkDialog";
@@ -133,8 +133,8 @@ function FieldRow({
 }
 
 function ServerDate({ iso }: { iso: string | null | undefined }) {
-  const { time } = useServerTime();
-  const offset = time?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offset = serverOffsetMinutes ?? 0;
   if (!iso) return <span>Not set</span>;
   return <span>{toServerLocal(iso, offset)}</span>;
 }
@@ -425,17 +425,14 @@ function StatusTab({
   const flagColor = flagColors(flagSettings);
   // Pulsing "Contact not linked" warning. Only renders when (a) the admin
   // has the toggle on and (b) the requester has zero current company links.
+  // v0.1.27 — agent-readable endpoint (the admin-only settings list 403'd
+  // for agents, so they never saw this warning).
   const { data: warningSetting } = useQuery({
-    queryKey: ["settings", "tickets-warnings"],
-    queryFn: () => settingsApi.list("Tickets"),
+    queryKey: ["settings", "ticket-warnings"],
+    queryFn: () => settingsApi.ticketWarnings(),
     staleTime: 5 * 60_000, // v0.1.25 — global config, not per ticket
   });
-  const showContactNotLinkedSetting = React.useMemo(
-    () =>
-      warningSetting?.find((e) => e.key === "Tickets.ShowContactNotLinkedWarning")?.value ===
-      "true",
-    [warningSetting],
-  );
+  const showContactNotLinkedSetting = warningSetting?.showContactNotLinked ?? false;
   const { data: requesterLinks } = useQuery({
     queryKey: ["contact-companies", ticket.requesterContactId],
     queryFn: () => contactApi.listCompanies(ticket.requesterContactId),

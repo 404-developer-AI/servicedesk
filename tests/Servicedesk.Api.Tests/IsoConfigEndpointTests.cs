@@ -71,6 +71,24 @@ public sealed class IsoConfigEndpointTests
         Assert.True(response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized);
     }
 
+    // v0.1.27 — same bug class: the ticket side panel's contact warning.
+    [Theory]
+    [InlineData("true", true)]
+    [InlineData("false", false)]
+    public async Task Plain_agent_reads_the_ticket_warning_toggle_only(string stored, bool expected)
+    {
+        using var factory = new SecurityBaselineFactory();
+        factory.Settings.Set(SettingKeys.Tickets.ShowContactNotLinkedWarning, stored);
+        var client = await ClientAsync(factory, "Agent", IsoFlags.None);
+
+        var response = await client.GetAsync("/api/settings/ticket-warnings");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var doc = global::System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(new[] { "showContactNotLinked" }, doc.RootElement.EnumerateObject().Select(p => p.Name).ToArray());
+        Assert.Equal(expected, doc.RootElement.GetProperty("showContactNotLinked").GetBoolean());
+    }
+
     private sealed record Dto(Guid? QueueId);
 
     private static async Task<HttpClient> ClientAsync(SecurityBaselineFactory factory, string role, IsoFlags flags)

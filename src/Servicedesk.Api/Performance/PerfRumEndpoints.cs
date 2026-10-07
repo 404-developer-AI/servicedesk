@@ -145,7 +145,9 @@ public static partial class PerfRumEndpoints
     [GeneratedRegex(@"^[A-Za-z0-9_.\-@$/]{1,80}$")]
     private static partial Regex ScriptName();
 
-    [GeneratedRegex(@"^[A-Za-z0-9_.#>:\-\s\[\]=""'()*+~,]{1,120}$")]
+    // "/" and "%" occur in Tailwind class names (bg-background/80, w-[50%]);
+    // without them nearly every selector of this app fell back to "other".
+    [GeneratedRegex(@"^[A-Za-z0-9_.#>:\-\s\[\]=""'()*+~,/%]{1,120}$")]
     private static partial Regex Selector();
 
     [GeneratedRegex(@"\d+")]

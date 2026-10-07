@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 
 const EVENT_TYPES = ["", "rate_limited", "rate_limited_csp_report", "csp_violation", "setting_changed"] as const;
 
@@ -37,8 +37,8 @@ export function AuditLogPage() {
     queryFn: () => auditApi.list(query),
   });
 
-  const { time: serverTime } = useServerTime();
-  const offsetMinutes = serverTime?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offsetMinutes = serverOffsetMinutes ?? 0;
 
   // Layout: page header + filter bar + pagination footer stay pinned; only
   // the table body scrolls. We bound the outer flex-col to the visible

@@ -194,6 +194,7 @@ function WarningsTab() {
       settingsApi.update(key, value),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["settings", "tickets-warnings"] });
+      qc.invalidateQueries({ queryKey: ["settings", "ticket-warnings"] });
       toast.success("Setting updated");
     },
     onError: () => toast.error("Could not update setting"),

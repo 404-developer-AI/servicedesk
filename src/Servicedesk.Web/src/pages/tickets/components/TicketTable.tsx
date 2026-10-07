@@ -15,7 +15,7 @@ import { TicketTypeBadge } from "@/components/TicketTypeBadge";
 import { ContactHoverCard } from "@/components/ContactHoverCard";
 import { ListChecks } from "lucide-react";
 import type { TicketListItem } from "@/lib/ticket-api";
-import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, useServerNowMs, toServerLocal } from "@/hooks/useServerTime";
 import { colorPillStyle } from "@/lib/colorPill";
 import { flagColors, ticketRowAccentStyle, useTicketFlagSettings } from "@/lib/ticketFlags";
 import { formatDuration } from "@/lib/timesheet-api";
@@ -55,8 +55,8 @@ function relativeTime(utc: string): string {
 
 /** Renders a UTC ISO date as server-local time (no UTC suffix — too noisy for table cells). */
 function ServerDate({ iso, className }: { iso: string; className?: string }) {
-  const { time } = useServerTime();
-  const offset = time?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offset = serverOffsetMinutes ?? 0;
   return (
     <span className={className}>
       {toServerLocal(iso, offset)}
@@ -79,9 +79,9 @@ type ColoredBadgeProps = {
 /// the stored value is frozen, so it is not shown at all.
 function DueCell({ iso }: { iso: string | null }) {
   const { user } = useAuth();
-  const { time } = useServerTime();
+  const nowMs = useServerNowMs();
   if (!iso || user?.slaEnabled === false) return <span className="text-muted-foreground/60">—</span>;
-  const isPast = !!time && new Date(iso).getTime() < new Date(time.utc).getTime();
+  const isPast = nowMs !== null && new Date(iso).getTime() < nowMs;
   return <ServerDate iso={iso} className={isPast ? "text-red-400 text-xs" : "text-muted-foreground text-xs"} />;
 }
 

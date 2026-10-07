@@ -1,6 +1,6 @@
 import * as React from "react";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
-import { useServerTime } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes } from "@/hooks/useServerTime";
 
 /// "Pending till" date+time picker shared by the ticket side panel (edit flow)
 /// and the new-ticket drawer (create flow). Wraps the glass DateTimePicker so
@@ -33,8 +33,8 @@ export function PendingTillField({
    */
   commitOnChange?: boolean;
 }) {
-  const { time } = useServerTime();
-  const offsetMinutes = time?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offsetMinutes = serverOffsetMinutes ?? 0;
 
   // Buffered draft for the edit flow so in-popover date/time tweaks commit as a
   // single PATCH when the popover closes. Reseeded whenever the saved value

@@ -2,7 +2,7 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import DOMPurify from "dompurify";
 import { History } from "lucide-react";
-import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 import {
   Dialog,
   DialogContent,
@@ -27,8 +27,8 @@ function RevisionEntry({
   revision: TicketEventRevision;
   isFirst: boolean;
 }) {
-  const { time: serverTime } = useServerTime();
-  const offset = serverTime?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offset = serverOffsetMinutes ?? 0;
   const [expanded, setExpanded] = React.useState(isFirst);
   // Memoise both the sanitised string and the wrapper object. Inline
   // `{__html: DOMPurify.sanitize(...)}` is a new object every render, which

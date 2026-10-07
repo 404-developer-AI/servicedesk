@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/auth/authStore";
-import { toServerLocal, useServerTime } from "@/hooks/useServerTime";
+import { toServerLocal, useServerOffsetMinutes } from "@/hooks/useServerTime";
 import { cn } from "@/lib/utils";
 import { ClientNotesSheet, type NotesTarget } from "./ClientNotesSheet";
 
@@ -85,8 +85,8 @@ export function RemoteDesktopTab({
   const qc = useQueryClient();
   const { user } = useAuth();
   const isAdmin = user?.role === "Admin";
-  const { time: serverTime } = useServerTime();
-  const offsetMinutes = serverTime?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offsetMinutes = serverOffsetMinutes ?? 0;
 
   const [search, setSearch] = React.useState("");
   const [debounced, setDebounced] = React.useState("");

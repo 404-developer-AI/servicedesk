@@ -6,7 +6,7 @@ import { sanitizeSnippet } from "@/lib/sanitize";
 import { KIND_ORDER, labelForKind, hitHref } from "@/components/search/searchMeta";
 import { useTheme } from "@/app/ThemeProvider";
 import { ContactHoverCard } from "@/components/ContactHoverCard";
-import { useServerTime, toServerLocalDate } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, toServerLocalDate } from "@/hooks/useServerTime";
 import { colorPillStyle } from "@/lib/colorPill";
 
 const PAGE_SIZE = 25;
@@ -211,8 +211,8 @@ function HitRow({ hit, query }: { hit: SearchHit; query: string }) {
   const theme = useTheme();
   // Server offset for the created/closed dates on ticket hits — display
   // only, the timestamps themselves are server-provided.
-  const { time: serverTime } = useServerTime();
-  const serverOffset = serverTime?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const serverOffset = serverOffsetMinutes ?? 0;
   const requester = hit.meta?.requester;
   const company = hit.meta?.company;
   const subtitle = [requester, company].filter(Boolean).join(" · ");

@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Paperclip, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 import {
   ApiError,
   mailDiagnosticsApi,
@@ -34,8 +34,8 @@ const JOB_BADGE: Record<string, string> = {
 };
 
 export function MailDiagnosticsPage() {
-  const { time: serverTime } = useServerTime();
-  const offset = serverTime?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offset = serverOffsetMinutes ?? 0;
   const [input, setInput] = React.useState("");
   const [submitted, setSubmitted] = React.useState<string | null>(null);
   const [onlyIssues, setOnlyIssues] = React.useState(true);

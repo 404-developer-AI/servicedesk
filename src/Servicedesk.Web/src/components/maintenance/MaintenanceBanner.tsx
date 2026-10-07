@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Wrench } from "lucide-react";
 import { systemApi } from "@/lib/api";
-import { useServerTime } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes } from "@/hooks/useServerTime";
 import { cn } from "@/lib/utils";
 
 const MAINTENANCE_QUERY_KEY = ["system", "maintenance"] as const;
@@ -19,7 +19,7 @@ const MAINTENANCE_QUERY_KEY = ["system", "maintenance"] as const;
 type Props = { variant?: "shell" | "auth"; className?: string };
 
 export function MaintenanceBanner({ variant = "shell", className }: Props) {
-  const { time } = useServerTime();
+  const serverOffsetMinutes = useServerOffsetMinutes();
   const { data } = useQuery({
     queryKey: MAINTENANCE_QUERY_KEY,
     queryFn: () => systemApi.maintenance(),
@@ -28,7 +28,7 @@ export function MaintenanceBanner({ variant = "shell", className }: Props) {
 
   if (!data?.active) return null;
 
-  const offsetMinutes = time?.offsetMinutes ?? 0;
+  const offsetMinutes = serverOffsetMinutes ?? 0;
   const startLabel = data.startUtc ? formatLocal(data.startUtc, offsetMinutes) : null;
   const endLabel = data.endUtc ? formatLocal(data.endUtc, offsetMinutes) : null;
 

@@ -5,7 +5,7 @@ import { ArrowDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } fro
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useTheme } from "@/app/ThemeProvider";
-import { useServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 import { colorPillStyle } from "@/lib/colorPill";
 import {
   insightsApi,
@@ -177,8 +177,8 @@ function usePaging(filter: unknown) {
 
 function AgentOpened({ agentId, params }: { agentId: string; params: ReportParams }) {
   const theme = useTheme();
-  const { time } = useServerTime();
-  const offsetMinutes = time?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offsetMinutes = serverOffsetMinutes ?? 0;
   const { page, pageSize, changePageSize, goTo } = usePaging([agentId, params]);
 
   const query = useQuery({
@@ -204,7 +204,7 @@ function AgentOpened({ agentId, params }: { agentId: string; params: ReportParam
     );
   }
 
-  const fmt = (utc: string) => (time ? toServerLocal(utc, offsetMinutes) : "…");
+  const fmt = (utc: string) => (serverOffsetMinutes !== null ? toServerLocal(utc, offsetMinutes) : "…");
 
   return (
     <>
@@ -351,8 +351,8 @@ function AgentTickets({
   onSort: (s: AgentTicketSort) => void;
 }) {
   const theme = useTheme();
-  const { time } = useServerTime();
-  const offsetMinutes = time?.offsetMinutes ?? 0;
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offsetMinutes = serverOffsetMinutes ?? 0;
 
   // A new period / sort / page size starts again at page 1.
   const { page, pageSize, changePageSize, goTo } = usePaging([agentId, params, sort]);
@@ -370,7 +370,7 @@ function AgentTickets({
 
   function lastActivity(t: AgentTicketItem): string {
     if (t.lastActionUtc) {
-      const local = time ? toServerLocal(t.lastActionUtc, offsetMinutes) : "…";
+      const local = serverOffsetMinutes !== null ? toServerLocal(t.lastActionUtc, offsetMinutes) : "…";
       // A later time-only day wins over an earlier action.
       if (!t.lastEntryDate || t.lastEntryDate <= t.lastActionUtc.slice(0, 10)) return local;
     }
