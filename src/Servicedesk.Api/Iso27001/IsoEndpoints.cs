@@ -42,7 +42,34 @@ public static class IsoEndpoints
         group.MapPost("/{id:guid}/iso/classify-incident", ClassifyIncident)
             .WithName("IsoClassifyIncident").WithOpenApi();
 
+        // v0.1.27 — the classification buttons need the bound queue id. They
+        // used to read it through the admin-only GET /api/settings, which
+        // 403'd for every non-admin MGM member and hid the buttons. This
+        // agent-readable projection returns that one value only, to MGM
+        // members only.
+        app.MapGet("/api/iso/config", GetConfig)
+            .WithTags("ISO 27001")
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+            .WithName("IsoGetConfig").WithOpenApi();
+
         return app;
+    }
+
+    public sealed record IsoConfigDto(Guid? QueueId);
+
+    private static async Task<IResult> GetConfig(
+        HttpContext http, ISettingsService settings, IUserService users, CancellationToken ct)
+    {
+        var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var flags = await users.GetIsoFlagsAsync(userId, ct);
+        if (!flags.Mgm)
+            return Results.Json(
+                new { error = "You don't have the ISO 27001 MGM role.", code = "missing_iso_role" },
+                statusCode: 403);
+
+        var raw = await settings.GetAsync<string>(SettingKeys.Iso27001.QueueId, ct);
+        Guid? queueId = Guid.TryParse(raw, out var parsed) ? parsed : null;
+        return Results.Ok(new IsoConfigDto(queueId));
     }
 
     public sealed record IsoClassificationRequest(

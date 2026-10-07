@@ -20,6 +20,7 @@ public sealed class GraphMailClient : IGraphMailClient
 
     private readonly ISettingsService _settings;
     private readonly IProtectedSecretStore _secrets;
+    private readonly GraphServiceClientCache _clients = new(CreateClient);
 
     public GraphMailClient(ISettingsService settings, IProtectedSecretStore secrets)
     {
@@ -536,6 +537,11 @@ public sealed class GraphMailClient : IGraphMailClient
             throw new InvalidOperationException(
                 "Microsoft Graph is not fully configured. Set Graph.TenantId, Graph.ClientId, and the client secret via Settings.");
 
+        return _clients.Get(tenantId, clientId, clientSecret);
+    }
+
+    private static GraphServiceClient CreateClient(string tenantId, string clientId, string clientSecret)
+    {
         var credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
 
         // Opt the whole mail client into Graph immutable item IDs via a pipeline

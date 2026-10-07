@@ -271,6 +271,13 @@ public sealed class DatabaseBootstrapper : IHostedService
             ON tickets (updated_utc DESC, id DESC)
             WHERE is_deleted = FALSE AND closed_utc IS NULL AND resolved_utc IS NULL;
 
+        -- v0.1.27 — views without a status filter ("All tickets", incl.
+        -- closed) otherwise seq-scan + full-sort the whole table for the
+        -- default recency order; this lets the planner do a top-N index scan.
+        CREATE INDEX IF NOT EXISTS ix_tickets_live_updated
+            ON tickets (updated_utc DESC, id DESC)
+            WHERE is_deleted = FALSE;
+
         CREATE INDEX IF NOT EXISTS ix_tickets_requester
             ON tickets (requester_contact_id)
             WHERE is_deleted = FALSE;

@@ -75,6 +75,10 @@ public sealed partial class PerfToolbox
             }
         }
 
+        // A shape that cannot be planned generically (untyped $n, …) fails
+        // in PostgreSQL by design; don't count those attempts as errors.
+        PerfContext.ExpectedFailuresOnly = true;
+
         if (string.IsNullOrWhiteSpace(sql)) return new PlanResult(false, null, "Query text not found (statistics reset or not captured yet).", null);
         var check = ValidateForPlan(sql);
         if (check is not null) return new PlanResult(false, null, check, PerfRedactor.Sql(sql));

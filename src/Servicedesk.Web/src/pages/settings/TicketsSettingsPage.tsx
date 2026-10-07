@@ -2277,6 +2277,7 @@ function Iso27001Tab() {
       settingsApi.update("Iso27001.QueueId", value),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["settings", "iso27001"] });
+      qc.invalidateQueries({ queryKey: ["iso", "config"] });
       toast.success("ISO 27001 queue updated");
     },
     onError: () => toast.error("Could not update ISO 27001 queue"),

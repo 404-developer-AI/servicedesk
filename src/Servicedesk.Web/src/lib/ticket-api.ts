@@ -1299,6 +1299,9 @@ export const ticketApi = {
   // v0.0.40 — ISO 27001 classification transitions. Each takes a
   // mandatory motivation that lands as an internal note on the
   // ticket plus a structured audit row.
+  // v0.1.27 — agent-readable bound-queue lookup (MGM members only), so the
+  // classification buttons no longer need the admin-only settings list.
+  isoConfig: () => request<{ queueId: string | null }>("GET", "/api/iso/config"),
   isoClassifyEvent: (ticketId: string, motivation: string) =>
     request<IsoTransitionResponse>(
       "POST",

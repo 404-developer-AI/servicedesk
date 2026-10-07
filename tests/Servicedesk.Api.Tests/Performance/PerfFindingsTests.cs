@@ -237,7 +237,7 @@ public sealed class PerfFindingsTests
         var d = Dataset(b =>
         {
             b.Routes.Add(Route("/api/tickets/{id:guid}", 300, 450, 0.3));
-            b.Overlaps.Add(new WorkerOverlap("adsolut-sync", 30, 600, P95During: 900, P95Outside: 300));
+            b.Overlaps.Add(new WorkerOverlap("adsolut-sync", 30, 600, P95During: 900, P95Outside: 300, MinutesOutside: 30));
             b.Versions = new VersionComparisonResult("0.1.23", "0.1.24", new[]
             {
                 new RouteComparison { Method = "GET", Route = "/api/tickets", BeforeCount = 500, BeforeP95 = 200, AfterCount = 500, AfterP95 = 600 },
@@ -370,5 +370,16 @@ public sealed class PerfReportTests
         var runs = new[] { new WorkerRunRow { Worker = "sync", StartedUtc = start.AddMinutes(10), DurationMs = 9.5 * 60_000, Success = true } };
         var o = Assert.Single(PerfDatasetBuilder.ComputeOverlaps(minutes, runs));
         Assert.True(o.P95During > o.P95Outside * 3);
+        Assert.Equal(50, o.MinutesOutside);
+    }
+
+    [Theory]
+    [InlineData(4, 900, 300)]   // near-always-on worker: too few minutes without it
+    [InlineData(30, 140, 60)]   // ratio exceeded but the absolute gap is tiny
+    public void WorkerOverlap_NeedsABaselineAndARealGap(long minutesOutside, double during, double outside)
+    {
+        var d = PerfFindingsTests.Dataset(b => b.Overlaps.Add(
+            new WorkerOverlap("telavox-polling", 56, 600, P95During: during, P95Outside: outside, MinutesOutside: minutesOutside)));
+        Assert.DoesNotContain(PerfFindings.Evaluate(d), x => x.Key == "worker-overlap:telavox-polling");
     }
 }

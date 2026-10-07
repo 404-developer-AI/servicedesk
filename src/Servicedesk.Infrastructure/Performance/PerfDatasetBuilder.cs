@@ -174,7 +174,8 @@ public sealed class PerfDatasetBuilder
                 during.Count,
                 during.Sum(p => p.Count),
                 PerfHistogram.Percentile(duringHist, 95, during.Max(p => p.MaxMs)),
-                PerfHistogram.Percentile(outsideHist, 95, outside.Max(p => p.MaxMs))));
+                PerfHistogram.Percentile(outsideHist, 95, outside.Max(p => p.MaxMs)),
+                outside.Count));
         }
         return result;
 

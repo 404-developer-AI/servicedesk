@@ -71,6 +71,7 @@ public static class PerfContext
 {
     private static readonly AsyncLocal<PerfRequestScope?> RequestScope = new();
     private static readonly AsyncLocal<string?> WorkerName = new();
+    private static readonly AsyncLocal<bool> ExpectedFailures = new();
 
     public static PerfRequestScope? Request
     {
@@ -82,6 +83,17 @@ public static class PerfContext
     {
         get => WorkerName.Value;
         set => WorkerName.Value = value;
+    }
+
+    /// v0.1.27 — set on a flow whose failures are an expected outcome (the
+    /// toolbox's EXPLAIN attempts: many captured shapes cannot be planned
+    /// generically). Exceptions and failed DB commands on that flow are not
+    /// counted, so the monitor doesn't report its own probing as errors.
+    /// Set it inside an async method: the value then ends with that call.
+    public static bool ExpectedFailuresOnly
+    {
+        get => ExpectedFailures.Value;
+        set => ExpectedFailures.Value = value;
     }
 
     /// Who issued the current query: the request ("GET /api/tickets/{id:guid}"),
