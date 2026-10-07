@@ -98,9 +98,14 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
     (user?.role === "Agent" || user?.role === "Admin")
     && user?.searchEnabled === true;
 
+  // v0.1.26 — message texts are searched in recent messages first; the agent
+  // can widen this one query to all messages ("deep"). Typing a new query
+  // falls back to the fast search automatically.
+  const [deepQuery, setDeepQuery] = useState<string | null>(null);
+  const deep = deepQuery !== null && deepQuery === debounced;
   const { data, isFetching } = useQuery({
-    queryKey: ["search", "quick", debounced],
-    queryFn: () => searchApi.quick(debounced, QUICK_LIMIT),
+    queryKey: ["search", "quick", debounced, deep],
+    queryFn: () => searchApi.quick(debounced, QUICK_LIMIT, deep),
     enabled: canSearch && debounced.trim().length > 0,
     staleTime: 10_000,
   });
@@ -150,7 +155,8 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
   // The tickets group arrives partitioned (quick mode: top-N open + top-N
   // closed, with per-partition totals) — render it as two sections. Every
   // other group stays a single section.
-  type DisplaySection = { key: string; label: string; hits: SearchHit[]; more: number };
+  type DisplaySection = { key: string; label: string; hits: SearchHit[]; more: number; partial?: boolean };
+  const ticketsPartial = !deep && (data?.groups ?? []).some((g) => g.kind === "tickets" && g.partial);
   const sections: DisplaySection[] = groupsOrdered.flatMap((group): DisplaySection[] => {
     if (group.kind === "tickets" && group.partitionTotals) {
       const openHits = group.hits.filter((h) => h.meta?.isClosed !== "true");
@@ -158,8 +164,8 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
       const openTotal = group.partitionTotals["open"] ?? openHits.length;
       const closedTotal = group.partitionTotals["closed"] ?? closedHits.length;
       return [
-        { key: "tickets-open", label: "Open tickets", hits: openHits, more: Math.max(0, openTotal - openHits.length) },
-        { key: "tickets-closed", label: "Closed tickets", hits: closedHits, more: Math.max(0, closedTotal - closedHits.length) },
+        { key: "tickets-open", label: "Open tickets", hits: openHits, more: Math.max(0, openTotal - openHits.length), partial: !!group.partial },
+        { key: "tickets-closed", label: "Closed tickets", hits: closedHits, more: Math.max(0, closedTotal - closedHits.length), partial: !!group.partial },
       ].filter((s) => s.hits.length > 0);
     }
     return [{
@@ -283,8 +289,19 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
 
                   {!isFetching && sections.every((s) => s.hits.length === 0) && (
                     <div className="px-3 py-6 text-center text-sm text-muted-foreground">
-                      No results for "{query}".
+                      No results for "{query}"{ticketsPartial ? " in recent messages" : ""}.
                     </div>
+                  )}
+
+                  {!isFetching && ticketsPartial && (
+                    <Command.Item
+                      value="__search-older__"
+                      onSelect={() => setDeepQuery(debounced)}
+                      className="flex cursor-pointer items-center justify-between rounded-md px-3 py-2 text-sm aria-selected:bg-glass-strong"
+                    >
+                      <span>Search older messages too</span>
+                      <span className="text-xs text-muted-foreground">recent messages searched · slower</span>
+                    </Command.Item>
                   )}
 
                   {sections.map((section) =>
@@ -296,7 +313,7 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
                             {section.label}
                             {section.more > 0 && (
                               <span className="ml-2 text-muted-foreground/70">
-                                +{section.more} more
+                                +{section.more}{section.partial && !deep ? "+" : ""} more
                               </span>
                             )}
                           </div>

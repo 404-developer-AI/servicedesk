@@ -95,7 +95,10 @@ public sealed record SearchRequest(
     int Offset,
     IReadOnlyList<string>? Kinds = null,
     bool QuickMode = false,
-    SearchSort Sort = SearchSort.Relevance);
+    SearchSort Sort = SearchSort.Relevance,
+    // v0.1.26 — false: message bodies are searched in the most recent
+    // Search.RecentMessageWindow messages only (fast); true: all of them.
+    bool Deep = false);
 
 /// Results grouped by source. The dropdown consumes all groups; the full
 /// page consumes the single group matching <see cref="SearchRequest.Type"/>.
@@ -111,7 +114,10 @@ public sealed record SearchGroup(
     IReadOnlyList<SearchHit> Hits,
     int TotalInGroup,
     bool HasMore,
-    IReadOnlyDictionary<string, int>? PartitionTotals = null);
+    IReadOnlyDictionary<string, int>? PartitionTotals = null,
+    // v0.1.26 — the group searched recent messages only and older ones
+    // exist; the UI shows "N+" and offers "Search older messages too".
+    bool Partial = false);
 
 /// One hit in the result set. <see cref="Kind"/> lets the UI pick the
 /// right icon/route; <see cref="EntityId"/> is the clickable target.

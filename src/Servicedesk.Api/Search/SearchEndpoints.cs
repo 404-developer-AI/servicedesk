@@ -20,7 +20,7 @@ public static class SearchEndpoints
 
         // Dropdown: top-N per available source.
         group.MapGet("/", async (
-            string? q, int? limit,
+            string? q, int? limit, bool? deep,
             HttpContext http,
             ISearchService search,
             IQueueAccessService queueAccess,
@@ -49,7 +49,7 @@ public static class SearchEndpoints
             var quickKinds = await GetQuickKindsAsync(settings, ct);
             var results = await search.SearchAsync(
                 new SearchRequest(query, Type: null, Limit: capped, Offset: 0,
-                    Kinds: quickKinds, QuickMode: true),
+                    Kinds: quickKinds, QuickMode: true, Deep: deep == true),
                 principal, ct);
 
             return Results.Ok(new
@@ -64,7 +64,7 @@ public static class SearchEndpoints
 
         // Full-page search: one source, paginated.
         group.MapGet("/full", async (
-            string? q, string? type, int? limit, int? offset, string? sort,
+            string? q, string? type, int? limit, int? offset, string? sort, bool? deep,
             HttpContext http,
             ISearchService search,
             IQueueAccessService queueAccess,
@@ -101,7 +101,7 @@ public static class SearchEndpoints
 
             var results = await search.SearchAsync(
                 new SearchRequest(query, Type: type, Limit: capped, Offset: safeOffset,
-                    Sort: parsedSort),
+                    Sort: parsedSort, Deep: deep == true),
                 principal, ct);
 
             var firstGroup = results.Groups.Count > 0

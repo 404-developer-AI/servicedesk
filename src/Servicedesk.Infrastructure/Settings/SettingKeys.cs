@@ -985,6 +985,12 @@ public static class SettingKeys
         /// 250–30000 in code.
         public const string SourceTimeoutMs = "Search.SourceTimeoutMs";
 
+        /// v0.1.26 — ticket search looks for message-body matches in this many
+        /// most recent messages first (subjects, numbers and descriptions are
+        /// always searched in full); the agent can then choose "search older
+        /// messages too". 0 = always search every message.
+        public const string RecentMessageWindow = "Search.RecentMessageWindow";
+
         /// v0.0.99 — upper bound on how many search sources run concurrently
         /// within one request. Every source opens its own DB connection, so
         /// an unbounded fan-out across ~20 sources multiplied by a handful of
@@ -2045,6 +2051,8 @@ public static class SettingDefaults
             "Client-side debounce (milliseconds) between keystrokes and the dropdown query."),
         new SettingDefault(SettingKeys.Search.QuickSources, "tickets,companies,contacts", "string", "Search",
             "Comma-separated source kinds the quick-search dropdown queries. Keeping this to fast, indexed sources (tickets, companies, contacts) keeps the dropdown instant; every source stays available on the full search page. Empty falls back to the default."),
+        new SettingDefault(SettingKeys.Search.RecentMessageWindow, "20000", "int", "Search",
+            "Ticket search looks for matches in message texts among this many most recent messages first, so common words stay fast; subjects, ticket numbers and descriptions are always searched in full. When older messages exist the result count shows a '+' and the agent can choose 'Search older messages too'. 0 = always search all messages."),
         new SettingDefault(SettingKeys.Search.SourceTimeoutMs, "5000", "int", "Search",
             "Time budget (milliseconds) per search source. A source that exceeds it is cancelled and returns no hits for that request instead of stalling the whole search. Clamped to 250-30000."),
         new SettingDefault(SettingKeys.Search.MaxConcurrentSources, "8", "int", "Search",

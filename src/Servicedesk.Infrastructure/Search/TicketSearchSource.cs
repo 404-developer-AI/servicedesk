@@ -119,6 +119,7 @@ public sealed class TicketSearchSource : ISearchSource
                   AND (@skipQueueFilter OR t.queue_id = ANY(@allowedQueues))
                   AND (SELECT tsq FROM q) IS NOT NULL
                   AND tes.search_vector @@ (SELECT tsq FROM q)
+                  AND tes.event_id > @recentFrom
                 UNION ALL
                 -- Description hits via ticket_bodies (v0.0.93). The
                 -- body_search vector + GIN index existed since the table was
@@ -236,6 +237,33 @@ public sealed class TicketSearchSource : ISearchSource
             """;
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
+
+        // v0.1.26 — fast mode: body matches only among the most recent
+        // Search.RecentMessageWindow messages. A very common word otherwise
+        // walks ~100k message rows (~1 s); the window keeps it to a few
+        // hundred ms and the agent can still ask for the full search
+        // (request.Deep). The cut-off is "newest id − window" — two index
+        // endpoint lookups, no count; ids are one sequence, so it is the
+        // window give or take a few messages without a search row.
+        long recentFrom = 0;
+        var partial = false;
+        if (!request.Deep && !string.IsNullOrEmpty(tsqueryText))
+        {
+            var window = 20000;
+            try { window = await _settings.GetAsync<int>(SettingKeys.Search.RecentMessageWindow, ct); }
+            catch { /* default */ }
+            if (window > 0)
+            {
+                var bounds = await conn.QueryFirstAsync<EventBounds>(new CommandDefinition(
+                    "SELECT min(event_id) AS MinId, max(event_id) AS MaxId FROM ticket_event_search",
+                    cancellationToken: ct));
+                if (bounds.MaxId is { } maxId && bounds.MinId is { } minId && maxId - window > minId)
+                {
+                    recentFrom = maxId - window;
+                    partial = true;
+                }
+            }
+        }
         var rows = (await conn.QueryAsync<TicketHitRow>(new CommandDefinition(sql + tail, new
         {
             tsqueryText,
@@ -245,6 +273,7 @@ public sealed class TicketSearchSource : ISearchSource
             allowedQueues = allowedQueues?.ToArray() ?? Array.Empty<Guid>(),
             limit,
             offset,
+            recentFrom,
         }, cancellationToken: ct))).ToList();
 
         var hits = rows.Select(r => new SearchHit(
@@ -285,11 +314,11 @@ public sealed class TicketSearchSource : ISearchSource
                 ["open"] = openTotal,
                 ["closed"] = closedTotal,
             };
-            return new SearchGroup(Kind, hits, totalInGroup, hasMoreQuick, partitionTotals);
+            return new SearchGroup(Kind, hits, totalInGroup, hasMoreQuick, partitionTotals, partial);
         }
 
         var hasMore = totalInGroup > offset + hits.Count;
-        return new SearchGroup(Kind, hits, totalInGroup, hasMore);
+        return new SearchGroup(Kind, hits, totalInGroup, hasMore, Partial: partial);
     }
 
     private async Task<string> GetPrefixAsync(CancellationToken ct)
@@ -322,4 +351,10 @@ public sealed class TicketSearchSource : ISearchSource
         string? StatusColor,
         DateTime CreatedUtc,
         DateTime? ClosedUtc);
+
+    private sealed class EventBounds
+    {
+        public long? MinId { get; set; }
+        public long? MaxId { get; set; }
+    }
 }
