@@ -1,20 +1,24 @@
 using Azure.Identity;
 using Microsoft.Graph;
+using Servicedesk.Infrastructure.Mail.Graph;
 using Servicedesk.Infrastructure.Secrets;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Auth.Microsoft;
 
-/// Graph SDK implementation. Builds a fresh <c>GraphServiceClient</c> per
-/// call so tenant-id / client-id / client-secret changes from the Settings
-/// page take effect without an app restart — same pattern as
-/// <c>GraphMailClient.BuildClientAsync</c>.
+/// Graph SDK implementation. Keeps one cached <c>GraphServiceClient</c>
+/// (token cache + connection pool survive between calls) that is rebuilt
+/// when tenant-id / client-id / client-secret change on the Settings page —
+/// same pattern as <c>GraphMailClient.BuildClientAsync</c>.
 public sealed class GraphDirectoryClient : IGraphDirectoryClient
 {
     private static readonly string[] Scopes = ["https://graph.microsoft.com/.default"];
 
     private readonly ISettingsService _settings;
     private readonly IProtectedSecretStore _secrets;
+    private readonly GraphServiceClientCache _clients = new(
+        static (tenantId, clientId, clientSecret) =>
+            new GraphServiceClient(new ClientSecretCredential(tenantId, clientId, clientSecret), Scopes));
 
     public GraphDirectoryClient(ISettingsService settings, IProtectedSecretStore secrets)
     {
@@ -186,7 +190,6 @@ public sealed class GraphDirectoryClient : IGraphDirectoryClient
                 "Microsoft Graph is not fully configured. Set Graph.TenantId, Graph.ClientId, and the client secret via Settings.");
         }
 
-        var credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
-        return new GraphServiceClient(credential, Scopes);
+        return _clients.Get(tenantId, clientId, clientSecret);
     }
 }

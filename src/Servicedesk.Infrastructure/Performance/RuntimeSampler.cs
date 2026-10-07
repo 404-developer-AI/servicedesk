@@ -55,6 +55,7 @@ public sealed class RuntimeSampler
         {
             AppDomain.CurrentDomain.FirstChanceException += (_, e) =>
             {
+                if (PerfContext.ExpectedFailuresOnly) return;
                 Interlocked.Increment(ref _firstChanceExceptions);
                 CountType(e.Exception);
             };
@@ -82,6 +83,13 @@ public sealed class RuntimeSampler
                 && ex.TargetSite?.DeclaringType?.FullName is { } origin)
             {
                 key += " @ " + origin;
+                // v0.1.27 — "IOException @ Socket" alone doesn't say whose
+                // connection broke. Network exceptions also carry the worker
+                // (or "request") whose async flow threw — a bounded set.
+                // Npgsql too: PostgresException @ NpgsqlConnector is as vague.
+                if (origin.StartsWith("System.Net.", StringComparison.Ordinal)
+                    || origin.StartsWith("Npgsql.", StringComparison.Ordinal))
+                    key += " [" + PerfContext.CurrentSourceKind() + "]";
             }
             if (ExceptionsByType.Count >= MaxExceptionTypes && !ExceptionsByType.ContainsKey(key)) key = "other";
             ExceptionsByType.AddOrUpdate(key, 1, static (_, v) => v + 1);

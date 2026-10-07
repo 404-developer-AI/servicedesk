@@ -56,7 +56,8 @@ public sealed class PerfDataset
 
 public sealed record VersionComparisonResult(string Before, string After, IReadOnlyList<RouteComparison> Routes);
 
-public sealed record WorkerOverlap(string Worker, long MinutesDuring, long RequestsDuring, double P95During, double P95Outside);
+public sealed record WorkerOverlap(string Worker, long MinutesDuring, long RequestsDuring, double P95During, double P95Outside,
+    long MinutesOutside = 0);
 
 public sealed class Budget
 {
@@ -148,6 +149,8 @@ public sealed class FindingThresholds
     public int ApiCallsPerScreen { get; set; } = 15;
     public int ResponseKb { get; set; } = 500;
     public int WorkerOverlapPct { get; set; } = 50;
+    public int WorkerOverlapMinOutsideMinutes { get; set; } = 15;
+    public int WorkerOverlapMinGapMs { get; set; } = 100;
     public int RegressionPct { get; set; } = 30;
     public int ExternalErrorPct { get; set; } = 5;
 
@@ -191,6 +194,8 @@ public sealed class FindingThresholds
             ApiCallsPerScreen = await I(SettingKeys.Performance.FindingApiCallsPerScreen, 1, 1000),
             ResponseKb = await I(SettingKeys.Performance.FindingResponseKb, 10, 1_000_000),
             WorkerOverlapPct = await I(SettingKeys.Performance.FindingWorkerOverlapPct, 5, 10_000),
+            WorkerOverlapMinOutsideMinutes = await I(SettingKeys.Performance.FindingWorkerOverlapMinOutsideMinutes, 1, 10_000),
+            WorkerOverlapMinGapMs = await I(SettingKeys.Performance.FindingWorkerOverlapMinGapMs, 0, 60_000),
             RegressionPct = await I(SettingKeys.Performance.FindingRegressionPct, 5, 10_000),
             ExternalErrorPct = await I(SettingKeys.Performance.FindingExternalErrorPct, 1, 100),
         };

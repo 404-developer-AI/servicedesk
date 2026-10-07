@@ -83,6 +83,8 @@ const THRESHOLDS = [
   k("Findings.ApiCallsPerScreen", "API calls per screen above"),
   k("Findings.ResponseKb", "Response size p95 above (KB)"),
   k("Findings.WorkerOverlapPct", "API slower during a worker by more than (%)"),
+  k("Findings.WorkerOverlapMinOutsideMinutes", "Worker overlap: minimum minutes without the worker"),
+  k("Findings.WorkerOverlapMinGapMs", "Worker overlap: minimum p95 difference (ms)"),
   k("Findings.RegressionPct", "Slower after a version change by more than (%)"),
   k("Findings.ExternalErrorPct", "External API errors above (%)"),
 ];

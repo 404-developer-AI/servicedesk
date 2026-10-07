@@ -228,7 +228,17 @@ public static class DependencyInjection
         services.AddSingleton<ITelavoxCallStateStore, TelavoxCallStateStore>();
         services.AddSingleton<ITelavoxProvisioningService, TelavoxProvisioningService>();
         services.AddSingleton<Realtime.ITelavoxCallNotifier, Realtime.NullTelavoxCallNotifier>();
-        services.AddHttpClient(TelavoxApiClient.HttpClientName);
+        // v0.1.27 — the poller calls Telavox every few seconds; with the
+        // default 1-minute pool idle timeout a pooled connection the remote
+        // had already closed got reused (~1,500 silently-retried
+        // IOException @ Socket an hour). Drop idle connections before a
+        // typical short server keep-alive (5 s) instead. The Diagnose
+        // exception view now names the worker, to confirm the source.
+        services.AddHttpClient(TelavoxApiClient.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+            {
+                PooledConnectionIdleTimeout = TimeSpan.FromSeconds(4),
+            });
         services.AddHostedService<TelavoxPollingWorker>();
 
         // Claude AI ticket-assist integration. One install-wide Anthropic API

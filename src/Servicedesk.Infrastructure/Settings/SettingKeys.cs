@@ -1660,6 +1660,8 @@ public static class SettingKeys
         public const string FindingApiCallsPerScreen = "Performance.Findings.ApiCallsPerScreen";
         public const string FindingResponseKb = "Performance.Findings.ResponseKb";
         public const string FindingWorkerOverlapPct = "Performance.Findings.WorkerOverlapPct";
+        public const string FindingWorkerOverlapMinOutsideMinutes = "Performance.Findings.WorkerOverlapMinOutsideMinutes";
+        public const string FindingWorkerOverlapMinGapMs = "Performance.Findings.WorkerOverlapMinGapMs";
         public const string FindingRegressionPct = "Performance.Findings.RegressionPct";
         public const string FindingExternalErrorPct = "Performance.Findings.ExternalErrorPct";
     }
@@ -2739,6 +2741,10 @@ public static class SettingDefaults
             "Finding: a route whose p95 response size exceeds this (KB) ships too much data."),
         new SettingDefault(SettingKeys.Performance.FindingWorkerOverlapPct, "50", "int", "Performance",
             "Finding: API p95 while a background worker runs is this percentage higher than without it."),
+        new SettingDefault(SettingKeys.Performance.FindingWorkerOverlapMinOutsideMinutes, "15", "int", "Performance",
+            "Worker-overlap finding: only compare when there are at least this many minutes without the worker running (a near-always-on worker has no fair baseline)."),
+        new SettingDefault(SettingKeys.Performance.FindingWorkerOverlapMinGapMs, "100", "int", "Performance",
+            "Worker-overlap finding: the p95 difference must also be at least this many milliseconds."),
         new SettingDefault(SettingKeys.Performance.FindingRegressionPct, "30", "int", "Performance",
             "Finding: a route that became this percentage slower (p95) after a version change."),
         new SettingDefault(SettingKeys.Performance.FindingExternalErrorPct, "5", "int", "Performance",

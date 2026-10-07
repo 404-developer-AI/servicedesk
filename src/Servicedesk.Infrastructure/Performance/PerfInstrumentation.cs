@@ -207,7 +207,7 @@ public sealed class PerfInstrumentation : IHostedService, IDisposable
                     Interlocked.Add(ref Gauges.PoolTimeouts, value);
                     break;
                 case Instrument.DbCommandFailed:
-                    if (_settings.IsEnabled(PerfCollector.Database))
+                    if (_settings.IsEnabled(PerfCollector.Database) && !PerfContext.ExpectedFailuresOnly)
                     {
                         var agg = _recorder.Current.SpanFor(new SpanKey("db", PerfContext.CurrentSourceKind(), ""));
                         Interlocked.Add(ref agg.ErrorCount, value);

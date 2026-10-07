@@ -112,6 +112,16 @@ public sealed class PerfHttpMiddleware
         }
     }
 
+    internal static bool IsFileResponse(HttpResponse response)
+    {
+        if (response.Headers.ContentDisposition.Count > 0) return true;
+        var type = response.ContentType;
+        if (string.IsNullOrEmpty(type)) return false;
+        return !(type.StartsWith("application/json", StringComparison.OrdinalIgnoreCase)
+                 || type.StartsWith("application/problem+json", StringComparison.OrdinalIgnoreCase)
+                 || type.StartsWith("text/", StringComparison.OrdinalIgnoreCase));
+    }
+
     private void Record(HttpContext context, PerfRequestScope scope, CountingResponseBody? counting, bool failed,
         int gcBefore, PerfOptions options)
     {
@@ -133,7 +143,11 @@ public sealed class PerfHttpMiddleware
         agg.AddExtra(PerfWindow.HttpExtMicro, extMicro);
         agg.AddExtra(PerfWindow.HttpPipelineMicro, pipelineMicro);
         agg.AddExtra(PerfWindow.HttpBytes, bytes);
-        agg.RecordSecond(bytes / 1024.0);
+        // v0.1.27 — the size histogram (p95 KB, "Large responses" finding)
+        // describes data payloads only. File downloads (attachments, PDFs,
+        // exports) are big by nature and already browser-cached; they still
+        // count towards the byte total.
+        if (!IsFileResponse(context.Response)) agg.RecordSecond(bytes / 1024.0);
 
         var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (userId is not null)

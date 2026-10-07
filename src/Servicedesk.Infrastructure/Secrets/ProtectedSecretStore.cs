@@ -18,7 +18,11 @@ public sealed class ProtectedSecretStore : IProtectedSecretStore
     // an update. Rotating credentials (OAuth refresh tokens, renewed on
     // every use) bypass the cache entirely so two instances can never
     // replay an already-rotated token.
-    private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(30);
+    // v0.1.27 — 30 s was about the health poll interval, so /api/system/health
+    // still missed on nearly every request (8 secret reads each). The app runs
+    // as a single process and Set/Delete invalidate immediately, so a longer
+    // TTL only matters for the brief old/new overlap during an update.
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(10);
 
     private const string SelectSql =
         "SELECT value_protected AS ValueProtected FROM protected_secrets WHERE key = @key";

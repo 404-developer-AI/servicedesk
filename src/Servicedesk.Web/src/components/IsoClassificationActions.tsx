@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ticketApi, type Ticket } from "@/lib/ticket-api";
-import { settingsApi, taxonomyApi, type Status } from "@/lib/api";
+import { taxonomyApi, type Status } from "@/lib/api";
 import { useAuth } from "@/auth/authStore";
 import { cn } from "@/lib/utils";
 
@@ -48,8 +48,8 @@ export function IsoClassificationActions({ ticket }: Props) {
   // staleTime — both change rarely and the same admin who edits either
   // also reloads the page.
   const isoSettingsQ = useQuery({
-    queryKey: ["settings", "iso27001"],
-    queryFn: () => settingsApi.list("Iso27001"),
+    queryKey: ["iso", "config"],
+    queryFn: () => ticketApi.isoConfig(),
     staleTime: 5 * 60_000,
     enabled: !!user && user.isIsoMgm,
   });
@@ -66,8 +66,8 @@ export function IsoClassificationActions({ ticket }: Props) {
   // possible no-op. We only fetch the settings / statuses when set.
   if (!user || !user.isIsoMgm) return null;
 
-  const boundQueueId = isoSettingsQ.data?.find((e) => e.key === "Iso27001.QueueId")?.value ?? "";
-  if (!boundQueueId || boundQueueId.trim().length === 0) return null;
+  const boundQueueId = isoSettingsQ.data?.queueId ?? "";
+  if (!boundQueueId) return null;
   if (ticket.queueId !== boundQueueId) return null;
 
   if (isoSettingsQ.isLoading || statusesQ.isLoading) {

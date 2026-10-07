@@ -849,7 +849,7 @@ public static class PerfFindings
                 f.Add(new PerfFinding(
                     "network-share", PerfCategory.Network, share > 75 ? PerfSeverity.Critical : PerfSeverity.Warning,
                     $"{PerfFormat.Pct(share)} of API time in the browser is network, not server",
-                    "The browser measures each API call end to end; the server reports its own time in the Server-Timing header. The difference is connection setup, latency and download time — outside the server.",
+                    "The browser measures each API call end to end; the server reports its own time in the Server-Timing header. The difference is connection setup, latency and download time — outside the server. It can also include time the browser's main thread was busy (long tasks delay when a response is marked complete), so check the long-task findings for the same screens first.",
                     new[]
                     {
                         new PerfEvidence("API calls measured", PerfFormat.Count(calls)),
@@ -857,7 +857,7 @@ public static class PerfFindings
                         new PerfEvidence("Avg network per call", PerfFormat.Ms(networkMs / Math.Max(1, network.Sum(x => x.Count)))),
                         new PerfEvidence("Queued in the browser (excluded)", PerfFormat.Pct(queueShare)),
                     },
-                    "Slow or distant user connections (Wi-Fi, mobile, VPN), proxy overhead, or large responses.",
+                    "Slow or distant user connections (Wi-Fi, mobile, VPN), proxy overhead, large responses — or a busy main thread in the browser.",
                     "Check the connection-type breakdown on the Frontend tab; reduce payload sizes and the number of calls per screen. If users are remote, the hosting location matters.",
                     Array.Empty<PerfCodeRef>(),
                     networkMs - totalMs * 0.25));
@@ -967,7 +967,12 @@ public static class PerfFindings
 
     private static void BackgroundRules(PerfDataset d, FindingThresholds t, List<PerfFinding> f)
     {
+        // v0.1.27 — a near-always-on worker (telavox-polling overlapped 44 of
+        // 60 minutes) leaves no fair baseline: require enough minutes without
+        // it, and an absolute gap so two fast p95s don't trip on a ratio.
         foreach (var o in d.WorkerOverlaps.Where(o => o.RequestsDuring >= 50 && o.P95Outside > 0
+                                                      && o.MinutesOutside >= t.WorkerOverlapMinOutsideMinutes
+                                                      && o.P95During - o.P95Outside >= t.WorkerOverlapMinGapMs
                                                       && o.P95During > o.P95Outside * (1 + t.WorkerOverlapPct / 100.0)))
         {
             f.Add(new PerfFinding(
@@ -977,7 +982,7 @@ public static class PerfFindings
                 new[]
                 {
                     new PerfEvidence("p95 during / outside", $"{PerfFormat.Ms(o.P95During)} / {PerfFormat.Ms(o.P95Outside)}"),
-                    new PerfEvidence("Minutes overlapping", PerfFormat.Count(o.MinutesDuring)),
+                    new PerfEvidence("Minutes overlapping / without", $"{PerfFormat.Count(o.MinutesDuring)} / {PerfFormat.Count(o.MinutesOutside)}"),
                 },
                 "The worker competes for CPU, database connections or locks with user requests.",
                 "Make the job lighter (smaller batches, pauses between batches), schedule it outside office hours, or lower its frequency.",
