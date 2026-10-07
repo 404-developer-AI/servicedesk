@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dateFormat";
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -741,7 +742,7 @@ function AuditRow({ entry }: { entry: ContactAuditEntry }) {
         <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
           <span className="inline-flex items-center gap-1">
             <Clock className="h-3 w-3" />
-            {new Date(entry.utc).toLocaleString()}
+            {formatDateTime(entry.utc)}
           </span>
           <span className="inline-flex items-center gap-1">
             <UserRound className="h-3 w-3" />

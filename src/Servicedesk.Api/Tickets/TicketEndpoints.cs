@@ -1311,10 +1311,17 @@ public static class TicketEndpoints
         group.MapPut("/{id:guid}/events/{eventId:long}", async (
             Guid id, long eventId, [FromBody] UpdateEventRequest req, HttpContext http,
             ITicketRepository tickets, IQueueAccessService queueAccess,
+            IAttachmentRepository attachmentsRepo,
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            // Images pasted while editing arrive as staged uploads. An edit
+            // touches one note, so a handful is plenty; anything larger is a
+            // malformed or hostile payload.
+            if (req.AttachmentIds is { Count: > MaxEditAttachmentIds })
+                return Results.BadRequest(new { error = $"At most {MaxEditAttachmentIds} attachments per edit." });
 
             // Queue-access check via parent ticket
             var ticket = await tickets.GetCoreAsync(id, ct);
@@ -1329,6 +1336,12 @@ public static class TicketEndpoints
             var updated = await tickets.UpdateEventAsync(id, eventId, input, ct);
             if (updated is null) return Results.NotFound();
 
+            // Same ownership-guarded re-link as a new note: only uploads still
+            // staged on *this* ticket (no event yet) move; foreign ids no-op.
+            var linkedAttachments = 0;
+            if (req.AttachmentIds is { Count: > 0 } attIds)
+                linkedAttachments = await attachmentsRepo.ReassignToEventAsync(attIds, id, eventId, ct);
+
             var (actor, role) = ActorContext.Resolve(http);
             await audit.LogAsync(new AuditEvent(
                 EventType: "ticket.event.edited",
@@ -1337,7 +1350,7 @@ public static class TicketEndpoints
                 Target: $"{id}/events/{eventId}",
                 ClientIp: http.Connection.RemoteIpAddress?.ToString(),
                 UserAgent: http.Request.Headers.UserAgent.ToString(),
-                Payload: new { updated.EventType, updated.IsInternal }));
+                Payload: new { updated.EventType, updated.IsInternal, linkedAttachments }));
 
             // Notify viewers of this ticket
             await hub.Clients.Group($"ticket:{id}").SendAsync("TicketUpdated", id.ToString(), ct);
@@ -2353,7 +2366,10 @@ public static class TicketEndpoints
     public sealed record UpdateEventRequest(
         string? BodyText,
         string? BodyHtml,
-        bool? IsInternal);
+        bool? IsInternal,
+        IReadOnlyList<Guid>? AttachmentIds = null);
+
+    private const int MaxEditAttachmentIds = 20;
 
     public sealed record SendOutboundMailRequest(
         string Kind,

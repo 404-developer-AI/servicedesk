@@ -1,27 +1,15 @@
+import { formatDateMedium, formatDateTimeMedium } from "@/lib/dateFormat";
+
 // Shared formatting helpers for the Adsolut Orders overview + detail.
 
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
-  try {
-    return new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "2-digit" }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
+  return formatDateMedium(iso);
 }
 
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
+  return formatDateTimeMedium(iso);
 }
 
 export function formatMoney(value: number | null | undefined, currency: string | null | undefined): string {

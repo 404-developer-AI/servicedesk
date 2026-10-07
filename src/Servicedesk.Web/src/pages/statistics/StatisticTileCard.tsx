@@ -173,17 +173,21 @@ function BarBody({
           ))}
         </div>
       )}
+      {/* Grid with an auto value column: it sizes to the widest value in the
+          tile ("437.6h/1464.9h"), so nothing is clipped and every bar still
+          starts and ends on the same x. A fixed-width column cut long values. */}
+      <div className="grid grid-cols-[4rem_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1.5 text-xs">
       {points.map((p, i) => {
         const total = rowTotal(p);
         return (
-          <div key={`${p.label}-${i}`} className="flex items-center gap-2 text-xs">
-            <span className="w-16 shrink-0 truncate text-muted-foreground" title={p.label}>
+          <React.Fragment key={`${p.label}-${i}`}>
+            <span className="truncate text-muted-foreground" title={p.label}>
               {p.label}
             </span>
             {/* Exact proportional widths (no percentage floor, which would make
                 small values collapse to the same minimum and look equal). A 2px
                 floor only keeps a non-zero value from disappearing entirely. */}
-            <div className="relative flex h-4 flex-1 overflow-hidden rounded bg-glass">
+            <div className="relative flex h-4 overflow-hidden rounded bg-glass">
               {segmentMode ? (
                 (p.segments ?? []).map((seg, si) => (
                   <div
@@ -210,21 +214,17 @@ function BarBody({
                 </>
               )}
             </div>
-            <span
-              className={cn(
-                "shrink-0 text-right font-mono tabular-nums text-foreground",
-                segmentMode || twoSeries ? "w-18" : "w-12",
-              )}
-            >
+            <span className="whitespace-nowrap text-right font-mono tabular-nums text-foreground">
               {segmentMode
                 ? formatHours(total)
                 : twoSeries
                   ? `${formatHours(p.value)}/${formatHours(total)}`
                   : formatValue(p.value, unit)}
             </span>
-          </div>
+          </React.Fragment>
         );
       })}
+      </div>
     </div>
   );
 }

@@ -1,6 +1,7 @@
+import { formatDate, formatDateTime } from "@/lib/dateFormat";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useSyncExternalStore } from "react";
-import { toServerLocal, toServerLocalDate, useServerOffsetMinutes } from "@/hooks/useServerTime";
+import { useServerTimeZone } from "@/hooks/useServerTime";
 import { useTheme } from "@/app/ThemeProvider";
 import { colorPillStyle } from "@/lib/colorPill";
 import { portalAuthApi, type PortalMeUser } from "@/lib/portal-api";
@@ -81,15 +82,14 @@ export function usePortalCompany() {
   return { companies, active, select, isLoading: me.isLoading, user };
 }
 
-/// Server-anchored date formatting for portal pages. Falls back to the
-/// browser only while the first /api/system/time answer is in flight.
+/// Server-anchored date formatting for portal pages (English, server zone).
 export function usePortalDates() {
-  const offset = useServerOffsetMinutes();
+  const tz = useServerTimeZone();
   return {
     dateTime: (iso: string | null | undefined) =>
-      !iso ? "" : offset === null ? new Date(iso).toLocaleString() : toServerLocal(iso, offset),
+      !iso ? "" : formatDateTime(iso, tz),
     date: (iso: string | null | undefined) =>
-      !iso ? "" : offset === null ? new Date(iso).toLocaleDateString() : toServerLocalDate(iso, offset),
+      !iso ? "" : formatDate(iso, tz),
   };
 }
 

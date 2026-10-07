@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Command } from "cmdk";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import { Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { searchApi, type SearchHit } from "@/lib/api";
@@ -86,6 +86,9 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
         // defer focus until the portal has committed.
         setTimeout(() => inputRef.current?.focus(), 0);
       } else if (e.key === "Escape" && open) {
+        // Escape dismisses the search entirely — a stale term left in the
+        // box after closing read as an active filter.
+        setValue("");
         setOpen(false);
         inputRef.current?.blur();
       }
@@ -93,6 +96,18 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [open]);
+
+  // Leaving the page by any route (sidebar link, back button) clears a term
+  // the user typed but didn't act on. Skipped while the box has focus so a
+  // route change can never eat what is being typed.
+  const router = useRouter();
+  useEffect(
+    () =>
+      router.subscribe("onResolved", (evt) => {
+        if (evt.pathChanged && document.activeElement !== inputRef.current) setValue("");
+      }),
+    [router],
+  );
 
   const canSearch =
     (user?.role === "Agent" || user?.role === "Admin")
@@ -313,7 +328,7 @@ export function GlobalSearchBar({ collapsed = false }: { collapsed?: boolean }) 
                             {section.label}
                             {section.more > 0 && (
                               <span className="ml-2 text-muted-foreground/70">
-                                +{section.more}{section.partial && !deep ? "+" : ""} more
+                                {section.more}{section.partial && !deep ? "+" : ""} more
                               </span>
                             )}
                           </div>

@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dateFormat";
 import * as React from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -126,7 +127,7 @@ export function BackgroundTab({ period }: { period: PeriodQuery }) {
                   <Tooltip content={(props) => {
                     const row = props.payload?.[0]?.payload as (typeof connSeries)[number] | undefined;
                     if (!props.active || !row) return null;
-                    return <ChartTooltipBox title={new Date(row.ts).toLocaleString()} rows={[
+                    return <ChartTooltipBox title={formatDateTime(row.ts, undefined, true)} rows={[
                       { label: "SignalR clients", value: fmtCount(row.signalr), color: pal.slot(0) },
                       { label: "HTTP connections", value: fmtCount(row.kestrel), color: pal.slot(2) },
                     ]} />;
@@ -221,7 +222,7 @@ function Gantt({ runs, period }: { runs: WorkerRun[]; period: PeriodQuery }) {
         <Legend items={[{ label: "Run", color: pal.slot(0) }, { label: "Failed run", color: pal.slot(7) }]} />
         {hover ? (
           <span className="text-muted-foreground">
-            <span className="font-mono text-foreground">{hover.worker}</span> · {new Date(hover.t).toLocaleString()} · {fmtMs(hover.durationMs)}
+            <span className="font-mono text-foreground">{hover.worker}</span> · {formatDateTime(hover.t)} · {fmtMs(hover.durationMs)}
             {hover.items > 0 ? ` · ${fmtCount(hover.items)} items` : ""}{hover.error ? ` · ${hover.error}` : ""}
           </span>
         ) : <span className="text-muted-foreground">Hover a bar for details.</span>}

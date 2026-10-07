@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dateFormat";
 import * as React from "react";
 import { Link } from "@tanstack/react-router";
 import { Activity, AlertTriangle, Archive, CheckCircle2, ChevronDown, ChevronRight, Gauge, RadioTower, ShieldAlert, Trash2 } from "lucide-react";
@@ -410,7 +411,7 @@ function IncidentEntry({
               <span className="text-muted-foreground">×{incident.occurrenceCount}</span>
             ) : null}
             <span className="text-muted-foreground">
-              {new Date(incident.lastOccurredUtc).toLocaleString()}
+              {formatDateTime(incident.lastOccurredUtc)}
             </span>
           </div>
           <p className="whitespace-pre-wrap wrap-break-word text-foreground/90">{incident.message}</p>

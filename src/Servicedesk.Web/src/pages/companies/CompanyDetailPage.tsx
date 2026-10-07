@@ -1,3 +1,4 @@
+import { formatDateTime, formatDate } from "@/lib/dateFormat";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -151,14 +152,14 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
                   className="border border-purple-400/30 bg-purple-500/8 text-[10px] font-normal text-purple-200"
                   title={
                     company.adsolutLastModified
-                      ? `Adsolut lastModified: ${new Date(company.adsolutLastModified).toLocaleString()}`
+                      ? `Adsolut lastModified: ${formatDateTime(company.adsolutLastModified)}`
                       : "Synced from Adsolut"
                   }
                 >
                   Synced from Adsolut
                   {company.adsolutLastModified && (
                     <span className="ml-1 text-purple-300/70">
-                      · {new Date(company.adsolutLastModified).toLocaleDateString()}
+                      · {formatDate(company.adsolutLastModified)}
                     </span>
                   )}
                 </Badge>

@@ -1,3 +1,4 @@
+import { formatDateMedium, formatDateTime } from "@/lib/dateFormat";
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -340,7 +341,7 @@ export function ZammadIntegrationPage() {
           <div className="rounded-md border border-emerald-400/20 bg-emerald-500/5 p-3 text-xs">
             <div className="flex items-center gap-2 text-emerald-300">
               <CheckCircle2 className="h-3.5 w-3.5" />
-              Last successful test {new Date(lastTest.at).toLocaleString()}
+              Last successful test {formatDateTime(lastTest.at)}
             </div>
             <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-muted-foreground">
               <div>
@@ -1112,15 +1113,7 @@ function ResultTable({
 
 function formatRelative(iso: string | null): string {
   if (!iso) return "—";
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
+  return formatDateMedium(iso);
 }
 
 function FieldOrSkeleton({

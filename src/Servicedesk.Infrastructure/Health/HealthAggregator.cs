@@ -5,6 +5,7 @@ using Servicedesk.Infrastructure.Mail.Polling;
 using Servicedesk.Infrastructure.Observability;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Secrets;
+using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Storage;
 
 namespace Servicedesk.Infrastructure.Health;
@@ -40,6 +41,7 @@ public sealed class HealthAggregator : IHealthAggregator
     private readonly IOptions<TlsCertHealthOptions> _tlsOptions;
     private readonly ISecurityActivitySnapshot _securityActivity;
     private readonly Retention.IRetentionHealth _retention;
+    private readonly ISettingsService _settings;
 
     public HealthAggregator(
         IQueueInboundMailboxRepository sources,
@@ -52,8 +54,10 @@ public sealed class HealthAggregator : IHealthAggregator
         ICertRenewalTrigger certRenewal,
         IOptions<TlsCertHealthOptions> tlsOptions,
         ISecurityActivitySnapshot securityActivity,
-        Retention.IRetentionHealth retention)
+        Retention.IRetentionHealth retention,
+        ISettingsService settings)
     {
+        _settings = settings;
         _retention = retention;
         _sources = sources;
         _taxonomy = taxonomy;
@@ -70,6 +74,7 @@ public sealed class HealthAggregator : IHealthAggregator
     public async Task<HealthReport> CollectAsync(CancellationToken ct)
     {
         var openIncidents = await _incidents.GetOpenBySubsystemAsync(ct);
+        var tz = await HealthTimeFormat.ResolveDisplayZoneAsync(_settings, ct);
 
         // v0.0.27: Adsolut moved out of System health into its own
         // IntegrationsHealthAggregator + dashboard tile. The roll-up below
@@ -77,13 +82,13 @@ public sealed class HealthAggregator : IHealthAggregator
         // both aggregators.
         var subsystems = new List<SubsystemHealth>
         {
-            ApplyIncidents(await BuildMailPollingAsync(ct), openIncidents),
+            ApplyIncidents(await BuildMailPollingAsync(tz, ct), openIncidents),
             ApplyIncidents(await BuildGraphAuthAsync(ct), openIncidents),
             ApplyIncidents(await BuildAttachmentJobsAsync(ct), openIncidents),
-            ApplyIncidents(BuildBlobStore(), openIncidents),
-            ApplyIncidents(BuildTlsCert(), openIncidents),
-            ApplyIncidents(BuildSecurityActivity(), openIncidents),
-            ApplyIncidents(BuildDataRetention(), openIncidents),
+            ApplyIncidents(BuildBlobStore(tz), openIncidents),
+            ApplyIncidents(BuildTlsCert(tz), openIncidents),
+            ApplyIncidents(BuildSecurityActivity(tz), openIncidents),
+            ApplyIncidents(BuildDataRetention(tz), openIncidents),
         };
 
         var rollup = subsystems.Aggregate(HealthStatus.Ok,
@@ -95,7 +100,7 @@ public sealed class HealthAggregator : IHealthAggregator
     /// when the last sweep threw; otherwise informational (last run, rows
     /// pruned per table, next run). Settings live under Settings → Health →
     /// Data retention.
-    private SubsystemHealth BuildDataRetention()
+    private SubsystemHealth BuildDataRetention(TimeZoneInfo tz)
     {
         var snap = _retention.Snapshot();
         var details = new List<HealthDetail>();
@@ -107,7 +112,7 @@ public sealed class HealthAggregator : IHealthAggregator
                 : string.Join(", ", snap.LastDeletedPerTable.Where(kv => kv.Value > 0).Select(kv => $"{kv.Key}: {kv.Value}"));
             if (string.IsNullOrEmpty(pruned)) pruned = "nothing to prune";
             var secs = (snap.LastDuration?.TotalSeconds ?? 0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
-            details.Add(new HealthDetail("Last sweep", $"{last:u} ({secs} s) — {pruned}."));
+            details.Add(new HealthDetail("Last sweep", $"{HealthTimeFormat.Local(last, tz)} ({secs} s) — {pruned}."));
             details.Add(new HealthDetail("Rows pruned since start", snap.TotalDeletedSinceStart.ToString()));
         }
         else
@@ -115,11 +120,11 @@ public sealed class HealthAggregator : IHealthAggregator
             details.Add(new HealthDetail("Last sweep", "Not run yet (first sweep 2 minutes after start)."));
         }
         if (snap.NextRunUtc is { } next)
-            details.Add(new HealthDetail("Next sweep", next.ToString("u")));
+            details.Add(new HealthDetail("Next sweep", HealthTimeFormat.Local(next, tz)));
 
         if (snap.LastError is not null)
         {
-            details.Add(new HealthDetail("Last error", $"{snap.LastErrorUtc:u}: {snap.LastError}"));
+            details.Add(new HealthDetail("Last error", $"{(snap.LastErrorUtc is { } errAt ? HealthTimeFormat.Local(errAt, tz) : "(unknown time)")}: {snap.LastError}"));
             return new SubsystemHealth(
                 Key: "data-retention",
                 Label: "Data retention",
@@ -158,7 +163,7 @@ public sealed class HealthAggregator : IHealthAggregator
         };
     }
 
-    private async Task<SubsystemHealth> BuildMailPollingAsync(CancellationToken ct)
+    private async Task<SubsystemHealth> BuildMailPollingAsync(TimeZoneInfo tz, CancellationToken ct)
     {
         var queues = (await _taxonomy.ListQueuesAsync(ct)).ToDictionary(q => q.Id);
         var sources = await _sources.ListAllAsync(ct);
@@ -217,7 +222,7 @@ public sealed class HealthAggregator : IHealthAggregator
                 if (status < HealthStatus.Warning) status = HealthStatus.Warning;
                 summaryParts.Add($"{queueName}: mailbox action failing");
                 var when = src.LastMailboxActionErrorUtc is { } ts
-                    ? ts.ToString("u")
+                    ? HealthTimeFormat.Local(ts, tz)
                     : "(unknown time)";
                 details.Add(new HealthDetail(label,
                     $"Delta polling OK, but a post-ingest mailbox action failed at {when}: {src.LastMailboxActionError}. " +
@@ -230,7 +235,7 @@ public sealed class HealthAggregator : IHealthAggregator
             else
             {
                 var last = src.LastPolledUtc is { } ts
-                    ? $"last polled {ts:u}"
+                    ? $"last polled {HealthTimeFormat.Local(ts, tz)}"
                     : "not yet polled";
                 details.Add(new HealthDetail(label, $"OK — {last}"));
             }
@@ -327,7 +332,7 @@ public sealed class HealthAggregator : IHealthAggregator
             Actions: actions);
     }
 
-    private SubsystemHealth BuildBlobStore()
+    private SubsystemHealth BuildBlobStore(TimeZoneInfo tz)
     {
         var snap = _blobHealth.Snapshot();
         var details = new List<HealthDetail>();
@@ -336,7 +341,7 @@ public sealed class HealthAggregator : IHealthAggregator
         if (snap.ConsecutiveFailures == 0)
         {
             var last = snap.LastSuccessUtc is { } ts
-                ? $"Last successful write {ts:u}."
+                ? $"Last successful write {HealthTimeFormat.Local(ts, tz)}."
                 : "No writes observed yet.";
             details.Add(new HealthDetail("Writes", last));
             return new SubsystemHealth(
@@ -352,7 +357,7 @@ public sealed class HealthAggregator : IHealthAggregator
             ? HealthStatus.Critical
             : HealthStatus.Warning;
 
-        var when = snap.LastErrorUtc is { } errTs ? errTs.ToString("u") : "(unknown time)";
+        var when = snap.LastErrorUtc is { } errTs ? HealthTimeFormat.Local(errTs, tz) : "(unknown time)";
         details.Add(new HealthDetail(
             "Last failure",
             $"{snap.ConsecutiveFailures} consecutive failure(s). Last {snap.LastOperation ?? "write"} at {when}: {snap.LastError}"));
@@ -380,7 +385,7 @@ public sealed class HealthAggregator : IHealthAggregator
             Actions: actions);
     }
 
-    private SubsystemHealth BuildTlsCert()
+    private SubsystemHealth BuildTlsCert(TimeZoneInfo tz)
     {
         var opts = _tlsOptions.Value;
         var details = new List<HealthDetail>();
@@ -409,7 +414,7 @@ public sealed class HealthAggregator : IHealthAggregator
         var status = HealthStatus.Ok;
         string summary;
 
-        AppendLastRun(details);
+        AppendLastRun(details, tz);
 
         if (info is null)
         {
@@ -458,7 +463,7 @@ public sealed class HealthAggregator : IHealthAggregator
 
         details.Add(new HealthDetail("Domain", opts.Domain));
         details.Add(new HealthDetail("Subject", info.Subject));
-        details.Add(new HealthDetail("Expires", info.NotAfterUtc.ToString("u")));
+        details.Add(new HealthDetail("Expires", HealthTimeFormat.Local(info.NotAfterUtc, tz)));
         details.Add(new HealthDetail("Days remaining", daysLeftRounded.ToString()));
 
         actions.Add(BuildRenewAction(opts.Domain));
@@ -472,7 +477,7 @@ public sealed class HealthAggregator : IHealthAggregator
             Actions: actions);
     }
 
-    private void AppendLastRun(List<HealthDetail> details)
+    private void AppendLastRun(List<HealthDetail> details, TimeZoneInfo tz)
     {
         var status = _certRenewal.TryReadStatus();
         if (status is null) return;
@@ -485,8 +490,8 @@ public sealed class HealthAggregator : IHealthAggregator
             _ => "Last renew attempt",
         };
         var value = status.Detail is null
-            ? $"{status.State} at {status.WhenUtc:u}"
-            : $"{status.State} at {status.WhenUtc:u} — {status.Detail}";
+            ? $"{status.State} at {HealthTimeFormat.Local(status.WhenUtc, tz)}"
+            : $"{status.State} at {HealthTimeFormat.Local(status.WhenUtc, tz)} — {status.Detail}";
         details.Add(new HealthDetail(label, value));
     }
 
@@ -499,7 +504,7 @@ public sealed class HealthAggregator : IHealthAggregator
             "Certbot runs on the host (webroot challenge via nginx) and nginx is " +
             "reloaded automatically on success. Watch this card for the result.");
 
-    private SubsystemHealth BuildSecurityActivity()
+    private SubsystemHealth BuildSecurityActivity(TimeZoneInfo tz)
     {
         var snap = _securityActivity.Get();
         if (snap is null)
@@ -524,13 +529,13 @@ public sealed class HealthAggregator : IHealthAggregator
         {
             details.Add(new HealthDetail(
                 "Window",
-                $"{(int)snap.Window.TotalSeconds}s rolling, evaluated {snap.EvaluatedUtc:u}"));
+                $"{(int)snap.Window.TotalSeconds}s rolling, evaluated {HealthTimeFormat.Local(snap.EvaluatedUtc, tz)}"));
 
             if (snap.AcknowledgedFromUtc is { } ack)
             {
                 details.Add(new HealthDetail(
                     "Counter reset",
-                    $"Acknowledged at {ack:u} — only counting events after that moment until the window has fully rolled past."));
+                    $"Acknowledged at {HealthTimeFormat.Local(ack, tz)} — only counting events after that moment until the window has fully rolled past."));
             }
 
             foreach (var c in snap.Categories)

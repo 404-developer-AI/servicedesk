@@ -1,27 +1,14 @@
+import { formatDateMedium, formatDateTimeMedium } from "@/lib/dateFormat";
 import type { AdsolutContractDetail } from "@/lib/api";
 
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
-  try {
-    return new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "2-digit" }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
+  return formatDateMedium(iso);
 }
 
 function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
+  return formatDateTimeMedium(iso);
 }
 
 function formatMoney(value: number | null | undefined): string {

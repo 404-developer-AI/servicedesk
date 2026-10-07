@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dateFormat";
 import * as React from "react";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -186,7 +187,7 @@ function RouteDetail({ period, route }: { period: PeriodQuery; route: RouteRow }
                     if (!props.active || !row) return null;
                     return (
                       <ChartTooltipBox
-                        title={new Date(row.t).toLocaleString()}
+                        title={formatDateTime(row.t, undefined, true)}
                         rows={[
                           { label: "p95", value: fmtMs(row.p95), color: pal.slot(0) },
                           { label: "p50", value: fmtMs(row.p50), color: pal.slot(2) },
@@ -283,7 +284,7 @@ export function SlowList({ rows }: { rows: SlowRequest[] }) {
           <li key={s.id} className="space-y-1.5 py-2 text-xs">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-semibold tabular-nums text-foreground">{fmtMs(s.totalMs)}</span>
-              <span className="text-muted-foreground">{new Date(s.t).toLocaleString()}</span>
+              <span className="text-muted-foreground">{formatDateTime(s.t)}</span>
               <Pill tone={s.status >= 500 ? "critical" : s.status >= 400 ? "warning" : "nodata"}>{s.status}</Pill>
               <span className="ml-auto text-muted-foreground">
                 {s.dbCount} queries · {fmtBytes(s.bytes)}{s.gcCount > 0 ? ` · ${s.gcCount} GC` : ""}

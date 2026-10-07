@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dateFormat";
 import * as React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -312,7 +313,7 @@ function MarkersPanel({ overview, serverNow }: { overview: Overview; serverNow: 
             <li key={m.id} className="flex items-center gap-2 py-1.5 text-xs">
               <Flag className={cn("h-3 w-3 shrink-0", m.kind === "deploy" ? "text-primary" : "text-muted-foreground")} />
               <span className="min-w-0 flex-1 truncate text-foreground/90" title={m.label}>{m.label}</span>
-              <span className="shrink-0 text-muted-foreground" title={new Date(m.t).toLocaleString()}>
+              <span className="shrink-0 text-muted-foreground" title={formatDateTime(m.t, undefined, true)}>
                 {Math.abs(now - new Date(m.t).getTime()) < 86_400_000 ? fmtTime(m.t) : fmtTime(m.t, true)}
               </span>
               {m.kind === "manual" ? (
@@ -387,7 +388,7 @@ function TimelinePanel({ overview }: { overview: Overview }) {
                     });
                     return (
                       <ChartTooltipBox
-                        title={new Date(row.t).toLocaleString()}
+                        title={formatDateTime(row.t, undefined, true)}
                         rows={[
                           { label: "p95", value: fmtMs(row.p95), color: p95Color },
                           { label: "p50", value: fmtMs(row.p50), color: p50Color },
@@ -418,7 +419,7 @@ function TimelinePanel({ overview }: { overview: Overview }) {
                     content={(props) => {
                       const row = props.payload?.[0]?.payload as (typeof data)[number] | undefined;
                       if (!props.active || !row) return null;
-                      return <ChartTooltipBox title={new Date(row.t).toLocaleString()} rows={[{ label: "Requests/min", value: fmtCount(row.rpm), color: rpmColor }]} />;
+                      return <ChartTooltipBox title={formatDateTime(row.t, undefined, true)} rows={[{ label: "Requests/min", value: fmtCount(row.rpm), color: rpmColor }]} />;
                     }}
                   />
                   <Area type="monotone" dataKey="rpm" stroke={rpmColor} strokeWidth={2} fill={rpmColor} fillOpacity={0.12} isAnimationActive={false} />

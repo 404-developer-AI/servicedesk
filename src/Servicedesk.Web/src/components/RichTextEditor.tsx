@@ -96,6 +96,11 @@ type RichTextEditorProps = {
   /// (compose window only). Off everywhere else so notes/replies never parse
   /// the marker.
   enableSignatureBlock?: boolean;
+  /// Re-editing saved content (e.g. editing a posted note): register
+  /// render-only @@-mention and order-pill nodes even without their
+  /// typeahead callbacks, so existing chips survive the round-trip instead
+  /// of collapsing to plain text.
+  preserveInlineNodes?: boolean;
 };
 
 type ToolbarButtonProps = {
@@ -150,6 +155,7 @@ export function RichTextEditor({
   composeTokens,
   onEditorReady,
   enableSignatureBlock = false,
+  preserveInlineNodes = false,
 }: RichTextEditorProps) {
   // Stash the latest upload callback in a ref so the editor extensions —
   // which see only the prop-snapshot at construction time — can still call
@@ -240,21 +246,43 @@ export function RichTextEditor({
   // otherwise an editor that never sees agent-mentions pays nothing for
   // this surface. The suggestion callback reads ref values so the search
   // function can update across re-renders without recreating the editor.
+  // Emits <span data-type="mention" class="sd-mention" data-id data-label>@label</span>.
+  // The visible text is a single "@" even though the typeahead trigger is
+  // "@@" — Tiptap's default would echo the trigger ("@@label").
+  const agentMentionOptions = {
+    HTMLAttributes: {
+      class: "sd-mention",
+    },
+    renderText({ node }: { node: { attrs: Record<string, unknown> } }) {
+      return `@${node.attrs.label ?? node.attrs.id ?? ""}`;
+    },
+    renderHTML({ options, node }: { options: { HTMLAttributes: Record<string, unknown> }; node: { attrs: Record<string, unknown> } }) {
+      return [
+        "span",
+        options.HTMLAttributes,
+        `@${node.attrs.label ?? node.attrs.id ?? ""}`,
+      ] as [string, Record<string, unknown>, string];
+    },
+  };
+
   if (onMentionQuery) {
     extensions.push(
       Mention.configure({
-        // Mention's default renderHTML already emits
-        //   <span data-type="mention" class="<our class>" data-id="..." data-label="...">@label</span>
-        // via its built-in addAttributes — we just contribute the styling
-        // hook and the plain-text serialisation.
-        HTMLAttributes: {
-          class: "sd-mention",
-        },
-        renderText({ node }) {
-          return `@${node.attrs.label ?? node.attrs.id ?? ""}`;
-        },
+        ...agentMentionOptions,
         suggestion: buildMentionSuggestion(mentionQueryRef),
       }),
+    );
+  } else if (preserveInlineNodes) {
+    // Render-only: saved @@-mentions re-parse as chips when a note is edited
+    // (otherwise ProseMirror drops the unknown span to plain text). No
+    // typeahead — the edit path doesn't send mention notifications, so
+    // offering new tags there would silently notify nobody.
+    extensions.push(
+      Mention.extend({
+        addProseMirrorPlugins() {
+          return [];
+        },
+      }).configure(agentMentionOptions),
     );
   }
 
@@ -330,7 +358,9 @@ export function RichTextEditor({
     });
 
     extensions.push(IntakeMention);
+  }
 
+  if (onIntakeQuery || preserveInlineNodes) {
     // v0.0.59 — order pills. A second Mention-derived inline atom keyed off
     // `data-order-id`. It has NO own suggestion — orders surface through the
     // same `::` picker (their items carry kind: "order") and the shared

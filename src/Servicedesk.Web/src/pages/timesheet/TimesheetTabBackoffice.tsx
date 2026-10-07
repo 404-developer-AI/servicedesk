@@ -1,3 +1,4 @@
+import { formatDateTimeMedium, formatMonthYear } from "@/lib/dateFormat";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -71,17 +72,7 @@ function formatMinutes(minutes: number | null | undefined): string {
 
 function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
+  return formatDateTimeMedium(iso);
 }
 
 // ---- column model -----------------------------------------------------
@@ -931,8 +922,7 @@ function ColumnPickerItem({
 // ---- month label ------------------------------------------------------
 
 function MonthLabel({ year, month }: { year: number; month: number }) {
-  const d = new Date(year, month - 1, 1);
-  const label = d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const label = formatMonthYear(year, month);
   return (
     <span className="min-w-40 px-2 text-center text-sm font-medium text-foreground">
       {label}

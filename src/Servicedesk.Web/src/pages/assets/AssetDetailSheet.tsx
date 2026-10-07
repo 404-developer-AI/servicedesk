@@ -1,3 +1,4 @@
+import { formatDateTime, formatDate } from "@/lib/dateFormat";
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, Server } from "lucide-react";
 import {
@@ -14,7 +15,7 @@ import { cn } from "@/lib/utils";
 function formatWhen(iso: string | null): string {
   if (!iso) return "never";
   try {
-    return new Date(iso).toLocaleString();
+    return formatDateTime(iso);
   } catch {
     return iso;
   }
@@ -79,7 +80,7 @@ export function AssetDetailSheet({ assetId, onClose }: Props) {
               label="EOL"
               value={
                 asset.data.eolUtc
-                  ? `${new Date(asset.data.eolUtc).toLocaleDateString()} (${asset.data.eolStatus})`
+                  ? `${formatDate(asset.data.eolUtc)} (${asset.data.eolStatus})`
                   : "Unknown"
               }
             />

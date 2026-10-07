@@ -1,3 +1,4 @@
+import { formatDayMonthTime, formatTime } from "@/lib/dateFormat";
 import type { CategoryScore, Severity } from "@/lib/perf-api";
 
 const nf0 = new Intl.NumberFormat("en-GB", { maximumFractionDigits: 0 });
@@ -48,11 +49,8 @@ export function fmtNum(n: number | null | undefined, digits = 1): string {
 
 /** Server UTC timestamp → local short time/date for chart axes and tables. */
 export function fmtTime(iso: string, withDate = false): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return withDate
-    ? d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
-    : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  if (Number.isNaN(new Date(iso).getTime())) return iso;
+  return withDate ? formatDayMonthTime(iso) : formatTime(iso);
 }
 
 export function fmtAgo(iso: string | null | undefined, nowMs: number): string {

@@ -60,6 +60,7 @@ import { RichTextEditor } from "@/components/RichTextEditor";
 import { useAuth } from "@/auth/authStore";
 import type { TicketAttachmentMeta } from "@/lib/ticket-api";
 import { ApiError } from "@/lib/ticket-api";
+import { htmlToText } from "@/lib/sanitize";
 
 // ---- Column definitions ---------------------------------------------------
 
@@ -134,10 +135,6 @@ function serverDateToday(time: ReturnType<typeof useServerTime>["time"]): string
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 }
 
-function stripHtml(html: string | null | undefined): string {
-  if (!html) return "";
-  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-}
 
 // Format a server-set UTC timestamp for a hover tooltip (local display only —
 // the value itself is server-authored). Falls back to the raw string.
@@ -1224,7 +1221,7 @@ function RichTextPreviewCell({
   dialogTitle: string;
 }) {
   const [open, setOpen] = React.useState(false);
-  const preview = stripHtml(html);
+  const preview = React.useMemo(() => htmlToText(html), [html]);
 
   if (!preview) {
     return <span className="text-muted-foreground italic text-xs">—</span>;
@@ -1274,7 +1271,7 @@ function RichTextCellEditor({
   onClose: () => void;
   onUploadFile: (file: File) => Promise<TicketAttachmentMeta | null>;
 }) {
-  const preview = stripHtml(html);
+  const preview = React.useMemo(() => htmlToText(html), [html]);
 
   return (
     <>

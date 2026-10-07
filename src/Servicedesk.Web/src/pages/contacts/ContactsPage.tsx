@@ -1,3 +1,4 @@
+import { formatDate } from "@/lib/dateFormat";
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -240,7 +241,7 @@ export function ContactsPage() {
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">
                       {c.lastTicketUpdatedUtc
-                        ? new Date(c.lastTicketUpdatedUtc).toLocaleDateString()
+                        ? formatDate(c.lastTicketUpdatedUtc)
                         : "—"}
                     </td>
                     <td className="px-4 py-3">

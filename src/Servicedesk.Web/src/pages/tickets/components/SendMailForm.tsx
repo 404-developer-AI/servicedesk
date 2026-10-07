@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dateFormat";
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -107,7 +108,7 @@ function buildForwardQuote(source: {
     ? `${source.from.name || source.from.address} &lt;${source.from.address}&gt;`
     : "(unknown sender)";
   const dateLine = source.receivedUtc
-    ? new Date(source.receivedUtc).toLocaleString()
+    ? formatDateTime(source.receivedUtc)
     : "";
   const subjectLine = source.subject ?? "";
   const body = source.bodyHtml ?? "";
@@ -129,7 +130,7 @@ function buildReplyQuote(source: {
     ? `${source.from.name || source.from.address} &lt;${source.from.address}&gt;`
     : "(unknown sender)";
   const when = source.receivedUtc
-    ? new Date(source.receivedUtc).toLocaleString()
+    ? formatDateTime(source.receivedUtc)
     : "";
   const preamble = when
     ? `On ${when}, ${who} wrote:`

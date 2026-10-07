@@ -227,6 +227,8 @@ export type UpdateTicketEventRequest = {
   bodyText?: string;
   bodyHtml?: string;
   isInternal?: boolean;
+  /// Staged uploads (images pasted while editing) to link to this event.
+  attachmentIds?: string[];
 };
 
 export type TicketEventPin = {

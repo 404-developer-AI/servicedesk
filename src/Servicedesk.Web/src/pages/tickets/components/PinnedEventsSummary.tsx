@@ -14,6 +14,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { EVENT_CONFIG } from "./TicketTimeline";
+import { stripBaseTags } from "@/lib/sanitize";
 
 type PinnedEventsSummaryProps = {
   ticketId: string;
@@ -73,7 +74,7 @@ function PinnedItem({
       // popover open/close, query invalidation, or a parent prop change,
       // that produces "100 reqs for the same 2 attachments / second"
       // without anything actually being viewed.
-      const doc = new DOMParser().parseFromString(event.bodyHtml, "text/html");
+      const doc = new DOMParser().parseFromString(stripBaseTags(event.bodyHtml), "text/html");
       const text = doc.body.textContent?.trim();
       if (text) return text.slice(0, 80);
     }

@@ -1,3 +1,4 @@
+import { formatDateTime as formatServerDateTime } from "@/lib/dateFormat";
 import { useMemo, useState, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
@@ -73,18 +74,7 @@ const STATUS_ICON: Record<ZammadImportRunStatus, ReactNode> = {
 
 function formatDateTime(iso: string | null) {
   if (!iso) return "—";
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
+  return formatServerDateTime(iso, undefined, true);
 }
 
 export function ZammadImportRunDetailPage() {

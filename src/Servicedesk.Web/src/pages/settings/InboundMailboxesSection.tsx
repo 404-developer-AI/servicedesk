@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dateFormat";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Inbox, AlertTriangle, PauseCircle } from "lucide-react";
@@ -130,7 +131,7 @@ function MailboxRow({
               : "No inbound folder selected"}
           </span>
           {mbx.lastPolledUtc && (
-            <span>· Last polled {new Date(mbx.lastPolledUtc).toLocaleString()}</span>
+            <span>· Last polled {formatDateTime(mbx.lastPolledUtc)}</span>
           )}
           {!mbx.isActive && <span>· Queue inactive</span>}
         </div>

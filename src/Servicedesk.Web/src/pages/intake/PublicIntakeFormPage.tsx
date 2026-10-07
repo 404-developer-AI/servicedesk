@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dateFormat";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, Clock, Loader2, Send } from "lucide-react";
@@ -191,7 +192,7 @@ function PublicIntakeContent({
         {view.expiresUtc && (
           <p className="flex items-center gap-1 text-xs text-muted-foreground/70">
             <Clock className="h-3 w-3" />
-            Geldig tot {new Date(view.expiresUtc).toLocaleString()}
+            Geldig tot {formatDateTime(view.expiresUtc)}
           </p>
         )}
       </header>

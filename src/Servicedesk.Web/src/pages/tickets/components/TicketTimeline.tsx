@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ticketApi, ApiError, type TicketEvent, type OutboundMailKind } from "@/lib/ticket-api";
+import { useAttachmentUploads } from "../hooks/useAttachmentUploads";
 import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
 import { useAuth } from "@/auth/authStore";
 import {
@@ -63,6 +64,7 @@ import { EventRevisionDialog } from "./EventRevisionDialog";
 import { IntakeSubmissionPanel } from "@/components/intake/IntakeSubmissionPanel";
 import { SplitMailDialog } from "@/components/SplitMailDialog";
 import { formatDuration } from "@/lib/timesheet-api";
+import { stripBaseTags } from "@/lib/sanitize";
 
 type PreviewContextValue = {
   open: (preview: AttachmentPreview) => void;
@@ -121,6 +123,13 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
     node.setAttribute("loading", "lazy");
     node.setAttribute("decoding", "async");
   }
+  // Notes saved before the editor's mention renderHTML fix carry the "@@"
+  // trigger in the chip text ("@@ian"). Normalise to the label on display;
+  // data-label is the source of truth (textContent assignment = no HTML).
+  if (node.nodeName === "SPAN" && node.getAttribute("data-type") === "mention") {
+    const label = node.getAttribute("data-label");
+    if (label) node.textContent = `@${label}`;
+  }
 });
 
 function SafeHtml({ html }: { html: string }) {
@@ -157,7 +166,7 @@ function SafeHtml({ html }: { html: string }) {
   // ticks), which re-fires the GET — a sub-rosa loop that only shows up
   // without the HTTP cache (incognito, DevTools "Disable cache").
   const danger = React.useMemo(
-    () => ({ __html: DOMPurify.sanitize(html, SANITIZE_CONFIG) as unknown as string }),
+    () => ({ __html: DOMPurify.sanitize(stripBaseTags(html), SANITIZE_CONFIG) as unknown as string }),
     [html],
   );
   return (
@@ -1311,20 +1320,41 @@ function TimelineEvent({
     isMailEvent &&
     (!!mailFrom || mailTo.length > 0 || mailCc.length > 0 || mailBcc.length > 0);
 
+  // Images pasted/dropped while editing upload as staged ticket attachments
+  // and are linked to this event on save — same path as a new note.
+  const editUploads = useAttachmentUploads(ticketId);
+  const uploadEditImage = editUploads.upload;
+  const uploadWhileEditing = React.useCallback(
+    async (file: File) => {
+      // There is no attachment tray in edit mode, so a non-image upload
+      // would be invisible until save. Images only; files go via a new note.
+      if (!file.type.startsWith("image/")) {
+        toast.info("Only images can be added while editing. Attach files in a new note.");
+        return null;
+      }
+      return uploadEditImage(file);
+    },
+    [uploadEditImage],
+  );
+  const uploadsPending = editUploads.items.some((it) => it.status === "pending");
+
   const updateMutation = useMutation({
     mutationFn: () => {
-      const div = document.createElement("div");
-      div.innerHTML = draftHtml;
-      const plainText = div.textContent ?? "";
+      // DOMParser: an inert document, so inline <img> tags in the draft
+      // don't fire requests just to compute the plain-text twin.
+      const doc = new DOMParser().parseFromString(draftHtml, "text/html");
+      const plainText = doc.body.textContent ?? "";
       return ticketApi.updateEvent(ticketId, event.id, {
         bodyHtml: draftHtml,
         bodyText: plainText,
         isInternal: draftInternal,
+        attachmentIds: editUploads.readyAttachmentIds,
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
       toast.success("Event updated");
+      editUploads.reset();
       setEditing(false);
     },
     onError: () => toast.error("Failed to update event"),
@@ -1361,6 +1391,9 @@ function TimelineEvent({
   const cancelEdit = () => {
     setDraftHtml(event.bodyHtml ?? event.bodyText ?? "");
     setDraftInternal(event.isInternal);
+    // Uploads made during a cancelled edit stay staged (unlinked) on the
+    // ticket, exactly like an abandoned new-note draft.
+    editUploads.reset();
     setEditing(false);
   };
 
@@ -1616,6 +1649,8 @@ function TimelineEvent({
                 content={draftHtml}
                 onChange={setDraftHtml}
                 minHeight="80px"
+                preserveInlineNodes
+                onUploadFile={uploadWhileEditing}
               />
 
               <div className="flex items-center justify-between">
@@ -1629,14 +1664,14 @@ function TimelineEvent({
                 <button
                   type="button"
                   onClick={() => updateMutation.mutate()}
-                  disabled={updateMutation.isPending}
+                  disabled={updateMutation.isPending || uploadsPending}
                   className={cn(
                     "px-3 py-1.5 text-xs rounded-md font-medium transition-colors",
                     "bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30",
-                    updateMutation.isPending && "opacity-50 cursor-not-allowed"
+                    (updateMutation.isPending || uploadsPending) && "opacity-50 cursor-not-allowed"
                   )}
                 >
-                  {updateMutation.isPending ? "Saving..." : "Save"}
+                  {updateMutation.isPending ? "Saving..." : uploadsPending ? "Uploading..." : "Save"}
                 </button>
               </div>
             </div>

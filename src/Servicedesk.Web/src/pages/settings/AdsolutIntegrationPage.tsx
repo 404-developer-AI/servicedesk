@@ -1,3 +1,4 @@
+import { formatDateTimeMedium } from "@/lib/dateFormat";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -80,17 +81,7 @@ function findEntry(entries: SettingEntry[] | undefined, key: string) {
 
 function formatDate(iso: string | null | undefined) {
   if (!iso) return "—";
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
+  return formatDateTimeMedium(iso);
 }
 
 function daysUntil(iso: string | null | undefined): number | null {
