@@ -410,8 +410,10 @@ const searchRoute = createRoute({
     type?: string;
     offset?: number;
     sort?: string;
+    deep?: boolean;
   } => ({
     q: typeof raw.q === "string" ? raw.q : undefined,
+    deep: raw.deep === true || raw.deep === "true" ? true : undefined,
     type: typeof raw.type === "string" ? raw.type : undefined,
     offset: typeof raw.offset === "string" ? Number(raw.offset) : (raw.offset as number | undefined),
     sort: typeof raw.sort === "string" ? raw.sort : undefined,

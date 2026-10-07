@@ -36,9 +36,13 @@ export function SearchPage() {
     type?: string;
     offset?: number;
     sort?: string;
+    deep?: boolean;
   };
 
   const q = (search.q ?? "").trim();
+  // v0.1.26 — message texts are searched in recent messages first; "deep"
+  // (kept in the URL so paging and back/forward keep it) searches them all.
+  const deep = search.deep === true;
   const [input, setInput] = useState(q);
   const activeType = search.type ?? "tickets";
   const offset = Math.max(0, Number(search.offset ?? 0));
@@ -47,8 +51,8 @@ export function SearchPage() {
   useEffect(() => setInput(q), [q]);
 
   const { data, isFetching } = useQuery({
-    queryKey: ["search", "full", q, activeType, offset, activeSort],
-    queryFn: () => searchApi.full(q, activeType, PAGE_SIZE, offset, activeSort),
+    queryKey: ["search", "full", q, activeType, offset, activeSort, deep],
+    queryFn: () => searchApi.full(q, activeType, PAGE_SIZE, offset, activeSort, deep),
     enabled: q.length > 0,
     staleTime: 10_000,
   });
@@ -64,8 +68,10 @@ export function SearchPage() {
     return kinds.length > 0 ? kinds : [activeType];
   }, [data?.availableKinds, activeType]);
 
-  function updateUrl(next: { q?: string; type?: string; offset?: number; sort?: SearchSort }) {
+  function updateUrl(next: { q?: string; type?: string; offset?: number; sort?: SearchSort; deep?: boolean }) {
     const nextType = next.type ?? activeType;
+    // A new query or category starts fast again; paging/sorting keeps deep.
+    const keepDeep = next.deep ?? (deep && (next.q ?? q) === q && nextType === activeType);
     // A tickets-only sort silently resets when the user switches category.
     const nextSort = parseSort(next.sort ?? activeSort, nextType);
     navigate({
@@ -75,6 +81,7 @@ export function SearchPage() {
         type: nextType,
         offset: next.offset,
         sort: nextSort === "relevance" ? undefined : nextSort,
+        deep: keepDeep ? true : undefined,
       },
     });
   }
@@ -147,9 +154,26 @@ export function SearchPage() {
           <>
             <div className="mb-3 text-xs text-muted-foreground">
               {total === 0
-                ? `No results for "${q}".`
-                : `${pageStart}–${pageEnd} of ${total} results`}
+                ? `No results for "${q}"${group.partial ? " in recent messages" : ""}.`
+                : `${pageStart}–${pageEnd} of ${total}${group.partial ? "+" : ""} results`}
+              {deep && activeType === "tickets" ? " · all messages searched" : ""}
             </div>
+
+            {group.partial && (
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-glass bg-glass px-4 py-3 text-sm">
+                <span className="text-muted-foreground">
+                  Message texts were searched in recent messages only. Subjects, ticket numbers and descriptions are always searched in full.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => updateUrl({ offset: 0, deep: true })}
+                  disabled={isFetching}
+                  className="shrink-0 rounded-lg border border-glass-strong bg-glass-strong px-3 py-1.5 text-sm font-medium text-foreground transition hover:bg-glass-hover disabled:opacity-60"
+                >
+                  {isFetching ? "Searching…" : "Search older messages too"}
+                </button>
+              </div>
+            )}
 
             <ul className="divide-y divide-glass rounded-xl border border-glass bg-glass">
               {group.hits.map((hit) => (

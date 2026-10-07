@@ -3862,6 +3862,9 @@ export type SearchGroup = {
   hasMore: boolean;
   /** Tickets quick-mode only: total matches per partition ("open"/"closed"). */
   partitionTotals: Record<string, number> | null;
+  /** v0.1.26 — tickets: message texts were searched in recent messages only
+   *  and older ones exist; show "N+" and offer the deep search. */
+  partial?: boolean;
 };
 
 export type SearchDropdownResponse = {
@@ -3881,15 +3884,15 @@ export type SearchFullResponse = {
 };
 
 export const searchApi = {
-  quick: (q: string, limit = 8) =>
+  quick: (q: string, limit = 8, deep = false) =>
     request<SearchDropdownResponse>(
       "GET",
-      `/api/search?q=${encodeURIComponent(q)}&limit=${limit}`,
+      `/api/search?q=${encodeURIComponent(q)}&limit=${limit}${deep ? "&deep=true" : ""}`,
     ),
-  full: (q: string, type: string, limit = 25, offset = 0, sort: SearchSort = "relevance") =>
+  full: (q: string, type: string, limit = 25, offset = 0, sort: SearchSort = "relevance", deep = false) =>
     request<SearchFullResponse>(
       "GET",
-      `/api/search/full?q=${encodeURIComponent(q)}&type=${encodeURIComponent(type)}&limit=${limit}&offset=${offset}&sort=${sort}`,
+      `/api/search/full?q=${encodeURIComponent(q)}&type=${encodeURIComponent(type)}&limit=${limit}&offset=${offset}&sort=${sort}${deep ? "&deep=true" : ""}`,
     ),
 };
 
