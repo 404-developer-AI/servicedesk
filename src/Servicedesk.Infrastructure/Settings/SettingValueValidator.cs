@@ -45,6 +45,8 @@ public static class SettingValueValidator
             SettingKeys.Insights.OpenedNoActionMinSeconds =>
                 int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var s) && s is >= 0 and <= 3600
                     ? null : "Choose a whole number of seconds from 0 to 3600.",
+            SettingKeys.Insights.RewindIntervalMinutes =>
+                value is "5" or "10" or "15" or "30" or "60" ? null : "Choose 5, 10, 15, 30 or 60 minutes.",
             // Served agent-readable and painted into inline styles.
             SettingKeys.Tickets.CallbackColor or SettingKeys.Tickets.ResearchColor =>
                 HexColor.IsMatch(value) ? null : "Enter a hex colour like #22c55e.",

@@ -214,8 +214,91 @@ async function downloadPdf(url: string, fallbackName: string): Promise<void> {
   window.setTimeout(() => URL.revokeObjectURL(href), 1000);
 }
 
+// ---- Rewind (v0.1.31) ------------------------------------------------------
+// Quarter-hour snapshots of tracked views. Tickets and counts are cut to the
+// caller's queue access server-side; a group only appears with a visible
+// ticket in it.
+
+export type RewindRange = "4h" | "24h" | "7d";
+
+export type RewindViewSummary = { id: string; name: string };
+export type RewindViews = { intervalMinutes: number; views: RewindViewSummary[] };
+
+export type RewindGroup = { key: string; label: string; color: string | null };
+
+export type RewindSlot = {
+  /** Slot start (UTC). */
+  t: string;
+  /** False = no snapshot covers this slot (before tracking began, or the app was down). */
+  covered: boolean;
+  /** Visible tickets per group key. */
+  counts: Record<string, number>;
+};
+
+export type RewindSeries = {
+  intervalMinutes: number;
+  fromUtc: string;
+  toUtc: string;
+  latestSlotUtc: string;
+  groups: RewindGroup[];
+  slots: RewindSlot[];
+};
+
+/** One ticket as it stood in the view at that moment (subject included). */
+export type RewindItem = {
+  id: string;
+  number: number;
+  subject: string;
+  queueId: string;
+  queueName: string;
+  statusId: string;
+  statusName: string;
+  statusColor: string;
+  stateCategory: string;
+  priorityName: string;
+  priorityColor: string;
+  priorityIsDefault: boolean;
+  isCallback: boolean;
+  isResearch: boolean;
+  requester: string;
+  companyName: string | null;
+  assigneeUserId: string | null;
+  assigneeEmail: string | null;
+  createdUtc: string;
+  pendingTillUtc: string | null;
+  /** Key of the group it showed under. */
+  group: string;
+};
+
+export type RewindSnapshot = {
+  slotUtc: string;
+  covered: boolean;
+  capturedUtc: string | null;
+  truncated: boolean;
+  groups: RewindGroup[];
+  /** Displayed order, group by group. */
+  items: RewindItem[];
+  /** Tickets deleted since — shown, not linked. */
+  deletedIds: string[];
+};
+
 export const insightsApi = {
   config: () => getJson<InsightsConfig>("/api/insights/config"),
+
+  rewindViews: () => getJson<RewindViews>("/api/insights/rewind/views"),
+
+  /** Slots from end − range to end; end omitted = the latest slot (server time). */
+  rewindSeries: (viewId: string, range: RewindRange, endUtc?: string | null) => {
+    const qs = new URLSearchParams({ range });
+    if (endUtc) qs.set("end", endUtc);
+    return getJson<RewindSeries>(`/api/insights/rewind/${encodeURIComponent(viewId)}/series?${qs.toString()}`);
+  },
+
+  /** The view as it stood at a slot (floored to the interval by the server). */
+  rewindSnapshot: (viewId: string, atUtc: string) =>
+    getJson<RewindSnapshot>(
+      `/api/insights/rewind/${encodeURIComponent(viewId)}/snapshot?${new URLSearchParams({ at: atUtc }).toString()}`,
+    ),
 
   report: (kind: InsightsReportKind, p: ReportParams) =>
     getJson<TicketCountReport>(`/api/insights/${kind}?${toQuery(p).toString()}`),

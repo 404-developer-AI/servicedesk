@@ -1,18 +1,20 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChartColumnStacked, CircleCheckBig, Inbox, Users } from "lucide-react";
+import { ChartColumnStacked, CircleCheckBig, History, Inbox, Users } from "lucide-react";
 import { insightsApi, type InsightsConfig, type InsightsReportKind } from "@/lib/insights-api";
 import { cn } from "@/lib/utils";
 import { AgentActivityReportView } from "./AgentActivityReport";
+import { RewindReportView } from "./RewindReport";
 import { TicketCountReportView } from "./TicketCountReport";
 import { useReportFilters } from "./useReportFilters";
 
-type InsightsTab = InsightsReportKind | "agents";
+type InsightsTab = InsightsReportKind | "agents" | "rewind";
 
 const TABS: ReadonlyArray<{ kind: InsightsTab; label: string; icon: typeof Inbox }> = [
   { kind: "new-tickets", label: "New tickets", icon: Inbox },
   { kind: "closed-tickets", label: "Closed tickets", icon: CircleCheckBig },
   { kind: "agents", label: "Agents", icon: Users },
+  { kind: "rewind", label: "Rewind", icon: History },
 ];
 
 // Per-viewer convenience: reopen on the last overview.
@@ -21,7 +23,7 @@ const TAB_KEY = "sd-insights-tab";
 function readTab(): InsightsTab {
   try {
     const v = window.localStorage.getItem(TAB_KEY);
-    return v === "closed-tickets" || v === "agents" ? v : "new-tickets";
+    return v === "closed-tickets" || v === "agents" || v === "rewind" ? v : "new-tickets";
   } catch {
     return "new-tickets";
   }
@@ -30,7 +32,8 @@ function readTab(): InsightsTab {
 /// v0.1.13 — Insights: the reporting dashboard. Per-user opt-in
 /// (`insights_enabled`); every figure is scoped server-side to the viewer's
 /// queue access. One tab per overview; the period filter is shared.
-/// v0.1.14 adds the Agents tab (per-agent work, side by side).
+/// v0.1.14 adds the Agents tab (per-agent work, side by side); v0.1.31 the
+/// Rewind tab (how the tickets in a tracked view shifted over time).
 export function InsightsPage() {
   const config = useQuery({
     queryKey: ["insights", "config"],
@@ -48,8 +51,8 @@ export function InsightsPage() {
           </div>
           <h1 className="text-display-md font-semibold text-foreground">Reports</h1>
           <p className="max-w-xl text-sm text-muted-foreground">
-            How work flows into and out of the desk, and who does it. Every figure respects your
-            queue access and every overview exports to PDF exactly as you see it.
+            How work flows into and out of the desk, who does it, and how the queue shifted over
+            time. Every figure respects your queue access.
           </p>
         </div>
       </header>
@@ -106,7 +109,9 @@ function Reports({ config }: { config: InsightsConfig }) {
         })}
       </div>
 
-      {tab === "agents" ? (
+      {tab === "rewind" ? (
+        <RewindReportView />
+      ) : tab === "agents" ? (
         <AgentActivityReportView config={config} filters={filters} />
       ) : (
         <TicketCountReportView key={tab} kind={tab} filters={filters} />

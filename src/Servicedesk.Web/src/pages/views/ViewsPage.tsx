@@ -439,6 +439,8 @@ function ViewDialog({
   );
   // v0.1.18 — column lock + per-view search box.
   const [allowUserColumns, setAllowUserColumns] = React.useState(view?.allowUserColumns ?? true);
+  // v0.1.31 — Insights Rewind tracking.
+  const [rewindTracked, setRewindTracked] = React.useState(view?.rewindTracked ?? false);
   const [searchEnabled, setSearchEnabled] = React.useState(initialDc.searchEnabled ?? false);
   const [searchDefaultMode, setSearchDefaultMode] = React.useState<ViewSearchMode>(
     initialDc.searchDefaultMode === "full" ? "full" : "columns",
@@ -476,6 +478,7 @@ function ViewDialog({
         displayConfigJson: JSON.stringify(dc),
         sortOrder: Math.max(0, Math.min(100, Math.trunc(sortOrder))),
         allowUserColumns,
+        rewindTracked,
       };
       if (view) {
         return viewApi.update(view.id, input);
@@ -632,6 +635,19 @@ function ViewDialog({
               </div>
               <Switch checked={allowUserColumns} onCheckedChange={setAllowUserColumns} />
             </div>
+          </div>
+
+          {/* ---- Insights Rewind (v0.1.31) ---- */}
+          <div className="flex items-center justify-between pt-2 border-t border-glass-strong">
+            <div className="space-y-0.5">
+              <span className="text-xs font-medium text-muted-foreground">Track in Rewind</span>
+              <p className="text-[10px] text-muted-foreground/60 leading-tight">
+                {rewindTracked
+                  ? "A snapshot of this view's tickets (order, groups, subjects) is kept on every interval, so Insights → Rewind can show how it shifted"
+                  : "Off — no snapshots are taken. History already captured stays until the retention period ends"}
+              </p>
+            </div>
+            <Switch checked={rewindTracked} onCheckedChange={setRewindTracked} />
           </div>
 
           {/* ---- Search box (v0.1.18) ---- */}
@@ -845,6 +861,7 @@ function ViewRow({
   } catch { /* ignore */ }
   const summaryParts = [...filterParts, ...dcParts];
   if (view.allowUserColumns === false) summaryParts.push("Columns locked");
+  if (view.rewindTracked) summaryParts.push("Tracked in Rewind");
 
   return (
     <div className="rounded-lg border border-glass-strong bg-glass transition-colors hover:bg-glass-hover">
