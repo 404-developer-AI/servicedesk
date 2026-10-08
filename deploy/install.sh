@@ -534,6 +534,12 @@ APP_INSTALL_DIR=${INSTALL_DIR}
 # appsettings.json default), which is fine in dev but should always be set
 # in production.
 SERVICEDESK_AllowedHosts=${DOMAIN}
+
+# Break-glass for IP blocking (Settings → IP blocking). If a block ever locks
+# admins out, uncomment, then run `docker compose up -d` in ${INSTALL_DIR}
+# (recreating the container applies it).
+# Every request passes; the block list itself is left untouched.
+#SERVICEDESK_Security__IpBlocking__Disabled=true
 EOF
         install -m 644 -o root -g root "$tmp" "$ENV_CONF_FILE"
         rm -f "$tmp"

@@ -37,6 +37,7 @@ import { TicketDetailPage } from "@/pages/tickets/TicketDetailPage";
 
 // Route pages are code-split; hot paths (dashboard, ticket list/detail, auth, portal, public forms) stay eager.
 const AuditLogPage = lazyRouteComponent(() => import("@/pages/settings/AuditLogPage"), "AuditLogPage");
+const IpBlockingPage = lazyRouteComponent(() => import("@/pages/settings/IpBlockingPage"), "IpBlockingPage");
 const GeneralSettingsPage = lazyRouteComponent(() => import("@/pages/settings/GeneralSettingsPage"), "GeneralSettingsPage");
 const HealthSettingsPage = lazyRouteComponent(() => import("@/pages/settings/HealthSettingsPage"), "HealthSettingsPage");
 const IntegrationsSettingsPage = lazyRouteComponent(() => import("@/pages/settings/IntegrationsSettingsPage"), "IntegrationsSettingsPage");
@@ -972,6 +973,12 @@ const settingsAuditRoute = createRoute({
   component: AuditLogPage,
 });
 
+const settingsIpBlockingRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "ip-blocking",
+  component: IpBlockingPage,
+});
+
 const settingsMailDiagnosticsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "mail-diagnostics",
@@ -1171,6 +1178,7 @@ const routeTree = rootRoute.addChildren([
     settingsHealthRoute,
     settingsPerformanceRoute,
     settingsAuditRoute,
+    settingsIpBlockingRoute,
   ]),
   publicIntakeRoute,
   publicSurveyRoute,

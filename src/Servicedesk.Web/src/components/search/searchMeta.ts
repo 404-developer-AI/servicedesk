@@ -27,6 +27,7 @@ export type SearchKind =
   | "checklist-templates"
   | "portal-accounts"
   | "remote-desktop-notes"
+  | "ip-rules"
   | (string & {});
 
 export const KIND_LABELS: Record<string, string> = {
@@ -52,6 +53,7 @@ export const KIND_LABELS: Record<string, string> = {
   "checklist-templates": "Checklist templates",
   "portal-accounts": "Portal accounts",
   "remote-desktop-notes": "Remote Desktop notes",
+  "ip-rules": "IP blocking",
 };
 
 export const KIND_ORDER: string[] = [
@@ -77,6 +79,7 @@ export const KIND_ORDER: string[] = [
   "checklist-templates",
   "portal-accounts",
   "remote-desktop-notes",
+  "ip-rules",
 ];
 
 export function labelForKind(kind: string): string {
@@ -147,6 +150,9 @@ export function hitHref(hit: SearchHit): string {
     case "remote-desktop-notes":
       // A note hit opens the Remote Desktop tab with that client's notes.
       return `/assets?tab=remote-desktop&client=${hit.entityId}`;
+    case "ip-rules":
+      // Admin-only source; opens Settings → IP blocking filtered to the address.
+      return `/settings/ip-blocking?ip=${encodeURIComponent(hit.entityId)}`;
     default:
       return "#";
   }

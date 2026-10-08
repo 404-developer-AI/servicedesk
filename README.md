@@ -130,6 +130,7 @@ npm run dev
 - HTTPS with HSTS, Content-Security-Policy, CSRF protection and rate limiting.
 - Secrets and sensitive fields encrypted at rest.
 - Append-only, hash-chained audit log.
+- Suspicious addresses (vulnerability-scanner probes, abuse bursts) are raised for an admin to block or whitelist; obvious scanners are blocked temporarily straight away.
 
 To report a vulnerability, see [SECURITY.md](SECURITY.md).
 

@@ -14,7 +14,19 @@ import {
 } from "@/components/ui/dialog";
 import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 
-const EVENT_TYPES = ["", "rate_limited", "rate_limited_csp_report", "csp_violation", "setting_changed"] as const;
+const EVENT_TYPES = [
+  "",
+  "rate_limited",
+  "rate_limited_csp_report",
+  "csp_violation",
+  "setting_changed",
+  "security.ip.auto_blocked",
+  "security.ip.proposal_raised",
+  "security.ip.blocked",
+  "security.ip.whitelisted",
+  "security.ip.proposal_dismissed",
+  "security.ip.rule_removed",
+] as const;
 
 export function AuditLogPage() {
   const [eventType, setEventType] = useState<string>("");

@@ -4,6 +4,8 @@ import { cn } from "@/lib/utils";
 import { SETTINGS_SECTIONS } from "@/shell/settingsSections";
 import { useSecondarySidebarStore } from "@/stores/useSecondarySidebarStore";
 import { useAuth } from "@/auth/authStore";
+import { useQuery } from "@tanstack/react-query";
+import { ipBlockingApi } from "@/lib/api";
 
 // Mounts a secondary nav rail into AppShell's root flex row (via
 // useSecondarySidebarStore), so the rail shares the main Sidebar's
@@ -32,6 +34,16 @@ function SettingsRail() {
   const sections = SETTINGS_SECTIONS.filter((s) =>
     s.slug === "knowledge-base" ? !!user?.kbEnabled : true,
   );
+  // v0.1.30 — open IP block proposals badge the nav entry. Same query key as
+  // the IP blocking page, so the two share one cache entry.
+  const ipBlocking = useQuery({
+    queryKey: ["admin", "ip-blocking"],
+    queryFn: () => ipBlockingApi.overview(),
+    enabled: user?.role === "Admin",
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+  const openIpProposals = ipBlocking.data?.openProposals.length ?? 0;
 
   return (
     <aside
@@ -71,6 +83,14 @@ function SettingsRail() {
                   )}
                 />
                 <span className="truncate">{section.label}</span>
+                {section.slug === "ip-blocking" && openIpProposals > 0 && (
+                  <span
+                    className="ml-auto rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-semibold leading-none text-destructive-foreground"
+                    aria-label={`${openIpProposals} open block proposals`}
+                  >
+                    {openIpProposals}
+                  </span>
+                )}
               </Link>
               {section.separatorAfter && (
                 <div
