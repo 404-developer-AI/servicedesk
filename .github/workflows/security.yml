@@ -46,11 +46,12 @@ jobs:
           echo "$REPORT"
           echo "$REPORT" > nuget-vuln.txt
 
-          # v0.1.2 — the ImageSharp allowlist is gone: the Infrastructure
-          # csproj now pins SixLabors.ImageSharp 2.1.x over PdfSharpCore's
-          # transitive 1.0.4, and HtmlSanitizer 9.2.x carries a patched
-          # AngleSharp. Any High/Critical hit fails the build outright; add
-          # a new allowlist only with a written reachability argument.
+          # No allowlist: any High/Critical hit fails the build outright.
+          # v0.1.30 removed PdfSharpCore (intake PDF moved to QuestPDF) and
+          # with it SixLabors.ImageSharp, whose 2.x line got no fix for
+          # GHSA-j3p4-wp97-rph4. HtmlSanitizer 9.2.x carries a patched
+          # AngleSharp. Add an allowlist only with a written reachability
+          # argument.
           if grep -E '\b(High|Critical)\b' nuget-vuln.txt; then
             echo "::error::High or Critical vulnerable NuGet package detected."
             exit 1

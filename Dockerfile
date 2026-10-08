@@ -71,10 +71,11 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS runtime
 # and the TZ env-var provisioned by install.sh both resolve — Alpine ships
 # without zoneinfo, which would silently leave every install on UTC regardless
 # of the App.TimeZone setting or the container TZ.
-# ttf-liberation is required (v0.0.20) so PdfSharpCore's SystemFonts
-# enumeration has a metric-compatible Arial substitute available. Without
-# this the intake-form PDF endpoint NRE's on the first `new XFont(...)`
-# call. Liberation Sans is MIT-licensed, Arial-metric-compatible, ~2MB.
+# ttf-liberation + fontconfig: originally required by PdfSharpCore (v0.0.20,
+# removed v0.1.30). QuestPDF bundles its own fallback fonts, so this is no
+# longer strictly needed; kept so the "Helvetica" family every PDF asks for
+# resolves to a metric-compatible system font (Liberation Sans, MIT, ~2MB)
+# instead of the bundled fallback — output stays identical to earlier builds.
 RUN addgroup -S sd && adduser -S -G sd -u 10001 sd \
     && apk add --no-cache wget icu-libs tzdata ttf-liberation fontconfig
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
