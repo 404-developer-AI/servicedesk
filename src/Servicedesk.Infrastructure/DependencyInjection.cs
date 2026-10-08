@@ -669,16 +669,6 @@ public static class DependencyInjection
         services.AddSingleton<IIntakeTokenResolver, IntakeTokenResolver>();
         services.AddSingleton<IIntakeFormPdfBuilder, IntakeFormPdfBuilder>();
 
-        // PdfSharpCore needs a font resolver on every platform (its default
-        // is null and throws on MeasureString). The bundled FontResolver
-        // searches the OS font directories — works on Windows out of the
-        // box and on Linux containers where `fonts-liberation` or similar
-        // is installed. Set once per process; GlobalFontSettings is static.
-        if (PdfSharpCore.Fonts.GlobalFontSettings.FontResolver is null)
-        {
-            PdfSharpCore.Fonts.GlobalFontSettings.FontResolver =
-                new PdfSharpCore.Utils.FontResolver();
-        }
         services.AddSingleton<IntakeTemplateSearchSource>();
         services.AddSingleton<IntakeSubmissionSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<IntakeTemplateSearchSource>()));
