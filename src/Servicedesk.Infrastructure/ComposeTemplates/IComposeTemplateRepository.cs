@@ -61,6 +61,10 @@ public interface IComposeTemplateRepository
         ComposeTemplateKindScope kinds,
         CancellationToken ct);
 
+    /// v0.1.32 — Insights Workflow role flags, kept out of Create/Update so
+    /// existing callers stay untouched; the admin endpoints set them after.
+    Task SetWorkflowFlagsAsync(Guid id, bool workflowClose, bool specialistConsult, CancellationToken ct);
+
     Task<bool> DeactivateAsync(Guid id, CancellationToken ct);
 
     Task<bool> DeleteAsync(Guid id, CancellationToken ct);

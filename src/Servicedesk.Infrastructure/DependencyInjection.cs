@@ -496,9 +496,12 @@ public static class DependencyInjection
         services.AddSingleton<Insights.IAgentInsightsService, Insights.AgentInsightsService>();
         // v0.1.31 — Insights Rewind: quarter-hour snapshots of tracked views.
         services.AddSingleton<Insights.Rewind.IRewindStore, Insights.Rewind.RewindStore>();
+        services.AddSingleton<Insights.Rewind.IRewindLayoutService, Insights.Rewind.RewindLayoutService>();
         services.AddSingleton<Insights.Rewind.IRewindCaptureService, Insights.Rewind.RewindCaptureService>();
         services.AddSingleton<Insights.Rewind.IRewindService, Insights.Rewind.RewindService>();
         services.AddHostedService<Insights.Rewind.RewindWorker>();
+        // v0.1.32 — Insights Workflow, step 1: template use + pickup capture.
+        services.AddSingleton<Workflow.IWorkflowCaptureService, Workflow.WorkflowCaptureService>();
         // Default to the no-op notifier; the Api project overrides this
         // with the SignalR-backed implementation.
         services.AddSingleton<Realtime.ITimesheetEntryNotifier, Realtime.NullTimesheetEntryNotifier>();

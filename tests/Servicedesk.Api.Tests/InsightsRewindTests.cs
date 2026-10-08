@@ -196,7 +196,8 @@ public sealed class InsightsRewindTests
             : throw new NotSupportedException(m.Name));
         var taxonomy = PartialFake<Servicedesk.Infrastructure.Persistence.Taxonomy.ITaxonomyRepository>.Create(
             (m, _) => throw new NotSupportedException(m.Name));
-        var svc = new RewindCaptureService(store, tickets, taxonomy, new InMemorySettingsService(),
+        var svc = new RewindCaptureService(store,
+            new RewindLayoutService(tickets, taxonomy, new InMemorySettingsService()),
             new ThrowingLogger());
         store.Tracked.Add(new RewindTrackedView(ViewId, "Servicedesk", "{}", "{}"));
         var t0 = new DateTime(2026, 10, 8, 12, 0, 0, DateTimeKind.Utc);

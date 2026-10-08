@@ -22,7 +22,9 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
         created_utc         AS CreatedUtc,
         updated_utc         AS UpdatedUtc,
         created_by          AS CreatedBy,
-        linked_survey_id    AS LinkedSurveyId
+        linked_survey_id    AS LinkedSurveyId,
+        workflow_close      AS WorkflowClose,
+        specialist_consult  AS SpecialistConsult
         """;
 
     private readonly NpgsqlDataSource _dataSource;
@@ -30,6 +32,17 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
     public ComposeTemplateRepository(NpgsqlDataSource dataSource)
     {
         _dataSource = dataSource;
+    }
+
+    public async Task SetWorkflowFlagsAsync(Guid id, bool workflowClose, bool specialistConsult, CancellationToken ct)
+    {
+        const string sql = """
+            UPDATE compose_templates
+            SET workflow_close = @workflowClose, specialist_consult = @specialistConsult
+            WHERE id = @id
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql, new { id, workflowClose, specialistConsult }, cancellationToken: ct));
     }
 
     public async Task<IReadOnlyList<ComposeTemplate>> ListAsync(bool includeInactive, CancellationToken ct)
@@ -254,7 +267,9 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
         r.UseForNote,
         r.UseForMail,
         r.UseForCall,
-        r.AutoInsertOnCall);
+        r.AutoInsertOnCall,
+        r.WorkflowClose,
+        r.SpecialistConsult);
 
     // Mutable class for Dapper column-name binding. See the project memo
     // about positional-record-struct null bugs — we avoid those here.
@@ -276,5 +291,7 @@ public sealed class ComposeTemplateRepository : IComposeTemplateRepository
         public DateTime UpdatedUtc { get; set; }
         public Guid? CreatedBy { get; set; }
         public Guid? LinkedSurveyId { get; set; }
+        public bool WorkflowClose { get; set; }
+        public bool SpecialistConsult { get; set; }
     }
 }

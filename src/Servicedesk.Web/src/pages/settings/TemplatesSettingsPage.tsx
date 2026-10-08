@@ -264,6 +264,22 @@ function TemplateRow({
               Auto-insert
             </span>
           )}
+          {template.workflowClose && (
+            <span
+              className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-primary"
+              title="Counts as the closing action before Pending in Insights → Workflow."
+            >
+              Workflow
+            </span>
+          )}
+          {template.specialistConsult && (
+            <span
+              className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-primary"
+              title="Counts as a Specialist Consult in Insights → Workflow."
+            >
+              Specialist Consult
+            </span>
+          )}
           {!template.isActive && (
             <span className="rounded-full bg-glass-strong px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
               Inactive

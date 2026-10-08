@@ -31,6 +31,9 @@ export interface ComposeTemplate {
   useForMail: boolean;
   useForCall: boolean;
   autoInsertOnCall: boolean;
+  /// v0.1.32 — Insights Workflow roles (read at report time).
+  workflowClose: boolean;
+  specialistConsult: boolean;
   /// v0.0.38 — optional CSAT survey that fires automatically when an agent
   /// sends a reply/note built from this template. Null = no survey-on-send.
   linkedSurveyId: string | null;
@@ -67,6 +70,8 @@ export interface ComposeTemplateUpsert {
   useForMail: boolean;
   useForCall: boolean;
   autoInsertOnCall: boolean;
+  workflowClose: boolean;
+  specialistConsult: boolean;
   linkedSurveyId: string | null;
 }
 

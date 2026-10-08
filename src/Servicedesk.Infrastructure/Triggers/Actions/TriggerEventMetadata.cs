@@ -6,7 +6,8 @@ namespace Servicedesk.Infrastructure.Triggers.Actions;
 /// trigger-fired mutations. The agent UI's manual change-events use the same
 /// <c>{ from, to, fromName, toName }</c> shape (see TicketRepository.UpdateFieldsAsync);
 /// the trigger path adds <c>triggered_by</c> so the timeline can render a
-/// "by trigger {id}" badge instead of an agent avatar.
+/// "by trigger {id}" badge instead of an agent avatar. v0.1.32 adds
+/// <c>on_behalf_of</c> (see <see cref="TriggerOrigin"/>).
 internal static class TriggerEventMetadata
 {
     public static string FieldChange(
@@ -25,6 +26,8 @@ internal static class TriggerEventMetadata
             ["toName"] = toName,
             ["triggered_by"] = triggerId,
         };
+        // v0.1.32 — the agent whose action caused this pass (request path only).
+        if (TriggerOrigin.OnBehalfOfUserId is { } agent) payload["on_behalf_of"] = agent;
         if (extra is not null)
         {
             foreach (var kv in extra) payload[kv.Key] = kv.Value;
@@ -38,6 +41,8 @@ internal static class TriggerEventMetadata
         {
             ["triggered_by"] = triggerId,
         };
+        // v0.1.32 — the agent whose action caused this pass (request path only).
+        if (TriggerOrigin.OnBehalfOfUserId is { } agent) payload["on_behalf_of"] = agent;
         if (extra is not null)
         {
             foreach (var kv in extra) payload[kv.Key] = kv.Value;

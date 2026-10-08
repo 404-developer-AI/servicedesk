@@ -65,6 +65,9 @@ export function TemplateEditor({
   const [autoInsertOnCall, setAutoInsertOnCall] = useState(
     existing?.autoInsertOnCall ?? false,
   );
+  // v0.1.32 — Insights Workflow roles.
+  const [workflowClose, setWorkflowClose] = useState(existing?.workflowClose ?? false);
+  const [specialistConsult, setSpecialistConsult] = useState(existing?.specialistConsult ?? false);
   const [linkedSurveyId, setLinkedSurveyId] = useState<string | null>(
     existing?.linkedSurveyId ?? null,
   );
@@ -117,6 +120,8 @@ export function TemplateEditor({
         useForMail,
         useForCall,
         autoInsertOnCall: autoInsertOnCall && useForCall,
+        workflowClose,
+        specialistConsult,
         linkedSurveyId,
       };
       return existing
@@ -440,6 +445,37 @@ export function TemplateEditor({
           checked={autoInsertOnCall && useForCall}
           disabled={!useForCall}
           onCheckedChange={setAutoInsertOnCall}
+        />
+      </div>
+
+      <div className="flex items-start justify-between gap-4 rounded-lg border border-glass-strong bg-glass px-4 py-3">
+        <div className="space-y-0.5">
+          <p className="text-sm font-medium text-foreground">Counts for Workflow</p>
+          <p className="text-xs text-muted-foreground">
+            Insights → Workflow: a note or call built from this template, and filled in, counts as the
+            agent's closing action before a ticket goes to Pending. Applies to Note and Call use; turning it
+            on later also counts earlier use.
+          </p>
+        </div>
+        <Switch
+          checked={workflowClose}
+          disabled={!useForNote && !useForCall}
+          onCheckedChange={setWorkflowClose}
+        />
+      </div>
+
+      <div className="flex items-start justify-between gap-4 rounded-lg border border-glass-strong bg-glass px-4 py-3">
+        <div className="space-y-0.5">
+          <p className="text-sm font-medium text-foreground">Specialist Consult</p>
+          <p className="text-xs text-muted-foreground">
+            Insights → Workflow: a note or call built from this template counts as the Specialist Consult
+            expected after a High prio or Research ticket runs over its time limit.
+          </p>
+        </div>
+        <Switch
+          checked={specialistConsult}
+          disabled={!useForNote && !useForCall}
+          onCheckedChange={setSpecialistConsult}
         />
       </div>
 
