@@ -117,6 +117,17 @@ public sealed class RetentionWorker : BackgroundService
                 LIMIT @BatchSize
             )
             """),
+        // v0.1.31 — Insights Rewind snapshots, aged by the moment a snapshot
+        // stopped being current (an unchanged weekend is one row).
+        new("rewind_snapshots", SettingKeys.Retention.RewindSnapshotsDays, """
+            DELETE FROM rewind_snapshots
+            WHERE id IN (
+                SELECT id FROM rewind_snapshots
+                WHERE last_seen_utc < @Cutoff
+                ORDER BY id
+                LIMIT @BatchSize
+            )
+            """),
         new("blob_disk_samples", SettingKeys.Retention.BlobDiskSamplesDays, """
             DELETE FROM blob_disk_samples
             WHERE id IN (

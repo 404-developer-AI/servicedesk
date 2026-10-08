@@ -411,6 +411,15 @@ const INSIGHTS_PERIODS: ReadonlyArray<{ value: string; label: string }> = [
   { value: "year", label: "This year" },
 ];
 
+// v0.1.31 — Rewind capture cadence; the server only accepts these.
+const REWIND_INTERVALS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "5", label: "5 min" },
+  { value: "10", label: "10 min" },
+  { value: "15", label: "15 min" },
+  { value: "30", label: "30 min" },
+  { value: "60", label: "1 hour" },
+];
+
 // v0.1.13 — Insights reporting dashboard. Access is a per-user feature flag
 // (Users → Features); the only global knob is the period the page opens on.
 function InsightsSection({
@@ -424,18 +433,51 @@ function InsightsSection({
   const entry = findEntry(entries, "Insights.DefaultPeriod");
   const compareEntry = findEntry(entries, "Insights.AgentCompareMax");
   const openedMinEntry = findEntry(entries, "Insights.OpenedNoActionMinSeconds");
+  const rewindEntry = findEntry(entries, "Insights.RewindIntervalMinutes");
   const current = entry?.value ?? "month";
 
   const update = useMutation({
-    mutationFn: (value: string) => settingsApi.update("Insights.DefaultPeriod", value),
+    mutationFn: ({ key, value }: { key: string; value: string }) => settingsApi.update(key, value),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: INSIGHTS_QUERY_KEY });
-      qc.invalidateQueries({ queryKey: ["insights", "config"] });
+      qc.invalidateQueries({ queryKey: ["insights"] });
     },
-    onError: () => {
-      toast.error("Failed to update Insights.DefaultPeriod");
+    onError: (_err, { key }) => {
+      toast.error(`Failed to update ${key}`);
     },
   });
+
+  const choiceRow = (
+    key: string,
+    value: string,
+    options: ReadonlyArray<{ value: string; label: string }>,
+  ) => (
+    <div className="flex flex-wrap gap-2" role="radiogroup">
+      {options.map((p) => {
+        const selected = value === p.value;
+        return (
+          <button
+            key={p.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            disabled={update.isPending}
+            onClick={() => update.mutate({ key, value: p.value })}
+            className={cn(
+              "inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
+              "focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring",
+              "disabled:cursor-not-allowed disabled:opacity-50",
+              selected
+                ? "border-primary/50 bg-primary/10 text-foreground"
+                : "border-glass bg-glass text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {p.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
     <section className="glass-card p-6">
@@ -456,31 +498,7 @@ function InsightsSection({
         <Skeleton className="h-16 w-full" />
       ) : entry ? (
         <FieldShell label="Opening period">
-          <div className="flex flex-wrap gap-2" role="radiogroup">
-            {INSIGHTS_PERIODS.map((p) => {
-              const selected = current === p.value;
-              return (
-                <button
-                  key={p.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  disabled={update.isPending}
-                  onClick={() => update.mutate(p.value)}
-                  className={cn(
-                    "inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
-                    "focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring",
-                    "disabled:cursor-not-allowed disabled:opacity-50",
-                    selected
-                      ? "border-primary/50 bg-primary/10 text-foreground"
-                      : "border-glass bg-glass text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {p.label}
-                </button>
-              );
-            })}
-          </div>
+          {choiceRow("Insights.DefaultPeriod", current, INSIGHTS_PERIODS)}
           <p className="mt-1 text-[10px] text-muted-foreground/70">
             Only the starting point — users can switch period freely on the page.
           </p>
@@ -506,6 +524,18 @@ function InsightsSection({
             label="Opened without action — minimum seconds"
             hint="Ticket openings shorter than this are left out of the Agents overview's 'Opened without action' list (0–3600). 0 shows every quick click-through. How long the sessions are kept is under Health → Data retention."
           />
+        </div>
+      )}
+      {!loading && rewindEntry && (
+        <div className="mt-4">
+          <FieldShell label="Rewind snapshot interval">
+            {choiceRow("Insights.RewindIntervalMinutes", rewindEntry.value, REWIND_INTERVALS)}
+            <p className="mt-1 text-[10px] text-muted-foreground/70">
+              How often Rewind captures each tracked view, on the clock in server time (15 min = :00, :15, :30,
+              :45). A capture identical to the previous one is not stored again. Which views are tracked is set
+              per view under Settings → Views; how long snapshots are kept is under Health → Data retention.
+            </p>
+          </FieldShell>
         </div>
       )}
     </section>

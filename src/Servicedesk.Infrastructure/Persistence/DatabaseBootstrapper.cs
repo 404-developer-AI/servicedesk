@@ -6376,6 +6376,39 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_audit_log_login_success_ip
             ON audit_log (client_ip)
             WHERE event_type IN ('login_success','2fa_challenge_success','auth.microsoft.login.success','portal.login.success');
+
+        -- ===================================================================
+        -- v0.1.31 — Insights "Rewind": quarter-hour snapshots of tracked
+        -- views. Opt-in per view (views.rewind_tracked, admin-set); untracked
+        -- views produce no rows. One row per view per *changed* capture: an
+        -- unchanged capture only advances last_seen_utc on the latest row,
+        -- so a row covers [captured_utc, last_seen_utc + interval) and a gap
+        -- (app down) stays visible. items = the view's displayed order with
+        -- the ticket state of that moment (subject included); counts =
+        -- per (group, queue) tallies so the chart is scoped to the viewer's
+        -- queue access without detoasting items. Pruned by RetentionWorker
+        -- (Retention.RewindSnapshotsDays); cascades with the view.
+        ALTER TABLE views ADD COLUMN IF NOT EXISTS rewind_tracked BOOLEAN NOT NULL DEFAULT FALSE;
+
+        CREATE TABLE IF NOT EXISTS rewind_snapshots (
+            id                BIGSERIAL   PRIMARY KEY,
+            view_id           UUID        NOT NULL REFERENCES views(id) ON DELETE CASCADE,
+            captured_utc      TIMESTAMPTZ NOT NULL,
+            last_seen_utc     TIMESTAMPTZ NOT NULL,
+            interval_minutes  INTEGER     NOT NULL,
+            ticket_count      INTEGER     NOT NULL,
+            truncated         BOOLEAN     NOT NULL DEFAULT FALSE,
+            content_hash      TEXT        NOT NULL,
+            groups            JSONB       NOT NULL,
+            counts            JSONB       NOT NULL,
+            items             JSONB       NOT NULL,
+            CONSTRAINT ck_rewind_snapshots_seen CHECK (last_seen_utc >= captured_utc),
+            CONSTRAINT ck_rewind_snapshots_interval CHECK (interval_minutes BETWEEN 1 AND 1440)
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_rewind_snapshots_view_captured
+            ON rewind_snapshots (view_id, captured_utc DESC);
+        CREATE INDEX IF NOT EXISTS ix_rewind_snapshots_last_seen
+            ON rewind_snapshots (last_seen_utc);
         """;
 
     private readonly NpgsqlDataSource _dataSource;

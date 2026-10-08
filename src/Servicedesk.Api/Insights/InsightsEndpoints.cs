@@ -5,6 +5,7 @@ using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Insights;
+using Servicedesk.Infrastructure.Insights.Rewind;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Api.Insights;
@@ -23,6 +24,11 @@ namespace Servicedesk.Api.Insights;
 /// v0.1.14 adds the Agents overview under <c>/agents</c>: one to
 /// <c>Insights.AgentCompareMax</c> agents side by side — tickets worked on,
 /// time on tickets, calls — plus each agent's ticket list and a PDF.
+///
+/// v0.1.31 adds Rewind under <c>/rewind</c>: quarter-hour snapshots of the
+/// views an admin marked as tracked. Besides the flag, every call checks
+/// view access (404 when missing, like <c>GET /api/views/{id}</c>) and cuts
+/// tickets and counts to the caller's queue access.
 public static class InsightsEndpoints
 {
     private const string PdfExportedEvent = "insights.report.pdf_exported";
@@ -55,6 +61,9 @@ public static class InsightsEndpoints
         group.MapGet("/agents/tickets", ListAgentTickets).WithName("InsightsAgentTickets").WithOpenApi();
         group.MapGet("/agents/opened", ListOpenedWithoutAction).WithName("InsightsAgentOpened").WithOpenApi();
         group.MapGet("/agents/pdf", ExportAgentPdf).WithName("InsightsAgentsPdf").WithOpenApi();
+        group.MapGet("/rewind/views", ListRewindViews).WithName("InsightsRewindViews").WithOpenApi();
+        group.MapGet("/rewind/{viewId:guid}/series", GetRewindSeries).WithName("InsightsRewindSeries").WithOpenApi();
+        group.MapGet("/rewind/{viewId:guid}/snapshot", GetRewindSnapshot).WithName("InsightsRewindSnapshot").WithOpenApi();
 
         return app;
     }
@@ -460,6 +469,73 @@ public static class InsightsEndpoints
         [FromQuery] string? From,
         [FromQuery] string? To,
         [FromQuery] string? Granularity);
+
+    // ---- Rewind (v0.1.31) ----------------------------------------------------
+
+    /// Chart windows the page offers; the window ends at <c>end</c> (or the
+    /// latest slot) and reaches back this far.
+    private static readonly Dictionary<string, TimeSpan> RewindRanges = new(StringComparer.Ordinal)
+    {
+        ["4h"] = TimeSpan.FromHours(4),
+        ["24h"] = TimeSpan.FromHours(24),
+        ["7d"] = TimeSpan.FromDays(7),
+    };
+
+    private static async Task<IResult> ListRewindViews(
+        HttpContext http, IUserService users, IRewindService rewind, CancellationToken ct)
+    {
+        if (await RequireFlagAsync(http, users, ct) is { } deny) return deny;
+        var (_, role) = ActorContext.Resolve(http);
+        var views = await rewind.ListViewsAsync(ActorContext.GetUserId(http), role, ct);
+        return Results.Ok(new { intervalMinutes = await rewind.GetIntervalAsync(ct), views });
+    }
+
+    private static async Task<IResult> GetRewindSeries(
+        Guid viewId,
+        [FromQuery(Name = "range")] string? range,
+        [FromQuery(Name = "end")] DateTimeOffset? end,
+        HttpContext http, IUserService users, IRewindService rewind, IQueueAccessService queueAccess,
+        CancellationToken ct)
+    {
+        if (await RequireFlagAsync(http, users, ct) is { } deny) return deny;
+        if (await RequireRewindViewAsync(http, rewind, viewId, ct) is { } missing) return missing;
+        if (!RewindRanges.TryGetValue(range ?? "24h", out var span))
+            return Results.BadRequest(new { error = "range must be 4h, 24h or 7d." });
+
+        // "end" only moves the window back; the service clamps it to the
+        // latest server-time slot, so a future (or client-clock) value
+        // never reaches past now.
+        if (end is { } e && e.UtcDateTime.Year < 2000)
+            return Results.BadRequest(new { error = "end is out of range." });
+
+        var scope = await ResolveScopeAsync(http, queueAccess, ct);
+        var series = await rewind.GetSeriesAsync(viewId, end?.UtcDateTime, span, scope, ct);
+        return Results.Ok(series);
+    }
+
+    private static async Task<IResult> GetRewindSnapshot(
+        Guid viewId,
+        [FromQuery(Name = "at")] DateTimeOffset? at,
+        HttpContext http, IUserService users, IRewindService rewind, IQueueAccessService queueAccess,
+        CancellationToken ct)
+    {
+        if (await RequireFlagAsync(http, users, ct) is { } deny) return deny;
+        if (await RequireRewindViewAsync(http, rewind, viewId, ct) is { } missing) return missing;
+        if (at is { } a && a.UtcDateTime.Year < 2000)
+            return Results.BadRequest(new { error = "at is out of range." });
+
+        var scope = await ResolveScopeAsync(http, queueAccess, ct);
+        var snapshot = await rewind.GetSnapshotAsync(viewId, at?.UtcDateTime ?? DateTime.UtcNow, scope, ct);
+        return Results.Ok(snapshot);
+    }
+
+    private static async Task<IResult?> RequireRewindViewAsync(
+        HttpContext http, IRewindService rewind, Guid viewId, CancellationToken ct)
+    {
+        var (_, role) = ActorContext.Resolve(http);
+        return await rewind.CanReadViewAsync(ActorContext.GetUserId(http), role, viewId, ct)
+            ? null : Results.NotFound();
+    }
 
     private static async Task<IResult?> RequireFlagAsync(HttpContext http, IUserService users, CancellationToken ct)
     {

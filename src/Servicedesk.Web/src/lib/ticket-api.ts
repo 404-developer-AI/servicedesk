@@ -811,6 +811,8 @@ export type View = {
   updatedUtc: string;
   /// v0.1.18 — false = column layout locked to the view for every agent.
   allowUserColumns: boolean;
+  /// v0.1.31 — Insights Rewind snapshots this view every interval.
+  rewindTracked?: boolean;
 };
 
 export type ViewInput = {
@@ -821,6 +823,7 @@ export type ViewInput = {
   isShared?: boolean;
   displayConfigJson?: string;
   allowUserColumns?: boolean;
+  rewindTracked?: boolean;
 };
 
 // ---- Users ----

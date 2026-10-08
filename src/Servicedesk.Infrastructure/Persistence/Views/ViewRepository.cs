@@ -15,7 +15,8 @@ public sealed class ViewRepository : IViewRepository
         columns AS Columns, sort_order AS SortOrder, is_shared AS IsShared,
         display_config::text AS DisplayConfigJson,
         created_utc AS CreatedUtc, updated_utc AS UpdatedUtc,
-        allow_user_columns AS AllowUserColumns
+        allow_user_columns AS AllowUserColumns,
+        rewind_tracked AS RewindTracked
         """;
 
     public async Task<IReadOnlyList<View>> ListAsync(Guid userId, CancellationToken ct)
@@ -41,31 +42,32 @@ public sealed class ViewRepository : IViewRepository
         return await conn.QueryFirstOrDefaultAsync<View>(new CommandDefinition(sql, new { id }, cancellationToken: ct));
     }
 
-    public async Task<View> CreateAsync(Guid userId, string name, string filtersJson, string? columns, int sortOrder, bool isShared, string displayConfigJson, bool allowUserColumns, CancellationToken ct)
+    public async Task<View> CreateAsync(Guid userId, string name, string filtersJson, string? columns, int sortOrder, bool isShared, string displayConfigJson, bool allowUserColumns, bool rewindTracked, CancellationToken ct)
     {
         var sql = $"""
-            INSERT INTO views (user_id, name, filters, columns, sort_order, is_shared, display_config, allow_user_columns)
-            VALUES (@userId, @name, @filtersJson::jsonb, @columns, @sortOrder, @isShared, @displayConfigJson::jsonb, @allowUserColumns)
+            INSERT INTO views (user_id, name, filters, columns, sort_order, is_shared, display_config, allow_user_columns, rewind_tracked)
+            VALUES (@userId, @name, @filtersJson::jsonb, @columns, @sortOrder, @isShared, @displayConfigJson::jsonb, @allowUserColumns, @rewindTracked)
             RETURNING {SelectColumns}
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.QuerySingleAsync<View>(new CommandDefinition(sql,
-            new { userId, name, filtersJson, columns, sortOrder, isShared, displayConfigJson, allowUserColumns }, cancellationToken: ct));
+            new { userId, name, filtersJson, columns, sortOrder, isShared, displayConfigJson, allowUserColumns, rewindTracked }, cancellationToken: ct));
     }
 
-    public async Task<View?> UpdateAsync(Guid id, string name, string filtersJson, string? columns, int sortOrder, bool isShared, string displayConfigJson, bool allowUserColumns, CancellationToken ct)
+    public async Task<View?> UpdateAsync(Guid id, string name, string filtersJson, string? columns, int sortOrder, bool isShared, string displayConfigJson, bool allowUserColumns, bool rewindTracked, CancellationToken ct)
     {
         var sql = $"""
             UPDATE views SET name = @name, filters = @filtersJson::jsonb,
                              columns = @columns, sort_order = @sortOrder, is_shared = @isShared,
                              display_config = @displayConfigJson::jsonb,
-                             allow_user_columns = @allowUserColumns, updated_utc = now()
+                             allow_user_columns = @allowUserColumns, rewind_tracked = @rewindTracked,
+                             updated_utc = now()
             WHERE id = @id
             RETURNING {SelectColumns}
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.QueryFirstOrDefaultAsync<View>(new CommandDefinition(sql,
-            new { id, name, filtersJson, columns, sortOrder, isShared, displayConfigJson, allowUserColumns }, cancellationToken: ct));
+            new { id, name, filtersJson, columns, sortOrder, isShared, displayConfigJson, allowUserColumns, rewindTracked }, cancellationToken: ct));
     }
 
     public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)

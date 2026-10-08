@@ -1299,6 +1299,10 @@ public static class SettingKeys
         /// v0.1.14 — ticket openings shorter than this (seconds) are left
         /// out of "Opened without action" (0 = show every opening).
         public const string OpenedNoActionMinSeconds = "Insights.OpenedNoActionMinSeconds";
+
+        /// v0.1.31 — Rewind capture cadence in minutes (5, 10, 15, 30 or
+        /// 60; default 15). Captures fire on server-time boundaries.
+        public const string RewindIntervalMinutes = "Insights.RewindIntervalMinutes";
     }
 
     public static class Statistics
@@ -1330,6 +1334,7 @@ public static class SettingKeys
         public const string IncidentsDays = "Retention.IncidentsDays";
         public const string BlobDiskSamplesDays = "Retention.BlobDiskSamplesDays";
         public const string TicketOpenSessionsDays = "Retention.TicketOpenSessionsDays";
+        public const string RewindSnapshotsDays = "Retention.RewindSnapshotsDays";
     }
 
     public static class Health
@@ -2204,6 +2209,8 @@ public static class SettingDefaults
             "Days to keep blob-storage disk-usage samples (one row per sampler tick). 0 = keep forever."),
         new SettingDefault(SettingKeys.Retention.TicketOpenSessionsDays, "365", "int", "Retention",
             "Days to keep ticket open sessions (when an agent opened a ticket and closed it again from the recent-tickets list), which feed the Insights 'Opened without action' list. Counted from the close moment; a session still open is counted from when it was opened. 0 = keep forever."),
+        new SettingDefault(SettingKeys.Retention.RewindSnapshotsDays, "90", "int", "Retention",
+            "Days to keep Insights Rewind snapshots of tracked views. Counted from the last moment a snapshot was still current. 0 = keep forever."),
 
         // Health — Security activity monitor (v0.0.18). Replaces "watch the
         // logs yourself". Defaults are tuned for a single-tenant install with
@@ -2404,6 +2411,8 @@ public static class SettingDefaults
             "How many agents the Insights Agents overview can compare side by side (1–6). Default 3."),
         new SettingDefault(SettingKeys.Insights.OpenedNoActionMinSeconds, "3", "int", "Insights",
             "Ticket openings shorter than this many seconds are left out of the Insights 'Opened without action' list (0–3600). Default 3; 0 shows every opening, including quick click-throughs."),
+        new SettingDefault(SettingKeys.Insights.RewindIntervalMinutes, "15", "int", "Insights",
+            "How often Insights Rewind takes a snapshot of each tracked view, in minutes: 5, 10, 15, 30 or 60. Snapshots are taken on the clock (e.g. :00, :15, :30, :45) in server time; a snapshot identical to the previous one is not stored again. Default 15."),
         new SettingDefault(SettingKeys.Statistics.QfiStatusIds, "", "string", "Timesheet",
             "Statuses that make up the 'QFI' group in the Statistics 'Hours by status group' metric. Pick statuses by name on the Settings → Timesheet → Statistics status groups panel. Empty = the QFI group is omitted from the chart."),
         new SettingDefault(SettingKeys.Statistics.WfqStatusIds, "", "string", "Timesheet",
