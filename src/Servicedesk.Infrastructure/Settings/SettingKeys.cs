@@ -36,6 +36,18 @@ public static class SettingKeys
         public const string CspReportDedupWindowSeconds = "Security.Csp.ReportDedupWindowSeconds";
         public const string CspIgnoredReportDirectives = "Security.Csp.IgnoredReportDirectives";
 
+        // v0.1.30 — IP block proposals. Suspicious behaviour per client IP
+        // (scanner-path probes, rate-limit / CSRF / failed-login bursts) raises
+        // an admin proposal; unambiguous scanners are temp-blocked at once.
+        public const string IpBlockingEnabled = "Security.IpBlocking.Enabled";
+        public const string IpBlockingWindowMinutes = "Security.IpBlocking.WindowMinutes";
+        public const string IpBlockingScannerPaths = "Security.IpBlocking.ScannerPaths";
+        public const string IpBlockingScannerThreshold = "Security.IpBlocking.ScannerThreshold";
+        public const string IpBlockingAutoBlockHours = "Security.IpBlocking.AutoBlockHours";
+        public const string IpBlockingRateLimitThreshold = "Security.IpBlocking.RateLimitThreshold";
+        public const string IpBlockingCsrfThreshold = "Security.IpBlocking.CsrfThreshold";
+        public const string IpBlockingFailedLoginThreshold = "Security.IpBlocking.FailedLoginThreshold";
+
         public const string PasswordArgon2MemoryKb = "Security.Password.Argon2.MemoryKb";
         public const string PasswordArgon2Iterations = "Security.Password.Argon2.Iterations";
         public const string PasswordArgon2Parallelism = "Security.Password.Argon2.Parallelism";
@@ -1698,6 +1710,25 @@ public static class SettingDefaults
             "Window (seconds) during which an identical CSP violation report (same directive + blocked resource) from the same IP is logged only once. 0 disables deduplication."),
         new SettingDefault(SettingKeys.Security.CspIgnoredReportDirectives, "img-src", "string", "Security",
             "Comma-separated CSP directives whose violation reports are acknowledged but not audit-logged. External images in inbound mail are blocked by design (img-src 'self'), so their reports carry no attack signal and would only flood the audit log. Empty logs everything."),
+
+        new SettingDefault(SettingKeys.Security.IpBlockingEnabled, "true", "bool", "Security",
+            "Watch client IPs for scanner probes and abuse bursts, raise block proposals for admins and temp-block unambiguous scanners. Off = no detection, no proposals, no auto-blocks (existing permanent blocks stay enforced)."),
+        new SettingDefault(SettingKeys.Security.IpBlockingWindowMinutes, "10", "int", "Security",
+            "Rolling window (minutes) in which per-IP signals are counted against the thresholds below."),
+        new SettingDefault(SettingKeys.Security.IpBlockingScannerPaths,
+            "/.env*, */.env, /.git/*, /.svn/*, /.aws/*, /.ssh/*, /.config/*, /.docker*, /.DS_Store, *.php, *.asp, *.aspx, *.jsp, *.cgi, /wp-*, /wordpress*, /xmlrpc*, /phpmyadmin*, /pma*, /cgi-bin/*, /actuator*, /server-status*, /vendor/*, /config.json, /credentials*.json, /firebase*.json, /google*.json, /key.json, /keyfile.json, *application_default_credentials.json, /service-account*.json, /backup*.sql, /dump*.sql, *.sql.gz, /web.config, /.htaccess, /.htpasswd",
+            "string", "Security",
+            "Comma-separated path patterns (* = any characters, case-insensitive) that only a vulnerability scanner requests. An IP probing them is temp-blocked at once (unless it ever signed in successfully) and raised for an admin to confirm."),
+        new SettingDefault(SettingKeys.Security.IpBlockingScannerThreshold, "2", "int", "Security",
+            "Scanner-path requests from one IP within the window before it is temp-blocked and proposed."),
+        new SettingDefault(SettingKeys.Security.IpBlockingAutoBlockHours, "24", "int", "Security",
+            "How long an automatic scanner block lasts while it waits for an admin decision. Confirming makes it permanent; it lapses on its own after this time if nobody acts."),
+        new SettingDefault(SettingKeys.Security.IpBlockingRateLimitThreshold, "100", "int", "Security",
+            "Rate-limit rejections from one IP within the window before a block proposal is raised (proposal only — never auto-blocked). Whitelist your office IP if colleagues behind one address trip this."),
+        new SettingDefault(SettingKeys.Security.IpBlockingCsrfThreshold, "10", "int", "Security",
+            "CSRF rejections from one IP within the window before a block proposal is raised (proposal only)."),
+        new SettingDefault(SettingKeys.Security.IpBlockingFailedLoginThreshold, "10", "int", "Security",
+            "Failed sign-ins (staff password, 2FA, Microsoft 365, customer portal) from one IP within the window before a block proposal is raised (proposal only)."),
 
         new SettingDefault(SettingKeys.Security.PasswordArgon2MemoryKb, "65536", "int", "Security",
             "Argon2id memory cost in kibibytes. 65536 = 64 MiB."),

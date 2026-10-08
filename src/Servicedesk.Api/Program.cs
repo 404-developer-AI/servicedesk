@@ -518,6 +518,10 @@ var app = builder.Build();
 var systemInfo = SystemInfo.Capture(Assembly.GetExecutingAssembly());
 
 app.UseForwardedHeaders();
+// v0.1.30 — right after the real client IP is known and before anything else
+// (request logging, static files, SPA fallback, auth) spends work on a
+// blocked address. Also reports scanner-only paths to the IP detector.
+app.UseMiddleware<Servicedesk.Api.Security.IpBlockMiddleware>();
 app.UseSerilogRequestLogging();
 
 // HSTS is owned by nginx (deploy/nginx/default.conf.template), the layer
@@ -798,6 +802,7 @@ app.MapGet("/api/system/ticket-reference-prefix", async (ISettingsService settin
 
 app.MapCspReportEndpoint();
 app.MapAuditEndpoints();
+app.MapIpBlockEndpoints();
 app.MapAuthEndpoints();
 app.MapMicrosoftAuthEndpoints();
 app.MapPortalPublicEndpoints();

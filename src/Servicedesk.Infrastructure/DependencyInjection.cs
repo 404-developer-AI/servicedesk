@@ -83,11 +83,33 @@ public static class DependencyInjection
         // forwards to AuditLogger (the real writer) so the HMAC chain
         // stays intact; the activity-feed tee-off is best-effort.
         services.AddSingleton<AuditLogger>();
-        services.AddSingleton<IAuditLogger>(sp => new ActivityLoggingAuditDecorator(
-            sp.GetRequiredService<AuditLogger>(),
-            sp.GetRequiredService<IActivityRecorder>(),
-            sp.GetRequiredService<IUserService>(),
-            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<ActivityLoggingAuditDecorator>>()));
+        // v0.1.30 — outermost: abuse-type events (rate limit, CSRF, failed
+        // sign-in) also feed the IP threat detector.
+        services.AddSingleton<IAuditLogger>(sp => new Security.IpBlocking.IpSignalAuditDecorator(
+            new ActivityLoggingAuditDecorator(
+                sp.GetRequiredService<AuditLogger>(),
+                sp.GetRequiredService<IActivityRecorder>(),
+                sp.GetRequiredService<IUserService>(),
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<ActivityLoggingAuditDecorator>>()),
+            sp.GetRequiredService<Security.IpBlocking.IIpThreatDetector>()));
+
+        // v0.1.30 — IP block proposals. The rule cache never blocks loopback
+        // or the reverse-proxy network (same setting the forwarded-headers
+        // trust list uses), so a misdetection can't block nginx itself.
+        services.AddSingleton<Security.IpBlocking.IIpBlockList>(_ =>
+        {
+            var nets = new List<System.Net.IPNetwork>();
+            var trusted = configuration["ForwardedHeaders:TrustedNetwork"] ?? "172.28.0.0/16";
+            foreach (var cidr in trusted.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (System.Net.IPNetwork.TryParse(cidr, out var net)) nets.Add(net);
+            }
+            return new Security.IpBlocking.IpBlockList(nets);
+        });
+        services.AddSingleton<Security.IpBlocking.IIpThreatDetector, Security.IpBlocking.IpThreatDetector>();
+        services.AddSingleton<Security.IpBlocking.IIpBlockRepository, Security.IpBlocking.IpBlockRepository>();
+        services.AddSingleton<Security.IpBlocking.IIpBlockService, Security.IpBlocking.IpBlockService>();
+        services.AddHostedService<Security.IpBlocking.IpThreatWorker>();
         services.AddSingleton<IAuditQuery, AuditQueryService>();
 
         // Integration-audit (v0.0.25). Operational log for outbound
@@ -772,6 +794,8 @@ public static class DependencyInjection
             Servicedesk.Infrastructure.Contracts.Reports.M365ReportSender>();
         services.AddSingleton<Servicedesk.Infrastructure.Search.ReportTemplateSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<Servicedesk.Infrastructure.Search.ReportTemplateSearchSource>()));
+        services.AddSingleton<Servicedesk.Infrastructure.Search.IpRuleSearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<Servicedesk.Infrastructure.Search.IpRuleSearchSource>()));
 
         services.AddHostedService<DatabaseBootstrapper>();
         // v0.1.3 — one-shot re-hash of legacy (reversibly encrypted) TOTP

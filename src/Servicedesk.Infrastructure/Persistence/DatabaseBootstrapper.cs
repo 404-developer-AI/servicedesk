@@ -6328,6 +6328,54 @@ public sealed class DatabaseBootstrapper : IHostedService
             finding_key     TEXT        PRIMARY KEY,
             last_alert_utc  TIMESTAMPTZ NOT NULL
         );
+
+        -- v0.1.30 — IP block proposals. `ip` is the normalised textual form
+        -- (IPv4-mapped IPv6 collapsed to IPv4), validated in code before it
+        -- is ever written. One rule per IP: block or whitelist. Auto scanner
+        -- blocks carry expires_utc; an admin confirmation clears it
+        -- (permanent until lifted).
+        CREATE TABLE IF NOT EXISTS security_ip_proposals (
+            id              BIGSERIAL   PRIMARY KEY,
+            ip              TEXT        NOT NULL,
+            status          TEXT        NOT NULL DEFAULT 'open',
+            auto_blocked    BOOLEAN     NOT NULL DEFAULT FALSE,
+            reasons         TEXT[]      NOT NULL DEFAULT '{}',
+            evidence        JSONB       NOT NULL DEFAULT '{}'::jsonb,
+            known_login     BOOLEAN     NOT NULL DEFAULT FALSE,
+            first_seen_utc  TIMESTAMPTZ NOT NULL,
+            last_seen_utc   TIMESTAMPTZ NOT NULL,
+            created_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            decided_utc     TIMESTAMPTZ NULL,
+            decided_by      TEXT        NULL,
+            CONSTRAINT ck_security_ip_proposals_status
+                CHECK (status IN ('open','blocked','whitelisted','dismissed'))
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_security_ip_proposals_open
+            ON security_ip_proposals (ip) WHERE status = 'open';
+        CREATE INDEX IF NOT EXISTS ix_security_ip_proposals_created
+            ON security_ip_proposals (created_utc DESC);
+
+        CREATE TABLE IF NOT EXISTS security_ip_rules (
+            ip              TEXT        PRIMARY KEY,
+            kind            TEXT        NOT NULL,
+            source          TEXT        NOT NULL,
+            reason          TEXT        NULL,
+            proposal_id     BIGINT      NULL REFERENCES security_ip_proposals(id) ON DELETE SET NULL,
+            created_utc     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            created_by      TEXT        NOT NULL,
+            expires_utc     TIMESTAMPTZ NULL,
+            hit_count       BIGINT      NOT NULL DEFAULT 0,
+            last_hit_utc    TIMESTAMPTZ NULL,
+            CONSTRAINT ck_security_ip_rules_kind CHECK (kind IN ('block','whitelist')),
+            CONSTRAINT ck_security_ip_rules_source CHECK (source IN ('auto','admin'))
+        );
+
+        -- "Has this IP ever signed in successfully?" — asked once per newly
+        -- suspicious IP before an auto-block. Partial, so it only indexes the
+        -- handful of login-success rows, not the whole audit log.
+        CREATE INDEX IF NOT EXISTS ix_audit_log_login_success_ip
+            ON audit_log (client_ip)
+            WHERE event_type IN ('login_success','2fa_challenge_success','auth.microsoft.login.success','portal.login.success');
         """;
 
     private readonly NpgsqlDataSource _dataSource;

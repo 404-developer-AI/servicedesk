@@ -42,6 +42,7 @@ public sealed class HealthAggregator : IHealthAggregator
     private readonly ISecurityActivitySnapshot _securityActivity;
     private readonly Retention.IRetentionHealth _retention;
     private readonly ISettingsService _settings;
+    private readonly Security.IpBlocking.IIpBlockList? _ipBlockList;
 
     public HealthAggregator(
         IQueueInboundMailboxRepository sources,
@@ -55,8 +56,10 @@ public sealed class HealthAggregator : IHealthAggregator
         IOptions<TlsCertHealthOptions> tlsOptions,
         ISecurityActivitySnapshot securityActivity,
         Retention.IRetentionHealth retention,
-        ISettingsService settings)
+        ISettingsService settings,
+        Security.IpBlocking.IIpBlockList? ipBlockList = null)
     {
+        _ipBlockList = ipBlockList;
         _settings = settings;
         _retention = retention;
         _sources = sources;
@@ -90,10 +93,39 @@ public sealed class HealthAggregator : IHealthAggregator
             ApplyIncidents(BuildSecurityActivity(tz), openIncidents),
             ApplyIncidents(BuildDataRetention(tz), openIncidents),
         };
+        if (_ipBlockList is not null) subsystems.Add(BuildIpBlocking(_ipBlockList));
 
         var rollup = subsystems.Aggregate(HealthStatus.Ok,
             (acc, s) => s.Status > acc ? s.Status : acc);
         return new HealthReport(rollup, subsystems);
+    }
+
+    /// v0.1.30 — open IP block proposals keep this card (and so the admin
+    /// dashboard pill) on Warning until an admin decides each one. Read from
+    /// the in-memory rule cache the IP worker refreshes every minute and on
+    /// every decision — no DB round-trip per health poll.
+    internal static SubsystemHealth BuildIpBlocking(Security.IpBlocking.IIpBlockList list)
+    {
+        var open = list.OpenProposalCount;
+        var (blocked, whitelisted) = list.RuleCounts;
+        var details = new List<HealthDetail>
+        {
+            new("Open proposals", open.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            new("Blocked addresses", blocked.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            new("Whitelisted addresses", whitelisted.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+        };
+        return new SubsystemHealth(
+            Key: "ip-blocking",
+            Label: "IP blocking",
+            Status: open > 0 ? HealthStatus.Warning : HealthStatus.Ok,
+            Summary: open switch
+            {
+                0 => "No block proposals waiting.",
+                1 => "1 block proposal waiting for an admin decision (Settings → IP blocking).",
+                _ => $"{open} block proposals waiting for an admin decision (Settings → IP blocking).",
+            },
+            Details: details,
+            Actions: Array.Empty<HealthAction>());
     }
 
     /// v0.0.101 — the generic housekeeping sweep (RetentionWorker). Warning

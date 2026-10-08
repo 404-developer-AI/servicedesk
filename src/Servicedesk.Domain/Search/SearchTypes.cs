@@ -35,6 +35,9 @@ public static class SearchSourceKind
     // v0.1.10 - per-client notes on Assets → Remote Desktop; hit -> the
     // Remote Desktop tab with that client's notes opened. Agents/admins only.
     public const string RemoteDesktopNotes = "remote-desktop-notes";
+    // v0.1.30 - IP block/whitelist rules and open block proposals; hit ->
+    // Settings → IP blocking filtered to that address. Admins only.
+    public const string IpRules = "ip-rules";
 }
 
 /// Per-user feature flags that gate availability of certain search sources.

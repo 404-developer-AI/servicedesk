@@ -16,6 +16,7 @@ import {
   Plug,
   ScrollText,
   Shield,
+  ShieldAlert,
   SlidersHorizontal,
   Smile,
   Ticket,
@@ -200,6 +201,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     description:
       "Append-only HMAC-chained record of security events — rate limits, CSP violations, setting changes.",
     icon: ScrollText,
+  },
+  {
+    slug: "ip-blocking",
+    label: "IP blocking",
+    description:
+      "Block proposals for addresses that probe for leaked files or trip abuse limits — confirm, whitelist or release, and manage the block list.",
+    icon: ShieldAlert,
   },
   {
     slug: "health",

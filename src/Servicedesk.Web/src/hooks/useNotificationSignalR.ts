@@ -178,9 +178,15 @@ export function useNotificationSignalR(toastDurationMs: number) {
       queryClient.invalidateQueries({ queryKey: ["admin", "health", "incidents"] });
       queryClient.invalidateQueries({ queryKey: ["system", "health"] });
 
-      const title = payload.severity === "Critical"
-        ? "Critical security activity detected"
-        : "Elevated security activity detected";
+      const isIpBlocking = payload.subsystem === "ip-blocking";
+      if (isIpBlocking) {
+        queryClient.invalidateQueries({ queryKey: ["admin", "ip-blocking"] });
+      }
+      const title = isIpBlocking
+        ? "Suspicious address — block proposal"
+        : payload.severity === "Critical"
+          ? "Critical security activity detected"
+          : "Elevated security activity detected";
 
       const showToast = payload.severity === "Critical" ? toast.error : toast.warning;
       showToast(title, {
@@ -189,7 +195,7 @@ export function useNotificationSignalR(toastDurationMs: number) {
         action: {
           label: "Review",
           onClick: () => {
-            void navigateRef.current({ to: "/settings/health" });
+            void navigateRef.current({ to: isIpBlocking ? "/settings/ip-blocking" : "/settings/health" });
           },
         },
       });
