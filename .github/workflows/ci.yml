@@ -84,7 +84,10 @@ jobs:
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           BASE=${LATEST_TAG#v}
           SHORT_SHA=$(git rev-parse --short HEAD)
-          echo "value=${BASE}-ci.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          # "g" prefix (as in git describe): an all-digit short SHA with a
+          # leading zero (e.g. 0144545) is an invalid SemVer numeric
+          # identifier and MinVer rejects it (MINVER1005).
+          echo "value=${BASE}-ci.g${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Build image
         run: |
