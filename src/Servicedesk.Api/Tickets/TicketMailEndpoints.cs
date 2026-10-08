@@ -63,6 +63,7 @@ public static class TicketMailEndpoints
         group.MapGet("/{id:guid}/mail/{mailMessageId:guid}/attachments/{attachmentId:guid}", async (
             Guid id, Guid mailMessageId, Guid attachmentId, HttpContext http,
             [FromQuery] bool? inline,
+            [FromQuery] bool? open,
             ITicketRepository tickets, IMailMessageRepository mail,
             IAttachmentRepository attachments, IBlobStore blobs,
             IQueueAccessService queueAccess, IAuditLogger audit,
@@ -104,14 +105,17 @@ public static class TicketMailEndpoints
             var stream = await blobs.OpenReadAsync(att.ContentHash, ct);
             if (stream is null) return Results.NotFound();
 
-            await audit.LogAsync(new AuditEvent(
-                EventType: "mail.attachment.view",
-                Actor: http.User.Identity?.Name ?? userId.ToString(),
-                ActorRole: role,
-                Target: attachmentId.ToString(),
-                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
-                UserAgent: http.Request.Headers.UserAgent.ToString(),
-                Payload: new { ticketId = id, mailMessageId, filename = att.OriginalFilename }), ct);
+            if (!AttachmentResponse.IsUnauditedInlineImage(inline == true && open != true, att.MimeType))
+            {
+                await audit.LogAsync(new AuditEvent(
+                    EventType: "mail.attachment.view",
+                    Actor: http.User.Identity?.Name ?? userId.ToString(),
+                    ActorRole: role,
+                    Target: attachmentId.ToString(),
+                    ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                    UserAgent: http.Request.Headers.UserAgent.ToString(),
+                    Payload: new { ticketId = id, mailMessageId, filename = att.OriginalFilename }), ct);
+            }
 
             var fileName = SanitizeFilename(att.OriginalFilename);
             // inline=true serves the bytes with Content-Disposition: inline so

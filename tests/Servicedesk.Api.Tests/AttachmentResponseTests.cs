@@ -67,4 +67,22 @@ public class AttachmentResponseTests
         Assert.DoesNotContain('"', inner);
         Assert.All(inner, c => Assert.True(c == '!' || (c >= '#' && c <= '~'), $"illegal char 0x{(int)c:X2}"));
     }
+
+    // Inline timeline images skip the audit row; everything else must still log,
+    // because `inline` is a client-controlled query flag.
+    [Theory]
+    [InlineData(true, "image/png", true)]
+    [InlineData(true, "image/jpeg", true)]
+    [InlineData(true, "IMAGE/GIF", true)]
+    [InlineData(false, "image/png", false)]        // explicit download/open
+    [InlineData(true, "application/pdf", false)]   // document: always audited
+    [InlineData(true, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", false)]
+    [InlineData(true, "image/svg+xml", false)]     // not inline-safe
+    [InlineData(true, "text/html", false)]
+    [InlineData(true, null, false)]
+    [InlineData(true, "", false)]
+    public void Only_inline_raster_images_skip_the_audit_row(bool inline, string? mime, bool unaudited)
+    {
+        Assert.Equal(unaudited, AttachmentResponse.IsUnauditedInlineImage(inline, mime));
+    }
 }

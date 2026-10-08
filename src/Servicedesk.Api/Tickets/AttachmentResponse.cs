@@ -20,6 +20,24 @@ internal static class AttachmentResponse
         && !contentType.Contains("javascript", StringComparison.OrdinalIgnoreCase)
         && !contentType.Contains("ecmascript", StringComparison.OrdinalIgnoreCase);
 
+    /// True when the request is a raster image rendered inline in the ticket
+    /// timeline (an <img> in a note or mail body). Those are not audit-logged
+    /// (v0.1.30): opening one ticket fired a row per embedded logo/screenshot,
+    /// half of the whole audit log. Deliberately narrow, because `inline` is a
+    /// client-chosen query flag: a PDF/Office file or anything not an image
+    /// still logs even with inline=true, so the flag can't be used to download
+    /// documents without a trail. SVG is excluded (not inline-safe anyway).
+    /// Callers pass `inline && !open`: the attachment-chip preview adds
+    /// `open=true` because clicking a file is a deliberate view and keeps its
+    /// audit row (that flag can only add logging, never suppress it).
+    internal static bool IsUnauditedInlineImage(bool inlineRequested, string? mimeType)
+    {
+        if (!inlineRequested || string.IsNullOrWhiteSpace(mimeType)) return false;
+        var type = mimeType.Trim();
+        return type.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+            && IsInlineSafe(type);
+    }
+
     /// Strong ETag for a blob-backed response. The blob store is
     /// content-addressed, so the hash alone pins the *bytes* — but an HTTP
     /// validator has to cover the whole representation, and the served
