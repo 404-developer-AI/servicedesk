@@ -372,7 +372,9 @@ function AttachmentChip({ attachment: a }: { attachment: MailAttachment }) {
     if (!canPreviewFile || !preview) return;
     e.preventDefault();
     preview.open({
-      url: inlineUrl(a.url),
+      // open=true: a deliberate click on an attachment stays audit-logged,
+      // unlike images embedded in a body (server skips only those).
+      url: `${inlineUrl(a.url)}&open=true`,
       mimeType: a.mimeType,
       filename: a.name,
       sizeLabel: formatBytes(a.size),

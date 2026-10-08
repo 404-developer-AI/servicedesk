@@ -87,6 +87,7 @@ public static class TicketAttachmentEndpoints
         group.MapGet("/{id:guid}/attachments/{attachmentId:guid}", async (
             Guid id, Guid attachmentId, HttpContext http,
             [FromQuery] bool? inline,
+            [FromQuery] bool? open,
             ITicketRepository tickets, IQueueAccessService queueAccess,
             IAttachmentRepository attachments, IBlobStore blobs,
             IAuditLogger audit, CancellationToken ct) =>
@@ -133,14 +134,17 @@ public static class TicketAttachmentEndpoints
             var stream = await blobs.OpenReadAsync(att.ContentHash, ct);
             if (stream is null) return Results.NotFound();
 
-            await audit.LogAsync(new AuditEvent(
-                EventType: "ticket.attachment.view",
-                Actor: http.User.Identity?.Name ?? userId.ToString(),
-                ActorRole: role,
-                Target: attachmentId.ToString(),
-                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
-                UserAgent: http.Request.Headers.UserAgent.ToString(),
-                Payload: new { ticketId = id, eventId = att.EventId, filename = att.OriginalFilename }), ct);
+            if (!AttachmentResponse.IsUnauditedInlineImage(inline == true && open != true, att.MimeType))
+            {
+                await audit.LogAsync(new AuditEvent(
+                    EventType: "ticket.attachment.view",
+                    Actor: http.User.Identity?.Name ?? userId.ToString(),
+                    ActorRole: role,
+                    Target: attachmentId.ToString(),
+                    ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                    UserAgent: http.Request.Headers.UserAgent.ToString(),
+                    Payload: new { ticketId = id, eventId = att.EventId, filename = att.OriginalFilename }), ct);
+            }
 
             // Inline only for inline-safe types (audit v0.1.1 #2) — see
             // AttachmentResponse for the reasoning.
