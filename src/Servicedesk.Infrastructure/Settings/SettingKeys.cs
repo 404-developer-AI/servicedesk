@@ -1335,6 +1335,7 @@ public static class SettingKeys
         public const string BlobDiskSamplesDays = "Retention.BlobDiskSamplesDays";
         public const string TicketOpenSessionsDays = "Retention.TicketOpenSessionsDays";
         public const string RewindSnapshotsDays = "Retention.RewindSnapshotsDays";
+        public const string WorkflowPickupsDays = "Retention.WorkflowPickupsDays";
     }
 
     public static class Health
@@ -2211,6 +2212,8 @@ public static class SettingDefaults
             "Days to keep ticket open sessions (when an agent opened a ticket and closed it again from the recent-tickets list), which feed the Insights 'Opened without action' list. Counted from the close moment; a session still open is counted from when it was opened. 0 = keep forever."),
         new SettingDefault(SettingKeys.Retention.RewindSnapshotsDays, "90", "int", "Retention",
             "Days to keep Insights Rewind snapshots of tracked views. Counted from the last moment a snapshot was still current. 0 = keep forever."),
+        new SettingDefault(SettingKeys.Retention.WorkflowPickupsDays, "365", "int", "Retention",
+            "Days to keep Insights Workflow pickup records (where a ticket stood in a tracked view when an agent took it on). 0 = keep forever."),
 
         // Health — Security activity monitor (v0.0.18). Replaces "watch the
         // logs yourself". Defaults are tuned for a single-tenant install with

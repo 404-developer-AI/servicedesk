@@ -128,6 +128,16 @@ public sealed class RetentionWorker : BackgroundService
                 LIMIT @BatchSize
             )
             """),
+        // v0.1.32 — Insights Workflow pickup records.
+        new("workflow_pickups", SettingKeys.Retention.WorkflowPickupsDays, """
+            DELETE FROM workflow_pickups
+            WHERE id IN (
+                SELECT id FROM workflow_pickups
+                WHERE picked_utc < @Cutoff
+                ORDER BY id
+                LIMIT @BatchSize
+            )
+            """),
         new("blob_disk_samples", SettingKeys.Retention.BlobDiskSamplesDays, """
             DELETE FROM blob_disk_samples
             WHERE id IN (

@@ -406,6 +406,8 @@ public sealed class OutboundMailService : IOutboundMailService
         // would never fire. Mirrors the AddTicketEvent and MailIngest
         // hook-points; the trigger evaluator's own send_mail path is
         // separate and never re-enters here.
+        // v0.1.32 — "mail sent → 2 days pending" is the agent's doing.
+        using var origin = Servicedesk.Infrastructure.Triggers.TriggerOrigin.Agent(request.AuthorUserId);
         await _triggers.EvaluateAsync(
             ticketId: request.TicketId,
             ticketEventId: evt.Id,

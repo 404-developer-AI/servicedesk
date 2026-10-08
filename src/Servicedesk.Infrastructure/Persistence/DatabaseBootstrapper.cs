@@ -6409,6 +6409,52 @@ public sealed class DatabaseBootstrapper : IHostedService
             ON rewind_snapshots (view_id, captured_utc DESC);
         CREATE INDEX IF NOT EXISTS ix_rewind_snapshots_last_seen
             ON rewind_snapshots (last_seen_utc);
+
+        -- ===================================================================
+        -- v0.1.32 — Insights Workflow, step 1: capture the facts the
+        -- work-order report needs (the report itself comes later).
+        --  * compose_templates: two admin role switches.
+        --  * ticket_events: which compose template a Note/Comment/Call was
+        --    built from (detected server-side from the content, never sent
+        --    by the client) and whether the agent filled it in. Frozen at
+        --    save/edit time; the role flags are read at report time.
+        --  * workflow_pickups: an agent's first note/call/mail on a ticket
+        --    per local day, with the ticket's group, position and the
+        --    tickets above it in each tracked view, captured just before
+        --    the action. Pruned by RetentionWorker
+        --    (Retention.WorkflowPickupsDays).
+        -- Nullable columns without a default: instant on a large table.
+        -- ===================================================================
+        ALTER TABLE compose_templates
+            ADD COLUMN IF NOT EXISTS workflow_close     BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS specialist_consult BOOLEAN NOT NULL DEFAULT FALSE;
+
+        ALTER TABLE ticket_events
+            ADD COLUMN IF NOT EXISTS compose_template_id UUID NULL
+                REFERENCES compose_templates(id) ON DELETE SET NULL,
+            ADD COLUMN IF NOT EXISTS template_filled BOOLEAN NULL;
+        CREATE INDEX IF NOT EXISTS ix_ticket_events_compose_template
+            ON ticket_events (compose_template_id) WHERE compose_template_id IS NOT NULL;
+
+        CREATE TABLE IF NOT EXISTS workflow_pickups (
+            id           BIGSERIAL   PRIMARY KEY,
+            user_id      UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            ticket_id    UUID        NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            view_id      UUID        NOT NULL REFERENCES views(id) ON DELETE CASCADE,
+            picked_utc   TIMESTAMPTZ NOT NULL,
+            pickup_date  DATE        NOT NULL,
+            action       TEXT        NOT NULL,
+            group_key    TEXT        NOT NULL,
+            group_label  TEXT        NOT NULL,
+            position     INTEGER     NOT NULL,
+            above_ids    UUID[]      NOT NULL DEFAULT '{}',
+            CONSTRAINT ck_workflow_pickups_action CHECK (action IN ('Note','Comment','Call','Mail')),
+            CONSTRAINT ck_workflow_pickups_position CHECK (position >= 1)
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_workflow_pickups_day
+            ON workflow_pickups (user_id, ticket_id, pickup_date, view_id);
+        CREATE INDEX IF NOT EXISTS ix_workflow_pickups_picked
+            ON workflow_pickups (picked_utc);
         """;
 
     private readonly NpgsqlDataSource _dataSource;

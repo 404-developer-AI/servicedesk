@@ -29,6 +29,7 @@ using Servicedesk.Infrastructure.Tickets;
 using Servicedesk.Infrastructure.Triggers;
 using Servicedesk.Infrastructure.Triggers.StatusGate;
 using Servicedesk.Infrastructure.Triggers.FirstOpenGate;
+using Servicedesk.Infrastructure.Workflow;
 
 namespace Servicedesk.Api.Tickets;
 
@@ -368,6 +369,7 @@ public static class TicketEndpoints
             // current deadlines. AllFieldsNew + ArticleAdded=true is the
             // ChangeSet for a fresh ticket — every field is "changed" and
             // a description-event was just written.
+            using var origin = Servicedesk.Infrastructure.Triggers.TriggerOrigin.Agent(userId);
             await triggers.EvaluateAsync(
                 ticketId: created.Id,
                 ticketEventId: null,
@@ -1028,6 +1030,7 @@ public static class TicketEndpoints
             IMentionNotificationService mentionService,
             IComposeTemplateSurveyDispatcher surveyTemplateDispatcher,
             ISettingsService settings,
+            IWorkflowCaptureService workflow,
             CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(req.EventType))
@@ -1076,8 +1079,13 @@ public static class TicketEndpoints
                 IsInternal: req.IsInternal ?? (req.EventType is "Note" or "Call"),
                 AuthorUserId: userId,
                 MetadataJson: metadataJson);
+            // v0.1.32 — Insights Workflow: the ticket's place in the tracked
+            // views *before* this action changes it (best-effort).
+            await workflow.RecordPickupAsync(userId, id, req.EventType, ct);
             var evt = await mutations.AddEventAsync(id, input, ct);
             if (evt is null) return Results.NotFound();
+            await workflow.RecordTemplateUseAsync(id, evt.Id, evt.EventType, evt.BodyHtml,
+                http.User.FindFirst(ClaimTypes.Email)?.Value, ct);
 
             // Re-link any user-uploaded attachments to the freshly-created
             // event. Ownership-guarded inside the repo: attempting to attach
@@ -1164,7 +1172,8 @@ public static class TicketEndpoints
             ITicketRepository tickets, IQueueAccessService queueAccess,
             IOutboundMailService outbound, IHubContext<TicketPresenceHub> hub,
             IComposeTemplateSurveyDispatcher surveyTemplateDispatcher,
-            IAuditLogger audit, ISettingsService settings, CancellationToken ct) =>
+            IAuditLogger audit, ISettingsService settings, IWorkflowCaptureService workflow,
+            CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
@@ -1210,6 +1219,8 @@ public static class TicketEndpoints
                 SignaturePreloaded: req.SignaturePreloaded,
                 AuthorRole: userRole);
 
+            // v0.1.32 — Insights Workflow pickup, before the send moves anything.
+            await workflow.RecordPickupAsync(userId, id, "Mail", ct);
             var result = await outbound.SendAsync(request, ct);
             switch (result.Status)
             {
@@ -1312,7 +1323,8 @@ public static class TicketEndpoints
             Guid id, long eventId, [FromBody] UpdateEventRequest req, HttpContext http,
             ITicketRepository tickets, IQueueAccessService queueAccess,
             IAttachmentRepository attachmentsRepo,
-            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, CancellationToken ct) =>
+            IHubContext<TicketPresenceHub> hub, IAuditLogger audit, IWorkflowCaptureService workflow,
+            CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
@@ -1335,6 +1347,9 @@ public static class TicketEndpoints
                 EditorUserId: userId);
             var updated = await tickets.UpdateEventAsync(id, eventId, input, ct);
             if (updated is null) return Results.NotFound();
+            // v0.1.32 — an edit can fill a template in (or strip it out).
+            await workflow.RecordTemplateUseAsync(id, eventId, updated.EventType, updated.BodyHtml,
+                http.User.FindFirst(ClaimTypes.Email)?.Value, ct);
 
             // Same ownership-guarded re-link as a new note: only uploads still
             // staged on *this* ticket (no event yet) move; foreign ids no-op.

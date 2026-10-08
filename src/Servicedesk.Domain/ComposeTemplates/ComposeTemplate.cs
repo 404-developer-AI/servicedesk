@@ -27,7 +27,11 @@ public sealed record ComposeTemplate(
     bool UseForNote = true,
     bool UseForMail = true,
     bool UseForCall = true,
-    bool AutoInsertOnCall = false);
+    bool AutoInsertOnCall = false,
+    // v0.1.32 — Insights Workflow: the template counts as the closing
+    // "last action" before Pending, and/or as a Specialist Consult.
+    bool WorkflowClose = false,
+    bool SpecialistConsult = false);
 
 /// v0.1.17 — the composer a template is offered in.
 public enum ComposeTemplateKind

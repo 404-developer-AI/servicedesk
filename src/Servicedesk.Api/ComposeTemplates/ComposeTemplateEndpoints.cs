@@ -102,6 +102,10 @@ public static class ComposeTemplateEndpoints
                 });
             }
 
+            // v0.1.32 — Workflow role flags (off unless sent).
+            if (req.WorkflowClose == true || req.SpecialistConsult == true)
+                await repo.SetWorkflowFlagsAsync(id, req.WorkflowClose ?? false, req.SpecialistConsult ?? false, ct);
+
             var (actor, role) = ActorContext.Resolve(http);
             await audit.LogAsync(new AuditEvent(
                 EventType: "compose_template.create",
@@ -119,6 +123,8 @@ public static class ComposeTemplateEndpoints
                     useForMail = req.UseForMail ?? true,
                     useForCall = req.UseForCall ?? true,
                     autoInsertOnCall = req.AutoInsertOnCall ?? false,
+                    workflowClose = req.WorkflowClose ?? false,
+                    specialistConsult = req.SpecialistConsult ?? false,
                 }));
 
             var created = await repo.GetAsync(id, ct);
@@ -165,6 +171,12 @@ public static class ComposeTemplateEndpoints
                 });
             }
 
+            // v0.1.32 — Workflow role flags; omitted = keep.
+            var workflowClose = req.WorkflowClose ?? existing.WorkflowClose;
+            var specialistConsult = req.SpecialistConsult ?? existing.SpecialistConsult;
+            if (workflowClose != existing.WorkflowClose || specialistConsult != existing.SpecialistConsult)
+                await repo.SetWorkflowFlagsAsync(id, workflowClose, specialistConsult, ct);
+
             var (actor, role) = ActorContext.Resolve(http);
             await audit.LogAsync(new AuditEvent(
                 EventType: "compose_template.update",
@@ -183,6 +195,8 @@ public static class ComposeTemplateEndpoints
                     useForMail = req.UseForMail,
                     useForCall = req.UseForCall,
                     autoInsertOnCall = req.AutoInsertOnCall,
+                    workflowClose = req.WorkflowClose,
+                    specialistConsult = req.SpecialistConsult,
                 }));
 
             var updated = await repo.GetAsync(id, ct);
@@ -322,7 +336,10 @@ public static class ComposeTemplateEndpoints
         bool? UseForNote = null,
         bool? UseForMail = null,
         bool? UseForCall = null,
-        bool? AutoInsertOnCall = null);
+        bool? AutoInsertOnCall = null,
+        // v0.1.32 — Insights Workflow roles; null = keep (update) / off (create).
+        bool? WorkflowClose = null,
+        bool? SpecialistConsult = null);
 
     internal static bool TryParseKind(string value, out ComposeTemplateKind kind)
     {
@@ -375,6 +392,8 @@ public static class ComposeTemplateEndpoints
         useForMail = t.UseForMail,
         useForCall = t.UseForCall,
         autoInsertOnCall = t.AutoInsertOnCall,
+        workflowClose = t.WorkflowClose,
+        specialistConsult = t.SpecialistConsult,
         linkedSurveyId = t.LinkedSurveyId,
         createdUtc = t.CreatedUtc,
         updatedUtc = t.UpdatedUtc,

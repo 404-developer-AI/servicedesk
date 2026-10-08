@@ -251,6 +251,7 @@ public sealed class TicketMutationService : ITicketMutationService
         // "changed" (a same-value update still trips the Selective check —
         // refining that would cost a pre-update fetch we don't pay elsewhere).
         changeSet ??= new TriggerChangeSet(DeriveChangedFields(update), ArticleAdded: false);
+        using var origin = TriggerOrigin.Agent(actor.UserId);
         await _triggers.EvaluateAsync(
             ticketId: ticketId,
             ticketEventId: null,
@@ -306,6 +307,7 @@ public sealed class TicketMutationService : ITicketMutationService
 
         // A new article satisfies the trigger Selective short-circuit by
         // itself — no per-field changedFields tracking needed.
+        using var origin = TriggerOrigin.Agent(actor.UserId);
         await _triggers.EvaluateAsync(
             ticketId: ticketId,
             ticketEventId: evt.Id,
