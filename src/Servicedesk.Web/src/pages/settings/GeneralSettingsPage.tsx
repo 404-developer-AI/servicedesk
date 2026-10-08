@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { StatusSetField } from "./TimesheetSettingsPage";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   SlidersHorizontal,
@@ -434,6 +435,16 @@ function InsightsSection({
   const compareEntry = findEntry(entries, "Insights.AgentCompareMax");
   const openedMinEntry = findEntry(entries, "Insights.OpenedNoActionMinSeconds");
   const rewindEntry = findEntry(entries, "Insights.RewindIntervalMinutes");
+  // v0.1.32 — Workflow (work-order compliance) thresholds.
+  const workflowFields: ReadonlyArray<{ key: string; label: string; hint: string }> = [
+    { key: "Insights.WorkflowMailAfterTemplateMinutes", label: "Workflow — mail after template (minutes)", hint: "A mail this soon after a filled-in Workflow template still counts as the right last action before Pending (0–240)." },
+    { key: "Insights.WorkflowLimitPriorityMinutes", label: "Workflow — High prio limit (minutes)", hint: "Registered time on a High prio ticket before a Specialist Consult is expected (1–600)." },
+    { key: "Insights.WorkflowLimitCallbackMinutes", label: "Workflow — Call-back limit (minutes)", hint: "Registered time on a Call-back ticket before it should move to Research (1–600)." },
+    { key: "Insights.WorkflowLimitWfpMinutes", label: "Workflow — WFP limit (minutes)", hint: "Registered time on a WFP ticket before it should move to Research (1–600)." },
+    { key: "Insights.WorkflowLimitResearchMinutes", label: "Workflow — Research limit (minutes)", hint: "Registered time on a Research ticket before a Specialist Consult is expected (1–600)." },
+    { key: "Insights.WorkflowMaxResearchPerAgent", label: "Workflow — Research tickets per agent", hint: "The most Research tickets one agent may have assigned at once (1–20)." },
+  ];
+  const wfpEntry = findEntry(entries, "Insights.WorkflowWfpStatusIds");
   const current = entry?.value ?? "month";
 
   const update = useMutation({
@@ -536,6 +547,25 @@ function InsightsSection({
               per view under Settings → Views; how long snapshots are kept is under Health → Data retention.
             </p>
           </FieldShell>
+        </div>
+      )}
+      {!loading &&
+        workflowFields.map((f) => {
+          const e = findEntry(entries, f.key);
+          return e ? (
+            <div key={f.key} className="mt-4">
+              <SettingField entry={e} queryKey={INSIGHTS_QUERY_KEY} label={f.label} hint={f.hint} />
+            </div>
+          ) : null;
+        })}
+      {!loading && wfpEntry && (
+        <div className="mt-4">
+          <StatusSetField
+            entry={wfpEntry}
+            queryKey={INSIGHTS_QUERY_KEY}
+            label="Workflow — WFP statuses"
+            hint="Statuses whose group in the tracked view counts as WFP. None picked = every group except the Priority, Call-back and Research floats."
+          />
         </div>
       )}
     </section>

@@ -45,6 +45,13 @@ public static class SettingValueValidator
             SettingKeys.Insights.OpenedNoActionMinSeconds =>
                 int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var s) && s is >= 0 and <= 3600
                     ? null : "Choose a whole number of seconds from 0 to 3600.",
+            SettingKeys.Insights.WorkflowMailAfterTemplateMinutes => IntRange(value, 0, 240),
+            SettingKeys.Insights.WorkflowLimitPriorityMinutes
+                or SettingKeys.Insights.WorkflowLimitCallbackMinutes
+                or SettingKeys.Insights.WorkflowLimitWfpMinutes
+                or SettingKeys.Insights.WorkflowLimitResearchMinutes => IntRange(value, 1, 600),
+            SettingKeys.Insights.WorkflowMaxResearchPerAgent => IntRange(value, 1, 20),
+            SettingKeys.Insights.WorkflowWfpStatusIds => GuidCsv(value),
             SettingKeys.Insights.RewindIntervalMinutes =>
                 value is "5" or "10" or "15" or "30" or "60" ? null : "Choose 5, 10, 15, 30 or 60 minutes.",
             // Served agent-readable and painted into inline styles.
@@ -73,6 +80,20 @@ public static class SettingValueValidator
                     ? null : "Choose oldest or newest.",
             _ => null,
         };
+    }
+
+    private static string? IntRange(string value, int min, int max)
+        => int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n)
+           && n >= min && n <= max
+            ? null : $"Choose a whole number from {min} to {max}.";
+
+    /// Comma-separated GUIDs (empty allowed), at most 100.
+    private static string? GuidCsv(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var parts = value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length > 100) return "Pick at most 100 statuses.";
+        return parts.All(p => Guid.TryParse(p, out _)) ? null : "Expected a comma-separated list of status ids.";
     }
 
     private static string? RequireHttpUrl(string value, bool httpsOnly, bool allowEmpty)

@@ -5,7 +5,21 @@ namespace Servicedesk.Infrastructure.Insights.Rewind;
 
 public sealed record RewindViewSummary(Guid Id, string Name);
 
-public sealed record RewindSlot(DateTime T, bool Covered, IReadOnlyDictionary<string, int> Counts);
+/// <see cref="Added"/> / <see cref="Left"/>: tickets that entered / left the
+/// view at this slot against the previous snapshot (visible queues only);
+/// null when unknown (before change tracking, or the view's first row).
+public sealed record RewindSlot(
+    DateTime T, bool Covered, IReadOnlyDictionary<string, int> Counts,
+    int? Added = null, RewindLeftCounts? Left = null);
+
+public sealed record RewindLeftCounts(int Closed, int Queue, int Other)
+{
+    public int Total => Closed + Queue + Other;
+}
+
+/// What changed at a snapshot's slot against the previous snapshot.
+/// Empty lists = the view did not change in this slot.
+public sealed record RewindChanges(IReadOnlyList<RewindChange> Added, IReadOnlyList<RewindChange> Removed);
 
 public sealed record RewindSeries(
     int IntervalMinutes, DateTime FromUtc, DateTime ToUtc, DateTime LatestSlotUtc,
@@ -13,7 +27,8 @@ public sealed record RewindSeries(
 
 public sealed record RewindSnapshot(
     DateTime SlotUtc, bool Covered, DateTime? CapturedUtc, bool Truncated,
-    IReadOnlyList<RewindGroup> Groups, IReadOnlyList<RewindItem> Items, IReadOnlyList<Guid> DeletedIds);
+    IReadOnlyList<RewindGroup> Groups, IReadOnlyList<RewindItem> Items, IReadOnlyList<Guid> DeletedIds,
+    RewindChanges? Changes = null);
 
 /// Read side of Rewind. Every result is cut to the caller's queue access
 /// here, on the server: chart counts sum only visible queues, and a group
@@ -88,7 +103,8 @@ public sealed class RewindService : IRewindService
         var parsed = rows.Select(r => (
             Row: r,
             Groups: Deserialize<List<RewindGroup>>(r.GroupsJson),
-            Counts: VisibleCounts(Deserialize<List<RewindCount>>(r.CountsJson), scope))).ToList();
+            Counts: VisibleCounts(Deserialize<List<RewindCount>>(r.CountsJson), scope),
+            Changes: VisibleChanges(r.AddedJson, r.RemovedJson, scope))).ToList();
 
         var slots = new List<RewindSlot>();
         var shown = new HashSet<string>(StringComparer.Ordinal);
@@ -105,7 +121,14 @@ public sealed class RewindService : IRewindService
                 continue;
             }
             foreach (var key in hit.Counts.Keys) shown.Add(key);
-            slots.Add(new RewindSlot(t, true, hit.Counts));
+            // Changes belong to the slot the row was captured in; the slots
+            // it merely extends had no change at all.
+            if (hit.Row.CapturedUtc == t && hit.Changes is { } ch)
+                slots.Add(new RewindSlot(t, true, hit.Counts, ch.Added.Count, LeftCounts(ch.Removed)));
+            else if (hit.Row.CapturedUtc != t)
+                slots.Add(new RewindSlot(t, true, hit.Counts, 0, new RewindLeftCounts(0, 0, 0)));
+            else
+                slots.Add(new RewindSlot(t, true, hit.Counts));
         }
 
         // Legend: newest layout first (its order is what agents see now),
@@ -134,13 +157,29 @@ public sealed class RewindService : IRewindService
         var visibleGroups = items.Select(i => i.Group).ToHashSet(StringComparer.Ordinal);
         var groups = Deserialize<List<RewindGroup>>(row.GroupsJson).Where(g => visibleGroups.Contains(g.Key)).ToList();
         var deleted = await _store.GetDeletedAsync(items.Select(i => i.Id).ToList(), ct);
-        return new RewindSnapshot(slot, true, row.CapturedUtc, row.Truncated, groups, items, deleted.ToList());
+        var changes = row.CapturedUtc == slot
+            ? VisibleChanges(row.AddedJson, row.RemovedJson, scope)
+            : new RewindChanges(Array.Empty<RewindChange>(), Array.Empty<RewindChange>());
+        return new RewindSnapshot(slot, true, row.CapturedUtc, row.Truncated, groups, items, deleted.ToList(), changes);
     }
 
     /// A row stands for its state from capture until one interval after it
     /// was last confirmed; beyond that nothing was captured (app down).
     internal static bool Covers(DateTime capturedUtc, DateTime lastSeenUtc, int intervalMinutes, DateTime slotUtc)
         => capturedUtc <= slotUtc && slotUtc < lastSeenUtc.AddMinutes(intervalMinutes);
+
+    internal static RewindChanges? VisibleChanges(string? addedJson, string? removedJson, QueueAccessScope scope)
+    {
+        if (addedJson is null || removedJson is null) return null;
+        return new RewindChanges(
+            Deserialize<List<RewindChange>>(addedJson).Where(c => scope.CanSee(c.Q)).ToList(),
+            Deserialize<List<RewindChange>>(removedJson).Where(c => scope.CanSee(c.Q)).ToList());
+    }
+
+    private static RewindLeftCounts LeftCounts(IReadOnlyList<RewindChange> removed) => new(
+        removed.Count(r => r.R == RewindLeaveReason.Closed),
+        removed.Count(r => r.R == RewindLeaveReason.Queue),
+        removed.Count(r => r.R is not (RewindLeaveReason.Closed or RewindLeaveReason.Queue)));
 
     private static Dictionary<string, int> VisibleCounts(List<RewindCount> counts, QueueAccessScope scope)
     {

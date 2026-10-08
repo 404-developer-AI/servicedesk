@@ -1303,6 +1303,17 @@ public static class SettingKeys
         /// v0.1.31 — Rewind capture cadence in minutes (5, 10, 15, 30 or
         /// 60; default 15). Captures fire on server-time boundaries.
         public const string RewindIntervalMinutes = "Insights.RewindIntervalMinutes";
+
+        /// v0.1.32 — Insights Workflow (work-order compliance) thresholds.
+        public const string WorkflowMailAfterTemplateMinutes = "Insights.WorkflowMailAfterTemplateMinutes";
+        public const string WorkflowLimitPriorityMinutes = "Insights.WorkflowLimitPriorityMinutes";
+        public const string WorkflowLimitCallbackMinutes = "Insights.WorkflowLimitCallbackMinutes";
+        public const string WorkflowLimitWfpMinutes = "Insights.WorkflowLimitWfpMinutes";
+        public const string WorkflowLimitResearchMinutes = "Insights.WorkflowLimitResearchMinutes";
+        public const string WorkflowMaxResearchPerAgent = "Insights.WorkflowMaxResearchPerAgent";
+        /// CSV of status ids whose view group counts as WFP; empty = every
+        /// group except the Priority / Call-back / Research floats.
+        public const string WorkflowWfpStatusIds = "Insights.WorkflowWfpStatusIds";
     }
 
     public static class Statistics
@@ -2414,6 +2425,20 @@ public static class SettingDefaults
             "How many agents the Insights Agents overview can compare side by side (1–6). Default 3."),
         new SettingDefault(SettingKeys.Insights.OpenedNoActionMinSeconds, "3", "int", "Insights",
             "Ticket openings shorter than this many seconds are left out of the Insights 'Opened without action' list (0–3600). Default 3; 0 shows every opening, including quick click-throughs."),
+        new SettingDefault(SettingKeys.Insights.WorkflowMailAfterTemplateMinutes, "15", "int", "Insights",
+            "Insights Workflow: a mail sent within this many minutes after a filled-in Workflow template still counts as a correct last action before Pending (0–240). Default 15."),
+        new SettingDefault(SettingKeys.Insights.WorkflowLimitPriorityMinutes, "60", "int", "Insights",
+            "Insights Workflow: registered minutes an agent may spend on a High prio ticket before a Specialist Consult is expected (1–600). Default 60."),
+        new SettingDefault(SettingKeys.Insights.WorkflowLimitCallbackMinutes, "15", "int", "Insights",
+            "Insights Workflow: registered minutes an agent may spend on a Call-back ticket before it should move to Research (1–600). Default 15."),
+        new SettingDefault(SettingKeys.Insights.WorkflowLimitWfpMinutes, "15", "int", "Insights",
+            "Insights Workflow: registered minutes an agent may spend on a WFP ticket before it should move to Research (1–600). Default 15."),
+        new SettingDefault(SettingKeys.Insights.WorkflowLimitResearchMinutes, "60", "int", "Insights",
+            "Insights Workflow: registered minutes an agent may spend on a Research ticket before a Specialist Consult is expected (1–600). Default 60."),
+        new SettingDefault(SettingKeys.Insights.WorkflowMaxResearchPerAgent, "2", "int", "Insights",
+            "Insights Workflow: the most Research tickets one agent may have assigned at the same time (1–20). Default 2."),
+        new SettingDefault(SettingKeys.Insights.WorkflowWfpStatusIds, "", "string", "Insights",
+            "Insights Workflow: statuses whose group in the tracked view counts as WFP (waiting for pickup). Empty = every group except the Priority, Call-back and Research floats."),
         new SettingDefault(SettingKeys.Insights.RewindIntervalMinutes, "15", "int", "Insights",
             "How often Insights Rewind takes a snapshot of each tracked view, in minutes: 5, 10, 15, 30 or 60. Snapshots are taken on the clock (e.g. :00, :15, :30, :45) in server time; a snapshot identical to the previous one is not stored again. Default 15."),
         new SettingDefault(SettingKeys.Statistics.QfiStatusIds, "", "string", "Timesheet",

@@ -56,6 +56,8 @@ public sealed class RewindCaptureService : IRewindCaptureService
                 }
                 else
                 {
+                    if (latest is not null)
+                        capture = await WithChangesAsync(capture, latest, ct);
                     await _store.InsertAsync(capture, ct);
                     changed++;
                 }
@@ -70,6 +72,40 @@ public sealed class RewindCaptureService : IRewindCaptureService
             }
         }
         return changed;
+    }
+
+    /// Diffs a changed capture against the view's previous row: arrivals,
+    /// and leavers with the reason they left (looked up in the ticket's
+    /// events since the previous row was captured).
+    private async Task<RewindCapture> WithChangesAsync(RewindCapture capture, RewindLatest previous, CancellationToken ct)
+    {
+        var previousJson = await _store.GetItemsAsync(previous.Id, ct);
+        if (previousJson is null) return capture;
+        var before = JsonSerializer.Deserialize<List<RewindItem>>(previousJson, Json) ?? new();
+        var after = JsonSerializer.Deserialize<List<RewindItem>>(capture.ItemsJson, Json) ?? new();
+        var afterIds = after.Select(i => i.Id).ToHashSet();
+        var leaverIds = before.Where(i => !afterIds.Contains(i.Id)).Select(i => i.Id).ToList();
+        var reasons = await _store.ClassifyLeaversAsync(leaverIds, previous.CapturedUtc, ct);
+        var (added, removed) = ComputeChanges(before, after, reasons);
+        return capture with
+        {
+            AddedJson = JsonSerializer.Serialize(added, Json),
+            RemovedJson = JsonSerializer.Serialize(removed, Json),
+        };
+    }
+
+    internal static (IReadOnlyList<RewindChange> Added, IReadOnlyList<RewindChange> Removed) ComputeChanges(
+        IReadOnlyList<RewindItem> before, IReadOnlyList<RewindItem> after, IReadOnlyDictionary<Guid, string> reasons)
+    {
+        var beforeIds = before.Select(i => i.Id).ToHashSet();
+        var afterIds = after.Select(i => i.Id).ToHashSet();
+        var added = after.Where(i => !beforeIds.Contains(i.Id))
+            .Select(i => new RewindChange(i.Id, i.QueueId, i.Number, i.Subject)).ToList();
+        var removed = before.Where(i => !afterIds.Contains(i.Id))
+            .Select(i => new RewindChange(i.Id, i.QueueId, i.Number, i.Subject,
+                reasons.TryGetValue(i.Id, out var r) ? r : RewindLeaveReason.Other))
+            .ToList();
+        return (added, removed);
     }
 
     internal static RewindCapture BuildCapture(

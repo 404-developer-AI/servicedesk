@@ -7,6 +7,7 @@ using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Insights;
 using Servicedesk.Infrastructure.Insights.Rewind;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Workflow;
 
 namespace Servicedesk.Api.Insights;
 
@@ -64,6 +65,9 @@ public static class InsightsEndpoints
         group.MapGet("/rewind/views", ListRewindViews).WithName("InsightsRewindViews").WithOpenApi();
         group.MapGet("/rewind/{viewId:guid}/series", GetRewindSeries).WithName("InsightsRewindSeries").WithOpenApi();
         group.MapGet("/rewind/{viewId:guid}/snapshot", GetRewindSnapshot).WithName("InsightsRewindSnapshot").WithOpenApi();
+        group.MapGet("/workflow/config", GetWorkflowConfig).WithName("InsightsWorkflowConfig").WithOpenApi();
+        group.MapGet("/workflow", GetWorkflowReport).WithName("InsightsWorkflow").WithOpenApi();
+        group.MapGet("/workflow/cases", GetWorkflowCases).WithName("InsightsWorkflowCases").WithOpenApi();
 
         return app;
     }
@@ -527,6 +531,95 @@ public static class InsightsEndpoints
         var scope = await ResolveScopeAsync(http, queueAccess, ct);
         var snapshot = await rewind.GetSnapshotAsync(viewId, at?.UtcDateTime ?? DateTime.UtcNow, scope, ct);
         return Results.Ok(snapshot);
+    }
+
+    // ---- Workflow (v0.1.32) ---------------------------------------------------
+
+    private const string WorkflowCasesViewedEvent = "insights.workflow.cases_viewed";
+
+    private static async Task<IResult> GetWorkflowConfig(
+        HttpContext http, IUserService users, IRewindService rewind, IWorkflowReportService workflow,
+        CancellationToken ct)
+    {
+        if (await RequireWorkflowAsync(http, users, ct) is { } deny) return deny;
+        var (_, role) = ActorContext.Resolve(http);
+        var views = await rewind.ListViewsAsync(ActorContext.GetUserId(http), role, ct);
+        return Results.Ok(new { views, limits = await workflow.GetLimitsAsync(ct), maxDays = IWorkflowReportService.MaxDays });
+    }
+
+    private static async Task<IResult> GetWorkflowReport(
+        [AsParameters] ReportQuery query,
+        [FromQuery(Name = "viewId")] Guid? viewId,
+        HttpContext http, IUserService users, IInsightsService insights, IRewindService rewind,
+        IWorkflowReportService workflow, IQueueAccessService queueAccess, CancellationToken ct)
+    {
+        if (await RequireWorkflowAsync(http, users, ct) is { } deny) return deny;
+        var resolved = await ResolveWorkflowAsync(http, query, viewId, insights, rewind, ct);
+        if (resolved.Error is { } error) return error;
+
+        var scope = await ResolveScopeAsync(http, queueAccess, ct);
+        var report = await workflow.GetReportAsync(resolved.Range, viewId, scope, ct);
+        return Results.Ok(report);
+    }
+
+    private static async Task<IResult> GetWorkflowCases(
+        [AsParameters] ReportQuery query,
+        [FromQuery(Name = "viewId")] Guid? viewId,
+        [FromQuery(Name = "agentId")] Guid? agentId,
+        [FromQuery(Name = "kpi")] string? kpi,
+        HttpContext http, IUserService users, IInsightsService insights, IRewindService rewind,
+        IWorkflowReportService workflow, IQueueAccessService queueAccess, IAuditLogger audit, CancellationToken ct)
+    {
+        if (await RequireWorkflowAsync(http, users, ct) is { } deny) return deny;
+        if (agentId is not { } agent || agent == Guid.Empty)
+            return Results.BadRequest(new { error = "agentId is required." });
+        if (!Enum.TryParse<WorkflowKpi>(kpi, ignoreCase: true, out var which) || !Enum.IsDefined(which))
+            return Results.BadRequest(new { error = "Unknown kpi." });
+        var resolved = await ResolveWorkflowAsync(http, query, viewId, insights, rewind, ct);
+        if (resolved.Error is { } error) return error;
+
+        var scope = await ResolveScopeAsync(http, queueAccess, ct);
+        var cases = await workflow.GetCasesAsync(resolved.Range, viewId, scope, agent, which, ct);
+
+        // Per-agent compliance detail is personnel data: every look is audited.
+        var (actor, role) = ActorContext.Resolve(http);
+        await audit.LogAsync(new AuditEvent(
+            EventType: WorkflowCasesViewedEvent,
+            Actor: actor, ActorRole: role, Target: agent.ToString(),
+            ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: http.Request.Headers.UserAgent.ToString(),
+            Payload: new { kpi = which.ToString(), from = resolved.Range.From, to = resolved.Range.To, viewId }), ct);
+
+        return Results.Ok(new { items = cases.Take(ListMaxPageSize * 5).ToList(), total = cases.Count });
+    }
+
+    /// Insights flag (like every tab) plus manager-level access: Admin, or
+    /// the Timesheet manager feature. The report measures individual agents.
+    private static async Task<IResult?> RequireWorkflowAsync(HttpContext http, IUserService users, CancellationToken ct)
+    {
+        if (await RequireFlagAsync(http, users, ct) is { } deny) return deny;
+        var (_, role) = ActorContext.Resolve(http);
+        if (string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase)) return null;
+        var flags = await users.GetTimesheetFlagsAsync(ActorContext.GetUserId(http), ct);
+        return flags.Manager ? null : Results.Forbid();
+    }
+
+    private static async Task<(InsightsRange Range, IResult? Error)> ResolveWorkflowAsync(
+        HttpContext http, ReportQuery query, Guid? viewId, IInsightsService insights, IRewindService rewind,
+        CancellationToken ct)
+    {
+        var clock = await insights.GetClockAsync(ct);
+        if (!TryResolve(query, clock.Today, out var range, out _, out var error))
+            return (range, Results.BadRequest(new { error }));
+        if (range.DayCount > IWorkflowReportService.MaxDays)
+            return (range, Results.BadRequest(new { error = $"Pick a period of at most {IWorkflowReportService.MaxDays} days." }));
+        if (viewId is { } v)
+        {
+            var (_, role) = ActorContext.Resolve(http);
+            var tracked = await rewind.ListViewsAsync(ActorContext.GetUserId(http), role, ct);
+            if (!tracked.Any(t => t.Id == v)) return (range, Results.NotFound());
+        }
+        return (range, null);
     }
 
     private static async Task<IResult?> RequireRewindViewAsync(

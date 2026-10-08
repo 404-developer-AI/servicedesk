@@ -28,6 +28,18 @@ public sealed record RewindItem(
     DateTime? PendingTillUtc,
     string Group);
 
+/// A ticket that entered or left a view between two snapshots. <see cref="R"/>
+/// is the reason a ticket left: <c>closed</c> (resolved, closed or merged),
+/// <c>queue</c> (moved to another queue) or <c>other</c>; null for arrivals.
+public sealed record RewindChange(Guid Id, Guid Q, long N, string S, string? R = null);
+
+public static class RewindLeaveReason
+{
+    public const string Closed = "closed";
+    public const string Queue = "queue";
+    public const string Other = "other";
+}
+
 /// A group header in displayed order (float buckets first).
 public sealed record RewindGroup(string Key, string Label, string? Color);
 
@@ -41,13 +53,15 @@ public sealed record RewindLatest(long Id, DateTime CapturedUtc, DateTime LastSe
 
 /// A snapshot row without its items, for the chart.
 public sealed record RewindSeriesRow(
-    DateTime CapturedUtc, DateTime LastSeenUtc, int IntervalMinutes, string GroupsJson, string CountsJson);
+    DateTime CapturedUtc, DateTime LastSeenUtc, int IntervalMinutes, string GroupsJson, string CountsJson,
+    string? AddedJson = null, string? RemovedJson = null);
 
 public sealed record RewindSnapshotRow(
     DateTime CapturedUtc, DateTime LastSeenUtc, int IntervalMinutes, bool Truncated,
-    string GroupsJson, string ItemsJson);
+    string GroupsJson, string ItemsJson, string? AddedJson = null, string? RemovedJson = null);
 
 /// A new capture, ready to store.
 public sealed record RewindCapture(
     Guid ViewId, DateTime SlotUtc, int IntervalMinutes, int TicketCount, bool Truncated,
-    string ContentHash, string GroupsJson, string CountsJson, string ItemsJson);
+    string ContentHash, string GroupsJson, string CountsJson, string ItemsJson,
+    string? AddedJson = null, string? RemovedJson = null);

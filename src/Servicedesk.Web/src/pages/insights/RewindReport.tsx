@@ -4,6 +4,8 @@ import { Link } from "@tanstack/react-router";
 import {
   Area,
   AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
   ReferenceLine,
   ResponsiveContainer,
@@ -27,6 +29,7 @@ import {
   insightsApi,
   insightsErrorMessage,
   type RewindGroup,
+  type RewindChange,
   type RewindItem,
   type RewindRange,
   type RewindSeries,
@@ -357,6 +360,16 @@ function Rewind({ views, intervalMinutes }: { views: Array<{ id: string; name: s
 
 type ChartRow = { t: string; covered: boolean } & Record<string, number | string | boolean | null>;
 
+// v0.1.32 — arrivals / leavers per slot. Keys can't collide with group keys
+// (those are status/priority/... ids or __float__ keys).
+const CHG = { added: "chg:added", closed: "chg:closed", queue: "chg:queue", other: "chg:other" } as const;
+const CHANGE_COLORS = { added: "#10b981", closed: "#6366f1", queue: "#f59e0b", other: "#94a3b8" } as const;
+const LEAVE_LABEL: Record<"closed" | "queue" | "other", string> = {
+  closed: "resolved/closed",
+  queue: "other queue",
+  other: "other",
+};
+
 function RewindChart({
   series,
   hidden,
@@ -386,11 +399,27 @@ function RewindChart({
       series.slots.map((s) => {
         const row: ChartRow = { t: s.t, covered: s.covered };
         for (const g of groups) row[g.key] = s.covered ? (s.counts[g.key] ?? 0) : null;
+        // Leavers point down, arrivals up.
+        row[CHG.added] = s.added ?? null;
+        row[CHG.closed] = s.left ? -s.left.closed : null;
+        row[CHG.queue] = s.left ? -s.left.queue : null;
+        row[CHG.other] = s.left ? -s.left.other : null;
         return row;
       }),
     [series, groups],
   );
   const anyCovered = series.slots.some((s) => s.covered);
+  const anyChanges = series.slots.some((s) => s.added != null);
+  // Symmetric axis so "in" and "out" read at the same scale.
+  const changeMax = Math.max(
+    1,
+    ...series.slots.map((s) => Math.max(s.added ?? 0, s.left ? s.left.closed + s.left.queue + s.left.other : 0)),
+  );
+  const selectAt = (state: { activeTooltipIndex?: unknown } | null | undefined) => {
+    const i = Number(state?.activeTooltipIndex);
+    const row = Number.isInteger(i) ? rows[i] : undefined;
+    if (row?.covered) onSelect(row.t);
+  };
   // A step area needs a following covered slot to have width; a snapshot
   // with gaps on both sides (or the very first one) gets a dot instead.
   const isolated = React.useMemo(() => {
@@ -450,12 +479,9 @@ function RewindChart({
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
             data={rows}
+            syncId="rewind"
             margin={{ top: 8, right: 8, left: -12, bottom: 0 }}
-            onClick={(state) => {
-              const i = Number(state?.activeTooltipIndex);
-              const row = Number.isInteger(i) ? rows[i] : undefined;
-              if (row?.covered) onSelect(row.t);
-            }}
+            onClick={selectAt}
             style={{ cursor: "pointer" }}
           >
             <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.7} />
@@ -526,7 +552,63 @@ function RewindChart({
           </div>
         )}
       </div>
+
+      {/* v0.1.32 — tickets in / out per snapshot, synced with the chart above. */}
+      {anyChanges && (
+        <div className="mt-3 border-t border-glass pt-3">
+          <div className="mb-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+            <span className="font-medium text-foreground">In / out per snapshot</span>
+            <LegendDot color={CHANGE_COLORS.added} label="New" />
+            <LegendDot color={CHANGE_COLORS.closed} label="Left: resolved/closed" />
+            <LegendDot color={CHANGE_COLORS.queue} label="Left: other queue" />
+            <LegendDot color={CHANGE_COLORS.other} label="Left: other" />
+          </div>
+          <div className="h-[96px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={rows}
+                syncId="rewind"
+                stackOffset="sign"
+                margin={{ top: 4, right: 8, left: -12, bottom: 0 }}
+                onClick={selectAt}
+                style={{ cursor: "pointer" }}
+                barCategoryGap="12%"
+              >
+                <XAxis dataKey="t" hide />
+                <YAxis
+                  allowDecimals={false}
+                  domain={[-changeMax, changeMax]}
+                  ticks={[-changeMax, 0, changeMax]}
+                  tickLine={false}
+                  axisLine={false}
+                  width={44}
+                  tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                  tickFormatter={(v: number) => (v > 0 ? `+${nf.format(v)}` : v < 0 ? `−${nf.format(-v)}` : "0")}
+                />
+                <ReferenceLine y={0} stroke="hsl(var(--border))" />
+                {/* The chart above carries the tooltip (synced); here only the cursor. */}
+                <Tooltip content={() => null} cursor={{ fill: "hsl(var(--foreground) / 0.05)" }} isAnimationActive={false} />
+                <Bar dataKey={CHG.added} stackId="chg" fill={CHANGE_COLORS.added} isAnimationActive={false} />
+                <Bar dataKey={CHG.closed} stackId="chg" fill={CHANGE_COLORS.closed} isAnimationActive={false} />
+                <Bar dataKey={CHG.queue} stackId="chg" fill={CHANGE_COLORS.queue} isAnimationActive={false} />
+                <Bar dataKey={CHG.other} stackId="chg" fill={CHANGE_COLORS.other} isAnimationActive={false} />
+                {compareSlot && <ReferenceLine x={compareSlot} stroke="hsl(var(--muted-foreground))" strokeDasharray="4 3" />}
+                {selected && <ReferenceLine x={selected} stroke="hsl(var(--primary))" strokeWidth={2} />}
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="h-2 w-2 rounded-[2px]" style={{ backgroundColor: color }} />
+      {label}
+    </span>
   );
 }
 
@@ -567,6 +649,22 @@ function RewindTooltip({
               <span>Total</span>
               <span className="tabular-nums">{nf.format(total)}</span>
             </div>
+          )}
+        </div>
+      )}
+      {row.covered && typeof row[CHG.added] === "number" && (
+        <div className="mt-2 flex flex-col gap-0.5 border-t border-glass pt-2">
+          <span className="flex justify-between gap-4">
+            <span className="text-muted-foreground">New</span>
+            <span className="tabular-nums font-medium">+{nf.format(Number(row[CHG.added]))}</span>
+          </span>
+          {(["closed", "queue", "other"] as const).map((k) =>
+            Number(row[CHG[k]]) !== 0 ? (
+              <span key={k} className="flex justify-between gap-4">
+                <span className="text-muted-foreground">Left · {LEAVE_LABEL[k]}</span>
+                <span className="tabular-nums font-medium">−{nf.format(Math.abs(Number(row[CHG[k]])))}</span>
+              </span>
+            ) : null,
           )}
         </div>
       )}
@@ -639,6 +737,8 @@ function SnapshotList({
           {snapshot.truncated && " · list was capped at the view's page size"}
         </span>
       </div>
+
+      <ChangesSincePrevious changes={snapshot.changes} />
 
       {snapshot.items.length === 0 ? (
         <p className="px-5 pb-5 text-sm text-muted-foreground">The view was empty at this moment.</p>
@@ -725,6 +825,79 @@ function SnapshotList({
         </div>
       )}
     </div>
+  );
+}
+
+/// v0.1.32 — what came in and went out at this snapshot vs the previous one.
+function ChangesSincePrevious({ changes }: { changes: RewindSnapshot["changes"] | undefined }) {
+  // undefined: an older server without change tracking (rollout window).
+  if (changes == null)
+    return (
+      <p className="px-5 pb-3 text-xs text-muted-foreground">
+        Arrivals and departures were not recorded yet for this snapshot.
+      </p>
+    );
+  const { added, removed } = changes;
+  if (added.length === 0 && removed.length === 0)
+    return (
+      <p className="px-5 pb-3 text-xs text-muted-foreground">
+        Since the previous snapshot: no tickets came in or left.
+      </p>
+    );
+  const byReason = (r: "closed" | "queue" | "other") => removed.filter((c) => (c.r ?? "other") === r);
+  return (
+    <div className="mx-5 mb-3 flex flex-col gap-2 rounded-md border border-glass bg-glass px-3 py-2.5">
+      <p className="text-xs text-muted-foreground">
+        Since the previous snapshot:{" "}
+        <span className="font-medium text-foreground">+{nf.format(added.length)} new</span>
+        {" · "}
+        <span className="font-medium text-foreground">
+          {removed.length > 0 ? `−${nf.format(removed.length)}` : "0"} left
+        </span>
+        {removed.length > 0 && (
+          <>
+            {" ("}
+            {(["closed", "queue", "other"] as const)
+              .map((r) => ({ r, n: byReason(r).length }))
+              .filter((x) => x.n > 0)
+              .map((x) => `${x.n} ${LEAVE_LABEL[x.r]}`)
+              .join(", ")}
+            {")"}
+          </>
+        )}
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {added.map((c) => (
+          <ChangeChip key={`a-${c.id}`} change={c} color={CHANGE_COLORS.added} sign="+" title="New in the view" />
+        ))}
+        {removed.map((c) => (
+          <ChangeChip
+            key={`r-${c.id}`}
+            change={c}
+            color={CHANGE_COLORS[c.r ?? "other"]}
+            sign="−"
+            title={`Left the view: ${LEAVE_LABEL[c.r ?? "other"]}`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ChangeChip({ change, color, sign, title }: { change: RewindChange; color: string; sign: string; title: string }) {
+  return (
+    <Link
+      to={"/tickets/$ticketId" as never}
+      params={{ ticketId: change.id } as never}
+      title={`${title} — ${change.s}`}
+      className="inline-flex max-w-72 items-center gap-1.5 rounded-md border border-glass bg-background/60 px-2 py-0.5 text-[11px] text-foreground transition-colors hover:bg-glass-hover"
+    >
+      <span className="font-semibold tabular-nums" style={{ color }}>
+        {sign}
+      </span>
+      <span className="font-mono text-primary">#{change.n}</span>
+      <span className="truncate text-muted-foreground">{change.s}</span>
+    </Link>
   );
 }
 

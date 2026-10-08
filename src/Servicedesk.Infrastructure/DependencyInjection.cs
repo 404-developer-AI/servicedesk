@@ -502,6 +502,7 @@ public static class DependencyInjection
         services.AddHostedService<Insights.Rewind.RewindWorker>();
         // v0.1.32 — Insights Workflow, step 1: template use + pickup capture.
         services.AddSingleton<Workflow.IWorkflowCaptureService, Workflow.WorkflowCaptureService>();
+        services.AddSingleton<Workflow.IWorkflowReportService, Workflow.WorkflowReportService>();
         // Default to the no-op notifier; the Api project overrides this
         // with the SignalR-backed implementation.
         services.AddSingleton<Realtime.ITimesheetEntryNotifier, Realtime.NullTimesheetEntryNotifier>();

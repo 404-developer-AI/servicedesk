@@ -211,6 +211,51 @@ public sealed class InsightsRewindTests
         Assert.Equal(t0.AddMinutes(15), store.Rows[0].LastSeenUtc);
     }
 
+    [Fact]
+    public async Task Changed_capture_records_arrivals_and_leavers_with_their_reason()
+    {
+        var store = new FakeStore();
+        IReadOnlyList<TicketListItem> current = new[]
+        {
+            Ticket(1, StatusOpen, "Open"), Ticket(2, StatusOpen, "Open"), Ticket(3, StatusOpen, "Open"),
+        };
+        var tickets = PartialFake<ITicketRepository>.Create((m, _) => m.Name == nameof(ITicketRepository.SearchAsync)
+            ? Task.FromResult(new TicketPage(current, null, null))
+            : throw new NotSupportedException(m.Name));
+        var taxonomy = PartialFake<Servicedesk.Infrastructure.Persistence.Taxonomy.ITaxonomyRepository>.Create(
+            (m, _) => throw new NotSupportedException(m.Name));
+        var svc = new RewindCaptureService(store,
+            new RewindLayoutService(tickets, taxonomy, new InMemorySettingsService()), new ThrowingLogger());
+        store.Tracked.Add(new RewindTrackedView(ViewId, "Servicedesk", "{}", "{}"));
+        var t0 = RewindSlots.Floor(DateTime.UtcNow, 15).AddMinutes(-30);
+
+        await svc.CaptureAsync(t0, 15, default);
+        Assert.Null(store.Rows[0].Capture.AddedJson); // a view's first row has nothing to compare with
+
+        store.LeaveReasons[Ticket(2, StatusOpen, "Open").Id] = RewindLeaveReason.Closed;
+        current = new[] { Ticket(1, StatusOpen, "Open"), Ticket(4, StatusOpen, "Open") }; // 2 closed, 3 gone, 4 new
+        await svc.CaptureAsync(t0.AddMinutes(15), 15, default);
+        await svc.CaptureAsync(t0.AddMinutes(30), 15, default); // unchanged → extends that row
+
+        var rewind = new RewindService(store, new AllowAllViews(), new InMemorySettingsService(), TimeProvider.System);
+        var series = await rewind.GetSeriesAsync(ViewId, null, TimeSpan.FromHours(1), QueueAccessScope.AdminScope);
+        var changed = series.Slots.Single(sl => sl.T == t0.AddMinutes(15));
+        Assert.Equal(1, changed.Added);
+        Assert.Equal(new RewindLeftCounts(1, 0, 1), changed.Left);
+        Assert.Null(series.Slots.Single(sl => sl.T == t0).Added);
+
+        var snap = await rewind.GetSnapshotAsync(ViewId, t0.AddMinutes(15), QueueAccessScope.AdminScope);
+        Assert.Equal(new long[] { 4 }, snap.Changes!.Added.Select(c => c.N));
+        Assert.Equal(new[] { (2L, "closed"), (3L, "other") }, snap.Changes.Removed.Select(c => (c.N, c.R!)));
+
+        // The next unchanged slot reports no change; foreign queues are cut out.
+        var later = await rewind.GetSnapshotAsync(ViewId, t0.AddMinutes(30), QueueAccessScope.AdminScope);
+        Assert.Empty(later.Changes!.Added);
+        var foreign = await rewind.GetSnapshotAsync(ViewId, t0.AddMinutes(15), new QueueAccessScope(false, new HashSet<Guid> { QueueB }));
+        Assert.Empty(foreign.Changes!.Added);
+        Assert.Empty(foreign.Changes.Removed);
+    }
+
     // ---- coverage -------------------------------------------------------------
 
     [Fact]
@@ -354,6 +399,7 @@ public sealed class InsightsRewindTests
         public List<RewindTrackedView> Tracked { get; } = new();
         public List<StoredRow> Rows { get; } = new();
         public HashSet<Guid> Deleted { get; } = new();
+        public Dictionary<Guid, string> LeaveReasons { get; } = new();
 
         public Task<IReadOnlyList<RewindTrackedView>> ListTrackedViewsAsync(CancellationToken ct)
             => Task.FromResult<IReadOnlyList<RewindTrackedView>>(Tracked);
@@ -382,7 +428,7 @@ public sealed class InsightsRewindTests
                 .Where(r => r.Capture.SlotUtc <= toUtc && r.LastSeenUtc.AddMinutes(r.Capture.IntervalMinutes) > fromUtc)
                 .OrderBy(r => r.Capture.SlotUtc)
                 .Select(r => new RewindSeriesRow(r.Capture.SlotUtc, r.LastSeenUtc, r.Capture.IntervalMinutes,
-                    r.Capture.GroupsJson, r.Capture.CountsJson))
+                    r.Capture.GroupsJson, r.Capture.CountsJson, r.Capture.AddedJson, r.Capture.RemovedJson))
                 .ToList());
 
         public Task<RewindSnapshotRow?> GetAtAsync(Guid viewId, DateTime atUtc, CancellationToken ct)
@@ -390,8 +436,17 @@ public sealed class InsightsRewindTests
             var r = Rows.Where(x => x.Capture.SlotUtc <= atUtc).MaxBy(x => x.Capture.SlotUtc);
             return Task.FromResult(r is null ? null
                 : new RewindSnapshotRow(r.Capture.SlotUtc, r.LastSeenUtc, r.Capture.IntervalMinutes,
-                    r.Capture.Truncated, r.Capture.GroupsJson, r.Capture.ItemsJson));
+                    r.Capture.Truncated, r.Capture.GroupsJson, r.Capture.ItemsJson,
+                    r.Capture.AddedJson, r.Capture.RemovedJson));
         }
+
+        public Task<string?> GetItemsAsync(long id, CancellationToken ct)
+            => Task.FromResult<string?>(Rows.SingleOrDefault(r => r.Id == id)?.Capture.ItemsJson);
+
+        public Task<IReadOnlyDictionary<Guid, string>> ClassifyLeaversAsync(
+            IReadOnlyCollection<Guid> ticketIds, DateTime sinceUtc, CancellationToken ct)
+            => Task.FromResult<IReadOnlyDictionary<Guid, string>>(
+                ticketIds.ToDictionary(id => id, id => LeaveReasons.GetValueOrDefault(id, RewindLeaveReason.Other)));
 
         public Task<IReadOnlySet<Guid>> GetDeletedAsync(IReadOnlyCollection<Guid> ticketIds, CancellationToken ct)
             => Task.FromResult<IReadOnlySet<Guid>>(ticketIds.Where(Deleted.Contains).ToHashSet());

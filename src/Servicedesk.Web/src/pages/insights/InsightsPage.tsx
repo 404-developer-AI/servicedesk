@@ -1,20 +1,24 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChartColumnStacked, CircleCheckBig, History, Inbox, Users } from "lucide-react";
+import { ChartColumnStacked, CircleCheckBig, ClipboardCheck, History, Inbox, Users } from "lucide-react";
+import { useAuth } from "@/auth/authStore";
 import { insightsApi, type InsightsConfig, type InsightsReportKind } from "@/lib/insights-api";
 import { cn } from "@/lib/utils";
 import { AgentActivityReportView } from "./AgentActivityReport";
 import { RewindReportView } from "./RewindReport";
+import { WorkflowReportView } from "./WorkflowReport";
 import { TicketCountReportView } from "./TicketCountReport";
 import { useReportFilters } from "./useReportFilters";
 
-type InsightsTab = InsightsReportKind | "agents" | "rewind";
+type InsightsTab = InsightsReportKind | "agents" | "rewind" | "workflow";
 
 const TABS: ReadonlyArray<{ kind: InsightsTab; label: string; icon: typeof Inbox }> = [
   { kind: "new-tickets", label: "New tickets", icon: Inbox },
   { kind: "closed-tickets", label: "Closed tickets", icon: CircleCheckBig },
   { kind: "agents", label: "Agents", icon: Users },
   { kind: "rewind", label: "Rewind", icon: History },
+  // v0.1.32 — managers / admins only (also enforced server-side).
+  { kind: "workflow", label: "Workflow", icon: ClipboardCheck },
 ];
 
 // Per-viewer convenience: reopen on the last overview.
@@ -23,7 +27,7 @@ const TAB_KEY = "sd-insights-tab";
 function readTab(): InsightsTab {
   try {
     const v = window.localStorage.getItem(TAB_KEY);
-    return v === "closed-tickets" || v === "agents" || v === "rewind" ? v : "new-tickets";
+    return v === "closed-tickets" || v === "agents" || v === "rewind" || v === "workflow" ? v : "new-tickets";
   } catch {
     return "new-tickets";
   }
@@ -72,7 +76,11 @@ export function InsightsPage() {
 
 function Reports({ config }: { config: InsightsConfig }) {
   const filters = useReportFilters(config);
-  const [tab, setTab] = React.useState<InsightsTab>(readTab);
+  const { user } = useAuth();
+  const canWorkflow = user?.role === "Admin" || !!user?.timesheetManager;
+  const tabs = TABS.filter((t) => t.kind !== "workflow" || canWorkflow);
+  const [stored, setTab] = React.useState<InsightsTab>(readTab);
+  const tab: InsightsTab = stored === "workflow" && !canWorkflow ? "new-tickets" : stored;
 
   function choose(kind: InsightsTab) {
     setTab(kind);
@@ -86,7 +94,7 @@ function Reports({ config }: { config: InsightsConfig }) {
   return (
     <div className="flex flex-col gap-4">
       <div role="tablist" aria-label="Overview" className="sd-insights-tabs flex gap-1 border-b border-glass">
-        {TABS.map(({ kind, label, icon: Icon }) => {
+        {tabs.map(({ kind, label, icon: Icon }) => {
           const active = tab === kind;
           return (
             <button
@@ -109,7 +117,9 @@ function Reports({ config }: { config: InsightsConfig }) {
         })}
       </div>
 
-      {tab === "rewind" ? (
+      {tab === "workflow" ? (
+        <WorkflowReportView config={config} filters={filters} />
+      ) : tab === "rewind" ? (
         <RewindReportView />
       ) : tab === "agents" ? (
         <AgentActivityReportView config={config} filters={filters} />

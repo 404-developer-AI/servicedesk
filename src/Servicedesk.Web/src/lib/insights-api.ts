@@ -226,6 +226,9 @@ export type RewindViews = { intervalMinutes: number; views: RewindViewSummary[] 
 
 export type RewindGroup = { key: string; label: string; color: string | null };
 
+/** Tickets that left a view, by reason. */
+export type RewindLeftCounts = { closed: number; queue: number; other: number; total: number };
+
 export type RewindSlot = {
   /** Slot start (UTC). */
   t: string;
@@ -233,7 +236,14 @@ export type RewindSlot = {
   covered: boolean;
   /** Visible tickets per group key. */
   counts: Record<string, number>;
+  /** v0.1.32 — tickets that came in at this slot vs the previous snapshot; null = not tracked then. */
+  added: number | null;
+  /** v0.1.32 — tickets that left at this slot, by reason; null = not tracked then. */
+  left: RewindLeftCounts | null;
 };
+
+/** A ticket that entered or left the view. r: closed | queue | other (leavers only). */
+export type RewindChange = { id: string; q: string; n: number; s: string; r: "closed" | "queue" | "other" | null };
 
 export type RewindSeries = {
   intervalMinutes: number;
@@ -280,12 +290,89 @@ export type RewindSnapshot = {
   items: RewindItem[];
   /** Tickets deleted since — shown, not linked. */
   deletedIds: string[];
+  /** v0.1.32 — vs the previous snapshot; empty lists = unchanged in this slot, null = not tracked then. */
+  changes: { added: RewindChange[]; removed: RewindChange[] } | null;
 };
+
+// ---- Workflow (v0.1.32) ----------------------------------------------------
+// Work-order compliance per agent. Insights flag + Admin or Timesheet manager;
+// every ticket and count is cut to the caller's queue access server-side.
+
+export type WorkflowKpi =
+  | "CallBeforeMail"
+  | "TemplateBeforePending"
+  | "NoCherryPicking"
+  | "TimeLimits"
+  | "ResearchLoad";
+
+export type WorkflowLimits = {
+  mailAfterTemplateMinutes: number;
+  priorityMinutes: number;
+  callbackMinutes: number;
+  wfpMinutes: number;
+  researchMinutes: number;
+  maxResearchPerAgent: number;
+  wfpStatusIds: string[];
+};
+
+export type WorkflowConfig = { views: RewindViewSummary[]; limits: WorkflowLimits; maxDays: number };
+
+export type WorkflowScore = { ok: number; total: number };
+
+export type WorkflowAgentRow = {
+  agentId: string;
+  name: string;
+  callBeforeMail: WorkflowScore;
+  templateBeforePending: WorkflowScore;
+  noCherryPicking: WorkflowScore;
+  timeLimits: WorkflowScore;
+  researchOverMinutes: number;
+  researchPeak: number;
+};
+
+export type WorkflowReport = {
+  range: { from: string; to: string };
+  viewId: string | null;
+  limits: WorkflowLimits;
+  agents: WorkflowAgentRow[];
+};
+
+export type WorkflowCase = {
+  kpi: WorkflowKpi;
+  agentId: string;
+  ticketId: string | null;
+  ticketNumber: number | null;
+  subject: string | null;
+  atUtc: string;
+  ok: boolean;
+  detail: string;
+  minutes: number | null;
+  count: number | null;
+};
+
+export type WorkflowCasePage = { items: WorkflowCase[]; total: number };
 
 export const insightsApi = {
   config: () => getJson<InsightsConfig>("/api/insights/config"),
 
   rewindViews: () => getJson<RewindViews>("/api/insights/rewind/views"),
+
+  workflowConfig: () => getJson<WorkflowConfig>("/api/insights/workflow/config"),
+
+  workflow: (p: ReportParams, viewId: string | null) => {
+    const qs = toQuery(p);
+    if (viewId) qs.set("viewId", viewId);
+    return getJson<WorkflowReport>(`/api/insights/workflow?${qs.toString()}`);
+  },
+
+  /** One agent's checked cases for one rule, problems first. Audited server-side. */
+  workflowCases: (p: ReportParams, viewId: string | null, agentId: string, kpi: WorkflowKpi) => {
+    const qs = toQuery(p);
+    if (viewId) qs.set("viewId", viewId);
+    qs.set("agentId", agentId);
+    qs.set("kpi", kpi);
+    return getJson<WorkflowCasePage>(`/api/insights/workflow/cases?${qs.toString()}`);
+  },
 
   /** Slots from end − range to end; end omitted = the latest slot (server time). */
   rewindSeries: (viewId: string, range: RewindRange, endUtc?: string | null) => {

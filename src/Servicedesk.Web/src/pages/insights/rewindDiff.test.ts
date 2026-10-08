@@ -18,7 +18,7 @@ function snap(items: RewindItem[]): RewindSnapshot {
   return {
     slotUtc: "2026-10-08T11:00:00Z", covered: true, capturedUtc: "2026-10-08T11:00:00Z", truncated: false,
     groups: keys.map((k) => ({ key: k, label: k === "__all__" ? "All tickets" : k, color: null })),
-    items, deletedIds: [],
+    items, deletedIds: [], changes: null,
   };
 }
 

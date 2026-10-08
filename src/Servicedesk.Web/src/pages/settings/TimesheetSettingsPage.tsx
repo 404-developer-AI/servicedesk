@@ -1032,14 +1032,18 @@ function HourlyRateField({ entry }: { entry: SettingEntry }) {
 /// value is the id so a rename keeps the selection. Several statuses can
 /// share a state-category, so the picker lists every active status (the
 /// category is shown only as a muted hint).
-function StatusSetField({
+/// v0.1.32 — also used by Settings → General → Insights (Workflow WFP
+/// statuses); `queryKey` is the settings query to refresh after a save.
+export function StatusSetField({
   entry,
   label,
   hint,
+  queryKey = QUERY_KEY,
 }: {
   entry: SettingEntry;
   label: string;
   hint: string;
+  queryKey?: readonly unknown[];
 }) {
   const qc = useQueryClient();
   const statusesQuery = useQuery({
@@ -1055,7 +1059,7 @@ function StatusSetField({
   const save = useMutation({
     mutationFn: (val: string) => settingsApi.update(entry.key, val),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QUERY_KEY });
+      qc.invalidateQueries({ queryKey });
       toast.success(`${label} updated`);
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to save"),
