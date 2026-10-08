@@ -21,6 +21,14 @@ public interface IRewindStore
     /// The row in force at <paramref name="atUtc"/> (latest captured at or before it).
     Task<RewindSnapshotRow?> GetAtAsync(Guid viewId, DateTime atUtc, CancellationToken ct);
 
+    /// The items of one stored row (to diff the next capture against).
+    Task<string?> GetItemsAsync(long id, CancellationToken ct);
+
+    /// Why each ticket left a view since <paramref name="sinceUtc"/>: see
+    /// <see cref="RewindLeaveReason"/>.
+    Task<IReadOnlyDictionary<Guid, string>> ClassifyLeaversAsync(
+        IReadOnlyCollection<Guid> ticketIds, DateTime sinceUtc, CancellationToken ct);
+
     /// Of <paramref name="ticketIds"/>, the ones deleted since.
     Task<IReadOnlySet<Guid>> GetDeletedAsync(IReadOnlyCollection<Guid> ticketIds, CancellationToken ct);
 }
@@ -63,10 +71,11 @@ public sealed class RewindStore : IRewindStore
         const string sql = """
             INSERT INTO rewind_snapshots
                 (view_id, captured_utc, last_seen_utc, interval_minutes, ticket_count, truncated,
-                 content_hash, groups, counts, items)
+                 content_hash, groups, counts, items, added, removed)
             VALUES
                 (@ViewId, @SlotUtc, @SlotUtc, @IntervalMinutes, @TicketCount, @Truncated,
-                 @ContentHash, @GroupsJson::jsonb, @CountsJson::jsonb, @ItemsJson::jsonb)
+                 @ContentHash, @GroupsJson::jsonb, @CountsJson::jsonb, @ItemsJson::jsonb,
+                 @AddedJson::jsonb, @RemovedJson::jsonb)
             ON CONFLICT (view_id, captured_utc) DO NOTHING
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -92,7 +101,8 @@ public sealed class RewindStore : IRewindStore
         // large column) is never selected here.
         const string sql = """
             SELECT captured_utc AS CapturedUtc, last_seen_utc AS LastSeenUtc, interval_minutes AS IntervalMinutes,
-                   groups::text AS GroupsJson, counts::text AS CountsJson
+                   groups::text AS GroupsJson, counts::text AS CountsJson,
+                   added::text AS AddedJson, removed::text AS RemovedJson
             FROM rewind_snapshots
             WHERE view_id = @viewId
               AND captured_utc <= @toUtc
@@ -109,7 +119,8 @@ public sealed class RewindStore : IRewindStore
     {
         const string sql = """
             SELECT captured_utc AS CapturedUtc, last_seen_utc AS LastSeenUtc, interval_minutes AS IntervalMinutes,
-                   truncated AS Truncated, groups::text AS GroupsJson, items::text AS ItemsJson
+                   truncated AS Truncated, groups::text AS GroupsJson, items::text AS ItemsJson,
+                   added::text AS AddedJson, removed::text AS RemovedJson
             FROM rewind_snapshots
             WHERE view_id = @viewId AND captured_utc <= @atUtc
             ORDER BY captured_utc DESC
@@ -118,6 +129,43 @@ public sealed class RewindStore : IRewindStore
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.QueryFirstOrDefaultAsync<RewindSnapshotRow>(
             new CommandDefinition(sql, new { viewId, atUtc }, cancellationToken: ct));
+    }
+
+    public async Task<string?> GetItemsAsync(long id, CancellationToken ct)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        return await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
+            "SELECT items::text FROM rewind_snapshots WHERE id = @id", new { id }, cancellationToken: ct));
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, string>> ClassifyLeaversAsync(
+        IReadOnlyCollection<Guid> ticketIds, DateTime sinceUtc, CancellationToken ct)
+    {
+        if (ticketIds.Count == 0) return new Dictionary<Guid, string>();
+        // Closed wins over a queue move in the same window (the ticket is
+        // gone for good either way). Reason literals are constants.
+        const string sql = """
+            SELECT t.id AS Id,
+                   CASE
+                     WHEN t.merged_into_ticket_id IS NOT NULL
+                       OR EXISTS (SELECT 1 FROM ticket_events e
+                                  WHERE e.ticket_id = t.id AND e.created_utc > @sinceUtc
+                                    AND e.event_type = 'StatusChange'
+                                    AND e.metadata->>'toCategory' IN ('Resolved', 'Closed'))
+                       THEN 'closed'
+                     WHEN EXISTS (SELECT 1 FROM ticket_events e
+                                  WHERE e.ticket_id = t.id AND e.created_utc > @sinceUtc
+                                    AND e.event_type = 'QueueChange')
+                       THEN 'queue'
+                     ELSE 'other'
+                   END AS Reason
+            FROM tickets t
+            WHERE t.id = ANY(@ids)
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<(Guid Id, string Reason)>(new CommandDefinition(
+            sql, new { ids = ticketIds.ToArray(), sinceUtc }, cancellationToken: ct));
+        return rows.ToDictionary(r => r.Id, r => r.Reason);
     }
 
     public async Task<IReadOnlySet<Guid>> GetDeletedAsync(IReadOnlyCollection<Guid> ticketIds, CancellationToken ct)

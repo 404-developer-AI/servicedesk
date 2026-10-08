@@ -6410,6 +6410,15 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_rewind_snapshots_last_seen
             ON rewind_snapshots (last_seen_utc);
 
+        -- v0.1.32 — what changed against the view's previous snapshot:
+        -- tickets that came in, and tickets that left with a reason
+        -- (closed = resolved/closed/merged, queue = moved to another queue,
+        -- other). Per ticket with its queue so reads stay access-scoped.
+        -- NULL on rows captured before this (and on a view's first row).
+        ALTER TABLE rewind_snapshots
+            ADD COLUMN IF NOT EXISTS added   JSONB NULL,
+            ADD COLUMN IF NOT EXISTS removed JSONB NULL;
+
         -- ===================================================================
         -- v0.1.32 — Insights Workflow, step 1: capture the facts the
         -- work-order report needs (the report itself comes later).

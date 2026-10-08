@@ -397,7 +397,10 @@ public sealed class FakeUserService : IUserService
     }
 
     public Task<TimesheetFlags> GetTimesheetFlagsAsync(Guid userId, CancellationToken ct = default) =>
-        Task.FromResult(TimesheetFlags.None);
+        Task.FromResult(TimesheetManagers.ContainsKey(userId) ? new TimesheetFlags(true, true) : TimesheetFlags.None);
+
+    /// Users that carry the Timesheet manager flag (Insights Workflow gate).
+    public ConcurrentDictionary<Guid, bool> TimesheetManagers { get; } = new();
 
     /// Test seam (v0.1.27): per-user ISO 27001 flags.
     public ConcurrentDictionary<Guid, IsoFlags> IsoFlagsByUser { get; } = new();
