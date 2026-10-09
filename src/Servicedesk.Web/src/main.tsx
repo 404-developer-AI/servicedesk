@@ -37,7 +37,7 @@ const queryClient = new QueryClient({
 // first beforeLoad gates see the real auth state and never flash the wrong
 // page. If the network call fails, bootstrapAuth falls through to a safe
 // "unauthenticated, no setup" state and the login page surfaces errors itself.
-await bootstrapAuth();
+await bootstrapAuth(queryClient);
 
 // A mid-session 401 (idle timeout / expiry / revocation) now bounces the
 // viewer to the sign-in page instead of surfacing a raw error toast.
