@@ -102,6 +102,10 @@ public static class SettingKeys
 
         public const string ShowContactNotLinkedWarning = "Tickets.ShowContactNotLinkedWarning";
 
+        /// v0.1.33 — timeline entries in the first page of a ticket; older
+        /// ones load on demand. 0 = whole timeline. Clamped 10–1000 (or 0).
+        public const string TimelinePageSize = "Tickets.TimelinePageSize";
+
         /// v0.0.57 — admin-configurable human-facing ticket reference prefix
         /// (e.g. "Ticket#"). Drives the copy-to-clipboard value, the outbound
         /// mail subject tag, the <c>#{ticket.reference}</c> template variable,
@@ -1347,6 +1351,7 @@ public static class SettingKeys
         public const string TicketOpenSessionsDays = "Retention.TicketOpenSessionsDays";
         public const string RewindSnapshotsDays = "Retention.RewindSnapshotsDays";
         public const string WorkflowPickupsDays = "Retention.WorkflowPickupsDays";
+        public const string StagedAttachmentsDays = "Retention.StagedAttachmentsDays";
     }
 
     public static class Health
@@ -1809,6 +1814,8 @@ public static class SettingDefaults
             "Comma-separated column IDs shown by default in the ticket list for new users."),
         new SettingDefault(SettingKeys.Tickets.ShowContactNotLinkedWarning, "true", "bool", "Tickets",
             "Show a pulsing 'Contact not linked' warning in the ticket side panel when the requester has no current company links."),
+        new SettingDefault(SettingKeys.Tickets.TimelinePageSize, "50", "int", "Tickets",
+            "Timeline entries (mails, notes, status changes, …) a ticket opens with; older entries load on demand ('Load older', or when a link points at one). Lower = faster ticket open on long threads; in-ticket search covers loaded entries only. 0 = load the whole timeline at once. Range 10-1000, or 0."),
         new SettingDefault(SettingKeys.Tickets.ReferencePrefix, "Ticket#", "string", "Tickets",
             "Human-facing prefix for a ticket reference (e.g. \"Ticket#\" produces \"Ticket#1234\"). Used by the copy-to-clipboard button, the outbound mail subject tag, the #{ticket.reference} template variable, and survey-invite default text. Pasting a reference in this form into global search, the ticket picker, or a timesheet link resolves it back to the ticket; a bare number or a leading \"#\" are always accepted as well."),
 
@@ -2225,6 +2232,8 @@ public static class SettingDefaults
             "Days to keep Insights Rewind snapshots of tracked views. Counted from the last moment a snapshot was still current. 0 = keep forever."),
         new SettingDefault(SettingKeys.Retention.WorkflowPickupsDays, "365", "int", "Retention",
             "Days to keep Insights Workflow pickup records (where a ticket stood in a tracked view when an agent took it on). 0 = keep forever."),
+        new SettingDefault(SettingKeys.Retention.StagedAttachmentsDays, "7", "int", "Retention",
+            "Days to keep files uploaded or pasted into a ticket composer that were never posted (abandoned drafts, a paste in the wrong ticket). Files still in someone's saved draft, or referenced by any note or mail body, are always kept. 0 = keep forever."),
 
         // Health — Security activity monitor (v0.0.18). Replaces "watch the
         // logs yourself". Defaults are tuned for a single-tenant install with
@@ -2237,7 +2246,7 @@ public static class SettingDefaults
         // uncached evaluation runs dozens of queries; on a busy morning the
         // synchronized polls alone could exhaust the Postgres connection
         // slots (53300 "remaining connection slots are reserved").
-        new SettingDefault(SettingKeys.Health.ReportCacheSeconds, "10", "int", "Health",
+        new SettingDefault(SettingKeys.Health.ReportCacheSeconds, "25", "int", "Health",
             "How long (seconds) the server reuses a computed health report (system + integrations) before re-evaluating. Simultaneous polls from many tabs share one evaluation instead of each running dozens of queries. Admin actions (acknowledge, reset, requeue) refresh it immediately. 0 disables the cache. Clamped to 0-300."),
         new SettingDefault(SettingKeys.Health.PollIntervalSeconds, "30", "int", "Health",
             "How often (seconds) open browser tabs re-poll the health status (dashboard pill, critical banner, health tiles and the Health page). Applies to every client on its next poll. Clamped to 5-600."),

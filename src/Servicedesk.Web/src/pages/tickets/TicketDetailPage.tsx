@@ -7,7 +7,7 @@ import { Check, Copy, Download, FileDown, FolderKanban, GitBranch, ListChecks, M
 import { cn } from "@/lib/utils";
 import { formatTicketRef } from "@/lib/ticketRef";
 import { useTicketReferencePrefix } from "@/hooks/useTicketReferencePrefix";
-import { ticketApi, contactApi, ApiError, type ContactCompanyRole, type GateConfirmation, type StatusGateMatch, type Ticket, type TicketFieldUpdate } from "@/lib/ticket-api";
+import { ticketApi, contactApi, ApiError, mergeTicketMutation, type ContactCompanyRole, type GateConfirmation, type StatusGateMatch, type Ticket, type TicketDetail, type TicketEvent, type TicketFieldUpdate } from "@/lib/ticket-api";
 import { checklistErrorCode, type ChecklistSettings, type TicketChecklist } from "@/lib/checklist-api";
 import { useChecklistSettings, useTicketChecklists, summarizeChecklists } from "./components/checklists/useTicketChecklists";
 import { TicketChecklistBar } from "./components/checklists/TicketChecklistBar";
@@ -37,7 +37,10 @@ import { useViewingTicket } from "@/hooks/usePresence";
 import { useTicketRealtime } from "@/hooks/useTicketRealtime";
 import { SlaPill } from "@/components/sla/SlaPill";
 import { TicketSidePanel, TicketPresence } from "./components/TicketSidePanel";
-import { TicketTimeline, isSystemEvent } from "./components/TicketTimeline";
+import { TicketTimeline, isSystemEvent, isSystemEventType } from "./components/TicketTimeline";
+import { TimelineOlderBar } from "./components/TimelineOlderBar";
+import { useTicketTimeline, type TicketTimeline as TicketTimelineState } from "./useTicketTimeline";
+import { useAuth } from "@/auth/authStore";
 import { PortalRegistrationCard } from "@/components/portal/PortalRegistrationCard";
 import { PinnedEventsSummary } from "./components/PinnedEventsSummary";
 import { TicketTimesheetPanel } from "./components/TicketTimesheetPanel";
@@ -70,7 +73,7 @@ function LoadingSkeleton() {
           <Skeleton className="h-4 w-5/6" />
           <Skeleton className="h-4 w-4/6" />
         </div>
-        <Skeleton className="h-6 w-32 mt-6" />
+        <Skeleton className="h-6 w-32" />
         <Skeleton className="h-24 w-full" />
         <Skeleton className="h-24 w-full" />
       </div>
@@ -385,6 +388,18 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
     queryKey: ["ticket", ticketId],
     queryFn: () => ticketApi.get(ticketId),
   });
+  // v0.1.33 — the detail carries the latest page of the timeline; older
+  // events load on demand and live in this hook.
+  const timeline = useTicketTimeline(ticketId, data);
+  // Order pills in entries outside the loaded page — only the Orders
+  // feature shows them, so only its users pay for the body scan.
+  const ordersFeature = !!useAuth().user?.adsolutOrdersEnabled;
+  const taggedOrdersQ = useQuery({
+    queryKey: ["ticket-tagged-orders", ticketId],
+    queryFn: () => ticketApi.taggedOrders(ticketId),
+    enabled: ordersFeature,
+    staleTime: 5 * 60_000,
+  });
 
   // Pull the requester's email so "Send mail → New" can pre-fill the To
   // field. Same query key as TicketSidePanel so the two components share
@@ -549,12 +564,23 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
   // v0.0.12 stap 4 — deep-link to a specific event (from mention
   // notifications, mail CTAs, etc.). Runs once events are in the DOM.
   // Scroll + ring-animate pattern copied from PinnedEventsSummary.handleJump.
+  // v0.1.33 — an event outside the loaded page is loaded first (once per
+  // hash); the effect re-runs when it arrives.
+  const deepLinkLoadRef = React.useRef<string | null>(null);
+  const { events: timelineEvents, ensureLoaded: ensureEventLoaded } = timeline;
   React.useEffect(() => {
-    if (!data?.events?.length) return;
+    if (!timelineEvents.length) return;
     const hash = window.location.hash;
     const match = hash.match(/^#event-(\d+)$/);
     if (!match) return;
     const eventId = match[1];
+    if (!timelineEvents.some((e) => String(e.id) === eventId)) {
+      const key = `${ticketId}:${eventId}`;
+      if (deepLinkLoadRef.current === key) return;
+      deepLinkLoadRef.current = key;
+      void ensureEventLoaded(Number(eventId));
+      return;
+    }
     // requestAnimationFrame waits for the timeline to render before we try
     // to find the anchor — the query may resolve before the DOM settles.
     requestAnimationFrame(() => {
@@ -566,12 +592,15 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         el.classList.remove("ring-2", "ring-primary/50", "rounded-lg");
       }, 2000);
     });
-  }, [data?.events]);
+  }, [timelineEvents, ensureEventLoaded, ticketId]);
 
   const updateMutation = useMutation({
     mutationFn: (fields: TicketFieldUpdate) => ticketApi.update(ticketId, fields),
     onSuccess: (updated, variables) => {
-      queryClient.setQueryData(["ticket", ticketId], updated);
+      // v0.1.33 — the response is the ticket core only: merge it in, then
+      // refetch the timeline (gate notes / status-change events it added).
+      queryClient.setQueryData<TicketDetail>(["ticket", ticketId], (old) => mergeTicketMutation(old, updated));
+      void queryClient.invalidateQueries({ queryKey: ["ticket", ticketId], exact: true });
       queryClient.invalidateQueries({ queryKey: ["tickets"] });
       // v0.0.89 — a status-change gate whose chosen option keeps the ticket
       // open returns the unchanged status, so the requested status differs
@@ -614,7 +643,10 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
     mutationFn: (vars: { triggerId: string; subject: string }) =>
       ticketApi.confirmOpenGate(ticketId, vars.triggerId, vars.subject),
     onSuccess: (updated) => {
-      queryClient.setQueryData(["ticket", ticketId], updated);
+      // v0.1.33 — the response is the ticket core only: merge it in, then
+      // refetch the timeline (gate notes / status-change events it added).
+      queryClient.setQueryData<TicketDetail>(["ticket", ticketId], (old) => mergeTicketMutation(old, updated));
+      void queryClient.invalidateQueries({ queryKey: ["ticket", ticketId], exact: true });
       queryClient.setQueryData(["ticket-open-gates", ticketId], { gate: null });
       queryClient.invalidateQueries({ queryKey: ["tickets"] });
     },
@@ -825,7 +857,10 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
   const callbackOffMutation = useMutation({
     mutationFn: () => ticketApi.update(ticketId, { isCallback: false }),
     onSuccess: (updated) => {
-      queryClient.setQueryData(["ticket", ticketId], updated);
+      // v0.1.33 — the response is the ticket core only: merge it in, then
+      // refetch the timeline (gate notes / status-change events it added).
+      queryClient.setQueryData<TicketDetail>(["ticket", ticketId], (old) => mergeTicketMutation(old, updated));
+      void queryClient.invalidateQueries({ queryKey: ["ticket", ticketId], exact: true });
       queryClient.invalidateQueries({ queryKey: ["tickets"] });
       setCallbackPrompt("done");
       toast.success("Call-back turned off");
@@ -849,7 +884,10 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         newLinkRole: vars.newLinkRole ?? undefined,
       }),
     onSuccess: (updated) => {
-      queryClient.setQueryData(["ticket", ticketId], updated);
+      // v0.1.33 — the response is the ticket core only: merge it in, then
+      // refetch the timeline (gate notes / status-change events it added).
+      queryClient.setQueryData<TicketDetail>(["ticket", ticketId], (old) => mergeTicketMutation(old, updated));
+      void queryClient.invalidateQueries({ queryKey: ["ticket", ticketId], exact: true });
       queryClient.invalidateQueries({ queryKey: ["tickets"] });
       toast.success("Company assigned");
     },
@@ -884,7 +922,8 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
     );
   }
 
-  const { ticket, body, events, pinnedEvents } = data;
+  const { ticket, body, pinnedEvents } = data;
+  const events = timeline.events;
   const mergedSourceTicketNumbers = data.mergedSourceTicketNumbers ?? [];
   const mergedByUserName = data.mergedByUserName ?? null;
   const mergedIntoTicketNumber = data.mergedIntoTicketNumber ?? null;
@@ -898,6 +937,7 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
   const projectTicketNumber = data.projectTicketNumber ?? null;
   const projectLinkedByUserName = data.projectLinkedByUserName ?? null;
   const projectLinkedTicketCount = data.projectLinkedTicketCount ?? 0;
+  const contactNotLinkedWarning = data.contactNotLinkedWarning;
 
   const otherOpenDialog =
     !!openGate ||
@@ -917,6 +957,11 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         ticket={ticket}
         body={body}
         events={events}
+        timeline={timeline}
+        eventTypeCounts={data.eventTypeCounts}
+        latestMailReceived={data.latestMailReceived ?? null}
+        pinnedEventsOutsidePage={data.pinnedEventsOutsidePage ?? []}
+        serverTaggedOrders={taggedOrdersQ.data ?? []}
         pinnedEvents={pinnedEvents}
         pinnedEventIds={pinnedEventIds}
         updateMutation={updateMutation}
@@ -950,6 +995,7 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         projectTicketNumber={projectTicketNumber}
         projectLinkedByUserName={projectLinkedByUserName}
         projectLinkedTicketCount={projectLinkedTicketCount}
+        contactNotLinkedWarning={contactNotLinkedWarning}
         onTimeAlertBlockingChange={setTimeAlertBlocking}
       />
       <ChecklistBlockedDialog
@@ -1039,7 +1085,8 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
 const ORDER_GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 function TicketDetailBody({
-  ticketId, ticket, body, events, pinnedEvents, pinnedEventIds, updateMutation, queryClient,
+  ticketId, ticket, body, events, timeline, eventTypeCounts, latestMailReceived, pinnedEventsOutsidePage,
+  serverTaggedOrders, pinnedEvents, pinnedEventIds, updateMutation, queryClient,
   onSidePanelUpdate,
   requesterEmail,
   ownMailboxAddresses,
@@ -1069,12 +1116,18 @@ function TicketDetailBody({
   projectTicketNumber,
   projectLinkedByUserName,
   projectLinkedTicketCount,
+  contactNotLinkedWarning,
   onTimeAlertBlockingChange,
 }: {
   ticketId: string;
   ticket: any;
   body: any;
   events: any[];
+  timeline: TicketTimelineState;
+  eventTypeCounts?: Record<string, number>;
+  latestMailReceived: TicketEvent | null;
+  pinnedEventsOutsidePage: TicketEvent[];
+  serverTaggedOrders: { id: string; label: string }[];
   pinnedEvents: any[];
   pinnedEventIds: Set<number>;
   updateMutation: any;
@@ -1116,6 +1169,7 @@ function TicketDetailBody({
   projectTicketNumber: string | null;
   projectLinkedByUserName: string | null;
   projectLinkedTicketCount: number;
+  contactNotLinkedWarning?: boolean;
   /// v0.1.17 — forwarded from the hour-limit dialog so the page can hold
   /// the call-back prompt until that dialog is handled.
   onTimeAlertBlockingChange: (blocking: boolean) => void;
@@ -1142,9 +1196,14 @@ function TicketDetailBody({
     return list;
   }, [events, matchesEvent, mode, query, showSystemEvents]);
 
+  // v0.1.33 — counted over the whole timeline (server per-type counts), not
+  // just the loaded page.
   const systemEventCount = React.useMemo(
-    () => events.filter(isSystemEvent).length,
-    [events],
+    () =>
+      eventTypeCounts
+        ? Object.entries(eventTypeCounts).reduce((n, [type, c]) => (isSystemEventType(type) ? n + c : n), 0)
+        : events.filter(isSystemEvent).length,
+    [events, eventTypeCounts],
   );
 
   // Orders tagged via "::" pills anywhere in this ticket (description or any
@@ -1169,8 +1228,24 @@ function TicketDetailBody({
           seen.set(id, el.getAttribute("data-label") ?? el.textContent ?? "");
         });
     }
+    // v0.1.33 — pills in events that aren't loaded come from the server.
+    for (const o of serverTaggedOrders) {
+      if (ORDER_GUID_RE.test(o.id) && !seen.has(o.id)) seen.set(o.id, o.label);
+    }
     return Array.from(seen, ([id, label]) => ({ id, label }));
-  }, [body, events]);
+  }, [body, events, serverTaggedOrders]);
+
+  // The composer's reply / quote source is the newest inbound mail, which
+  // may be older than the loaded page — the server sends it separately.
+  const mailContextEvents = React.useMemo(
+    () => (latestMailReceived ? [latestMailReceived, ...events] : events),
+    [latestMailReceived, events],
+  );
+  // Pinned-summary previews resolve against loaded + out-of-page pinned events.
+  const pinnedLookupEvents = React.useMemo(
+    () => (pinnedEventsOutsidePage.length > 0 ? [...pinnedEventsOutsidePage, ...events] : events),
+    [pinnedEventsOutsidePage, events],
+  );
 
   // Scroll the activity feed to the latest post when an agent opens (or
   // switches to) a ticket. We park a ref on the same scroll container the
@@ -1337,7 +1412,8 @@ function TicketDetailBody({
             <PinnedEventsSummary
               ticketId={ticketId}
               pinnedEvents={pinnedEvents}
-              events={events}
+              events={pinnedLookupEvents}
+              ensureEventLoaded={timeline.ensureLoaded}
             />
           </div>
         )}
@@ -1396,6 +1472,14 @@ function TicketDetailBody({
             which subtree to walk — nothing outside this container gets
             mutated. */}
         <div ref={setScrollRef} className="flex-1 min-h-0 overflow-y-auto pr-1">
+          {timeline.hasOlder && (
+            <TimelineOlderBar
+              loading={timeline.loadingOlder}
+              searching={!!query.trim()}
+              onLoadOlder={timeline.loadOlder}
+              onLoadAll={timeline.loadAll}
+            />
+          )}
           <TicketTimeline ticketId={ticketId} ticketNumber={ticket.number} events={visibleEvents} pinnedEventIds={pinnedEventIds} />
           {mode === "filter" && query.trim() && visibleEvents.length === 0 && (
             <div className="py-6 text-center text-sm text-muted-foreground">
@@ -1416,7 +1500,7 @@ function TicketDetailBody({
                 queueId={ticket.queueId}
                 statusId={ticket.statusId}
                 internalOnly={projectsEnabled && ticket.isProject}
-                mailContext={buildMailContext(ticket, events, requesterEmail, ownMailboxAddresses)}
+                mailContext={buildMailContext(ticket, mailContextEvents, requesterEmail, ownMailboxAddresses)}
                 onSubmitted={() => {
                   queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
                 }}
@@ -1558,6 +1642,7 @@ function TicketDetailBody({
             projectTicketNumber={projectTicketNumber}
             projectLinkedByUserName={projectLinkedByUserName}
             projectLinkedTicketCount={projectLinkedTicketCount}
+            contactNotLinkedWarning={contactNotLinkedWarning}
             taggedOrders={taggedOrders}
           />
         </div>

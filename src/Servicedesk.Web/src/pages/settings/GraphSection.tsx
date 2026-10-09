@@ -181,7 +181,7 @@ export function GraphSection() {
           )}
         </div>
 
-        <div className="mt-2 border-t border-glass pt-4">
+        <div className="border-t border-glass pt-4">
           <h3 className="text-xs font-medium uppercase tracking-widest text-muted-foreground/60 mb-2">
             Microsoft 365 sign-in
           </h3>

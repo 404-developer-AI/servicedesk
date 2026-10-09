@@ -95,6 +95,9 @@ type TicketSidePanelProps = {
   projectTicketNumber?: string | null;
   projectLinkedByUserName?: string | null;
   projectLinkedTicketCount?: number;
+  /// v0.1.33 — server's first-render answer for the "Contact not linked"
+  /// banner; the live lookups below take over once they have loaded.
+  contactNotLinkedWarning?: boolean;
   /// Orders tagged in the ticket via "::" pills (description or any
   /// article/note), deduped by the detail page. Drives the "Orders" block
   /// in the Status tab; the label is the pill's own "OR3 · Customer" text
@@ -182,6 +185,7 @@ export function TicketSidePanel({
   projectTicketNumber,
   projectLinkedByUserName,
   projectLinkedTicketCount = 0,
+  contactNotLinkedWarning,
   taggedOrders,
 }: TicketSidePanelProps) {
   const queryClient = useQueryClient();
@@ -316,6 +320,7 @@ export function TicketSidePanel({
             projectTicketNumber={projectTicketNumber ?? null}
             projectLinkedByUserName={projectLinkedByUserName ?? null}
             projectLinkedTicketCount={projectLinkedTicketCount}
+            contactNotLinkedWarning={contactNotLinkedWarning}
             taggedOrders={taggedOrders ?? []}
             onRequestLinkProject={() => setLinkProjectOpen(true)}
             onUnlinkProject={() =>
@@ -384,6 +389,7 @@ function StatusTab({
   projectTicketNumber,
   projectLinkedByUserName,
   projectLinkedTicketCount,
+  contactNotLinkedWarning,
   taggedOrders,
   onRequestLinkProject,
   onUnlinkProject,
@@ -409,6 +415,7 @@ function StatusTab({
   projectTicketNumber: string | null;
   projectLinkedByUserName: string | null;
   projectLinkedTicketCount: number;
+  contactNotLinkedWarning?: boolean;
   taggedOrders: { id: string; label: string }[];
   onRequestLinkProject: () => void;
   onUnlinkProject: () => void;
@@ -439,8 +446,13 @@ function StatusTab({
     staleTime: 60_000,
     enabled: showContactNotLinkedSetting && !!ticket.requesterContactId,
   });
+  // v0.1.33 — until both lookups are in, the detail's own answer decides,
+  // so the banner is there on the first paint instead of pushing the
+  // cards below it down a moment later.
   const showContactNotLinked =
-    showContactNotLinkedSetting && (requesterLinks?.length ?? null) === 0;
+    warningSetting !== undefined && (requesterLinks !== undefined || !showContactNotLinkedSetting)
+      ? showContactNotLinkedSetting && (requesterLinks?.length ?? null) === 0
+      : (contactNotLinkedWarning ?? false);
 
   const { data: queues } = useQuery({
     queryKey: ["accessible-queues"],

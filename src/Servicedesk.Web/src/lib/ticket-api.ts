@@ -258,7 +258,18 @@ export type TicketDetail = {
   /// reject card when present.
   portalRegistration?: { userId: string; status: string; email: string; displayName: string } | null;
   body: TicketBody;
+  /// v0.1.33 — the latest page of the timeline (oldest first). Older events
+  /// load through `listOlderEvents`; see pages/tickets/useTicketTimeline.ts.
   events: TicketEvent[];
+  /// True when events older than `events[0]` exist.
+  hasOlderEvents?: boolean;
+  /// Event count per type over the whole timeline (role-filtered).
+  eventTypeCounts?: Record<string, number>;
+  /// The newest inbound mail when it is not in `events` (composer reply /
+  /// quote / recipient source); null when it is in the page or absent.
+  latestMailReceived?: TicketEvent | null;
+  /// Pinned events that are not in `events` (pinned-summary previews).
+  pinnedEventsOutsidePage?: TicketEvent[];
   pinnedEvents: TicketEventPin[];
   companyAlert: CompanyAlert | null;
   /// Numbers of tickets that have been merged INTO this ticket (v0.0.23).
@@ -304,7 +315,36 @@ export type TicketDetail = {
   projectTicketSubject: string | null;
   projectLinkedByUserName: string | null;
   projectLinkedTicketCount: number;
+  /// v0.1.33 — the "Contact not linked" banner as decided with the detail
+  /// (setting on and requester has no company link), so it renders on the
+  /// first paint. Absent on mutation responses.
+  contactNotLinkedWarning?: boolean;
 };
+
+/// v0.1.33 — what PATCH /api/tickets/{id}, /company, /requester and the
+/// open-gate confirm return: the ticket core only, no timeline (it was the
+/// full detail incl. every event, p95 879 KB). Merge it into the cached
+/// detail with `mergeTicketMutation`; the realtime refetch brings new events.
+export type TicketMutationResult = {
+  ticket: Ticket;
+  body: TicketBody;
+  pinnedEvents: TicketEventPin[];
+  companyAlert?: CompanyAlert | null;
+};
+
+export function mergeTicketMutation(
+  current: TicketDetail | undefined,
+  result: TicketMutationResult,
+): TicketDetail | undefined {
+  if (!current) return current;
+  return {
+    ...current,
+    ticket: result.ticket,
+    body: result.body,
+    pinnedEvents: result.pinnedEvents,
+    companyAlert: result.companyAlert ?? null,
+  };
+}
 
 /// Lightweight row returned by /api/tickets/picker for the merge dialog.
 export type TicketPickerItem = {
@@ -1180,7 +1220,22 @@ export const ticketApi = {
   create: (input: CreateTicketRequest) =>
     request<CreateTicketResponse>("POST", "/api/tickets", input),
   update: (id: string, fields: TicketFieldUpdate) =>
-    request<TicketDetail>("PATCH", `/api/tickets/${id}`, fields),
+    request<TicketMutationResult>("PATCH", `/api/tickets/${id}`, fields),
+  /// v0.1.33 — "::" order pills across the whole timeline (the detail only
+  /// carries the latest page). Orders-feature users only.
+  taggedOrders: (id: string) =>
+    request<{ id: string; label: string }[]>("GET", `/api/tickets/${id}/tagged-orders`),
+  /// v0.1.33 — timeline events older than `beforeId` (a page), back to and
+  /// including `untilId`, or all of them (`all`). Oldest first.
+  listOlderEvents: (id: string, opts: { beforeId: number; untilId?: number; all?: boolean }) => {
+    const params = new URLSearchParams({ beforeId: String(opts.beforeId) });
+    if (opts.untilId !== undefined) params.set("untilId", String(opts.untilId));
+    if (opts.all) params.set("all", "true");
+    return request<{ events: TicketEvent[]; hasMore: boolean }>(
+      "GET",
+      `/api/tickets/${id}/events?${params.toString()}`,
+    );
+  },
   listStatusGates: (id: string, toStatusId: string) =>
     request<{ items: StatusGateMatch[] }>(
       "GET",
@@ -1197,7 +1252,7 @@ export const ticketApi = {
   /// subject, marks the ticket reviewed, runs the trigger's actions, and
   /// returns the refreshed detail.
   confirmOpenGate: (id: string, triggerId: string, subject: string) =>
-    request<TicketDetail & { reviewed: boolean }>(
+    request<TicketMutationResult & { reviewed: boolean }>(
       "POST",
       `/api/tickets/${id}/open-gates/confirm`,
       { triggerId, subject },
@@ -1233,9 +1288,9 @@ export const ticketApi = {
   updatePinRemark: (id: string, eventId: number, remark: string) =>
     request<TicketEventPin>("PATCH", `/api/tickets/${id}/events/${eventId}/pin`, { remark }),
   assignCompany: (id: string, body: AssignTicketCompanyRequest) =>
-    request<TicketDetail>("PATCH", `/api/tickets/${id}/company`, body),
+    request<TicketMutationResult>("PATCH", `/api/tickets/${id}/company`, body),
   changeRequester: (id: string, contactId: string) =>
-    request<TicketDetail>("PATCH", `/api/tickets/${id}/requester`, { contactId }),
+    request<TicketMutationResult>("PATCH", `/api/tickets/${id}/requester`, { contactId }),
   picker: (q?: string, excludeTicketId?: string, limit = 20, recentFirst = false, projectsOnly = false) => {
     const params = new URLSearchParams();
     if (q) params.set("q", q);

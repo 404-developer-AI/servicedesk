@@ -31,12 +31,17 @@ public sealed class ProtectedSecretStore : IProtectedSecretStore
     private readonly IDataProtector _protector;
     private readonly TimeProvider _time;
     private readonly ConcurrentDictionary<string, CachedSecret> _cache = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, CachedExists> _exists = new(StringComparer.Ordinal);
+
+    private const string ExistsSql =
+        "SELECT EXISTS (SELECT 1 FROM protected_secrets WHERE key = @key)";
 
     // Bumped by every Set/Delete: a read that started before a write must
     // not put the pre-write value back into the cache.
     private long _generation;
 
     private sealed record CachedSecret(string? ProtectedValue, long ExpiresTimestamp);
+    private sealed record CachedExists(bool Exists, long ExpiresTimestamp);
 
     public ProtectedSecretStore(NpgsqlDataSource dataSource, IDataProtectionProvider provider, TimeProvider? time = null)
     {
@@ -72,9 +77,29 @@ public sealed class ProtectedSecretStore : IProtectedSecretStore
     }
 
     public async Task<bool> HasAsync(string key, CancellationToken ct = default)
+    {
         // value_protected is NOT NULL, so "row exists" == "value not null";
         // shares the cache entry with GetAsync.
-        => await GetProtectedAsync(key, ct) is not null;
+        if (Cacheable(key)) return await GetProtectedAsync(key, ct) is not null;
+
+        // v0.1.33 — rotating keys never cache their value, but whether the row
+        // exists doesn't change when the token rotates (only Set/Delete change
+        // it, and those invalidate). The health check asks this on every
+        // evaluation; cache the answer, never the value.
+        if (_exists.TryGetValue(key, out var hit) && hit.ExpiresTimestamp > _time.GetTimestamp())
+            return hit.Exists;
+
+        var generation = Interlocked.Read(ref _generation);
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var exists = await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
+            ExistsSql, new { key }, cancellationToken: ct));
+        if (Interlocked.Read(ref _generation) == generation)
+        {
+            var expires = _time.GetTimestamp() + (long)(CacheTtl.TotalSeconds * _time.TimestampFrequency);
+            _exists[key] = new CachedExists(exists, expires);
+        }
+        return exists;
+    }
 
     public async Task DeleteAsync(string key, CancellationToken ct = default)
     {
@@ -90,6 +115,7 @@ public sealed class ProtectedSecretStore : IProtectedSecretStore
     {
         Interlocked.Increment(ref _generation);
         _cache.TryRemove(key, out _);
+        _exists.TryRemove(key, out _);
     }
 
     private async Task<string?> GetProtectedAsync(string key, CancellationToken ct)

@@ -20,6 +20,8 @@ type PinnedEventsSummaryProps = {
   ticketId: string;
   pinnedEvents: TicketEventPin[];
   events: TicketEvent[];
+  /// v0.1.33 — loads the timeline back to an event outside the loaded page.
+  ensureEventLoaded?: (eventId: number) => Promise<boolean>;
 };
 
 function PinnedItem({
@@ -115,7 +117,7 @@ function PinnedItem({
         </p>
 
         {editingRemark ? (
-          <div className="flex items-center gap-1.5 mt-1" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
             <input
               type="text"
               value={remarkDraft}
@@ -149,7 +151,7 @@ function PinnedItem({
             </button>
           </div>
         ) : pin.remark ? (
-          <div className="flex items-center gap-1.5 mt-0.5">
+          <div className="flex items-center gap-1.5">
             <p className="text-[11px] italic text-primary/60 truncate flex-1">
               {pin.remark}
             </p>
@@ -190,6 +192,7 @@ export function PinnedEventsSummary({
   ticketId,
   pinnedEvents,
   events,
+  ensureEventLoaded,
 }: PinnedEventsSummaryProps) {
   const [open, setOpen] = React.useState(false);
 
@@ -199,8 +202,14 @@ export function PinnedEventsSummary({
     return map;
   }, [events]);
 
-  const scrollToEvent = (eventId: number) => {
+  const scrollToEvent = async (eventId: number) => {
     setOpen(false);
+    // v0.1.33 — a pin can point at an event older than the loaded timeline
+    // page: load back to it first, then give React a frame to render it.
+    if (!document.getElementById(`event-${eventId}`) && ensureEventLoaded) {
+      await ensureEventLoaded(eventId);
+      await new Promise((r) => setTimeout(r, 50));
+    }
     // Small delay so popover closes before scroll
     requestAnimationFrame(() => {
       const el = document.getElementById(`event-${eventId}`);
@@ -247,7 +256,7 @@ export function PinnedEventsSummary({
                 pin={pin}
                 event={eventsById.get(pin.eventId)}
                 ticketId={ticketId}
-                onJump={() => scrollToEvent(pin.eventId)}
+                onJump={() => void scrollToEvent(pin.eventId)}
               />
             ))}
           </div>

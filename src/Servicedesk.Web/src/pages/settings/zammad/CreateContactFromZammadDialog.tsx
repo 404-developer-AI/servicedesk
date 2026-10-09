@@ -195,7 +195,7 @@ export function CreateContactFromZammadDialog({
             </Field>
           </div>
           {userQuery.data && !namesEditedByUser ? (
-            <div className="-mt-2 text-[10px] text-muted-foreground/60">
+            <div className="text-[10px] text-muted-foreground/60">
               Pre-filled from Zammad — edit if needed.
             </div>
           ) : null}

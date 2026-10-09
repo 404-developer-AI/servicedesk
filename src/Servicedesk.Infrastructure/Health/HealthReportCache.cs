@@ -34,7 +34,7 @@ public sealed class HealthReportCache : IHealthReportCache
 {
     public const int TtlFloorSeconds = 0;
     public const int TtlCeilingSeconds = 300;
-    private const int TtlFallbackSeconds = 10;
+    private const int TtlFallbackSeconds = 25;
 
     private readonly IHealthAggregator _system;
     private readonly IIntegrationsHealthAggregator _integrations;

@@ -447,6 +447,29 @@ function GeneralTab() {
     onError: () => toast.error("Could not update setting"),
   });
 
+  // v0.1.33 — ticket timeline paging: events in the first page of a ticket
+  // (older ones load on demand). 0 = load the whole timeline at once.
+  const savedTimelinePage = useMemo(
+    () => entries?.find((e) => e.key === "Tickets.TimelinePageSize")?.value ?? "50",
+    [entries],
+  );
+  const [timelinePage, setTimelinePage] = useState<string | null>(null);
+  const timelinePageValue = timelinePage ?? savedTimelinePage;
+  const timelinePageNum = Number.parseInt(timelinePageValue, 10);
+  const timelinePageValid =
+    Number.isFinite(timelinePageNum) && (timelinePageNum === 0 || (timelinePageNum >= 10 && timelinePageNum <= 1000));
+  const timelinePageDirty = timelinePage !== null && timelinePage !== savedTimelinePage;
+
+  const updateTimelinePage = useMutation({
+    mutationFn: (next: string) => settingsApi.update("Tickets.TimelinePageSize", next),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings", "tickets-general"] });
+      setTimelinePage(null);
+      toast.success("Setting updated");
+    },
+    onError: () => toast.error("Could not update setting"),
+  });
+
   // v0.0.102 — bulk actions on the ticket list. The enable flag hides the
   // selection UI entirely; the cap bounds one request's worth of work and is
   // re-enforced server-side (hard ceiling 500).
@@ -626,6 +649,49 @@ function GeneralTab() {
         {!maxRowsValid && (
           <p className="mt-2 text-xs text-destructive">
             Enter a whole number between 1 and 5000.
+          </p>
+        )}
+      </section>
+
+      <section className="glass-card p-5">
+        <div className="space-y-1">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            Ticket timeline
+          </h2>
+          <p className="text-xs text-muted-foreground/70">
+            How many timeline entries (mails, notes, status changes, …) a ticket
+            opens with. Older entries load with “Load older” at the top of the
+            timeline, or on their own when a link points at one. Fewer means a
+            faster ticket open on long threads; in-ticket search only covers
+            what is loaded. 0 loads the whole timeline at once. Range 10–1000,
+            or 0.
+          </p>
+        </div>
+        <div className="mt-4 flex items-end gap-3">
+          <label className="min-w-0 flex-1 space-y-1.5">
+            <span className="text-sm font-medium text-foreground">Entries per page</span>
+            <Input
+              type="number"
+              min={0}
+              max={1000}
+              value={timelinePageValue}
+              disabled={isLoading || updateTimelinePage.isPending}
+              onChange={(e) => setTimelinePage(e.target.value)}
+              placeholder="50"
+              className="max-w-xs"
+            />
+          </label>
+          <Button
+            type="button"
+            disabled={!timelinePageDirty || !timelinePageValid || updateTimelinePage.isPending}
+            onClick={() => updateTimelinePage.mutate(String(timelinePageNum))}
+          >
+            Save
+          </Button>
+        </div>
+        {!timelinePageValid && (
+          <p className="mt-2 text-xs text-destructive">
+            Enter 0, or a whole number between 10 and 1000.
           </p>
         )}
       </section>
@@ -1275,7 +1341,7 @@ function QueueDialog({
               "Inherit" uses the global Settings → Timesheet switch + limit;
               On/Off force it for this queue; the limit override replaces the
               global limit for tickets in this queue only. */}
-          <div className="mt-2 space-y-3 rounded-md border border-glass-strong bg-glass p-3">
+          <div className="space-y-3 rounded-md border border-glass-strong bg-glass p-3">
             <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
               Hour-limit alert
             </div>
@@ -1327,7 +1393,7 @@ function QueueDialog({
               to filter the status dropdown and the trigger set_status
               picker. Default status is the auto-flip target when a
               ticket moves into this queue on a status not in the list. */}
-          <div className="mt-2 space-y-3 rounded-md border border-glass-strong bg-glass p-3">
+          <div className="space-y-3 rounded-md border border-glass-strong bg-glass p-3">
             <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
               Status scope
             </div>
@@ -1402,7 +1468,7 @@ function QueueDialog({
             </p>
           </div>
 
-          <div className="mt-2 space-y-3 rounded-md border border-glass-strong bg-glass p-3">
+          <div className="space-y-3 rounded-md border border-glass-strong bg-glass p-3">
             <div className="flex items-center justify-between">
               <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
                 Microsoft Graph mailboxes

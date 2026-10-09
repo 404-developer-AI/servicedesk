@@ -99,7 +99,7 @@ export function AssetDetailSheet({ assetId, onClose }: Props) {
                 href={`${trmmStatus.data.baseUrl}/agents/${asset.data.trmmAgentId}`}
                 target="_blank"
                 rel="noreferrer"
-                className="mt-4 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
               >
                 Open in Tactical RMM <ExternalLink className="h-3 w-3" />
               </a>

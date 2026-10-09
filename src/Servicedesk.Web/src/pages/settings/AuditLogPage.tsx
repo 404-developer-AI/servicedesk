@@ -28,29 +28,43 @@ const EVENT_TYPES = [
   "security.ip.rule_removed",
 ] as const;
 
+/// A `YYYY-MM-DD` day in the server's zone → its UTC instant (start of that
+/// day, or the last millisecond of it with `endOfDay`). Uses the current
+/// server offset; a DST change inside the range shifts its edge by an hour.
+function serverDayToUtc(day: string, offsetMinutes: number, endOfDay = false): string | undefined {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!m) return undefined;
+  const startMs = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) - offsetMinutes * 60_000;
+  return new Date(endOfDay ? startMs + 86_400_000 - 1 : startMs).toISOString();
+}
+
 export function AuditLogPage() {
   const [eventType, setEventType] = useState<string>("");
   const [actor, setActor] = useState<string>("");
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
   const [cursor, setCursor] = useState<number | undefined>(undefined);
   const [selected, setSelected] = useState<AuditEntry | null>(null);
+
+  const serverOffsetMinutes = useServerOffsetMinutes();
+  const offsetMinutes = serverOffsetMinutes ?? 0;
 
   const query: AuditListQuery = useMemo(
     () => ({
       eventType: eventType || undefined,
       actor: actor || undefined,
+      fromUtc: fromDate ? serverDayToUtc(fromDate, offsetMinutes) : undefined,
+      toUtc: toDate ? serverDayToUtc(toDate, offsetMinutes, true) : undefined,
       cursor,
       limit: 50,
     }),
-    [eventType, actor, cursor],
+    [eventType, actor, fromDate, toDate, offsetMinutes, cursor],
   );
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["audit", query],
     queryFn: () => auditApi.list(query),
   });
-
-  const serverOffsetMinutes = useServerOffsetMinutes();
-  const offsetMinutes = serverOffsetMinutes ?? 0;
 
   // Layout: page header + filter bar + pagination footer stay pinned; only
   // the table body scrolls. We bound the outer flex-col to the visible
@@ -102,6 +116,44 @@ export function AuditLogPage() {
                 className="h-9 w-56"
               />
             </label>
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+              From
+              <input
+                type="date"
+                value={fromDate}
+                max={toDate || undefined}
+                onChange={(e) => {
+                  setFromDate(e.target.value);
+                  setCursor(undefined);
+                }}
+                className="h-9 rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-hidden focus:border-primary/60"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+              To
+              <input
+                type="date"
+                value={toDate}
+                min={fromDate || undefined}
+                onChange={(e) => {
+                  setToDate(e.target.value);
+                  setCursor(undefined);
+                }}
+                className="h-9 rounded-md border border-glass bg-glass px-2 text-sm text-foreground outline-hidden focus:border-primary/60"
+              />
+            </label>
+            {(fromDate || toDate) && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setFromDate("");
+                  setToDate("");
+                  setCursor(undefined);
+                }}
+              >
+                Clear dates
+              </Button>
+            )}
             <div className="ml-auto flex gap-2">
               <Button
                 variant="secondary"

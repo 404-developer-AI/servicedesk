@@ -795,6 +795,13 @@ public sealed class DatabaseBootstrapper : IHostedService
             ON attachments (event_id)
             WHERE event_id IS NOT NULL;
 
+        -- v0.1.33 — staged composer uploads by age, for the retention sweep
+        -- of never-posted uploads (RetentionWorker). Small: only rows still
+        -- waiting for a post.
+        CREATE INDEX IF NOT EXISTS ix_attachments_staged
+            ON attachments (created_utc, id)
+            WHERE owner_kind = 'Ticket' AND event_id IS NULL;
+
         -- Extend attachment_jobs state CHECK with 'Cancelled' so an admin can
         -- dismiss dead-lettered jobs from the Health page without losing the
         -- attempt history (attempts stay; the job row flips to terminal state).
@@ -984,22 +991,12 @@ public sealed class DatabaseBootstrapper : IHostedService
             END IF;
         END $$;
 
-        -- Mail-scoped FTS: subject + body_text + sender identity.
-        ALTER TABLE mail_messages
-            ADD COLUMN IF NOT EXISTS search_vector TSVECTOR
-                GENERATED ALWAYS AS (
-                    to_tsvector('simple',
-                        lower(
-                            coalesce(subject, '') || ' ' ||
-                            coalesce(body_text, '') || ' ' ||
-                            coalesce(from_address::text, '') || ' ' ||
-                            coalesce(from_name, '')
-                        )
-                    )
-                ) STORED;
-
-        CREATE INDEX IF NOT EXISTS ix_mail_messages_search_vector
-            ON mail_messages USING GIN (search_vector);
+        -- Mail-scoped FTS (generated search_vector + GIN index) was never
+        -- read: global search goes through ticket_event_search. Removed in
+        -- v0.1.33 — 18 MB of index plus a tsvector build on every inbound
+        -- mail. Only the derived column goes; DROP COLUMN is metadata-only.
+        DROP INDEX IF EXISTS ix_mail_messages_search_vector;
+        ALTER TABLE mail_messages DROP COLUMN IF EXISTS search_vector;
 
         -- SLA policy targets are optional (first-response-only or resolution-only).
         ALTER TABLE sla_policies ALTER COLUMN first_response_minutes DROP NOT NULL;
@@ -2185,9 +2182,8 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- Attachments hergebruiken het bestaande blob-pipeline-pattern via
         -- owner_kind='KbArticle'. Geen separate KB-attachment-tabel.
         --
-        -- FTS-config: 'simple' + lower() (mirrors the existing pattern in
-        -- mail_messages.search_vector — unaccent() is STABLE and cannot
-        -- live in a STORED generated column on this install layout).
+        -- FTS-config: 'simple' + lower() — unaccent() is STABLE and cannot
+        -- live in a STORED generated column on this install layout.
         -- ===================================================================
 
         -- Extend the existing attachments owner-kind whitelist to include
@@ -5931,6 +5927,21 @@ public sealed class DatabaseBootstrapper : IHostedService
                 UPDATE settings SET value = '240', updated_utc = now()
                  WHERE key = 'Security.RateLimit.Global.PermitPerWindow' AND value = '120';
                 INSERT INTO data_migrations (name) VALUES ('v0_1_3_ratelimit_global_default');
+            END IF;
+        END $do$;
+
+        -- v0.1.33 — Health.ReportCacheSeconds default 10 → 25. With tabs
+        -- polling every 30 s a 10 s TTL missed on about half the polls
+        -- (~190 re-evaluations of ~13 queries an hour, Performance report
+        -- 2026-10-08). Lift only an untouched seed, once.
+        DO $do$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM data_migrations WHERE name = 'v0_1_33_health_report_cache_default'
+            ) THEN
+                UPDATE settings SET value = '25', updated_utc = now()
+                 WHERE key = 'Health.ReportCacheSeconds' AND value = '10';
+                INSERT INTO data_migrations (name) VALUES ('v0_1_33_health_report_cache_default');
             END IF;
         END $do$;
 

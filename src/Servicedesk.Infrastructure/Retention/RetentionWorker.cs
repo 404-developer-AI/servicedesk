@@ -209,8 +209,142 @@ public sealed class RetentionWorker : BackgroundService
                 _logger.LogInformation("RetentionWorker pruned {Count} rows from {Table} older than {Days}d.", total, rule.Table, days);
         }
 
+        ct.ThrowIfCancellationRequested();
+        var stagedDays = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Retention.StagedAttachmentsDays, ct), 0, 3650);
+        var staged = stagedDays == 0 ? 0 : await SweepStagedAttachmentsAsync(conn, stagedDays, ct);
+        deleted[StagedAttachmentsLabel] = staged;
+        if (staged > 0)
+            _logger.LogInformation("RetentionWorker pruned {Count} unposted composer uploads older than {Days}d.", staged, stagedDays);
+
         sw.Stop();
         run.AddItems(deleted.Values.Sum());
         _health.RecordRun(deleted, sw.Elapsed, DateTime.UtcNow + interval);
+    }
+
+    private const string StagedAttachmentsLabel = "attachments (unposted uploads)";
+
+    // Candidates per round. Each round runs one reference check over the
+    // bodies written since the oldest candidate, so it stays bounded.
+    private const int StagedCandidatesPerRound = 500;
+
+    /// v0.1.33 — uploads pasted into a composer that were never posted stay
+    /// staged (owner_kind='Ticket', event_id NULL) forever: invisible in the
+    /// timeline, still downloadable with queue access. A row is removed only
+    /// when it is older than the cutoff AND nothing points at it:
+    ///   • no saved workspace draft of any user mentions its id;
+    ///   • no note / mail / ticket body, event revision, KB article or compose
+    ///     template mentions it — a body copied into another composer (or
+    ///     ticket) keeps rendering through the original staged row. Only
+    ///     events written or edited after the upload can reference it, which
+    ///     bounds the largest scan.
+    /// The blob itself stays: the blob store is content-addressed and has its
+    /// own GC. Deletes re-check the staged guard so a post racing the sweep
+    /// keeps its file.
+    private static async Task<long> SweepStagedAttachmentsAsync(NpgsqlConnection conn, int days, CancellationToken ct)
+    {
+        const string candidatesSql = """
+            SELECT id AS Id, created_utc AS CreatedUtc
+              FROM attachments
+             WHERE owner_kind = 'Ticket'
+               AND event_id IS NULL
+               AND created_utc < @Cutoff
+               AND (@AfterUtc::timestamptz IS NULL OR (created_utc, id) > (@AfterUtc, @AfterId))
+             ORDER BY created_utc, id
+             LIMIT @Limit
+            """;
+        // Bodies are matched by pulling every attachment id out of them in
+        // one regex pass and hash-joining the candidates — not strpos per
+        // candidate per row, which multiplied the scan by the batch size.
+        const string referencedSql = """
+            WITH c(id) AS (SELECT unnest(@Ids::text[])),
+            body_refs(id) AS (
+                SELECT lower(m[1])
+                  FROM ticket_events e
+                 CROSS JOIN LATERAL regexp_matches(e.body_html, '/attachments/([0-9a-fA-F-]{36})', 'g') m
+                 WHERE (e.created_utc >= @MinCreated OR e.edited_utc >= @MinCreated)
+                   AND e.body_html LIKE '%/attachments/%'
+                UNION
+                SELECT lower(m[1])
+                  FROM ticket_event_revisions r
+                 CROSS JOIN LATERAL regexp_matches(r.body_html_before, '/attachments/([0-9a-fA-F-]{36})', 'g') m
+                 WHERE r.edited_utc >= @MinCreated
+                   AND r.body_html_before LIKE '%/attachments/%'
+                UNION
+                SELECT lower(m[1])
+                  FROM ticket_bodies b
+                 CROSS JOIN LATERAL regexp_matches(b.body_html, '/attachments/([0-9a-fA-F-]{36})', 'g') m
+                 WHERE b.body_html LIKE '%/attachments/%'
+                UNION
+                -- A screenshot copied from a ticket composer into a KB
+                -- article or a compose template still points at the ticket row.
+                SELECT lower(m[1])
+                  FROM kb_article_translations k
+                 CROSS JOIN LATERAL regexp_matches(k.body_html, '/attachments/([0-9a-fA-F-]{36})', 'g') m
+                 WHERE k.body_html LIKE '%/attachments/%'
+                UNION
+                SELECT lower(m[1])
+                  FROM compose_templates t
+                 CROSS JOIN LATERAL regexp_matches(t.body_html, '/attachments/([0-9a-fA-F-]{36})', 'g') m
+                 WHERE t.body_html LIKE '%/attachments/%'
+            )
+            SELECT c.id FROM c JOIN body_refs r ON r.id = c.id
+            UNION
+            SELECT c.id FROM c
+             WHERE EXISTS (SELECT 1 FROM user_preferences p
+                            WHERE p.pref_key LIKE 'workspace:%'
+                              AND strpos(lower(p.pref_value), c.id) > 0)
+            """;
+        const string deleteSql = """
+            DELETE FROM attachments
+             WHERE id = ANY(@Ids)
+               AND owner_kind = 'Ticket'
+               AND event_id IS NULL
+               AND created_utc < @Cutoff
+            """;
+
+        var cutoff = DateTime.UtcNow - TimeSpan.FromDays(days);
+        DateTime? afterUtc = null;
+        var afterId = Guid.Empty;
+        long total = 0;
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            var candidates = (await conn.QueryAsync<StagedCandidate>(new CommandDefinition(candidatesSql, new
+            {
+                Cutoff = cutoff,
+                AfterUtc = afterUtc,
+                AfterId = afterId,
+                Limit = StagedCandidatesPerRound,
+            }, cancellationToken: ct))).ToList();
+            if (candidates.Count == 0) break;
+
+            var ids = candidates.Select(c => c.Id.ToString()).ToArray();
+            var referenced = (await conn.QueryAsync<string>(new CommandDefinition(referencedSql, new
+            {
+                Ids = ids,
+                MinCreated = candidates[0].CreatedUtc,
+            }, cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var orphans = candidates.Where(c => !referenced.Contains(c.Id.ToString())).Select(c => c.Id).ToArray();
+            if (orphans.Length > 0)
+            {
+                total += await conn.ExecuteAsync(new CommandDefinition(deleteSql, new
+                {
+                    Ids = orphans,
+                    Cutoff = cutoff,
+                }, cancellationToken: ct));
+            }
+
+            if (candidates.Count < StagedCandidatesPerRound) break;
+            afterUtc = candidates[^1].CreatedUtc;
+            afterId = candidates[^1].Id;
+        }
+        return total;
+    }
+
+    private sealed class StagedCandidate
+    {
+        public Guid Id { get; set; }
+        public DateTime CreatedUtc { get; set; }
     }
 }

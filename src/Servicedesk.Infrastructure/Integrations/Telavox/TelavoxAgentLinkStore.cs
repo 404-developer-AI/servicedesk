@@ -132,6 +132,28 @@ public sealed class TelavoxAgentLinkStore : ITelavoxAgentLinkStore
         }, cancellationToken: ct));
     }
 
+    public async Task MarkPollSucceededAsync(
+        IReadOnlyCollection<Guid> userIds,
+        DateTime lastPollUtc,
+        CancellationToken ct = default)
+    {
+        if (userIds.Count == 0) return;
+        const string sql = """
+            UPDATE telavox_agent_links
+               SET last_poll_utc      = @LastPollUtc,
+                   last_poll_error    = NULL,
+                   consecutive_errors = 0,
+                   updated_utc        = now()
+             WHERE user_id = ANY(@UserIds)
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            UserIds = userIds.ToArray(),
+            LastPollUtc = lastPollUtc,
+        }, cancellationToken: ct));
+    }
+
     /// Row-DTO for Dapper. <c>sealed class { get; set; }</c> per the project
     /// Dapper convention — record-structs and positional records are both
     /// known to trip Dapper's nullable-handling and constructor-ordering.

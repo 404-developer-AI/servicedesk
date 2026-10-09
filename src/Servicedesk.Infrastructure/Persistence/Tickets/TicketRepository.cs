@@ -538,7 +538,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
 
     public async Task<TicketDetailRelations?> GetDetailRelationsAsync(Guid ticketId, CancellationToken ct)
     {
-        // Seven statements, one batch, one connection. Every branch is an
+        // Nine statements, one batch, one connection. Every branch is an
         // indexed point lookup or a sparse-index scan (ix_tickets_merged_into,
         // ix_tickets_split_from, ix_tickets_parent), so the cost is dominated
         // by the round-trip we are saving, not by the queries.
@@ -612,6 +612,13 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             -- 7: how many tickets are linked to this ticket as their project
             SELECT COUNT(*) FROM tickets
             WHERE project_ticket_id = @ticketId AND is_deleted = FALSE;
+
+            -- 8: how many companies the requester is linked to (v0.1.33) —
+            --    the side panel's "Contact not linked" banner needs it on the
+            --    first render instead of after its own lookup (layout shift).
+            SELECT COUNT(*) FROM contact_companies cc
+            JOIN tickets t ON t.requester_contact_id = cc.contact_id
+            WHERE t.id = @ticketId;
             """;
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
@@ -626,6 +633,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         var companyAlert = await grid.ReadFirstOrDefaultAsync<TicketCompanyAlertSource>();
         var project = await grid.ReadFirstOrDefaultAsync<ProjectTicketSummary>();
         var projectLinkedCount = await grid.ReadFirstAsync<int>();
+        var requesterCompanyLinkCount = await grid.ReadFirstAsync<int>();
         if (head is null) return null;
 
         return new TicketDetailRelations(
@@ -639,7 +647,8 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             ChildTickets: children,
             CompanyAlert: companyAlert,
             Project: project,
-            ProjectLinkedTicketCount: projectLinkedCount);
+            ProjectLinkedTicketCount: projectLinkedCount,
+            RequesterCompanyLinkCount: requesterCompanyLinkCount);
     }
 
     private sealed class RelationsHeadRow
