@@ -1,3 +1,4 @@
+import type { QueryClient } from "@tanstack/react-query";
 import { authApi } from "@/lib/api";
 import { authStore, type AuthUser } from "@/auth/authStore";
 import { refreshPortalAuth } from "@/auth/portalAuth";
@@ -10,7 +11,7 @@ import { hydrateRecentTicketsFromServer } from "@/stores/useRecentTicketsStore";
 /// over, so route gates can trust `authStore.get()` from their very first call.
 /// Network failures fall through to an unauthenticated, non-setup state — the
 /// login page then surfaces the real error on submit.
-export async function bootstrapAuth(): Promise<void> {
+export async function bootstrapAuth(queryClient?: QueryClient): Promise<void> {
   // v0.1.1 — the portal rides its own session cookie, so /api/auth/me never
   // sees a customer (or shadow) session. On portal paths the portal gates
   // need the portal session primed before the router mounts; fetched in
@@ -32,7 +33,11 @@ export async function bootstrapAuth(): Promise<void> {
     // recent tickets); those endpoints are agent-gated and would only 403.
     if (me.user && me.user.role !== "Customer") {
       useColumnPrefsStore.getState().loadFromServer();
-      await useWorkspaceStore.getState().loadFromServer();
+      const workspaceRaw = await useWorkspaceStore.getState().loadFromServer();
+      // v0.1.33 — seed the shared query cache with the same response so the
+      // components that read it through React Query (KB chat widget on every
+      // page, ticket list) don't fire a second GET on a full page load.
+      if (workspaceRaw) queryClient?.setQueryData(["preferences", "workspace"], workspaceRaw);
       const ws = useWorkspaceStore.getState();
       if (ws.loaded) {
         useSidebarStore.getState().setCollapsed(ws.sidebarCollapsed);

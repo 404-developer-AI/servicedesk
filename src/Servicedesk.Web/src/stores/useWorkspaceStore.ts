@@ -113,7 +113,9 @@ type WorkspaceState = {
     intent: Omit<PendingMailAction, "id">,
   ) => void;
   clearMailAction: () => void;
-  loadFromServer: () => Promise<void>;
+  /** Resolves with the raw server map (null on failure) so the caller can
+   *  seed the shared ["preferences", "workspace"] query cache with it. */
+  loadFromServer: () => Promise<Record<string, string> | null>;
   flush: () => Promise<void>;
   flushSync: () => void;
 };
@@ -323,8 +325,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       // load must not re-send it unchanged.
       lastSaved.clear();
       markSaved(toEntries(get()));
+      return raw;
     } catch {
       set({ loaded: true });
+      return null;
     }
   },
 

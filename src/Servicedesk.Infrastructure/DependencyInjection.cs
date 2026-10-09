@@ -256,6 +256,12 @@ public static class DependencyInjection
         // IOException @ Socket an hour). Drop idle connections before a
         // typical short server keep-alive (5 s) instead. The Diagnose
         // exception view now names the worker, to confirm the source.
+        // Confirmed in prod (Performance report 2026-10-08): the count did not
+        // change with this timeout (~1,500/h, now raised by the pool's idle
+        // cleanup instead), but fell to ~380/h with a 3 s poll interval. Any
+        // idle interval longer than the keep-alive costs one connection per
+        // round either way — known-benign first-chance noise, no retries or
+        // failed calls. Don't shorten the poll interval to hide it.
         services.AddHttpClient(TelavoxApiClient.HttpClientName)
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
             {
