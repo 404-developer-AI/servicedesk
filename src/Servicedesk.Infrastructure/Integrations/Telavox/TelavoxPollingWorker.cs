@@ -256,6 +256,8 @@ public sealed class TelavoxPollingWorker : BackgroundService
         var pollsAttempted = 0;
         var pollsSucceeded = 0;
         var pollsFailed = 0;
+        var succeededUserIds = new List<Guid>(allLinks.Count);
+        var heartbeatDue = false;
         var firesEmitted = 0;
         var firesFailed = 0;
         var anyRinging = false;
@@ -481,16 +483,16 @@ public sealed class TelavoxPollingWorker : BackgroundService
                 // half staleness window (the Health page flags polling as
                 // stale after max(4 × interval, 30 s)), instead of one UPDATE
                 // per agent per poll. Error transitions are written at once.
+                // v0.1.33 — the refresh is batched: once any healthy link is
+                // due, every healthy link is stamped in one UPDATE after the
+                // loop, so the links stay in step (one write per window
+                // instead of one per agent per window).
+                succeededUserIds.Add(link.UserId);
                 var stillFresh = link.ConsecutiveErrors == 0
                     && link.LastPollError is null
                     && link.LastPollUtc is { } lastPoll
                     && DateTime.UtcNow - lastPoll < outcomeRefresh;
-                if (!stillFresh)
-                {
-                    await links.UpdatePollOutcomeAsync(
-                        link.UserId, DateTime.UtcNow, lastPollError: null,
-                        consecutiveErrors: 0, ct);
-                }
+                if (!stillFresh) heartbeatDue = true;
             }
             catch (TelavoxApiException apiEx)
             {
@@ -523,6 +525,10 @@ public sealed class TelavoxPollingWorker : BackgroundService
                     "Telavox poll for user {UserId} threw an unexpected exception.",
                     link.UserId);
             }
+        }
+        if (heartbeatDue)
+        {
+            await links.MarkPollSucceededAsync(succeededUserIds, DateTime.UtcNow, ct);
         }
         tickStart.Stop();
         run.AddItems(pollsSucceeded);

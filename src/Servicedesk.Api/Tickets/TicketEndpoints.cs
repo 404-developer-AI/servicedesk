@@ -154,19 +154,37 @@ public static class TicketEndpoints
         }).WithName("ListTickets").WithOpenApi();
 
         group.MapGet("/{id:guid}", async (
-            Guid id, HttpContext http, ITicketRepository repo, IQueueAccessService queueAccess,
-            IMailTimelineEnricher mailEnricher,
+            Guid id, HttpContext http, ITicketRepository repo, ITicketTimelineReader timeline,
+            IQueueAccessService queueAccess,
+            IMailTimelineEnricher mailEnricher, ISettingsService settings,
             [FromServices] Npgsql.NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
-            var detail = await repo.GetByIdAsync(id, ct);
-            if (detail is null) return Results.NotFound();
-
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+
+            // v0.1.33 — the latest page of the timeline only (older events via
+            // GET /{id}/events), plus what the page used to compute over all
+            // events: counts per type, latest inbound mail, pinned events,
+            // tagged orders and the Created event's metadata.
+            var pageSize = await ResolveTimelinePageSizeAsync(settings, ct);
+            var first = await timeline.GetFirstPageAsync(id, pageSize, HiddenTimelineEventTypes(role), ct);
+            if (first is null) return Results.NotFound();
+            var detail = first.Detail;
+
             if (!await queueAccess.HasQueueAccessAsync(userId, role, detail.Ticket.QueueId, ct))
                 return Results.NotFound(); // 404 to prevent existence leaking
 
-            detail = await mailEnricher.EnrichAsync(detail, ct);
+            // Enrich the page and the out-of-page extras in one batched pass.
+            var extras = new List<Servicedesk.Domain.Tickets.TicketEvent>(first.PinnedEventsOutsidePage);
+            if (first.LatestMailReceived is { } lm && extras.All(e => e.Id != lm.Id)) extras.Add(lm);
+            var enriched = await mailEnricher.EnrichAsync(
+                detail with { Events = detail.Events.Concat(extras).ToList() }, ct);
+            var pageIds = detail.Events.Select(e => e.Id).ToHashSet();
+            var enrichedById = enriched.Events.ToDictionary(e => e.Id);
+            detail = enriched with { Events = enriched.Events.Where(e => pageIds.Contains(e.Id)).ToList() };
+            var latestMailReceived = first.LatestMailReceived is { } l ? enrichedById.GetValueOrDefault(l.Id) : null;
+            var pinnedEventsOutsidePage = first.PinnedEventsOutsidePage
+                .Select(e => enrichedById.GetValueOrDefault(e.Id) ?? e).ToList();
 
             // v0.0.101: merge/split banners, linked parent/children and the
             // company-alert source used to be six sequential lookups, each on
@@ -193,7 +211,7 @@ public static class TicketEndpoints
             // source ticket's mail-attachment endpoint, which the agent can
             // already access (split requires queue access on the source).
             var descriptionAttachments = await BuildSplitDescriptionAttachmentsAsync(
-                detail, dataSource, ct);
+                detail.Ticket, first.CreatedEventMetadataJson, dataSource, ct);
 
             // v0.1.0 — a system ticket opened for a portal registration
             // carries the pending account so the detail page can render the
@@ -213,7 +231,11 @@ public static class TicketEndpoints
                 ticket = detail.Ticket,
                 portalRegistration,
                 body = detail.Body,
-                events = FilterTimelineEventsForRole(detail.Events, role),
+                events = detail.Events,
+                hasOlderEvents = first.HasOlderEvents,
+                eventTypeCounts = first.EventTypeCounts,
+                latestMailReceived,
+                pinnedEventsOutsidePage,
                 pinnedEvents = detail.PinnedEvents,
                 companyAlert,
                 mergedSourceTicketNumbers = rel.MergedSourceTicketNumbers,
@@ -230,8 +252,70 @@ public static class TicketEndpoints
                 projectTicketSubject = rel.Project?.ProjectSubject,
                 projectLinkedByUserName = rel.Project?.LinkedByName,
                 projectLinkedTicketCount = rel.ProjectLinkedTicketCount,
+                // v0.1.33 — the side panel's "Contact not linked" banner, decided
+                // with the detail so it is in place on the first render (it used
+                // to appear after two follow-up lookups and push the cards down).
+                contactNotLinkedWarning = rel.RequesterCompanyLinkCount == 0
+                    && await settings.GetAsync<bool>(SettingKeys.Tickets.ShowContactNotLinkedWarning, ct),
             });
         }).WithName("GetTicket").WithOpenApi();
+
+        // v0.1.33 — older timeline events, paged backwards from the oldest
+        // event the client has. `untilId` loads back to (and including) one
+        // specific event — deep links, pinned-event jumps; `all=true` loads
+        // the rest of the timeline. Same queue-access rule, role filter and
+        // mail enrichment as GET /{id}.
+        group.MapGet("/{id:guid}/events", async (
+            Guid id, long? beforeId, long? untilId, bool? all, HttpContext http,
+            ITicketRepository repo, ITicketTimelineReader timeline, IQueueAccessService queueAccess,
+            IMailTimelineEnricher mailEnricher, ISettingsService settings, CancellationToken ct) =>
+        {
+            if (beforeId is null or <= 0)
+                return Results.BadRequest(new { error = "beforeId is required." });
+            if (untilId is <= 0)
+                return Results.BadRequest(new { error = "untilId must be a positive event id." });
+
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var ticket = await repo.GetCoreAsync(id, ct);
+            if (ticket is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.QueueId, ct))
+                return Results.NotFound();
+
+            var pageSize = await ResolveTimelinePageSizeAsync(settings, ct);
+            var limit = all == true || untilId is not null || pageSize == 0
+                ? MaxTimelineSliceEvents
+                : pageSize;
+            var slice = await timeline.ListOlderAsync(
+                id, beforeId.Value, untilId, limit, HiddenTimelineEventTypes(role), ct);
+
+            var events = slice.Events;
+            if (events.Count > 0)
+            {
+                var enriched = await mailEnricher.EnrichAsync(new TicketDetail(
+                    ticket, new Servicedesk.Domain.Tickets.TicketBody(id, string.Empty, null),
+                    events, Array.Empty<Servicedesk.Domain.Tickets.TicketEventPin>()), ct);
+                events = enriched.Events;
+            }
+            return Results.Ok(new { events, hasMore = slice.HasMore });
+        }).WithName("ListTicketEvents").WithOpenApi();
+
+        // v0.1.33 — "::" order pills across the whole timeline for the side
+        // panel's Orders block (the detail only carries the latest page). Only
+        // asked for by agents with the Orders feature; same access rule.
+        group.MapGet("/{id:guid}/tagged-orders", async (
+            Guid id, HttpContext http, ITicketRepository repo, ITicketTimelineReader timeline,
+            IQueueAccessService queueAccess, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
+            var ticket = await repo.GetCoreAsync(id, ct);
+            if (ticket is null) return Results.NotFound();
+            if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.QueueId, ct))
+                return Results.NotFound();
+            var orders = await timeline.ListTaggedOrdersAsync(id, ct);
+            return Results.Ok(orders.Select(o => new { id = o.Id, label = o.Label }));
+        }).WithName("ListTicketTaggedOrders").WithOpenApi();
 
         group.MapPost("/", async (
             [FromBody] CreateTicketRequest req, HttpContext http,
@@ -481,7 +565,6 @@ public static class TicketEndpoints
                     reviewed = true,
                     ticket = done.Ticket,
                     body = done.Body,
-                    events = FilterTimelineEventsForRole(done.Events, role),
                     pinnedEvents = done.PinnedEvents,
                 });
             }
@@ -509,7 +592,6 @@ public static class TicketEndpoints
                     reviewed = true,
                     ticket = raced.Ticket,
                     body = raced.Body,
-                    events = FilterTimelineEventsForRole(raced.Events, role),
                     pinnedEvents = raced.PinnedEvents,
                 });
             }
@@ -547,7 +629,6 @@ public static class TicketEndpoints
                 reviewed = true,
                 ticket = detail.Ticket,
                 body = detail.Body,
-                events = FilterTimelineEventsForRole(detail.Events, role),
                 pinnedEvents = detail.PinnedEvents,
                 companyAlert,
             });
@@ -853,7 +934,6 @@ public static class TicketEndpoints
             {
                 ticket = detail.Ticket,
                 body = detail.Body,
-                events = FilterTimelineEventsForRole(detail.Events, actor.AuditRole),
                 pinnedEvents = detail.PinnedEvents,
                 companyAlert,
             });
@@ -941,7 +1021,6 @@ public static class TicketEndpoints
             {
                 ticket = detail.Ticket,
                 body = detail.Body,
-                events = FilterTimelineEventsForRole(detail.Events, actorRole),
                 pinnedEvents = detail.PinnedEvents,
                 companyAlert,
             });
@@ -1016,7 +1095,6 @@ public static class TicketEndpoints
             {
                 ticket = detail.Ticket,
                 body = detail.Body,
-                events = FilterTimelineEventsForRole(detail.Events, role),
                 pinnedEvents = detail.PinnedEvents,
                 companyAlert,
             });
@@ -2475,15 +2553,32 @@ public static class TicketEndpoints
     /// post-test access tightening. EventType is stored on the record as a
     /// string (matches the DB CHECK constraint), so we compare names rather
     /// than enum values.
-    private static IReadOnlyList<Servicedesk.Domain.Tickets.TicketEvent> FilterTimelineEventsForRole(
-        IReadOnlyList<Servicedesk.Domain.Tickets.TicketEvent> events, string role)
+    /// v0.1.33 — event types a role never sees on the timeline (survey events
+    /// are Admin-only), applied in SQL by the paged reader so page sizes and
+    /// counts match.
+    private static readonly string[] AdminOnlyTimelineEventTypes =
     {
-        if (string.Equals(role, "Admin", StringComparison.Ordinal)) return events;
-        return events
-            .Where(e => !string.Equals(e.EventType, nameof(Servicedesk.Domain.Tickets.TicketEventType.SurveySubmitted), StringComparison.Ordinal)
-                     && !string.Equals(e.EventType, nameof(Servicedesk.Domain.Tickets.TicketEventType.SurveyExpired), StringComparison.Ordinal))
-            .ToList();
+        nameof(Servicedesk.Domain.Tickets.TicketEventType.SurveySubmitted),
+        nameof(Servicedesk.Domain.Tickets.TicketEventType.SurveyExpired),
+    };
+
+    private static IReadOnlyCollection<string> HiddenTimelineEventTypes(string role) =>
+        string.Equals(role, "Admin", StringComparison.Ordinal)
+            ? Array.Empty<string>()
+            : AdminOnlyTimelineEventTypes;
+
+    /// Tickets.TimelinePageSize: 0 = whole timeline, else clamped to 10–1000.
+    private static async Task<int> ResolveTimelinePageSizeAsync(ISettingsService settings, CancellationToken ct)
+    {
+        int raw;
+        try { raw = await settings.GetAsync<int>(SettingKeys.Tickets.TimelinePageSize, ct); }
+        catch { raw = 50; }
+        return raw <= 0 ? 0 : Math.Clamp(raw, 10, 1000);
     }
+
+    // Hard ceiling for one "load older" request, also when it loads back to a
+    // linked event or loads everything — keeps a single response bounded.
+    private const int MaxTimelineSliceEvents = 2000;
 
     /// v0.0.51 — shared validation + side-effect for the two endpoints
     /// that let the agent attach a ticket to a specific company
@@ -2612,20 +2707,21 @@ public static class TicketEndpoints
     /// source ticket's per-mail attachment endpoint — the bytes never move.
     /// Returns an empty list for tickets that aren't splits.
     private static async Task<IReadOnlyList<object>> BuildSplitDescriptionAttachmentsAsync(
-        TicketDetail detail, Npgsql.NpgsqlDataSource dataSource, CancellationToken ct)
+        Servicedesk.Domain.Tickets.Ticket ticket, string? createdEventMetadataJson,
+        Npgsql.NpgsqlDataSource dataSource, CancellationToken ct)
     {
-        if (detail.Ticket.SplitFromTicketId is null) return Array.Empty<object>();
+        if (ticket.SplitFromTicketId is null) return Array.Empty<object>();
 
         // Created event carries splitFromMailMessageId in its metadata (set by
-        // SplitAsync). Locate it and parse out the source mail id.
-        var createdEvent = detail.Events.FirstOrDefault(e => e.EventType == "Created");
-        if (createdEvent is null || string.IsNullOrWhiteSpace(createdEvent.MetadataJson))
+        // SplitAsync). v0.1.33 — read straight from that event (the timeline
+        // is paged, so it is usually not in the loaded events).
+        if (string.IsNullOrWhiteSpace(createdEventMetadataJson))
             return Array.Empty<object>();
 
         Guid? sourceMailMessageId = null;
         try
         {
-            using var doc = JsonDocument.Parse(createdEvent.MetadataJson);
+            using var doc = JsonDocument.Parse(createdEventMetadataJson);
             if (doc.RootElement.TryGetProperty("splitFromMailMessageId", out var prop)
                 && prop.ValueKind == JsonValueKind.String
                 && Guid.TryParse(prop.GetString(), out var g))
@@ -2650,7 +2746,7 @@ public static class TicketEndpoints
         var rows = await Dapper.SqlMapper.QueryAsync<(Guid Id, string OriginalFilename, string MimeType, long SizeBytes)>(
             conn, new Dapper.CommandDefinition(sql, new { mailId = sourceMailMessageId.Value }, cancellationToken: ct));
 
-        var sourceTicketId = detail.Ticket.SplitFromTicketId.Value;
+        var sourceTicketId = ticket.SplitFromTicketId.Value;
         var mailId = sourceMailMessageId.Value;
         return rows.Select(r => (object)new
         {

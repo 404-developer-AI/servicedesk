@@ -745,7 +745,7 @@ function HoursCell({ row }: { row: BackofficeTicket }) {
                   <span className="shrink-0 tabular-nums text-muted-foreground">{formatMinutes(t.minutes)}</span>
                 </li>
               ))}
-              <li className="mt-1 flex items-center justify-between gap-3 border-t border-glass px-1.5 pt-1.5 font-medium">
+              <li className="flex items-center justify-between gap-3 border-t border-glass px-1.5 pt-1.5 font-medium">
                 <span className="text-foreground">Total</span>
                 <span className="tabular-nums text-foreground">{formatMinutes(breakdown.data.totalMinutes)}</span>
               </li>

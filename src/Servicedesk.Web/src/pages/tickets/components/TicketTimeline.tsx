@@ -573,6 +573,10 @@ export function isSystemEvent(event: TicketEvent): boolean {
   return SYSTEM_EVENT_TYPES.has(event.eventType);
 }
 
+export function isSystemEventType(eventType: string): boolean {
+  return SYSTEM_EVENT_TYPES.has(eventType);
+}
+
 /// Left-edge accent colour per content-event type, tying each card back to
 /// its timeline dot — sky for mail (in/out), blue for internal notes,
 /// emerald for customer-visible replies. Internal events override this

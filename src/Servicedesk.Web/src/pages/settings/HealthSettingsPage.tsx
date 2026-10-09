@@ -76,6 +76,7 @@ const RETENTION_SETTINGS: ReadonlyArray<{ key: string; label: string }> = [
   { key: "Retention.TicketOpenSessionsDays", label: "Ticket open sessions for Insights (days)" },
   { key: "Retention.RewindSnapshotsDays", label: "Insights Rewind snapshots (days)" },
   { key: "Retention.WorkflowPickupsDays", label: "Insights Workflow pickups (days)" },
+  { key: "Retention.StagedAttachmentsDays", label: "Unposted composer uploads (days)" },
 ];
 
 const STATUS_BADGE: Record<HealthStatus, { label: string; className: string; icon: React.ReactNode }> = {
@@ -427,7 +428,7 @@ function IncidentEntry({
             </button>
           ) : null}
           {showDetails && incident.details ? (
-            <pre className="mt-1 max-h-64 overflow-auto rounded border border-glass-strong bg-black/40 p-2 text-[11px] text-foreground/80">
+            <pre className="max-h-64 overflow-auto rounded border border-glass-strong bg-black/40 p-2 text-[11px] text-foreground/80">
               {incident.details}
             </pre>
           ) : null}

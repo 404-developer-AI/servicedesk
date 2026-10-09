@@ -194,7 +194,7 @@ export function ZammadIntegrationPage() {
           >
             <ArrowLeft className="h-3 w-3" /> Integrations
           </Link>
-          <div className="mt-2 mb-2 text-primary">
+          <div className="mb-2 text-primary">
             <Database className="h-6 w-6" />
           </div>
           <h1 className="text-display-md font-semibold text-foreground">Zammad</h1>

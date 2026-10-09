@@ -3,7 +3,7 @@
 /* ─── Tailwind CSS v4 setup ───────────────────────────────────────────────
    Cascade layout (deliberate, keeps the v3 cascade the UI was built on):
    - theme   → Tailwind's design tokens (CSS variables).
-   - base    → our v3 Preflight (styles/preflight-v3.css, see the note there)
+   - base    → Tailwind's v4 Preflight + the small compat block below
                + the token sets below.
    - utilities → ONE layer holding, in this order: our component classes
                (glass-card, legibility overrides, …), Tailwind's generated
@@ -17,9 +17,35 @@
                every component rule lose to every utility. */
 @layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
-@import "./styles/palette-v3.css";
-@import "./styles/preflight-v3.css" layer(base);
+@import "tailwindcss/preflight.css" layer(base);
 @import "tw-animate-css";
+
+/* v4 Preflight, with four v3 behaviours kept on purpose (v0.1.33):
+   - default border colour: a bare `border` stays the light hairline instead
+     of v4's currentColor (hundreds of call sites rely on it);
+   - table cells keep the browser's padding — and `cellpadding` in rendered
+     inbound mail — which v4's universal `padding: 0` cancels. `revert-layer`
+     rolls the cell back past this layer to the presentational hint;
+   - buttons keep the pointer cursor;
+   - unstyled ring utilities keep the v3 blue (v4 uses currentColor). */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+    --tw-ring-color: rgb(59 130 246 / 0.5);
+  }
+  td,
+  th {
+    padding: revert-layer;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
 
 /* `.dark` on <html> drives Nebula dark. `:is()` (not `:where()`) keeps the
    v3 specificity of `dark:` utilities. */
@@ -123,58 +149,6 @@
     to {
       height: 0;
     }
-  }
-}
-
-/* ─── v3 semantics for space-* / divide-* ─────────────────────────────────
-   v4 moved these to `:where(.x > :not(:last-child))` (zero specificity, gap on
-   the bottom/right of each non-last child). v3 put it on the top/left of
-   every non-hidden child after the first, at (0,3,0), overriding a child's
-   own margin/border in that axis. ~800 call sites were laid out against the
-   v3 behaviour, so these utilities restore it: the (0,3,0) rule wins over
-   the v4 rule, and the (0,0,1) reset cancels v4's trailing margin/border on
-   the first child while still losing to a class on that child. */
-@utility space-y-* {
-  & > :not([hidden]) ~ :not([hidden]) {
-    margin-top: calc(var(--spacing) * --value(number));
-    margin-top: --value([length]);
-    margin-bottom: 0;
-  }
-  :where(&) > :not(template) {
-    margin-block-end: 0;
-  }
-}
-@utility space-x-* {
-  & > :not([hidden]) ~ :not([hidden]) {
-    margin-left: calc(var(--spacing) * --value(number));
-    margin-left: --value([length]);
-    margin-right: 0;
-  }
-  :where(&) > :not(template) {
-    margin-inline-end: 0;
-  }
-}
-@utility divide-y {
-  & > :not([hidden]) ~ :not([hidden]) {
-    border-top-width: 1px;
-    border-bottom-width: 0;
-  }
-  :where(&) > :not(template) {
-    border-bottom-width: 0;
-  }
-}
-@utility divide-x {
-  & > :not([hidden]) ~ :not([hidden]) {
-    border-left-width: 1px;
-    border-right-width: 0;
-  }
-  :where(&) > :not(template) {
-    border-right-width: 0;
-  }
-}
-@utility divide-* {
-  & > :not([hidden]) ~ :not([hidden]) {
-    border-color: --value(--divide-color-*, --border-color-*, --color-*);
   }
 }
 
@@ -636,6 +610,51 @@
   background: hsl(160 84% 50% / 0.25);
 }
 
+/* v0.1.33 — placeholder for an external image in a mail / note / KB body
+   (lib/remoteImages.ts swaps the <img> for it before anything is fetched).
+   Keeps the image's declared size when it had one, otherwise a compact
+   inline label. Mail bodies bring their own inline colours, so the
+   placeholder sets its own text colour and background. */
+.sd-remote-image {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4em;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: 1.9em;
+  padding: 0.2em 0.65em;
+  vertical-align: middle;
+  overflow: hidden;
+  border: 1px dashed hsl(var(--glass-border-strong));
+  border-radius: 0.5rem;
+  background: hsl(var(--muted) / 0.55);
+  color: hsl(var(--muted-foreground));
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 500;
+  font-style: normal;
+  line-height: 1.3;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: help;
+}
+.sd-remote-image::before {
+  content: "";
+  flex: none;
+  width: 1.05em;
+  height: 1.05em;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='2' x2='22' y1='2' y2='22'/%3E%3Cpath d='M10.41 10.41a2 2 0 1 1-2.83-2.83'/%3E%3Cline x1='13.5' x2='6' y1='13.5' y2='21'/%3E%3Cline x1='18' x2='21' y1='12' y2='15'/%3E%3Cpath d='M3.59 3.59A1.99 1.99 0 0 0 3 5v14a2 2 0 0 0 2 2h14c.55 0 1.052-.22 1.41-.59'/%3E%3Cpath d='M21 15V5a2 2 0 0 0-2-2H9'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='2' x2='22' y1='2' y2='22'/%3E%3Cpath d='M10.41 10.41a2 2 0 1 1-2.83-2.83'/%3E%3Cline x1='13.5' x2='6' y1='13.5' y2='21'/%3E%3Cline x1='18' x2='21' y1='12' y2='15'/%3E%3Cpath d='M3.59 3.59A1.99 1.99 0 0 0 3 5v14a2 2 0 0 0 2 2h14c.55 0 1.052-.22 1.41-.59'/%3E%3Cpath d='M21 15V5a2 2 0 0 0-2-2H9'/%3E%3C/svg%3E") center / contain no-repeat;
+  opacity: 0.8;
+}
+.dark .sd-remote-image {
+  background: hsl(var(--muted) / 0.35);
+}
+
 /* Reader typography for user-authored rich-text bodies (KB articles via
    SafeHtml, ticket timeline mail/note bodies, gate/revision dialogs).
    Tailwind's preflight strips list markers, heading sizes, blockquote
@@ -908,6 +927,13 @@
 .theme-steaan .sd-internal-note {
   background-color: #fffbeb;
   --tw-ring-color: #fde68a;
+}
+
+/* Blocked external image: flat warm-neutral tile, solid hairline. */
+.theme-steaan .sd-remote-image {
+  background: hsl(var(--muted));
+  border-style: solid;
+  border-color: hsl(var(--border));
 }
 
 /* @@-mention chip follows the primary hue. */

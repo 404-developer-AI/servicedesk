@@ -586,7 +586,7 @@ function MirrorCard({
         </div>
 
         {error && errorIsCurrent ? (
-          <div className="mt-1 inline-flex items-start gap-1 text-[11px] text-rose-500 dark:text-rose-300">
+          <div className="inline-flex items-start gap-1 text-[11px] text-rose-500 dark:text-rose-300">
             <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
             <span className="line-clamp-2">{error}</span>
           </div>

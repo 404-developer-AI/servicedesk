@@ -112,7 +112,7 @@ export function RecentTickets({ collapsed }: { collapsed: boolean }) {
   }
 
   return (
-    <div className="mt-2 flex min-h-0 flex-1 flex-col border-t border-glass pt-2">
+    <div className="flex min-h-0 flex-1 flex-col border-t border-glass pt-2">
       {!collapsed && (
         <div className="px-3 pb-1 text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">
           Recent

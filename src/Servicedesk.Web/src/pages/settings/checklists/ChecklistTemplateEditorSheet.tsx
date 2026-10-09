@@ -379,7 +379,7 @@ function EditorBody({ templateId, maxItems, onClose }: { templateId: string | "n
       </div>
 
       {/* Footer */}
-      <div className="sticky bottom-0 -mx-6 mt-4 flex items-center gap-2 border-t border-glass bg-popover/95 px-6 py-3 backdrop-blur-xl">
+      <div className="sticky bottom-0 -mx-6 flex items-center gap-2 border-t border-glass bg-popover/95 px-6 py-3 backdrop-blur-xl">
         <span className="text-xs text-muted-foreground">
           {itemCount === 0 ? "Add at least one item." : itemCount > maxItems ? `Too many items (max ${maxItems}).` : `${itemCount} item${itemCount === 1 ? "" : "s"}`}
         </span>

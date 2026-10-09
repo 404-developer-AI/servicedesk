@@ -205,7 +205,7 @@ export function M365IntegrationPage() {
           >
             <ArrowLeft className="h-3 w-3" /> Integrations
           </Link>
-          <div className="mt-2 mb-2 flex h-10 w-10 items-center justify-center rounded-lg border border-glass-strong bg-glass">
+          <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg border border-glass-strong bg-glass">
             <img src={microsoftLogo} alt="" aria-hidden className="h-5 w-5" />
           </div>
           <h1 className="text-display-md font-semibold text-foreground">Microsoft 365</h1>
@@ -281,7 +281,7 @@ export function M365IntegrationPage() {
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <Fingerprint className="h-4 w-4 text-primary" /> MSP app credentials
         </div>
-        <p className="-mt-2 text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           The three values from the app registration in <strong>your</strong> tenant. The
           tenant ID and client ID are identifiers; the client secret is encrypted at rest via
           DataProtection and never returned to the browser.
@@ -398,7 +398,7 @@ export function M365IntegrationPage() {
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <ShieldCheck className="h-4 w-4 text-primary" /> Entra ID app setup
         </div>
-        <p className="-mt-2 text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           Register one app in your tenant, set it to <strong>multi-tenant</strong>{" "}
           (accounts in any organizational directory), then add the permissions and redirect
           URI below. Each customer admin consents once via the{" "}

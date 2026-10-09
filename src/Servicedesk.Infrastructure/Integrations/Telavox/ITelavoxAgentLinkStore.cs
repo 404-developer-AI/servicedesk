@@ -26,4 +26,12 @@ public interface ITelavoxAgentLinkStore
         string? lastPollError,
         int consecutiveErrors,
         CancellationToken ct = default);
+
+    /// Marks a set of links as polled successfully in one statement:
+    /// last_poll_utc = <paramref name="lastPollUtc"/>, error cleared,
+    /// consecutive_errors = 0. The polling worker's batched heartbeat.
+    Task MarkPollSucceededAsync(
+        IReadOnlyCollection<Guid> userIds,
+        DateTime lastPollUtc,
+        CancellationToken ct = default);
 }

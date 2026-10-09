@@ -427,7 +427,7 @@ export function Sidebar() {
           ))
         )}
         {views && views.length > 0 && (
-          <div className="mt-2 space-y-0.5 border-t border-glass pt-2">
+          <div className="space-y-0.5 border-t border-glass pt-2">
             {/* Views the user pinned out of the flyout — rendered inline. */}
             {pinnedViews.map((v) => (
               <ViewRow

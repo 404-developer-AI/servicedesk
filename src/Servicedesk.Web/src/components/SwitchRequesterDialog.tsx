@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ContactPicker } from "@/components/ContactPicker";
-import { contactApi, companyApi, ticketApi } from "@/lib/ticket-api";
+import { contactApi, companyApi, ticketApi, mergeTicketMutation, type TicketDetail } from "@/lib/ticket-api";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -95,7 +95,7 @@ export function SwitchRequesterDialog({
   const switchMutation = useMutation({
     mutationFn: () => ticketApi.changeRequester(ticketId, newContactId!),
     onSuccess: (detail) => {
-      queryClient.setQueryData(["ticket", ticketId], detail);
+      queryClient.setQueryData<TicketDetail>(["ticket", ticketId], (old) => mergeTicketMutation(old, detail));
       queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
       queryClient.invalidateQueries({ queryKey: ["tickets"] });
       queryClient.invalidateQueries({ queryKey: ["contact", currentContactId] });

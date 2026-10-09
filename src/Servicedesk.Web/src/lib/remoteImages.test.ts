@@ -11,18 +11,31 @@ function render(html: string): HTMLElement {
 }
 
 describe("installRemoteImageBlock", () => {
-  it("removes the source of an external image and keeps its size", () => {
-    const img = render('<img src="https://tracker.example.com/p.gif" width="120" height="40">').querySelector("img")!;
-    expect(img.getAttribute("src")).toBeNull();
-    expect(img.getAttribute("data-remote-src")).toBe("https://tracker.example.com/p.gif");
-    expect(img.getAttribute("width")).toBe("120");
-    expect(img.getAttribute("alt")).toBe("[external image]");
+  it("replaces an external image with a placeholder that keeps its size", () => {
+    const root = render('<p><img src="https://cdn.example.com/banner.png" width="320" height="80" alt="Spring sale"></p>');
+    expect(root.querySelector("img")).toBeNull();
+    const ph = root.querySelector(".sd-remote-image")!;
+    expect(ph.textContent).toBe("Spring sale");
+    expect(ph.getAttribute("role")).toBe("img");
+    expect(ph.getAttribute("style")).toBe("width:320px;height:80px");
+    expect(root.innerHTML).not.toContain("cdn.example.com");
   });
 
-  it("treats protocol-relative URLs as external", () => {
-    const img = render('<img src="//cdn.example.com/logo.png" alt="Logo">').querySelector("img")!;
-    expect(img.getAttribute("src")).toBeNull();
-    expect(img.getAttribute("alt")).toBe("Logo");
+  it("uses a generic label when the image has no alt text", () => {
+    const root = render('<img src="//cdn.example.com/logo.png">');
+    expect(root.querySelector("img")).toBeNull();
+    expect(root.querySelector(".sd-remote-image")!.textContent).toBe("External image blocked");
+  });
+
+  it("drops tracking pixels outright", () => {
+    const root = render(
+      '<p>a<img src="https://t.example.com/o.gif" width="1" height="1">' +
+        '<img src="https://t.example.com/p.gif" style="display: none">' +
+        '<img src="https://t.example.com/q.gif" style="width:0px;height:0px">b</p>',
+    );
+    expect(root.querySelector("img")).toBeNull();
+    expect(root.querySelector(".sd-remote-image")).toBeNull();
+    expect(root.textContent).toBe("ab");
   });
 
   it("leaves same-origin and data images alone", () => {

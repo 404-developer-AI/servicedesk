@@ -188,7 +188,10 @@ public sealed record TicketDetailRelations(
     // v0.0.105 — the project this ticket is linked to (null when
     // unlinked) and, for project tickets, how many tickets link here.
     ProjectTicketSummary? Project = null,
-    int ProjectLinkedTicketCount = 0);
+    int ProjectLinkedTicketCount = 0,
+    // v0.1.33 — companies the requester is linked to (any role), so the
+    // "Contact not linked" banner renders with the detail, not after it.
+    int RequesterCompanyLinkCount = 0);
 
 /// v0.0.105 — summary of the project a ticket is linked to, for the
 /// side panel + banner without a second round-trip.

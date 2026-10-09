@@ -80,9 +80,10 @@ export function TicketComposePage({ ticketId }: { ticketId: string }) {
   }
 
   const { ticket, events } = data;
+  // v0.1.33 — the newest inbound mail may be older than the loaded page.
   const mailContext = buildMailContext(
     ticket,
-    events,
+    data.latestMailReceived ? [data.latestMailReceived, ...events] : events,
     requesterContact?.email ?? null,
     ownMailboxAddresses,
   );

@@ -288,7 +288,7 @@ export function VeeamIntegrationPage() {
           >
             <ArrowLeft className="h-3 w-3" /> Integrations
           </Link>
-          <div className="mt-2 mb-2 flex h-10 w-10 items-center justify-center rounded-lg border border-glass-strong bg-glass">
+          <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg border border-glass-strong bg-glass">
             <img src={veeamLogo} alt="" aria-hidden className="h-5 w-5" />
           </div>
           <h1 className="text-display-md font-semibold text-foreground">Veeam</h1>
@@ -360,7 +360,7 @@ export function VeeamIntegrationPage() {
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <Globe className="h-4 w-4 text-primary" /> VSPC connection
         </div>
-        <p className="-mt-2 text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           The REST API URL and login of your Veeam Service Provider Console. The URL and
           username are stored as settings; the password is encrypted at rest via DataProtection
           and never returned to the browser.

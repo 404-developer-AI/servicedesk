@@ -242,7 +242,7 @@ export function ClaudeIntegrationPage() {
           >
             <ArrowLeft className="h-3 w-3" /> Integrations
           </Link>
-          <div className="mt-2 mb-2 text-primary">
+          <div className="mb-2 text-primary">
             <Bot className="h-6 w-6" />
           </div>
           <h1 className="text-display-md font-semibold text-foreground">Claude AI</h1>

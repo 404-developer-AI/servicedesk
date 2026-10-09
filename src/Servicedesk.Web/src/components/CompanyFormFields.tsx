@@ -107,7 +107,7 @@ export function CompanyFormFields({
             />
           </label>
           {form.alertOnOpen && (
-            <div className="mt-2 flex items-center gap-3 text-sm">
+            <div className="flex items-center gap-3 text-sm">
               <span className="text-muted-foreground">Frequency:</span>
               <label className="flex items-center gap-2">
                 <input

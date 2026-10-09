@@ -218,7 +218,7 @@ export function SophosIntegrationPage() {
           >
             <ArrowLeft className="h-3 w-3" /> Integrations
           </Link>
-          <div className="mt-2 mb-2 flex h-10 w-10 items-center justify-center rounded-lg border border-glass-strong bg-glass">
+          <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg border border-glass-strong bg-glass">
             <img src={sophosLogo} alt="" aria-hidden className="h-5 w-5" />
           </div>
           <h1 className="text-display-md font-semibold text-foreground">Sophos</h1>
@@ -294,7 +294,7 @@ export function SophosIntegrationPage() {
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <Fingerprint className="h-4 w-4 text-primary" /> API credentials
         </div>
-        <p className="-mt-2 text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           The partner API client ID and secret from the Sophos Central partner dashboard. Both
           are encrypted at rest via DataProtection and never returned to the browser.
         </p>
