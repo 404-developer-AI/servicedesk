@@ -52,6 +52,44 @@ public sealed class IpBlockingTests
         Assert.Null(IpThreatConfig.CompileScannerPatterns(" * , "));
     }
 
+    // The shipped default list must parse and behave — a NonBacktracking regex
+    // over this list once threw at build time and stopped IP-blocking
+    // housekeeping altogether.
+    [Theory]
+    [InlineData("/.env", true)]
+    [InlineData("/app/.env", true)]
+    [InlineData("/.git/config", true)]
+    [InlineData("/wp-login.php", true)]
+    [InlineData("/WP-ADMIN/setup.PHP", true)]
+    [InlineData("/cgi-bin/luci", true)]
+    [InlineData("/backup-2024.sql", true)]
+    [InlineData("/x/application_default_credentials.json", true)]
+    [InlineData("/tickets", false)]
+    [InlineData("/api/tickets/1/attachments/2", false)]
+    [InlineData("/assets/index-abc.js", false)]
+    [InlineData("/kb/articles/new", false)]
+    [InlineData("/settings/general", false)]
+    public void Default_scanner_list_parses_and_matches(string path, bool expected)
+    {
+        var defaults = Servicedesk.Infrastructure.Settings.SettingDefaults.All
+            .Single(d => d.Key == Servicedesk.Infrastructure.Settings.SettingKeys.Security.IpBlockingScannerPaths);
+        var matcher = IpThreatConfig.CompileScannerPatterns(defaults.Value);
+        Assert.NotNull(matcher);
+        Assert.Equal(expected, matcher!.IsMatch(path));
+    }
+
+    [Theory]
+    [InlineData("/a*b*c", "/aXbYc", true)]
+    [InlineData("/a*b*c", "/aXcYb", false)]
+    [InlineData("/a*a", "/a", false)]      // prefix and suffix may not overlap
+    [InlineData("*.php", ".php", true)]
+    [InlineData("/exact", "/EXACT", true)]
+    [InlineData("/exact", "/exact/more", false)]
+    public void Glob_matching_is_anchored_ordered_and_case_insensitive(string pattern, string path, bool expected)
+    {
+        Assert.Equal(expected, IpThreatConfig.CompileScannerPatterns(pattern)!.IsMatch(path));
+    }
+
     // ---- detector --------------------------------------------------------
 
     [Fact]
