@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Net;
-using System.Text.RegularExpressions;
 using System.Threading.Channels;
 
 namespace Servicedesk.Infrastructure.Security.IpBlocking;
@@ -16,7 +15,7 @@ public sealed record IpThreatConfig(
     int CsrfThreshold,
     int FailedLoginThreshold,
     TimeSpan AutoBlockDuration,
-    Regex? ScannerPathPattern)
+    ScannerPathMatcher? ScannerPathPattern)
 {
     public static readonly IpThreatConfig Disabled = new(
         false, TimeSpan.FromMinutes(10), 2, 100, 10, 10, TimeSpan.FromHours(24), null);
@@ -30,22 +29,73 @@ public sealed record IpThreatConfig(
         _ => int.MaxValue,
     };
 
-    /// Compiles the comma-separated glob list ("/.env*, *.php, …") into one
-    /// case-insensitive, anchored regex. `*` matches any characters; every
-    /// other character is literal. Invalid/empty input → null (no scanner
-    /// detection rather than a crash).
-    public static Regex? CompileScannerPatterns(string? patterns)
+    /// Parses the comma-separated glob list ("/.env*, *.php, …") into a
+    /// case-insensitive, anchored matcher. `*` matches any characters; every
+    /// other character is literal. Empty input → null (no scanner detection).
+    public static ScannerPathMatcher? CompileScannerPatterns(string? patterns) =>
+        ScannerPathMatcher.Parse(patterns);
+}
+
+/// v0.1.33 — glob matching without a regex. The list used to be one
+/// Compiled regex with a 50 ms match timeout; the timeout counts wall-clock
+/// time, so a JIT or GC pause during a match made IsScannerPath silently
+/// answer "no" (a scanner probe went unnoticed; the tests failed at random
+/// under load). A NonBacktracking regex instead exceeded .NET's automaton
+/// size limit on the default list. Globs with only `*` need neither: split
+/// on `*`, the first piece must be a prefix, the last a suffix, the middle
+/// pieces are found left to right — greedy leftmost matching is exact for
+/// `*`-only patterns, linear in the path length, with no timeout and no size
+/// limit.
+public sealed class ScannerPathMatcher
+{
+    private readonly string[][] _patterns;
+
+    private ScannerPathMatcher(string[][] patterns) => _patterns = patterns;
+
+    public int Count => _patterns.Length;
+
+    public static ScannerPathMatcher? Parse(string? patterns)
     {
         if (string.IsNullOrWhiteSpace(patterns)) return null;
-        var parts = patterns
+        var parsed = patterns
             .Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(p => p.Length > 0 && p != "*")
-            .Select(p => "^" + Regex.Escape(p).Replace("\\*", ".*") + "$")
-            .ToList();
-        if (parts.Count == 0) return null;
-        return new Regex(string.Join("|", parts),
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled,
-            TimeSpan.FromMilliseconds(50));
+            .Where(p => p.Length > 0 && p.Trim('*').Length > 0) // "*" alone would match everything
+            .Select(p => p.Split('*'))
+            .ToArray();
+        return parsed.Length == 0 ? null : new ScannerPathMatcher(parsed);
+    }
+
+    public bool IsMatch(string path)
+    {
+        foreach (var pieces in _patterns)
+        {
+            if (Matches(path, pieces)) return true;
+        }
+        return false;
+    }
+
+    // pieces = pattern.Split('*'): no star → one piece (exact match).
+    private static bool Matches(string path, string[] pieces)
+    {
+        const StringComparison cmp = StringComparison.OrdinalIgnoreCase;
+        if (pieces.Length == 1) return string.Equals(path, pieces[0], cmp);
+
+        var first = pieces[0];
+        var last = pieces[^1];
+        if (path.Length < first.Length + last.Length) return false;
+        if (!path.StartsWith(first, cmp) || !path.EndsWith(last, cmp)) return false;
+
+        var pos = first.Length;
+        var end = path.Length - last.Length;
+        for (var i = 1; i < pieces.Length - 1; i++)
+        {
+            var piece = pieces[i];
+            if (piece.Length == 0) continue;
+            var at = path.IndexOf(piece, pos, end - pos, cmp);
+            if (at < 0) return false;
+            pos = at + piece.Length;
+        }
+        return true;
     }
 }
 
@@ -94,16 +144,9 @@ public sealed class IpThreatDetector : IIpThreatDetector
 
     public bool IsScannerPath(string? path)
     {
-        var rx = _config.ScannerPathPattern;
-        if (rx is null || string.IsNullOrEmpty(path)) return false;
-        try
-        {
-            return rx.IsMatch(path);
-        }
-        catch (RegexMatchTimeoutException)
-        {
-            return false;
-        }
+        var matcher = _config.ScannerPathPattern;
+        if (matcher is null || string.IsNullOrEmpty(path)) return false;
+        return matcher.IsMatch(path);
     }
 
     public void Record(string? ip, IpSignalKind kind, string? path, DateTime nowUtc)

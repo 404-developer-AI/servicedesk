@@ -508,7 +508,11 @@ export function RichTextEditor({
   // (the case for imported articles whose `?include=body` query
   // resolves on the next tick).
   useEffect(() => {
-    if (!editor) return;
+    // Tiptap destroys an editor one tick after its component unmounts (or
+    // when it recreates it) and nulls its schema — any getHTML/setContent on
+    // that instance throws "Cannot read properties of null (reading
+    // 'cached')". The effect can still see the old instance, so skip it.
+    if (!editor || editor.isDestroyed) return;
     const current = editor.getHTML();
     const incoming = content ?? "";
     if (current === incoming) return;
@@ -860,7 +864,8 @@ function insertUpload(
   meta: TicketAttachmentMeta,
   linkNonImage: boolean,
 ): void {
-  if (!editor) return;
+  // An upload can finish after the editor was destroyed (navigated away).
+  if (!editor || editor.isDestroyed) return;
   if (meta.mimeType?.startsWith("image/")) {
     // setImage is provided by @tiptap/extension-image.
     // alt is the filename so screen readers + the timeline preview have a

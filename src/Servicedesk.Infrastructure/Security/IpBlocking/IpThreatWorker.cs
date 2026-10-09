@@ -149,16 +149,15 @@ public sealed class IpThreatWorker : BackgroundService
                 : null);
     }
 
-    private static (string? Source, System.Text.RegularExpressions.Regex? Regex) _patternCache;
+    private static (string? Source, ScannerPathMatcher? Matcher) _patternCache;
 
-    // Recompile only when the setting text actually changed (compiled regexes
-    // are not free; this runs every minute).
-    private static System.Text.RegularExpressions.Regex? CompileCached(string? patterns)
+    // Re-parse only when the setting text actually changed (this runs every minute).
+    private static ScannerPathMatcher? CompileCached(string? patterns)
     {
         var cached = _patternCache;
-        if (cached.Source == patterns) return cached.Regex;
-        var rx = IpThreatConfig.CompileScannerPatterns(patterns);
-        _patternCache = (patterns, rx);
-        return rx;
+        if (cached.Source == patterns) return cached.Matcher;
+        var matcher = IpThreatConfig.CompileScannerPatterns(patterns);
+        _patternCache = (patterns, matcher);
+        return matcher;
     }
 }

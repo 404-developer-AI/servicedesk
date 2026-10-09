@@ -122,7 +122,8 @@ function HtmlField({
   // Sync external value changes (e.g. action-list reorder) back into the
   // editor without fighting the user's cursor when they're typing.
   React.useEffect(() => {
-    if (!editor) return;
+    // A destroyed editor has no schema; getHTML/setContent would throw.
+    if (!editor || editor.isDestroyed) return;
     if (editor.isFocused) return;
     if (editor.getHTML() !== (value || "")) {
       editor.commands.setContent(value || "");
