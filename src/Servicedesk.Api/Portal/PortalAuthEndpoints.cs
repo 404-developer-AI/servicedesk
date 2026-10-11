@@ -309,6 +309,7 @@ public static class PortalAuthEndpoints
             }
         }
         AuthEndpoints.ClearAuthCookies(http, cookieName, portalCookie: true);
+        AuthEndpoints.ClearBrowserCache(http);
         return Results.Ok();
     }
 

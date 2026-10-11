@@ -62,7 +62,18 @@ function applyTheme(theme: Theme) {
   root.classList.toggle("theme-steaan", theme === "steaan");
   root.dataset.theme = theme;
   root.style.colorScheme = themeMode(theme);
+  // Browser / installed-app status bar follows the surface under it (the
+  // mobile header): white for Steaan, the canvas for Nebula light/dark.
+  document
+    .querySelector('meta[name="theme-color"]')
+    ?.setAttribute("content", THEME_COLOR_META[theme]);
 }
+
+const THEME_COLOR_META: Record<Theme, string> = {
+  steaan: "#FFFFFF",
+  light: "#F9F9FB",
+  dark: "#09090B",
+};
 
 /**
  * Theme provider. Three themes: `steaan` (flat, light-only house style —

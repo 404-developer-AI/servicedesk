@@ -54,11 +54,11 @@ const SECTIONS: Section[] = [
   },
   {
     title: "Attachment limits",
-    description: "Hard ceilings on incoming attachment and inline-image sizes.",
+    description: "Hard ceilings on uploaded files, incoming mail attachments and signature images.",
     keys: [
       "Storage.MaxAttachmentBytes",
+      "Storage.MaxInboundAttachmentBytes",
       "Storage.InlineImageMaxBytes",
-      "Storage.PerMailboxMonthlyCapMB",
     ],
   },
   {
@@ -82,11 +82,20 @@ const SECTIONS: Section[] = [
   },
   {
     title: "Disk monitoring",
-    description: "Thresholds that raise disk-usage alerts and pause intake when storage is nearly full.",
+    description: "Thresholds that raise disk-usage alerts and pause mail polling when storage is nearly full. Current usage is shown on the Health page (Blob storage).",
     keys: [
       "Storage.BlobRoot",
       "Storage.BlobDiskWarnPercent",
       "Storage.BlobDiskCriticalPercent",
+    ],
+  },
+  {
+    title: "Blob cleanup",
+    description: "Stored files that nothing references anymore (deleted drafts, expired .eml copies, replaced photos) are removed after a grace period. Start in dry-run mode and check the figures on the Health page before letting it delete.",
+    keys: [
+      "Storage.BlobGcDryRun",
+      "Storage.OrphanRetentionHours",
+      "Storage.BlobGcIntervalHours",
     ],
   },
 ];

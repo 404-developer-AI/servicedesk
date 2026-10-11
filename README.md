@@ -29,6 +29,8 @@ A self-hosted helpdesk for IT service teams. One install per organisation, on a 
 - Time tracking on tickets, with a monthly overview and export.
 - A knowledge base, dashboards and Insights reports.
 - Live updates: see who is working on a ticket, and lists refresh by themselves.
+- A mobile version for phones and tablets: views, ticket detail, search, notes, logged calls and @@-mentions, installable on the home screen (online only).
+- A list of your signed-in devices, so a lost or shared phone can be signed out from elsewhere.
 
 **Integrations** (each optional and off by default)
 - Microsoft 365 — mail (Microsoft Graph) and single sign-on for staff.
@@ -100,7 +102,7 @@ sudo /opt/servicedesk/deploy/backup.sh
 sudo /opt/servicedesk/deploy/restore.sh /var/backups/servicedesk/<timestamp>
 ```
 
-A backup holds the database and the stored files together, so a restore is always consistent. See the [backup runbook](docs/backup-runbook.md).
+A backup holds the database and the stored files together, so a restore is always consistent. Unchanged files are shared with the previous backup, and the newest 14 backups are kept (`BACKUP_RETAIN`). See the [backup runbook](docs/backup-runbook.md).
 
 ## Local development
 

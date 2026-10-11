@@ -11,9 +11,12 @@ import {
   PinOff,
   Plus,
   Settings as SettingsIcon,
+  Smartphone,
   Sparkles,
   UserCircle2,
 } from "lucide-react";
+import { isTouchDevice, mobilePathFor, setMobilePreference } from "@/mobile/mobileMode";
+import { clearAllDrafts } from "@/mobile/compose";
 import { BrandMark } from "@/components/BrandMark";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -332,9 +335,21 @@ export function Sidebar() {
       toast.error("Sign-out failed — you are still signed in. Reload the page and try again.");
       return;
     }
+    // Leave nothing of this session behind for the next person on this
+    // browser: unsent mobile drafts and every cached response.
+    clearAllDrafts();
+    qc.clear();
     authStore.patch({ user: null });
     toast.success("Signed out");
     navigate({ to: "/login" });
+  };
+
+  // Mobile web: a touch device that chose the desktop version can switch
+  // back from the profile menu (lands on the matching mobile page).
+  const touchDevice = React.useMemo(() => isTouchDevice(), []);
+  const switchToMobile = () => {
+    setMobilePreference("mobile");
+    window.location.assign(mobilePathFor(pathname, searchStr) ?? "/m");
   };
 
   const canSeeSettings = role === "Admin";
@@ -515,6 +530,11 @@ export function Sidebar() {
                 <DropdownMenuItem onClick={() => navigate({ to: "/profile" })}>
                   <UserCircle2 className="mr-2 h-4 w-4" /> Profile
                 </DropdownMenuItem>
+                {touchDevice && (
+                  <DropdownMenuItem onClick={switchToMobile}>
+                    <Smartphone className="mr-2 h-4 w-4" /> Mobile version
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={handleLogout}>
                   <LogOut className="mr-2 h-4 w-4" /> Sign out
                 </DropdownMenuItem>
@@ -611,6 +631,11 @@ export function Sidebar() {
                   <DropdownMenuItem onClick={() => navigate({ to: "/profile" })}>
                     <UserCircle2 className="mr-2 h-4 w-4" /> Profile
                   </DropdownMenuItem>
+                  {touchDevice && (
+                    <DropdownMenuItem onClick={switchToMobile}>
+                      <Smartphone className="mr-2 h-4 w-4" /> Mobile version
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem onClick={handleLogout}>
                     <LogOut className="mr-2 h-4 w-4" /> Sign out
                   </DropdownMenuItem>

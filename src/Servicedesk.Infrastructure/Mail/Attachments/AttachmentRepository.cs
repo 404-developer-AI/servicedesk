@@ -116,6 +116,19 @@ public sealed class AttachmentRepository : IAttachmentRepository
         return affected == 1;
     }
 
+    public async Task MarkTooLargeAsync(Guid attachmentId, CancellationToken ct)
+    {
+        const string sql = """
+            UPDATE attachments
+               SET processing_state = 'TooLarge'
+             WHERE id = @attachmentId
+               AND processing_state = 'Pending'
+            """;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await conn.ExecuteAsync(new CommandDefinition(sql,
+            new { attachmentId }, cancellationToken: ct));
+    }
+
     public async Task MarkFailedAsync(Guid attachmentId, CancellationToken ct)
     {
         const string sql = """

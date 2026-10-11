@@ -793,6 +793,8 @@ export const settingsApi = {
     request<void>("PUT", `/api/settings/${encodeURIComponent(key)}`, { value }),
   navigation: () =>
     request<NavigationSettings>("GET", "/api/settings/navigation"),
+  /// Mobile web: whether touch devices are sent to the /m views.
+  mobile: () => request<{ autoRedirect: boolean }>("GET", "/api/settings/mobile"),
   notifications: () =>
     request<NotificationsSettings>("GET", "/api/settings/notifications"),
   mailCompose: () =>
@@ -4376,4 +4378,21 @@ export const authApi = {
   // every other session on success.
   changePassword: (currentPassword: string, newPassword: string) =>
     request<void>("POST", "/api/auth/change-password", { currentPassword, newPassword }),
+  /// "My sessions": the caller's open sign-ins, addressed by a public handle
+  /// (never the session token). Revoking signs that device out.
+  sessions: () => request<{ items: MySession[] }>("GET", "/api/auth/sessions"),
+  revokeSession: (publicId: string) =>
+    request<void>("DELETE", `/api/auth/sessions/${encodeURIComponent(publicId)}`),
+  revokeOtherSessions: () => request<void>("POST", "/api/auth/sessions/revoke-others"),
+};
+
+export type MySession = {
+  publicId: string;
+  createdUtc: string;
+  lastSeenUtc: string;
+  expiresUtc: string;
+  ip: string | null;
+  userAgent: string | null;
+  amr: string;
+  current: boolean;
 };

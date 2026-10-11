@@ -40,7 +40,7 @@ public static class PortalTicketEndpoints
         group.MapPost("/", Create).WithName("PortalCreateTicket").WithOpenApi();
         group.MapGet("/{id:guid}", Detail).WithName("PortalTicketDetail").WithOpenApi();
         group.MapPost("/{id:guid}/messages", Reply).WithName("PortalReply").WithOpenApi();
-        group.MapPost("/{id:guid}/attachments", Upload).WithName("PortalUploadAttachment").WithOpenApi().DisableRequestTimeout();
+        group.MapPost("/{id:guid}/attachments", Upload).WithName("PortalUploadAttachment").WithOpenApi();
         group.MapGet("/{id:guid}/attachments/{attachmentId:guid}", DownloadEventAttachment).WithName("PortalGetAttachment").WithOpenApi();
         group.MapGet("/{id:guid}/mail/{mailMessageId:guid}/attachments/{attachmentId:guid}", DownloadMailAttachment).WithName("PortalGetMailAttachment").WithOpenApi();
         return app;

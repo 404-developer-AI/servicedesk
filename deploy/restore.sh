@@ -89,7 +89,8 @@ if [[ -d "${BACKUP_DIR}/blobs" ]]; then
     mkdir -p "${BLOB_ROOT}"
     # --delete IS used here: we want the blob store to exactly match the
     # backup, otherwise orphan files pile up over repeated restore tests.
-    rsync -a --delete "${BACKUP_DIR}/blobs/" "${BLOB_ROOT}/"
+    # .tmp/ (in-flight writes) is neither restored nor deleted by --delete.
+    rsync -a --delete --exclude=/.tmp/ "${BACKUP_DIR}/blobs/" "${BLOB_ROOT}/"
     chown -R 10001:10001 "${BLOB_ROOT}"
     echo "[✓] Blobs restored."
 else

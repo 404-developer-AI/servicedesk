@@ -16,6 +16,7 @@ import {
   RefreshCw,
   KeyRound,
   ChartColumnStacked,
+  Smartphone,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +33,10 @@ import { CollapsibleSettingsCard } from "@/components/settings/CollapsibleSettin
 const SESSION_SETTINGS: ReadonlyArray<{ key: string; label: string }> = [
   { key: "Security.Session.IdleTimeoutMinutes", label: "Idle timeout (minutes)" },
   { key: "Security.Session.LifetimeHours", label: "Absolute session lifetime (hours)" },
+];
+
+const MOBILE_SETTINGS: ReadonlyArray<{ key: string; label: string }> = [
+  { key: "Ui.MobileAutoRedirect", label: "Open the mobile version on touch devices" },
 ];
 import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { renderLoginBannerPreviewHtml } from "@/components/auth/LoginBanner";
@@ -127,6 +132,14 @@ export function GeneralSettingsPage() {
       <DefaultThemeSection
         entry={defaultThemeEntry}
         loading={uiSettings.isLoading}
+      />
+
+      <CollapsibleSettingsCard
+        category="Ui"
+        icon={<Smartphone className="h-5 w-5" />}
+        title="Mobile web"
+        description="Staff on a phone or tablet get a lightweight mobile version (/m): their views, ticket detail, search, internal notes, logged calls and mentions. Settings and admin tools stay on desktop. Each person can still switch to the desktop version on their own device; /m stays reachable by URL either way."
+        keys={MOBILE_SETTINGS}
       />
 
       <section className="glass-card p-6">

@@ -24,3 +24,11 @@ public interface IBlobStore
 }
 
 public sealed record BlobWriteResult(string ContentHash, long SizeBytes);
+
+/// Thrown by a caller's source stream to abort a write on purpose (e.g. a
+/// size cap hit mid-download). The store discards the temp file like any
+/// failed write but does not count it as a blob-store health failure.
+public class BlobSourceRejectedException : Exception
+{
+    public BlobSourceRejectedException(string message) : base(message) { }
+}

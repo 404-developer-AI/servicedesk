@@ -43,6 +43,8 @@ public sealed class HealthAggregator : IHealthAggregator
     private readonly Retention.IRetentionHealth _retention;
     private readonly ISettingsService _settings;
     private readonly Security.IpBlocking.IIpBlockList? _ipBlockList;
+    private readonly IBlobGcHealth? _blobGc;
+    private readonly IBlobDiskStatus? _blobDisk;
 
     public HealthAggregator(
         IQueueInboundMailboxRepository sources,
@@ -57,9 +59,13 @@ public sealed class HealthAggregator : IHealthAggregator
         ISecurityActivitySnapshot securityActivity,
         Retention.IRetentionHealth retention,
         ISettingsService settings,
-        Security.IpBlocking.IIpBlockList? ipBlockList = null)
+        Security.IpBlocking.IIpBlockList? ipBlockList = null,
+        IBlobGcHealth? blobGc = null,
+        IBlobDiskStatus? blobDisk = null)
     {
         _ipBlockList = ipBlockList;
+        _blobGc = blobGc;
+        _blobDisk = blobDisk;
         _settings = settings;
         _retention = retention;
         _sources = sources;
@@ -369,52 +375,120 @@ public sealed class HealthAggregator : IHealthAggregator
         var snap = _blobHealth.Snapshot();
         var details = new List<HealthDetail>();
         var actions = new List<HealthAction>();
+        var status = HealthStatus.Ok;
+        var summaries = new List<string>();
 
+        // Writes.
         if (snap.ConsecutiveFailures == 0)
         {
-            var last = snap.LastSuccessUtc is { } ts
+            details.Add(new HealthDetail("Writes", snap.LastSuccessUtc is { } ts
                 ? $"Last successful write {HealthTimeFormat.Local(ts, tz)}."
-                : "No writes observed yet.";
-            details.Add(new HealthDetail("Writes", last));
-            return new SubsystemHealth(
-                Key: "blob-store",
-                Label: "Blob storage",
-                Status: HealthStatus.Ok,
-                Summary: "Blob writes healthy.",
-                Details: details,
-                Actions: actions);
+                : "No writes observed yet."));
+        }
+        else
+        {
+            status = snap.ConsecutiveFailures >= BlobStoreCriticalThreshold ? HealthStatus.Critical : HealthStatus.Warning;
+            var when = snap.LastErrorUtc is { } errTs ? HealthTimeFormat.Local(errTs, tz) : "(unknown time)";
+            details.Add(new HealthDetail(
+                "Last failure",
+                $"{snap.ConsecutiveFailures} consecutive failure(s). Last {snap.LastOperation ?? "write"} at {when}: {snap.LastError}"));
+            details.Add(new HealthDetail(
+                "Hint",
+                "Check that Storage.BlobRoot is an absolute, existing path the app can write to. " +
+                "Default on Linux: /var/lib/servicedesk/blobs. On Windows dev: e.g. C:\\ProgramData\\servicedesk\\blobs."));
+            actions.Add(new HealthAction(
+                Key: "clear-blob-store-failures",
+                Label: "Clear blob-store error",
+                Endpoint: "/api/admin/health/blob-store/clear",
+                ConfirmMessage: "Clear the blob-store failure counter? The next write will re-evaluate health."));
+            summaries.Add(status == HealthStatus.Critical
+                ? $"{snap.ConsecutiveFailures} consecutive blob write failures — uploads, raw .eml, and HTML bodies are not being persisted."
+                : "Blob write failure detected — check Storage.BlobRoot configuration.");
         }
 
-        var status = snap.ConsecutiveFailures >= BlobStoreCriticalThreshold
-            ? HealthStatus.Critical
-            : HealthStatus.Warning;
+        // Disk.
+        if (_blobDisk?.Latest is { } disk)
+        {
+            details.Add(new HealthDetail("Disk usage",
+                $"{Pct(disk.UsedPercent)}% used — {FormatBytes(disk.FreeBytes)} free of {FormatBytes(disk.TotalBytes)} " +
+                $"(warning at {disk.WarnPercent}%, critical at {disk.CriticalPercent}%; sampled {HealthTimeFormat.Local(disk.SampledUtc, tz)})."));
+            if (disk.Level == BlobDiskLevel.Critical)
+            {
+                status = HealthStatus.Critical;
+                summaries.Add($"Blob disk {Pct(disk.UsedPercent)}% full — mail polling is paused until usage drops below {disk.CriticalPercent}%.");
+            }
+            else if (disk.Level == BlobDiskLevel.Warning)
+            {
+                if (status < HealthStatus.Warning) status = HealthStatus.Warning;
+                summaries.Add($"Blob disk {Pct(disk.UsedPercent)}% full — free up space or enlarge the disk before it reaches {disk.CriticalPercent}%.");
+            }
+        }
 
-        var when = snap.LastErrorUtc is { } errTs ? HealthTimeFormat.Local(errTs, tz) : "(unknown time)";
-        details.Add(new HealthDetail(
-            "Last failure",
-            $"{snap.ConsecutiveFailures} consecutive failure(s). Last {snap.LastOperation ?? "write"} at {when}: {snap.LastError}"));
-        details.Add(new HealthDetail(
-            "Hint",
-            "Check that Storage.BlobRoot is an absolute, existing path the app can write to. " +
-            "Default on Linux: /var/lib/servicedesk/blobs. On Windows dev: e.g. C:\\ProgramData\\servicedesk\\blobs."));
-
-        actions.Add(new HealthAction(
-            Key: "clear-blob-store-failures",
-            Label: "Clear blob-store error",
-            Endpoint: "/api/admin/health/blob-store/clear",
-            ConfirmMessage: "Clear the blob-store failure counter? The next write will re-evaluate health."));
-
-        var summary = status == HealthStatus.Critical
-            ? $"{snap.ConsecutiveFailures} consecutive blob write failures — uploads, raw .eml, and HTML bodies are not being persisted."
-            : "Blob write failure detected — check Storage.BlobRoot configuration.";
+        // Cleanup (GC).
+        if (_blobGc is not null)
+        {
+            if (_blobGc.LastRun is { } gc)
+            {
+                details.Add(new HealthDetail("Stored files",
+                    $"{gc.FilesScanned} files, {FormatBytes(gc.BytesScanned)} (as of {HealthTimeFormat.Local(gc.FinishedUtc, tz)})."));
+                var secs = gc.Duration.TotalSeconds.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+                var cleanup = gc.DryRun
+                    ? $"Dry run: {gc.OrphanFiles} unreferenced file(s), {FormatBytes(gc.OrphanBytes)}, would be deleted"
+                    : $"Deleted {gc.DeletedFiles} unreferenced file(s), {FormatBytes(gc.DeletedBytes)}";
+                if (gc.RawEmlExpired > 0)
+                    cleanup += gc.DryRun
+                        ? $"; {gc.RawEmlExpired} raw .eml cop(ies) past retention would be released"
+                        : $"; {gc.RawEmlExpired} raw .eml cop(ies) past retention released";
+                if (gc.StaleTempFiles > 0)
+                    cleanup += $"; {gc.StaleTempFiles} stale temp file(s)";
+                details.Add(new HealthDetail("Last cleanup", $"{cleanup} ({secs} s)."));
+                if (gc.ReferencedMissing > 0)
+                {
+                    details.Add(new HealthDetail("Missing files",
+                        $"{gc.ReferencedMissing} stored reference(s) point at a file that is not on disk (download returns 404). Usually a restore from an older blob backup."));
+                    if (status < HealthStatus.Warning) status = HealthStatus.Warning;
+                    summaries.Add($"{gc.ReferencedMissing} referenced file(s) missing from blob storage.");
+                }
+            }
+            else
+            {
+                details.Add(new HealthDetail("Last cleanup", "Not run yet (first run 10 minutes after start)."));
+            }
+            if (_blobGc.LastError is { } gcErr)
+            {
+                var at = _blobGc.LastErrorUtc is { } e ? HealthTimeFormat.Local(e, tz) : "(unknown time)";
+                details.Add(new HealthDetail("Cleanup error", $"{at}: {gcErr}"));
+                if (status < HealthStatus.Warning) status = HealthStatus.Warning;
+                summaries.Add("The last blob cleanup failed — unreferenced files keep using disk space until it succeeds.");
+            }
+            if (_blobGc.NextRunUtc is { } next)
+                details.Add(new HealthDetail("Next cleanup", HealthTimeFormat.Local(next, tz)));
+            actions.Add(new HealthAction(
+                Key: "run-blob-gc",
+                Label: "Run cleanup now",
+                Endpoint: "/api/admin/health/blob-store/gc",
+                ConfirmMessage: "Run the blob cleanup now? It follows the current dry-run setting and grace period."));
+        }
 
         return new SubsystemHealth(
             Key: "blob-store",
             Label: "Blob storage",
             Status: status,
-            Summary: summary,
+            Summary: summaries.Count == 0 ? "Blob storage healthy." : string.Join(" ", summaries),
             Details: details,
             Actions: actions);
+    }
+
+    private static string Pct(double value) =>
+        value.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = { "B", "KB", "MB", "GB", "TB" };
+        double v = bytes;
+        var i = 0;
+        while (v >= 1024 && i < units.Length - 1) { v /= 1024; i++; }
+        return v.ToString(i == 0 ? "0" : "0.0", System.Globalization.CultureInfo.InvariantCulture) + " " + units[i];
     }
 
     private SubsystemHealth BuildTlsCert(TimeZoneInfo tz)

@@ -109,7 +109,7 @@ public static class AgentProfileEndpoints
             resolver.Invalidate(userId);
 
             return Results.Ok(new { photoUrl = "/api/me/signature-photo", mimeType = sniffed });
-        }).WithName("UploadMySignaturePhoto").WithOpenApi().DisableRequestTimeout();
+        }).WithName("UploadMySignaturePhoto").WithOpenApi();
 
         group.MapDelete("/signature-photo", async (
             HttpContext http, IAgentProfileRepository repo,
@@ -222,7 +222,7 @@ public static class AgentProfileEndpoints
         {
             var result = await StorePhotoAsync(userId, http, repo, blobs, settings, resolver, ct);
             return result;
-        }).WithName("UploadTeamSignaturePhoto").WithOpenApi().DisableRequestTimeout();
+        }).WithName("UploadTeamSignaturePhoto").WithOpenApi();
 
         group.MapDelete("/{userId:guid}/photo", async (
             Guid userId, IAgentProfileRepository repo, ISignatureVariableResolver resolver, CancellationToken ct) =>
@@ -287,7 +287,7 @@ public static class AgentProfileEndpoints
             await settings.SetAsync<string>(SettingKeys.Signatures.PhotoFrameBlobHash, written.ContentHash, actor, role, ct);
             await settings.SetAsync<string>(SettingKeys.Signatures.PhotoFrameMime, sniffed, actor, role, ct);
             return Results.Ok(new { frameUrl = "/api/admin/signature-profiles/frame", mimeType = sniffed });
-        }).WithName("UploadSignaturePhotoFrame").WithOpenApi().DisableRequestTimeout();
+        }).WithName("UploadSignaturePhotoFrame").WithOpenApi();
 
         group.MapGet("/frame", async (
             HttpContext http, IBlobStore blobs, ISettingsService settings, CancellationToken ct) =>

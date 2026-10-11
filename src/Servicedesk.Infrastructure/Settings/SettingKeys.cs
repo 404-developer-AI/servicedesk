@@ -86,6 +86,11 @@ public static class SettingKeys
     public static class Ui
     {
         public const string DefaultTheme = "Ui.DefaultTheme";
+
+        /// Mobile web (staff): a touch device (phone or tablet) that opens the
+        /// app is sent to the lightweight /m views. Off = every device gets the
+        /// desktop app; /m stays reachable by URL either way.
+        public const string MobileAutoRedirect = "Ui.MobileAutoRedirect";
     }
 
     public static class Tickets
@@ -179,8 +184,10 @@ public static class SettingKeys
         public const string InlineImageMaxBytes = "Storage.InlineImageMaxBytes";
         public const string BlobDiskWarnPercent = "Storage.BlobDiskWarnPercent";
         public const string BlobDiskCriticalPercent = "Storage.BlobDiskCriticalPercent";
-        public const string PerMailboxMonthlyCapMB = "Storage.PerMailboxMonthlyCapMB";
         public const string OrphanRetentionHours = "Storage.OrphanRetentionHours";
+        public const string BlobGcDryRun = "Storage.BlobGcDryRun";
+        public const string BlobGcIntervalHours = "Storage.BlobGcIntervalHours";
+        public const string MaxInboundAttachmentBytes = "Storage.MaxInboundAttachmentBytes";
     }
 
     public static class Mail
@@ -1800,6 +1807,9 @@ public static class SettingDefaults
         new SettingDefault(SettingKeys.Ui.DefaultTheme, UiThemes.Factory, "string", "Ui",
             "Default theme applied to new users and to users who have not yet picked a theme on their Profile page. Allowed values: 'steaan' (flat light house style), 'light' or 'dark' (the Nebula glass theme). A user who has explicitly picked a theme keeps that choice across all devices via their saved preference; this setting only applies until they do."),
 
+        new SettingDefault(SettingKeys.Ui.MobileAutoRedirect, "true", "bool", "Ui",
+            "Send staff on a touch device (phone or tablet) to the mobile web version (/m): ticket views, ticket detail, search, notes, calls and mentions. Each person can still switch to the desktop version on their device. Off = every device opens the desktop app."),
+
         new SettingDefault(SettingKeys.Tickets.DefaultPrioritySlug, "normal", "string", "Tickets",
             "Slug of the priority assigned to new tickets when none is specified."),
         new SettingDefault(SettingKeys.Tickets.ListPageSize, "1000", "int", "Tickets",
@@ -1863,23 +1873,27 @@ public static class SettingDefaults
         new SettingDefault(SettingKeys.Projects.QueueId, "", "string", "Tickets",
             "Queue that holds every project ticket. When set, new and converted project tickets are placed in this queue automatically and cannot be moved to another queue (the queue field is hidden on project tickets); which agents see projects is controlled by this queue's access list. Leave empty to let project tickets sit in any queue like normal tickets."),
 
-        // Storage — ADR-001 (v0.0.8). Keys only; runtime consumers land in later steps.
+        // Storage — blob store, upload limits, blob GC and disk monitoring.
         new SettingDefault(SettingKeys.Storage.BlobRoot, "/var/lib/servicedesk/blobs", "string", "Storage",
             "Host path for content-addressed blob storage. Bind-mounted into the container; read-only outside dev."),
         new SettingDefault(SettingKeys.Storage.MaxAttachmentBytes, "26214400", "int", "Storage",
-            "Maximum size (bytes) for an individual attachment. Default 25 MB matches Exchange Online inbound."),
+            "Maximum size (bytes) of a single uploaded file (tickets, customer portal, knowledge base, feedback, template images). Default 25 MB. The web server's own request limit is derived from this value; uploads above roughly 48 MB are additionally capped by the reverse proxy."),
+        new SettingDefault(SettingKeys.Storage.MaxInboundAttachmentBytes, "104857600", "int", "Storage",
+            "Maximum size (bytes) of a single attachment on an incoming mail. Larger attachments are not downloaded; the mail is processed normally and the attachment is listed as 'too large' in the ticket timeline. Default 100 MB."),
         new SettingDefault(SettingKeys.Storage.RawEmlRetentionDays, "0", "int", "Storage",
-            "Retention window (days) for raw .eml copies. 0 = keep indefinitely."),
+            "How long (days) the original .eml copy of each incoming mail is kept. After that the '.eml' download is no longer available; the mail itself, its body and its attachments stay on the ticket. 0 = keep indefinitely. Applied by the blob cleanup run."),
         new SettingDefault(SettingKeys.Storage.InlineImageMaxBytes, "2097152", "int", "Storage",
-            "Maximum size (bytes) for inline images embedded in mail bodies. Default 2 MB."),
+            "Maximum size (bytes) for signature images and agent photos. Default 2 MB."),
         new SettingDefault(SettingKeys.Storage.BlobDiskWarnPercent, "80", "int", "Storage",
-            "Disk usage percentage that triggers a warning banner for admins."),
+            "Disk usage percentage of the blob storage disk that turns the Blob storage health card to Warning."),
         new SettingDefault(SettingKeys.Storage.BlobDiskCriticalPercent, "92", "int", "Storage",
-            "Disk usage percentage that pauses mail polling and raises a critical alert."),
-        new SettingDefault(SettingKeys.Storage.PerMailboxMonthlyCapMB, "0", "int", "Storage",
-            "Per-mailbox monthly ingestion cap in MB. 0 = no cap."),
+            "Disk usage percentage that turns the Blob storage health card to Critical and pauses mail polling until usage drops below it again. Mail stays in the mailboxes and is picked up once polling resumes."),
         new SettingDefault(SettingKeys.Storage.OrphanRetentionHours, "24", "int", "Storage",
-            "How long (hours) a user-uploaded attachment that was never linked to a post or mail is kept before the orphan-sweeper deletes it."),
+            "Grace period (hours) before the blob cleanup deletes a stored file that nothing references anymore. Minimum 6."),
+        new SettingDefault(SettingKeys.Storage.BlobGcDryRun, "true", "bool", "Storage",
+            "Blob cleanup only counts what it would delete (shown on the Health page) without deleting anything. Turn off once the dry-run figures look right."),
+        new SettingDefault(SettingKeys.Storage.BlobGcIntervalHours, "24", "int", "Storage",
+            "How often (hours) the blob cleanup runs. It scans every stored file, so keep this at a day or more on large installs."),
 
         // Mail — ADR-001 placeholders consumed from v0.0.8 step 4 onwards.
         new SettingDefault(SettingKeys.Mail.PollingIntervalSeconds, "60", "int", "Mail",

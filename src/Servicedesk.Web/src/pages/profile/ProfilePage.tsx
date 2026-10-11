@@ -7,6 +7,7 @@ import { TwoFactorSection } from "@/pages/profile/TwoFactorSection";
 import { ChangePasswordSection } from "@/pages/profile/ChangePasswordSection";
 import { useTheme } from "@/app/ThemeProvider";
 import { ThemePicker } from "@/components/ThemePicker";
+import { MySessionsCard } from "@/components/auth/MySessionsCard";
 import { preferencesApi } from "@/lib/api";
 import { viewApi } from "@/lib/ticket-api";
 import {
@@ -83,6 +84,8 @@ export function ProfilePage() {
           <ChevronRight className="h-4 w-4 text-muted-foreground" />
         </Link>
       ) : null}
+
+      {isAgent ? <MySessionsCard /> : null}
 
       <ChangePasswordSection />
 

@@ -353,11 +353,21 @@ public sealed class FeedbackEntryService : IFeedbackEntryService
     public async Task<bool> DeleteAsync(Guid id, Guid actorUserId, bool ownOnly, CancellationToken ct = default)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        var rows = await conn.ExecuteAsync(new CommandDefinition(
+        // attachments.owner_id is polymorphic (no FK), so the entry's
+        // attachment rows go in the same statement; the blob GC reclaims the
+        // files once nothing else references them.
+        var rows = await conn.ExecuteScalarAsync<int>(new CommandDefinition(
             """
-            DELETE FROM feedback_entries
-            WHERE id = @id
-              AND (@actor IS NULL OR created_by_user_id = @actor)
+            WITH d AS (
+                DELETE FROM feedback_entries
+                WHERE id = @id
+                  AND (@actor IS NULL OR created_by_user_id = @actor)
+                RETURNING id
+            ), a AS (
+                DELETE FROM attachments
+                WHERE owner_kind = 'FeedbackEntry' AND owner_id IN (SELECT id FROM d)
+            )
+            SELECT count(*)::int FROM d
             """,
             new { id, actor = ownOnly ? actorUserId : (Guid?)null },
             cancellationToken: ct));

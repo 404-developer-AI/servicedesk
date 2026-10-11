@@ -37,10 +37,15 @@ public static class TicketMailEndpoints
 
             var row = await mail.GetByIdAsync(mailMessageId, ct);
             if (row is null || row.TicketId != id) return Results.NotFound();
-            if (string.IsNullOrWhiteSpace(row.RawEmlBlobHash)) return Results.NotFound();
+            // The link opens in a new tab, so answer in plain text: the copy is
+            // dropped after Storage.RawEmlRetentionDays (or was never stored
+            // when the raw fetch failed at ingest).
+            if (string.IsNullOrWhiteSpace(row.RawEmlBlobHash))
+                return Results.Text(RawEmlUnavailable, "text/plain; charset=utf-8", statusCode: StatusCodes.Status410Gone);
 
             var stream = await blobs.OpenReadAsync(row.RawEmlBlobHash, ct);
-            if (stream is null) return Results.NotFound();
+            if (stream is null)
+                return Results.Text(RawEmlUnavailable, "text/plain; charset=utf-8", statusCode: StatusCodes.Status410Gone);
 
             await audit.LogAsync(new AuditEvent(
                 EventType: "mail.raw.view",
@@ -129,6 +134,9 @@ public static class TicketMailEndpoints
 
         return app;
     }
+
+    private const string RawEmlUnavailable =
+        "The original .eml copy of this mail is not available: it is past the retention period or was never stored. The mail itself and its attachments are still on the ticket.";
 
     private static string SanitizeFilename(string input)
     {

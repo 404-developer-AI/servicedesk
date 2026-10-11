@@ -147,6 +147,8 @@ ROADMAP.md
 CHANGELOG.md
 CHANGELOG-archive.md
 ARCHITECTURE-archive.md
+AUDIT.md
+SECURITY_AUDIT.md
 NOTFORCLAUDE.md
 NOTFORCLAUDE.MD
 rapport.md
@@ -159,6 +161,7 @@ ReportingApi.md
 KnowledgeBase.md
 EmailSignatures.md
 Statistics.md
+MOBILE_AUDIT.md
 
 # Brand-asset source-staging (multi-resolution originals). The bundled
 # copies the app actually serves live under src/Servicedesk.Web/src/assets/.

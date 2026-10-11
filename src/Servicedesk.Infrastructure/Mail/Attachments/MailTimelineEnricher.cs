@@ -252,8 +252,18 @@ public sealed class MailTimelineEnricher : IMailTimelineEnricher
             })
             .ToList();
 
+        // Attachments skipped by Storage.MaxInboundAttachmentBytes: listed by
+        // name + size only (no URL — there are no bytes). A separate key so
+        // reply/forward code that copies `attachments` never sees them.
+        var skipped = attachments
+            .Where(a => !a.IsInline && a.ProcessingState == "TooLarge")
+            .Select(a => new { name = a.OriginalFilename, size = a.SizeBytes })
+            .ToList();
+
         var dict = ParseMetadata(metadataJson);
         dict["attachments"] = JsonSerializer.SerializeToElement(items);
+        if (skipped.Count > 0)
+            dict["skippedAttachments"] = JsonSerializer.SerializeToElement(skipped);
         AddMailHeaders(dict, fromAddress, fromName, recipients);
         return JsonSerializer.Serialize(dict);
     }

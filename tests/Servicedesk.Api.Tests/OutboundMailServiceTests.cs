@@ -842,6 +842,7 @@ public sealed class OutboundMailServiceTests
             => Task.FromResult<IReadOnlyList<AttachmentRow>>(Array.Empty<AttachmentRow>());
         public Task<bool> MarkReadyAsync(Guid id, string h, long s, string m, CancellationToken ct) => Task.FromResult(true);
         public Task MarkFailedAsync(Guid id, CancellationToken ct) => Task.CompletedTask;
+        public Task MarkTooLargeAsync(Guid id, CancellationToken ct) => Task.CompletedTask;
         public Task<Guid> CreateUploadedAsync(NewUploadedAttachment input, CancellationToken ct)
         {
             // Behaves like the real repo: the copy lands as a Ready row staged

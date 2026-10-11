@@ -85,6 +85,47 @@ public sealed class AttachmentWorkerTests
     }
 
     [Fact]
+    public async Task Declared_size_over_the_inbound_cap_marks_too_large_without_downloading()
+    {
+        var jobs = new StubJobs(new AttachmentJobClaim(10, "Ingest", MakePayload(), AttemptCount: 1));
+        var attachments = new StubAttachments();
+        attachments.Rows[AttachmentId] = MakeAttachmentRow() with { SizeBytes = 5_000 };
+        var graph = new StubGraph(throwOnFetch: true); // a download would throw
+        var blobs = new StubBlobs();
+
+        var ran = await AttachmentWorker.ProcessOneAsync(
+            jobs, attachments, graph, blobs,
+            maxAttempts: 7, retryBaseSeconds: 1,
+            NullLogger<AttachmentWorkerTests>.Instance, default, maxInboundBytes: 1_000);
+
+        Assert.Equal(AttachmentId, ran.TerminalForAttachmentId);
+        Assert.Contains(AttachmentId, attachments.TooLarge);
+        Assert.Contains(10L, jobs.Completed);
+        Assert.Empty(jobs.Retried);
+        Assert.Empty(jobs.DeadLettered);
+        Assert.Empty(blobs.Writes);
+    }
+
+    [Fact]
+    public async Task Understated_size_is_caught_mid_stream_and_marked_too_large()
+    {
+        var jobs = new StubJobs(new AttachmentJobClaim(10, "Ingest", MakePayload(), AttemptCount: 1));
+        var attachments = new StubAttachments();
+        attachments.Rows[AttachmentId] = MakeAttachmentRow() with { SizeBytes = 10 };
+        var graph = new StubGraph(bytes: new string('x', 64));
+        var blobs = new StubBlobs();
+
+        await AttachmentWorker.ProcessOneAsync(
+            jobs, attachments, graph, blobs,
+            maxAttempts: 7, retryBaseSeconds: 1,
+            NullLogger<AttachmentWorkerTests>.Instance, default, maxInboundBytes: 32);
+
+        Assert.Contains(AttachmentId, attachments.TooLarge);
+        Assert.Contains(10L, jobs.Completed);
+        Assert.Empty(attachments.ReadyMarks);
+    }
+
+    [Fact]
     public async Task Empty_queue_returns_false_without_side_effects()
     {
         var jobs = new StubJobs(null);
@@ -152,6 +193,8 @@ public sealed class AttachmentWorkerTests
         public Task<bool> MarkReadyAsync(Guid id, string contentHash, long sizeBytes, string mimeType, CancellationToken ct)
         { ReadyMarks[id] = (contentHash, sizeBytes, mimeType); return Task.FromResult(true); }
         public Task MarkFailedAsync(Guid id, CancellationToken ct) { Failed.Add(id); return Task.CompletedTask; }
+        public HashSet<Guid> TooLarge { get; } = new();
+        public Task MarkTooLargeAsync(Guid id, CancellationToken ct) { TooLarge.Add(id); return Task.CompletedTask; }
         public Task<IReadOnlyList<AttachmentRow>> ListByEventAsync(long eventId, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<AttachmentRow>>(Rows.Values.Where(r => r.EventId == eventId).ToList());
         public Task<Guid> CreateUploadedAsync(NewUploadedAttachment input, CancellationToken ct) => throw new NotImplementedException();

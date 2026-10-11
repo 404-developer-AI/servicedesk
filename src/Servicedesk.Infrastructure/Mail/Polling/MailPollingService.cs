@@ -7,6 +7,7 @@ using Servicedesk.Infrastructure.Performance;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Realtime;
 using Servicedesk.Infrastructure.Settings;
+using Servicedesk.Infrastructure.Storage;
 
 namespace Servicedesk.Infrastructure.Mail.Polling;
 
@@ -73,6 +74,14 @@ public sealed class MailPollingService : BackgroundService
         var markRead = await settings.GetAsync<bool>(SettingKeys.Mail.MarkAsReadOnIngest, ct);
         if (intervalSeconds < 10) intervalSeconds = 10;
         if (batchSize < 1) batchSize = 50;
+
+        // Storage.BlobDiskCriticalPercent: stop pulling mail (bodies, raw .eml
+        // and attachments all land on the blob disk, which the database shares)
+        // until usage drops. Nothing is lost — the mail waits in the mailbox
+        // and the delta cursor resumes where it stopped. BlobDiskMonitor logs
+        // the transition, which raises the Health incident.
+        if (scope.ServiceProvider.GetService<IBlobDiskStatus>() is { IsCritical: true })
+            return TimeSpan.FromSeconds(intervalSeconds);
 
         var queues = (await taxonomy.ListQueuesAsync(ct)).ToDictionary(q => q.Id);
         var sources = await repo.ListAllAsync(ct);

@@ -57,6 +57,19 @@ public static class SettingEndpoints
         .WithName("GetNavigationSettings")
         .WithOpenApi();
 
+        // ---- Mobile web settings (agent-readable) ----
+        // The client decides at route time whether a touch device goes to the
+        // /m views. Only that one flag leaves the server here.
+        app.MapGet("/api/settings/mobile", async (ISettingsService svc, CancellationToken ct) =>
+        {
+            var autoRedirect = await svc.GetAsync<bool>(SettingKeys.Ui.MobileAutoRedirect, ct);
+            return Results.Ok(new MobileSettings(autoRedirect));
+        })
+        .WithTags("Settings")
+        .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+        .WithName("GetMobileSettings")
+        .WithOpenApi();
+
         // ---- Notification settings (v0.0.12 stap 4, agent-readable) ----
         // The notification raamwerk needs the toast duration on the client.
         // Exposing the two public-safe knobs here keeps the settings read
@@ -266,6 +279,8 @@ public static class SettingEndpoints
 
     public sealed record UpdateSettingRequest([property: Required] string Value);
     public sealed record NavigationSettings(bool ShowOpenTickets);
+
+    public sealed record MobileSettings(bool AutoRedirect);
     public sealed record CopilotSettings(bool Enabled, string Url, string Label, bool OpenInPopup);
     public sealed record NotificationsSettings(int PopupDurationSeconds);
     public sealed record MailComposeSettings(bool ForgottenAttachmentEnabled, string ForgottenAttachmentKeywords);

@@ -34,6 +34,7 @@ import { PortalAccountPage } from "@/portal/pages/PortalAccountPage";
 import { SetupWizardPage } from "@/pages/auth/SetupWizardPage";
 import { TicketListPage } from "@/pages/tickets/TicketListPage";
 import { TicketDetailPage } from "@/pages/tickets/TicketDetailPage";
+import { isMobilePath, mobilePathFor, shouldUseMobile } from "@/mobile/mobileMode";
 
 // Route pages are code-split; hot paths (dashboard, ticket list/detail, auth, portal, public forms) stay eager.
 const AuditLogPage = lazyRouteComponent(() => import("@/pages/settings/AuditLogPage"), "AuditLogPage");
@@ -99,6 +100,16 @@ const ActivityFeedPage = lazyRouteComponent(() => import("@/pages/activity/Activ
 const SignaturesSettingsPage = lazyRouteComponent(() => import("@/pages/settings/SignaturesSettingsPage"), "SignaturesSettingsPage");
 const FeedbackPage = lazyRouteComponent(() => import("@/pages/feedback/FeedbackPage"), "FeedbackPage");
 const FeedbackSettingsPage = lazyRouteComponent(() => import("@/pages/settings/FeedbackSettingsPage"), "FeedbackSettingsPage");
+// Mobile web (/m): its own lazy chunk so desktop users never download it.
+const mobileRoutes = () => import("@/mobile/MobileRoutes");
+const MobileShell = lazyRouteComponent(mobileRoutes, "MobileShell");
+const MobileViewsPage = lazyRouteComponent(mobileRoutes, "MobileViewsPage");
+const MobileViewTicketsRoute = lazyRouteComponent(mobileRoutes, "MobileViewTicketsRoute");
+const MobileTicketRoute = lazyRouteComponent(mobileRoutes, "MobileTicketRoute");
+const MobileSearchRoute = lazyRouteComponent(mobileRoutes, "MobileSearchRoute");
+const MobileMentionsPage = lazyRouteComponent(mobileRoutes, "MobileMentionsPage");
+const MobileMePage = lazyRouteComponent(mobileRoutes, "MobileMePage");
+const MobileNotFound = lazyRouteComponent(mobileRoutes, "MobileNotFound");
 
 // The router reads the "current role" outside of React here (for the
 // beforeLoad gate). The auth store is populated by bootstrapAuth() in
@@ -205,6 +216,8 @@ function isBareRoute(path: string): boolean {
   // v0.1.0 — the customer portal has its own shell (PortalShell on the
   // /portal layout route); nothing under /portal ever renders the agent shell.
   if (isPortalPath(path)) return true;
+  // Mobile web has its own shell (MobileShell on the /m layout route).
+  if (isMobilePath(path)) return true;
   if (path.endsWith("/compose")) return true;
   // v0.0.103 — checklist pop-out window (same second-screen workflow).
   if (/^\/tickets\/[^/]+\/checklists$/.test(path)) return true;
@@ -225,7 +238,7 @@ function RootLayout() {
 }
 
 const rootRoute = createRootRoute({
-  beforeLoad: ({ location }) => {
+  beforeLoad: async ({ location }) => {
     const { setupAvailable, user } = authStore.get();
     const path = location.pathname;
     // Hard-gate the setup wizard: it's only reachable while the users table
@@ -260,6 +273,16 @@ const rootRoute = createRootRoute({
     // routes run their own gate.
     if (!isPortalPath(path) && !isPublicPath(path) && authedUser()?.role === "Customer") {
       throw redirect({ to: "/portal" });
+    }
+    // Mobile web: a staff session on a touch device (unless the admin
+    // switched it off or this device chose desktop) lands on the /m view of
+    // the page it asked for. Pages without a mobile view stay on desktop.
+    const role = authedUser()?.role;
+    if (role === "Agent" || role === "Admin") {
+      const target = isMobilePath(path)
+        ? null
+        : mobilePathFor(path, location.searchStr, location.hash ? `#${location.hash}` : "");
+      if (target && (await shouldUseMobile())) throw redirect({ href: target, replace: true });
     }
   },
   component: RootLayout,
@@ -1096,6 +1119,48 @@ const contactDetailRoute = createRoute({
   },
 });
 
+// ---- Mobile web (/m) — staff only, same API + authorization as desktop ----
+const mobileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/m",
+  beforeLoad: authGate(["Agent", "Admin"]),
+  component: MobileShell,
+  notFoundComponent: MobileNotFound,
+});
+const mobileIndexRoute = createRoute({
+  getParentRoute: () => mobileRoute,
+  path: "/",
+  component: MobileViewsPage,
+});
+const mobileViewRoute = createRoute({
+  getParentRoute: () => mobileRoute,
+  path: "views/$viewId",
+  component: MobileViewTicketsRoute,
+});
+const mobileTicketRoute = createRoute({
+  getParentRoute: () => mobileRoute,
+  path: "tickets/$ticketId",
+  component: MobileTicketRoute,
+});
+const mobileSearchRoute = createRoute({
+  getParentRoute: () => mobileRoute,
+  path: "search",
+  validateSearch: (raw: Record<string, unknown>): { q?: string } => ({
+    q: typeof raw.q === "string" ? raw.q : undefined,
+  }),
+  component: MobileSearchRoute,
+});
+const mobileMentionsRoute = createRoute({
+  getParentRoute: () => mobileRoute,
+  path: "mentions",
+  component: MobileMentionsPage,
+});
+const mobileMeRoute = createRoute({
+  getParentRoute: () => mobileRoute,
+  path: "me",
+  component: MobileMePage,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   setupRoute,
@@ -1106,6 +1171,14 @@ const routeTree = rootRoute.addChildren([
   portalResetPasswordRoute,
   portalInvitationRoute,
   portalRoute.addChildren([portalIndexRoute, portalNewTicketRoute, portalTicketDetailRoute, portalAccountRoute]),
+  mobileRoute.addChildren([
+    mobileIndexRoute,
+    mobileViewRoute,
+    mobileTicketRoute,
+    mobileSearchRoute,
+    mobileMentionsRoute,
+    mobileMeRoute,
+  ]),
   dashboardRoute,
   ticketsRoute,
   ticketDetailRoute,
