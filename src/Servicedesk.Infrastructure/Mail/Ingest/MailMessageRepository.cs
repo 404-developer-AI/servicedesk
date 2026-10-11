@@ -184,7 +184,8 @@ public sealed class MailMessageRepository : IMailMessageRepository
     // "Ready to finalize" = mail is attached to a ticket, has not yet been
     // moved, carries the graph_message_id we'll need for the Move call, and
     // every attachment owned by it is in Ready state (absent pending/failed
-    // rows). Mails without attachments qualify trivially.
+    // rows) or was deliberately skipped as TooLarge — the original stays in
+    // the processed folder. Mails without attachments qualify trivially.
     private const string ReadyForFinalizeWhere = """
         m.ticket_id IS NOT NULL
           AND m.mailbox_moved_utc IS NULL
@@ -192,7 +193,7 @@ public sealed class MailMessageRepository : IMailMessageRepository
           AND NOT EXISTS (
               SELECT 1 FROM attachments a
                WHERE a.owner_kind = 'Mail' AND a.owner_id = m.id
-                 AND a.processing_state <> 'Ready')
+                 AND a.processing_state NOT IN ('Ready','TooLarge'))
         """;
 
     public async Task<IReadOnlyList<FinalizeCandidate>> ListReadyForFinalizeAsync(int limit, CancellationToken ct)

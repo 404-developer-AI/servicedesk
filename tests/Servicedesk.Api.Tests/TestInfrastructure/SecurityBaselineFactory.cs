@@ -456,7 +456,7 @@ public sealed class FakeUserService : IUserService
 
 public sealed class FakeSessionService : ISessionService
 {
-    public sealed record Entry(Guid Id, Guid UserId, string Amr, DateTime ExpiresUtc, DateTime LastSeenUtc, bool Revoked, Guid? ImpersonatorUserId = null);
+    public sealed record Entry(Guid Id, Guid UserId, string Amr, DateTime ExpiresUtc, DateTime LastSeenUtc, bool Revoked, Guid? ImpersonatorUserId = null, Guid PublicId = default);
 
     private readonly ConcurrentDictionary<Guid, Entry> _sessions = new();
 
@@ -467,7 +467,7 @@ public sealed class FakeSessionService : ISessionService
     public Task<Guid> CreateAsync(Guid userId, string? ip, string? userAgent, TimeSpan lifetime, string amr, Guid? impersonatorUserId = null, CancellationToken ct = default)
     {
         var id = Guid.NewGuid();
-        _sessions[id] = new Entry(id, userId, amr, DateTime.UtcNow.Add(lifetime), DateTime.UtcNow, false, impersonatorUserId);
+        _sessions[id] = new Entry(id, userId, amr, DateTime.UtcNow.Add(lifetime), DateTime.UtcNow, false, impersonatorUserId, Guid.NewGuid());
         return Task.FromResult(id);
     }
 
@@ -549,6 +549,37 @@ public sealed class FakeSessionService : ISessionService
         }
         return Task.CompletedTask;
     }
+
+    public Task<IReadOnlyList<ActiveSessionRow>> ListActiveForUserAsync(Guid userId, TimeSpan idleTimeout, CancellationToken ct = default)
+    {
+        var now = DateTime.UtcNow;
+        IReadOnlyList<ActiveSessionRow> rows = _sessions.Values
+            .Where(e => e.UserId == userId && !e.Revoked && e.ImpersonatorUserId is null && e.ExpiresUtc > now
+                        && (idleTimeout <= TimeSpan.Zero || now - e.LastSeenUtc <= idleTimeout))
+            .OrderByDescending(e => e.LastSeenUtc)
+            .Select(e => new ActiveSessionRow(e.Id, e.PublicId, e.LastSeenUtc, e.LastSeenUtc, e.ExpiresUtc, "127.0.0.1", "test-agent", e.Amr))
+            .ToList();
+        return Task.FromResult(rows);
+    }
+
+    public Task<Guid?> RevokeByPublicIdForUserAsync(Guid userId, Guid publicId, CancellationToken ct = default)
+    {
+        foreach (var kv in _sessions)
+        {
+            if (kv.Value.PublicId == publicId && kv.Value.UserId == userId && !kv.Value.Revoked)
+            {
+                _sessions[kv.Key] = kv.Value with { Revoked = true };
+                return Task.FromResult<Guid?>(kv.Key);
+            }
+        }
+        return Task.FromResult<Guid?>(null);
+    }
+
+    /// Test helper: the public handle of a session (what "My sessions" shows).
+    public Guid PublicIdOf(Guid sessionId) => _sessions[sessionId].PublicId;
+
+    /// Test helper: whether a session has been revoked.
+    public bool IsRevoked(Guid sessionId) => _sessions.TryGetValue(sessionId, out var e) && e.Revoked;
 }
 
 public sealed class FakeDashboardTilesService : IDashboardTilesService

@@ -3,9 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Servicedesk</title>
     <meta name="color-scheme" content="light dark" />
+    <!-- Mobile web / "Add to Home Screen" (no service worker: online only).
+         theme-color is kept in step with the active theme by ThemeProvider. -->
+    <meta name="theme-color" content="#FFFFFF" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Servicedesk" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <script>
       // Anti-FOUC: apply the persisted theme to <html> before any CSS/JS so
       // the first paint matches the user's last choice. Three themes:

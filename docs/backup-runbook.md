@@ -36,7 +36,23 @@ Output lands in `/var/backups/servicedesk/<timestamp>/`. Override:
 sudo BACKUP_ROOT=/mnt/nas/servicedesk /opt/servicedesk/deploy/backup.sh
 ```
 
-Typical sizes: the DB dump is roughly 2–5% of the raw DB size because `pg_dump -Fc` compresses. Blobs are already on disk — rsync dedup via hardlink is a future improvement.
+Typical sizes: the DB dump is roughly 2–5% of the raw DB size because `pg_dump -Fc` compresses.
+
+### Incremental blobs
+
+Blob files are immutable, so `backup.sh` copies them incrementally. It finds the newest previous complete backup under the backup root (one with a `manifest.txt` and a `blobs/` directory) and runs `rsync -a --link-dest` against it. Unchanged files become hardlinks, so only new blobs cost disk space, while every backup directory remains a complete, self-contained tree that can be restored or copied on its own. The first run, or a run with no previous backup, makes a full copy. The in-flight staging directory `.tmp/` is excluded from the blob copy, both in backup and in restore.
+
+The database dump is always taken first and the blobs second, so no database row can reference a blob that is missing from the backup.
+
+Hardlinks only work within one filesystem. If the backup root is on a filesystem without hardlink support (some network mounts), each backup is a full copy.
+
+### Rotation
+
+`backup.sh` keeps the newest `BACKUP_RETAIN` backups (default `14`) and removes older ones after the new backup has completed successfully. Only directories named like the backups it creates (`YYYY-MM-DDThh-mm-ssZ`) are ever removed, and the backup just created is never removed. Set `BACKUP_RETAIN=0` to disable pruning. Removing an old backup is safe for later ones: a hardlinked file survives as long as any backup still references it.
+
+```bash
+sudo BACKUP_RETAIN=30 /opt/servicedesk/deploy/backup.sh
+```
 
 ## Automating backups with cron
 
@@ -44,13 +60,17 @@ Typical sizes: the DB dump is roughly 2–5% of the raw DB size because `pg_dump
 sudo tee /etc/cron.daily/servicedesk-backup > /dev/null <<'EOF'
 #!/bin/sh
 /opt/servicedesk/deploy/backup.sh >> /var/log/servicedesk-backup.log 2>&1
-# Rotate: keep the last 14 daily backups.
-find /var/backups/servicedesk -maxdepth 1 -mindepth 1 -type d -mtime +14 -exec rm -rf {} \;
 EOF
 sudo chmod 755 /etc/cron.daily/servicedesk-backup
 ```
 
-For weekly full + daily incremental, use `rsync --link-dest` (hardlinks unchanged blobs across timestamp dirs so only the delta costs disk). Not yet wired into `backup.sh` — request in `v0.1.x` if you need it.
+Rotation is handled by `backup.sh` itself (see `BACKUP_RETAIN` above); no separate cleanup job is needed. To change the retention, set the variable in the script line, e.g. `BACKUP_RETAIN=30 /opt/servicedesk/deploy/backup.sh`.
+
+## Off-site copy and encryption
+
+Backups are stored unencrypted, on the same host as the application. A backup on the same disk does not protect against loss of that host. Ship the backup root off-site after each run, using a tool that encrypts and deduplicates, for example [restic](https://restic.net/) or [borg](https://www.borgbackup.org/), from a cron job that runs after `backup.sh`.
+
+The blob directory is unencrypted at rest by design. Use full-disk encryption (LUKS) on the host disk, and on any disk that holds the backup root.
 
 ## Restoring
 

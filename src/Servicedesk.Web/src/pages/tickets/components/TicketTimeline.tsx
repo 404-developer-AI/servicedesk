@@ -22,6 +22,7 @@ import {
   Forward as ForwardIcon,
   Building2,
   Download,
+  FileX,
   Pencil,
   Pin,
   UserCog,
@@ -35,7 +36,9 @@ import {
   Ban,
   ListChecks,
   FolderKanban,
+  Link2,
 } from "lucide-react";
+import { CARD_ACCENT, parseMetadata } from "./timelineMeta";
 import { cn } from "@/lib/utils";
 import { ticketApi, ApiError, type TicketEvent, type OutboundMailKind } from "@/lib/ticket-api";
 import { useAttachmentUploads } from "../hooks/useAttachmentUploads";
@@ -249,7 +252,7 @@ function useDeferredBodyMount(enabled: boolean) {
   return { ref, ready, mountNow: () => setReady(true) };
 }
 
-function CollapsibleBody({
+export function CollapsibleBody({
   html,
   text,
 }: {
@@ -535,6 +538,9 @@ const EVENT_CONFIG: Record<string, EventConfig> = {
   ProjectReverted: { icon: FolderKanban, dotColor: "bg-glass-strong", label: "Project flag removed" },
   ProjectLinked: { icon: FolderKanban, dotColor: "bg-sky-500", label: "Linked to project" },
   ProjectUnlinked: { icon: FolderKanban, dotColor: "bg-glass-strong", label: "Removed from project" },
+  // Parent/child links (LinkParentDialog).
+  ParentLinked: { icon: Link2, dotColor: "bg-sky-500", label: "Linked to parent ticket" },
+  ParentUnlinked: { icon: Link2, dotColor: "bg-glass-strong", label: "Parent link removed" },
   // v0.1.17 — Call-back / Research flag switched on or off.
   TicketFlagChange: { icon: Flag, dotColor: "bg-emerald-500", label: "Ticket flag changed" },
 };
@@ -566,6 +572,8 @@ const SYSTEM_EVENT_TYPES = new Set<string>([
   "ProjectReverted",
   "ProjectLinked",
   "ProjectUnlinked",
+  "ParentLinked",
+  "ParentUnlinked",
   "TicketFlagChange",
 ]);
 
@@ -575,28 +583,6 @@ export function isSystemEvent(event: TicketEvent): boolean {
 
 export function isSystemEventType(eventType: string): boolean {
   return SYSTEM_EVENT_TYPES.has(eventType);
-}
-
-/// Left-edge accent colour per content-event type, tying each card back to
-/// its timeline dot — sky for mail (in/out), blue for internal notes,
-/// emerald for customer-visible replies. Internal events override this
-/// with amber (see the card className below).
-const CARD_ACCENT: Record<string, string> = {
-  MailReceived: "border-l-sky-400/60",
-  MailSent: "border-l-sky-500/50",
-  Mail: "border-l-sky-500/50",
-  Note: "border-l-blue-500/50",
-  Comment: "border-l-emerald-500/40",
-  PortalMessage: "border-l-teal-500/50",
-  Call: "border-l-violet-500/60",
-};
-
-function parseMetadata(json: string): Record<string, unknown> {
-  try {
-    return JSON.parse(json) as Record<string, unknown>;
-  } catch {
-    return {};
-  }
 }
 
 function MetaChangeText({
@@ -673,7 +659,9 @@ function PostAttachmentStrip({ attachments }: { attachments: MailAttachment[] })
   );
 }
 
-function EventBody({ event }: { event: TicketEvent }) {
+/// `readOnly` (mobile web) renders the body without the mail actions
+/// (reply / forward / split / .eml) — outbound mail is out of the mobile scope.
+export function EventBody({ event, readOnly = false }: { event: TicketEvent; readOnly?: boolean }) {
   const meta = parseMetadata(event.metadataJson);
   // Used only by the MailReceived branch but declared here so React's hook
   // ordering stays stable across event types — switch arms can't host hooks.
@@ -878,6 +866,23 @@ function EventBody({ event }: { event: TicketEvent }) {
       );
     }
 
+    case "ParentLinked": {
+      const number = meta.parentNumber != null ? String(meta.parentNumber) : null;
+      return (
+        <span className="text-sm text-muted-foreground">
+          Linked to parent ticket
+          {number && <span className="text-foreground/80"> #{number}</span>}
+        </span>
+      );
+    }
+
+    case "ParentUnlinked":
+      return (
+        <span className="text-sm text-muted-foreground">
+          Parent ticket link removed
+        </span>
+      );
+
     case "ProjectUnlinked":
       return (
         <span className="text-sm text-muted-foreground">
@@ -989,34 +994,36 @@ function EventBody({ event }: { event: TicketEvent }) {
         <div className="space-y-2">
           <CollapsibleBody html={event.bodyHtml} text={event.bodyText} />
           <PostAttachmentStrip attachments={sentAttachments} />
-          <div className="flex flex-wrap items-center gap-1 pt-1">
-            <button
-              type="button"
-              onClick={() => startOutboundAction("Reply")}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
-            >
-              <Reply className="h-3 w-3" />
-              Reply
-            </button>
-            {normalizedCc.length > 0 ? (
+          {!readOnly && (
+            <div className="flex flex-wrap items-center gap-1 pt-1">
               <button
                 type="button"
-                onClick={() => startOutboundAction("ReplyAll")}
+                onClick={() => startOutboundAction("Reply")}
                 className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
               >
-                <ReplyAll className="h-3 w-3" />
-                Reply all
+                <Reply className="h-3 w-3" />
+                Reply
               </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => startOutboundAction("Forward")}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
-            >
-              <ForwardIcon className="h-3 w-3" />
-              Forward
-            </button>
-          </div>
+              {normalizedCc.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => startOutboundAction("ReplyAll")}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
+                >
+                  <ReplyAll className="h-3 w-3" />
+                  Reply all
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => startOutboundAction("Forward")}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
+              >
+                <ForwardIcon className="h-3 w-3" />
+                Forward
+              </button>
+            </div>
+          )}
         </div>
       );
     }
@@ -1041,6 +1048,11 @@ function EventBody({ event }: { event: TicketEvent }) {
             size: number;
             url: string;
           }>)
+        : [];
+      const skippedAttachments = Array.isArray(meta.skippedAttachments)
+        ? (meta.skippedAttachments as Array<{ name?: unknown; size?: unknown }>)
+            .filter((a) => typeof a?.name === "string")
+            .map((a) => ({ name: a.name as string, size: typeof a.size === "number" ? a.size : 0 }))
         : [];
       const metaTo = Array.isArray(meta.to)
         ? (meta.to as Array<{ address: string; name?: string }>)
@@ -1081,58 +1093,77 @@ function EventBody({ event }: { event: TicketEvent }) {
               ))}
             </div>
           ) : null}
-          <div className="flex flex-wrap items-center gap-1 pt-1">
-            <button
-              type="button"
-              onClick={() => startMailAction("Reply")}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
-            >
-              <Reply className="h-3 w-3" />
-              Reply
-            </button>
-            <button
-              type="button"
-              onClick={() => startMailAction("ReplyAll")}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
-            >
-              <ReplyAll className="h-3 w-3" />
-              Reply all
-            </button>
-            <button
-              type="button"
-              onClick={() => startMailAction("Forward")}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
-            >
-              <ForwardIcon className="h-3 w-3" />
-              Forward
-            </button>
-            <button
-              type="button"
-              onClick={() => setSplitOpen(true)}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
-            >
-              <GitBranch className="h-3 w-3" />
-              Split
-            </button>
-            {mailId ? (
-              <a
-                href={`/api/tickets/${event.ticketId}/mail/${mailId}/raw`}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors ml-auto"
+          {skippedAttachments.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {skippedAttachments.map((a, i) => (
+                <span
+                  key={`${a.name}-${i}`}
+                  className="inline-flex items-center gap-2 rounded-md border border-dashed border-border/60 px-2.5 py-1.5 text-xs text-muted-foreground"
+                  title="Not downloaded: larger than the inbound attachment limit. The original mail in the mailbox still has it."
+                >
+                  <FileX className="h-3.5 w-3.5" />
+                  <span className="max-w-[220px] truncate">{a.name}</span>
+                  <span>{formatBytes(a.size)} · too large</span>
+                </span>
+              ))}
+            </div>
+          ) : null}
+          {!readOnly && (
+            <div className="flex flex-wrap items-center gap-1 pt-1">
+              <button
+                type="button"
+                onClick={() => startMailAction("Reply")}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
               >
-                <Download className="h-3 w-3" />
-                .eml
-              </a>
-            ) : null}
-          </div>
-          <SplitMailDialog
-            open={splitOpen}
-            sourceTicketId={event.ticketId}
-            sourceMailEventId={event.id}
-            mailSubject={subject}
-            onClose={() => setSplitOpen(false)}
-          />
+                <Reply className="h-3 w-3" />
+                Reply
+              </button>
+              <button
+                type="button"
+                onClick={() => startMailAction("ReplyAll")}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
+              >
+                <ReplyAll className="h-3 w-3" />
+                Reply all
+              </button>
+              <button
+                type="button"
+                onClick={() => startMailAction("Forward")}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
+              >
+                <ForwardIcon className="h-3 w-3" />
+                Forward
+              </button>
+              <button
+                type="button"
+                onClick={() => setSplitOpen(true)}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors"
+              >
+                <GitBranch className="h-3 w-3" />
+                Split
+              </button>
+              {mailId ? (
+                <a
+                  href={`/api/tickets/${event.ticketId}/mail/${mailId}/raw`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-glass-hover transition-colors ml-auto"
+                >
+                  <Download className="h-3 w-3" />
+                  .eml
+                </a>
+              ) : null}
+            </div>
+          )}
+          {!readOnly && (
+            <SplitMailDialog
+              open={splitOpen}
+              sourceTicketId={event.ticketId}
+              sourceMailEventId={event.id}
+              mailSubject={subject}
+              onClose={() => setSplitOpen(false)}
+            />
+          )}
         </div>
       );
     }
@@ -1746,6 +1777,25 @@ function TimelineEvent({
 }
 
 export { EVENT_CONFIG };
+
+/// Image/attachment preview context for timeline bodies rendered outside
+/// <TicketTimeline> (the mobile ticket page): clicking an inline image or an
+/// attachment chip opens the same preview dialog.
+export function TimelinePreviewProvider({ children }: { children: React.ReactNode }) {
+  const [preview, setPreview] = React.useState<AttachmentPreview | null>(null);
+  const previewApi = React.useMemo<PreviewContextValue>(() => ({ open: setPreview }), []);
+  return (
+    <PreviewContext.Provider value={previewApi}>
+      {children}
+      <AttachmentPreviewDialog
+        preview={preview}
+        onOpenChange={(open) => {
+          if (!open) setPreview(null);
+        }}
+      />
+    </PreviewContext.Provider>
+  );
+}
 
 export function TicketTimeline({ ticketId, ticketNumber, events, pinnedEventIds }: TicketTimelineProps) {
   const [preview, setPreview] = React.useState<AttachmentPreview | null>(null);

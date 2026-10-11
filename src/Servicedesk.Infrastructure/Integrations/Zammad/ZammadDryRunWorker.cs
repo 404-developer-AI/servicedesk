@@ -542,15 +542,20 @@ public sealed class ZammadDryRunWorker : BackgroundService
 
                 try
                 {
+                    // Sniff like every other ingest path: the Zammad-declared
+                    // type is only a fallback, so a mislabelled file cannot
+                    // ride along to the inline-download route.
                     await using var stream = await zammad.FetchAttachmentBytesAsync(
                         zammadTicketId, article.Id, att.Id, ct);
-                    var written = await blobs.WriteAsync(stream, ct);
+                    var stored = await SniffedBlobWriter.WriteAsync(
+                        blobs, stream, att.MimeType, att.Filename, accept: null, ct);
+                    var written = stored.Write!;
                     plans.Add(new ZammadImportAttachmentPlan(
                         ZammadArticleId: article.Id,
                         ZammadAttachmentId: att.Id,
                         Filename: att.Filename,
                         SizeBytes: written.SizeBytes,
-                        MimeType: att.MimeType,
+                        MimeType: stored.MimeType,
                         IsInline: att.IsInline,
                         ContentId: att.ContentId,
                         ContentHash: written.ContentHash));

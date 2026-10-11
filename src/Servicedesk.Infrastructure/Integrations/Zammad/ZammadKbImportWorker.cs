@@ -615,103 +615,17 @@ public sealed class ZammadKbImportWorker : BackgroundService
             attachmentId: upstreamId,
             ct: ct);
 
-        // Sniff the first 512 bytes for the actual content-type so a
-        // PNG advertised as octet-stream still lands with the right
-        // mime. The ConcatStream wrapper re-prefixes the sniffed head
-        // onto the rest of the upstream stream before writing to the
-        // blob store.
-        var headBuffer = System.Buffers.ArrayPool<byte>.Shared.Rent(
-            Storage.MimeSniffer.SniffWindowBytes);
-        try
-        {
-            var headLen = await ReadFullyAsync(source,
-                headBuffer.AsMemory(0, Storage.MimeSniffer.SniffWindowBytes), ct);
-            var sniffedMime = Storage.MimeSniffer.Sniff(
-                headBuffer.AsSpan(0, headLen),
-                advertisedMime,
-                advertisedFilename);
-
-            using var combined = new HeadedStream(
-                headBuffer.AsMemory(0, headLen), source);
-            var write = await blobs.WriteAsync(combined, ct);
-            return await attachments.CreateForKbArticleAsync(new NewKbArticleAttachment(
-                ArticleId: articleId,
-                ContentHash: write.ContentHash,
-                SizeBytes: write.SizeBytes,
-                MimeType: sniffedMime,
-                OriginalFilename: advertisedFilename), ct);
-        }
-        finally
-        {
-            System.Buffers.ArrayPool<byte>.Shared.Return(headBuffer);
-        }
-    }
-
-    private static async Task<int> ReadFullyAsync(Stream source, Memory<byte> dest, CancellationToken ct)
-    {
-        var total = 0;
-        while (total < dest.Length)
-        {
-            var read = await source.ReadAsync(dest[total..], ct);
-            if (read == 0) break;
-            total += read;
-        }
-        return total;
-    }
-
-    /// Read-only stream that emits a buffered "head" first and then
-    /// drains the underlying inner stream. Used to re-prefix the MIME-
-    /// sniff peek onto the rest of the upstream byte stream before the
-    /// blob-store write consumes it.
-    private sealed class HeadedStream : Stream
-    {
-        private readonly ReadOnlyMemory<byte> _head;
-        private readonly Stream _tail;
-        private int _headOffset;
-
-        public HeadedStream(ReadOnlyMemory<byte> head, Stream tail)
-        {
-            _head = head;
-            _tail = tail;
-        }
-
-        public override bool CanRead => true;
-        public override bool CanSeek => false;
-        public override bool CanWrite => false;
-        public override long Length => throw new NotSupportedException();
-        public override long Position
-        {
-            get => throw new NotSupportedException();
-            set => throw new NotSupportedException();
-        }
-        public override void Flush() { }
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-        public override void SetLength(long value) => throw new NotSupportedException();
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            if (_headOffset < _head.Length)
-            {
-                var take = Math.Min(count, _head.Length - _headOffset);
-                _head.Span.Slice(_headOffset, take).CopyTo(buffer.AsSpan(offset, take));
-                _headOffset += take;
-                return take;
-            }
-            return _tail.Read(buffer, offset, count);
-        }
-
-        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
-        {
-            if (_headOffset < _head.Length)
-            {
-                var take = Math.Min(buffer.Length, _head.Length - _headOffset);
-                _head.Slice(_headOffset, take).CopyTo(buffer);
-                _headOffset += take;
-                return take;
-            }
-            return await _tail.ReadAsync(buffer, ct);
-        }
+        // Sniff the actual content-type so a PNG advertised as octet-stream
+        // still lands with the right mime; the advertised one is the fallback.
+        var stored = await Storage.SniffedBlobWriter.WriteAsync(
+            blobs, source, advertisedMime, advertisedFilename, accept: null, ct);
+        var write = stored.Write!;
+        return await attachments.CreateForKbArticleAsync(new NewKbArticleAttachment(
+            ArticleId: articleId,
+            ContentHash: write.ContentHash,
+            SizeBytes: write.SizeBytes,
+            MimeType: stored.MimeType,
+            OriginalFilename: advertisedFilename), ct);
     }
 
     private static async Task<(Guid? UserId, Dictionary<string, object?>? ExternalMeta)> ResolveAuthorAsync(

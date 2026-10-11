@@ -4,6 +4,19 @@ using Npgsql;
 
 namespace Servicedesk.Infrastructure.Auth.Sessions;
 
+/// One open session of a user, as listed on the "My sessions" surface.
+/// <see cref="SessionId"/> is the cookie token: server-side only (used to
+/// mark the caller's own row), never serialised to a client.
+public sealed record ActiveSessionRow(
+    Guid SessionId,
+    Guid PublicId,
+    DateTime CreatedUtc,
+    DateTime LastSeenUtc,
+    DateTime ExpiresUtc,
+    string? Ip,
+    string? UserAgent,
+    string Amr);
+
 public sealed record SessionValidation(Guid SessionId, ApplicationUser User, string Amr, DateTime ExpiresUtc, Guid? ImpersonatorUserId = null);
 
 /// Cache-key format for validated sessions. Lives here (not in the API's
@@ -37,6 +50,16 @@ public interface ISessionService
     Task RevokeAllForUserExceptAsync(Guid userId, Guid keepSessionId, CancellationToken ct = default);
 
     Task UpgradeAmrAsync(Guid sessionId, string amr, CancellationToken ct = default);
+
+    /// Open sessions of <paramref name="userId"/>: not revoked, not past the
+    /// absolute expiry and not idled out. Newest activity first. Shadow
+    /// (impersonated) sessions belong to the customer row, never listed here.
+    Task<IReadOnlyList<ActiveSessionRow>> ListActiveForUserAsync(Guid userId, TimeSpan idleTimeout, CancellationToken ct = default);
+
+    /// Revokes the session with this public handle, but only when it belongs
+    /// to <paramref name="userId"/> (ownership is part of the WHERE clause).
+    /// Returns the revoked session's id, or null when nothing matched.
+    Task<Guid?> RevokeByPublicIdForUserAsync(Guid userId, Guid publicId, CancellationToken ct = default);
 }
 
 public sealed class SessionService : ISessionService
@@ -188,6 +211,48 @@ public sealed class SessionService : ISessionService
             new { id = sessionId, amr },
             cancellationToken: ct));
         _cache.Remove(SessionCache.Key(sessionId));
+    }
+
+    public async Task<IReadOnlyList<ActiveSessionRow>> ListActiveForUserAsync(
+        Guid userId, TimeSpan idleTimeout, CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT id AS SessionId, public_id AS PublicId, created_utc AS CreatedUtc,
+                   last_seen_utc AS LastSeenUtc, expires_utc AS ExpiresUtc,
+                   ip AS Ip, user_agent AS UserAgent, amr AS Amr
+            FROM user_sessions
+            WHERE user_id = @userId
+              AND revoked_utc IS NULL
+              AND impersonator_user_id IS NULL
+              AND expires_utc > now()
+              AND (@idleSeconds <= 0 OR last_seen_utc > now() - make_interval(secs => @idleSeconds))
+            ORDER BY last_seen_utc DESC
+            LIMIT 100
+            """;
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await connection.QueryAsync<ActiveSessionRow>(new CommandDefinition(
+            sql,
+            new { userId, idleSeconds = idleTimeout.TotalSeconds },
+            cancellationToken: ct));
+        return rows.ToList();
+    }
+
+    public async Task<Guid?> RevokeByPublicIdForUserAsync(Guid userId, Guid publicId, CancellationToken ct = default)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var revoked = await connection.QueryFirstOrDefaultAsync<Guid?>(new CommandDefinition(
+            """
+            UPDATE user_sessions SET revoked_utc = now()
+            WHERE public_id = @publicId AND user_id = @userId AND revoked_utc IS NULL
+            RETURNING id
+            """,
+            new { publicId, userId },
+            cancellationToken: ct));
+        if (revoked is Guid sessionId)
+        {
+            _cache.Remove(SessionCache.Key(sessionId));
+        }
+        return revoked;
     }
 
     private sealed record SessionRow(

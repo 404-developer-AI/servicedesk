@@ -322,8 +322,16 @@ public static class TicketEndpoints
             ITicketRepository tickets, ICompanyRepository companies, IQueueAccessService queueAccess,
             IContactLookupService contactLookup,
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla,
-            ITriggerService triggers, ISettingsService settings, CancellationToken ct) =>
+            ITriggerService triggers, ISettingsService settings,
+            Servicedesk.Infrastructure.Tickets.ITicketHtmlSanitizer htmlSanitizer, CancellationToken ct) =>
         {
+            req = req with
+            {
+                BodyHtml = htmlSanitizer.Sanitize(req.BodyHtml),
+                InitialNote = req.InitialNote is { } initialNote
+                    ? initialNote with { BodyHtml = htmlSanitizer.Sanitize(initialNote.BodyHtml) ?? string.Empty }
+                    : null,
+            };
             if (string.IsNullOrWhiteSpace(req.Subject))
                 return Results.BadRequest(new { error = "Subject is required." });
             if (req.RequesterContactId == Guid.Empty)
@@ -1109,8 +1117,10 @@ public static class TicketEndpoints
             IComposeTemplateSurveyDispatcher surveyTemplateDispatcher,
             ISettingsService settings,
             IWorkflowCaptureService workflow,
+            Servicedesk.Infrastructure.Tickets.ITicketHtmlSanitizer htmlSanitizer,
             CancellationToken ct) =>
         {
+            req = req with { BodyHtml = htmlSanitizer.Sanitize(req.BodyHtml) };
             if (string.IsNullOrWhiteSpace(req.EventType))
                 return Results.BadRequest(new { error = "eventType is required." });
             if (req.EventType != "Comment" && req.EventType != "Note" && req.EventType != "Call")
@@ -1251,8 +1261,10 @@ public static class TicketEndpoints
             IOutboundMailService outbound, IHubContext<TicketPresenceHub> hub,
             IComposeTemplateSurveyDispatcher surveyTemplateDispatcher,
             IAuditLogger audit, ISettingsService settings, IWorkflowCaptureService workflow,
+            Servicedesk.Infrastructure.Tickets.ITicketHtmlSanitizer htmlSanitizer,
             CancellationToken ct) =>
         {
+            req = req with { BodyHtml = htmlSanitizer.Sanitize(req.BodyHtml) };
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 
@@ -1402,8 +1414,10 @@ public static class TicketEndpoints
             ITicketRepository tickets, IQueueAccessService queueAccess,
             IAttachmentRepository attachmentsRepo,
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, IWorkflowCaptureService workflow,
+            Servicedesk.Infrastructure.Tickets.ITicketHtmlSanitizer htmlSanitizer,
             CancellationToken ct) =>
         {
+            req = req with { BodyHtml = htmlSanitizer.Sanitize(req.BodyHtml) };
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
 

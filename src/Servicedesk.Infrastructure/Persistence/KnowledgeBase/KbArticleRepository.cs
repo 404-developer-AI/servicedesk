@@ -260,8 +260,17 @@ public sealed class KbArticleRepository : IKbArticleRepository
     public async Task<bool> HardDeleteArticleAsync(Guid id, CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
-        var rows = await conn.ExecuteAsync(new CommandDefinition(
-            "DELETE FROM kb_articles WHERE id = @id", new { id }, cancellationToken: ct));
+        // attachments.owner_id is polymorphic (no FK): drop the article's
+        // attachment rows in the same statement. The blob GC reclaims the files.
+        var rows = await conn.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            WITH d AS (DELETE FROM kb_articles WHERE id = @id RETURNING id),
+            a AS (
+                DELETE FROM attachments
+                WHERE owner_kind = 'KbArticle' AND owner_id IN (SELECT id FROM d)
+            )
+            SELECT count(*)::int FROM d
+            """, new { id }, cancellationToken: ct));
         return rows > 0;
     }
 

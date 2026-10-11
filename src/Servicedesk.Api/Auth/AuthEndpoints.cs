@@ -77,8 +77,125 @@ public static class AuthEndpoints
             .RequireAuthorization(AuthorizationPolicies.RequireAgent)
             .RequireRateLimiting("auth");
 
+        // "My sessions" — every open sign-in of the caller, so a lost or
+        // shared phone can be signed out from another device. Rows are
+        // addressed by their public handle; the session id is the cookie
+        // token and never leaves the server. Staff only (customers have no
+        // multi-device surface); revokes are audited.
+        group.MapGet("/sessions", ListMySessions)
+            .WithName("AuthListSessions")
+            .WithOpenApi()
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
+
+        group.MapDelete("/sessions/{publicId:guid}", RevokeMySession)
+            .WithName("AuthRevokeSession")
+            .WithOpenApi()
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+            .RequireRateLimiting("auth");
+
+        group.MapPost("/sessions/revoke-others", RevokeMyOtherSessions)
+            .WithName("AuthRevokeOtherSessions")
+            .WithOpenApi()
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+            .RequireRateLimiting("auth");
+
         return app;
     }
+
+    // ---- My sessions -------------------------------------------------------
+
+    private const int MaxUserAgentLength = 300;
+
+    public sealed record MySessionDto(
+        Guid PublicId,
+        DateTime CreatedUtc,
+        DateTime LastSeenUtc,
+        DateTime ExpiresUtc,
+        string? Ip,
+        string? UserAgent,
+        string Amr,
+        bool Current);
+
+    private static async Task<IResult> ListMySessions(
+        HttpContext httpContext,
+        ISessionService sessions,
+        ISettingsService settings,
+        CancellationToken ct)
+    {
+        var userId = RequireUserId(httpContext);
+        if (userId is null || !TryGetSessionId(httpContext, out var currentSessionId)) return Results.Unauthorized();
+
+        var idleMinutes = await settings.GetAsync<int>(SettingKeys.Security.SessionIdleTimeoutMinutes, ct);
+        var rows = await sessions.ListActiveForUserAsync(
+            userId.Value, idleMinutes > 0 ? TimeSpan.FromMinutes(idleMinutes) : TimeSpan.Zero, ct);
+        var items = rows.Select(r => new MySessionDto(
+            r.PublicId,
+            r.CreatedUtc,
+            r.LastSeenUtc,
+            r.ExpiresUtc,
+            r.Ip,
+            r.UserAgent is { Length: > MaxUserAgentLength } ua ? ua[..MaxUserAgentLength] : r.UserAgent,
+            r.Amr,
+            r.SessionId == currentSessionId)).ToList();
+        return Results.Ok(new { items });
+    }
+
+    private static async Task<IResult> RevokeMySession(
+        Guid publicId,
+        HttpContext httpContext,
+        ISessionService sessions,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        var userId = RequireUserId(httpContext);
+        if (userId is null || !TryGetSessionId(httpContext, out var currentSessionId)) return Results.Unauthorized();
+
+        // Ending the session doing the request is a sign-out, which has its
+        // own endpoint (it also clears the cookies). Refuse it here so this
+        // endpoint only ever affects *other* devices.
+        var own = await sessions.ListActiveForUserAsync(userId.Value, TimeSpan.Zero, ct);
+        if (own.Any(r => r.PublicId == publicId && r.SessionId == currentSessionId))
+        {
+            return Results.BadRequest(new { error = "This is the current session. Use sign out instead." });
+        }
+
+        var revoked = await sessions.RevokeByPublicIdForUserAsync(userId.Value, publicId, ct);
+        if (revoked is null) return Results.NotFound();
+
+        await audit.LogAsync(new AuditEvent(
+            EventType: AuthEventTypes.SessionRevoked,
+            Actor: httpContext.User.FindFirst(ClaimTypes.Email)?.Value ?? "unknown",
+            ActorRole: httpContext.User.FindFirst(ClaimTypes.Role)?.Value ?? "unknown",
+            Target: userId.Value.ToString(),
+            ClientIp: httpContext.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: httpContext.Request.Headers.UserAgent.ToString(),
+            Payload: new { scope = "single", sessionPublicId = publicId }), ct);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> RevokeMyOtherSessions(
+        HttpContext httpContext,
+        ISessionService sessions,
+        IAuditLogger audit,
+        CancellationToken ct)
+    {
+        var userId = RequireUserId(httpContext);
+        if (userId is null || !TryGetSessionId(httpContext, out var currentSessionId)) return Results.Unauthorized();
+
+        await sessions.RevokeAllForUserExceptAsync(userId.Value, currentSessionId, ct);
+        await audit.LogAsync(new AuditEvent(
+            EventType: AuthEventTypes.SessionRevoked,
+            Actor: httpContext.User.FindFirst(ClaimTypes.Email)?.Value ?? "unknown",
+            ActorRole: httpContext.User.FindFirst(ClaimTypes.Role)?.Value ?? "unknown",
+            Target: userId.Value.ToString(),
+            ClientIp: httpContext.Connection.RemoteIpAddress?.ToString(),
+            UserAgent: httpContext.Request.Headers.UserAgent.ToString(),
+            Payload: new { scope = "others" }), ct);
+        return Results.NoContent();
+    }
+
+    private static bool TryGetSessionId(HttpContext httpContext, out Guid sessionId) =>
+        Guid.TryParse(httpContext.User.FindFirst("sid")?.Value, out sessionId);
 
     // ---- Setup wizard ------------------------------------------------------
 
@@ -370,8 +487,17 @@ public static class AuthEndpoints
                 UserAgent: httpContext.Request.Headers.UserAgent.ToString()), ct);
         }
         ClearAuthCookies(httpContext, cookieName);
+        ClearBrowserCache(httpContext);
         return Results.Ok();
     }
+
+    /// Sign-out also drops the browser's HTTP cache for this origin, so a
+    /// shared or handed-over device keeps no ticket attachments or inline
+    /// images (those are served `private, max-age`) once the session ends.
+    /// Storage and cookies are left alone: per-device preferences stay, and
+    /// the auth cookies are already deleted above.
+    internal static void ClearBrowserCache(HttpContext httpContext) =>
+        httpContext.Response.Headers["Clear-Site-Data"] = "\"cache\"";
 
     private static async Task<IResult> Me(
         HttpContext httpContext,

@@ -28,6 +28,8 @@ public sealed class SettingsSearchSource : ISearchSource
             "sla business hours holidays first response resolution policy pause pending dashboard recalc"),
         new("jobs", "Jobs & retentie", "/settings/jobs",
             "jobs retention attachment worker concurrency poll attempts backoff dead letter"),
+        new("general", "General", "/settings/general",
+            "general timezone default theme maintenance login banner update rollout mobile phone tablet touch pwa home screen session idle lifetime"),
         new("navigation", "Navigatie", "/settings/navigation",
             "navigation sidebar open tickets link"),
         new("queues", "Queues", "/settings/queues",

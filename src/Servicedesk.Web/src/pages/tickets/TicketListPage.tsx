@@ -16,6 +16,7 @@ import type { TicketListQuery, TicketListItem, DisplayConfig, ViewSearchMode } f
 import { rowMatchesColumns, searchableColumns, searchTokens } from "@/lib/ticketColumns";
 import { ViewSearchBar } from "./components/ViewSearchBar";
 import { SearchHighlightContext } from "./components/searchHighlightContext";
+import { viewDisplayConfig, viewFilters, viewListQuery } from "@/lib/viewFilters";
 
 const NO_TOKENS: readonly string[] = [];
 
@@ -27,24 +28,6 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
     return () => window.clearTimeout(id);
   }, [value, delayMs]);
   return delayMs <= 0 ? value : debounced;
-}
-
-// v0.0.40 polish — pull a multi-id list from a parsed filtersJson object
-// while falling back to the legacy singular field. Returns undefined when
-// neither form is present so the caller can omit the key entirely.
-function readIdList(
-  raw: Record<string, unknown>,
-  listKey: string,
-  singularKey: string,
-): string[] | undefined {
-  const list = raw[listKey];
-  if (Array.isArray(list)) {
-    const ids = list.filter((v): v is string => typeof v === "string" && v.length > 0);
-    if (ids.length > 0) return ids;
-  }
-  const single = raw[singularKey];
-  if (typeof single === "string" && single.length > 0) return [single];
-  return undefined;
 }
 
 function readFiltersFromSearch(searchStr: string): TicketListQuery {
@@ -149,37 +132,9 @@ export function TicketListPage() {
   React.useEffect(() => {
     if (!viewData || viewApplied) return;
     appliedVersionRef.current = { id: viewData.id, version: viewData.updatedUtc };
-    try {
-      const vf = JSON.parse(viewData.filtersJson) as Record<string, unknown>;
-      const applied: TicketListQuery = {};
-      // v0.0.40 polish — multi-select arrays from the view editor. Legacy
-      // views (singular form) are folded into a single-element array so
-      // the server can take the same path.
-      const queueIds = readIdList(vf, "queueIds", "queueId");
-      const statusIds = readIdList(vf, "statusIds", "statusId");
-      const priorityIds = readIdList(vf, "priorityIds", "priorityId");
-      if (queueIds) applied.queueIds = queueIds;
-      if (statusIds) applied.statusIds = statusIds;
-      if (priorityIds) applied.priorityIds = priorityIds;
-      if (typeof vf.assigneeUserId === "string") applied.assigneeUserId = vf.assigneeUserId;
-      if (typeof vf.search === "string") applied.search = vf.search;
-      if (vf.openOnly === true) applied.openOnly = true;
-      if (vf.projectsOnly === true) applied.projectsOnly = true;
-      if (vf.callbacksOnly === true) applied.callbacksOnly = true;
-      if (vf.researchOnly === true) applied.researchOnly = true;
-      setFilters(applied);
-    } catch {
-      // bad JSON — ignore, show unfiltered
-    }
+    setFilters(viewFilters(viewData));
     // Parse display config (sorting, grouping, priority float)
-    try {
-      const dc: DisplayConfig = viewData.displayConfigJson
-        ? JSON.parse(viewData.displayConfigJson)
-        : {};
-      setDisplayConfig(dc);
-    } catch {
-      setDisplayConfig({});
-    }
+    setDisplayConfig(viewDisplayConfig(viewData));
     setViewApplied(true);
   }, [viewData, viewApplied]);
 
@@ -194,16 +149,7 @@ export function TicketListPage() {
   const visibleColumns = useColumnPrefsStore((s) => s.visibleColumns);
   const includeTimeLogged = visibleColumns.includes("timeLogged");
   const baseQuery = React.useMemo<TicketListQuery>(
-    () => ({
-      ...filters,
-      sortField: displayConfig.sort?.field,
-      sortDirection: displayConfig.sort?.direction,
-      priorityFloat: displayConfig.priorityFloat,
-      callbackFloat: displayConfig.callbackFloat,
-      researchFloat: displayConfig.researchFloat,
-      stateBucketSort: displayConfig.stateBucketSort,
-      includeTimeLogged,
-    }),
+    () => ({ ...viewListQuery(filters, displayConfig), includeTimeLogged }),
     [filters, displayConfig, includeTimeLogged],
   );
   const {

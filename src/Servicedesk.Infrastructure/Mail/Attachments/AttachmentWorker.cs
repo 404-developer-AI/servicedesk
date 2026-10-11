@@ -121,8 +121,9 @@ public sealed class AttachmentWorker : BackgroundService
 
         var maxAttempts = SafeRead(() => settings.GetAsync<int>(SettingKeys.Jobs.AttachmentMaxAttempts, ct), 7);
         var retryBase = SafeRead(() => settings.GetAsync<int>(SettingKeys.Jobs.AttachmentRetryBaseSeconds, ct), 5);
+        var maxInboundBytes = (long)SafeRead(() => settings.GetAsync<int>(SettingKeys.Storage.MaxInboundAttachmentBytes, ct), 104_857_600);
 
-        var outcome = await ProcessOneAsync(jobs, attachments, graph, blobs, maxAttempts, retryBase, _logger, ct);
+        var outcome = await ProcessOneAsync(jobs, attachments, graph, blobs, maxAttempts, retryBase, _logger, ct, maxInboundBytes);
         if (outcome.Ran && outcome.TerminalForAttachmentId is Guid attachmentRowId)
         {
             // Attachment row → mail row. Only Mail-owned rows trigger the
@@ -159,7 +160,8 @@ public sealed class AttachmentWorker : BackgroundService
         int maxAttempts,
         int retryBaseSeconds,
         ILogger logger,
-        CancellationToken ct)
+        CancellationToken ct,
+        long maxInboundBytes = long.MaxValue)
     {
         var job = await jobs.ClaimNextAsync(DateTime.UtcNow, ct);
         if (job is null) return new ProcessOutcome(false, null);
@@ -171,7 +173,23 @@ public sealed class AttachmentWorker : BackgroundService
             logger.LogInformation(
                 "[AttachmentWorker] jobId={JobId} attachment={AttachmentId} claim mailbox={Mailbox} graphMessageId={GraphMessageId} attempt={Attempt}",
                 job.JobId, payload.AttachmentId, payload.Mailbox, payload.GraphMessageId, job.AttemptCount + 1);
-            var ingested = await IngestAsync(payload, graph, blobs, attachments, ct);
+            BlobWriteResult ingested;
+            try
+            {
+                ingested = await IngestAsync(payload, graph, blobs, attachments, maxInboundBytes, ct);
+            }
+            catch (InboundAttachmentTooLargeException tooLarge)
+            {
+                // Deliberate, terminal and not an error: no retries, no
+                // dead-letter. The timeline lists the file as too large.
+                sw.Stop();
+                await attachments.MarkTooLargeAsync(payload.AttachmentId, ct);
+                await jobs.CompleteAsync(job.JobId, sw.Elapsed, ct);
+                logger.LogInformation(
+                    "[AttachmentWorker] jobId={JobId} attachment={AttachmentId} skipped: {Size} bytes exceeds Storage.MaxInboundAttachmentBytes ({Max}).",
+                    job.JobId, payload.AttachmentId, tooLarge.SizeBytes, maxInboundBytes);
+                return new ProcessOutcome(true, payload.AttachmentId);
+            }
             sw.Stop();
             await jobs.CompleteAsync(job.JobId, sw.Elapsed, ct);
             logger.LogInformation(
@@ -234,15 +252,24 @@ public sealed class AttachmentWorker : BackgroundService
 
     private static async Task<BlobWriteResult> IngestAsync(
         JobPayload p, IGraphMailClient graph, IBlobStore blobs,
-        IAttachmentRepository attachments, CancellationToken ct)
+        IAttachmentRepository attachments, long maxInboundBytes, CancellationToken ct)
     {
-        await using var stream = await graph.FetchAttachmentBytesAsync(
-            p.Mailbox, p.GraphMessageId, p.GraphAttachmentId, ct);
-        var result = await blobs.WriteAsync(stream, ct);
-
         var row = await attachments.GetByIdAsync(p.AttachmentId, ct)
             ?? throw new InvalidOperationException(
                 $"Attachment row {p.AttachmentId} disappeared between enqueue and ingest.");
+
+        // Graph's declared size (taken at enqueue) settles most cases without
+        // a download; the capped stream catches an understated size.
+        if (row.SizeBytes > maxInboundBytes)
+            throw new InboundAttachmentTooLargeException(row.SizeBytes);
+
+        BlobWriteResult result;
+        await using (var stream = await graph.FetchAttachmentBytesAsync(
+            p.Mailbox, p.GraphMessageId, p.GraphAttachmentId, ct))
+        await using (var capped = new MaxLengthReadStream(stream, maxInboundBytes))
+        {
+            result = await blobs.WriteAsync(capped, ct);
+        }
 
         // v0.1.3 (audit v0.1.1 #2) — the row's MIME type so far is whatever
         // the *sender's* mail client declared. Sniff the stored bytes exactly
@@ -251,22 +278,8 @@ public sealed class AttachmentWorker : BackgroundService
         // along to the inline-download route. (Unlike uploads the attachment
         // is kept either way — the download guard force-downloads anything
         // that still sniffs as HTML/XML.)
-        var mimeType = row.MimeType;
-        await using (var head = await blobs.OpenReadAsync(result.ContentHash, ct))
-        {
-            if (head is not null)
-            {
-                var buffer = new byte[Storage.MimeSniffer.SniffWindowBytes];
-                var read = 0;
-                while (read < buffer.Length)
-                {
-                    var n = await head.ReadAsync(buffer.AsMemory(read), ct);
-                    if (n == 0) break;
-                    read += n;
-                }
-                mimeType = Storage.MimeSniffer.Sniff(buffer.AsSpan(0, read), row.MimeType, row.OriginalFilename);
-            }
-        }
+        var mimeType = await SniffedBlobWriter.SniffStoredAsync(
+            blobs, result.ContentHash, row.MimeType, row.OriginalFilename, ct);
 
         await attachments.MarkReadyAsync(
             p.AttachmentId,
@@ -375,4 +388,55 @@ public sealed class AttachmentWorker : BackgroundService
     }
 
     private sealed record JobPayload(Guid AttachmentId, string Mailbox, string GraphMessageId, string GraphAttachmentId);
+}
+
+/// Thrown by <see cref="MaxLengthReadStream"/> (or the declared-size check)
+/// when an inbound attachment exceeds Storage.MaxInboundAttachmentBytes.
+internal sealed class InboundAttachmentTooLargeException(long sizeBytes)
+    : BlobSourceRejectedException($"Attachment exceeds the inbound size limit ({sizeBytes} bytes or more).")
+{
+    public long SizeBytes { get; } = sizeBytes;
+}
+
+/// Read-only pass-through that throws once more than <c>max</c> bytes have
+/// been read, so an oversized download is aborted mid-stream instead of
+/// filling the disk. The partially written temp blob is discarded by the
+/// blob store's own failure path.
+internal sealed class MaxLengthReadStream(Stream inner, long max) : Stream
+{
+    private long _read;
+
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => _read; set => throw new NotSupportedException(); }
+
+    public override int Read(byte[] buffer, int offset, int count) => Count(inner.Read(buffer, offset, count));
+
+    public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+        Count(await inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false));
+
+    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+        ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+    private int Count(int n)
+    {
+        _read += n;
+        if (_read > max) throw new InboundAttachmentTooLargeException(_read);
+        return n;
+    }
+
+    public override void Flush() { }
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) inner.Dispose();
+        base.Dispose(disposing);
+    }
+
+    public override ValueTask DisposeAsync() => inner.DisposeAsync();
 }

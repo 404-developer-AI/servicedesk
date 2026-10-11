@@ -556,7 +556,10 @@ app.UseDefaultFiles();
 // (favicon etc.) keep the default heuristic caching.
 var indexNoCache = new Action<Microsoft.AspNetCore.StaticFiles.StaticFileResponseContext>(ctx =>
 {
-    if (string.Equals(ctx.File.Name, "index.html", StringComparison.OrdinalIgnoreCase))
+    // The PWA manifest (mobile web, "Add to Home Screen") is revalidated like
+    // index.html so a changed name/icon/start URL reaches installed devices.
+    if (string.Equals(ctx.File.Name, "index.html", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(ctx.File.Name, "manifest.webmanifest", StringComparison.OrdinalIgnoreCase))
     {
         ctx.Context.Response.Headers.CacheControl = "no-cache";
     }
@@ -565,7 +568,10 @@ var indexNoCache = new Action<Microsoft.AspNetCore.StaticFiles.StaticFileRespons
         ctx.Context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
     }
 });
-app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = indexNoCache });
+// Explicit so the manifest never depends on the framework's default MIME map.
+var staticContentTypes = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+staticContentTypes.Mappings[".webmanifest"] = "application/manifest+json";
+app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = indexNoCache, ContentTypeProvider = staticContentTypes });
 app.UseRouting();
 
 // v0.1.24 — performance monitoring. Right after routing so the route

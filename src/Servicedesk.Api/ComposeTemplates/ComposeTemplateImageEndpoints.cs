@@ -1,4 +1,4 @@
-using System.Buffers;
+using Servicedesk.Api.Tickets;
 using Servicedesk.Api.Auth;
 using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Audit;
@@ -33,56 +33,12 @@ public static class ComposeTemplateImageEndpoints
             ISettingsService settings, IAuditLogger audit,
             CancellationToken ct) =>
         {
-            if (!http.Request.HasFormContentType)
-                return Results.BadRequest(new { error = "multipart/form-data required." });
+            // Templates embed pictures only; the sniffed type (not the
+            // client-supplied one) decides.
+            var received = await UploadReceiver.ReceiveAsync(http, blobs, settings, ct, imagesOnly: true);
+            if (received.Error is not null) return received.Error;
+            var (safeFilename, sniffedMime, writeResult) = received.Ok!.Value;
 
-            const long HardBodyCeilingBytes = 52_428_800;
-            if (http.Request.ContentLength is long advertised && advertised > HardBodyCeilingBytes)
-                return Results.Json(new { error = "Request body exceeds 50 MB hard ceiling." }, statusCode: 413);
-
-            var form = await http.Request.ReadFormAsync(ct);
-            var file = form.Files.FirstOrDefault();
-            if (file is null || file.Length == 0)
-                return Results.BadRequest(new { error = "Upload a non-empty file in the 'file' field." });
-
-            var maxBytes = await settings.GetAsync<long>(SettingKeys.Storage.MaxAttachmentBytes, ct);
-            if (maxBytes <= 0) maxBytes = 26_214_400; // 25 MB safety net
-            if (file.Length > maxBytes)
-                return Results.Json(new
-                {
-                    error = $"File exceeds the {Math.Max(1, maxBytes / 1_048_576)} MB limit (Storage.MaxAttachmentBytes).",
-                }, statusCode: 413);
-
-            var headBuffer = ArrayPool<byte>.Shared.Rent(MimeSniffer.SniffWindowBytes);
-            int headLen;
-            string sniffedMime;
-            BlobWriteResult writeResult;
-            try
-            {
-                await using var source = file.OpenReadStream();
-                headLen = await ReadFullyAsync(source, headBuffer.AsMemory(0, MimeSniffer.SniffWindowBytes), ct);
-                sniffedMime = MimeSniffer.Sniff(headBuffer.AsSpan(0, headLen), file.ContentType, file.FileName);
-                // Templates embed pictures only. The sniffed type (not the
-                // client-supplied one) decides, so a renamed .exe or an HTML
-                // payload can't slip through as "image/png".
-                if (!sniffedMime.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-                    return Results.BadRequest(new { error = "Only images can be embedded in a template." });
-
-                using var combined = new ConcatStream(headBuffer.AsMemory(0, headLen), source);
-                writeResult = await blobs.WriteAsync(combined, ct);
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(headBuffer);
-            }
-
-            if (writeResult.SizeBytes > maxBytes)
-                return Results.Json(new
-                {
-                    error = $"File exceeds the {Math.Max(1, maxBytes / 1_048_576)} MB limit (Storage.MaxAttachmentBytes).",
-                }, statusCode: 413);
-
-            var safeFilename = SanitizeFilename(file.FileName);
             var imageId = await attachments.CreateForComposeTemplateImageAsync(new NewComposeTemplateImage(
                 ContentHash: writeResult.ContentHash,
                 SizeBytes: writeResult.SizeBytes,
@@ -109,8 +65,7 @@ public static class ComposeTemplateImageEndpoints
             });
         }).WithTags("ComposeTemplates")
           .RequireAuthorization(AuthorizationPolicies.RequireAdmin)
-          .WithName("UploadComposeTemplateImage").WithOpenApi()
-          .DisableRequestTimeout();
+          .WithName("UploadComposeTemplateImage").WithOpenApi();
 
         // GET /api/compose-templates/images/{id} — agent-readable download.
         // The template body's <img> tags point here; the compose editor, the
@@ -145,82 +100,5 @@ public static class ComposeTemplateImageEndpoints
           .WithName("GetComposeTemplateImage").WithOpenApi();
 
         return app;
-    }
-
-    private static async Task<int> ReadFullyAsync(Stream source, Memory<byte> dest, CancellationToken ct)
-    {
-        var total = 0;
-        while (total < dest.Length)
-        {
-            var read = await source.ReadAsync(dest[total..], ct);
-            if (read == 0) break;
-            total += read;
-        }
-        return total;
-    }
-
-    private static string SanitizeFilename(string input)
-    {
-        if (string.IsNullOrWhiteSpace(input)) return "image";
-        var leaf = Path.GetFileName(input);
-        var invalid = Path.GetInvalidFileNameChars();
-        var chars = leaf.Select(c => invalid.Contains(c) || c == '<' || c == '>' || c == ':' ? '_' : c).ToArray();
-        var s = new string(chars).Trim().TrimStart('.');
-        if (string.IsNullOrEmpty(s)) s = "image";
-        return s.Length > 200 ? s[..200] : s;
-    }
-
-    /// Concatenates an in-memory head buffer with the remainder of the source
-    /// stream so blob.WriteAsync sees the full payload exactly once. Read-only.
-    private sealed class ConcatStream : Stream
-    {
-        private readonly ReadOnlyMemory<byte> _head;
-        private readonly Stream _tail;
-        private int _headOffset;
-
-        public ConcatStream(ReadOnlyMemory<byte> head, Stream tail)
-        {
-            _head = head;
-            _tail = tail;
-        }
-
-        public override bool CanRead => true;
-        public override bool CanSeek => false;
-        public override bool CanWrite => false;
-        public override long Length => throw new NotSupportedException();
-        public override long Position
-        {
-            get => throw new NotSupportedException();
-            set => throw new NotSupportedException();
-        }
-
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            if (_headOffset < _head.Length)
-            {
-                var take = Math.Min(count, _head.Length - _headOffset);
-                _head.Span.Slice(_headOffset, take).CopyTo(buffer.AsSpan(offset, take));
-                _headOffset += take;
-                return take;
-            }
-            return _tail.Read(buffer, offset, count);
-        }
-
-        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
-        {
-            if (_headOffset < _head.Length)
-            {
-                var take = Math.Min(buffer.Length, _head.Length - _headOffset);
-                _head.Slice(_headOffset, take).CopyTo(buffer);
-                _headOffset += take;
-                return take;
-            }
-            return await _tail.ReadAsync(buffer, cancellationToken);
-        }
-
-        public override void Flush() { }
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-        public override void SetLength(long value) => throw new NotSupportedException();
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }

@@ -124,6 +124,96 @@ public sealed class LocalFileBlobStoreTests : IDisposable
 
     /// Minimal ISettingsService that only answers Storage.BlobRoot — that's
     /// the only key LocalFileBlobStore touches.
+    [Fact]
+    public async Task Enumerate_lists_blob_files_and_skips_tmp_and_foreign_files()
+    {
+        var a = await _store.WriteAsync(new MemoryStream(Encoding.UTF8.GetBytes("a")));
+        var b = await _store.WriteAsync(new MemoryStream(Encoding.UTF8.GetBytes("bb")));
+        Directory.CreateDirectory(Path.Combine(_root, ".tmp"));
+        await File.WriteAllTextAsync(Path.Combine(_root, ".tmp", "partial"), "x");
+        await File.WriteAllTextAsync(Path.Combine(_root, "README"), "not a blob");
+
+        var listed = new List<BlobFileInfo>();
+        await foreach (var f in _store.EnumerateAsync()) listed.Add(f);
+
+        Assert.Equal(new[] { a.ContentHash, b.ContentHash }.OrderBy(h => h), listed.Select(f => f.ContentHash).OrderBy(h => h));
+        Assert.Equal(2, listed.Single(f => f.ContentHash == b.ContentHash).SizeBytes);
+    }
+
+    [Fact]
+    public async Task DeleteIfUntouchedSince_only_deletes_files_older_than_the_cutoff()
+    {
+        var w = await _store.WriteAsync(new MemoryStream(Encoding.UTF8.GetBytes("gc me")));
+
+        // Fresh file: inside the grace window, kept.
+        Assert.Null(await _store.DeleteIfUntouchedSinceAsync(w.ContentHash, DateTime.UtcNow.AddHours(-1)));
+        Assert.True(await _store.ExistsAsync(w.ContentHash));
+
+        Assert.Equal(w.SizeBytes, await _store.DeleteIfUntouchedSinceAsync(w.ContentHash, DateTime.UtcNow.AddMinutes(1)));
+        Assert.False(await _store.ExistsAsync(w.ContentHash));
+    }
+
+    [Fact]
+    public async Task Dedup_write_refreshes_mtime_so_the_gc_keeps_a_reused_blob()
+    {
+        var bytes = Encoding.UTF8.GetBytes("reused");
+        var first = await _store.WriteAsync(new MemoryStream(bytes));
+        var path = Directory.GetFiles(_root, first.ContentHash, SearchOption.AllDirectories).Single();
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddDays(-10));
+
+        await _store.WriteAsync(new MemoryStream(bytes));
+
+        Assert.True(File.GetLastWriteTimeUtc(path) > DateTime.UtcNow.AddMinutes(-1));
+        Assert.Null(await _store.DeleteIfUntouchedSinceAsync(first.ContentHash, DateTime.UtcNow.AddDays(-1)));
+    }
+
+    [Fact]
+    public async Task PurgeStaleTempFiles_counts_in_dry_run_and_deletes_otherwise()
+    {
+        var tmp = Path.Combine(_root, ".tmp");
+        Directory.CreateDirectory(tmp);
+        var stale = Path.Combine(tmp, "stale");
+        var fresh = Path.Combine(tmp, "fresh");
+        await File.WriteAllTextAsync(stale, "12345");
+        await File.WriteAllTextAsync(fresh, "1");
+        File.SetLastWriteTimeUtc(stale, DateTime.UtcNow.AddDays(-2));
+
+        var dry = await _store.PurgeStaleTempFilesAsync(DateTime.UtcNow.AddDays(-1), delete: false);
+        Assert.Equal((1, 5L), dry);
+        Assert.True(File.Exists(stale));
+
+        var real = await _store.PurgeStaleTempFilesAsync(DateTime.UtcNow.AddDays(-1), delete: true);
+        Assert.Equal((1, 5L), real);
+        Assert.False(File.Exists(stale));
+        Assert.True(File.Exists(fresh));
+    }
+
+    [Fact]
+    public async Task Rejected_source_aborts_the_write_without_a_health_failure()
+    {
+        var health = new BlobStoreHealth();
+        var store = new LocalFileBlobStore(new StubSettings(_root), health);
+
+        await Assert.ThrowsAsync<BlobSourceRejectedException>(() => store.WriteAsync(new RejectingStream()));
+
+        Assert.Equal(0, health.Snapshot().ConsecutiveFailures);
+        Assert.Empty(Directory.GetFiles(Path.Combine(_root, ".tmp")));
+    }
+
+    private sealed class RejectingStream : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => 0; set => throw new NotSupportedException(); }
+        public override int Read(byte[] buffer, int offset, int count) => throw new BlobSourceRejectedException("too large");
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
     private sealed class StubSettings : ISettingsService
     {
         private readonly string _root;

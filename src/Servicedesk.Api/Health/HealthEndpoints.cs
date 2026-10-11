@@ -269,6 +269,28 @@ public static class HealthEndpoints
         })
         .WithName("ClearBlobStoreHealth").WithOpenApi();
 
+        // Wakes the blob GC for an immediate run. It still honours
+        // Storage.BlobGcDryRun and the grace period — this only skips the wait.
+        admin.MapPost("/blob-store/gc", async (
+            HttpContext http,
+            IBlobGcHealth gcHealth,
+            IAuditLogger audit,
+            CancellationToken ct) =>
+        {
+            gcHealth.RequestRun();
+            var (actor, role) = ActorContext.Resolve(http);
+            await audit.LogAsync(new AuditEvent(
+                EventType: "health.blob-store.gc-run",
+                Actor: actor,
+                ActorRole: role,
+                Target: "blob-store",
+                ClientIp: http.Connection.RemoteIpAddress?.ToString(),
+                UserAgent: http.Request.Headers.UserAgent.ToString(),
+                Payload: null));
+            return Results.NoContent();
+        })
+        .WithName("RunBlobGc").WithOpenApi();
+
         admin.MapGet("/incidents", async (
             IIncidentLog incidents,
             int? take,

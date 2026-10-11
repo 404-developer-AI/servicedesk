@@ -166,15 +166,30 @@ public sealed class GraphMailClient : IGraphMailClient
     public async Task<Stream> FetchAttachmentBytesAsync(
         string mailbox, string graphMessageId, string graphAttachmentId, CancellationToken ct)
     {
+        // GET …/attachments/{id}/$value returns the raw file bytes, streamed —
+        // unlike the JSON form (base64 contentBytes), which held ~2.3× the
+        // file size in memory per job. The SDK has no builder for this
+        // segment, so the request is built by hand on the same adapter (same
+        // auth + immutable-id pipeline). Only file attachments reach the
+        // worker; Graph answers 4xx for anything else and the job retries /
+        // dead-letters as before.
         var graph = await BuildClientAsync(ct);
-        var attachment = await graph.Users[mailbox].Messages[graphMessageId]
-            .Attachments[graphAttachmentId].GetAsync(cancellationToken: ct);
-
-        if (attachment is not FileAttachment fa || fa.ContentBytes is null)
-            throw new InvalidOperationException(
-                $"Graph attachment {graphAttachmentId} on message {graphMessageId} is not a file-attachment or has no content.");
-
-        return new MemoryStream(fa.ContentBytes, writable: false);
+        var request = new Microsoft.Kiota.Abstractions.RequestInformation
+        {
+            HttpMethod = Microsoft.Kiota.Abstractions.Method.GET,
+            UrlTemplate = "{+baseurl}/users/{user%2Did}/messages/{message%2Did}/attachments/{attachment%2Did}/$value",
+            PathParameters = new Dictionary<string, object>
+            {
+                ["baseurl"] = graph.RequestAdapter.BaseUrl!,
+                ["user%2Did"] = mailbox,
+                ["message%2Did"] = graphMessageId,
+                ["attachment%2Did"] = graphAttachmentId,
+            },
+        };
+        request.Headers.TryAdd("Accept", "application/octet-stream");
+        var stream = await graph.RequestAdapter.SendPrimitiveAsync<Stream>(request, cancellationToken: ct);
+        return stream ?? throw new InvalidOperationException(
+            $"Graph attachment {graphAttachmentId} on message {graphMessageId} returned no content.");
     }
 
     public async Task<Stream> FetchRawMessageAsync(string mailbox, string graphMessageId, CancellationToken ct)

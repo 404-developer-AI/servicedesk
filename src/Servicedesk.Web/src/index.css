@@ -1126,4 +1126,80 @@
   box-shadow: var(--steaan-shadow-sm);
 }
 
+/* ─── Mobile web (/m) ──────────────────────────────────────────────────
+   Hook classes for the mobile shell (MobileShell + mobile pages). Nebula:
+   frosted header / tab bar over the canvas. Steaan: flat white bars with a
+   hairline, no blur, teal active rail — same token set, no forked
+   components. */
+.sd-m-app {
+  overflow-x: clip;
+  -webkit-tap-highlight-color: transparent;
+}
+/* The mobile search fields draw their own clear button. */
+.sd-m-app input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+.sd-m-header,
+.sd-m-tabbar {
+  background-color: hsl(var(--background) / 0.78);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+}
+.sd-m-tab-active::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 28px;
+  height: 3px;
+  transform: translateX(-50%);
+  border-radius: 0 0 3px 3px;
+  background-color: hsl(var(--primary));
+  box-shadow: 0 0 12px hsl(var(--primary) / 0.6);
+}
+.sd-m-fab {
+  box-shadow: 0 10px 28px -10px hsl(240 25% 12% / 0.45);
+}
+.dark .sd-m-fab {
+  box-shadow: 0 10px 28px -8px hsl(0 0% 0% / 0.7);
+}
+.sd-m-input:focus-visible {
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.18);
+  outline: none;
+}
+/* Inbound mail HTML is laid out for a desktop mail client: keep it inside
+   the card. Images scale down, wide tables scroll inside the card instead
+   of widening the page, long URLs wrap. */
+.sd-m-event-body {
+  overflow-wrap: anywhere;
+}
+.sd-m-event-body img {
+  max-width: 100% !important;
+  height: auto !important;
+}
+.sd-m-event-body table {
+  max-width: 100%;
+}
+.sd-m-event-body pre {
+  white-space: pre-wrap;
+}
+
+.theme-steaan .sd-m-header,
+.theme-steaan .sd-m-tabbar {
+  background-color: hsl(var(--card));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.theme-steaan .sd-m-tab-active::before {
+  box-shadow: none;
+}
+.theme-steaan .sd-m-fab {
+  box-shadow: var(--steaan-shadow-lg);
+}
+.theme-steaan .sd-m-sheet {
+  background-color: hsl(var(--card));
+}
+
 } /* end @layer utilities (app + Steaan CSS) */

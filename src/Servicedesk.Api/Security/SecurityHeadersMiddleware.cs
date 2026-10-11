@@ -26,6 +26,7 @@ public sealed class SecurityHeadersMiddleware
         // isolation (no SharedArrayBuffer / high-res timers), so COEP is
         // omitted on exactly those documents; COOP/CORP stay.
         var portalPage = ContentSecurityPolicyMiddleware.IsPortalPage(context.Request);
+        var apiResponse = context.Request.Path.StartsWithSegments("/api");
 
         context.Response.OnStarting(state =>
         {
@@ -38,6 +39,12 @@ public sealed class SecurityHeadersMiddleware
             headers["Cross-Origin-Opener-Policy"] = "same-origin";
             headers["Cross-Origin-Resource-Policy"] = "same-origin";
             if (!portalPage) headers["Cross-Origin-Embedder-Policy"] = "require-corp";
+            // API data (tickets, notes, contacts) is never written to the
+            // browser's HTTP cache, so nothing is left on a shared or lost
+            // device and the back button after sign-out shows no data. An
+            // endpoint that chose its own policy (attachments, avatars:
+            // `private, max-age` + ETag) keeps it.
+            if (apiResponse && !headers.ContainsKey("Cache-Control")) headers["Cache-Control"] = "no-store";
             headers.Remove("Server");
             headers.Remove("X-Powered-By");
             return Task.CompletedTask;

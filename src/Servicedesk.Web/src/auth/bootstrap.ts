@@ -6,6 +6,7 @@ import { useColumnPrefsStore } from "@/stores/useColumnPrefsStore";
 import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
 import { useSidebarStore } from "@/stores/useSidebarStore";
 import { hydrateRecentTicketsFromServer } from "@/stores/useRecentTicketsStore";
+import { loadMobileSettings } from "@/mobile/mobileMode";
 
 /// Fetches `/api/auth/setup/status` + `/api/auth/me` before the router takes
 /// over, so route gates can trust `authStore.get()` from their very first call.
@@ -33,7 +34,11 @@ export async function bootstrapAuth(queryClient?: QueryClient): Promise<void> {
     // recent tickets); those endpoints are agent-gated and would only 403.
     if (me.user && me.user.role !== "Customer") {
       useColumnPrefsStore.getState().loadFromServer();
+      // Mobile web: on a touch device the first route gate needs the admin
+      // switch (Ui.MobileAutoRedirect); a desktop browser skips the call.
+      const mobileSettings = loadMobileSettings();
       const workspaceRaw = await useWorkspaceStore.getState().loadFromServer();
+      await mobileSettings;
       // v0.1.33 — seed the shared query cache with the same response so the
       // components that read it through React Query (KB chat widget on every
       // page, ticket list) don't fire a second GET on a full page load.

@@ -241,6 +241,8 @@ public sealed class KbPublicEndpointsTests
             throw new NotImplementedException();
         public Task MarkFailedAsync(Guid attachmentId, CancellationToken ct) =>
             throw new NotImplementedException();
+        public Task MarkTooLargeAsync(Guid attachmentId, CancellationToken ct) =>
+            throw new NotImplementedException();
         public Task<Guid> CreateUploadedAsync(NewUploadedAttachment input, CancellationToken ct) =>
             throw new NotImplementedException();
         public Task<int> ReassignToEventAsync(IReadOnlyList<Guid> attachmentIds, Guid ticketId, long eventId, CancellationToken ct) =>

@@ -774,7 +774,7 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- still enforced. Same for the other recreated CHECKs below.
         ALTER TABLE attachments DROP CONSTRAINT IF EXISTS chk_attachments_processing_state;
         ALTER TABLE attachments ADD CONSTRAINT chk_attachments_processing_state
-            CHECK (processing_state IN ('Pending','Stored','Ready','Failed')) NOT VALID;
+            CHECK (processing_state IN ('Pending','Stored','Ready','Failed','TooLarge')) NOT VALID;
 
         -- Hot path for the worker: find pending attachments by age.
         CREATE INDEX IF NOT EXISTS ix_attachments_pending
@@ -5892,6 +5892,16 @@ public sealed class DatabaseBootstrapper : IHostedService
         ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS impersonator_user_id UUID NULL REFERENCES users(id) ON DELETE CASCADE;
 
         -- ===================================================================
+        -- Mobile web — "My sessions" (sign out a lost or shared device)
+        -- ===================================================================
+        -- The row id IS the bearer token in the session cookie, so it can
+        -- never be shown or used as a handle. public_id is a separate random
+        -- handle for listing and revoking a session from another device.
+        -- Existing rows get their own random value (volatile default).
+        ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS public_id UUID NOT NULL DEFAULT gen_random_uuid();
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_user_sessions_public_id ON user_sessions (public_id);
+
+        -- ===================================================================
         -- v0.1.3 Security hardening (internal audit of v0.1.1)
         -- ===================================================================
         -- RFC 6238 §5.2 replay protection: the timestep of the last accepted
@@ -5913,6 +5923,22 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- HSTS is owned by nginx (the layer that terminates TLS). Deleting
         -- the row removes the dead knob from the Settings UI.
         DELETE FROM settings WHERE key = 'Security.Hsts.MaxAgeDays';
+
+        -- Storage.PerMailboxMonthlyCapMB is retired: it never had a read site,
+        -- and a servicedesk must not silently stop ingesting a customer's
+        -- mail. Disk pressure is handled by BlobDiskCriticalPercent instead.
+        DELETE FROM settings WHERE key = 'Storage.PerMailboxMonthlyCapMB';
+
+        -- Attachment rows left behind by KB-article hard deletes and feedback
+        -- deletes before both started removing them (attachments.owner_id is
+        -- polymorphic, no FK). Their download routes already 404 without the
+        -- owner; the blob GC reclaims the files. Idempotent, index-backed.
+        DELETE FROM attachments a
+         WHERE a.owner_kind = 'KbArticle'
+           AND NOT EXISTS (SELECT 1 FROM kb_articles k WHERE k.id = a.owner_id);
+        DELETE FROM attachments a
+         WHERE a.owner_kind = 'FeedbackEntry'
+           AND NOT EXISTS (SELECT 1 FROM feedback_entries f WHERE f.id = a.owner_id);
 
         -- The global rate-limit budget was seeded as 120 while the code ran
         -- 240, and the DB value was never read — so a stored 120 was never in

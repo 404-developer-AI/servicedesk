@@ -417,7 +417,16 @@ public static class DependencyInjection
         services.AddSingleton<IViewAccessService, ViewAccessService>();
 
         services.AddSingleton<IBlobStoreHealth, BlobStoreHealth>();
-        services.AddSingleton<IBlobStore, LocalFileBlobStore>();
+        services.AddSingleton<LocalFileBlobStore>();
+        services.AddSingleton<IBlobStore>(sp => sp.GetRequiredService<LocalFileBlobStore>());
+        services.AddSingleton<IBlobStoreMaintenance>(sp => sp.GetRequiredService<LocalFileBlobStore>());
+        // Blob GC (mark-and-sweep + raw .eml retention) and the disk sampler
+        // that feeds the Health card and pauses mail polling at Critical.
+        services.AddSingleton<IBlobGcHealth, BlobGcHealth>();
+        services.AddHostedService<BlobGarbageCollector>();
+        services.AddSingleton<BlobDiskMonitor>();
+        services.AddSingleton<IBlobDiskStatus>(sp => sp.GetRequiredService<BlobDiskMonitor>());
+        services.AddHostedService(sp => sp.GetRequiredService<BlobDiskMonitor>());
 
         services.AddSingleton<IIncidentLog, IncidentLog>();
         services.AddHostedService<IncidentLogDrainService>();
@@ -586,6 +595,10 @@ public static class DependencyInjection
         // action service alike, so both paths enforce one rule set.
         services.AddScoped<Servicedesk.Infrastructure.Tickets.ITicketMutationService,
                            Servicedesk.Infrastructure.Tickets.TicketMutationService>();
+        // Agent-supplied ticket HTML is sanitised at the API boundary (defence in
+        // depth on top of DOMPurify at render).
+        services.AddSingleton<Servicedesk.Infrastructure.Tickets.ITicketHtmlSanitizer,
+                              Servicedesk.Infrastructure.Tickets.TicketHtmlSanitizer>();
         services.AddScoped<Servicedesk.Infrastructure.Tickets.ITicketBulkActionService,
                            Servicedesk.Infrastructure.Tickets.TicketBulkActionService>();
         // v0.0.103 — ticket checklists: templates, attached checklists, the

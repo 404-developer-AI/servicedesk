@@ -48,6 +48,12 @@ public interface IAttachmentRepository
     /// the timeline renderer.
     Task MarkFailedAsync(Guid attachmentId, CancellationToken ct);
 
+    /// Worker call when an inbound attachment exceeds
+    /// <c>Storage.MaxInboundAttachmentBytes</c>. Terminal like Failed, but
+    /// deliberate: the timeline lists it as "too large" and the mail still
+    /// finalizes (moves to the processed folder, where the original stays).
+    Task MarkTooLargeAsync(Guid attachmentId, CancellationToken ct);
+
     /// Insert a fully-stored, user-uploaded attachment. The blob has already
     /// been written via <c>IBlobStore</c>, so the row lands as <c>Ready</c>.
     /// <paramref name="ownerKind"/> is <c>'Ticket'</c> while the file is

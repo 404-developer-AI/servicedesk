@@ -152,7 +152,7 @@ public sealed class AttachmentJobRepository : IAttachmentJobRepository
                    SET processing_state = 'Failed'
                   FROM cancelled c
                  WHERE a.id = c.attachment_id
-                   AND a.processing_state NOT IN ('Ready','Failed')
+                   AND a.processing_state NOT IN ('Ready','Failed','TooLarge')
                  RETURNING a.id
             )
             SELECT COUNT(*) FROM cancelled

@@ -116,11 +116,9 @@ public static class SignatureEndpoints
             var existing = await repo.GetAsync(id, ct);
             if (existing is null) return Results.NotFound();
 
-            // Best-effort blob cleanup for this signature's assets before the
-            // cascade drops the rows. A shared content-hash (same image in two
-            // signatures) is content-addressed, so a delete here only removes
-            // bytes no longer referenced — but to stay safe we leave the blob
-            // store's own orphan-sweep to reclaim; we only drop the rows.
+            // Only the rows go (assets cascade). The blob files are shared
+            // content-addressed bytes; the blob GC reclaims them once no row
+            // references them anymore.
             var deleted = await repo.DeleteAsync(id, ct);
             if (!deleted) return Results.NotFound();
 
@@ -262,7 +260,7 @@ public static class SignatureEndpoints
             var created = await repo.GetAsync(newId, ct);
             var createdAssets = await repo.ListAssetsAsync(newId, ct);
             return Results.Created($"/api/settings/signatures/{newId}", MapDetail(created!, createdAssets, Array.Empty<Guid>()));
-        }).WithName("ImportSignature").WithOpenApi().DisableRequestTimeout();
+        }).WithName("ImportSignature").WithOpenApi();
     }
 
     private static async Task<IResult> FailImport(ISignatureRepository repo, Guid id, CancellationToken ct, string message)
@@ -368,7 +366,7 @@ public static class SignatureEndpoints
                 filename,
                 size = written.SizeBytes,
             });
-        }).WithName("UploadSignatureAsset").WithOpenApi().DisableRequestTimeout();
+        }).WithName("UploadSignatureAsset").WithOpenApi();
 
         // Serve an asset for the builder preview. Admin-only (same group auth).
         group.MapGet("/{id:guid}/assets/{assetId:guid}", async (
@@ -388,8 +386,10 @@ public static class SignatureEndpoints
             var stream = await blobs.OpenReadAsync(asset.ContentHash, ct);
             if (stream is null) return Results.NotFound();
 
-            var contentType = string.IsNullOrWhiteSpace(asset.MimeType) ? "application/octet-stream" : asset.MimeType;
-            return Results.File(stream, contentType, fileDownloadName: null, enableRangeProcessing: true);
+            // Inline for the builder preview, through the shared guard like
+            // every other blob route (uploads are image-only already).
+            return Servicedesk.Api.Tickets.AttachmentResponse.File(
+                stream, asset.MimeType, asset.OriginalFilename, inlineRequested: true);
         }).WithName("GetSignatureAsset").WithOpenApi();
 
         group.MapDelete("/{id:guid}/assets/{assetId:guid}", async (

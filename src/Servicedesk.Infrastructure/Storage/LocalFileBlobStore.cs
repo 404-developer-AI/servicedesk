@@ -12,8 +12,17 @@ namespace Servicedesk.Infrastructure.Storage;
 /// first, are hashed during streaming, and are then renamed into place.
 /// A concurrent write of the same content resolves into a single file via
 /// the filesystem rename — duplicate temp files are discarded.
-public sealed class LocalFileBlobStore : IBlobStore
+///
+/// GC safety: a dedup hit refreshes the existing file's mtime, and both that
+/// touch/rename and the GC's <see cref="DeleteIfUntouchedSinceAsync"/> run
+/// under the same per-hash lock. The GC only deletes files untouched for its
+/// grace period, so a writer that just reused (or re-created) a blob always
+/// keeps it. The locks are in-process: one app instance per install.
+public sealed class LocalFileBlobStore : IBlobStore, IBlobStoreMaintenance
 {
+    private const string TempDirName = ".tmp";
+    private static readonly SemaphoreSlim[] HashLocks = Enumerable.Range(0, 256).Select(_ => new SemaphoreSlim(1, 1)).ToArray();
+
     private const int BufferSize = 81920; // 80 KB — matches default Stream.CopyTo chunk
     private static readonly char[] HexChars = "0123456789abcdef".ToCharArray();
 
@@ -35,7 +44,7 @@ public sealed class LocalFileBlobStore : IBlobStore
         try
         {
             root = await GetRootAsync(cancellationToken).ConfigureAwait(false);
-            tmpDir = Path.Combine(root, ".tmp");
+            tmpDir = Path.Combine(root, TempDirName);
             Directory.CreateDirectory(tmpDir);
         }
         catch (Exception ex)
@@ -74,28 +83,26 @@ public sealed class LocalFileBlobStore : IBlobStore
             var finalPath = ResolvePath(root, hash);
             Directory.CreateDirectory(Path.GetDirectoryName(finalPath)!);
 
-            if (File.Exists(finalPath))
-            {
-                // Dedup: identical content already on disk. Drop the temp.
-                File.Delete(tmpPath);
-                _health.RecordSuccess();
-                return new BlobWriteResult(hash, size);
-            }
-
+            var gate = LockFor(hash);
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                File.Move(tmpPath, finalPath);
-            }
-            catch (IOException)
-            {
-                // Another writer won the race. Accept their file.
                 if (File.Exists(finalPath))
                 {
-                    if (File.Exists(tmpPath)) File.Delete(tmpPath);
+                    // Dedup: identical content already on disk. Drop the temp
+                    // and refresh the mtime so the GC grace period restarts —
+                    // the caller is about to write a row that references it.
+                    File.SetLastWriteTimeUtc(finalPath, DateTime.UtcNow);
+                    File.Delete(tmpPath);
                     _health.RecordSuccess();
                     return new BlobWriteResult(hash, size);
                 }
-                throw;
+
+                File.Move(tmpPath, finalPath);
+            }
+            finally
+            {
+                gate.Release();
             }
 
             _health.RecordSuccess();
@@ -107,7 +114,7 @@ public sealed class LocalFileBlobStore : IBlobStore
             {
                 try { File.Delete(tmpPath); } catch { /* best-effort cleanup */ }
             }
-            _health.RecordFailure("write", ex);
+            if (ex is not BlobSourceRejectedException) _health.RecordFailure("write", ex);
             throw;
         }
     }
@@ -134,6 +141,90 @@ public sealed class LocalFileBlobStore : IBlobStore
         var path = ResolvePath(root, contentHash);
         if (!File.Exists(path)) return false;
         File.Delete(path);
+        return true;
+    }
+
+    public Task<string> GetRootPathAsync(CancellationToken cancellationToken = default) =>
+        GetRootAsync(cancellationToken);
+
+    public async IAsyncEnumerable<BlobFileInfo> EnumerateAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var root = await GetRootAsync(cancellationToken).ConfigureAwait(false);
+        if (!Directory.Exists(root)) yield break;
+
+        foreach (var shard1 in Directory.EnumerateDirectories(root))
+        {
+            var name1 = Path.GetFileName(shard1);
+            if (name1.Length != 2 || !IsHex(name1)) continue; // skips .tmp and anything foreign
+            foreach (var shard2 in Directory.EnumerateDirectories(shard1))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var name2 = Path.GetFileName(shard2);
+                if (name2.Length != 2 || !IsHex(name2)) continue;
+                foreach (var file in new DirectoryInfo(shard2).EnumerateFiles())
+                {
+                    var hash = file.Name;
+                    if (!IsValidSha256Hex(hash) || !hash.StartsWith(name1 + name2, StringComparison.Ordinal)) continue;
+                    yield return new BlobFileInfo(hash, file.Length, file.LastWriteTimeUtc);
+                }
+            }
+        }
+    }
+
+    public async Task<long?> DeleteIfUntouchedSinceAsync(string contentHash, DateTime untouchedSinceUtc, CancellationToken cancellationToken = default)
+    {
+        var root = await GetRootAsync(cancellationToken).ConfigureAwait(false);
+        var path = ResolvePath(root, contentHash);
+        var gate = LockFor(contentHash);
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists || info.LastWriteTimeUtc >= untouchedSinceUtc) return null;
+            var size = info.Length;
+            info.Delete();
+            return size;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    public async Task<(int Files, long Bytes)> PurgeStaleTempFilesAsync(DateTime olderThanUtc, bool delete, CancellationToken cancellationToken = default)
+    {
+        var root = await GetRootAsync(cancellationToken).ConfigureAwait(false);
+        var tmpDir = Path.Combine(root, TempDirName);
+        if (!Directory.Exists(tmpDir)) return (0, 0);
+
+        var files = 0;
+        long bytes = 0;
+        foreach (var file in new DirectoryInfo(tmpDir).EnumerateFiles())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (file.LastWriteTimeUtc >= olderThanUtc) continue;
+            var size = file.Length;
+            if (delete)
+            {
+                try { file.Delete(); }
+                catch (IOException) { continue; } // still being written — next run
+            }
+            files++;
+            bytes += size;
+        }
+        return (files, bytes);
+    }
+
+    private static SemaphoreSlim LockFor(string contentHash) =>
+        HashLocks[Convert.ToInt32(contentHash.Substring(0, 2), 16)];
+
+    private static bool IsHex(string value)
+    {
+        foreach (var c in value)
+        {
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+        }
         return true;
     }
 
