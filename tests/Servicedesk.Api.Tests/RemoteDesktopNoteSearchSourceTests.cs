@@ -5,7 +5,8 @@ using Xunit;
 namespace Servicedesk.Api.Tests;
 
 /// Pins the authorization boundary of <see cref="RemoteDesktopNoteSearchSource"/>
-/// (v0.1.10): customers never see a hit, agents/admins are eligible. The
+/// (v0.1.10): customers never see a hit, agents only with the
+/// `assets_enabled` flag, admins always. The
 /// null! data source proves the customer and empty-query branches never
 /// open a connection.
 public sealed class RemoteDesktopNoteSearchSourceTests
@@ -20,12 +21,26 @@ public sealed class RemoteDesktopNoteSearchSourceTests
     }
 
     [Fact]
-    public void Agent_and_admin_principals_are_available()
+    public void Flagged_agent_and_admin_principals_are_available()
     {
         var src = new RemoteDesktopNoteSearchSource(null!);
+        var flaggedAgent = new SearchPrincipal(Guid.NewGuid(), "Agent", Array.Empty<Guid>(),
+            new HashSet<string> { SearchFeature.Assets });
 
-        Assert.True(src.IsAvailableFor(new SearchPrincipal(Guid.NewGuid(), "Agent", Array.Empty<Guid>())));
+        Assert.True(src.IsAvailableFor(flaggedAgent));
         Assert.True(src.IsAvailableFor(new SearchPrincipal(Guid.NewGuid(), "Admin", null)));
+    }
+
+    [Fact]
+    public async Task Agent_without_assets_flag_gets_zero_hits_without_hitting_db()
+    {
+        var src = new RemoteDesktopNoteSearchSource(null!);
+        var plainAgent = new SearchPrincipal(Guid.NewGuid(), "Agent", Array.Empty<Guid>());
+
+        Assert.False(src.IsAvailableFor(plainAgent));
+        var result = await src.SearchAsync(new SearchRequest("acme", null, 10, 0), plainAgent, default);
+        Assert.Empty(result.Hits);
+        Assert.Equal(0, result.TotalInGroup);
     }
 
     [Fact]

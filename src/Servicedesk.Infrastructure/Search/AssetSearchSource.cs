@@ -16,8 +16,9 @@ namespace Servicedesk.Infrastructure.Search;
 ///                                   can ship later with company-scoped
 ///                                   filtering layered on top of these
 ///                                   same rows).
-///   Agent/Admin       → all rows. The Assets page is shared across the
-///                       team — there is no per-user asset visibility.
+///   Agent             → all rows when the user's `assets_enabled` flag is
+///                       on (the same flag that gates /api/assets), none
+///                       otherwise. Admin → all rows.
 public sealed class AssetSearchSource : ISearchSource
 {
     private readonly NpgsqlDataSource _dataSource;
@@ -27,7 +28,7 @@ public sealed class AssetSearchSource : ISearchSource
     public string Kind => SearchSourceKind.Assets;
 
     public bool IsAvailableFor(SearchPrincipal principal) =>
-        principal.IsAdmin || principal.IsAgent;
+        principal.IsAdmin || (principal.IsAgent && principal.HasFeature(SearchFeature.Assets));
 
     public async Task<SearchGroup> SearchAsync(
         SearchRequest request, SearchPrincipal principal, CancellationToken ct)

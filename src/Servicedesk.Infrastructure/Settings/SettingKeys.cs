@@ -636,6 +636,17 @@ public static class SettingKeys
         /// fired popup or a per-agent failure flushes immediately, so the
         /// admin still sees those events in real time.
         public const string AuditSummaryIntervalSeconds = "Telavox.AuditSummaryIntervalSeconds";
+
+        /// Contact lookup (v0.1.35): Telavox calls
+        /// <c>GET /api/public/telavox/contact-lookup</c> on a ringing call to
+        /// show the caller's name + company in its own app. Off by default;
+        /// off (or no token) makes the route answer 404.
+        public const string ContactLookupEnabled = "Telavox.ContactLookup.Enabled";
+
+        /// Per-IP fixed window for the public lookup route. Read once at
+        /// startup (restart to apply), like every other rate-limit setting.
+        public const string ContactLookupRateLimitPermitPerWindow = "Telavox.ContactLookup.RateLimitPermitPerWindow";
+        public const string ContactLookupRateLimitWindowSeconds = "Telavox.ContactLookup.RateLimitWindowSeconds";
     }
 
     /// Zammad migration link (v0.0.41). One-way bridge from an existing
@@ -2072,6 +2083,12 @@ public static class SettingDefaults
             "Base URL of the Telavox PAPI (partner API) host. Endpoints the SD client appends live under /partner2/api/papi/v1/... — matches the host + basePath fields of the published PAPI swagger. Trailing slashes are normalised. Swap only if your partner-token was issued for a non-default regional PAPI host."),
         new SettingDefault(SettingKeys.Telavox.CapiBaseUrl, "https://home.telavox.se", "string", "Telavox",
             "Base URL of the Telavox CAPI (customer / per-agent API) host. Endpoints the SD worker appends live under /api/capi/v1/... — matches the host + basePath of the published CAPI swagger. Distinct from the PAPI host; the two APIs are not served from the same domain."),
+        new SettingDefault(SettingKeys.Telavox.ContactLookupEnabled, "false", "bool", "Telavox",
+            "Contact lookup for the Telavox app: when on and a lookup token is generated (Settings → Integrations → Telavox), Telavox can look up a ringing caller's number and show the contact's name and company in its own desktop and mobile app. Only name + company are returned. Off = the lookup URL answers 404."),
+        new SettingDefault(SettingKeys.Telavox.ContactLookupRateLimitPermitPerWindow, "60", "int", "Telavox",
+            "Maximum contact lookups per IP address per window. Bounds number-enumeration with a leaked token; one lookup per ringing call is far below it. Applied after a restart."),
+        new SettingDefault(SettingKeys.Telavox.ContactLookupRateLimitWindowSeconds, "60", "int", "Telavox",
+            "Window (seconds) for the contact-lookup rate limit. Applied after a restart."),
         new SettingDefault(SettingKeys.Telavox.AuditSummaryIntervalSeconds, "300", "int", "Telavox",
             "Coalesce window (seconds) for the per-tick poll-summary row the worker writes to integration_audit. Without coalescing the worker writes one row per PollIntervalSeconds — at the default 2s cadence that's ~30 rows/min even on a silent install. Default 300 (5 minutes) keeps the audit-log browsable; any tick with a fired popup or a per-agent failure flushes immediately so admins still see those events in real time. Floor 30s."),
 

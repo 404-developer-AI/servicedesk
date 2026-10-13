@@ -498,6 +498,21 @@ builder.Services.AddRateLimiter(options =>
             AutoReplenishment = true,
         });
     });
+    // Telavox contact lookup: an external server calls this once per ringing
+    // call; the per-IP bound caps number-enumeration with a leaked token.
+    var telavoxLookupPermit = RateLimitValue("Security:RateLimit:TelavoxLookup:PermitPerWindow", SettingKeys.Telavox.ContactLookupRateLimitPermitPerWindow, 60);
+    var telavoxLookupWindow = RateLimitValue("Security:RateLimit:TelavoxLookup:WindowSeconds", SettingKeys.Telavox.ContactLookupRateLimitWindowSeconds, 60);
+    options.AddPolicy("telavox-lookup", ctx =>
+    {
+        var key = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = telavoxLookupPermit,
+            Window = TimeSpan.FromSeconds(telavoxLookupWindow),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        });
+    });
     var portalRegisterPermit = RateLimitValue("Security:RateLimit:PortalRegister:PermitPerWindow", SettingKeys.Portal.RateLimitRegisterPermitPerWindow, 5);
     var portalRegisterWindow = RateLimitValue("Security:RateLimit:PortalRegister:WindowSeconds", SettingKeys.Portal.RateLimitRegisterWindowSeconds, 600);
     options.AddPolicy("portal-register", ctx =>
@@ -845,6 +860,7 @@ app.MapSurveyTokenMetadata();
 app.MapGraphAdminEndpoints();
 app.MapAdsolutEndpoints();
 app.MapTelavoxEndpoints();
+app.MapTelavoxContactLookupEndpoints();
 app.MapZammadEndpoints();
 app.MapZammadMappingEndpoints();
 app.MapZammadDryRunEndpoints();

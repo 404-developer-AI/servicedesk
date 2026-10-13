@@ -10,8 +10,8 @@ namespace Servicedesk.Infrastructure.Search;
 /// the Remote Desktop tab with that client's notes opened.
 ///
 /// Row-level rules mirror <see cref="AssetSearchSource"/>: Customer
-/// principals never see a hit (the notes are internal MSP chatter),
-/// Agent/Admin see every note — the tab is shared across the team.
+/// principals never see a hit (the notes are internal MSP chatter), an
+/// Agent sees every note only with the `assets_enabled` flag, Admin always.
 public sealed class RemoteDesktopNoteSearchSource : ISearchSource
 {
     private readonly NpgsqlDataSource _dataSource;
@@ -21,7 +21,7 @@ public sealed class RemoteDesktopNoteSearchSource : ISearchSource
     public string Kind => SearchSourceKind.RemoteDesktopNotes;
 
     public bool IsAvailableFor(SearchPrincipal principal) =>
-        principal.IsAdmin || principal.IsAgent;
+        principal.IsAdmin || (principal.IsAgent && principal.HasFeature(SearchFeature.Assets));
 
     public async Task<SearchGroup> SearchAsync(
         SearchRequest request, SearchPrincipal principal, CancellationToken ct)

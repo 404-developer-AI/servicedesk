@@ -54,6 +54,9 @@ public static class SearchFeature
     /// Gates the Adsolut Orders source.
     public const string AdsolutOrders = "adsolutOrders";
 
+    /// Gates the Assets family: TRMM assets and Remote Desktop notes.
+    public const string Assets = "assets";
+
     /// Gates the Adsolut sales-receipts (mirrored timesheet) source.
     public const string AdsolutTimesheet = "adsolutTimesheet";
 
