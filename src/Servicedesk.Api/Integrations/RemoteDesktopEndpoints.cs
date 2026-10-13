@@ -13,7 +13,8 @@ namespace Servicedesk.Api.Integrations;
 /// RDS host", and parks failed / missing / pending checks in a separate
 /// attention list. Per-client notes are a small thread with author
 /// attribution; edit/delete is author-or-admin, and an admin acting on
-/// someone else's note lands in the security audit trail.
+/// someone else's note lands in the security audit trail. Part of the Assets
+/// page, so gated server-side by the per-user <c>assets_enabled</c> flag.
 public static class RemoteDesktopEndpoints
 {
     /// Upper bound on a note body. Generous for a free-text remark, small
@@ -29,7 +30,8 @@ public static class RemoteDesktopEndpoints
     {
         var group = app.MapGroup("/api/assets/remote-desktop")
             .WithTags("Assets")
-            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+            .RequireFeature(UserFeature.Assets);
 
         group.MapGet("/", GetOverview).WithName("GetRemoteDesktopOverview").WithOpenApi();
         group.MapGet("/export.csv", ExportCsv).WithName("ExportRemoteDesktopCsv").WithOpenApi();

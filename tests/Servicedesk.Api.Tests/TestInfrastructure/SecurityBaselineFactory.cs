@@ -417,17 +417,25 @@ public sealed class FakeUserService : IUserService
     public Task<bool> GetActivityFeedEnabledAsync(Guid userId, CancellationToken ct = default) =>
         Task.FromResult(false);
 
+    public ConcurrentDictionary<Guid, bool> AssetsEnabled { get; } = new();
+
     public Task<bool> GetAssetsEnabledAsync(Guid userId, CancellationToken ct = default) =>
-        Task.FromResult(false);
+        Task.FromResult(AssetsEnabled.ContainsKey(userId));
+
+    public ConcurrentDictionary<Guid, bool> AdsolutTimesheetEnabled { get; } = new();
 
     public Task<bool> GetAdsolutTimesheetEnabledAsync(Guid userId, CancellationToken ct = default) =>
-        Task.FromResult(false);
+        Task.FromResult(AdsolutTimesheetEnabled.ContainsKey(userId));
+
+    public ConcurrentDictionary<Guid, bool> AdsolutOrdersEnabled { get; } = new();
 
     public Task<bool> GetAdsolutOrdersEnabledAsync(Guid userId, CancellationToken ct = default) =>
-        Task.FromResult(false);
+        Task.FromResult(AdsolutOrdersEnabled.ContainsKey(userId));
+
+    public ConcurrentDictionary<Guid, bool> TimesheetBackofficeEnabled { get; } = new();
 
     public Task<bool> GetTimesheetBackofficeEnabledAsync(Guid userId, CancellationToken ct = default) =>
-        Task.FromResult(false);
+        Task.FromResult(TimesheetBackofficeEnabled.ContainsKey(userId));
 
     public Task<bool> GetStatisticsReadEnabledAsync(Guid userId, CancellationToken ct = default) =>
         Task.FromResult(false);

@@ -7,7 +7,8 @@ namespace Servicedesk.Api.Integrations;
 /// HTTP surface for the Assets page (v0.0.52). Agent + Admin only;
 /// every route lives under <c>/api/assets</c>. Read-only; mutating
 /// actions (mappings, sync trigger, secret CRUD) live on
-/// <see cref="TrmmEndpoints"/> behind the admin policy.
+/// <see cref="TrmmEndpoints"/> behind the admin policy. Gated server-side by
+/// the per-user <c>assets_enabled</c> flag (403 when off).
 ///
 /// Customer-portal visibility is intentionally not wired here in v0.0.52
 /// — the schema already carries the company_id link so a future Customer
@@ -18,7 +19,8 @@ public static class AssetsEndpoints
     {
         var group = app.MapGroup("/api/assets")
             .WithTags("Assets")
-            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+            .RequireFeature(UserFeature.Assets);
 
         group.MapGet("/", ListAssets).WithName("ListAssets").WithOpenApi();
         group.MapGet("/builds", ListBuilds).WithName("ListAssetBuilds").WithOpenApi();

@@ -13,20 +13,17 @@ namespace Servicedesk.Api.Timesheet;
 /// service mirrors that scope in its WHERE clauses, so even a buggy
 /// endpoint can't leak another user's entries.
 ///
-/// The feature-flag gate (timesheet_enabled) is enforced at the
-/// frontend-routing layer + by hiding the nav item; the backend allows
-/// any authenticated agent/admin to call these endpoints because:
-///   (a) without a UI surface, an admin curl request is a deliberate
-///       choice and still operates on the admin's own rows;
-///   (b) the flag controls feature visibility, not authorization in
-///       the security sense.
+/// The entries routes are gated server-side by the per-user
+/// `timesheet_enabled` flag (403 when off); "+ Log time" on a ticket uses
+/// the same routes and the same flag.
 public static class TimesheetEntryEndpoints
 {
     public static IEndpointRouteBuilder MapTimesheetEntryEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/timesheet/entries")
             .WithTags("Timesheet")
-            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+            .RequireFeature(UserFeature.Timesheet);
 
         group.MapGet("/", async (
             string? date,

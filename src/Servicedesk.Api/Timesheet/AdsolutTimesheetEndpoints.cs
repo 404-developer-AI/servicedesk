@@ -9,18 +9,17 @@ namespace Servicedesk.Api.Timesheet;
 /// Agent-facing read endpoints for the Timesheet → Adsolut tab: the mirrored
 /// sales-receipts (verkoopbonnen) list, a per-receipt detail (product +
 /// performance lines for the expand view) and a per-row manual resync that
-/// refreshes one receipt straight from Adsolut. The tab itself is gated by
-/// the per-user `adsolut_timesheet_enabled` flag in the SPA; consistent with
-/// the other timesheet endpoints, the backend allows any authenticated agent
-/// (the flag controls feature visibility, not security authorization — the
-/// data is install-wide company sales data, not per-user rows).
+/// refreshes one receipt straight from Adsolut. Gated server-side by the
+/// per-user `adsolut_timesheet_enabled` flag (403 when off) — install-wide
+/// company sales data.
 public static class AdsolutTimesheetEndpoints
 {
     public static IEndpointRouteBuilder MapAdsolutTimesheetEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/timesheet/adsolut")
             .WithTags("Timesheet")
-            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+            .RequireFeature(UserFeature.AdsolutTimesheet);
 
         group.MapGet("/receipts", GetReceipts).WithName("ListAdsolutSalesReceipts").WithOpenApi();
         group.MapGet("/receipts/{id:guid}", GetReceiptDetail).WithName("GetAdsolutSalesReceiptDetail").WithOpenApi();

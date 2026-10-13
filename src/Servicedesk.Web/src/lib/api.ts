@@ -2151,6 +2151,17 @@ export type TelavoxAgentLink = {
 
 export type TelavoxSecretStatus = { configured: boolean };
 
+/// Telavox contact lookup (v0.1.35): Telavox looks up a ringing caller here.
+export type TelavoxContactLookupStatus = {
+  enabled: boolean;
+  tokenConfigured: boolean;
+  path: string;
+  found: number;
+  notFound: number;
+  denied: number;
+  lastLookupUtc: string | null;
+};
+
 export const telavoxAdminApi = {
   status: () =>
     request<TelavoxStatus>("GET", "/api/admin/integrations/telavox/status"),
@@ -2203,6 +2214,22 @@ export const telavoxAdminApi = {
     request<void>(
       "DELETE",
       `/api/admin/integrations/telavox/agents/${userId}/provision`,
+    ),
+  contactLookupStatus: () =>
+    request<TelavoxContactLookupStatus>(
+      "GET",
+      "/api/admin/integrations/telavox/contact-lookup/status",
+    ),
+  /// Generates (or rotates) the lookup token; the value is returned once.
+  generateContactLookupToken: () =>
+    request<{ token: string }>(
+      "POST",
+      "/api/admin/integrations/telavox/contact-lookup/token",
+    ),
+  deleteContactLookupToken: () =>
+    request<void>(
+      "DELETE",
+      "/api/admin/integrations/telavox/contact-lookup/token",
     ),
   auditLog: (cursor: number | null, limit = 50) => {
     const qs = new URLSearchParams();

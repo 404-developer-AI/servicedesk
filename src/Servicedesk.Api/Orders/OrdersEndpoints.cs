@@ -12,19 +12,18 @@ namespace Servicedesk.Api.Orders;
 /// only pulls what changed), a per-row resync, the ticket editor's "::" order
 /// picker, and the ticket ↔ order links.
 ///
-/// The overview + picker + links are gated by the per-user
-/// <c>adsolut_orders_enabled</c> flag in the SPA; consistent with the other
-/// feature endpoints, the backend allows any authenticated agent (the flag
-/// controls feature visibility, not security authorization — the data is
-/// install-wide company order data, not per-user rows). The admin's display
-/// status filter is applied to the overview, picker and global search.
+/// Every route here (overview, detail, picker, sync, ticket links) is gated
+/// server-side by the per-user <c>adsolut_orders_enabled</c> flag — 403 when
+/// off, whatever the role. The admin's display status filter is applied to
+/// the overview, picker and global search.
 public static class OrdersEndpoints
 {
     public static IEndpointRouteBuilder MapOrdersEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/orders")
             .WithTags("Orders")
-            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+            .RequireFeature(UserFeature.AdsolutOrders);
 
         group.MapGet("", ListOrders).WithName("ListAdsolutOrders").WithOpenApi();
         group.MapGet("/picker", PickOrders).WithName("PickAdsolutOrders").WithOpenApi();
@@ -33,10 +32,11 @@ public static class OrdersEndpoints
         group.MapPost("/{id:guid}/resync", ResyncOrder).WithName("ResyncAdsolutOrder").WithOpenApi();
 
         // Ticket ↔ order links. Separate group so it sits under the tickets
-        // namespace but reuses the same RequireAgent gate.
+        // namespace but reuses the same RequireAgent + feature gate.
         var ticketGroup = app.MapGroup("/api/tickets/{ticketId:guid}/orders")
             .WithTags("Orders")
-            .RequireAuthorization(AuthorizationPolicies.RequireAgent);
+            .RequireAuthorization(AuthorizationPolicies.RequireAgent)
+            .RequireFeature(UserFeature.AdsolutOrders);
 
         ticketGroup.MapGet("", ListTicketOrders).WithName("ListTicketOrders").WithOpenApi();
         ticketGroup.MapPost("/{orderId:guid}", LinkTicketOrder).WithName("LinkTicketOrder").WithOpenApi();

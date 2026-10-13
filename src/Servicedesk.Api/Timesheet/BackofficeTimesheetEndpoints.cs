@@ -1,4 +1,5 @@
 using Servicedesk.Api.Auth;
+using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Settings;
 using Servicedesk.Infrastructure.Timesheet;
 
@@ -8,10 +9,11 @@ namespace Servicedesk.Api.Timesheet;
 /// tabs (v0.0.56). Both tabs list tickets that entered an admin-selected set
 /// of statuses within a chosen month; Resolved additionally drops tickets
 /// that already have an Adsolut sales receipt. Per tab a Back-Office reviewer
-/// can tick/untick tickets ("BO checked"). The tabs are gated client-side by
-/// the per-user `timesheet_backoffice_enabled` flag; the routes here carry
-/// RequireAgent — the flag controls feature visibility, the data is
-/// install-wide ticket data (not per-user rows).
+/// can tick/untick tickets ("BO checked"). The list/hours routes are gated
+/// server-side by the per-user `timesheet_backoffice_enabled` flag (403 when
+/// off). `/checks` is shared with the Adsolut and Comments tabs, so it checks
+/// the flag that belongs to the request's context: Back-office for
+/// resolved/cwi, `adsolut_timesheet_enabled` for adsolut.
 public static class BackofficeTimesheetEndpoints
 {
     public static IEndpointRouteBuilder MapBackofficeTimesheetEndpoints(this IEndpointRouteBuilder app)
@@ -20,9 +22,12 @@ public static class BackofficeTimesheetEndpoints
             .WithTags("Timesheet")
             .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
-        group.MapGet("/resolved", GetResolved).WithName("ListBackofficeResolved").WithOpenApi();
-        group.MapGet("/cwi", GetCwi).WithName("ListBackofficeCwi").WithOpenApi();
-        group.MapGet("/tickets/{ticketId:guid}/hours", GetTicketHours).WithName("GetBackofficeTicketHours").WithOpenApi();
+        group.MapGet("/resolved", GetResolved).WithName("ListBackofficeResolved").WithOpenApi()
+            .RequireFeature(UserFeature.TimesheetBackoffice);
+        group.MapGet("/cwi", GetCwi).WithName("ListBackofficeCwi").WithOpenApi()
+            .RequireFeature(UserFeature.TimesheetBackoffice);
+        group.MapGet("/tickets/{ticketId:guid}/hours", GetTicketHours).WithName("GetBackofficeTicketHours").WithOpenApi()
+            .RequireFeature(UserFeature.TimesheetBackoffice);
         group.MapPost("/checks", SetChecks).WithName("SetBackofficeChecks").WithOpenApi();
 
         return group;
@@ -117,6 +122,7 @@ public static class BackofficeTimesheetEndpoints
         SetChecksRequest req,
         HttpContext http,
         IBackofficeTimesheetService svc,
+        IUserService users,
         CancellationToken ct)
     {
         if (req is null || !ValidContexts.Contains(req.Context))
@@ -125,6 +131,9 @@ public static class BackofficeTimesheetEndpoints
             return Results.BadRequest(new { error = "Field 'ids' must contain at least one id." });
 
         var userId = ActorContext.GetUserId(http);
+        var feature = req.Context == "adsolut" ? UserFeature.AdsolutTimesheet : UserFeature.TimesheetBackoffice;
+        if (!await FeatureFlagFilter.IsEnabledAsync(users, userId, feature, ct))
+            return Results.Forbid();
         await svc.SetChecksAsync(req.Ids, req.Context, req.Checked, userId, ct);
         return Results.Ok(new { ok = true, count = req.Ids.Count, @checked = req.Checked });
     }

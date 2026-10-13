@@ -34,7 +34,7 @@ A self-hosted helpdesk for IT service teams. One install per organisation, on a 
 
 **Integrations** (each optional and off by default)
 - Microsoft 365 — mail (Microsoft Graph) and single sign-on for staff.
-- Accounting sync (Wolters Kluwer Adsolut), Telavox call pop-ups, Tactical RMM assets, and a one-time import from Zammad.
+- Accounting sync (Wolters Kluwer Adsolut), Telavox call pop-ups and caller name lookup in the Telavox app, Tactical RMM assets, and a one-time import from Zammad.
 
 **Administration**
 - Everything tunable lives on a searchable Settings page — no config files to edit.

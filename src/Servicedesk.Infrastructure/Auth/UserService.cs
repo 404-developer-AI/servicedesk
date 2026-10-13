@@ -735,6 +735,7 @@ public sealed class UserService : IUserService
             SELECT COALESCE(contracts_enabled, FALSE)        AS Contracts,
                    COALESCE(adsolut_orders_enabled, FALSE)   AS AdsolutOrders,
                    COALESCE(adsolut_timesheet_enabled, FALSE) AS AdsolutTimesheet,
+                   COALESCE(assets_enabled, FALSE)           AS Assets,
                    COALESCE(feedback_enabled, FALSE)         AS Feedback,
                    COALESCE(feedback_own_only, FALSE)        AS FeedbackOwnOnly
             FROM users WHERE id = @id
@@ -748,6 +749,7 @@ public sealed class UserService : IUserService
         if (row.Contracts) set.Add(Domain.Search.SearchFeature.Contracts);
         if (row.AdsolutOrders) set.Add(Domain.Search.SearchFeature.AdsolutOrders);
         if (row.AdsolutTimesheet) set.Add(Domain.Search.SearchFeature.AdsolutTimesheet);
+        if (row.Assets) set.Add(Domain.Search.SearchFeature.Assets);
         // Full feedback access wins over own-only; only one feedback feature is
         // ever added so the search source can pick its scope unambiguously.
         if (row.Feedback) set.Add(Domain.Search.SearchFeature.Feedback);
@@ -760,6 +762,7 @@ public sealed class UserService : IUserService
         public bool Contracts { get; set; }
         public bool AdsolutOrders { get; set; }
         public bool AdsolutTimesheet { get; set; }
+        public bool Assets { get; set; }
         public bool Feedback { get; set; }
         public bool FeedbackOwnOnly { get; set; }
     }

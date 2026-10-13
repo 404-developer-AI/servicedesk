@@ -32,6 +32,16 @@ public static class TelavoxEventTypes
     /// is forensically traceable.
     public const string CustomerIdSelected = "integration.telavox.customer_id.selected";
 
+    /// Admin generated (or rotated) the contact-lookup token. The value is
+    /// never recorded — only that a new one exists.
+    public const string ContactLookupTokenGenerated = "integration.telavox.contact_lookup.token_generated";
+
+    /// Admin deleted the contact-lookup token; the lookup route is off.
+    public const string ContactLookupTokenDeleted = "integration.telavox.contact_lookup.token_deleted";
+
+    /// A lookup call presented a missing or wrong token (machine actor).
+    public const string ContactLookupDenied = "integration.telavox.contact_lookup.denied";
+
     /// Admin manually linked an SD user to a Telavox extension. The
     /// provisioning service has at this point already minted a CAPI-token
     /// and stored it in protected_secrets; payload carries the SD userId +

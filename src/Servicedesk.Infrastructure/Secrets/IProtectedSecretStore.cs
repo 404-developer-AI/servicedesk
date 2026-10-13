@@ -79,6 +79,12 @@ public static class ProtectedSecretKeys
     /// same panel; clearing it disables the surface.
     public const string ReportingApiKey = "Reporting.ApiKey";
 
+    /// Telavox contact lookup (v0.1.35): one install-wide token, generated
+    /// server-side under Settings → Integrations → Telavox and sent by
+    /// Telavox as <c>Authorization: Bearer …</c>. Grants the lookup only;
+    /// deleting it disables the route.
+    public const string TelavoxContactLookupToken = "Telavox.ContactLookupToken";
+
     /// Claude AI assist integration. The Anthropic API key used for the
     /// "AI proposal" feature inside a ticket. One install-wide key, sent on
     /// every Messages API call via the <c>x-api-key</c> header. Write-only:
