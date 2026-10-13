@@ -513,6 +513,20 @@ builder.Services.AddRateLimiter(options =>
             AutoReplenishment = true,
         });
     });
+    // Telavox call-event probe: a few posts per call (ringing, answer, hangup).
+    var telavoxEventsPermit = RateLimitValue("Security:RateLimit:TelavoxEvents:PermitPerWindow", SettingKeys.Telavox.EventProbeRateLimitPermitPerWindow, 120);
+    var telavoxEventsWindow = RateLimitValue("Security:RateLimit:TelavoxEvents:WindowSeconds", SettingKeys.Telavox.EventProbeRateLimitWindowSeconds, 60);
+    options.AddPolicy("telavox-events", ctx =>
+    {
+        var key = ctx.Connection.RemoteIpAddress?.ToString() ?? "anon";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = telavoxEventsPermit,
+            Window = TimeSpan.FromSeconds(telavoxEventsWindow),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        });
+    });
     var portalRegisterPermit = RateLimitValue("Security:RateLimit:PortalRegister:PermitPerWindow", SettingKeys.Portal.RateLimitRegisterPermitPerWindow, 5);
     var portalRegisterWindow = RateLimitValue("Security:RateLimit:PortalRegister:WindowSeconds", SettingKeys.Portal.RateLimitRegisterWindowSeconds, 600);
     options.AddPolicy("portal-register", ctx =>
@@ -861,6 +875,7 @@ app.MapGraphAdminEndpoints();
 app.MapAdsolutEndpoints();
 app.MapTelavoxEndpoints();
 app.MapTelavoxContactLookupEndpoints();
+app.MapTelavoxEventProbeEndpoints();
 app.MapZammadEndpoints();
 app.MapZammadMappingEndpoints();
 app.MapZammadDryRunEndpoints();

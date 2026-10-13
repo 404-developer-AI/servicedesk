@@ -58,6 +58,8 @@ public sealed class FakePortalTicketRepository : IPortalTicketRepository
     public Task<bool> EventIsCustomerVisibleAsync(Guid ticketId, long eventId, CancellationToken ct) => Task.FromResult(false);
     public Task<bool> MailMessageIsCustomerVisibleAsync(Guid ticketId, Guid mailMessageId, CancellationToken ct) => Task.FromResult(false);
     public Task<bool> PortalMessageBelongsToContactAsync(Guid ticketId, long eventId, Guid contactId, CancellationToken ct) => Task.FromResult(false);
+    public Task<PortalMessageSlice> ListMessagesAsync(Guid ticketId, long? beforeEventId, int limit, CancellationToken ct) =>
+        Task.FromResult(new PortalMessageSlice(Array.Empty<Servicedesk.Domain.Tickets.TicketEvent>(), false));
 }
 
 public sealed class FakePortalAccountService : IPortalAccountService

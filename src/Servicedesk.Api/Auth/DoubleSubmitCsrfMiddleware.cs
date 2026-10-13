@@ -88,6 +88,11 @@ public sealed class DoubleSubmitCsrfMiddleware
         // /api/portal/tickets/*, /api/portal/admin/*) stay CSRF-enforced —
         // the portal login mints the XSRF cookie like the agent login.
         "/api/portal/auth/public/",
+        // v0.1.36 — Telavox posts call events server-to-server (no session,
+        // no cookie). The Bearer token (constant-time compared), the admin
+        // switch and the "telavox-events" rate limit are the defence; a
+        // browser cannot forge the Authorization header cross-site.
+        "/api/public/telavox/call-events",
         "/hubs/",
     };
 

@@ -2162,6 +2162,24 @@ export type TelavoxContactLookupStatus = {
   lastLookupUtc: string | null;
 };
 
+/// Telavox call-event probe (v0.1.36): what Telavox webhooks sent, in memory.
+export type TelavoxProbeEvent = {
+  receivedUtc: string;
+  method: string;
+  contentType: string | null;
+  fields: { source: string; name: string; value: string }[];
+  agentEmail: string | null;
+  agentMatchesUser: boolean | null;
+};
+
+export type TelavoxEventProbeStatus = {
+  enabled: boolean;
+  tokenConfigured: boolean;
+  path: string;
+  received: number;
+  events: TelavoxProbeEvent[];
+};
+
 export const telavoxAdminApi = {
   status: () =>
     request<TelavoxStatus>("GET", "/api/admin/integrations/telavox/status"),
@@ -2231,6 +2249,15 @@ export const telavoxAdminApi = {
       "DELETE",
       "/api/admin/integrations/telavox/contact-lookup/token",
     ),
+  eventProbe: () =>
+    request<TelavoxEventProbeStatus>("GET", "/api/admin/integrations/telavox/event-probe/"),
+  clearEventProbe: () =>
+    request<void>("DELETE", "/api/admin/integrations/telavox/event-probe/events"),
+  /// Generates (or rotates) the probe token; the value is returned once.
+  generateEventProbeToken: () =>
+    request<{ token: string }>("POST", "/api/admin/integrations/telavox/event-probe/token"),
+  deleteEventProbeToken: () =>
+    request<void>("DELETE", "/api/admin/integrations/telavox/event-probe/token"),
   auditLog: (cursor: number | null, limit = 50) => {
     const qs = new URLSearchParams();
     if (cursor !== null) qs.set("cursor", String(cursor));

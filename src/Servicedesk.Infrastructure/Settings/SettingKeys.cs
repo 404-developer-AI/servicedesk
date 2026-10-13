@@ -647,6 +647,14 @@ public static class SettingKeys
         /// startup (restart to apply), like every other rate-limit setting.
         public const string ContactLookupRateLimitPermitPerWindow = "Telavox.ContactLookup.RateLimitPermitPerWindow";
         public const string ContactLookupRateLimitWindowSeconds = "Telavox.ContactLookup.RateLimitWindowSeconds";
+
+        /// Call-event webhook probe (v0.1.36): a log-only receiver at
+        /// <c>/api/public/telavox/call-events</c> that shows the admin what
+        /// Telavox sends, before the push-based popup is built. Off by
+        /// default; off (or no token) answers 404.
+        public const string EventProbeEnabled = "Telavox.EventProbe.Enabled";
+        public const string EventProbeRateLimitPermitPerWindow = "Telavox.EventProbe.RateLimitPermitPerWindow";
+        public const string EventProbeRateLimitWindowSeconds = "Telavox.EventProbe.RateLimitWindowSeconds";
     }
 
     /// Zammad migration link (v0.0.41). One-way bridge from an existing
@@ -1584,6 +1592,10 @@ public static class SettingKeys
         /// Page size of the portal ticket list.
         public const string TicketPageSize = "Portal.TicketPageSize";
 
+        /// Messages per page on the portal ticket page (newest first; older
+        /// ones load on demand). 0 = the whole conversation at once.
+        public const string ConversationPageSize = "Portal.ConversationPageSize";
+
         /// Whether customers may reply to tickets whose status category is
         /// Resolved (Closed is never writable from the portal).
         public const string AllowReplyOnResolved = "Portal.AllowReplyOnResolved";
@@ -2089,6 +2101,12 @@ public static class SettingDefaults
             "Maximum contact lookups per IP address per window. Bounds number-enumeration with a leaked token; one lookup per ringing call is far below it. Applied after a restart."),
         new SettingDefault(SettingKeys.Telavox.ContactLookupRateLimitWindowSeconds, "60", "int", "Telavox",
             "Window (seconds) for the contact-lookup rate limit. Applied after a restart."),
+        new SettingDefault(SettingKeys.Telavox.EventProbeEnabled, "false", "bool", "Telavox",
+            "Call-event probe: when on and a probe token is generated (Settings → Integrations → Telavox), Telavox webhooks can post call events (ringing, answer, hangup) here. They are only shown on the Telavox page (last 50, in memory, phone numbers masked) to see what Telavox sends — nothing acts on them yet. Off = the probe URL answers 404."),
+        new SettingDefault(SettingKeys.Telavox.EventProbeRateLimitPermitPerWindow, "120", "int", "Telavox",
+            "Maximum call-event posts per IP address per window for the probe. Applied after a restart."),
+        new SettingDefault(SettingKeys.Telavox.EventProbeRateLimitWindowSeconds, "60", "int", "Telavox",
+            "Window (seconds) for the call-event probe rate limit. Applied after a restart."),
         new SettingDefault(SettingKeys.Telavox.AuditSummaryIntervalSeconds, "300", "int", "Telavox",
             "Coalesce window (seconds) for the per-tick poll-summary row the worker writes to integration_audit. Without coalescing the worker writes one row per PollIntervalSeconds — at the default 2s cadence that's ~30 rows/min even on a silent install. Default 300 (5 minutes) keeps the audit-log browsable; any tick with a fired popup or a per-agent failure flushes immediately so admins still see those events in real time. Floor 30s."),
 
@@ -2686,6 +2704,8 @@ public static class SettingDefaults
             "Minimum password length for customer accounts."),
         new SettingDefault(SettingKeys.Portal.TicketPageSize, "25", "int", "Portal",
             "Number of tickets per page in the portal ticket list."),
+        new SettingDefault(SettingKeys.Portal.ConversationPageSize, "30", "int", "Portal",
+            "Number of messages a customer sees at first on a ticket page; earlier messages load with \"Show earlier messages\". Keeps long threads quick to open. 0 = the whole conversation at once."),
         new SettingDefault(SettingKeys.Portal.AllowReplyOnResolved, "true", "bool", "Portal",
             "Allow customers to reply to tickets in a Resolved status (a reply typically reopens the ticket through your triggers). Closed tickets are never writable from the portal."),
         new SettingDefault(SettingKeys.Portal.ConversationOrder, "oldest", "string", "Portal",

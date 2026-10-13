@@ -39,6 +39,7 @@ public static class PortalTicketEndpoints
         group.MapGet("/", List).WithName("PortalListTickets").WithOpenApi();
         group.MapPost("/", Create).WithName("PortalCreateTicket").WithOpenApi();
         group.MapGet("/{id:guid}", Detail).WithName("PortalTicketDetail").WithOpenApi();
+        group.MapGet("/{id:guid}/messages", OlderMessages).WithName("PortalOlderMessages").WithOpenApi();
         group.MapPost("/{id:guid}/messages", Reply).WithName("PortalReply").WithOpenApi();
         group.MapPost("/{id:guid}/attachments", Upload).WithName("PortalUploadAttachment").WithOpenApi();
         group.MapGet("/{id:guid}/attachments/{attachmentId:guid}", DownloadEventAttachment).WithName("PortalGetAttachment").WithOpenApi();
@@ -121,16 +122,12 @@ public static class PortalTicketEndpoints
         var header = await portalTickets.GetHeaderAsync(viewer, id, ct);
         if (header is null) return Results.NotFound();
 
-        var detail = await tickets.GetByIdAsync(id, ct);
-        if (detail is null) return Results.NotFound();
-        detail = await enricher.EnrichAsync(detail, ct);
-
-        var messages = detail.Events
-            .Where(e => !e.IsInternal && PortalTicketRepository.CustomerVisibleEventTypes.Contains(e.EventType))
-            .OrderBy(e => e.CreatedUtc).ThenBy(e => e.Id)
-            .Select(e => ProjectEvent(e, id, viewer))
-            .Where(m => m is not null)
-            .ToList();
+        // v0.1.36 — the newest page of the conversation only (older messages
+        // via GET /{id}/messages?before=); it used to load and enrich the
+        // whole timeline, internal events included, then filter.
+        var pageSize = await settings.GetAsync<int>(SettingKeys.Portal.ConversationPageSize, ct);
+        var page = await LoadMessagesAsync(id, viewer, null, pageSize, portalTickets, tickets, enricher, ct);
+        if (page is null) return Results.NotFound();
 
         var allowResolvedReply = await settings.GetAsync<bool>(SettingKeys.Portal.AllowReplyOnResolved, ct);
         var (canReply, reason) = ReplyGate(header.StateCategory, allowResolvedReply);
@@ -160,10 +157,48 @@ public static class PortalTicketEndpoints
                 descriptionHtml = RewriteUrls(header.BodyHtml, id),
                 descriptionText = header.BodyText,
             },
-            messages,
+            messages = page.Value.Messages,
+            hasOlderMessages = page.Value.HasOlder,
             canReply,
             replyBlockedReason = reason,
         });
+    }
+
+    private static async Task<IResult> OlderMessages(
+        Guid id, [FromQuery] long? before, HttpContext http,
+        IPortalAccountRepository accounts, IPortalTicketRepository portalTickets, ITicketRepository tickets,
+        IMailTimelineEnricher enricher, ISettingsService settings, CancellationToken ct)
+    {
+        var viewer = await ViewerAsync(http, accounts, settings, ct);
+        if (viewer is null) return PortalRequest.Disabled();
+        // Same scope check as the detail: a ticket outside it is a 404.
+        if (await portalTickets.GetHeaderAsync(viewer, id, ct) is null) return Results.NotFound();
+        if (before is null) return Results.BadRequest(new { error = "before_required" });
+
+        var pageSize = await settings.GetAsync<int>(SettingKeys.Portal.ConversationPageSize, ct);
+        var page = await LoadMessagesAsync(id, viewer, before, pageSize, portalTickets, tickets, enricher, ct);
+        if (page is null) return Results.NotFound();
+        return Results.Ok(new { messages = page.Value.Messages, hasOlderMessages = page.Value.HasOlder });
+    }
+
+    /// One page of whitelisted events, enriched (mail bodies, attachment
+    /// chips) and projected. Only the page is enriched.
+    private static async Task<(List<object> Messages, bool HasOlder)?> LoadMessagesAsync(
+        Guid id, PortalViewer viewer, long? before, int pageSize,
+        IPortalTicketRepository portalTickets, ITicketRepository tickets, IMailTimelineEnricher enricher, CancellationToken ct)
+    {
+        var slice = await portalTickets.ListMessagesAsync(id, before, Math.Max(0, pageSize), ct);
+        if (slice.Events.Count == 0) return (new List<object>(), false);
+        var core = await tickets.GetCoreAsync(id, ct);
+        if (core is null) return null;
+        var enriched = await enricher.EnrichAsync(new TicketDetail(
+            core, new TicketBody(id, string.Empty, null), slice.Events, Array.Empty<TicketEventPin>()), ct);
+        var messages = enriched.Events
+            .Select(e => ProjectEvent(e, id, viewer))
+            .Where(m => m is not null)
+            .Select(m => m!)
+            .ToList();
+        return (messages, slice.HasOlder);
     }
 
     private static (bool CanReply, string? Reason) ReplyGate(string stateCategory, bool allowResolved)

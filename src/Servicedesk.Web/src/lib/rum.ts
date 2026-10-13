@@ -12,7 +12,10 @@
 //
 // Routes are TanStack route templates ("/tickets/$ticketId"), API paths are
 // reduced to templates (ids → {id}); the server scrubs both again. Sampling
-// is decided once per page load from /api/perf/config. Batches go out every
+// is decided once per page load from /api/perf/config; a tab that was not
+// sampled re-checks the config every few minutes and joins in once Diagnose
+// is on (100 % sampling) — without the page-load metrics it no longer has.
+// Batches go out every
 // `flushSeconds` and when the tab is hidden, via fetch(keepalive) — not
 // sendBeacon, because the double-submit CSRF header has to ride along.
 
@@ -34,6 +37,8 @@ const ENDPOINT = "/api/perf/rum";
 const MAX_ITEMS_PER_BATCH = 250;
 const MAX_QUEUE = 1500;
 const SCREEN_WINDOW_MS = 10_000;
+// How often an unsampled tab asks whether Diagnose has started.
+const CONFIG_RECHECK_MS = 120_000;
 
 let started = false;
 const queue: Item[] = [];
@@ -119,16 +124,40 @@ export async function startRum(router: RouterLike): Promise<void> {
   if (started || typeof window === "undefined" || typeof PerformanceObserver === "undefined") return;
   started = true;
 
-  let config: PerfConfig;
-  try {
-    const res = await fetch("/api/perf/config", { credentials: "include", headers: { Accept: "application/json" } });
-    if (!res.ok) return;
-    config = (await res.json()) as PerfConfig;
-  } catch {
+  const config = await loadConfig();
+  if (!config) return;
+  if (config.enabled && Math.random() * 100 < config.samplePercent) {
+    collect(router, config, false);
     return;
   }
-  if (!config.enabled || Math.random() * 100 >= config.samplePercent) return;
 
+  // Not sampled: tabs stay open for days, so without this they would miss a
+  // Diagnose window entirely. Join only when Diagnose is on — re-rolling the
+  // normal sample would inflate it over a long-lived tab.
+  const recheck = window.setInterval(async () => {
+    if (document.visibilityState !== "visible") return;
+    const next = await loadConfig();
+    if (next?.enabled && next.diagnose) {
+      window.clearInterval(recheck);
+      collect(router, next, true);
+    }
+  }, CONFIG_RECHECK_MS);
+}
+
+async function loadConfig(): Promise<PerfConfig | null> {
+  try {
+    const res = await fetch("/api/perf/config", { credentials: "include", headers: { Accept: "application/json" } });
+    return res.ok ? ((await res.json()) as PerfConfig) : null;
+  } catch {
+    return null;
+  }
+}
+
+/// `lateStart`: collection began mid-session (Diagnose switched on). The
+/// page-load metrics (Web Vitals, navigation timing, load_api_calls) belong
+/// to a load that happened long before, so they are skipped, and the
+/// observers don't replay their buffered history.
+function collect(router: RouterLike, config: PerfConfig, lateStart: boolean): void {
   device = detectDevice();
   connection = detectConnection();
 
@@ -141,63 +170,66 @@ export async function startRum(router: RouterLike): Promise<void> {
   };
 
   const initialRoute = currentRoute();
+  const buffered = !lateStart;
 
-  // ---- Web Vitals (reported once per page load, attributed to the landing route)
-  const vital = (name: string) => (m: Metric) => push({ m: name, r: initialRoute, v: m.value });
-  onLCP(vital("lcp"));
-  onINP(vital("inp"));
-  // v0.1.27 — web-vitals builds the selector when it reports (page hide),
-  // by which time the shifted node is often gone (a loading placeholder), so
-  // no cls_target ever arrived. Remember the selector of the largest shift
-  // while its nodes are still in the DOM, as a fallback.
-  let largestShift = 0;
-  let largestShiftSelector: string | undefined;
-  try {
-    new PerformanceObserver((list) => {
-      for (const e of list.getEntries() as Array<PerformanceEntry & { value: number; hadRecentInput: boolean; sources?: Array<{ node?: Node | null }> }>) {
-        if (e.hadRecentInput || e.value <= largestShift) continue;
-        const node = e.sources?.find((s) => s.node instanceof Element)?.node as Element | undefined;
-        if (!node) continue;
-        largestShift = e.value;
-        largestShiftSelector = shortSelector(node);
-      }
-    }).observe({ type: "layout-shift", buffered: true });
-  } catch {
-    // Layout Instability API unavailable
-  }
-  onCLS((m) => {
-    push({ m: "cls", r: initialRoute, v: m.value });
-    // v0.1.26 — which element moved most (a CSS selector, no content), so a
-    // jumping page can be traced to its cause. The server masks digits.
-    const target = m.attribution?.largestShiftTarget || largestShiftSelector;
-    if (target && m.value > 0) push({ m: "cls_target", r: initialRoute, d: target.slice(0, 120), v: m.value });
-  });
-  onFCP(vital("fcp"));
-  onTTFB(vital("ttfb"));
+  if (!lateStart) {
+    // ---- Web Vitals (reported once per page load, attributed to the landing route)
+    const vital = (name: string) => (m: Metric) => push({ m: name, r: initialRoute, v: m.value });
+    onLCP(vital("lcp"));
+    onINP(vital("inp"));
+    // v0.1.27 — web-vitals builds the selector when it reports (page hide),
+    // by which time the shifted node is often gone (a loading placeholder), so
+    // no cls_target ever arrived. Remember the selector of the largest shift
+    // while its nodes are still in the DOM, as a fallback.
+    let largestShift = 0;
+    let largestShiftSelector: string | undefined;
+    try {
+      new PerformanceObserver((list) => {
+        for (const e of list.getEntries() as Array<PerformanceEntry & { value: number; hadRecentInput: boolean; sources?: Array<{ node?: Node | null }> }>) {
+          if (e.hadRecentInput || e.value <= largestShift) continue;
+          const node = e.sources?.find((s) => s.node instanceof Element)?.node as Element | undefined;
+          if (!node) continue;
+          largestShift = e.value;
+          largestShiftSelector = shortSelector(node);
+        }
+      }).observe({ type: "layout-shift", buffered: true });
+    } catch {
+      // Layout Instability API unavailable
+    }
+    onCLS((m) => {
+      push({ m: "cls", r: initialRoute, v: m.value });
+      // v0.1.26 — which element moved most (a CSS selector, no content), so a
+      // jumping page can be traced to its cause. The server masks digits.
+      const target = m.attribution?.largestShiftTarget || largestShiftSelector;
+      if (target && m.value > 0) push({ m: "cls_target", r: initialRoute, d: target.slice(0, 120), v: m.value });
+    });
+    onFCP(vital("fcp"));
+    onTTFB(vital("ttfb"));
 
-  // ---- Navigation timing of the first document load
-  const navEntry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
-  if (navEntry) {
-    const nav = (m: string, v: number) => {
-      if (v >= 0) push({ m, r: initialRoute, v });
-    };
-    nav("nav_dns", navEntry.domainLookupEnd - navEntry.domainLookupStart);
-    const tls = navEntry.secureConnectionStart > 0 ? navEntry.connectEnd - navEntry.secureConnectionStart : 0;
-    nav("nav_tcp", navEntry.connectEnd - navEntry.connectStart - tls);
-    nav("nav_tls", tls);
-    nav("nav_ttfb", navEntry.responseStart - navEntry.requestStart);
-    nav("nav_download", navEntry.responseEnd - navEntry.responseStart);
-    nav("nav_dom", navEntry.domInteractive);
-    window.addEventListener("load", () => {
-      setTimeout(() => nav("nav_load", navEntry.loadEventEnd || performance.now()), 0);
-    }, { once: true });
+    // ---- Navigation timing of the first document load
+    const navEntry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+    if (navEntry) {
+      const nav = (m: string, v: number) => {
+        if (v >= 0) push({ m, r: initialRoute, v });
+      };
+      nav("nav_dns", navEntry.domainLookupEnd - navEntry.domainLookupStart);
+      const tls = navEntry.secureConnectionStart > 0 ? navEntry.connectEnd - navEntry.secureConnectionStart : 0;
+      nav("nav_tcp", navEntry.connectEnd - navEntry.connectStart - tls);
+      nav("nav_tls", tls);
+      nav("nav_ttfb", navEntry.responseStart - navEntry.requestStart);
+      nav("nav_download", navEntry.responseEnd - navEntry.responseStart);
+      nav("nav_dom", navEntry.domInteractive);
+      window.addEventListener("load", () => {
+        setTimeout(() => nav("nav_load", navEntry.loadEventEnd || performance.now()), 0);
+      }, { once: true });
+    }
   }
 
   // ---- Screens: views, route-change duration, API calls/KB per screen
   let screenRoute = initialRoute;
   let screenCalls = 0;
   let screenBytes = 0;
-  let screenOpen = true;
+  let screenOpen = false;
   let screenTimer: number | undefined;
   // v0.1.26 — the first screen of a page load also carries the app's own
   // start-up calls (session, settings, navigation, …); it is reported as
@@ -225,11 +257,18 @@ export async function startRum(router: RouterLike): Promise<void> {
     push({ m: "view", r: route, v: 1 });
     screenTimer = window.setTimeout(closeScreen, SCREEN_WINDOW_MS);
   };
-  openScreen(initialRoute, true);
+  if (!lateStart) openScreen(initialRoute, true);
 
   router.subscribe("onBeforeNavigate", () => {
     navStart = performance.now();
     closeScreen();
+  });
+  // Browsers pause animation frames in a hidden tab, so a navigation that
+  // happens (or is still painting) while the tab is hidden would report the
+  // whole hidden time as "open time" (seen: 41 s on /timesheet). Hiding the
+  // tab voids the pending measurement.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") navStart = 0;
   });
   router.subscribe("onResolved", () => {
     const route = currentRoute();
@@ -237,7 +276,8 @@ export async function startRum(router: RouterLike): Promise<void> {
     // Two frames: the new page has been committed and painted.
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
-        if (begin > 0) push({ m: "route_change", r: route, v: performance.now() - begin });
+        if (begin > 0 && navStart === begin && document.visibilityState === "visible")
+          push({ m: "route_change", r: route, v: performance.now() - begin });
       }),
     );
     openScreen(route);
@@ -283,7 +323,7 @@ export async function startRum(router: RouterLike): Promise<void> {
         }
       }
     });
-    resources.observe({ type: "resource", buffered: true });
+    resources.observe({ type: "resource", buffered });
   } catch {
     // Resource Timing unavailable
   }
@@ -293,7 +333,7 @@ export async function startRum(router: RouterLike): Promise<void> {
     const longTasks = new PerformanceObserver((list) => {
       for (const e of list.getEntries()) push({ m: "long_task", r: currentRoute(), v: e.duration });
     });
-    longTasks.observe({ type: "longtask", buffered: true });
+    longTasks.observe({ type: "longtask", buffered });
   } catch {
     // unsupported
   }
@@ -311,7 +351,7 @@ export async function startRum(router: RouterLike): Promise<void> {
         if (detail) push({ m: "loaf", r: currentRoute(), d: detail, v: top.duration });
       }
     });
-    loaf.observe({ type: "long-animation-frame", buffered: true });
+    loaf.observe({ type: "long-animation-frame", buffered });
   } catch {
     // unsupported outside Chromium
   }

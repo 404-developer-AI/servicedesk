@@ -319,6 +319,9 @@ export type TicketDetail = {
   /// (setting on and requester has no company link), so it renders on the
   /// first paint. Absent on mutation responses.
   contactNotLinkedWarning?: boolean;
+  /// "::" order pills across the whole timeline; only for users with the
+  /// Orders feature (null otherwise).
+  taggedOrders?: { id: string; label: string }[] | null;
 };
 
 /// v0.1.33 — what PATCH /api/tickets/{id}, /company, /requester and the
@@ -1221,10 +1224,6 @@ export const ticketApi = {
     request<CreateTicketResponse>("POST", "/api/tickets", input),
   update: (id: string, fields: TicketFieldUpdate) =>
     request<TicketMutationResult>("PATCH", `/api/tickets/${id}`, fields),
-  /// v0.1.33 — "::" order pills across the whole timeline (the detail only
-  /// carries the latest page). Orders-feature users only.
-  taggedOrders: (id: string) =>
-    request<{ id: string; label: string }[]>("GET", `/api/tickets/${id}/tagged-orders`),
   /// v0.1.33 — timeline events older than `beforeId` (a page), back to and
   /// including `untilId`, or all of them (`all`). Oldest first.
   listOlderEvents: (id: string, opts: { beforeId: number; untilId?: number; all?: boolean }) => {

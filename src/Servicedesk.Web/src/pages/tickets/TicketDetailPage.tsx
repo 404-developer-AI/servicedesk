@@ -40,7 +40,6 @@ import { TicketSidePanel, TicketPresence } from "./components/TicketSidePanel";
 import { TicketTimeline, isSystemEvent, isSystemEventType } from "./components/TicketTimeline";
 import { TimelineOlderBar } from "./components/TimelineOlderBar";
 import { useTicketTimeline, type TicketTimeline as TicketTimelineState } from "./useTicketTimeline";
-import { useAuth } from "@/auth/authStore";
 import { PortalRegistrationCard } from "@/components/portal/PortalRegistrationCard";
 import { PinnedEventsSummary } from "./components/PinnedEventsSummary";
 import { TicketTimesheetPanel } from "./components/TicketTimesheetPanel";
@@ -391,15 +390,6 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
   // v0.1.33 — the detail carries the latest page of the timeline; older
   // events load on demand and live in this hook.
   const timeline = useTicketTimeline(ticketId, data);
-  // Order pills in entries outside the loaded page — only the Orders
-  // feature shows them, so only its users pay for the body scan.
-  const ordersFeature = !!useAuth().user?.adsolutOrdersEnabled;
-  const taggedOrdersQ = useQuery({
-    queryKey: ["ticket-tagged-orders", ticketId],
-    queryFn: () => ticketApi.taggedOrders(ticketId),
-    enabled: ordersFeature,
-    staleTime: 5 * 60_000,
-  });
 
   // Pull the requester's email so "Send mail → New" can pre-fill the To
   // field. Same query key as TicketSidePanel so the two components share
@@ -961,7 +951,7 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         eventTypeCounts={data.eventTypeCounts}
         latestMailReceived={data.latestMailReceived ?? null}
         pinnedEventsOutsidePage={data.pinnedEventsOutsidePage ?? []}
-        serverTaggedOrders={taggedOrdersQ.data ?? []}
+        serverTaggedOrders={data.taggedOrders ?? EMPTY_TAGGED_ORDERS}
         pinnedEvents={pinnedEvents}
         pinnedEventIds={pinnedEventIds}
         updateMutation={updateMutation}
@@ -1083,6 +1073,7 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
 
 // Shape of the id an order pill may carry — Adsolut mirror rows are GUIDs.
 const ORDER_GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const EMPTY_TAGGED_ORDERS: { id: string; label: string }[] = [];
 
 function TicketDetailBody({
   ticketId, ticket, body, events, timeline, eventTypeCounts, latestMailReceived, pinnedEventsOutsidePage,

@@ -99,7 +99,10 @@ public sealed class RecipientSuggestionRepository : IRecipientSuggestionReposito
                 FROM mail_recipients r
                 JOIN mail_messages m ON m.id = r.mail_id
                 JOIN tickets t ON t.id = m.ticket_id
+                -- is_deleted lets the partial company indexes serve this
+                -- (a bare company_id filter seq-scans tickets).
                 WHERE m.direction = 'Outbound' AND t.company_id = @companyId
+                  AND t.is_deleted = FALSE
                 GROUP BY r.address
             ),
             company_contacts AS (

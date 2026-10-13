@@ -85,6 +85,10 @@ public static class ProtectedSecretKeys
     /// deleting it disables the route.
     public const string TelavoxContactLookupToken = "Telavox.ContactLookupToken";
 
+    /// Telavox call-event probe (v0.1.36): its own token, so the probe can be
+    /// revoked without touching the contact lookup.
+    public const string TelavoxEventProbeToken = "Telavox.EventProbeToken";
+
     /// Claude AI assist integration. The Anthropic API key used for the
     /// "AI proposal" feature inside a ticket. One install-wide key, sent on
     /// every Messages API call via the <c>x-api-key</c> header. Write-only:
