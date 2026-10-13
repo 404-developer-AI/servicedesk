@@ -249,6 +249,7 @@ public static class DependencyInjection
         services.AddSingleton<ITelavoxAgentLinkStore, TelavoxAgentLinkStore>();
         services.AddSingleton<ITelavoxCallStateStore, TelavoxCallStateStore>();
         services.AddSingleton<TelavoxContactLookupStats>();
+        services.AddSingleton<TelavoxEventProbeBuffer>();
         services.AddSingleton<ITelavoxProvisioningService, TelavoxProvisioningService>();
         services.AddSingleton<Realtime.ITelavoxCallNotifier, Realtime.NullTelavoxCallNotifier>();
         // v0.1.27 — the poller calls Telavox every few seconds; with the

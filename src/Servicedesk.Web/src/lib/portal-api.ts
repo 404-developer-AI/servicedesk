@@ -188,7 +188,10 @@ export type PortalTicketDetail = {
     descriptionHtml: string | null;
     descriptionText: string;
   };
+  /** The newest page of the conversation, oldest first. */
   messages: PortalMessage[];
+  /** Earlier messages exist; fetch them with `olderMessages`. */
+  hasOlderMessages: boolean;
   canReply: boolean;
   replyBlockedReason: "closed" | "resolved" | null;
 };
@@ -203,6 +206,12 @@ export const portalTicketApi = {
     return request<PortalTicketList>("GET", `/api/portal/tickets/?${qs.toString()}`);
   },
   get: (id: string) => request<PortalTicketDetail>("GET", `/api/portal/tickets/${id}`),
+  /** The page of messages before `beforeId` (oldest first). */
+  olderMessages: (id: string, beforeId: number) =>
+    request<{ messages: PortalMessage[]; hasOlderMessages: boolean }>(
+      "GET",
+      `/api/portal/tickets/${id}/messages?before=${beforeId}`,
+    ),
   create: (subject: string, bodyHtml: string, companyId: string | null) =>
     request<{ id: string; number: number; messageEventId: number | null }>("POST", "/api/portal/tickets/", {
       subject,

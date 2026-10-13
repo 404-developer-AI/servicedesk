@@ -55,6 +55,10 @@ public sealed record PortalTicketHeader(
 
 public enum PortalTicketFilter { All = 0, Open = 1, Closed = 2 }
 
+/// A page of customer-visible timeline events, oldest first, plus whether
+/// earlier ones exist.
+public sealed record PortalMessageSlice(IReadOnlyList<Servicedesk.Domain.Tickets.TicketEvent> Events, bool HasOlder);
+
 public interface IPortalTicketRepository
 {
     /// Tickets of ONE company (the customer's active company): own tickets
@@ -78,6 +82,12 @@ public interface IPortalTicketRepository
     /// The PortalMessage event the viewer authored (attachment uploads are
     /// only allowed onto your own portal messages).
     Task<bool> PortalMessageBelongsToContactAsync(Guid ticketId, long eventId, Guid contactId, CancellationToken ct);
+
+    /// v0.1.36 — the newest <paramref name="limit"/> customer-visible events
+    /// (whitelisted type, not internal), or those before
+    /// <paramref name="beforeEventId"/>. <paramref name="limit"/> 0 = all.
+    /// The caller has already checked the viewer's scope on the ticket.
+    Task<PortalMessageSlice> ListMessagesAsync(Guid ticketId, long? beforeEventId, int limit, CancellationToken ct);
 }
 
 public sealed class PortalTicketRepository : IPortalTicketRepository
@@ -237,6 +247,46 @@ public sealed class PortalTicketRepository : IPortalTicketRepository
         args.Add("TicketId", ticketId, DbType.Guid);
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.QuerySingleOrDefaultAsync<PortalTicketHeader>(new CommandDefinition(sql, args, cancellationToken: ct));
+    }
+
+    public async Task<PortalMessageSlice> ListMessagesAsync(Guid ticketId, long? beforeEventId, int limit, CancellationToken ct)
+    {
+        // The whitelist lives in the WHERE clause: an internal or
+        // non-whitelisted event is never read, let alone projected. One row
+        // past the page tells whether earlier messages exist.
+        const string sql = """
+            SELECT e.id AS Id, e.ticket_id AS TicketId, e.event_type AS EventType,
+                   e.author_user_id AS AuthorUserId, e.author_contact_id AS AuthorContactId,
+                   COALESCE(au.email, NULLIF(CONCAT_WS(' ', ac.first_name, ac.last_name), ''), e.metadata->>'authorName') AS AuthorName,
+                   e.body_text AS BodyText, e.body_html AS BodyHtml,
+                   e.metadata::text AS MetadataJson, e.is_internal AS IsInternal,
+                   e.created_utc AS CreatedUtc,
+                   e.edited_utc AS EditedUtc, e.edited_by_user_id AS EditedByUserId
+            FROM ticket_events e
+            LEFT JOIN users    au ON au.id = e.author_user_id
+            LEFT JOIN contacts ac ON ac.id = e.author_contact_id
+            WHERE e.ticket_id = @ticketId
+              AND e.is_internal = FALSE
+              AND e.event_type = ANY(@types)
+              AND (@before::bigint IS NULL
+                   OR (e.created_utc, e.id) < (SELECT created_utc, id FROM ticket_events
+                                                WHERE id = @before AND ticket_id = @ticketId))
+            ORDER BY e.created_utc DESC, e.id DESC
+            LIMIT @take
+            """;
+        var take = limit <= 0 ? int.MaxValue : limit + 1;
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var newestFirst = (await conn.QueryAsync<Servicedesk.Domain.Tickets.TicketEvent>(new CommandDefinition(sql, new
+        {
+            ticketId,
+            types = CustomerVisibleEventTypes.ToArray(),
+            before = beforeEventId,
+            take,
+        }, cancellationToken: ct))).ToList();
+        var hasOlder = limit > 0 && newestFirst.Count > limit;
+        if (hasOlder) newestFirst.RemoveAt(newestFirst.Count - 1);
+        newestFirst.Reverse();
+        return new PortalMessageSlice(newestFirst, hasOlder);
     }
 
     public async Task<bool> EventIsCustomerVisibleAsync(Guid ticketId, long eventId, CancellationToken ct)

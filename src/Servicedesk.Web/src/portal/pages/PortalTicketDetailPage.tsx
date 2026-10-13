@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownWideNarrow, ArrowLeft, ArrowUpWideNarrow, Building2, Clock, FileText, Lock, MessageSquare, Paperclip, User } from "lucide-react";
+import { ArrowDownWideNarrow, ArrowLeft, ArrowUpWideNarrow, Building2, ChevronsUp, Clock, FileText, Lock, MessageSquare, Paperclip, User } from "lucide-react";
 import { toast } from "sonner";
 import { SafeHtml } from "@/components/SafeHtml";
 import { ApiError, apiErrorMessage } from "@/lib/api";
@@ -67,11 +67,37 @@ export function PortalTicketDetailPage({ ticketId }: { ticketId: string }) {
     }
   }
 
-  const messages = detail.data?.messages;
+  // v0.1.36 — the detail carries the newest page; earlier messages load on
+  // demand and are kept here (oldest first) across refetches of the page.
+  const [older, setOlder] = useState<{ ticketId: string; messages: PortalMessage[]; hasMore: boolean } | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const olderForTicket = older?.ticketId === ticketId ? older : null;
+  const pageMessages = detail.data?.messages;
+  const messages = useMemo(() => {
+    const page = pageMessages ?? [];
+    const earlier = olderForTicket?.messages ?? [];
+    const pageIds = new Set(page.map((m) => m.id));
+    return [...earlier.filter((m) => !pageIds.has(m.id)), ...page];
+  }, [pageMessages, olderForTicket]);
+  const hasOlder = olderForTicket ? olderForTicket.hasMore : (detail.data?.hasOlderMessages ?? false);
   const ordered = useMemo(
-    () => (messages && order.value === "newest" ? [...messages].reverse() : messages ?? []),
+    () => (order.value === "newest" ? [...messages].reverse() : messages),
     [messages, order.value],
   );
+
+  async function loadOlder() {
+    const oldest = messages[0];
+    if (!oldest || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const r = await portalTicketApi.olderMessages(ticketId, oldest.id);
+      setOlder({ ticketId, messages: [...r.messages, ...(olderForTicket?.messages ?? [])], hasMore: r.hasOlderMessages });
+    } catch (e) {
+      toast.error(apiErrorMessage(e) ?? "Could not load earlier messages.");
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
 
   if (detail.isLoading) {
     return (
@@ -95,6 +121,17 @@ export function PortalTicketDetailPage({ ticketId }: { ticketId: string }) {
 
   const { ticket, canReply, replyBlockedReason } = detail.data;
   const newestFirst = order.value === "newest";
+  const olderButton = hasOlder ? (
+    <button
+      type="button"
+      onClick={loadOlder}
+      disabled={loadingOlder}
+      className="sd-portal-load-older flex w-full items-center justify-center gap-1.5 rounded-lg border border-glass bg-glass px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-glass-hover hover:text-foreground disabled:opacity-60"
+    >
+      <ChevronsUp className={cn("h-3.5 w-3.5", newestFirst && "rotate-180")} />
+      {loadingOlder ? "Loading…" : "Show earlier messages"}
+    </button>
+  ) : null;
 
   const replySection = (
     <section className="glass-card p-5" data-testid="portal-reply">
@@ -184,6 +221,7 @@ export function PortalTicketDetailPage({ ticketId }: { ticketId: string }) {
           <OrderToggle value={order.value} onChange={order.set} />
         </div>
         {newestFirst ? replySection : null}
+        {newestFirst ? null : olderButton}
         {ordered.length === 0 ? (
           <div className="glass-card p-6 text-center text-sm text-muted-foreground">No messages yet.</div>
         ) : (
@@ -193,6 +231,7 @@ export function PortalTicketDetailPage({ ticketId }: { ticketId: string }) {
             ))}
           </ol>
         )}
+        {newestFirst ? olderButton : null}
       </section>
 
       {newestFirst ? null : replySection}

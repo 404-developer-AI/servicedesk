@@ -42,6 +42,11 @@ public static class TelavoxEventTypes
     /// A lookup call presented a missing or wrong token (machine actor).
     public const string ContactLookupDenied = "integration.telavox.contact_lookup.denied";
 
+    /// Call-event probe token generated / deleted, and a refused post.
+    public const string EventProbeTokenGenerated = "integration.telavox.event_probe.token_generated";
+    public const string EventProbeTokenDeleted = "integration.telavox.event_probe.token_deleted";
+    public const string EventProbeDenied = "integration.telavox.event_probe.denied";
+
     /// Admin manually linked an SD user to a Telavox extension. The
     /// provisioning service has at this point already minted a CAPI-token
     /// and stored it in protected_secrets; payload carries the SD userId +

@@ -1,6 +1,8 @@
 using System.Linq;
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Servicedesk.Api.Auth;
 using Servicedesk.Api.Tests.TestInfrastructure;
 using Servicedesk.Infrastructure.Settings;
@@ -99,8 +101,23 @@ public sealed class PortalAuthorizationTests
         var client = await ClientWithSession(factory, role, "pwd+mfa");
 
         var response = await client.GetAsync("/api/portal/tickets/");
+        // v0.1.36 — the earlier-messages page sits behind the same gate.
+        var older = await client.GetAsync($"/api/portal/tickets/{Guid.NewGuid()}/messages?before=1");
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, older.StatusCode);
+    }
+
+    [Fact]
+    public async Task Earlier_messages_of_a_ticket_outside_the_scope_are_a_404()
+    {
+        using var factory = new SecurityBaselineFactory();
+        factory.Settings.Set(SettingKeys.Portal.Enabled, "true");
+        var client = await ClientWithSession(factory, "Customer", "pwd+mfa", withDataSource: true);
+
+        var response = await client.GetAsync($"/api/portal/tickets/{Guid.NewGuid()}/messages?before=1");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -291,7 +308,7 @@ public sealed class PortalAuthorizationTests
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
-    private static async Task<HttpClient> ClientWithSession(SecurityBaselineFactory factory, string role, string amr, bool withCsrf = false)
+    private static async Task<HttpClient> ClientWithSession(SecurityBaselineFactory factory, string role, string amr, bool withCsrf = false, bool withDataSource = false)
     {
         var userId = Guid.NewGuid();
         factory.Sessions.Roles[userId] = role;
@@ -301,7 +318,16 @@ public sealed class PortalAuthorizationTests
         // both names so one helper serves staff and portal endpoints alike.
         var cookieName = await factory.Settings.GetAsync<string>(SettingKeys.Security.SessionCookieName);
         var portalCookieName = await factory.Settings.GetAsync<string>(SettingKeys.Security.PortalSessionCookieName);
-        var client = factory.CreateClient();
+        // Handlers resolve their repositories before running, so a request
+        // that gets past authorization needs a data source — an unreachable
+        // one, as these tests must answer before any query.
+        var client = withDataSource
+            ? factory.WithWebHostBuilder(b => b.ConfigureServices(services =>
+              {
+                  services.RemoveAll<Npgsql.NpgsqlDataSource>();
+                  services.AddSingleton(Npgsql.NpgsqlDataSource.Create("Host=127.0.0.1;Port=1;Database=none;Username=none;Timeout=1"));
+              })).CreateClient()
+            : factory.CreateClient();
         var cookie = $"{cookieName}={sessionId}; {portalCookieName}={sessionId}";
         if (withCsrf)
         {

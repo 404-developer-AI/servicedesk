@@ -48,6 +48,7 @@ import {
 import { SettingField } from "@/components/settings/SettingField";
 import { IntegrationAuditLog } from "@/components/integrations/IntegrationAuditLog";
 import { TelavoxContactLookupSection } from "./TelavoxContactLookupSection";
+import { TelavoxEventProbeSection } from "./TelavoxEventProbeSection";
 import { cn } from "@/lib/utils";
 
 const STATUS_QK = ["integrations", "telavox", "status"] as const;
@@ -391,6 +392,12 @@ export function TelavoxIntegrationPage() {
       {/* ---- Contact lookup (Telavox app) -------------------------- */}
       <TelavoxContactLookupSection
         enabledEntry={findEntry(settingsList.data, "Telavox.ContactLookup.Enabled")}
+        settingsQueryKey={SETTINGS_QK}
+      />
+
+      {/* ---- Call events probe (webhooks) --------------------------- */}
+      <TelavoxEventProbeSection
+        enabledEntry={findEntry(settingsList.data, "Telavox.EventProbe.Enabled")}
         settingsQueryKey={SETTINGS_QK}
       />
 

@@ -157,6 +157,7 @@ public static class TicketEndpoints
             Guid id, HttpContext http, ITicketRepository repo, ITicketTimelineReader timeline,
             IQueueAccessService queueAccess,
             IMailTimelineEnricher mailEnricher, ISettingsService settings,
+            Servicedesk.Infrastructure.Auth.IUserService users,
             [FromServices] Npgsql.NpgsqlDataSource dataSource, CancellationToken ct) =>
         {
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
@@ -226,10 +227,19 @@ public static class TicketEndpoints
                     portalRegistration = new { userId = reg.UserId, status = reg.Status, email = reg.Email, displayName = reg.DisplayName };
             }
 
+            // v0.1.36 — "::" order pills across the whole timeline for the side
+            // panel's Orders block (the page alone may miss older ones). Only
+            // the Orders feature shows them, so only its users pay for the
+            // body scan; it used to be a separate request per ticket open.
+            var taggedOrders = await users.GetAdsolutOrdersEnabledAsync(userId, ct)
+                ? (await timeline.ListTaggedOrdersAsync(id, ct)).Select(o => new { id = o.Id, label = o.Label }).ToList()
+                : null;
+
             return Results.Ok(new
             {
                 ticket = detail.Ticket,
                 portalRegistration,
+                taggedOrders,
                 body = detail.Body,
                 events = detail.Events,
                 hasOlderEvents = first.HasOlderEvents,
@@ -299,23 +309,6 @@ public static class TicketEndpoints
             }
             return Results.Ok(new { events, hasMore = slice.HasMore });
         }).WithName("ListTicketEvents").WithOpenApi();
-
-        // v0.1.33 — "::" order pills across the whole timeline for the side
-        // panel's Orders block (the detail only carries the latest page). Only
-        // asked for by agents with the Orders feature; same access rule.
-        group.MapGet("/{id:guid}/tagged-orders", async (
-            Guid id, HttpContext http, ITicketRepository repo, ITicketTimelineReader timeline,
-            IQueueAccessService queueAccess, CancellationToken ct) =>
-        {
-            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-            var role = http.User.FindFirst(ClaimTypes.Role)!.Value;
-            var ticket = await repo.GetCoreAsync(id, ct);
-            if (ticket is null) return Results.NotFound();
-            if (!await queueAccess.HasQueueAccessAsync(userId, role, ticket.QueueId, ct))
-                return Results.NotFound();
-            var orders = await timeline.ListTaggedOrdersAsync(id, ct);
-            return Results.Ok(orders.Select(o => new { id = o.Id, label = o.Label }));
-        }).WithName("ListTicketTaggedOrders").WithOpenApi();
 
         group.MapPost("/", async (
             [FromBody] CreateTicketRequest req, HttpContext http,

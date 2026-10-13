@@ -20,6 +20,9 @@ public sealed class RecipientSuggestionSqlTests
 
         Assert.Contains("m.direction = 'Outbound'", sql);
         Assert.Contains("t.company_id = @companyId", sql);
+        // Matches the partial company indexes (WHERE is_deleted = FALSE);
+        // without it the planner seq-scans tickets.
+        Assert.Contains("t.is_deleted = FALSE", sql);
     }
 
     [Theory]

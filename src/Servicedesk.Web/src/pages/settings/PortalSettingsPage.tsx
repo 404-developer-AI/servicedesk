@@ -95,6 +95,11 @@ export function PortalSettingsPage() {
               ]}
             />
             <Field entry={e("Portal.TicketPageSize")} label="Tickets per page" />
+            <Field
+              entry={e("Portal.ConversationPageSize")}
+              label="Messages shown at first on a ticket"
+              hint='Earlier messages load with "Show earlier messages". 0 = the whole conversation at once.'
+            />
             <Field entry={e("Portal.SessionLifetimeHours")} label="Customer session lifetime (hours)" />
             <Field
               entry={e("Portal.ImpersonationLifetimeMinutes")}

@@ -242,6 +242,9 @@ public sealed class TelavoxPollingWorker : BackgroundService
         var phoneNormalizer = sp.GetRequiredService<Phones.IContactPhoneNormalizer>();
         var companyRepo = sp.GetRequiredService<Persistence.Companies.ICompanyRepository>();
 
+        // The run scope opens before the first read so the link list is
+        // attributed to this worker in the Performance report, not "other".
+        using var run = PerfWorkerRun.Start("telavox-polling");
         var allLinks = await links.ListAsync(ct);
         if (allLinks.Count == 0) return false;
 
@@ -251,7 +254,6 @@ public sealed class TelavoxPollingWorker : BackgroundService
         // Half of IntegrationsHealthAggregator's staleness threshold.
         var outcomeRefresh = TimeSpan.FromSeconds(Math.Max(pollIntervalSeconds * 4, 30) / 2.0);
 
-        using var run = PerfWorkerRun.Start("telavox-polling");
         var tickStart = Stopwatch.StartNew();
         var pollsAttempted = 0;
         var pollsSucceeded = 0;
