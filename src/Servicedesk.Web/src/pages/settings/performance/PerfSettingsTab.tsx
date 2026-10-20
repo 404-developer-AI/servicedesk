@@ -60,6 +60,7 @@ const THRESHOLDS = [
   k("Findings.SeqScanRatio", "Seq-scan check: seq scans × index scans above"),
   k("Findings.DeadTuplePct", "Dead rows above (% of live rows)"),
   k("Findings.VacuumStaleDays", "Not vacuumed for (days)"),
+  k("Findings.VacuumStaleMinDeadPct", "…and dead rows above (% of live rows)"),
   k("Findings.CacheHitPct", "Buffer cache hit ratio below (%)"),
   k("Findings.TempMb", "Temp-file spill above (MB)"),
   k("Findings.IdleInTxSeconds", "Idle in transaction above (seconds)"),

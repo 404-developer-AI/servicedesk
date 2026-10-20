@@ -449,11 +449,15 @@ public static class PerfFindings
             if (!tables.TryGetValue(delta.Name, out var tb)) continue;
             var last = Max(tb.LastVacuum, tb.LastAutovacuum);
             if (last is not null && (now - last.Value).TotalDays <= t.VacuumStaleDays) continue;
+            // An old vacuum date alone is harmless: append-mostly tables and small HOT-updated tables
+            // stay below the autovacuum threshold for weeks. Only report when there is work to do.
+            var deadPct = 100.0 * tb.Dead / Math.Max(1, tb.Rows);
+            if (tb.Dead < 1000 || deadPct < t.VacuumStaleMinDeadPct) continue;
             f.Add(new PerfFinding(
-                "vacuum-stale:" + tb.Name, PerfCategory.Maintenance, PerfSeverity.Warning,
+                "vacuum-stale:" + tb.Name, PerfCategory.Maintenance, PerfSeverity.Info,
                 $"Table {tb.Name} is written to but was not vacuumed for {(last is null ? "a long time" : $"{(now - last.Value).TotalDays:0} days")}",
                 "Vacuum keeps tables compact and the visibility map fresh (index-only scans depend on it).",
-                new[] { new PerfEvidence("Writes in period", PerfFormat.Count(delta.Writes)), new PerfEvidence("Last vacuum", PerfFormat.Date(last)) },
+                new[] { new PerfEvidence("Writes in period", PerfFormat.Count(delta.Writes)), new PerfEvidence("Dead rows", $"{PerfFormat.Count(tb.Dead)} ({PerfFormat.Pct(deadPct)})"), new PerfEvidence("Last vacuum", PerfFormat.Date(last)) },
                 "Autovacuum thresholds are not reached, autovacuum is off, or it keeps getting cancelled.",
                 $"Run VACUUM (ANALYZE) {tb.Name}; check the autovacuum settings on the Database → Config tab.",
                 new[] { new PerfCodeRef("table", tb.Name) },

@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -95,7 +96,13 @@ const THEME_COLOR_META: Record<Theme, string> = {
  * users; anonymous users only flip the localStorage cache.
  */
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() => readStoredTheme());
+  // bootstrapAuth runs before the first render, so a signed-in user's own
+  // theme is known here — starting from it (not just the cache) avoids a
+  // theme swap right after first paint on a new device (layout shift).
+  const [theme, setThemeState] = useState<Theme>(() => {
+    const own = authStore.get().user?.effectiveTheme;
+    return isUiTheme(own) ? own : readStoredTheme();
+  });
   // The last value known to agree with the server (or the initial cache
   // before hydration). Only an explicit change away from it is PUT — a
   // value that came FROM the server must never bounce straight back.
@@ -105,8 +112,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // first real change.
   const lastSyncedRef = useRef<Theme>(theme);
 
-  // Apply theme to the DOM + localStorage on every change.
-  useEffect(() => {
+  // Apply theme to the DOM + localStorage on every change — before paint, so
+  // the first frame already has the right theme classes.
+  useLayoutEffect(() => {
     applyTheme(theme);
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, theme);

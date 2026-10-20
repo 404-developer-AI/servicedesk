@@ -1701,6 +1701,7 @@ public static class SettingKeys
         public const string FindingSeqScanRatio = "Performance.Findings.SeqScanRatio";
         public const string FindingDeadTuplePct = "Performance.Findings.DeadTuplePct";
         public const string FindingVacuumStaleDays = "Performance.Findings.VacuumStaleDays";
+        public const string FindingVacuumStaleMinDeadPct = "Performance.Findings.VacuumStaleMinDeadPct";
         public const string FindingCacheHitPct = "Performance.Findings.CacheHitPct";
         public const string FindingTempMb = "Performance.Findings.TempMb";
         public const string FindingIdleInTxSeconds = "Performance.Findings.IdleInTxSeconds";
@@ -2822,7 +2823,9 @@ public static class SettingDefaults
         new SettingDefault(SettingKeys.Performance.FindingDeadTuplePct, "20", "int", "Performance",
             "Finding: dead rows above this percentage of live rows on a table means bloat / vacuum is behind."),
         new SettingDefault(SettingKeys.Performance.FindingVacuumStaleDays, "7", "int", "Performance",
-            "Finding: an actively written table not vacuumed for this many days is reported."),
+            "Finding: an actively written table not vacuumed for this many days is reported (only when it also has dead rows, see the next setting)."),
+        new SettingDefault(SettingKeys.Performance.FindingVacuumStaleMinDeadPct, "5", "int", "Performance",
+            "Finding: a not-recently-vacuumed table is only reported when its dead rows exceed this percentage of live rows (and at least 1,000). Lower values report more tables."),
         new SettingDefault(SettingKeys.Performance.FindingCacheHitPct, "99", "int", "Performance",
             "Finding: a buffer cache hit ratio below this percentage means PostgreSQL reads from disk too often (too little RAM / shared_buffers, or bloat)."),
         new SettingDefault(SettingKeys.Performance.FindingTempMb, "100", "int", "Performance",
