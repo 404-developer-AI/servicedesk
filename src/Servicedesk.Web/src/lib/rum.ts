@@ -120,6 +120,16 @@ function shortSelector(el: Element): string {
   return (parent ? part(parent) + ">" : "") + part(el);
 }
 
+type ShiftSource = { node?: Node | null; previousRect?: DOMRectReadOnly; currentRect?: DOMRectReadOnly };
+
+/** Which way the shifted element moved — tells a rail/sidebar push from content loading above. */
+function shiftAxis(source: ShiftSource | undefined): string {
+  const a = source?.previousRect;
+  const b = source?.currentRect;
+  if (!a || !b) return "";
+  return Math.abs(b.x - a.x) >= Math.abs(b.y - a.y) ? " (horizontal)" : " (vertical)";
+}
+
 export async function startRum(router: RouterLike): Promise<void> {
   if (started || typeof window === "undefined" || typeof PerformanceObserver === "undefined") return;
   started = true;
@@ -181,16 +191,21 @@ function collect(router: RouterLike, config: PerfConfig, lateStart: boolean): vo
     // by which time the shifted node is often gone (a loading placeholder), so
     // no cls_target ever arrived. Remember the selector of the largest shift
     // while its nodes are still in the DOM, as a fallback.
+    // v0.1.37 — CLS covers the tab's whole life (SPA navigations included), so
+    // the target is filed under the route that was open when the shift happened,
+    // not the landing route, and carries the direction of the move.
     let largestShift = 0;
     let largestShiftSelector: string | undefined;
+    let largestShiftRoute: string | undefined;
     try {
       new PerformanceObserver((list) => {
-        for (const e of list.getEntries() as Array<PerformanceEntry & { value: number; hadRecentInput: boolean; sources?: Array<{ node?: Node | null }> }>) {
+        for (const e of list.getEntries() as Array<PerformanceEntry & { value: number; hadRecentInput: boolean; sources?: ShiftSource[] }>) {
           if (e.hadRecentInput || e.value <= largestShift) continue;
-          const node = e.sources?.find((s) => s.node instanceof Element)?.node as Element | undefined;
-          if (!node) continue;
+          const source = e.sources?.find((s) => s.node instanceof Element);
+          if (!source) continue;
           largestShift = e.value;
-          largestShiftSelector = shortSelector(node);
+          largestShiftSelector = shortSelector(source.node as Element) + shiftAxis(source);
+          largestShiftRoute = currentRoute();
         }
       }).observe({ type: "layout-shift", buffered: true });
     } catch {
@@ -200,8 +215,14 @@ function collect(router: RouterLike, config: PerfConfig, lateStart: boolean): vo
       push({ m: "cls", r: initialRoute, v: m.value });
       // v0.1.26 — which element moved most (a CSS selector, no content), so a
       // jumping page can be traced to its cause. The server masks digits.
-      const target = m.attribution?.largestShiftTarget || largestShiftSelector;
-      if (target && m.value > 0) push({ m: "cls_target", r: initialRoute, d: target.slice(0, 120), v: m.value });
+      const a = m.attribution;
+      const fromVitals = a?.largestShiftTarget && a.largestShiftValue === largestShift;
+      const vitalsTarget = a?.largestShiftTarget ? a.largestShiftTarget + shiftAxis(a.largestShiftSource) : undefined;
+      const own = !fromVitals && largestShiftSelector;
+      const target = own ? largestShiftSelector : vitalsTarget;
+      const route = fromVitals || own ? largestShiftRoute : undefined;
+      if (target && m.value > 0)
+        push({ m: "cls_target", r: route ?? initialRoute, d: target.slice(-120), v: m.value });
     });
     onFCP(vital("fcp"));
     onTTFB(vital("ttfb"));

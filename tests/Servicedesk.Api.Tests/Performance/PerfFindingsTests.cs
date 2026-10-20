@@ -209,6 +209,25 @@ public sealed class PerfFindingsTests
     }
 
     [Fact]
+    public void VacuumStale_OnlyWhenTheTableHasDeadRows()
+    {
+        var old = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc);
+        var d = Dataset(b =>
+        {
+            b.Tables.Add(new PgInspector.TableRow { Name = "audit_log", Rows = 400_000, Dead = 100, LastAutovacuum = old });
+            b.Tables.Add(new PgInspector.TableRow { Name = "queue_inbound_mailboxes", Rows = 3, Dead = 0 });
+            b.Tables.Add(new PgInspector.TableRow { Name = "mail_messages", Rows = 77_000, Dead = 8_500, LastAutovacuum = old });
+            b.TableDeltas.Add(new TableDelta { Name = "audit_log", Writes = 20_000 });
+            b.TableDeltas.Add(new TableDelta { Name = "queue_inbound_mailboxes", Writes = 50_000 });
+            b.TableDeltas.Add(new TableDelta { Name = "mail_messages", Writes = 2_000 });
+        });
+        var stale = PerfFindings.Evaluate(d).Where(x => x.Key.StartsWith("vacuum-stale:", StringComparison.Ordinal)).ToList();
+        var f = Assert.Single(stale);
+        Assert.Equal("vacuum-stale:mail_messages", f.Key);
+        Assert.Equal(PerfSeverity.Info, f.Severity);
+    }
+
+    [Fact]
     public void ThreadPoolStarvation_NeedsAQueueAndGrowingThreads()
     {
         var grow = Dataset(b => b.Runtime = new RuntimeSummary { Samples = 100, TpQueueSamples = 50, TpThreadsStart = 10, TpThreadsEnd = 40, TpThreadsMax = 40 });

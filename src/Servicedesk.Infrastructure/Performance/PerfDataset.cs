@@ -126,6 +126,7 @@ public sealed class FindingThresholds
     public int SeqScanRatio { get; set; } = 10;
     public int DeadTuplePct { get; set; } = 20;
     public int VacuumStaleDays { get; set; } = 7;
+    public int VacuumStaleMinDeadPct { get; set; } = 5;
     public int CacheHitPct { get; set; } = 99;
     public int TempMb { get; set; } = 100;
     public int IdleInTxSeconds { get; set; } = 30;
@@ -171,6 +172,7 @@ public sealed class FindingThresholds
             SeqScanRatio = await I(SettingKeys.Performance.FindingSeqScanRatio, 1, 100_000),
             DeadTuplePct = await I(SettingKeys.Performance.FindingDeadTuplePct, 1, 1000),
             VacuumStaleDays = await I(SettingKeys.Performance.FindingVacuumStaleDays, 1, 365),
+            VacuumStaleMinDeadPct = await I(SettingKeys.Performance.FindingVacuumStaleMinDeadPct, 0, 1000),
             CacheHitPct = await I(SettingKeys.Performance.FindingCacheHitPct, 50, 100),
             TempMb = await I(SettingKeys.Performance.FindingTempMb, 1, 1_000_000),
             IdleInTxSeconds = await I(SettingKeys.Performance.FindingIdleInTxSeconds, 1, 86_400),
