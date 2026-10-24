@@ -9,7 +9,7 @@
 #   5. docker compose up -d app (DatabaseBootstrapper runs idempotent schema DDL)
 #   6. wait for health
 #   7. ON FAILURE → automatic rollback to previous git ref + rebuild + start
-#   8. reload nginx if the template changed
+#   8. pull the nginx image + recreate it if the image or template changed
 #   9. re-apply REVOKE UPDATE, DELETE ON audit_log (idempotent)
 #
 # Data-loss guarantees:
@@ -102,6 +102,33 @@ snapshot_current_state() {
     PREVIOUS_SHA="$(git -C "$INSTALL_DIR" rev-parse HEAD)"
     PREVIOUS_REF="$(git -C "$INSTALL_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "$PREVIOUS_SHA")"
     log "Snapshot: on ref '${PREVIOUS_REF}' at ${PREVIOUS_SHA:0:12}."
+
+    # install.sh copies the http-only template over default.conf.template
+    # when the admin opted out of Let's Encrypt. That local edit would make
+    # every checkout that touches the TLS template abort, so remember the
+    # mode and re-apply it after each checkout (see checkout_ref).
+    NGINX_HTTP_ONLY=0
+    local tpl="${INSTALL_DIR}/deploy/nginx/default.conf.template"
+    if [[ -f "$tpl" ]] && ! grep -q "listen 443" "$tpl"; then
+        NGINX_HTTP_ONLY=1
+        log "http-only nginx install — the template choice is kept across the update."
+    fi
+}
+
+# checkout_ref REF [pull] — git checkout that survives the http-only template
+# swap. With "pull", a branch ref is also fast-forwarded to its latest commit.
+checkout_ref() {
+    local tpl="deploy/nginx/default.conf.template"
+    if (( NGINX_HTTP_ONLY )); then
+        git -C "$INSTALL_DIR" checkout --quiet -- "$tpl"
+    fi
+    git -C "$INSTALL_DIR" checkout "$1" --quiet
+    if [[ "${2:-}" == "pull" ]] && git -C "$INSTALL_DIR" symbolic-ref -q HEAD >/dev/null; then
+        git -C "$INSTALL_DIR" pull --ff-only --quiet
+    fi
+    if (( NGINX_HTTP_ONLY )); then
+        cp -f "${INSTALL_DIR}/deploy/nginx/default-http-only.conf.template" "${INSTALL_DIR}/${tpl}"
+    fi
 }
 
 # ===========================================================================
@@ -126,11 +153,7 @@ fetch_and_checkout() {
         exit 0
     fi
 
-    git -C "$INSTALL_DIR" checkout "$target" --quiet
-    # If it's a branch (not a tag), pull the latest commit.
-    if git -C "$INSTALL_DIR" symbolic-ref -q HEAD >/dev/null; then
-        git -C "$INSTALL_DIR" pull --ff-only --quiet
-    fi
+    checkout_ref "$target" pull
     NEW_SHA="$(git -C "$INSTALL_DIR" rev-parse HEAD)"
     ok "Checked out ${target} (${NEW_SHA:0:12})."
 }
@@ -385,7 +408,7 @@ wait_for_health_or_rollback() {
 
     warn "New app did NOT reach healthy state in $((tries*2))s — rolling back to ${PREVIOUS_SHA:0:12} …"
     docker logs servicedesk-app-1 2>&1 | tail -40
-    git -C "$INSTALL_DIR" checkout "$PREVIOUS_SHA" --quiet
+    checkout_ref "$PREVIOUS_SHA"
     compute_app_version
     (cd "${INSTALL_DIR}/deploy" && DOMAIN="$DOMAIN" docker compose build app)
     (cd "${INSTALL_DIR}/deploy" && docker compose stop app)
@@ -395,19 +418,37 @@ wait_for_health_or_rollback() {
 }
 
 # ===========================================================================
-# 7. nginx reload if its template changed between the two git refs
+# 7. nginx: pull the pinned image (security patches) and recreate the
+#    container when the image or its template changed. A HUP is not enough
+#    for a template change: the entrypoint renders *.template via envsubst
+#    only at container start. Recreating costs a ~1-2 s blip; nothing
+#    happens when neither changed.
 # ===========================================================================
-reload_nginx_if_config_changed() {
-    local diff
-    diff="$(git -C "$INSTALL_DIR" diff --name-only "$PREVIOUS_SHA" HEAD -- deploy/nginx/ 2>/dev/null || echo "")"
-    if [[ -z "$diff" ]]; then
-        ok "nginx config unchanged — no reload needed."
-        return
+update_nginx() {
+    local before after diff
+    before="$(docker inspect -f '{{.Image}}' servicedesk-nginx-1 2>/dev/null || echo "")"
+
+    if ! (cd "${INSTALL_DIR}/deploy" && DOMAIN="$DOMAIN" docker compose pull --quiet nginx); then
+        warn "Could not pull the nginx image — keeping the local one."
     fi
-    log "nginx config changed (${diff//$'\n'/, }) — reloading …"
-    docker kill -s HUP servicedesk-nginx-1 >/dev/null 2>&1 || \
-        (cd "${INSTALL_DIR}/deploy" && DOMAIN="$DOMAIN" docker compose restart nginx)
-    ok "nginx reloaded."
+
+    diff="$(git -C "$INSTALL_DIR" diff --name-only "$PREVIOUS_SHA" HEAD -- deploy/nginx/ 2>/dev/null || echo "")"
+    if [[ -n "$diff" ]]; then
+        log "nginx config changed (${diff//$'\n'/, }) — recreating nginx …"
+        (cd "${INSTALL_DIR}/deploy" && DOMAIN="$DOMAIN" docker compose up -d --no-deps --force-recreate nginx)
+    else
+        # Recreates only if the image (or the compose definition) changed.
+        (cd "${INSTALL_DIR}/deploy" && DOMAIN="$DOMAIN" docker compose up -d --no-deps nginx)
+    fi
+
+    after="$(docker inspect -f '{{.Image}}' servicedesk-nginx-1 2>/dev/null || echo "")"
+    if [[ -n "$diff" ]]; then
+        ok "nginx recreated with the new config."
+    elif [[ "$before" != "$after" ]]; then
+        ok "nginx updated to a new image."
+    else
+        ok "nginx image and config unchanged."
+    fi
 }
 
 # ===========================================================================
@@ -616,7 +657,7 @@ main() {
     if ! wait_for_health_or_rollback; then
         exit 1
     fi
-    reload_nginx_if_config_changed
+    update_nginx
     reapply_audit_log_revoke
     backfill_public_base_url
     print_summary
