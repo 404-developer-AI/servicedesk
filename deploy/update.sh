@@ -65,8 +65,27 @@ preflight() {
     DB_USER="$(echo "$conn" | grep -oE 'Username=[^;]+' | cut -d= -f2)"
     [[ -n "$DB_USER" ]] || die "Could not parse Username from ${SECRETS_FILE}."
 
-    DOMAIN="${DOMAIN:-$(grep -oE 'server_name[[:space:]]+[^;]+;' "${INSTALL_DIR}/deploy/nginx/default.conf.template" 2>/dev/null | awk '{print $2}' | tr -d ';' | head -1)}"
-    DOMAIN="${DOMAIN:-localhost}"
+    # The nginx template only holds the `${DOMAIN}` placeholder, so the real
+    # value comes from env.conf (written by install.sh), then from the running
+    # nginx container's environment. update.sh recreates nginx with this
+    # value, so a wrong one takes the site offline — never guess.
+    _valid_domain() { [[ "$1" =~ ^[A-Za-z0-9.-]+$ ]]; }
+    if [[ -n "${DOMAIN:-}" ]] && ! _valid_domain "$DOMAIN"; then
+        die "DOMAIN='${DOMAIN}' is not a valid host name."
+    fi
+    if [[ -z "${DOMAIN:-}" ]]; then
+        local candidate
+        for candidate in \
+            "$(grep -oE '^SERVICEDESK_AllowedHosts=[^;,[:space:]]+' "$ENV_CONF_FILE" 2>/dev/null | cut -d= -f2-)" \
+            "$(grep -oE '^SERVICEDESK_TlsCert__Domain=[^[:space:]]+' "$ENV_CONF_FILE" 2>/dev/null | cut -d= -f2-)" \
+            "$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' servicedesk-nginx-1 2>/dev/null | grep -oE '^DOMAIN=.+' | cut -d= -f2-)"; do
+            if [[ -n "$candidate" ]] && _valid_domain "$candidate"; then
+                DOMAIN="$candidate"
+                break
+            fi
+        done
+    fi
+    [[ -n "${DOMAIN:-}" ]] || die "Could not determine the domain — rerun with DOMAIN=your.domain."
 
     ok "Existing install detected — user=${DB_USER} domain=${DOMAIN}"
 }
