@@ -63,6 +63,9 @@ server {
     ssl_prefer_server_ciphers off;
     ssl_session_timeout 1d;
     ssl_session_cache   shared:MozSSL:10m;
+    # Off: the shared cache covers resumption; tickets would need key rotation
+    # we do not run (and were hit by CVE-2026-97629).
+    ssl_session_tickets off;
 
     # HSTS — 1 year, includeSubDomains, no preload-list submission until v0.1.0.
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;

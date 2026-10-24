@@ -61,7 +61,10 @@ services:
       start_period: 30s
 
   nginx:
-    image: nginx:1.27-alpine
+    # Pinned to the supported stable branch (major.minor) so patch releases
+    # arrive on every update.sh run, which pulls this image and recreates the
+    # container when it changed.
+    image: nginx:1.30-alpine
     restart: unless-stopped
     ports:
       - "80:80"
