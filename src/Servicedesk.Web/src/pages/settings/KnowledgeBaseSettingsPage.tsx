@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, FolderTree, Globe, Settings } from "lucide-react";
+import { Plus, Trash2, FolderTree, Globe, PackageOpen, Settings } from "lucide-react";
 import { toast } from "sonner";
 import {
   kbApi,
@@ -9,6 +9,7 @@ import {
   type KbSectionNode,
 } from "@/lib/kb-api";
 import { settingsApi } from "@/lib/api";
+import { SettingField } from "@/components/settings/SettingField";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,6 +85,8 @@ export function KnowledgeBaseSettingsPage() {
       )}
 
       <PublicLinksCard />
+
+      <ImportLimitsCard />
 
       <LocalesCard
         locales={locales ?? []}
@@ -219,6 +222,67 @@ function PublicLinksCard() {
             Internal and Archived articles are never served publicly. Flipping an article back out
             of Published kills its link immediately.
           </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Article package import limits
+// ──────────────────────────────────────────────────────────────────────────
+
+const IMPORT_FIELDS = [
+  {
+    key: "KnowledgeBase.Import.MaxPackageBytes",
+    label: "Max package size (bytes)",
+    hint: "Largest .zip an agent may import. Each file inside is also capped by Storage.MaxAttachmentBytes; the reverse proxy refuses uploads above roughly 48 MB.",
+  },
+  {
+    key: "KnowledgeBase.Import.MaxEntries",
+    label: "Max files per package",
+    hint: "Packages with more entries are refused before anything is read.",
+  },
+  {
+    key: "KnowledgeBase.Import.MaxUncompressedBytes",
+    label: "Max expanded size (bytes)",
+    hint: "Total size a package may decompress to. Counted on the real bytes, so a zip bomb is rejected regardless of what the archive claims.",
+  },
+] as const;
+
+/// Limits for the per-article package import (Section page → Import).
+/// Export has no limits of its own — it packages what the article holds.
+function ImportLimitsCard() {
+  const { data: entries, isLoading } = useQuery({
+    queryKey: ["settings", "KnowledgeBase"],
+    queryFn: () => settingsApi.list("KnowledgeBase"),
+  });
+
+  return (
+    <section className="glass-card flex flex-col gap-4 p-5">
+      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+        <PackageOpen className="h-4 w-4 text-primary" /> Article import
+      </div>
+      <p className="max-w-2xl text-xs text-muted-foreground">
+        Any article can be exported as a package (.zip with the body and its images) and imported
+        into a section of this or another install. An import always creates a new Draft.
+      </p>
+      {isLoading ? (
+        <Skeleton className="h-24 w-full" />
+      ) : (
+        <div className="divide-y divide-glass">
+          {IMPORT_FIELDS.map((f) => {
+            const entry = entries?.find((e) => e.key === f.key);
+            return entry ? (
+              <SettingField
+                key={f.key}
+                entry={entry}
+                queryKey={["settings", "KnowledgeBase"]}
+                label={f.label}
+                hint={f.hint}
+              />
+            ) : null;
+          })}
         </div>
       )}
     </section>

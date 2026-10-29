@@ -895,6 +895,7 @@ app.MapKbConfigEndpoints();
 app.MapKbSectionEndpoints();
 app.MapKbArticleEndpoints();
 app.MapKbAttachmentEndpoints();
+app.MapKbTransferEndpoints();
 app.MapKbPublicEndpoints();
 app.MapTimesheetTaskEndpoints();
 app.MapTimesheetEntryEndpoints();

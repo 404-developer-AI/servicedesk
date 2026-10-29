@@ -11,6 +11,7 @@ import {
   ArrowDown,
   Paperclip,
   Download,
+  PackageOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -200,6 +201,14 @@ export function KbArticlePage({ articleId }: Props) {
               />
             )}
           </div>
+          <a
+            href={kbApi.exportUrl(articleId)}
+            download
+            title="Download this article with its images as a package that can be imported into another install"
+            className="flex items-center justify-center gap-2 rounded-md border border-glass bg-glass px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-glass-hover hover:text-foreground"
+          >
+            <PackageOpen className="h-3.5 w-3.5" /> Export package
+          </a>
           {isAdmin && (
             <button
               type="button"
