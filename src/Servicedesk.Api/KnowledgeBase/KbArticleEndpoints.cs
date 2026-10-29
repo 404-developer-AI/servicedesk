@@ -304,7 +304,7 @@ public static class KbArticleEndpoints
     /// derives from the title; an explicit override is validated. The
     /// suffix loop walks `-2`, `-3`, … until it finds an unused slot or
     /// gives up at 100 (the DB UNIQUE catches the residual race).
-    private static async Task<string?> ResolveArticleSlugAsync(
+    internal static async Task<string?> ResolveArticleSlugAsync(
         string? requestedSlug, string title, Guid sectionId,
         IKbArticleRepository articles, CancellationToken ct)
     {

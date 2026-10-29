@@ -50,6 +50,8 @@ internal static class KbAudit
         "kb.article.moved" => "moved KB article",
         "kb.article.deleted" => "deleted KB article",
         "kb.article.attachment.added" => "added KB attachment",
+        "kb.article.exported" => "exported KB article",
+        "kb.article.imported" => "imported KB article",
         "kb.section.created" => "created KB section",
         "kb.section.updated" => "edited KB section",
         "kb.section.deleted" => "deleted KB section",

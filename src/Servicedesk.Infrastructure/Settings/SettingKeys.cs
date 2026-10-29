@@ -1148,6 +1148,9 @@ public static class SettingKeys
         public const string PublicLinksEnabled = "KnowledgeBase.PublicLinks.Enabled";
         public const string PublicRateLimitPermits = "KnowledgeBase.PublicRateLimit.PermitPerWindow";
         public const string PublicRateLimitWindowSeconds = "KnowledgeBase.PublicRateLimit.WindowSeconds";
+        public const string ImportMaxPackageBytes = "KnowledgeBase.Import.MaxPackageBytes";
+        public const string ImportMaxEntries = "KnowledgeBase.Import.MaxEntries";
+        public const string ImportMaxUncompressedBytes = "KnowledgeBase.Import.MaxUncompressedBytes";
     }
 
     public static class Surveys
@@ -2377,6 +2380,14 @@ public static class SettingDefaults
             "Requests permitted per rate-limit window against the public /api/public/kb endpoints, partitioned by {ip,article}. Higher than the survey limit because an article page also fetches its inline images."),
         new SettingDefault(SettingKeys.KnowledgeBase.PublicRateLimitWindowSeconds, "60", "int", "KnowledgeBase",
             "Rate-limit window length (seconds) for the public Knowledge Base endpoints."),
+        // Article package import (zip with manifest + body + assets). Each
+        // asset is additionally capped by Storage.MaxAttachmentBytes.
+        new SettingDefault(SettingKeys.KnowledgeBase.ImportMaxPackageBytes, "41943040", "int", "KnowledgeBase",
+            "Maximum size (bytes) of an uploaded article package (.zip). Default 40 MB. Each file inside is also capped by Storage.MaxAttachmentBytes. Packages above roughly 48 MB are additionally refused by the reverse proxy."),
+        new SettingDefault(SettingKeys.KnowledgeBase.ImportMaxEntries, "200", "int", "KnowledgeBase",
+            "Maximum number of files inside one article package. Guards against archives padded with thousands of entries."),
+        new SettingDefault(SettingKeys.KnowledgeBase.ImportMaxUncompressedBytes, "209715200", "int", "KnowledgeBase",
+            "Maximum total size (bytes) an article package may expand to while it is read. Default 200 MB. Counted on the actual decompressed bytes, so a zip bomb is rejected regardless of the sizes the archive claims."),
 
         // ISO 27001 workflow — v0.0.40. Single queue-binding setting; when
         // empty the classification buttons never appear and the feature is

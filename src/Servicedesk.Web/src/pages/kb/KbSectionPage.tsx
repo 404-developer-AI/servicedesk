@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight, Plus, Upload } from "lucide-react";
+import { toast } from "sonner";
 import { kbApi, type KbArticleStatus } from "@/lib/kb-api";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -28,6 +29,8 @@ export function KbSectionPage({ sectionId }: Props) {
 
 function SectionContent({ sectionId }: Props) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const importInput = useRef<HTMLInputElement>(null);
   const [statusFilter, setStatusFilter] = useState<KbArticleStatus | "All">("All");
   const { matchesText, mode, query, registerScope } = useInPageSearch();
   const serverOffsetMinutes = useServerOffsetMinutes();
@@ -51,6 +54,25 @@ function SectionContent({ sectionId }: Props) {
         status: statusFilter === "All" ? undefined : statusFilter,
         pageSize: 100,
       }),
+  });
+
+  // Article package import: always a new Draft in this section; the
+  // editor opens straight away so the author can review before flipping.
+  const importPackage = useMutation({
+    mutationFn: (file: File) => kbApi.importArticle(sectionId, file),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["kb"] });
+      if (result.warnings.length > 0) {
+        toast.warning(`Imported as draft with ${result.warnings.length} warning${result.warnings.length === 1 ? "" : "s"}.`, {
+          description: result.warnings.join(" "),
+        });
+      } else {
+        toast.success(`Imported as draft${result.assets > 0 ? ` with ${result.assets} file${result.assets === 1 ? "" : "s"}` : ""}.`);
+      }
+      navigate({ to: "/kb/articles/$articleId/edit", params: { articleId: result.article.id } });
+    },
+    onError: (err: Error & { payload?: { error?: string } }) =>
+      toast.error(err.payload?.error ?? "Could not import the package."),
   });
 
   const breadcrumb = useMemo(
@@ -106,13 +128,36 @@ function SectionContent({ sectionId }: Props) {
             <p className="max-w-2xl text-sm text-muted-foreground">{childNode.description}</p>
           )}
         </div>
-        <Button
-          onClick={() => navigate({ to: "/kb/articles/new", search: { sectionId } })}
-          className="gap-1"
-        >
-          <Plus className="h-4 w-4" />
-          New article
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <input
+            ref={importInput}
+            type="file"
+            accept=".zip,application/zip"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) importPackage.mutate(file);
+            }}
+          />
+          <Button
+            variant="outline"
+            onClick={() => importInput.current?.click()}
+            disabled={importPackage.isPending}
+            className="gap-1"
+            title="Import an article package (.zip) exported from a Servicedesk install"
+          >
+            <Upload className="h-4 w-4" />
+            {importPackage.isPending ? "Importing…" : "Import"}
+          </Button>
+          <Button
+            onClick={() => navigate({ to: "/kb/articles/new", search: { sectionId } })}
+            className="gap-1"
+          >
+            <Plus className="h-4 w-4" />
+            New article
+          </Button>
+        </div>
       </header>
 
       {childNode && childNode.children.length > 0 && (

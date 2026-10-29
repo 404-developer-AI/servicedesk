@@ -174,3 +174,7 @@ logo/
 
 # Local-only logs from manual smoke tests
 manual-logs/
+
+# Internal user guides + their KB import packages — local/dev only,
+# never committed or deployed (may show real customer data).
+docs/handleidingen/

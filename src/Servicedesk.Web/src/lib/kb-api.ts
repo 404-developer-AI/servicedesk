@@ -315,6 +315,46 @@ export const kbApi = {
   /// becomes a dead link until the author edits it out.
   deleteAttachment: (articleId: string, attachmentId: string) =>
     request<void>("DELETE", `/api/kb/articles/${articleId}/attachments/${attachmentId}`),
+
+  /// Download URL of the article package (.zip: manifest + body + assets).
+  /// A plain link is enough — GET, session cookie, no CSRF needed.
+  exportUrl: (articleId: string) => `/api/kb/articles/${articleId}/export`,
+
+  /// Import an article package into a section. Always lands as a new Draft;
+  /// `warnings` names body references the package did not carry.
+  importArticle: async (sectionId: string, file: File): Promise<KbArticleImportResult> => {
+    const csrf = document.cookie
+      .split("; ")
+      .find((c) => c.startsWith("XSRF-TOKEN="))
+      ?.split("=")[1];
+    const fd = new FormData();
+    fd.append("sectionId", sectionId);
+    fd.append("file", file, file.name);
+    const res = await fetch("/api/kb/articles/import", {
+      method: "POST",
+      credentials: "include",
+      headers: csrf ? { "X-XSRF-TOKEN": decodeURIComponent(csrf) } : undefined,
+      body: fd,
+    });
+    if (!res.ok) {
+      let payload: unknown = null;
+      try { payload = await res.json(); } catch { /* ignore */ }
+      const err = new Error(`Import failed: ${res.status}`) as Error & {
+        status?: number; payload?: unknown;
+      };
+      err.status = res.status;
+      err.payload = payload;
+      throw err;
+    }
+    return res.json();
+  },
+};
+
+export type KbArticleImportResult = {
+  article: KbArticle;
+  translation: KbArticleTranslation;
+  assets: number;
+  warnings: string[];
 };
 
 export type KbAttachment = {
