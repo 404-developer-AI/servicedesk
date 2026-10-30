@@ -2,6 +2,7 @@ using System.Text;
 using Dapper;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Servicedesk.Infrastructure.Health;
 using Servicedesk.Infrastructure.Mail.Attachments;
 using Servicedesk.Infrastructure.Mail.Ingest;
 using Servicedesk.Infrastructure.Persistence.Tickets;
@@ -84,6 +85,21 @@ public sealed class ClaudeAssistService : IClaudeAssistService
             return (systemPrompt, userText, (IReadOnlyList<ClaudeImageInput>)Array.Empty<ClaudeImageInput>());
         }, ct);
 
+    public Task<ClaudeProposalResult> GenerateStatusAsync(
+        Guid ticketId,
+        Guid userId,
+        CancellationToken ct) =>
+        RunAsync(ClaudeFeatures.Status, ticketId, userId, async () =>
+        {
+            var instructions = await _settings.GetAsync<string>(SettingKeys.Claude.StatusSystemPrompt, ct) ?? string.Empty;
+            var template = (await _settings.GetAsync<string>(SettingKeys.Claude.StatusTemplate, ct) ?? string.Empty).Trim();
+            var systemPrompt = BuildSummarySystemPrompt(instructions, template);
+            var maxContextChars = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Claude.StatusMaxContextChars, ct), 1000, 200_000);
+            var userText = await BuildStatusContextAsync(ticketId, maxContextChars, ct);
+            // Text only, like the summary: images are never sent.
+            return (systemPrompt, userText, (IReadOnlyList<ClaudeImageInput>)Array.Empty<ClaudeImageInput>());
+        }, ct);
+
     /// The admin-editable instructions followed by the admin-editable template.
     /// Both are trusted (admin-only settings); the ticket stays in the user turn.
     internal static string BuildSummarySystemPrompt(string instructions, string template) =>
@@ -136,8 +152,14 @@ public sealed class ClaudeAssistService : IClaudeAssistService
 
         // ---- Build the scoped prompt -----------------------------------
         var (systemPrompt, userText, images) = await buildPrompt();
-        var isSummary = feature == ClaudeFeatures.Summary;
-        var auditEventType = isSummary ? ClaudeEventTypes.SummaryCall : ClaudeEventTypes.ProposalCall;
+        var auditEventType = feature switch
+        {
+            ClaudeFeatures.Summary => ClaudeEventTypes.SummaryCall,
+            ClaudeFeatures.Status => ClaudeEventTypes.StatusCall,
+            _ => ClaudeEventTypes.ProposalCall,
+        };
+        // Summary and status fill a template; the proposal is free-form.
+        var fillsTemplate = feature is ClaudeFeatures.Summary or ClaudeFeatures.Status;
 
         // ---- Call + log -------------------------------------------------
         try
@@ -160,13 +182,16 @@ public sealed class ClaudeAssistService : IClaudeAssistService
             {
                 return new ClaudeProposalResult(
                     ClaudeProposalOutcome.Refused, null, null,
-                    isSummary
-                        ? "The assistant declined to produce a summary for this ticket's content."
-                        : "The assistant declined to produce a proposal for this ticket's content.",
+                    feature switch
+                    {
+                        ClaudeFeatures.Summary => "The assistant declined to produce a summary for this ticket's content.",
+                        ClaudeFeatures.Status => "The assistant declined to produce a status update for this ticket's content.",
+                        _ => "The assistant declined to produce a proposal for this ticket's content.",
+                    },
                     result.InputTokens, result.OutputTokens, costMicro, images.Count, newSpend, budgetMicro);
             }
 
-            var text = isSummary ? StripCodeFence(result.Text) : result.Text;
+            var text = fillsTemplate ? StripCodeFence(result.Text) : result.Text;
             return new ClaudeProposalResult(
                 ClaudeProposalOutcome.Ok,
                 text,
@@ -279,6 +304,137 @@ public sealed class ClaudeAssistService : IClaudeAssistService
         return Clamp(sb.ToString(), maxChars);
     }
 
+    /// Context for the status update. Unlike the proposal/summary context it
+    /// carries the ticket's current state, a time and author per event and
+    /// the field changes, so the model can say what the ticket waits on and
+    /// since when. Earlier AI status notes are left out so a brief never
+    /// summarises a previous brief. Over budget, the newest events are kept
+    /// (<see cref="ClaudeStatusContext.FitTimeline"/>).
+    private async Task<string> BuildStatusContextAsync(Guid ticketId, int maxChars, CancellationToken ct)
+    {
+        var tz = await HealthTimeFormat.ResolveDisplayZoneAsync(_settings, ct);
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+
+        const string headSql = """
+            SELECT t.number           AS Number,
+                   t.subject          AS Subject,
+                   COALESCE(b.body_text, '') AS Body,
+                   t.created_utc      AS CreatedUtc,
+                   s.name             AS StatusName,
+                   s.state_category   AS StatusCategory,
+                   p.name             AS PriorityName,
+                   q.name             AS QueueName,
+                   COALESCE(NULLIF(u.display_name, ''), u.email::text) AS AssigneeName,
+                   NULLIF(TRIM(c.first_name || ' ' || c.last_name), '') AS RequesterName,
+                   co.name            AS CompanyName,
+                   t.pending_till_utc AS PendingTillUtc,
+                   t.is_callback      AS IsCallback,
+                   t.is_research      AS IsResearch,
+                   t.is_project       AS IsProject
+              FROM tickets t
+              LEFT JOIN ticket_bodies b ON b.ticket_id = t.id
+              LEFT JOIN statuses s      ON s.id = t.status_id
+              LEFT JOIN priorities p    ON p.id = t.priority_id
+              LEFT JOIN queues q        ON q.id = t.queue_id
+              LEFT JOIN users u         ON u.id = t.assignee_user_id
+              LEFT JOIN contacts c      ON c.id = t.requester_contact_id
+              LEFT JOIN companies co    ON co.id = t.company_id
+             WHERE t.id = @id
+            """;
+        var head = await conn.QuerySingleOrDefaultAsync<StatusHeadRow>(
+            new CommandDefinition(headSql, new { id = ticketId }, cancellationToken: ct));
+
+        const string checklistSql = """
+            SELECT cl.name AS ChecklistName, i.title AS Title, i.is_required AS IsRequired
+              FROM ticket_checklist_items i
+              JOIN ticket_checklists cl ON cl.id = i.checklist_id
+             WHERE cl.ticket_id = @id AND i.state = 'open'
+             ORDER BY cl.sort_order, cl.attached_utc, i.sort_order
+             LIMIT 50
+            """;
+        var openItems = (await conn.QueryAsync<StatusChecklistRow>(
+            new CommandDefinition(checklistSql, new { id = ticketId }, cancellationToken: ct))).ToList();
+
+        // Newest first so a very long ticket keeps its recent history, then
+        // reversed into reading order.
+        const string eventsSql = """
+            SELECT e.event_type        AS EventType,
+                   e.body_text         AS BodyText,
+                   e.is_internal       AS IsInternal,
+                   e.metadata::text    AS MetadataJson,
+                   e.created_utc       AS CreatedUtc,
+                   e.author_user_id    AS AuthorUserId,
+                   e.author_contact_id AS AuthorContactId,
+                   COALESCE(NULLIF(u.display_name, ''), u.email::text) AS UserName,
+                   NULLIF(TRIM(c.first_name || ' ' || c.last_name), '') AS ContactName
+              FROM ticket_events e
+              LEFT JOIN users u    ON u.id = e.author_user_id
+              LEFT JOIN contacts c ON c.id = e.author_contact_id
+             WHERE e.ticket_id = @id
+               AND COALESCE(e.metadata->>@aiKey, '') <> @aiValue
+               AND ((e.body_text IS NOT NULL AND e.body_text <> '')
+                    OR e.event_type = ANY(@changeTypes))
+             ORDER BY e.created_utc DESC, e.id DESC
+             LIMIT 500
+            """;
+        var events = (await conn.QueryAsync<StatusEventRow>(new CommandDefinition(eventsSql, new
+        {
+            id = ticketId,
+            aiKey = ClaudeStatusContext.AiGeneratedKey,
+            aiValue = ClaudeStatusContext.AiGeneratedStatus,
+            changeTypes = ClaudeStatusContext.ChangeEventTypes,
+        }, cancellationToken: ct))).ToList();
+        events.Reverse();
+
+        var sb = new StringBuilder();
+        sb.Append("Here is the ticket to write a status update for. All times are ")
+          .Append(tz.Id).Append(" local time.\n");
+        sb.Append("Now: ").Append(ClaudeStatusContext.FormatLocal(DateTime.UtcNow, tz)).Append("\n\n");
+        if (head is not null)
+        {
+            sb.Append("Ticket #").Append(head.Number).Append('\n');
+            sb.Append("Subject: ").Append(head.Subject).Append('\n');
+            sb.Append("Created: ").Append(ClaudeStatusContext.FormatLocal(head.CreatedUtc, tz)).Append('\n');
+            sb.Append("Current status: ").Append(head.StatusName ?? "unknown");
+            if (!string.IsNullOrEmpty(head.StatusCategory)) sb.Append(" (").Append(head.StatusCategory).Append(')');
+            sb.Append('\n');
+            if (head.PendingTillUtc.HasValue)
+                sb.Append("Pending till: ").Append(ClaudeStatusContext.FormatLocal(head.PendingTillUtc.Value, tz)).Append('\n');
+            sb.Append("Priority: ").Append(head.PriorityName ?? "unknown").Append('\n');
+            sb.Append("Queue: ").Append(head.QueueName ?? "unknown").Append('\n');
+            sb.Append("Assigned to: ").Append(head.AssigneeName ?? "nobody").Append('\n');
+            sb.Append("Requester: ").Append(head.RequesterName ?? "unknown");
+            if (!string.IsNullOrEmpty(head.CompanyName)) sb.Append(" (").Append(head.CompanyName).Append(')');
+            sb.Append('\n');
+            var flags = new List<string>();
+            if (head.IsCallback) flags.Add("call-back requested");
+            if (head.IsResearch) flags.Add("under research");
+            if (head.IsProject) flags.Add("project ticket");
+            if (flags.Count > 0) sb.Append("Flags: ").Append(string.Join(", ", flags)).Append('\n');
+        }
+        if (openItems.Count > 0)
+        {
+            sb.Append("Open checklist items:\n");
+            foreach (var item in openItems)
+                sb.Append("- ").Append(item.ChecklistName).Append(": ").Append(item.Title)
+                  .Append(item.IsRequired ? "" : " (optional)").Append('\n');
+        }
+        if (head is not null)
+            sb.Append("\nDescription:\n").Append(Clamp(head.Body, 8000)).Append("\n\n");
+
+        var lines = events
+            .Select(e => ClaudeStatusContext.FormatEvent(e, tz))
+            .OfType<string>()
+            .ToList();
+
+        var header = sb.ToString();
+        if (lines.Count == 0) return Clamp(header, maxChars);
+
+        const string timelineTitle = "Timeline (oldest first):\n";
+        var timeline = ClaudeStatusContext.FitTimeline(lines, maxChars - header.Length - timelineTitle.Length);
+        return Clamp(header + timelineTitle + timeline, maxChars);
+    }
+
     private static string Clamp(string s, int max)
     {
         if (string.IsNullOrEmpty(s)) return string.Empty;
@@ -351,6 +507,32 @@ public sealed class ClaudeAssistService : IClaudeAssistService
         public long Number { get; set; }
         public string Subject { get; set; } = string.Empty;
         public string Body { get; set; } = string.Empty;
+    }
+
+    private sealed class StatusHeadRow
+    {
+        public long Number { get; set; }
+        public string Subject { get; set; } = string.Empty;
+        public string Body { get; set; } = string.Empty;
+        public DateTime CreatedUtc { get; set; }
+        public string? StatusName { get; set; }
+        public string? StatusCategory { get; set; }
+        public string? PriorityName { get; set; }
+        public string? QueueName { get; set; }
+        public string? AssigneeName { get; set; }
+        public string? RequesterName { get; set; }
+        public string? CompanyName { get; set; }
+        public DateTime? PendingTillUtc { get; set; }
+        public bool IsCallback { get; set; }
+        public bool IsResearch { get; set; }
+        public bool IsProject { get; set; }
+    }
+
+    private sealed class StatusChecklistRow
+    {
+        public string ChecklistName { get; set; } = string.Empty;
+        public string Title { get; set; } = string.Empty;
+        public bool IsRequired { get; set; }
     }
 
     private sealed class TicketEventRow

@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Clock, ExternalLink, FileText, Mail, Phone, Sparkles, StickyNote } from "lucide-react";
+import { Clock, ExternalLink, FileText, ListChecks, Mail, Phone, Sparkles, StickyNote } from "lucide-react";
 import { ticketApi, mentionApi } from "@/lib/ticket-api";
 import { preferencesApi, agentQueueApi } from "@/lib/api";
 import { useAuth } from "@/auth/authStore";
@@ -22,10 +22,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   claudeTicketApi,
   ApiError,
   type ClaudeProposalSuccess,
+  type ClaudeStatusSuccess,
   type ClaudeSummarySuccess,
   type ClaudeTicketImage,
 } from "@/lib/claude-api";
@@ -156,6 +158,10 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
   // replacing a composer that already has text.
   const [summaryLoading, setSummaryLoading] = React.useState(false);
   const [summaryConfirmOpen, setSummaryConfirmOpen] = React.useState(false);
+  // v0.1.46 — "Status update by AI": the server posts the brief as an
+  // internal note itself; the composer is never touched.
+  const [statusLoading, setStatusLoading] = React.useState(false);
+  const aiBusy = aiLoading || summaryLoading || statusLoading;
   const queryClient = useQueryClient();
   const attachments = useAttachmentUploads(ticketId);
   const formRef = React.useRef<HTMLDivElement>(null);
@@ -482,8 +488,29 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
     }
   }
 
+  async function runAiStatus() {
+    if (aiBusy) return;
+    setStatusLoading(true);
+    try {
+      const result = await claudeTicketApi.createTicketStatus(ticketId);
+
+      if ("refused" in result && result.refused) {
+        toast.warning(result.message);
+        return;
+      }
+
+      const { costMicroEur } = result as ClaudeStatusSuccess;
+      queryClient.invalidateQueries({ queryKey: ["ticket", ticketId] });
+      toast.success(`AI status update posted as an internal note (€${(costMicroEur / 1_000_000).toFixed(4)})`);
+    } catch (err) {
+      showAiError(err, "AI status update failed");
+    } finally {
+      setStatusLoading(false);
+    }
+  }
+
   function handleSummary() {
-    if (summaryLoading || aiLoading) return;
+    if (aiBusy) return;
     if (!isEmptyHtml(bodyHtml)) {
       setSummaryConfirmOpen(true);
       return;
@@ -773,7 +800,7 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
             type="button"
-            disabled={aiLoading || summaryLoading}
+            disabled={aiBusy}
             onClick={handleAskAi}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
@@ -787,7 +814,7 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
           </button>
           <button
             type="button"
-            disabled={aiLoading || summaryLoading}
+            disabled={aiBusy}
             onClick={handleSummary}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
@@ -799,6 +826,35 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
             <FileText className="h-3.5 w-3.5" />
             {summaryLoading ? "Summarizing…" : "Summary"}
           </button>
+          <TooltipProvider delayDuration={150}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  disabled={aiBusy}
+                  onClick={() => void runAiStatus()}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                    "border-amber-400/30 bg-amber-400/10 text-amber-200 hover:bg-amber-400/15",
+                    statusLoading && "opacity-50 cursor-not-allowed",
+                  )}
+                >
+                  <ListChecks className="h-3.5 w-3.5" />
+                  {statusLoading ? "Writing status…" : "Status update by AI"}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs space-y-1 leading-relaxed">
+                <p>
+                  Posts a short brief of where this ticket stands — current status, what
+                  happened, what it is waiting on and the next steps — straight onto the
+                  ticket as an internal note headed “Summary by AI”.
+                </p>
+                <p>Internal only: never visible to the customer, no mail is sent.</p>
+                <p>Whatever you are typing in the composer stays where it is.</p>
+                <p>Screenshots are not sent to the AI.</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       )}
 

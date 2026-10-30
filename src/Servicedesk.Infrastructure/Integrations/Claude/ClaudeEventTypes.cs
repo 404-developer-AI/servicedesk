@@ -20,6 +20,10 @@ public static class ClaudeEventTypes
     /// outcome — never the content).
     public const string SummaryRequested = "integration.claude.summary.requested";
 
+    /// An agent generated an AI status update on a ticket, posted as an
+    /// internal note (who, which ticket and the outcome — never the content).
+    public const string StatusRequested = "integration.claude.status.requested";
+
     /// An agent sent a message to the KB chat assistant (audit trail of who
     /// asked, and the outcome — not the content).
     public const string KbChatRequested = "integration.claude.kbchat.requested";
@@ -29,6 +33,9 @@ public static class ClaudeEventTypes
 
     /// Messages API call made for an in-ticket summary.
     public const string SummaryCall = "summary.call";
+
+    /// Messages API call made for an in-ticket status update.
+    public const string StatusCall = "status.call";
 
     /// One Messages API round-trip made inside a KB chat turn (a turn may make
     /// several when the model searches).

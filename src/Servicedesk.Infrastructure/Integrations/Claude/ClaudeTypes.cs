@@ -51,7 +51,7 @@ public sealed record ClaudeProposalResult(
 
 /// Which Claude feature a usage row belongs to. Stored verbatim in
 /// <c>claude_usage_log.feature</c> so the admin overview can split spend per
-/// feature; all three share the one per-agent monthly budget.
+/// feature; they all share the one per-agent monthly budget.
 public static class ClaudeFeatures
 {
     /// In-ticket "Analyze &amp; propose a solution by AI".
@@ -59,6 +59,10 @@ public static class ClaudeFeatures
 
     /// In-ticket "Summary" — fills the admin-editable summary template.
     public const string Summary = "summary";
+
+    /// In-ticket "Status update by AI" — an internal status brief posted
+    /// straight onto the ticket as an internal note.
+    public const string Status = "status";
 
     /// Floating knowledge-base chat assistant.
     public const string KbChat = "kbchat";
@@ -78,6 +82,8 @@ public sealed class ClaudeAgentUsage
     public int ProposalCalls { get; set; }
     public long SummarySpendMicroEur { get; set; }
     public int SummaryCalls { get; set; }
+    public long StatusSpendMicroEur { get; set; }
+    public int StatusCalls { get; set; }
     public long KbChatSpendMicroEur { get; set; }
     public int KbChatCalls { get; set; }
 }
