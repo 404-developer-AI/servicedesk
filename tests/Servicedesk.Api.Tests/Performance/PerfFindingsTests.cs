@@ -59,6 +59,7 @@ public sealed class PerfFindingsTests
         public RuntimeSummary Runtime { get; set; } = new();
         public DbPeriodStats PgDb { get; set; } = new();
         public VersionComparisonResult? Versions { get; set; }
+        public Servicedesk.Infrastructure.Integrations.Claude.KbChatUsageSummary? AiKb { get; set; }
         public FindingThresholds Thresholds { get; } = new();
 
         public PerfDataset Build()
@@ -100,6 +101,7 @@ public sealed class PerfFindingsTests
                 Budgets = Budgets,
                 Markers = Markers,
                 VersionComparison = Versions,
+                AiKb = AiKb,
                 PgAccess = new PgAccess(true, 160000, "16.4", true, true, null),
                 HostSupported = true,
             };

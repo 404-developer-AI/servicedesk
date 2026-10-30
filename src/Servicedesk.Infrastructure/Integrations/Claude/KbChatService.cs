@@ -12,9 +12,11 @@ namespace Servicedesk.Infrastructure.Integrations.Claude;
 /// <inheritdoc cref="IKbChatService"/>
 public sealed class KbChatService : IKbChatService
 {
-    /// The one tool the assistant is ever given. Its handler runs the
-    /// auth-scoped KB search server-side; the model can only ask, never reach.
+    /// The assistant's tools. Their handlers run the auth-scoped KB queries
+    /// server-side; the model can only ask, never reach. The section-listing
+    /// tool is only offered when the index is too large to list every title.
     private const string SearchToolName = "search_knowledge_base";
+    private const string ListSectionToolName = "list_section_articles";
 
     /// Defensive ceiling on a single user message length, independent of the
     /// rolling-window setting — bounds the per-turn input regardless of config.
@@ -95,54 +97,89 @@ public sealed class KbChatService : IKbChatService
 
         // ---- Config ----------------------------------------------------
         var systemPrompt = await _settings.GetAsync<string>(SettingKeys.Claude.KbChatSystemPrompt, ct) ?? string.Empty;
-        var model = (await _settings.GetAsync<string>(SettingKeys.Claude.KbChatModel, ct) ?? "claude-haiku-4-5-20251001").Trim();
+        var model = (await _settings.GetAsync<string>(SettingKeys.Claude.KbChatModel, ct) ?? "claude-haiku-5-5").Trim();
         var maxTokens = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Claude.KbChatMaxTokens, ct), 256, 8192);
         var resultLimit = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Claude.KbChatResultLimit, ct), 1, 20);
         var maxSearches = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Claude.KbChatMaxSearches, ct), 1, 8);
         var historyWindow = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Claude.KbChatHistoryWindow, ct), 2, 50);
         var snippetChars = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Claude.KbChatSnippetChars, ct), 200, 8000);
+        var catalogMax = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Claude.KbChatCatalogMaxArticles, ct), 0, 5000);
+        var promptCaching = await _settings.GetAsync<bool>(SettingKeys.Claude.KbChatPromptCaching, ct);
+        var effort = (await _settings.GetAsync<string>(SettingKeys.Claude.KbChatEffort, ct) ?? "off").Trim();
+
+        // The article index (titles, or sections above the cap) — same scope
+        // as the search tool, so it never names an article the agent can't open.
+        var catalog = await KbChatCatalog.LoadAsync(_dataSource, catalogMax, ct);
+        var catalogText = catalog.Render();
 
         var messages = BuildMessages(history, userMessage, historyWindow);
-        var tools = BuildTools();
+        var tools = BuildTools(catalog.Mode == KbChatCatalogMode.Sections);
 
         // ---- Tool-use loop --------------------------------------------
         var citations = new Dictionary<Guid, KbChatCitation>();
         var totalInput = 0;
         var totalOutput = 0;
+        var totalCacheRead = 0;
+        var totalCacheWrite = 0;
+        var searches = 0;
+        var emptySearches = 0;
+
+        ClaudeChatRequest Request(bool forceText) => new(
+            systemPrompt, catalogText, messages, tools, model, maxTokens, promptCaching, forceText, effort);
+
+        void Add(ClaudeChatResult r)
+        {
+            totalInput += r.InputTokens;
+            totalOutput += r.OutputTokens;
+            totalCacheRead += r.CacheReadTokens;
+            totalCacheWrite += r.CacheWriteTokens;
+        }
 
         try
         {
-            ClaudeChatResult turn = await _api.CreateChatTurnAsync(systemPrompt, messages, tools, model, maxTokens, ct);
-            totalInput += turn.InputTokens;
-            totalOutput += turn.OutputTokens;
+            ClaudeChatResult turn = await _api.CreateChatTurnAsync(Request(forceText: false), ct);
+            Add(turn);
 
-            var searchesUsed = 0;
+            // Every executed tool call counts against the per-turn budget, so
+            // "max searches" means exactly that, however the model batches.
+            var toolCallsUsed = 0;
             while (string.Equals(turn.StopReason, "tool_use", StringComparison.OrdinalIgnoreCase) && turn.ToolUses.Count > 0)
             {
                 // Echo the assistant's tool_use turn back into the transcript.
                 messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = turn.AssistantContent });
 
-                var capReached = searchesUsed >= maxSearches;
+                var capHit = false;
                 var toolResults = new JsonArray();
                 foreach (var call in turn.ToolUses)
                 {
                     string resultText;
-                    if (call.Name != SearchToolName)
+                    var known = call.Name == SearchToolName
+                        || (call.Name == ListSectionToolName && catalog.Mode == KbChatCatalogMode.Sections);
+                    if (!known)
                     {
                         // The model invented a tool we never offered — refuse.
-                        resultText = "Unknown tool. Only search_knowledge_base is available.";
+                        resultText = "Unknown tool.";
                     }
-                    else if (capReached)
+                    else if (toolCallsUsed >= maxSearches)
                     {
+                        capHit = true;
                         resultText = "Search limit reached for this turn. Answer now using the articles already retrieved; if they are insufficient, tell the user no matching knowledge-base article was found.";
+                    }
+                    else if (call.Name == ListSectionToolName)
+                    {
+                        toolCallsUsed++;
+                        resultText = await ListSectionAsync(catalog, call.Input, catalogMax, ct);
                     }
                     else
                     {
-                        var query = call.Input["query"]?.GetValue<string>() ?? string.Empty;
-                        var hits = await RetrieveAsync(query, resultLimit, snippetChars, ct);
+                        toolCallsUsed++;
+                        searches++;
+                        var keywords = KbChatKeywords.From(call.Input);
+                        var hits = await RetrieveAsync(keywords, resultLimit, snippetChars, ct);
+                        if (hits.Count == 0) emptySearches++;
                         foreach (var h in hits)
                             citations[h.ArticleId] = new KbChatCitation(h.ArticleId, h.Title, h.Slug, h.SectionId);
-                        resultText = FormatSearchResults(query, hits);
+                        resultText = FormatSearchResults(keywords, hits);
                     }
 
                     toolResults.Add(new JsonObject
@@ -155,29 +192,45 @@ public sealed class KbChatService : IKbChatService
 
                 messages.Add(new JsonObject { ["role"] = "user", ["content"] = toolResults });
 
-                if (!capReached) searchesUsed++;
+                // Once the budget is spent the next call must answer in text.
+                var forceText = capHit || toolCallsUsed >= maxSearches;
+                turn = await _api.CreateChatTurnAsync(Request(forceText), ct);
+                Add(turn);
 
-                // On the turn after the cap, drop the tools so the model is
-                // forced to answer with text rather than search again.
-                var nextTools = capReached ? new JsonArray() : tools;
-                turn = await _api.CreateChatTurnAsync(systemPrompt, messages, nextTools, model, maxTokens, ct);
-                totalInput += turn.InputTokens;
-                totalOutput += turn.OutputTokens;
-
-                if (capReached) break;
+                if (forceText) break;
             }
 
             // ---- Cost + log --------------------------------------------
-            var inputPriceCents = await _settings.GetAsync<int>(SettingKeys.Claude.InputPriceCentsPerMTok, ct);
-            var outputPriceCents = await _settings.GetAsync<int>(SettingKeys.Claude.OutputPriceCentsPerMTok, ct);
-            var costMicro = ((long)totalInput * inputPriceCents + (long)totalOutput * outputPriceCents) / 100L;
+            // Priced by the model that answered (price list), else the chat's
+            // own price settings.
+            var price = ClaudeModelPrices.Resolve(
+                await _settings.GetAsync<string>(SettingKeys.Claude.ModelPrices, ct), turn.Model);
+            var inputPriceCents = price?.InputCentsPerMTok ?? await _settings.GetAsync<int>(SettingKeys.Claude.KbChatInputPriceCentsPerMTok, ct);
+            var outputPriceCents = price?.OutputCentsPerMTok ?? await _settings.GetAsync<int>(SettingKeys.Claude.KbChatOutputPriceCentsPerMTok, ct);
+            var cacheWritePct = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Claude.KbChatCacheWritePricePct, ct), 0, 1000);
+            var cacheReadPct = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Claude.KbChatCacheReadPricePct, ct), 0, 1000);
+            var costMicro = KbChatPricing.CostMicroEur(
+                totalInput, totalOutput, totalCacheRead, totalCacheWrite,
+                inputPriceCents, outputPriceCents, cacheWritePct, cacheReadPct);
+
+            // Newer models can decline through a safety classifier (HTTP 200,
+            // stop_reason "refusal"); say so instead of "nothing found".
+            var refused = string.Equals(turn.StopReason, "refusal", StringComparison.OrdinalIgnoreCase);
 
             await _usage.LogAsync(new ClaudeUsageEntry(
-                userId, null, model, totalInput, totalOutput, costMicro, 0, "ok", null, turn.RequestId, ClaudeFeatures.KbChat), ct);
+                userId, null, model, totalInput, totalOutput, costMicro, 0, "ok", refused ? "refusal" : null, turn.RequestId, ClaudeFeatures.KbChat,
+                CacheReadTokens: totalCacheRead,
+                CacheWriteTokens: totalCacheWrite,
+                KbSearches: searches,
+                KbEmptySearches: emptySearches,
+                KbCatalogMode: catalog.Mode,
+                KbCatalogArticles: catalog.ArticleCount), ct);
 
-            var replyText = string.IsNullOrWhiteSpace(turn.Text)
-                ? "I could not find anything about that in the knowledge base."
-                : turn.Text;
+            var replyText = refused
+                ? "The assistant declined to answer this question. Try rephrasing it, or search the knowledge base directly."
+                : string.IsNullOrWhiteSpace(turn.Text)
+                    ? "I could not find anything about that in the knowledge base."
+                    : turn.Text;
 
             var orderedCitations = citations.Values.ToList();
             return new KbChatResult(
@@ -193,7 +246,13 @@ public sealed class KbChatService : IKbChatService
         {
             await _usage.LogAsync(new ClaudeUsageEntry(
                 userId, null, model, totalInput, totalOutput, 0, 0, "error",
-                ex.UpstreamErrorCode ?? "api_error", null, ClaudeFeatures.KbChat), ct);
+                ex.UpstreamErrorCode ?? "api_error", null, ClaudeFeatures.KbChat,
+                CacheReadTokens: totalCacheRead,
+                CacheWriteTokens: totalCacheWrite,
+                KbSearches: searches,
+                KbEmptySearches: emptySearches,
+                KbCatalogMode: catalog.Mode,
+                KbCatalogArticles: catalog.ArticleCount), ct);
             throw;
         }
     }
@@ -232,32 +291,78 @@ public sealed class KbChatService : IKbChatService
         return messages;
     }
 
-    private static JsonArray BuildTools() => new()
+    private static JsonArray BuildTools(bool includeSectionListing)
     {
-        new JsonObject
+        var tools = new JsonArray
         {
-            ["name"] = SearchToolName,
-            ["description"] = "Search the helpdesk's internal knowledge base and return the most relevant articles (title + a short excerpt). This is your only source of information. Call it with a concise query built from the user's question.",
-            ["input_schema"] = new JsonObject
+            new JsonObject
             {
-                ["type"] = "object",
-                ["properties"] = new JsonObject
+                ["name"] = SearchToolName,
+                ["description"] = "Search the helpdesk's internal knowledge base and return the most relevant articles (title + a short excerpt). This is your only source of information. Each keyword is matched on its own and articles matching more keywords rank higher, so pass several at once: words from matching article titles in the index, synonyms, broader terms, Dutch and English variants and product names.",
+                ["input_schema"] = new JsonObject
                 {
-                    ["query"] = new JsonObject
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
                     {
-                        ["type"] = "string",
-                        ["description"] = "Keywords or a short phrase to search for, in the language of the user's question.",
+                        ["keywords"] = new JsonObject
+                        {
+                            ["type"] = "array",
+                            ["items"] = new JsonObject { ["type"] = "string" },
+                            ["minItems"] = 1,
+                            ["maxItems"] = KbChatKeywords.MaxKeywords,
+                            ["description"] = "1 to 8 keywords or short phrases, e.g. [\"firewall\", \"Sophos\", \"website blocked\"].",
+                        },
                     },
+                    ["required"] = new JsonArray { "keywords" },
                 },
-                ["required"] = new JsonArray { "query" },
             },
-        },
-    };
+        };
+        if (includeSectionListing)
+        {
+            tools.Add(new JsonObject
+            {
+                ["name"] = ListSectionToolName,
+                ["description"] = "List the titles of the searchable articles in one knowledge-base section from the section list. Use it to find the right article title, then search for it.",
+                ["input_schema"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["section"] = new JsonObject
+                        {
+                            ["type"] = "string",
+                            ["description"] = "The section name exactly as shown in the section list.",
+                        },
+                    },
+                    ["required"] = new JsonArray { "section" },
+                },
+            });
+        }
+        return tools;
+    }
 
-    private static string FormatSearchResults(string query, IReadOnlyList<KbHit> hits)
+    private async Task<string> ListSectionAsync(KbChatCatalog catalog, JsonObject input, int limit, CancellationToken ct)
     {
+        var name = input["section"] is JsonValue v && v.TryGetValue<string>(out var s) ? s : null;
+        var section = catalog.FindSection(name);
+        if (section is null)
+            return $"No section named \"{name}\". Use a name from the section list.";
+
+        // Bounded like the index itself (the cap), with a floor so a small
+        // cap never hides a section's titles entirely.
+        var titles = await KbChatCatalog.ListSectionTitlesAsync(_dataSource, section.Id, Math.Max(limit, 200), ct);
+        var sb = new StringBuilder();
+        sb.Append("Articles in \"").Append(section.Title).Append("\" (").Append(titles.Count).Append("):\n");
+        foreach (var t in titles)
+            sb.Append("- ").Append(t.Replace('\r', ' ').Replace('\n', ' ').Trim()).Append('\n');
+        return sb.ToString().TrimEnd();
+    }
+
+    private static string FormatSearchResults(IReadOnlyList<string> keywords, IReadOnlyList<KbHit> hits)
+    {
+        var query = string.Join(", ", keywords);
         if (hits.Count == 0)
-            return $"No knowledge-base articles matched \"{query}\".";
+            return $"No knowledge-base articles matched \"{query}\". Try other keywords: synonyms, product names or words from the index.";
 
         var sb = new StringBuilder();
         sb.Append("Found ").Append(hits.Count).Append(" knowledge-base article(s) for \"").Append(query).Append("\":\n\n");
@@ -273,32 +378,44 @@ public sealed class KbChatService : IKbChatService
 
     // ---- Authorized retrieval -----------------------------------------
 
-    /// Runs the same two-path (FTS + trigram) match as the global KB search
-    /// source, scoped to Internal/Published articles in the install's default
-    /// locale. The per-user KB-access gate has already been checked for this
-    /// turn, so these are exactly the articles the agent may open.
-    private async Task<IReadOnlyList<KbHit>> RetrieveAsync(string query, int limit, int snippetChars, CancellationToken ct)
+    /// The global KB search's two-path match (FTS + title trigram/substring),
+    /// but with each keyword matched on its own (OR) so one call can try
+    /// synonyms and product names together. Ranking: one point per keyword
+    /// found in the title (the model often searches exact index titles), plus
+    /// length-normalised ts_rank_cd (so a long article mentioning a term
+    /// many times does not drown a short one about it), plus title trigram
+    /// similarity. Scoped to Internal/Published articles
+    /// in the install's default locale. The per-user KB-access gate has
+    /// already been checked for this turn, so these are exactly the articles
+    /// the agent may open. Each keyword goes through plainto_tsquery, whose
+    /// quoted output is the only tsquery text that is re-parsed.
+    private async Task<IReadOnlyList<KbHit>> RetrieveAsync(IReadOnlyList<string> keywords, int limit, int snippetChars, CancellationToken ct)
     {
-        var normalized = (query ?? string.Empty).Trim();
-        if (normalized.Length == 0) return Array.Empty<KbHit>();
+        if (keywords.Count == 0) return Array.Empty<KbHit>();
 
         const string sql = """
-            WITH q AS (
-                SELECT plainto_tsquery('simple', lower(@query)) AS tsq,
-                       lower(@query) AS norm
+            WITH kw AS (
+                SELECT DISTINCT lower(k) AS k
+                  FROM unnest(@keywords::text[]) AS k
+                 WHERE length(k) > 0
+            ),
+            q AS (
+                SELECT (SELECT string_agg('(' || plainto_tsquery('simple', k)::text || ')', ' | ')
+                          FROM kw
+                         WHERE plainto_tsquery('simple', k)::text <> '')::tsquery AS tsq
             ),
             hits AS (
                 SELECT a.id, a.section_id, a.slug, t.title, t.body_text,
                        CASE
                            WHEN t.search_vector @@ (SELECT tsq FROM q)
-                               THEN ts_rank_cd(t.search_vector, (SELECT tsq FROM q))
+                               THEN ts_rank_cd(t.search_vector, (SELECT tsq FROM q), 1)
                            ELSE 0
                        END AS fts_rank,
-                       CASE
-                           WHEN lower(t.title) % (SELECT norm FROM q)
-                               THEN similarity(lower(t.title), (SELECT norm FROM q))
-                           ELSE 0
-                       END AS trgm_rank
+                       (SELECT count(*) FROM kw
+                         WHERE to_tsvector('simple', t.title) @@ plainto_tsquery('simple', kw.k))::float8 AS title_hits,
+                       COALESCE((SELECT max(similarity(lower(t.title), kw.k))
+                                   FROM kw
+                                  WHERE lower(t.title) % kw.k), 0) AS trgm_rank
                   FROM kb_articles a
                   JOIN knowledge_base kb ON TRUE
                   LEFT JOIN kb_article_translations t
@@ -307,8 +424,9 @@ public sealed class KbChatService : IKbChatService
                    AND t.id IS NOT NULL
                    AND (
                         t.search_vector @@ (SELECT tsq FROM q)
-                     OR lower(t.title) % (SELECT norm FROM q)
-                     OR lower(t.title) LIKE '%' || (SELECT norm FROM q) || '%'
+                     OR EXISTS (SELECT 1 FROM kw
+                                 WHERE lower(t.title) % kw.k
+                                    OR lower(t.title) LIKE '%' || kw.k || '%')
                        )
             )
             SELECT id         AS Id,
@@ -317,13 +435,13 @@ public sealed class KbChatService : IKbChatService
                    title      AS Title,
                    body_text  AS BodyText
               FROM hits
-             ORDER BY (fts_rank + trgm_rank) DESC, title
+             ORDER BY (title_hits + fts_rank + trgm_rank) DESC, title
              LIMIT @limit;
             """;
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         var rows = (await conn.QueryAsync<KbHitRow>(new CommandDefinition(
-            sql, new { query = normalized, limit }, cancellationToken: ct))).ToList();
+            sql, new { keywords = keywords.ToArray(), limit }, cancellationToken: ct))).ToList();
 
         return rows.Select(r => new KbHit(
             r.Id, r.SectionId, r.Slug, r.Title, Snippet(r.BodyText, snippetChars))).ToList();

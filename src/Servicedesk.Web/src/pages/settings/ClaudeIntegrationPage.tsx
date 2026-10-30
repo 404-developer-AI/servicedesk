@@ -373,7 +373,7 @@ export function ClaudeIntegrationPage() {
               entry={findEntry(settingsList.data, "Claude.Model")}
               queryKey={SETTINGS_QK}
               label="Model"
-              hint="Anthropic model ID, e.g. claude-opus-4-5 or claude-sonnet-4-5. Check the Anthropic docs for the latest model IDs."
+              hint="Anthropic model ID for Analyze & propose, and for Summary / Status update when those have no model of their own — e.g. claude-sonnet-5-5 (default), claude-opus-5-5 or claude-haiku-5-5. Make sure the model has a line in the model price list below."
             />
             <FieldOrSkeleton
               entry={findEntry(settingsList.data, "Claude.ApiBaseUrl")}
@@ -385,13 +385,13 @@ export function ClaudeIntegrationPage() {
               entry={findEntry(settingsList.data, "Claude.MaxTokens")}
               queryKey={SETTINGS_QK}
               label="Max output tokens"
-              hint="Maximum number of tokens Claude may generate per proposal. Higher values allow longer responses but cost more."
+              hint="Maximum number of tokens Claude may generate per proposal, summary or status update. Newer models count their thinking in this too, so keep room (default 4096); you only pay for what is generated."
             />
             <FieldOrSkeleton
               entry={findEntry(settingsList.data, "Claude.Effort")}
               queryKey={SETTINGS_QK}
               label="Effort"
-              hint="Reasoning effort level: off (no extended thinking), low, medium, or high. Higher effort improves quality but increases latency and cost."
+              hint="Reasoning effort for Analyze & propose: off, low, medium (default) or high. Higher effort improves quality but adds latency and cost. Newer models think by default, so off there means the model's own default, not no thinking. Ignored on Haiku 4.5."
             />
             <FieldOrSkeleton
               entry={findEntry(settingsList.data, "Claude.RequestTimeoutSeconds")}
@@ -433,8 +433,8 @@ export function ClaudeIntegrationPage() {
         <p className="mb-3 max-w-2xl text-xs text-muted-foreground/70">
           The Summary button next to "Analyze &amp; propose" fills the template below
           from the ticket's text (never images) in one click and drops the result into
-          the internal-note composer as a draft. Shares the switches, model, budget and
-          usage log above.
+          the internal-note composer as a draft. Shares the switches, budget and usage
+          log above; has its own model and effort.
         </p>
         {settingsList.isLoading ? (
           <div className="space-y-2">
@@ -456,6 +456,18 @@ export function ClaudeIntegrationPage() {
               hint="Prompt sent before the template: customer-facing tone, compact bullets, strict template fidelity, and no internal or sensitive details copied from internal notes. The template is appended automatically; ticket content is always sent as data."
               rows={8}
             />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Claude.SummaryModel")}
+              queryKey={SETTINGS_QK}
+              label="Model (summary)"
+              hint="Model for the Summary button. Empty = the proposal model. Default claude-sonnet-5-5: the summary goes to the customer, so accuracy on long tickets comes first."
+            />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Claude.SummaryEffort")}
+              queryKey={SETTINGS_QK}
+              label="Effort (summary)"
+              hint="off, low, medium or high. Empty = the proposal effort. Low (default) keeps the button fast; filling a template needs little reasoning."
+            />
           </>
         )}
       </section>
@@ -471,7 +483,8 @@ export function ClaudeIntegrationPage() {
           stands — current status, what happened, what it is waiting on, next steps — from
           the ticket's state and timeline (never images), and posts it straight onto the
           ticket as an internal note headed "Summary by AI". Earlier AI status notes are
-          left out of the context. Shares the switches, model, budget and usage log above.
+          left out of the context. Shares the switches, budget and usage log above; has
+          its own model and effort.
         </p>
         {settingsList.isLoading ? (
           <div className="space-y-2">
@@ -498,6 +511,18 @@ export function ClaudeIntegrationPage() {
               queryKey={SETTINGS_QK}
               label="Max context chars (status update)"
               hint="Character budget for one status update. Higher than the general limit because the feature is meant for long tickets; beyond it the description, the first event and the newest events are kept and the oldest middle part is left out."
+            />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Claude.StatusModel")}
+              queryKey={SETTINGS_QK}
+              label="Model (status update)"
+              hint="Model for the 'Status update by AI' button. Empty = the proposal model. Default claude-sonnet-5-5; claude-haiku-5-5 is faster and much cheaper if its briefs hold up on your tickets."
+            />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Claude.StatusEffort")}
+              queryKey={SETTINGS_QK}
+              label="Effort (status update)"
+              hint="off, low, medium or high. Empty = the proposal effort. Low (default) keeps the button fast."
             />
           </>
         )}
@@ -560,7 +585,13 @@ export function ClaudeIntegrationPage() {
               entry={findEntry(settingsList.data, "Claude.KbChatModel")}
               queryKey={SETTINGS_QK}
               label="Model"
-              hint="Anthropic model ID used for chat turns. Separate from the proposal model so the higher-volume chat can run a cheaper model — a Haiku-class model is recommended."
+              hint="Anthropic model ID used for chat turns. Separate from the proposal model so the higher-volume chat can run a cheaper model — a Haiku-class model is recommended (default claude-haiku-5-5). When you change it, also update the chat prices below."
+            />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Claude.KbChatEffort")}
+              queryKey={SETTINGS_QK}
+              label="Effort"
+              hint="How much the chat model may think before answering: off, low, medium or high. Newer models think by default, which costs tokens and time; the assistant only points at articles, so low is enough. Off leaves the model's own default. Ignored on Haiku 4.5."
             />
             <FieldOrSkeleton
               entry={findEntry(settingsList.data, "Claude.KbChatMaxTokens")}
@@ -598,6 +629,42 @@ export function ClaudeIntegrationPage() {
               label="Snippet length (chars)"
               hint="Maximum characters of an article's body included in a search result sent to the model. Bounds per-result input cost. Clamped to 200–8000."
             />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Claude.KbChatCatalogMaxArticles")}
+              queryKey={SETTINGS_QK}
+              label="Article index limit"
+              hint="Up to this many searchable articles, every question includes the full list of article titles, so the assistant recognises the right article even when the agent uses other words. Above it, it gets the section list and looks up a section's titles when needed (cheaper, one extra step). 0 = always the section list. The performance report shows the current size against this limit."
+            />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Claude.KbChatPromptCaching")}
+              queryKey={SETTINGS_QK}
+              label="Prompt caching"
+              hint="Caches the instructions, tools and article index (and the conversation between search steps). Cached input costs a fraction of the normal input price."
+            />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Claude.KbChatInputPriceCentsPerMTok")}
+              queryKey={SETTINGS_QK}
+              label="Chat input price (cents per million tokens)"
+              hint="Fallback for the chat model when it has no line in the model price list below. Euro cents per million tokens."
+            />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Claude.KbChatOutputPriceCentsPerMTok")}
+              queryKey={SETTINGS_QK}
+              label="Chat output price (cents per million tokens)"
+              hint="Fallback for the chat model when it has no line in the model price list below."
+            />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Claude.KbChatCacheWritePricePct")}
+              queryKey={SETTINGS_QK}
+              label="Cache write price (% of input)"
+              hint="What writing to the prompt cache costs, as a percentage of the chat input price. Anthropic: 125."
+            />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Claude.KbChatCacheReadPricePct")}
+              queryKey={SETTINGS_QK}
+              label="Cache read price (% of input)"
+              hint="What reading from the prompt cache costs, as a percentage of the chat input price. Anthropic: 10."
+            />
           </>
         )}
       </section>
@@ -625,14 +692,21 @@ export function ClaudeIntegrationPage() {
             <FieldOrSkeleton
               entry={findEntry(settingsList.data, "Claude.InputPriceCentsPerMTok")}
               queryKey={SETTINGS_QK}
-              label="Input price (cents per million tokens)"
-              hint="Used for cost tracking only — does not affect Anthropic billing. Set to match your Anthropic plan's per-MTok input price."
+              label="Fallback input price (cents per million tokens)"
+              hint="Used for cost tracking only — does not affect Anthropic billing. Applies to Analyze & propose, Summary and Status update when their model has no line in the model price list."
             />
             <FieldOrSkeleton
               entry={findEntry(settingsList.data, "Claude.OutputPriceCentsPerMTok")}
               queryKey={SETTINGS_QK}
-              label="Output price (cents per million tokens)"
-              hint="Used for cost tracking only. Set to match your Anthropic plan's per-MTok output price."
+              label="Fallback output price (cents per million tokens)"
+              hint="Used for cost tracking only, when the model has no line in the model price list."
+            />
+            <TextAreaSettingField
+              entry={findEntry(settingsList.data, "Claude.ModelPrices")}
+              label="Model price list"
+              hint="One model per line as 'model = input / output' in euro cents per million tokens (Anthropic lists USD; enter the EUR equivalent). Every AI call is costed with the price of the model that answered; the longest matching model prefix wins. When you switch a feature to a new model, add its line here."
+              rows={6}
+              mono
             />
           </>
         )}

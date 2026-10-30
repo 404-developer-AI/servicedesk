@@ -43,6 +43,8 @@ public sealed class ClaudeApiClient : IClaudeApiClient
         string userText,
         IReadOnlyList<ClaudeImageInput> images,
         string auditEventType,
+        string model,
+        string effort,
         CancellationToken ct)
     {
         var apiKey = await _secrets.GetAsync(ProtectedSecretKeys.ClaudeApiKey, ct);
@@ -54,9 +56,9 @@ public sealed class ClaudeApiClient : IClaudeApiClient
         baseUrl = baseUrl.TrimEnd('/');
         var url = baseUrl + "/v1/messages";
 
-        var model = (await _settings.GetAsync<string>(SettingKeys.Claude.Model, ct) ?? "claude-sonnet-4-6").Trim();
+        model = model.Trim();
+        effort = effort.Trim().ToLowerInvariant();
         var maxTokens = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Claude.MaxTokens, ct), 256, 8192);
-        var effort = (await _settings.GetAsync<string>(SettingKeys.Claude.Effort, ct) ?? "off").Trim().ToLowerInvariant();
         var timeoutSeconds = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Claude.RequestTimeoutSeconds, ct), 10, 600);
 
         var body = BuildRequestBody(model, systemPrompt, userText, images, maxTokens, effort);
@@ -144,14 +146,9 @@ public sealed class ClaudeApiClient : IClaudeApiClient
         }
     }
 
-    public async Task<ClaudeChatResult> CreateChatTurnAsync(
-        string systemPrompt,
-        JsonArray messages,
-        JsonArray tools,
-        string model,
-        int maxTokens,
-        CancellationToken ct)
+    public async Task<ClaudeChatResult> CreateChatTurnAsync(ClaudeChatRequest request, CancellationToken ct)
     {
+        var model = request.Model;
         var apiKey = await _secrets.GetAsync(ProtectedSecretKeys.ClaudeApiKey, ct);
         if (string.IsNullOrWhiteSpace(apiKey))
             throw new ClaudeApiException("Claude API key is not configured.", httpStatus: null, upstreamErrorCode: "missing_api_key");
@@ -163,26 +160,13 @@ public sealed class ClaudeApiClient : IClaudeApiClient
 
         var timeoutSeconds = Math.Clamp(await _settings.GetAsync<int>(SettingKeys.Claude.RequestTimeoutSeconds, ct), 10, 600);
 
-        var body = new JsonObject
-        {
-            ["model"] = model.Trim(),
-            ["max_tokens"] = Math.Clamp(maxTokens, 256, 8192),
-            ["system"] = systemPrompt,
-            // DeepClone: a JsonNode can have only one parent, and the caller
-            // keeps reusing/extending the same messages array across the
-            // tool-use loop, so the request body must take a detached copy.
-            ["messages"] = messages.DeepClone(),
-        };
-        // Tools are omitted on the forced final turn (the caller passes an
-        // empty array) so the model must answer with text instead of searching.
-        if (tools.Count > 0)
-            body["tools"] = tools.DeepClone();
+        var body = BuildChatRequestBody(request);
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, url);
-        request.Headers.Add("x-api-key", apiKey);
-        request.Headers.Add("anthropic-version", AnthropicVersion);
-        request.Headers.Accept.ParseAdd("application/json");
-        request.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
+        httpRequest.Headers.Add("x-api-key", apiKey);
+        httpRequest.Headers.Add("anthropic-version", AnthropicVersion);
+        httpRequest.Headers.Accept.ParseAdd("application/json");
+        httpRequest.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
 
         var http = _httpClientFactory.CreateClient(HttpClientName);
         http.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
@@ -190,7 +174,7 @@ public sealed class ClaudeApiClient : IClaudeApiClient
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var response = await http.SendAsync(request, ct);
+            var response = await http.SendAsync(httpRequest, ct);
             stopwatch.Stop();
 
             var status = (int)response.StatusCode;
@@ -233,6 +217,8 @@ public sealed class ClaudeApiClient : IClaudeApiClient
                     stopReason = parsed.StopReason,
                     inputTokens = parsed.InputTokens,
                     outputTokens = parsed.OutputTokens,
+                    cacheReadTokens = parsed.CacheReadTokens,
+                    cacheWriteTokens = parsed.CacheWriteTokens,
                     toolUses = parsed.ToolUses.Count,
                 }), ct);
             return parsed;
@@ -294,10 +280,14 @@ public sealed class ClaudeApiClient : IClaudeApiClient
 
             var inputTokens = 0;
             var outputTokens = 0;
+            var cacheReadTokens = 0;
+            var cacheWriteTokens = 0;
             if (node["usage"] is JsonObject usage)
             {
                 inputTokens = usage["input_tokens"]?.GetValue<int>() ?? 0;
                 outputTokens = usage["output_tokens"]?.GetValue<int>() ?? 0;
+                cacheReadTokens = usage["cache_read_input_tokens"]?.GetValue<int>() ?? 0;
+                cacheWriteTokens = usage["cache_creation_input_tokens"]?.GetValue<int>() ?? 0;
             }
 
             // The raw content array is echoed back as the assistant turn; detach
@@ -310,7 +300,9 @@ public sealed class ClaudeApiClient : IClaudeApiClient
                 inputTokens,
                 outputTokens,
                 model,
-                requestId);
+                requestId,
+                cacheReadTokens,
+                cacheWriteTokens);
         }
         catch (ClaudeApiException)
         {
@@ -320,6 +312,64 @@ public sealed class ClaudeApiClient : IClaudeApiClient
         {
             throw new ClaudeApiException("Could not parse the Claude API response: " + ex.Message, ex);
         }
+    }
+
+    /// Messages API body for one KB-chat round-trip. Public for unit tests.
+    /// Cache breakpoints (at most two of the four allowed): the last system
+    /// block — which caches tools + instructions + article index, since tools
+    /// precede system in the prefix — and the last block of the last message,
+    /// so each search round reads the previous round's transcript from cache.
+    public static JsonObject BuildChatRequestBody(ClaudeChatRequest request)
+    {
+        var body = new JsonObject
+        {
+            ["model"] = request.Model.Trim(),
+            ["max_tokens"] = Math.Clamp(request.MaxTokens, 256, 8192),
+        };
+
+        // Empty text blocks are rejected by the API, so only non-empty ones go.
+        var system = new JsonArray();
+        foreach (var text in new[] { request.SystemPrompt, request.SystemContext })
+        {
+            if (!string.IsNullOrWhiteSpace(text))
+                system.Add(new JsonObject { ["type"] = "text", ["text"] = text });
+        }
+        if (request.PromptCaching && system.Count > 0)
+            ((JsonObject)system[^1]!)["cache_control"] = Ephemeral();
+        if (system.Count > 0)
+            body["system"] = system;
+
+        // DeepClone: a JsonNode can have only one parent, and the caller
+        // keeps reusing/extending the same messages array across the
+        // tool-use loop, so the request body must take a detached copy.
+        var messages = (JsonArray)request.Messages.DeepClone();
+        if (request.PromptCaching
+            && messages.Count > 0
+            && messages[^1] is JsonObject last
+            && last["content"] is JsonArray { Count: > 0 } content
+            && content[^1] is JsonObject lastBlock)
+        {
+            lastBlock["cache_control"] = Ephemeral();
+        }
+        body["messages"] = messages;
+
+        if (request.Tools.Count > 0)
+        {
+            body["tools"] = request.Tools.DeepClone();
+            // The forced final answer keeps the tools (an unchanged cached
+            // prefix, and tool_use blocks in the transcript stay valid) but
+            // forbids calling them.
+            if (request.ForceTextAnswer)
+                body["tool_choice"] = new JsonObject { ["type"] = "none" };
+        }
+
+        var effort = (request.Effort ?? string.Empty).Trim().ToLowerInvariant();
+        if (effort is "low" or "medium" or "high" && ModelSupportsEffort(request.Model))
+            body["output_config"] = new JsonObject { ["effort"] = effort };
+
+        return body;
+
+        static JsonObject Ephemeral() => new() { ["type"] = "ephemeral" };
     }
 
     private static JsonObject BuildRequestBody(
@@ -370,10 +420,17 @@ public sealed class ClaudeApiClient : IClaudeApiClient
         return body;
     }
 
-    private static bool ModelSupportsEffort(string model)
+    /// Models that accept <c>output_config.effort</c>. Haiku 4.5 and older
+    /// return a 400 on it, so they never receive it. The 5.x families (Haiku
+    /// 5.5, Sonnet 5 / 5.5, Opus 5 / 5.5) think by default, which makes an
+    /// explicit low effort the main lever on their latency and cost.
+    public static bool ModelSupportsEffort(string model)
     {
         var m = model.ToLowerInvariant();
-        return m.Contains("sonnet-4-6")
+        return m.Contains("haiku-5")
+            || m.Contains("sonnet-5")
+            || m.Contains("opus-5")
+            || m.Contains("sonnet-4-6")
             || m.Contains("opus-4-5")
             || m.Contains("opus-4-6")
             || m.Contains("opus-4-7")

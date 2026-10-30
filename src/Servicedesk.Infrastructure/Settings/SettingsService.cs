@@ -29,7 +29,15 @@ public sealed class SettingsService : ISettingsService
                 SET value_type = EXCLUDED.value_type,
                     category = EXCLUDED.category,
                     description = EXCLUDED.description,
-                    default_value = EXCLUDED.default_value
+                    default_value = EXCLUDED.default_value,
+                    -- Opt-in keys follow a changed shipped default, but only
+                    -- while the stored value is still the previous default
+                    -- (never edited). settings.* is the row before the update.
+                    value = CASE
+                        WHEN @FollowDefault AND settings.value = settings.default_value
+                            THEN EXCLUDED.value
+                        ELSE settings.value
+                    END
             """;
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
@@ -43,6 +51,7 @@ public sealed class SettingsService : ISettingsService
                 d.Category,
                 d.Description,
                 DefaultValue = d.Value,
+                FollowDefault = SettingDefaults.FollowShippedDefault.Contains(d.Key),
             }, cancellationToken: cancellationToken));
         }
 

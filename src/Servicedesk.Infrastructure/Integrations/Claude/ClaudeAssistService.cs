@@ -161,13 +161,19 @@ public sealed class ClaudeAssistService : IClaudeAssistService
         // Summary and status fill a template; the proposal is free-form.
         var fillsTemplate = feature is ClaudeFeatures.Summary or ClaudeFeatures.Status;
 
+        var (model, effort) = await ResolveModelAsync(feature, ct);
+
         // ---- Call + log -------------------------------------------------
         try
         {
-            var result = await _api.CreateProposalAsync(systemPrompt, userText, images, auditEventType, ct);
+            var result = await _api.CreateProposalAsync(systemPrompt, userText, images, auditEventType, model, effort, ct);
 
-            var inputPriceCents = await _settings.GetAsync<int>(SettingKeys.Claude.InputPriceCentsPerMTok, ct);
-            var outputPriceCents = await _settings.GetAsync<int>(SettingKeys.Claude.OutputPriceCentsPerMTok, ct);
+            // Priced by the model that answered; the shared settings are the
+            // fallback for a model missing from the price list.
+            var price = ClaudeModelPrices.Resolve(
+                await _settings.GetAsync<string>(SettingKeys.Claude.ModelPrices, ct), result.Model);
+            var inputPriceCents = price?.InputCentsPerMTok ?? await _settings.GetAsync<int>(SettingKeys.Claude.InputPriceCentsPerMTok, ct);
+            var outputPriceCents = price?.OutputCentsPerMTok ?? await _settings.GetAsync<int>(SettingKeys.Claude.OutputPriceCentsPerMTok, ct);
             var costMicro = ((long)result.InputTokens * inputPriceCents + (long)result.OutputTokens * outputPriceCents) / 100L;
 
             var refused = string.Equals(result.StopReason, "refusal", StringComparison.OrdinalIgnoreCase);
@@ -209,6 +215,27 @@ public sealed class ClaudeAssistService : IClaudeAssistService
                 ex.UpstreamErrorCode ?? "api_error", null, feature), ct);
             throw;
         }
+    }
+
+    /// Model + effort per feature: the summary and the status update have
+    /// their own (speed over depth); empty falls back to the proposal's.
+    private async Task<(string Model, string Effort)> ResolveModelAsync(string feature, CancellationToken ct)
+    {
+        var baseModel = (await _settings.GetAsync<string>(SettingKeys.Claude.Model, ct) ?? string.Empty).Trim();
+        if (baseModel.Length == 0) baseModel = "claude-sonnet-5-5";
+        var baseEffort = (await _settings.GetAsync<string>(SettingKeys.Claude.Effort, ct) ?? "off").Trim();
+
+        var (modelKey, effortKey) = feature switch
+        {
+            ClaudeFeatures.Summary => (SettingKeys.Claude.SummaryModel, SettingKeys.Claude.SummaryEffort),
+            ClaudeFeatures.Status => (SettingKeys.Claude.StatusModel, SettingKeys.Claude.StatusEffort),
+            _ => (null, null),
+        };
+        if (modelKey is null || effortKey is null) return (baseModel, baseEffort);
+
+        var model = (await _settings.GetAsync<string>(modelKey, ct) ?? string.Empty).Trim();
+        var effort = (await _settings.GetAsync<string>(effortKey, ct) ?? string.Empty).Trim();
+        return (model.Length > 0 ? model : baseModel, effort.Length > 0 ? effort : baseEffort);
     }
 
     /// Defensive: if the model wraps the filled template in a ``` fence

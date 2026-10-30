@@ -2497,6 +2497,22 @@ public sealed class DatabaseBootstrapper : IHostedService
            SET feature = CASE WHEN ticket_id IS NULL THEN 'kbchat' ELSE 'proposal' END
          WHERE feature IS NULL;
 
+        -- v0.1.47 — KB chat cost + tuning data. Prompt-cache tokens are billed
+        -- at their own rate (input_tokens excludes them). The kb_* columns are
+        -- per chat turn: search-tool rounds, rounds that found nothing, and
+        -- which article index was sent ('full' titles or 'sections') with how
+        -- many searchable articles. Aggregated (never per user) in the
+        -- performance report so the catalog cap and prices can be tuned.
+        ALTER TABLE claude_usage_log
+            ADD COLUMN IF NOT EXISTS cache_read_tokens   INT  NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS cache_write_tokens  INT  NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS kb_searches         INT  NULL,
+            ADD COLUMN IF NOT EXISTS kb_empty_searches   INT  NULL,
+            ADD COLUMN IF NOT EXISTS kb_catalog_mode     TEXT NULL,
+            ADD COLUMN IF NOT EXISTS kb_catalog_articles INT  NULL;
+        CREATE INDEX IF NOT EXISTS ix_claude_usage_feature_utc
+            ON claude_usage_log (feature, utc);
+
         -- ===================================================================
         -- v0.0.35 Timesheet — per-user feature flags. Two independent
         -- booleans live directly on the users row (no new role beside

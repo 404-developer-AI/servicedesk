@@ -18,10 +18,14 @@ public sealed class ClaudeUsageStore : IClaudeUsageStore
         const string sql = """
             INSERT INTO claude_usage_log
                 (user_id, ticket_id, model, input_tokens, output_tokens,
-                 cost_micro_eur, image_count, outcome, error_code, request_id, feature)
+                 cost_micro_eur, image_count, outcome, error_code, request_id, feature,
+                 cache_read_tokens, cache_write_tokens,
+                 kb_searches, kb_empty_searches, kb_catalog_mode, kb_catalog_articles)
             VALUES
                 (@UserId, @TicketId, @Model, @InputTokens, @OutputTokens,
-                 @CostMicroEur, @ImageCount, @Outcome, @ErrorCode, @RequestId, @Feature)
+                 @CostMicroEur, @ImageCount, @Outcome, @ErrorCode, @RequestId, @Feature,
+                 @CacheReadTokens, @CacheWriteTokens,
+                 @KbSearches, @KbEmptySearches, @KbCatalogMode, @KbCatalogArticles)
             """;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await conn.ExecuteAsync(new CommandDefinition(sql, new
@@ -37,6 +41,12 @@ public sealed class ClaudeUsageStore : IClaudeUsageStore
             entry.ErrorCode,
             entry.RequestId,
             entry.Feature,
+            entry.CacheReadTokens,
+            entry.CacheWriteTokens,
+            entry.KbSearches,
+            entry.KbEmptySearches,
+            entry.KbCatalogMode,
+            entry.KbCatalogArticles,
         }, cancellationToken: ct));
     }
 
