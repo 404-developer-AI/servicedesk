@@ -43,6 +43,8 @@ public static class TicketBulkSkipReason
     public const string ChecklistIncomplete = "checklist_incomplete";
     /// v0.0.105 — project tickets are pinned to the project queue.
     public const string ProjectQueueLocked = "project_queue_locked";
+    /// v0.1.44 — the pending-till is not in the future.
+    public const string PendingTillInPast = PendingTillRules.PastCode;
     public const string Failed = "failed";
 }
 
@@ -87,17 +89,20 @@ public sealed class TicketBulkActionService : ITicketBulkActionService
     private readonly ISettingsService _settings;
     private readonly IAuditLogger _audit;
     private readonly ILogger<TicketBulkActionService> _logger;
+    private readonly TimeProvider _clock;
 
     public TicketBulkActionService(
         ITicketMutationService mutations,
         ISettingsService settings,
         IAuditLogger audit,
-        ILogger<TicketBulkActionService> logger)
+        ILogger<TicketBulkActionService> logger,
+        TimeProvider clock)
     {
         _mutations = mutations;
         _settings = settings;
         _audit = audit;
         _logger = logger;
+        _clock = clock;
     }
 
     public async Task<TicketBulkActionResult> ExecuteAsync(
@@ -113,6 +118,10 @@ public sealed class TicketBulkActionService : ITicketBulkActionService
             throw new TicketBulkActionRejectedException("nothing_to_change", "Provide a message or at least one field change.");
         if (request.AssigneeUserId.HasValue && request.UnassignAssignee)
             throw new TicketBulkActionRejectedException("assignee_conflict", "assigneeUserId and unassignAssignee are mutually exclusive.");
+        // v0.1.44 — one value for the whole batch, so reject it once up front
+        // instead of skipping every ticket with the same reason.
+        if (request.StatusId.HasValue && PendingTillRules.IsInPast(request.PendingTillUtc, _clock.GetUtcNow().UtcDateTime))
+            throw new TicketBulkActionRejectedException(PendingTillRules.PastCode, PendingTillRules.PastMessage);
 
         // Dedupe while preserving order — a double-click in the UI must not
         // post the same note twice on one ticket.
@@ -166,6 +175,7 @@ public sealed class TicketBulkActionService : ITicketBulkActionService
                     TicketMutationCheck.StatusNotInQueueScope => TicketBulkSkipReason.StatusNotInQueueScope,
                     TicketMutationCheck.ChecklistIncomplete => TicketBulkSkipReason.ChecklistIncomplete,
                     TicketMutationCheck.ProjectQueueLocked => TicketBulkSkipReason.ProjectQueueLocked,
+                    TicketMutationCheck.PendingTillInPast => TicketBulkSkipReason.PendingTillInPast,
                     _ => TicketBulkSkipReason.Failed,
                 };
                 if (reason is not null)

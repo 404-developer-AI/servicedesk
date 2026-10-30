@@ -26,7 +26,7 @@ const MONTHS_LONG = [
 
 type Input = string | number | Date | null | undefined;
 
-type Parts = { y: number; m: number; d: number; hh: number; mi: number; ss: number };
+export type Parts = { y: number; m: number; d: number; hh: number; mi: number; ss: number };
 
 const formatterCache = new Map<string, Intl.DateTimeFormat>();
 
@@ -82,6 +82,33 @@ function toParts(value: Input, zone: string | null | undefined): Parts | null {
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
+
+/** Wall-clock parts (month 1-12) of an instant in the server zone. */
+export function serverWallClockParts(value: Input, zone?: string | null): Parts | null {
+  return toParts(value, zone);
+}
+
+/** UTC offset of `zone` (minutes) at the instant `utcMs`. */
+function zoneOffsetMinutesAt(utcMs: number, zone: string | null | undefined): number {
+  const p = toParts(utcMs, zone);
+  if (!p) return 0;
+  const asUtc = Date.UTC(p.y, p.m - 1, p.d, p.hh, p.mi, p.ss);
+  return Math.round((asUtc - Math.floor(utcMs / 1000) * 1000) / 60_000);
+}
+
+/**
+ * The UTC instant of a server-zone wall clock (month 1-12). Uses the zone's
+ * offset *on that date*, so a pick across a DST change keeps its wall time
+ * (a fixed "today" offset turned 08:00 into 09:00 a month later). A time
+ * inside the spring-forward gap resolves to the hour after.
+ */
+export function serverWallClockToUtcMs(
+  y: number, m: number, d: number, hh: number, mi: number, zone?: string | null,
+): number {
+  const wall = Date.UTC(y, m - 1, d, hh, mi, 0, 0);
+  const first = wall - zoneOffsetMinutesAt(wall, resolveZone(zone)) * 60_000;
+  return wall - zoneOffsetMinutesAt(first, resolveZone(zone)) * 60_000;
+}
 
 /** "07/10/2026 - 20:52" (or "…:05" with seconds). Matches `toServerLocal`. */
 export function formatDateTime(value: Input, zone?: string | null, seconds = false, fallback = "—"): string {

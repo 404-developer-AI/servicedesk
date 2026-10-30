@@ -822,8 +822,11 @@ public static class TriggerValidator
         if (HasNonEmptyString(action, "relative"))
         {
             var raw = action.GetProperty("relative").GetString();
-            try { _ = System.Xml.XmlConvert.ToTimeSpan(raw!); }
+            TimeSpan offset;
+            try { offset = System.Xml.XmlConvert.ToTimeSpan(raw!); }
             catch (FormatException) { return $"'relative' is not a valid ISO-8601 duration: '{raw}'."; }
+            // v0.1.44 — a negative duration always lands in the past.
+            if (offset <= TimeSpan.Zero) return "'relative' must be a positive duration.";
             return ValidateNextTriggerId(action);
         }
 

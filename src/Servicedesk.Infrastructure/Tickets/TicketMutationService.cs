@@ -45,6 +45,9 @@ public enum TicketMutationCheck
     /// v0.0.105 — project tickets are pinned to the configured project
     /// queue (Projects.QueueId); moving one to any other queue is refused.
     ProjectQueueLocked,
+    /// v0.1.44 — the update sets a pending-till that is not in the future
+    /// (server clock). See <see cref="PendingTillRules"/>.
+    PendingTillInPast,
 }
 
 /// Result of <see cref="ITicketMutationService.PrecheckFieldUpdateAsync"/>.
@@ -134,6 +137,7 @@ public sealed class TicketMutationService : ITicketMutationService
     private readonly ITriggerService _triggers;
     private readonly IChecklistCloseGuard _checklistGuard;
     private readonly Settings.ISettingsService _settings;
+    private readonly TimeProvider _clock;
 
     public TicketMutationService(
         ITicketRepository tickets,
@@ -145,7 +149,8 @@ public sealed class TicketMutationService : ITicketMutationService
         ISlaEngine sla,
         ITriggerService triggers,
         IChecklistCloseGuard checklistGuard,
-        Settings.ISettingsService settings)
+        Settings.ISettingsService settings,
+        TimeProvider clock)
     {
         _tickets = tickets;
         _queueAccess = queueAccess;
@@ -157,6 +162,7 @@ public sealed class TicketMutationService : ITicketMutationService
         _triggers = triggers;
         _checklistGuard = checklistGuard;
         _settings = settings;
+        _clock = clock;
     }
 
     public async Task<AccessPrecheck> PrecheckAccessAsync(TicketMutationActor actor, Guid ticketId, CancellationToken ct)
@@ -175,6 +181,14 @@ public sealed class TicketMutationService : ITicketMutationService
         if (access.Check != TicketMutationCheck.Ok || access.Ticket is null)
             return FieldUpdatePrecheck.Fail(access.Check);
         var current = access.Ticket;
+
+        // v0.1.44 — a new pending-till must lie in the future. Re-sending the
+        // value the ticket already holds is not a change and passes, so a
+        // stale form never blocks an unrelated edit.
+        if (update.PendingTillUtc.HasValue
+            && !PendingTillRules.SameInstant(update.PendingTillUtc, current.PendingTillUtc)
+            && PendingTillRules.IsInPast(update.PendingTillUtc, _clock.GetUtcNow().UtcDateTime))
+            return FieldUpdatePrecheck.Fail(TicketMutationCheck.PendingTillInPast);
 
         // Moving queues requires access to the destination too.
         if (update.QueueId.HasValue && update.QueueId != current.QueueId)

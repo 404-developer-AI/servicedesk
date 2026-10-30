@@ -774,6 +774,7 @@ public static partial class TicketPdfGenerator
         "CategoryChange"   => "Category Changed",
         "SystemNote"       => "System",
         "TicketFlagChange" => "Ticket Flag Changed",
+        "PendingTillChange" => "Pending Till Changed",
         _                  => eventType,
     };
 

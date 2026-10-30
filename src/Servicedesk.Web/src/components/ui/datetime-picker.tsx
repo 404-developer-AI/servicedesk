@@ -2,6 +2,8 @@ import * as React from "react";
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { serverWallClockParts, serverWallClockToUtcMs } from "@/lib/dateFormat";
+import { getServerTimeSnapshot } from "@/hooks/useServerTime";
 
 /**
  * Glass-styled date+time picker. Operates in *server-local* time: the admin
@@ -9,6 +11,10 @@ import { cn } from "@/lib/utils";
  * of their own browser timezone. The component round-trips through UTC ISO
  * strings — the offset is provided by the caller (typically from
  * useServerTime().time.offsetMinutes).
+ *
+ * Pass `timeZone` (the server's IANA zone, `useServerTimeZone()`) to convert
+ * with the offset that applies on the picked date instead of today's — a
+ * fixed offset shifts a pick across a DST change by an hour.
  *
  * value=null means "no datetime set".
  */
@@ -19,8 +25,10 @@ export type DateTimePickerProps = {
   disabled?: boolean;
   placeholder?: string;
   className?: string;
-  /** Optional minimum (UTC ISO) — earlier picks are disabled. */
+  /** Optional minimum (UTC ISO) — earlier days are disabled. */
   minUtc?: string | null;
+  /** Server IANA zone; when set it wins over `offsetMinutes` (DST-correct). */
+  timeZone?: string | null;
   /** Fires when the picker popover closes (Done / outside-click / Escape).
    *  Lets callers that buffer edits commit once, on close. */
   onClose?: () => void;
@@ -28,10 +36,14 @@ export type DateTimePickerProps = {
 
 type LocalParts = { y: number; m: number; d: number; hh: number; mm: number };
 
-function utcIsoToLocalParts(iso: string | null, offsetMinutes: number): LocalParts | null {
+function utcIsoToLocalParts(iso: string | null, offsetMinutes: number, timeZone?: string | null): LocalParts | null {
   if (!iso) return null;
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return null;
+  if (timeZone) {
+    const p = serverWallClockParts(t, timeZone);
+    return p ? { y: p.y, m: p.m - 1, d: p.d, hh: p.hh, mm: p.mi } : null;
+  }
   const local = new Date(t + offsetMinutes * 60_000);
   return {
     y: local.getUTCFullYear(),
@@ -42,7 +54,8 @@ function utcIsoToLocalParts(iso: string | null, offsetMinutes: number): LocalPar
   };
 }
 
-function localPartsToUtcIso(p: LocalParts, offsetMinutes: number): string {
+function localPartsToUtcIso(p: LocalParts, offsetMinutes: number, timeZone?: string | null): string {
+  if (timeZone) return new Date(serverWallClockToUtcMs(p.y, p.m + 1, p.d, p.hh, p.mm, timeZone)).toISOString();
   const localMs = Date.UTC(p.y, p.m, p.d, p.hh, p.mm, 0, 0);
   return new Date(localMs - offsetMinutes * 60_000).toISOString();
 }
@@ -89,6 +102,7 @@ export function DateTimePicker({
   className,
   minUtc,
   onClose,
+  timeZone,
 }: DateTimePickerProps) {
   const [open, setOpen] = React.useState(false);
 
@@ -97,14 +111,16 @@ export function DateTimePicker({
     if (!next) onClose?.();
   };
 
-  const valueParts = utcIsoToLocalParts(value, offsetMinutes);
-  const minParts = utcIsoToLocalParts(minUtc ?? null, offsetMinutes);
+  const valueParts = utcIsoToLocalParts(value, offsetMinutes, timeZone);
+  const minParts = utcIsoToLocalParts(minUtc ?? null, offsetMinutes, timeZone);
 
   // The view tracks which month is shown in the calendar — anchored to the
   // selected value when present, else to "now in server-local".
+  // Server clock, not the browser's — recomputed each time the popover opens.
   const today = React.useMemo(
-    () => utcIsoToLocalParts(new Date().toISOString(), offsetMinutes)!,
-    [offsetMinutes],
+    () => utcIsoToLocalParts(getServerTimeSnapshot()?.utc ?? new Date().toISOString(), offsetMinutes, timeZone)!,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [offsetMinutes, timeZone, open],
   );
   const [view, setView] = React.useState({
     y: valueParts?.y ?? today.y,
@@ -132,7 +148,7 @@ export function DateTimePicker({
   }, [today.hh, today.mm]);
 
   const commit = (next: LocalParts) => {
-    onChange(localPartsToUtcIso(next, offsetMinutes));
+    onChange(localPartsToUtcIso(next, offsetMinutes, timeZone));
   };
 
   const onPickDay = (cell: { y: number; m: number; d: number }) => {

@@ -316,7 +316,7 @@ public static class TicketEndpoints
             IContactLookupService contactLookup,
             IHubContext<TicketPresenceHub> hub, IAuditLogger audit, ISlaEngine sla,
             ITriggerService triggers, ISettingsService settings,
-            Servicedesk.Infrastructure.Tickets.ITicketHtmlSanitizer htmlSanitizer, CancellationToken ct) =>
+            Servicedesk.Infrastructure.Tickets.ITicketHtmlSanitizer htmlSanitizer, TimeProvider clock, CancellationToken ct) =>
         {
             req = req with
             {
@@ -329,6 +329,10 @@ public static class TicketEndpoints
                 return Results.BadRequest(new { error = "Subject is required." });
             if (req.RequesterContactId == Guid.Empty)
                 return Results.BadRequest(new { error = "requesterContactId is required." });
+            // v0.1.44 — same rule as the side panel: never a past reminder.
+            // Checked before any write (company link learning below).
+            if (PendingTillRules.IsInPast(req.PendingTillUtc, clock.GetUtcNow().UtcDateTime))
+                return Results.BadRequest(new { error = PendingTillRules.PastMessage, code = PendingTillRules.PastCode });
 
             var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var userRole = http.User.FindFirst(ClaimTypes.Role)!.Value;
@@ -730,6 +734,10 @@ public static class TicketEndpoints
                         error = "Project tickets live in the project queue and cannot be moved to another queue.",
                         code = "project_queue_locked",
                     });
+                case TicketMutationCheck.PendingTillInPast:
+                    // v0.1.44 — the picker disables past moments, so this
+                    // only catches a stale tab or a hand-rolled call.
+                    return Results.BadRequest(new { error = PendingTillRules.PastMessage, code = PendingTillRules.PastCode });
                 case TicketMutationCheck.ChecklistIncomplete:
                     // v0.0.103 — hard block: no confirmation payload can
                     // satisfy it. The body names the checklists so the FE

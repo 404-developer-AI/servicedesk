@@ -52,4 +52,7 @@ public enum TicketEventType
     // v0.1.17 — a phone call logged from the Call composer. Internal by
     // default; the agent may mark it customer-visible.
     Call,
+    // v0.1.44 — an agent changed "Pending till" (side panel or bulk).
+    // Internal. Metadata: { from, to } as UTC ISO strings (null = unset).
+    PendingTillChange,
 }
