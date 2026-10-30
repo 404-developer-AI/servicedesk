@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { publicKbApi } from "@/lib/kb-api";
-import { SafeHtml } from "@/components/SafeHtml";
+import { KbArticleBody } from "@/pages/kb/KbArticleBody";
 
 /// Bare-layout page rendered at `/kb/public/:articleId` — the target of
 /// the public links agents insert into outbound mail. The customer has no
@@ -60,7 +60,7 @@ export function PublicKbArticlePage({ articleId }: { articleId: string }) {
           {article.title}
         </h1>
         {article.bodyHtml.length > 0 ? (
-          <SafeHtml html={article.bodyHtml} />
+          <KbArticleBody html={article.bodyHtml} />
         ) : (
           <p className="text-sm italic text-muted-foreground">
             This article has no content.

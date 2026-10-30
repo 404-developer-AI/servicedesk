@@ -27,7 +27,7 @@ A self-hosted helpdesk for IT service teams. One install per organisation, on a 
 
 **For your team**
 - Time tracking on tickets, with a monthly overview and export.
-- A knowledge base (articles can be exported and imported as a package, images included), dashboards and Insights reports.
+- A knowledge base for step-by-step guides (headings, numbered steps, callouts, tables, sized screenshots with click-to-zoom and an on-page outline; articles can be exported and imported as a package, images included), dashboards and Insights reports.
 - Live updates: see who is working on a ticket, and lists refresh by themselves.
 - A mobile version for phones and tablets: views, ticket detail, search, notes, logged calls and @@-mentions, installable on the home screen (online only).
 - A list of your signed-in devices, so a lost or shared phone can be signed out from elsewhere.

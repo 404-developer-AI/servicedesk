@@ -19,6 +19,9 @@ import {
   Paperclip,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ToolbarButton, ToolbarSeparator } from "./EditorToolbarButton";
+import { KbArticleToolbar } from "./KbArticleToolbar";
+import { KbImage, kbArticleExtensions } from "./KbArticleExtensions";
 import { debounceAsync } from "@/lib/asyncDebounce";
 import { substituteComposeTokens } from "@/lib/composeTokens";
 import type { TicketAttachmentMeta, MentionPickerItem } from "@/lib/ticket-api";
@@ -101,39 +104,12 @@ type RichTextEditorProps = {
   /// typeahead callbacks, so existing chips survive the round-trip instead
   /// of collapsing to plain text.
   preserveInlineNodes?: boolean;
+  /// "article" — the KB editor: H2/H3, underline, interface labels, quote,
+  /// callouts, tables, divider and image sizes, with reader typography in the
+  /// editing surface. The default variant (tickets, mail, templates) keeps the
+  /// compact toolbar and never emits the article-only markup.
+  variant?: "default" | "article";
 };
-
-type ToolbarButtonProps = {
-  onClick: () => void;
-  active?: boolean;
-  title: string;
-  children: React.ReactNode;
-};
-
-function ToolbarButton({ onClick, active, title, children }: ToolbarButtonProps) {
-  return (
-    <button
-      type="button"
-      onMouseDown={(e) => {
-        e.preventDefault();
-        onClick();
-      }}
-      title={title}
-      className={cn(
-        "p-1.5 rounded-md transition-colors",
-        active
-          ? "bg-glass-strong text-foreground"
-          : "text-muted-foreground hover:bg-glass-hover hover:text-foreground"
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function ToolbarSeparator() {
-  return <div className="w-px h-4 bg-glass-strong mx-1 shrink-0" />;
-}
 
 export function RichTextEditor({
   content,
@@ -156,7 +132,9 @@ export function RichTextEditor({
   onEditorReady,
   enableSignatureBlock = false,
   preserveInlineNodes = false,
+  variant = "default",
 }: RichTextEditorProps) {
+  const isArticle = variant === "article";
   // Stash the latest upload callback in a ref so the editor extensions —
   // which see only the prop-snapshot at construction time — can still call
   // the freshest version after re-renders. Same trick keeps the editor from
@@ -224,7 +202,7 @@ export function RichTextEditor({
     // allowBase64=false is the default — we never want to embed bytes in
     // the body. Inline images always reference the upload-endpoint URL,
     // so the body stays small and the bytes live exactly once on disk.
-    Image.configure({
+    (isArticle ? KbImage : Image).configure({
       inline: false,
       HTMLAttributes: {
         class: "max-w-full h-auto rounded-md",
@@ -234,6 +212,10 @@ export function RichTextEditor({
       },
     }),
   ] as Array<ReturnType<typeof StarterKit.configure> | unknown>;
+
+  if (isArticle) {
+    extensions.push(...kbArticleExtensions);
+  }
 
   // v0.0.61 — compose-window signature block. A leaf atom that renders the
   // pre-loaded signature preview (data-URI images) and serialises to a bare
@@ -730,7 +712,14 @@ export function RichTextEditor({
           className
         )}
       >
-        {editable && (
+        {editable && isArticle && (
+          <KbArticleToolbar
+            editor={editor}
+            onLink={setLink}
+            onAttach={onUploadFile ? triggerFilePicker : undefined}
+          />
+        )}
+        {editable && !isArticle && (
           <div className="flex items-center gap-1 px-3 py-2 border-b border-glass bg-glass flex-wrap">
             <ToolbarButton
               onClick={() => editor?.chain().focus().toggleBold().run()}
@@ -807,7 +796,11 @@ export function RichTextEditor({
 
         <EditorContent
           editor={editor}
-          className={cn("rte-content px-4 py-3 text-sm", editable && "rte-capped")}
+          className={cn(
+            "rte-content",
+            isArticle ? "kb-doc rich-prose px-6 py-5" : "px-4 py-3 text-sm",
+            editable && "rte-capped",
+          )}
           style={{
             "--rte-min-height": minHeight,
             ...(editable ? { "--rte-max-height": maxHeight } : {}),

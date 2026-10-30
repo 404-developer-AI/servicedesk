@@ -8,6 +8,12 @@ namespace Servicedesk.Infrastructure.KnowledgeBase;
 /// images (only those served by the KB attachment endpoint), tables,
 /// blockquotes, code, and basic inline marks.
 ///
+/// CSS classes are limited to the explicit <see cref="ContentClasses"/> list
+/// (callouts, interface labels, image sizes, mention chips). Without that
+/// limit an author could borrow any app class or Tailwind utility — e.g.
+/// <c>fixed inset-0 z-50</c> — and overlay the surrounding UI from inside a
+/// body that other agents (or, once published, customers) read.
+///
 /// Anything outside the allow-list is stripped before persist; the
 /// frontend renders bodies through a memoised <c>&lt;SafeHtml&gt;</c>
 /// wrapper as a defence-in-depth second pass.
@@ -60,10 +66,31 @@ public sealed class KbHtmlSanitizer : IKbHtmlSanitizer
         sanitizer.AllowedSchemes.Add("mailto");
         sanitizer.AllowedSchemes.Add("tel");
 
+        // Non-empty AllowedClasses = allow-list mode (an empty set would
+        // allow every class).
+        sanitizer.AllowedClasses.Clear();
+        foreach (var cls in ContentClasses)
+        {
+            sanitizer.AllowedClasses.Add(cls);
+        }
+
         sanitizer.AllowedCssProperties.Clear();
         sanitizer.AllowedAtRules.Clear();
         sanitizer.AllowDataAttributes = false;
     }
+
+    /// Classes the rich-text editors emit into stored HTML. An editor feature
+    /// that serialises a new class must be added here, and styled in
+    /// index.css (article classes under `.kb-doc`).
+    public static readonly IReadOnlyList<string> ContentClasses = new[]
+    {
+        // KB article editor (RichTextEditor variant="article").
+        "sd-callout", "sd-callout--info", "sd-callout--tip", "sd-callout--warning", "sd-callout--important",
+        "sd-ui",
+        "sd-img--sm", "sd-img--md",
+        // Composer chips that templates may carry.
+        "sd-mention", "sd-intake-mention", "sd-order-mention",
+    };
 }
 
 public interface IKbHtmlSanitizer

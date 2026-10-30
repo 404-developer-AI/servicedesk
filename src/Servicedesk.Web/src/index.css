@@ -804,6 +804,286 @@
   color: hsl(var(--foreground) / 0.7);
 }
 
+/* ── KB article documents ─────────────────────────────────────────────────
+   `.kb-doc` wraps a KB article in the reader (KbArticleBody → div.kb-doc >
+   div.rich-prose) and is also the class of the article editor surface
+   (div.rte-content.kb-doc.rich-prose > div.ProseMirror), so authors see the
+   final layout while writing. Every editor selector is written as
+   `.kb-doc.rte-content .ProseMirror x` (0,3,1) to out-rank the compact
+   composer rules RichTextEditor injects (0,2,1). Scoped to KB on purpose:
+   ticket mail bodies keep their own table/image rendering.
+   Article markup is `sd-*` classes only (KbHtmlSanitizer keeps nothing
+   else): sd-callout(--type), sd-ui, sd-img--sm|md. Steaan stays flat —
+   tints and hairlines only, no blur or gradients. */
+
+.kb-doc .rich-prose h2,
+.kb-doc.rte-content .ProseMirror h2 {
+  font-size: 1.3em;
+  margin: 1.9em 0 0.6em;
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid hsl(var(--glass-border));
+}
+.kb-doc .rich-prose h3,
+.kb-doc.rte-content .ProseMirror h3 {
+  font-size: 1.08em;
+  margin: 1.5em 0 0.45em;
+}
+.kb-doc .rich-prose h2:first-child,
+.kb-doc.rte-content .ProseMirror h2:first-child,
+.kb-doc .rich-prose h3:first-child,
+.kb-doc.rte-content .ProseMirror h3:first-child {
+  margin-top: 0;
+}
+.kb-doc h2,
+.kb-doc h3 {
+  scroll-margin-top: 1.25rem;
+}
+.kb-doc.rte-content .ProseMirror ul,
+.kb-doc.rte-content .ProseMirror ol {
+  margin: 0.6em 0;
+  padding-left: 1.5em;
+}
+.kb-doc.rte-content .ProseMirror li > p {
+  margin: 0;
+}
+.kb-doc.rte-content .ProseMirror blockquote {
+  margin: 0.8em 0;
+  padding: 0.2em 0 0.2em 1em;
+  border-left: 2px solid hsl(var(--primary) / 0.5);
+  color: hsl(var(--muted-foreground));
+}
+.kb-doc.rte-content .ProseMirror hr {
+  margin: 1.5em 0;
+  border: none;
+  border-top: 1px solid hsl(var(--glass-border-strong));
+}
+.kb-doc.rte-content .ProseMirror hr.ProseMirror-selectednode {
+  border-top-color: hsl(var(--primary));
+}
+
+/* Numbered steps: a top-level ordered list renders as step badges. Nested
+   lists keep plain numbering. */
+.kb-doc .rich-prose > ol,
+.kb-doc.rte-content .ProseMirror > ol {
+  list-style: none;
+  counter-reset: kb-step;
+  padding-left: 2.4em;
+  margin: 0.9em 0;
+}
+.kb-doc .rich-prose > ol > li,
+.kb-doc.rte-content .ProseMirror > ol > li {
+  counter-increment: kb-step;
+  position: relative;
+  margin: 0.75em 0;
+}
+.kb-doc .rich-prose > ol > li::before,
+.kb-doc.rte-content .ProseMirror > ol > li::before {
+  content: counter(kb-step);
+  position: absolute;
+  left: -2.4em;
+  top: 0.1em;
+  width: 1.55em;
+  height: 1.55em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: hsl(var(--primary) / 0.12);
+  color: hsl(var(--primary));
+  font-size: 0.85em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.dark .kb-doc .rich-prose > ol > li::before,
+.dark .kb-doc.rte-content .ProseMirror > ol > li::before {
+  background: hsl(var(--primary) / 0.22);
+  color: hsl(var(--primary-foreground));
+}
+
+/* Screenshots: framed so a white capture doesn't melt into a white card,
+   width-capped by the author's size choice, zoomable in the reader. */
+.kb-doc .rich-prose img,
+.kb-doc.rte-content .ProseMirror img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.9em 0;
+  border: 1px solid hsl(var(--glass-border-strong));
+  border-radius: 0.6rem;
+}
+.kb-doc .rich-prose img {
+  cursor: zoom-in;
+}
+.kb-doc .rich-prose a img {
+  cursor: pointer;
+}
+.kb-doc .rich-prose img.sd-img--md,
+.kb-doc.rte-content .ProseMirror img.sd-img--md {
+  max-width: min(100%, 480px);
+}
+.kb-doc .rich-prose img.sd-img--sm,
+.kb-doc.rte-content .ProseMirror img.sd-img--sm {
+  max-width: min(100%, 240px);
+}
+.kb-doc.rte-content .ProseMirror img.ProseMirror-selectednode {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+
+/* Tables: hairline grid with a tinted header row, full content width.
+   Overrides the mail-oriented `.rich-prose table` (display:block,
+   width:auto!important) — KB tables are authored, not fixed-width layout. */
+.kb-doc .rich-prose table,
+.kb-doc.rte-content .ProseMirror table {
+  display: table;
+  width: 100% !important;
+}
+.kb-doc table {
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid hsl(var(--glass-border-strong));
+  border-radius: 0.6rem;
+  margin: 1em 0;
+  font-size: 0.95em;
+}
+.kb-doc.rte-content .ProseMirror .tableWrapper {
+  overflow-x: auto;
+  margin: 1em 0;
+}
+.kb-doc.rte-content .ProseMirror .tableWrapper table {
+  margin: 0;
+}
+.kb-doc th,
+.kb-doc td {
+  min-width: 6em;
+  padding: 0.5em 0.8em;
+  text-align: left;
+  vertical-align: top;
+  border-right: 1px solid hsl(var(--glass-border));
+  border-bottom: 1px solid hsl(var(--glass-border));
+}
+.kb-doc tr > :last-child {
+  border-right: none;
+}
+.kb-doc tr:last-child > * {
+  border-bottom: none;
+}
+.kb-doc th {
+  background: hsl(var(--glass-bg-strong));
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+.kb-doc tr:first-child > :first-child { border-top-left-radius: calc(0.6rem - 1px); }
+.kb-doc tr:first-child > :last-child { border-top-right-radius: calc(0.6rem - 1px); }
+.kb-doc th > p,
+.kb-doc td > p,
+.kb-doc.rte-content .ProseMirror th > p,
+.kb-doc.rte-content .ProseMirror td > p {
+  margin: 0;
+}
+.kb-doc.rte-content .ProseMirror .selectedCell {
+  background: hsl(var(--primary) / 0.08);
+}
+
+/* Interface label — names of buttons, menus and fields ("click Save"). */
+.sd-ui {
+  display: inline;
+  padding: 0.05em 0.42em;
+  border: 1px solid hsl(var(--glass-border-strong));
+  border-bottom-width: 2px;
+  border-radius: 0.35em;
+  background: hsl(var(--glass-bg-strong));
+  color: hsl(var(--foreground));
+  font-size: 0.9em;
+  font-weight: 500;
+  white-space: nowrap;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.theme-steaan .sd-ui {
+  background: hsl(var(--card));
+}
+
+/* Callouts — info / tip / warning / important. Colour per type via a hue
+   pair; the icon is a CSS mask so the stored HTML stays a bare div. */
+.sd-callout {
+  --co-h: 212;
+  --co-s: 80%;
+  --co-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 16v-4'/%3E%3Cpath d='M12 8h.01'/%3E%3C/svg%3E");
+  position: relative;
+  margin: 1em 0;
+  padding: 0.75em 1em 0.75em 2.85em;
+  border: 1px solid hsl(var(--co-h) var(--co-s) 45% / 0.26);
+  border-left-width: 3px;
+  border-left-color: hsl(var(--co-h) var(--co-s) 45% / 0.85);
+  border-radius: 0.6rem;
+  background: hsl(var(--co-h) var(--co-s) 50% / 0.07);
+}
+.sd-callout::before {
+  content: "";
+  position: absolute;
+  left: 0.95em;
+  top: 0.95em;
+  width: 1.15em;
+  height: 1.15em;
+  background-color: hsl(var(--co-h) var(--co-s) 38%);
+  -webkit-mask: var(--co-icon) center / contain no-repeat;
+  mask: var(--co-icon) center / contain no-repeat;
+}
+.sd-callout > :first-child { margin-top: 0; }
+.sd-callout > :last-child { margin-bottom: 0; }
+.sd-callout--tip {
+  --co-h: 158;
+  --co-s: 64%;
+  --co-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5'/%3E%3Cpath d='M9 18h6'/%3E%3Cpath d='M10 22h4'/%3E%3C/svg%3E");
+}
+.sd-callout--warning {
+  --co-h: 36;
+  --co-s: 92%;
+  --co-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3'/%3E%3Cpath d='M12 9v4'/%3E%3Cpath d='M12 17h.01'/%3E%3C/svg%3E");
+}
+.sd-callout--important {
+  --co-h: 0;
+  --co-s: 72%;
+  --co-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 16h.01'/%3E%3Cpath d='M12 8v4'/%3E%3Cpath d='M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z'/%3E%3C/svg%3E");
+}
+.sd-callout--warning::before {
+  background-color: hsl(var(--co-h) 90% 34%);
+}
+.dark .sd-callout {
+  border-color: hsl(var(--co-h) var(--co-s) 60% / 0.3);
+  border-left-color: hsl(var(--co-h) var(--co-s) 62% / 0.9);
+  background: hsl(var(--co-h) var(--co-s) 55% / 0.1);
+}
+.dark .sd-callout::before {
+  background-color: hsl(var(--co-h) var(--co-s) 68%);
+}
+.kb-doc.rte-content .ProseMirror .sd-callout > p {
+  margin: 0.5em 0;
+}
+.kb-doc.rte-content .ProseMirror .sd-callout > :first-child { margin-top: 0; }
+.kb-doc.rte-content .ProseMirror .sd-callout > :last-child { margin-bottom: 0; }
+
+/* Colour chip in the editor's callout picker. */
+.sd-callout-swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  flex-shrink: 0;
+  border-radius: 0.4rem;
+}
+.sd-callout-swatch--info { background: hsl(212 80% 50% / 0.12); color: hsl(212 80% 42%); }
+.sd-callout-swatch--tip { background: hsl(158 64% 45% / 0.14); color: hsl(158 64% 32%); }
+.sd-callout-swatch--warning { background: hsl(36 92% 50% / 0.16); color: hsl(36 90% 34%); }
+.sd-callout-swatch--important { background: hsl(0 72% 50% / 0.12); color: hsl(0 72% 42%); }
+.dark .sd-callout-swatch--info { color: hsl(212 80% 70%); }
+.dark .sd-callout-swatch--tip { color: hsl(158 64% 62%); }
+.dark .sd-callout-swatch--warning { color: hsl(36 92% 62%); }
+.dark .sd-callout-swatch--important { color: hsl(0 72% 68%); }
+
 /* ═══════════════════════════════════════════════════════════════════════
    Steaan theme — component overrides (v0.0.108)
    Everything here is scoped to `.theme-steaan` and exists to turn the

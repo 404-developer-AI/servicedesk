@@ -195,9 +195,10 @@ export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
             <RichTextEditor
               content={bodyHtml}
               onChange={setBodyHtml}
-              placeholder="Write the article body. Headings, lists, code, links, and images are supported."
+              variant="article"
+              placeholder="Write the article. Use headings, numbered steps, callouts, tables and screenshots — select an image to change its size."
               minHeight="320px"
-              maxHeight="60vh"
+              maxHeight="65vh"
               linkNonImageUploads
               onUploadFile={async (file) => {
                 if (isCreate) {
