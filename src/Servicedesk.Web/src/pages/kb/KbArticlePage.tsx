@@ -23,8 +23,12 @@ import { useCurrentRole } from "@/hooks/useCurrentRole";
 import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { SafeHtml } from "@/components/SafeHtml";
+import { buildKbOutline } from "@/lib/kbOutline";
 import { StatusPill } from "@/pages/kb/KbHomePage";
+import { KbArticleBody, KbOutlinePanel } from "@/pages/kb/KbArticleBody";
+
+/// The outline panel only earns its place on longer articles.
+const OUTLINE_MIN_HEADINGS = 3;
 
 type Props = { articleId: string };
 
@@ -55,6 +59,11 @@ export function KbArticlePage({ articleId }: Props) {
     queryKey: ["kb", "article", articleId, "attachments"],
     queryFn: () => kbApi.listAttachments(articleId),
   });
+
+  const outline = useMemo(
+    () => buildKbOutline(data?.translation?.bodyHtml ?? ""),
+    [data?.translation?.bodyHtml],
+  );
 
   const breadcrumb = useMemo(() => {
     if (!data?.article || !tree) return [];
@@ -139,7 +148,7 @@ export function KbArticlePage({ articleId }: Props) {
 
         <article className="glass-card p-6">
           {translation && translation.bodyHtml.length > 0 ? (
-            <SafeHtml html={translation.bodyHtml} />
+            <KbArticleBody html={outline.html} />
           ) : (
             <p className="text-sm italic text-muted-foreground">
               This article has no body yet.
@@ -263,6 +272,11 @@ export function KbArticlePage({ articleId }: Props) {
               ))}
             </ul>
           </div>
+        )}
+
+        {/* Last in the column so nothing scrolls underneath it once sticky. */}
+        {outline.headings.length >= OUTLINE_MIN_HEADINGS && (
+          <KbOutlinePanel headings={outline.headings} className="lg:sticky lg:top-4" />
         )}
       </aside>
     </div>

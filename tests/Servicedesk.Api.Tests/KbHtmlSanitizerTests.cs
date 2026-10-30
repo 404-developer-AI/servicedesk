@@ -109,6 +109,69 @@ public class KbHtmlSanitizerTests
         Assert.Contains("alt=\"logo\"", output);
     }
 
+    [Theory]
+    [InlineData("info")]
+    [InlineData("tip")]
+    [InlineData("warning")]
+    [InlineData("important")]
+    public void Keeps_article_callouts(string type)
+    {
+        var output = Sanitizer.Sanitize(
+            $"<div class=\"sd-callout sd-callout--{type}\"><p>Let op</p></div>");
+        Assert.Contains($"class=\"sd-callout sd-callout--{type}\"", output);
+        Assert.Contains("<p>Let op</p>", output);
+    }
+
+    [Fact]
+    public void Keeps_interface_labels_and_image_sizes()
+    {
+        var output = Sanitizer.Sanitize(
+            "<p>Klik op <span class=\"sd-ui\">Add note</span></p>" +
+            "<img src=\"/api/kb/articles/a/attachments/b\" alt=\"x\" class=\"max-w-full h-auto rounded-md sd-img--md\">");
+        Assert.Contains("<span class=\"sd-ui\">Add note</span>", output);
+        Assert.Contains("class=\"sd-img--md\"", output);
+        // The editor's own utility classes on <img> are not content classes.
+        Assert.DoesNotContain("max-w-full", output);
+    }
+
+    [Fact]
+    public void Strips_classes_outside_the_content_allow_list()
+    {
+        // Utility or app-chrome classes would let an author restyle or
+        // overlay the surrounding UI from inside a body.
+        var output = Sanitizer.Sanitize(
+            "<div class=\"fixed inset-0 z-50 sd-sidebar\"><p class=\"glass-card sd-callout\">x</p></div>");
+        Assert.DoesNotContain("fixed", output);
+        Assert.DoesNotContain("inset-0", output);
+        Assert.DoesNotContain("z-50", output);
+        Assert.DoesNotContain("sd-sidebar", output);
+        Assert.DoesNotContain("glass-card", output);
+        Assert.Contains("sd-callout", output);
+    }
+
+    [Fact]
+    public void Keeps_editor_tables_and_drops_inline_widths()
+    {
+        // Shape Tiptap's table extension serialises: inline min-width styles
+        // and a colgroup, cells wrapping paragraphs.
+        var input =
+            "<table style=\"min-width: 75px;\"><colgroup><col style=\"min-width: 25px;\"></colgroup><tbody>" +
+            "<tr><th colspan=\"1\" rowspan=\"1\"><p>Stap</p></th><th colspan=\"1\" rowspan=\"1\"><p>Limiet</p></th></tr>" +
+            "<tr><td colspan=\"1\" rowspan=\"1\"><p>Call-backs</p></td><td colspan=\"1\" rowspan=\"1\"><p>15 min</p></td></tr>" +
+            "</tbody></table>";
+        var output = Sanitizer.Sanitize(input);
+        Assert.Contains("<th colspan=\"1\" rowspan=\"1\"><p>Stap</p></th>", output);
+        Assert.Contains("<td colspan=\"1\" rowspan=\"1\"><p>15 min</p></td>", output);
+        Assert.DoesNotContain("style=", output);
+        Assert.DoesNotContain("<colgroup", output);
+    }
+
+    [Fact]
+    public void Content_class_list_only_holds_sd_classes()
+    {
+        Assert.All(KbHtmlSanitizer.ContentClasses, c => Assert.StartsWith("sd-", c));
+    }
+
     [Fact]
     public void Strips_data_uri_image_sources()
     {
