@@ -823,10 +823,34 @@
   padding-bottom: 0.35em;
   border-bottom: 1px solid hsl(var(--glass-border));
 }
+/* h3 = a chapter inside a guide. It must read as a clear new start, not
+   as one more paragraph: larger type, a short accent bar, and — unless it
+   directly follows its h2 — a hairline break with air above it. */
 .kb-doc .rich-prose h3,
 .kb-doc.rte-content .ProseMirror h3 {
-  font-size: 1.08em;
-  margin: 1.5em 0 0.45em;
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  font-size: 1.16em;
+  margin: 2.2em 0 0.65em;
+}
+.kb-doc .rich-prose h3::before,
+.kb-doc.rte-content .ProseMirror h3::before {
+  content: "";
+  flex: none;
+  width: 0.22em;
+  height: 1.05em;
+  border-radius: 9999px;
+  background: hsl(var(--primary));
+}
+.kb-doc .rich-prose h3:not(h2 + h3):not(:first-child),
+.kb-doc.rte-content .ProseMirror h3:not(h2 + h3):not(:first-child) {
+  padding-top: 1.5em;
+  border-top: 1px solid hsl(var(--glass-border));
+}
+.kb-doc .rich-prose h2 + h3,
+.kb-doc.rte-content .ProseMirror h2 + h3 {
+  margin-top: 1.1em;
 }
 .kb-doc .rich-prose h2:first-child,
 .kb-doc.rte-content .ProseMirror h2:first-child,
