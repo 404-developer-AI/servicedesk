@@ -146,6 +146,8 @@ public static class ClaudeEndpoints
                 proposalCalls = r.ProposalCalls,
                 summarySpendMicroEur = r.SummarySpendMicroEur,
                 summaryCalls = r.SummaryCalls,
+                statusSpendMicroEur = r.StatusSpendMicroEur,
+                statusCalls = r.StatusCalls,
                 kbChatSpendMicroEur = r.KbChatSpendMicroEur,
                 kbChatCalls = r.KbChatCalls,
             }),

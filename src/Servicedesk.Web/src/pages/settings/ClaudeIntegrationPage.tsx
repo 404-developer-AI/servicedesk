@@ -10,6 +10,7 @@ import {
   DollarSign,
   FileText,
   KeyRound,
+  ListChecks,
   MessageCircleQuestion,
   RotateCcw,
   Settings2,
@@ -459,6 +460,49 @@ export function ClaudeIntegrationPage() {
         )}
       </section>
 
+      {/* ---- Status update ----------------------------------- */}
+      <section className="space-y-1 rounded-xl border border-glass-strong bg-glass p-5">
+        <div className="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+          <ListChecks className="h-4 w-4 text-muted-foreground" />
+          Ticket status update
+        </div>
+        <p className="mb-3 max-w-2xl text-xs text-muted-foreground/70">
+          The "Status update by AI" button writes an internal brief of where the ticket
+          stands — current status, what happened, what it is waiting on, next steps — from
+          the ticket's state and timeline (never images), and posts it straight onto the
+          ticket as an internal note headed "Summary by AI". Earlier AI status notes are
+          left out of the context. Shares the switches, model, budget and usage log above.
+        </p>
+        {settingsList.isLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-24 w-full bg-glass" />
+            <Skeleton className="h-24 w-full bg-glass" />
+          </div>
+        ) : (
+          <>
+            <TextAreaSettingField
+              entry={findEntry(settingsList.data, "Claude.StatusTemplate")}
+              label="Status update template"
+              hint="Use **bold** lines as section headings with '- ' bullets underneath. The AI keeps headings, order and formatting exactly as written and only fills in the bullets."
+              rows={12}
+              mono
+            />
+            <TextAreaSettingField
+              entry={findEntry(settingsList.data, "Claude.StatusSystemPrompt")}
+              label="Status update instructions"
+              hint="Prompt sent before the template: an internal brief for a colleague (names and internal notes allowed, secrets never), compact bullets that keep every fact needed to continue the work. The template is appended automatically; ticket content is always sent as data."
+              rows={8}
+            />
+            <FieldOrSkeleton
+              entry={findEntry(settingsList.data, "Claude.StatusMaxContextChars")}
+              queryKey={SETTINGS_QK}
+              label="Max context chars (status update)"
+              hint="Character budget for one status update. Higher than the general limit because the feature is meant for long tickets; beyond it the description, the first event and the newest events are kept and the oldest middle part is left out."
+            />
+          </>
+        )}
+      </section>
+
       {/* ---- Images ------------------------------------------ */}
       <section className="space-y-1 rounded-xl border border-glass-strong bg-glass p-5">
         <div className="mb-3 text-sm font-medium text-foreground">Images</div>
@@ -667,6 +711,7 @@ function UsageTable({
             <th className="pb-2 pr-4 font-medium text-right">This month</th>
             <th className="pb-2 pr-4 font-medium text-right">Proposals</th>
             <th className="pb-2 pr-4 font-medium text-right">Summaries</th>
+            <th className="pb-2 pr-4 font-medium text-right">Status updates</th>
             <th className="pb-2 pr-4 font-medium text-right">KB chat</th>
             <th className="pb-2 font-medium text-right">Monthly budget (€)</th>
           </tr>
@@ -755,6 +800,7 @@ function UsageRow({
       </td>
       <FeatureUsageCell calls={agent.proposalCalls} spendMicroEur={agent.proposalSpendMicroEur} />
       <FeatureUsageCell calls={agent.summaryCalls} spendMicroEur={agent.summarySpendMicroEur} />
+      <FeatureUsageCell calls={agent.statusCalls} spendMicroEur={agent.statusSpendMicroEur} />
       <FeatureUsageCell calls={agent.kbChatCalls} spendMicroEur={agent.kbChatSpendMicroEur} />
       <td className="py-3 text-right">
         <div className="inline-flex items-center gap-1.5">

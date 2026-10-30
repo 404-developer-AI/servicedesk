@@ -6,6 +6,7 @@ using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Integrations.Claude;
 using Servicedesk.Infrastructure.Persistence.Taxonomy;
 using Servicedesk.Infrastructure.Persistence.Tickets;
+using Servicedesk.Infrastructure.Tickets;
 
 namespace Servicedesk.Api.Tickets;
 
@@ -33,6 +34,12 @@ public static class TicketClaudeEndpoints
         // queue scoping, per-queue switch, budget and usage log as above.
         group.MapPost("/{id:guid}/ai-summary", CreateSummary)
             .WithName("CreateTicketAiSummary").WithOpenApi();
+
+        // v0.1.46 — internal status brief, posted straight onto the ticket as
+        // an internal note (no draft step). Same gates as above; the note
+        // goes through the shared mutation path like a manual note.
+        group.MapPost("/{id:guid}/ai-status", CreateStatus)
+            .WithName("CreateTicketAiStatus").WithOpenApi();
 
         // Lists the ticket's image attachments so the agent can tick which
         // screenshots to send. Same queue-scoping as the proposal call.
@@ -139,7 +146,7 @@ public static class TicketClaudeEndpoints
         return await RunAsync(id, http, tickets, queueAccess, taxonomy, audit,
             ClaudeEventTypes.ProposalRequested,
             userId => assist.GenerateProposalAsync(id, userId, attachmentIds, ct),
-            r => Results.Ok(new
+            r => Task.FromResult(Results.Ok(new
             {
                 proposalText = r.ProposalText,
                 proposalHtml = r.ProposalHtml,
@@ -149,7 +156,7 @@ public static class TicketClaudeEndpoints
                 imageCount = r.ImageCount,
                 monthSpendMicroEur = r.MonthSpendMicroEur,
                 monthBudgetMicroEur = r.MonthBudgetMicroEur,
-            }), ct);
+            })), ct);
     }
 
     private static Task<IResult> CreateSummary(
@@ -164,7 +171,7 @@ public static class TicketClaudeEndpoints
         RunAsync(id, http, tickets, queueAccess, taxonomy, audit,
             ClaudeEventTypes.SummaryRequested,
             userId => assist.GenerateSummaryAsync(id, userId, ct),
-            r => Results.Ok(new
+            r => Task.FromResult(Results.Ok(new
             {
                 summaryText = r.ProposalText,
                 summaryHtml = r.ProposalHtml,
@@ -173,11 +180,74 @@ public static class TicketClaudeEndpoints
                 costMicroEur = r.CostMicroEur,
                 monthSpendMicroEur = r.MonthSpendMicroEur,
                 monthBudgetMicroEur = r.MonthBudgetMicroEur,
-            }), ct);
+            })), ct);
+
+    /// Heading the posted status note opens with, so it reads as AI output
+    /// on the timeline.
+    internal const string StatusNoteHeading = "Summary by AI";
+
+    /// Marks the note so a later status update leaves it out of its context.
+    internal static readonly string StatusNoteMetadataJson = global::System.Text.Json.JsonSerializer.Serialize(
+        new Dictionary<string, string> { [ClaudeStatusContext.AiGeneratedKey] = ClaudeStatusContext.AiGeneratedStatus });
+
+    /// The heading + the model's (already escaped) rendered Markdown.
+    internal static string BuildStatusNoteHtml(string? bodyHtml) =>
+        $"<p><strong>{StatusNoteHeading}</strong></p>" + (bodyHtml ?? string.Empty);
+
+    private static Task<IResult> CreateStatus(
+        Guid id,
+        HttpContext http,
+        ITicketRepository tickets,
+        IQueueAccessService queueAccess,
+        ITaxonomyRepository taxonomy,
+        IClaudeAssistService assist,
+        IAuditLogger audit,
+        ITicketMutationService mutations,
+        ITicketHtmlSanitizer htmlSanitizer,
+        CancellationToken ct) =>
+        RunAsync(id, http, tickets, queueAccess, taxonomy, audit,
+            ClaudeEventTypes.StatusRequested,
+            userId => assist.GenerateStatusAsync(id, userId, ct),
+            async r =>
+            {
+                // Posted as the agent who pressed the button, through the same
+                // precheck → write → publish (audit, realtime, SLA, triggers)
+                // as a note typed in the composer. Always internal.
+                var actor = TicketEndpoints.ResolveMutationActor(http);
+                var access = await mutations.PrecheckAccessAsync(actor, id, ct);
+                if (access.Check != TicketMutationCheck.Ok) return Results.NotFound();
+
+                var input = new NewTicketEvent(
+                    EventType: "Note",
+                    BodyText: null,
+                    BodyHtml: htmlSanitizer.Sanitize(BuildStatusNoteHtml(r.ProposalHtml)),
+                    IsInternal: true,
+                    AuthorUserId: actor.UserId,
+                    MetadataJson: StatusNoteMetadataJson);
+                var evt = await mutations.AddEventAsync(id, input, ct);
+                if (evt is null) return Results.NotFound();
+
+                await mutations.PublishEventAsync(actor, id, evt, new
+                {
+                    evt.EventType,
+                    evt.IsInternal,
+                    aiGenerated = ClaudeStatusContext.AiGeneratedStatus,
+                }, ct);
+
+                return Results.Created($"/api/tickets/{id}/events/{evt.Id}", new
+                {
+                    eventId = evt.Id,
+                    inputTokens = r.InputTokens,
+                    outputTokens = r.OutputTokens,
+                    costMicroEur = r.CostMicroEur,
+                    monthSpendMicroEur = r.MonthSpendMicroEur,
+                    monthBudgetMicroEur = r.MonthBudgetMicroEur,
+                });
+            }, ct);
 
     /// Shared authorize → per-queue gate → generate → audit → HTTP mapping for
     /// the in-ticket assist calls. Only the generate step and the success body
-    /// differ between proposal and summary.
+    /// differ between proposal, summary and status update.
     private static async Task<IResult> RunAsync(
         Guid id,
         HttpContext http,
@@ -187,7 +257,7 @@ public static class TicketClaudeEndpoints
         IAuditLogger audit,
         string auditEventType,
         Func<Guid, Task<ClaudeProposalResult>> generate,
-        Func<ClaudeProposalResult, IResult> okBody,
+        Func<ClaudeProposalResult, Task<IResult>> okBody,
         CancellationToken ct)
     {
         var ticket = await tickets.GetCoreAsync(id, ct);
@@ -231,9 +301,10 @@ public static class TicketClaudeEndpoints
 
         await WriteAuditAsync(audit, http, auditEventType, id, result.Outcome.ToString(), ct);
 
+        if (result.Outcome == ClaudeProposalOutcome.Ok) return await okBody(result);
+
         return result.Outcome switch
         {
-            ClaudeProposalOutcome.Ok => okBody(result),
             ClaudeProposalOutcome.Refused => Results.Ok(new
             {
                 refused = true,

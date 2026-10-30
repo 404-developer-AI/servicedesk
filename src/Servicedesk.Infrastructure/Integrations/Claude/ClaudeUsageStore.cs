@@ -86,6 +86,8 @@ public sealed class ClaudeUsageStore : IClaudeUsageStore
                     COUNT(*) FILTER (WHERE l.feature = 'proposal' AND l.outcome <> 'blocked')::int    AS ProposalCalls,
                     COALESCE(SUM(l.cost_micro_eur) FILTER (WHERE l.feature = 'summary'), 0)::bigint  AS SummarySpendMicroEur,
                     COUNT(*) FILTER (WHERE l.feature = 'summary' AND l.outcome <> 'blocked')::int     AS SummaryCalls,
+                    COALESCE(SUM(l.cost_micro_eur) FILTER (WHERE l.feature = 'status'), 0)::bigint   AS StatusSpendMicroEur,
+                    COUNT(*) FILTER (WHERE l.feature = 'status' AND l.outcome <> 'blocked')::int      AS StatusCalls,
                     COALESCE(SUM(l.cost_micro_eur) FILTER (WHERE l.feature = 'kbchat'), 0)::bigint   AS KbChatSpendMicroEur,
                     COUNT(*) FILTER (WHERE l.feature = 'kbchat' AND l.outcome <> 'blocked')::int      AS KbChatCalls
               FROM users u

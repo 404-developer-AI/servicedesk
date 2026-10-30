@@ -35,6 +35,8 @@ export type ClaudeUsageAgent = {
   proposalCalls: number;
   summarySpendMicroEur: number;
   summaryCalls: number;
+  statusSpendMicroEur: number;
+  statusCalls: number;
   kbChatSpendMicroEur: number;
   kbChatCalls: number;
 };
@@ -95,6 +97,20 @@ export type ClaudeSummarySuccess = {
 };
 
 export type ClaudeSummaryResult = ClaudeSummarySuccess | ClaudeProposalRefused;
+
+/// "Status update by AI" — the server posts the brief as an internal note
+/// itself, so the success body carries the new event id instead of the text.
+export type ClaudeStatusSuccess = {
+  refused?: false;
+  eventId: number;
+  inputTokens: number;
+  outputTokens: number;
+  costMicroEur: number;
+  monthSpendMicroEur: number;
+  monthBudgetMicroEur: number;
+};
+
+export type ClaudeStatusResult = ClaudeStatusSuccess | ClaudeProposalRefused;
 
 // ---- Helpers (shared with api.ts patterns) ----
 
@@ -179,6 +195,13 @@ export const claudeTicketApi = {
     request<ClaudeSummaryResult>(
       "POST",
       `/api/tickets/${encodeURIComponent(ticketId)}/ai-summary`,
+      {},
+    ),
+
+  createTicketStatus: (ticketId: string) =>
+    request<ClaudeStatusResult>(
+      "POST",
+      `/api/tickets/${encodeURIComponent(ticketId)}/ai-status`,
       {},
     ),
 };

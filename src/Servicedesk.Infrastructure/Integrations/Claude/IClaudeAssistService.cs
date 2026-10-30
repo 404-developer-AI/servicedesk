@@ -21,4 +21,13 @@ public interface IClaudeAssistService
         Guid ticketId,
         Guid userId,
         CancellationToken ct);
+
+    /// In-ticket "Status update by AI": an internal brief (current status,
+    /// what happened, waiting on, next steps) from the ticket's state and
+    /// timed timeline (never images), under the same guards, budget and
+    /// usage log. The caller posts the result as an internal note.
+    Task<ClaudeProposalResult> GenerateStatusAsync(
+        Guid ticketId,
+        Guid userId,
+        CancellationToken ct);
 }
