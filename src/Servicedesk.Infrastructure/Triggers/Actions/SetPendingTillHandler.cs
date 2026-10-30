@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml;
 using Servicedesk.Infrastructure.Sla;
+using Servicedesk.Infrastructure.Tickets;
 
 namespace Servicedesk.Infrastructure.Triggers.Actions;
 
@@ -50,8 +51,10 @@ internal sealed class SetPendingTillHandler : ITriggerActionHandler
         // get here. The resolver uses the same fresh-now for relative /
         // businessDays so this check stays a defensive guard against
         // absolute timestamps that were already historical at parse time.
-        if (target <= DateTime.UtcNow)
-            return TriggerActionResult.NoOp(Kind, new { reason = "Target time is in the past; not setting pending-till.", targetUtc = target });
+        // v0.1.44 — a failed action (was a silent no-op) so the trigger run
+        // log shows the misconfiguration; nothing is written either way.
+        if (PendingTillRules.IsInPast(target, DateTime.UtcNow))
+            return TriggerActionResult.Failed(Kind, $"Target time {target:yyyy-MM-ddTHH:mm:ssZ} is in the past; pending-till not set.");
 
         var (nextTriggerId, nextError) = SetPendingTillResolver.ResolveNextTriggerId(actionJson);
         if (nextError is not null) return TriggerActionResult.Failed(Kind, nextError);

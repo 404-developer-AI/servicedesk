@@ -7,6 +7,8 @@ import {
   formatDayMonthTime,
   formatMonthYear,
   formatTime,
+  serverWallClockParts,
+  serverWallClockToUtcMs,
 } from "@/lib/dateFormat";
 
 const BRU = "Europe/Brussels";
@@ -71,5 +73,27 @@ describe("other formatters", () => {
   it("formatMonthYear takes a 1-based month", () => {
     expect(formatMonthYear(2026, 10)).toBe("October 2026");
     expect(formatMonthYear(2027, 1)).toBe("January 2027");
+  });
+});
+
+// v0.1.44 — the pending-till picker converts with the offset of the picked
+// date, not today's: 13/10 "08:00" picked in winter must stay 08:00 local.
+describe("serverWallClockToUtcMs", () => {
+  it("uses summer time for a summer date", () => {
+    expect(new Date(serverWallClockToUtcMs(2026, 10, 13, 8, 0, BRU)).toISOString()).toBe("2026-10-13T06:00:00.000Z");
+  });
+
+  it("uses winter time for a winter date", () => {
+    expect(new Date(serverWallClockToUtcMs(2026, 11, 3, 8, 0, BRU)).toISOString()).toBe("2026-11-03T07:00:00.000Z");
+  });
+
+  it("handles the fall-back day itself", () => {
+    // 25/10/2026: clocks go back at 03:00 → 08:00 is already +1.
+    expect(new Date(serverWallClockToUtcMs(2026, 10, 25, 8, 0, BRU)).toISOString()).toBe("2026-10-25T07:00:00.000Z");
+  });
+
+  it("round-trips through serverWallClockParts", () => {
+    const ms = serverWallClockToUtcMs(2027, 3, 29, 8, 30, BRU);
+    expect(serverWallClockParts(ms, BRU)).toMatchObject({ y: 2027, m: 3, d: 29, hh: 8, mi: 30 });
   });
 });

@@ -6501,6 +6501,29 @@ public sealed class DatabaseBootstrapper : IHostedService
             ON workflow_pickups (user_id, ticket_id, pickup_date, view_id);
         CREATE INDEX IF NOT EXISTS ix_workflow_pickups_picked
             ON workflow_pickups (picked_utc);
+
+        -- ===================================================================
+        -- v0.1.44 — PendingTillChange: an agent changed "Pending till" in the
+        -- side panel or a bulk action ({from, to}). Internal only. Before
+        -- this the column changed without a trace in the timeline.
+        -- ===================================================================
+        ALTER TABLE ticket_events DROP CONSTRAINT IF EXISTS chk_ticket_event_type;
+        ALTER TABLE ticket_events ADD CONSTRAINT chk_ticket_event_type
+            CHECK (event_type IN ('Created','Comment','Mail','Note','StatusChange',
+                                  'AssignmentChange','PriorityChange','QueueChange',
+                                  'CategoryChange','SystemNote','MailReceived',
+                                  'MailSent','CompanyAssignment','RequesterChange',
+                                  'IntakeFormSent','IntakeFormSubmitted','IntakeFormExpired',
+                                  'ParentLinked','ParentUnlinked',
+                                  'SurveySent','SurveySubmitted','SurveyExpired',
+                                  'TimeLimitAlertDismissed','TimeLimitExtended',
+                                  'TimeLimitTrackingDisabled','StatusGateDecision',
+                                  'ChecklistAttached','ChecklistDetached','ChecklistCompleted',
+                                  'ChecklistReopened','ChecklistItemChanged','ChecklistCloseBlocked',
+                                  'ProjectConverted','ProjectReverted',
+                                  'ProjectLinked','ProjectUnlinked',
+                                  'PortalMessage','TicketFlagChange','Call',
+                                  'PendingTillChange')) NOT VALID;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

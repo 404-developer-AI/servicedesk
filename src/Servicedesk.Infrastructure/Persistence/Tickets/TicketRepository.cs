@@ -4,6 +4,7 @@ using Dapper;
 using Npgsql;
 using Servicedesk.Domain.Tickets;
 using Servicedesk.Infrastructure.Mail.Ingest;
+using Servicedesk.Infrastructure.Tickets;
 
 namespace Servicedesk.Infrastructure.Persistence.Tickets;
 
@@ -915,6 +916,16 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                 || !update.StatusId.HasValue
                 || await IsPendingStatusAsync(conn, tx, update.StatusId!.Value, ct));
         if (writePendingTill) sets.Add("pending_till_utc = @NewPendingTillUtc");
+        // v0.1.44 — leave a trace: who moved the reminder, from when to when.
+        // A same-value write (e.g. re-confirming the picker) stays silent.
+        if (writePendingTill && !PendingTillRules.SameInstant(current.PendingTillUtc, update.PendingTillUtc))
+        {
+            events.Add(("PendingTillChange", System.Text.Json.JsonSerializer.Serialize(new
+            {
+                from = PendingTillRules.ToUtc(current.PendingTillUtc),
+                to = PendingTillRules.ToUtc(update.PendingTillUtc),
+            })));
+        }
 
         if (sets.Count == 0 && !bodyChanged) { await tx.RollbackAsync(ct); return await GetByIdAsync(ticketId, ct); }
 
@@ -995,7 +1006,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                 """,
                 // v0.1.17 — flag changes are internal-only (defence in depth
                 // on top of the portal's event-type allow-list).
-                new { ticketId, eventType, actorUserId, metadata, bulkBatchId, isInternal = eventType == "TicketFlagChange" },
+                new { ticketId, eventType, actorUserId, metadata, bulkBatchId, isInternal = eventType is "TicketFlagChange" or "PendingTillChange" },
                 tx, cancellationToken: ct));
         }
 

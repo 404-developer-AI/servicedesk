@@ -167,7 +167,17 @@ public sealed class TicketBulkActionServiceTests
     // ---- helpers ----
 
     private static TicketBulkActionService Build(FakeMutations mutations, IAuditLogger audit, bool enabled = true, int maxSelection = 100)
-        => new(mutations, new StubSettings(enabled, maxSelection), audit, NullLogger<TicketBulkActionService>.Instance);
+        => new(mutations, new StubSettings(enabled, maxSelection), audit, NullLogger<TicketBulkActionService>.Instance,
+            new FixedClock(Now));
+
+    // Fixed server clock so pending-till values in these tests never age
+    // into the past.
+    private static readonly DateTimeOffset Now = new(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
+
+    private sealed class FixedClock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
 
     private static TicketBulkActionRequest Request(
         IReadOnlyList<Guid> ids, Guid? statusId = null, string? message = null, bool isInternal = true, DateTime? pendingTillUtc = null)
@@ -190,6 +200,41 @@ public sealed class TicketBulkActionServiceTests
         var ex = await Assert.ThrowsAsync<TicketBulkActionRejectedException>(() =>
             svc.ExecuteAsync(Actor, Request(new[] { withStatus }, pendingTillUtc: till), default));
         Assert.Equal("nothing_to_change", ex.Code);
+    }
+
+    // v0.1.44 — a past pending-till is one value for the whole batch: the
+    // request is rejected up front and no ticket is prechecked or touched.
+    [Theory]
+    [InlineData(0)]      // exactly now
+    [InlineData(-60)]    // a minute ago
+    public async Task Rejects_a_pending_till_that_is_not_in_the_future(int offsetSeconds)
+    {
+        var id = Guid.NewGuid();
+        var mutations = new FakeMutations();
+        mutations.Verdicts[id] = new FieldUpdatePrecheck(TicketMutationCheck.Ok, Detail(id, 1).Ticket, Array.Empty<MatchedStatusGate>());
+        var svc = Build(mutations, new RecordingAudit());
+
+        var ex = await Assert.ThrowsAsync<TicketBulkActionRejectedException>(() => svc.ExecuteAsync(Actor,
+            Request(new[] { id }, statusId: StatusId, pendingTillUtc: Now.UtcDateTime.AddSeconds(offsetSeconds)), default));
+
+        Assert.Equal(PendingTillRules.PastCode, ex.Code);
+        Assert.Empty(mutations.Prechecked);
+        Assert.Empty(mutations.Applied);
+    }
+
+    [Fact]
+    public async Task A_ticket_whose_precheck_refuses_the_pending_till_is_skipped()
+    {
+        var id = Guid.NewGuid();
+        var mutations = new FakeMutations();
+        mutations.Verdicts[id] = FieldUpdatePrecheck.Fail(TicketMutationCheck.PendingTillInPast);
+        var svc = Build(mutations, new RecordingAudit());
+
+        var result = await svc.ExecuteAsync(Actor,
+            Request(new[] { id }, statusId: StatusId, pendingTillUtc: Now.UtcDateTime.AddDays(1)), default);
+
+        Assert.Equal(TicketBulkSkipReason.PendingTillInPast, Assert.Single(result.Skipped).Reason);
+        Assert.Empty(mutations.Applied);
     }
 
     private static TicketDetail Detail(Guid id, long number)

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Servicedesk.Infrastructure.Sla;
+using Servicedesk.Infrastructure.Tickets;
 using Servicedesk.Infrastructure.Triggers.Actions;
 
 namespace Servicedesk.Infrastructure.Triggers.Actions.Previewers;
@@ -28,14 +29,8 @@ internal sealed class SetPendingTillPreviewer : ITriggerActionPreviewer
         var (target, error) = await SetPendingTillResolver.ResolveAsync(actionJson, ctx, _slaRepository, ct);
         if (error is not null) return TriggerActionPreviewResult.Failed(Kind, error);
 
-        if (target!.Value <= DateTime.UtcNow)
-        {
-            return TriggerActionPreviewResult.WouldNoOp(Kind, new
-            {
-                reason = "Target time is in the past; not setting pending-till.",
-                targetUtc = target,
-            });
-        }
+        if (PendingTillRules.IsInPast(target, DateTime.UtcNow))
+            return TriggerActionPreviewResult.Failed(Kind, $"Target time {target!.Value:yyyy-MM-ddTHH:mm:ssZ} is in the past; pending-till not set.");
 
         var (nextTriggerId, nextError) = SetPendingTillResolver.ResolveNextTriggerId(actionJson);
         if (nextError is not null) return TriggerActionPreviewResult.Failed(Kind, nextError);

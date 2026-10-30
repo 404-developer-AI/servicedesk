@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Dapper;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Servicedesk.Infrastructure.Tickets;
 
 namespace Servicedesk.Infrastructure.Integrations.Zammad;
 
@@ -22,6 +23,15 @@ public sealed class ZammadImportWriter : IZammadImportWriter
     {
         _dataSource = dataSource;
         _logger = logger;
+    }
+
+    /// v0.1.44 — UTC-normalised pending_time, or null when it has already
+    /// elapsed: a past reminder is never picked up by the scheduler
+    /// (<see cref="PendingTillRules"/>), so the ticket would stay Pending.
+    internal static DateTime? NormalizePendingTill(DateTime? value, DateTime nowUtc)
+    {
+        var utc = PendingTillRules.ToUtc(value);
+        return PendingTillRules.IsInPast(utc, nowUtc) ? null : utc;
     }
 
     public async Task<ZammadImportWriteResult> WriteAsync(
@@ -80,9 +90,7 @@ public sealed class ZammadImportWriter : IZammadImportWriter
         // scheduler picks the ticket back up at the same wake-up moment.
         // Normalise to UTC before binding so Npgsql doesn't reject a
         // Kind=Unspecified DateTime on the TIMESTAMPTZ column.
-        DateTime? pendingTillUtc = input.PendingTillUtc is null
-            ? null
-            : DateTime.SpecifyKind(input.PendingTillUtc.Value, DateTimeKind.Utc);
+        var pendingTillUtc = NormalizePendingTill(input.PendingTillUtc, DateTime.UtcNow);
 
         const string insertTicket = """
             INSERT INTO tickets (subject, requester_contact_id, queue_id,

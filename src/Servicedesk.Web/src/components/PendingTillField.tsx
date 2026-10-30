@@ -1,6 +1,22 @@
 import * as React from "react";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
-import { useServerOffsetMinutes } from "@/hooks/useServerTime";
+import { toast } from "sonner";
+import {
+  getServerTimeSnapshot,
+  useServerNowMs,
+  useServerOffsetMinutes,
+  useServerTimeZone,
+} from "@/hooks/useServerTime";
+
+const PAST_MESSAGE = "Pending till must be in the future.";
+
+/// Server-clock check; the server enforces the same rule (400 otherwise).
+function isInPast(iso: string | null): boolean {
+  if (!iso) return false;
+  const snap = getServerTimeSnapshot();
+  const nowMs = snap ? Date.parse(snap.utc) : Date.now();
+  return Date.parse(iso) <= nowMs;
+}
 
 /// "Pending till" date+time picker shared by the ticket side panel (edit flow)
 /// and the new-ticket drawer (create flow). Wraps the glass DateTimePicker so
@@ -15,6 +31,11 @@ import { useServerOffsetMinutes } from "@/hooks/useServerTime";
 /// fires a single PATCH instead of one per interaction. With commitOnChange
 /// (the new-ticket drawer, where onCommit only updates local form state) every
 /// change commits immediately.
+///
+/// v0.1.44 — never a moment in the past: earlier days are disabled and a past
+/// time-of-day is refused with a toast (the scheduler never picks a past
+/// reminder up, so the ticket would stay Pending for good). Conversion uses
+/// the server zone, so a date across a DST change keeps its wall time.
 export function PendingTillField({
   value,
   onCommit,
@@ -35,6 +56,9 @@ export function PendingTillField({
 }) {
   const serverOffsetMinutes = useServerOffsetMinutes();
   const offsetMinutes = serverOffsetMinutes ?? 0;
+  const timeZone = useServerTimeZone();
+  const nowMs = useServerNowMs();
+  const minUtc = nowMs !== null ? new Date(nowMs).toISOString() : null;
 
   // Buffered draft for the edit flow so in-popover date/time tweaks commit as a
   // single PATCH when the popover closes. Reseeded whenever the saved value
@@ -47,7 +71,15 @@ export function PendingTillField({
       <DateTimePicker
         value={value}
         offsetMinutes={offsetMinutes}
-        onChange={onCommit}
+        timeZone={timeZone}
+        minUtc={minUtc}
+        onChange={(v) => {
+          if (isInPast(v)) {
+            toast.error(PAST_MESSAGE);
+            return;
+          }
+          onCommit(v);
+        }}
         placeholder="Select date & time"
         className={className}
       />
@@ -58,6 +90,8 @@ export function PendingTillField({
     <DateTimePicker
       value={draft}
       offsetMinutes={offsetMinutes}
+      timeZone={timeZone}
+      minUtc={minUtc}
       onChange={(v) => {
         setDraft(v);
         // Clearing (the trigger's ✕) happens while the popover is closed, so it
@@ -66,7 +100,13 @@ export function PendingTillField({
         if (v === null) onCommit(null);
       }}
       onClose={() => {
-        if (draft !== value) onCommit(draft);
+        if (draft === value) return;
+        if (isInPast(draft)) {
+          toast.error(PAST_MESSAGE);
+          setDraft(value);
+          return;
+        }
+        onCommit(draft);
       }}
       placeholder="Select date & time"
       className={className}

@@ -1,6 +1,6 @@
 import * as React from "react";
 import DOMPurify from "dompurify";
-import { useServerOffsetMinutes, getServerTimeSnapshot, type ServerTime, toServerLocal } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, useServerTimeZone, getServerTimeSnapshot, type ServerTime, toServerLocal } from "@/hooks/useServerTime";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -37,7 +37,9 @@ import {
   ListChecks,
   FolderKanban,
   Link2,
+  CalendarClock,
 } from "lucide-react";
+import { formatDateTime } from "@/lib/dateFormat";
 import { CARD_ACCENT, parseMetadata } from "./timelineMeta";
 import { cn } from "@/lib/utils";
 import { ticketApi, ApiError, type TicketEvent, type OutboundMailKind } from "@/lib/ticket-api";
@@ -543,6 +545,8 @@ const EVENT_CONFIG: Record<string, EventConfig> = {
   ParentUnlinked: { icon: Link2, dotColor: "bg-glass-strong", label: "Parent link removed" },
   // v0.1.17 — Call-back / Research flag switched on or off.
   TicketFlagChange: { icon: Flag, dotColor: "bg-emerald-500", label: "Ticket flag changed" },
+  // v0.1.44 — an agent changed "Pending till" (side panel or bulk).
+  PendingTillChange: { icon: CalendarClock, dotColor: "bg-amber-500", label: "Pending till changed" },
 };
 
 /// Event types that are system/audit noise rather than real
@@ -575,6 +579,7 @@ const SYSTEM_EVENT_TYPES = new Set<string>([
   "ParentLinked",
   "ParentUnlinked",
   "TicketFlagChange",
+  "PendingTillChange",
 ]);
 
 export function isSystemEvent(event: TicketEvent): boolean {
@@ -656,6 +661,18 @@ function PostAttachmentStrip({ attachments }: { attachments: MailAttachment[] })
         <AttachmentChip key={a.id} attachment={a} />
       ))}
     </div>
+  );
+}
+
+/// v0.1.44 — "Pending till changed from X to Y", in the server's zone.
+function PendingTillChangeText({ from, to }: { from: unknown; to: unknown }) {
+  const zone = useServerTimeZone();
+  const fmt = (v: unknown) => (typeof v === "string" && v ? formatDateTime(v, zone) : "not set");
+  return (
+    <span className="text-sm text-muted-foreground">
+      Pending till changed from <span className="text-foreground/80">{fmt(from)}</span>
+      {" "}to <span className="text-foreground/80">{fmt(to)}</span>
+    </span>
   );
 }
 
@@ -865,6 +882,9 @@ export function EventBody({ event, readOnly = false }: { event: TicketEvent; rea
         </span>
       );
     }
+
+    case "PendingTillChange":
+      return <PendingTillChangeText from={meta.from} to={meta.to} />;
 
     case "ParentLinked": {
       const number = meta.parentNumber != null ? String(meta.parentNumber) : null;
