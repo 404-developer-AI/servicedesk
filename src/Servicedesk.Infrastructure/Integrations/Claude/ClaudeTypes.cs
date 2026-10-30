@@ -101,7 +101,8 @@ public sealed record ClaudeToolUse(string Id, string Name, JsonObject Input);
 /// back verbatim as the assistant turn on the next round-trip so the model
 /// sees its own tool calls. <see cref="Text"/> is the concatenated text blocks;
 /// <see cref="ToolUses"/> is non-empty when <see cref="StopReason"/> is
-/// "tool_use". Token counts drive cost and budgeting.
+/// "tool_use". Token counts drive cost and budgeting; <see cref="InputTokens"/>
+/// excludes prompt-cache reads and writes, which are billed at their own rate.
 public sealed record ClaudeChatResult(
     JsonNode AssistantContent,
     string Text,
@@ -110,10 +111,13 @@ public sealed record ClaudeChatResult(
     int InputTokens,
     int OutputTokens,
     string Model,
-    string? RequestId);
+    string? RequestId,
+    int CacheReadTokens = 0,
+    int CacheWriteTokens = 0);
 
 /// One row to append to <c>claude_usage_log</c>. <see cref="Feature"/> is one
-/// of the <see cref="ClaudeFeatures"/> constants.
+/// of the <see cref="ClaudeFeatures"/> constants. The cache and <c>Kb*</c>
+/// fields are only set by the KB chat (see <see cref="KbChatCatalogMode"/>).
 public sealed record ClaudeUsageEntry(
     Guid? UserId,
     Guid? TicketId,
@@ -125,4 +129,10 @@ public sealed record ClaudeUsageEntry(
     string Outcome,
     string? ErrorCode,
     string? RequestId,
-    string Feature);
+    string Feature,
+    int CacheReadTokens = 0,
+    int CacheWriteTokens = 0,
+    int? KbSearches = null,
+    int? KbEmptySearches = null,
+    string? KbCatalogMode = null,
+    int? KbCatalogArticles = null);

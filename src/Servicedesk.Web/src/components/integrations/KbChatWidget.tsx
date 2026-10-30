@@ -311,10 +311,10 @@ function ChatPanel({
           <div className="flex h-full flex-col items-center justify-center gap-2 py-8 text-center">
             <BookOpen className="h-8 w-8 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">
-              Ask about anything in the knowledge base.
+              Ask in your own words — no need to know the product or article name.
             </p>
             <p className="max-w-[16rem] text-xs text-muted-foreground/60">
-              e.g. “How do I install the Sophos VPN?” — I’ll point you to the right article.
+              e.g. “A customer’s firewall blocks a website, what now?” — I’ll point you to the right article.
             </p>
           </div>
         ) : (

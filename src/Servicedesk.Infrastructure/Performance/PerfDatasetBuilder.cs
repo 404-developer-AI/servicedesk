@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Servicedesk.Infrastructure.Integrations.Claude;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Infrastructure.Performance;
@@ -59,6 +60,8 @@ public sealed class PerfDatasetBuilder
         var slow = await Safe(gaps, "slow requests", () => _queries.SlowRequestsAsync(from, to, 100, ct), Array.Empty<SlowRequestRow>());
         var markers = await Safe(gaps, "markers", () => _queries.MarkersAsync(from, to, ct), Array.Empty<MarkerRow>());
         var versions = await Safe(gaps, "versions", () => _queries.VersionsAsync(from.AddDays(-14), to, ct), Array.Empty<VersionRange>());
+        var aiKb = await Safe<KbChatUsageSummary?>(gaps, "AI knowledge-base assistant",
+            async () => await KbChatUsageReport.ReadAsync(_dataSource, _settings, from, to, ct), null);
 
         IReadOnlyList<PgInspector.TableRow> tables = Array.Empty<PgInspector.TableRow>();
         IReadOnlyList<PgInspector.BloatRow> bloat = Array.Empty<PgInspector.BloatRow>();
@@ -145,6 +148,7 @@ public sealed class PerfDatasetBuilder
             HostSupported = HostMetricsReader.IsSupported,
             MonitorStorageBytes = storage,
             Bundle = ReadBundle(),
+            AiKb = aiKb,
             MaxPoolSize = SafePoolSize(),
             Gaps = gaps,
         };

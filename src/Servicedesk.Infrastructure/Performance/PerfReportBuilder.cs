@@ -58,6 +58,8 @@ public sealed class PerfReportBuilder
                       "smaller payload, frontend change) and say how to verify the improvement with this dashboard.");
         sb.AppendLine("- Where the bottleneck is the hosting (CPU steal, RAM, disk), say so explicitly instead of changing code.");
         sb.AppendLine("- Schema changes go in `DatabaseBootstrapper` (idempotent raw SQL), never EF migrations.");
+        sb.AppendLine("- The \"AI knowledge-base assistant\" section is about cost and answer quality, not latency: use its signals and tuning table " +
+                      "to adjust the listed settings (article-index cap, snippets, prices) as the knowledge base grows.");
         sb.AppendLine("- The report contains no personal data: no ids, names, e-mail addresses, ticket content or SQL parameter values.");
         sb.AppendLine();
 
@@ -339,6 +341,8 @@ public sealed class PerfReportBuilder
                 d.WorkerOverlaps.Select(o => new[] { $"`{Safe(o.Worker)}`", PerfFormat.Ms(o.P95During), PerfFormat.Ms(o.P95Outside), PerfFormat.Count(o.MinutesDuring) }));
         }
 
+        if (d.AiKb is { } ai) AiKbSection(sb, d, ai);
+
         if (d.VersionComparison is { } vc || d.PeriodComparison is not null)
         {
             sb.AppendLine("## Comparison");
@@ -462,6 +466,7 @@ public sealed class PerfReportBuilder
             periodComparison = d.PeriodComparison,
             markers = d.Markers.Select(m => new { m.TsUtc, m.Kind, label = PerfRedactor.Text(m.Label, maskNumbers: true) }),
             bundle = d.Bundle,
+            aiKb = d.AiKb,
             gaps = d.Gaps,
         };
         return JsonSerializer.Serialize(payload, JsonOptions);
@@ -489,6 +494,79 @@ public sealed class PerfReportBuilder
             w.Write(content);
         }
     }
+
+    /// KB chat: usage in the period, the article index against its cap, and
+    /// what to adjust. Aggregates only — no users, questions or answers.
+    private static void AiKbSection(StringBuilder sb, PerfDataset d, Integrations.Claude.KbChatUsageSummary ai)
+    {
+        const string fullMode = Integrations.Claude.KbChatCatalogMode.Full;
+        var turns = Math.Max(ai.Turns, 1);
+        var route = d.Routes.FirstOrDefault(r => r.Method == "POST" && r.Route == "/api/ai/kb-chat");
+
+        sb.AppendLine("## AI knowledge-base assistant");
+        sb.AppendLine("Cost and answer quality of the floating knowledge-base chat (Settings → Integrations → Claude AI), not latency. " +
+                      "Aggregated over the period; no users, questions or answers.");
+        sb.AppendLine();
+        var rows = new List<string[]>
+        {
+            new[] { "Status", $"{(ai.Enabled ? "on" : "off")} · model `{Safe(ai.Model)}`" },
+            new[] { "Questions in period", $"{PerfFormat.Count(ai.Turns)} answered, {PerfFormat.Count(ai.ErrorTurns)} errors, {PerfFormat.Count(ai.BlockedTurns)} blocked (budget/off/no access)" },
+            new[] { "Latency per question", route is null ? "–" : $"p50 {PerfFormat.Ms(route.P50)}, p95 {PerfFormat.Ms(route.P95)} (`POST /api/ai/kb-chat`, mostly waiting on the Claude API)" },
+            new[] { "Cost in period", $"{Eur(ai.CostMicroEur)} · {Eur((long)ai.AvgCostMicroEurPerTurn)} per question" },
+            new[] { "Tokens per question", $"input {Num((double)ai.InputTokens / turns)} · cache read {Num((double)ai.CacheReadTokens / turns)} · cache write {Num((double)ai.CacheWriteTokens / turns)} · output {Num((double)ai.OutputTokens / turns)}" },
+            new[] { "Prompt caching", $"{(ai.PromptCaching ? "on" : "off")} · {ai.CacheReadPct:0}% of input served from cache" },
+            new[] { "Searches per question", $"{ai.AvgSearchesPerTurn:0.0} (cap {ai.MaxSearches}; {ai.SearchCapPct:0}% of questions used the full budget)" },
+            new[] { "Searches without results", $"{ai.EmptySearchPct:0}% of {PerfFormat.Count(ai.Searches)}" },
+            new[] { "Article index now", ai.CatalogMode == fullMode
+                ? $"full title list · {ai.SearchableArticles} searchable articles of cap {ai.CatalogMaxArticles} · {ai.Sections} sections · ≈{Num(ai.CatalogEstimatedTokens)} tokens"
+                : $"section list only · {ai.SearchableArticles} searchable articles > cap {ai.CatalogMaxArticles} · {ai.Sections} sections · ≈{Num(ai.CatalogEstimatedTokens)} tokens" },
+            new[] { "Index cost per API call", $"{Eur(ai.CatalogCostUncachedMicroEur)} uncached · {Eur(ai.CatalogCostCachedMicroEur)} as cache read" },
+            new[] { "Prices used", $"input {ai.InputPriceCentsPerMTok} / output {ai.OutputPriceCentsPerMTok} euro cents per MTok · cache write {ai.CacheWritePricePct}% · cache read {ai.CacheReadPricePct}%" },
+        };
+        Table(sb, new[] { "Item", "Value" }, rows);
+
+        sb.AppendLine("### Signals");
+        var signals = new List<string>();
+        if (!ai.Enabled) signals.Add("The assistant is switched off.");
+        if (ai.Turns == 0) signals.Add("No questions in this period.");
+        if (ai.CatalogMode == fullMode)
+        {
+            if (ai.CatalogMaxArticles > 0)
+                signals.Add($"Index headroom: {Math.Max(ai.CatalogMaxArticles - ai.SearchableArticles, 0)} more searchable articles before the assistant switches to the section list.");
+        }
+        else
+        {
+            signals.Add($"The knowledge base ({ai.SearchableArticles} searchable articles) is above the index cap ({ai.CatalogMaxArticles}): questions only get the section list " +
+                        $"and need an extra step to list a section. The full title index would be ≈{Num(ai.FullIndexEstimatedTokens)} tokens " +
+                        $"({Eur(Integrations.Claude.KbChatPricing.CostMicroEur(ai.FullIndexEstimatedTokens, 0, 0, 0, ai.InputPriceCentsPerMTok, 0, 0, 0))} per API call uncached).");
+        }
+        if (ai.PromptCaching && ai.Turns > 0 && ai.CacheReadTokens == 0)
+            signals.Add("No prompt-cache hits in the period: the cached prefix (instructions + tools + index) is probably below the model's minimum cacheable length, so caching has no effect yet — and costs nothing extra.");
+        if (ai.TrackedTurns < ai.Turns)
+            signals.Add($"{PerfFormat.Count(ai.Turns - ai.TrackedTurns)} questions predate the tuning data (v0.1.47); the search and index figures cover the rest.");
+        if (ai.SectionModeTurns > 0 && ai.CatalogMode == fullMode)
+            signals.Add($"{PerfFormat.Count(ai.SectionModeTurns)} questions in the period ran in section-list mode (the cap or the knowledge base changed since).");
+        if (signals.Count == 0) signals.Add("None.");
+        foreach (var s in signals) sb.AppendLine("- " + s);
+        sb.AppendLine();
+
+        sb.AppendLine("### How to tune");
+        Table(sb, new[] { "When", "Adjust" }, new[]
+        {
+            new[] { "The knowledge base outgrew the index cap (section list mode) and answers miss articles",
+                    "Raise `Claude.KbChatCatalogMaxArticles` to at least the searchable article count if the full index cost above is acceptable; otherwise keep the section list." },
+            new[] { "Cost per question is too high",
+                    "Lower `Claude.KbChatSnippetChars` or `Claude.KbChatResultLimit`, keep `Claude.KbChatPromptCaching` on, or lower the index cap (section list)." },
+            new[] { "Many searches without results or questions using the full search budget",
+                    "Article titles probably don't use the words agents use — improve titles; or raise `Claude.KbChatMaxSearches`." },
+            new[] { "Cost here differs from the Anthropic invoice",
+                    "Add or correct the chat model's line in `Claude.ModelPrices` (the fallback is `Claude.KbChatInputPriceCentsPerMTok` / `Claude.KbChatOutputPriceCentsPerMTok`), and check the cache percentages." },
+            new[] { "Code",
+                    "`KbChatService` (tool loop, retrieval), `KbChatCatalog` (index, pricing), `ClaudeApiClient.BuildChatRequestBody` (cache breakpoints)." },
+        });
+    }
+
+    private static string Eur(long microEur) => "€" + (microEur / 1_000_000.0).ToString("0.0000", C);
 
     private static object RouteDto(HttpRouteStats r) => new
     {

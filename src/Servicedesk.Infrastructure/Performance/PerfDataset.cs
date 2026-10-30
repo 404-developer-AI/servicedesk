@@ -43,6 +43,10 @@ public sealed class PerfDataset
     public bool HostSupported { get; init; }
     public long MonitorStorageBytes { get; init; }
     public BundleInfo? Bundle { get; init; }
+
+    /// KB-chat assistant usage + article-index size (cost/answer-quality
+    /// tuning, not latency). Null when the section could not be read.
+    public Integrations.Claude.KbChatUsageSummary? AiKb { get; init; }
     public string AppVersion { get; init; } = PerfAppInfo.Version;
     public int MaxPoolSize { get; init; }
 
