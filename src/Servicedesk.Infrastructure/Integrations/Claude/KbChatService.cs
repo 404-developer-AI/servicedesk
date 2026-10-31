@@ -232,7 +232,9 @@ public sealed class KbChatService : IKbChatService
                     ? "I could not find anything about that in the knowledge base."
                     : turn.Text;
 
-            var orderedCitations = citations.Values.ToList();
+            // Articles the reply names first (the suggested answer), then the
+            // other hits as related reading.
+            var orderedCitations = KbChatCitationRanker.Rank(replyText, citations.Values.ToList());
             return new KbChatResult(
                 KbChatOutcome.Ok,
                 replyText,

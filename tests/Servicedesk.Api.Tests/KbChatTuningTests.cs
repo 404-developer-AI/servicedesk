@@ -81,6 +81,38 @@ public sealed class KbChatTuningTests
         Assert.Null(catalog.FindSection(null));
     }
 
+    // ---- Citation order ------------------------------------------------
+
+    private static KbChatCitation Cite(string title) => new(Guid.NewGuid(), title, "slug", SectionA);
+
+    [Fact]
+    public void Articles_named_in_the_reply_come_first_in_mention_order()
+    {
+        var kyocera = Cite("Kyocera-printer installeren en instellen");
+        var tilmans = Cite("Tilmans: afdrukken naar een documentbox (met wachtwoord)");
+        var gpo = Cite("Printers verwijderen via GPO");
+        const string reply =
+            "Dat is waarschijnlijk het geval beschreven in **“Tilmans:  afdrukken naar een documentbox (met wachtwoord)”**. " +
+            "Zie ook \"printers verwijderen via GPO\".";
+
+        var ranked = KbChatCitationRanker.Rank(reply, new[] { kyocera, tilmans, gpo });
+
+        Assert.Equal(new[] { tilmans.ArticleId, gpo.ArticleId, kyocera.ArticleId }, ranked.Select(c => c.ArticleId));
+        Assert.Equal(new[] { true, true, false }, ranked.Select(c => c.Referenced));
+    }
+
+    [Fact]
+    public void Without_a_reference_the_retrieval_order_is_kept()
+    {
+        var a = Cite("Sophos Central: nieuwe klant");
+        var b = Cite("WatchGuard licentie verlengen");
+
+        var ranked = KbChatCitationRanker.Rank("I found no matching knowledge-base article.", new[] { a, b });
+
+        Assert.Equal(new[] { a.ArticleId, b.ArticleId }, ranked.Select(c => c.ArticleId));
+        Assert.All(ranked, c => Assert.False(c.Referenced));
+    }
+
     // ---- Keywords -----------------------------------------------------
 
     [Fact]

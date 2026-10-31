@@ -99,6 +99,7 @@ public static class KbChatEndpoints
                     title = c.Title,
                     slug = c.Slug,
                     sectionId = c.SectionId,
+                    referenced = c.Referenced,
                 }),
                 monthSpendMicroEur = result.MonthSpendMicroEur,
                 monthBudgetMicroEur = result.MonthBudgetMicroEur,

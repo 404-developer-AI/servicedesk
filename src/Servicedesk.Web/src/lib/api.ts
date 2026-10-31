@@ -3784,6 +3784,8 @@ export type KbChatCitation = {
   title: string;
   slug: string;
   sectionId: string;
+  /** The reply names this article (suggested answer); listed first by the server. */
+  referenced: boolean;
 };
 
 export type KbChatReply = {
