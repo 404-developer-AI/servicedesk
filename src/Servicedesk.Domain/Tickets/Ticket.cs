@@ -69,7 +69,11 @@ public sealed record Ticket(
     // v0.1.17 — agent-set flags: Call-back (someone has to call the
     // customer back) and Research (under investigation). Internal only.
     bool IsCallback = false,
-    bool IsResearch = false);
+    bool IsResearch = false,
+    // v0.1.49 — whether the description is internal (agents only) or
+    // visible to the customer in the portal. Internal by default; the
+    // portal repository blanks an internal description server-side.
+    bool DescriptionInternal = true);
 
 public sealed record TicketBody(
     Guid TicketId,

@@ -363,7 +363,9 @@ public sealed record TicketFieldUpdate(
     Guid? BulkBatchId = null,
     // v0.1.17 — Call-back / Research flags; null = not provided.
     bool? IsCallback = null,
-    bool? IsResearch = null);
+    bool? IsResearch = null,
+    // v0.1.49 — description visibility; null = not provided.
+    bool? DescriptionInternal = null);
 
 public sealed record NewTicketEvent(
     string EventType,

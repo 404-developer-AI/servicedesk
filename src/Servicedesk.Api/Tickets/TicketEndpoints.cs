@@ -707,7 +707,8 @@ public static class TicketEndpoints
                 BodyHtml: req.BodyHtml,
                 PendingTillUtc: req.PendingTillUtc,
                 IsCallback: req.IsCallback,
-                IsResearch: req.IsResearch);
+                IsResearch: req.IsResearch,
+                DescriptionInternal: req.DescriptionInternal);
             var pre = await mutations.PrecheckFieldUpdateAsync(actor, id, requested, ct);
             switch (pre.Check)
             {
@@ -2424,7 +2425,10 @@ public static class TicketEndpoints
         // v0.1.17 — Call-back / Research flag toggles (Status panel and the
         // call-back prompt on open). Null = not provided.
         bool? IsCallback = null,
-        bool? IsResearch = null);
+        bool? IsResearch = null,
+        // v0.1.49 — description visibility toggle (Internal / Visible to
+        // customer). Null = not provided.
+        bool? DescriptionInternal = null);
 
     /// One agent-supplied confirmation payload for a status-change gate.
     /// The fields are kind-specific:

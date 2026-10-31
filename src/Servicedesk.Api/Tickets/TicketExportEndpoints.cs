@@ -72,10 +72,16 @@ public static class TicketExportEndpoints
 
             var exclude = excludeInternal ?? true;
             var pdfEvents = new List<TicketPdfEvent>();
+            var excludedEventIds = new HashSet<long>();
             foreach (var e in detail.Events)
             {
-                if (exclude && IsInternalEventType(e.EventType))
+                // Without internal info: drop system change events and every
+                // event flagged internal (internal notes, internal calls…).
+                if (exclude && ExcludeWithoutInternalInfo(e.EventType, e.IsInternal))
+                {
+                    excludedEventIds.Add(e.Id);
                     continue;
+                }
 
                 var inlineImages = await LoadInlineImagesAsync(
                     e, attachmentRepo, blobStore, ct);
@@ -105,8 +111,9 @@ public static class TicketExportEndpoints
                 RequesterName: (string)(names.requester_name ?? "Unknown"),
                 RequesterEmail: (string)(names.requester_email ?? ""),
                 CompanyName: (string?)names.company_name,
-                BodyText: detail.Body.BodyText,
-                BodyHtml: detail.Body.BodyHtml,
+                // An internal description stays out of a customer PDF.
+                BodyText: exclude && detail.Ticket.DescriptionInternal ? string.Empty : detail.Body.BodyText,
+                BodyHtml: exclude && detail.Ticket.DescriptionInternal ? null : detail.Body.BodyHtml,
                 FirstResponseDeadlineUtc: slaState?.FirstResponseDeadlineUtc,
                 ResolutionDeadlineUtc: slaState?.ResolutionDeadlineUtc,
                 FirstResponseMetUtc: slaState?.FirstResponseMetUtc,
@@ -114,11 +121,13 @@ public static class TicketExportEndpoints
                 SlaPaused: slaState?.IsPaused ?? false,
                 Events: pdfEvents,
                 PinnedEvents: detail.PinnedEvents
+                    .Where(p => !excludedEventIds.Contains(p.EventId))
                     .Select(p => new TicketPdfPin(p.EventId, p.PinnedByName, p.Remark, p.CreatedUtc))
                     .ToList(),
                 ExportedAtUtc: DateTime.UtcNow,
                 ExportedBy: exporterEmail,
-                ServerTimezoneId: TimeZoneInfo.Local.Id);
+                ServerTimezoneId: TimeZoneInfo.Local.Id,
+                DescriptionHidden: exclude && detail.Ticket.DescriptionInternal);
 
             var pdfBytes = TicketPdfGenerator.Generate(pdfData);
 
@@ -127,6 +136,11 @@ public static class TicketExportEndpoints
 
         return app;
     }
+
+    /// An export "without internal info" leaves out system change events and
+    /// every event flagged internal (internal notes, internal calls, …).
+    public static bool ExcludeWithoutInternalInfo(string eventType, bool isInternal) =>
+        isInternal || IsInternalEventType(eventType);
 
     private static bool IsInternalEventType(string eventType) =>
         eventType is "StatusChange" or "AssignmentChange" or "PriorityChange"

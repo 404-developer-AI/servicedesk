@@ -6044,6 +6044,36 @@ public sealed class DatabaseBootstrapper : IHostedService
             WHERE closed_utc IS NOT NULL;
 
         -- ===================================================================
+        -- v0.1.49 — description visibility per ticket. The agent UI labelled
+        -- the description "Internal" while the portal showed it to the
+        -- customer. Now an explicit flag, internal by default and enforced in
+        -- the portal query. Added once (guarded, so the backfill never runs
+        -- again): the default makes every existing description internal —
+        -- mail tickets keep their content in the MailReceived event and
+        -- portal tickets in the initial PortalMessage, so customers lose
+        -- nothing — except Zammad imports whose first article was an e-mail
+        -- (the customer's first message; the Created event carries its mail
+        -- anchor), which stay visible as before. Other Zammad first articles
+        -- (phone/note, possibly internal in Zammad) can't be told apart
+        -- afterwards, so they become internal; agents can flip them.
+        -- ===================================================================
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = current_schema()
+                              AND table_name = 'tickets'
+                              AND column_name = 'description_internal') THEN
+                ALTER TABLE tickets ADD COLUMN description_internal BOOLEAN NOT NULL DEFAULT TRUE;
+                UPDATE tickets t SET description_internal = FALSE
+                 WHERE t.source = 'Zammad'
+                   AND EXISTS (SELECT 1 FROM ticket_events e
+                                WHERE e.ticket_id = t.id
+                                  AND e.event_type = 'Created'
+                                  AND e.metadata->>'mail_message_id' IS NOT NULL);
+            END IF;
+        END $$;
+
+        -- ===================================================================
         -- v0.1.17 — Call-back + Research ticket flags. Two plain agent-set
         -- booleans toggled in the ticket's Status panel (call-back also in
         -- the new-ticket drawer). Internal only: never selected by the

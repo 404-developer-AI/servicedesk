@@ -98,13 +98,16 @@ public sealed class ZammadImportWriter : IZammadImportWriter
                                  company_id, awaiting_company_assignment, company_resolved_via,
                                  zammad_ticket_id, zammad_ticket_number,
                                  pending_till_utc,
-                                 ticket_type_id)
+                                 ticket_type_id, description_internal)
             VALUES (@Subject, @ContactId, @QueueId,
                     @StatusId, @PriorityId, 'Zammad',
                     @CompanyId, @AwaitingCompany, @CompanyResolvedVia,
                     @ZammadTicketId, @ZammadTicketNumber,
                     @PendingTillUtc,
-                    (SELECT id FROM ticket_types WHERE code = 'support' LIMIT 1))
+                    (SELECT id FROM ticket_types WHERE code = 'support' LIMIT 1),
+                    -- The description is the first Zammad article: visible
+                    -- to the customer unless Zammad marked it internal.
+                    @DescriptionInternal)
             ON CONFLICT (zammad_ticket_id) WHERE zammad_ticket_id IS NOT NULL DO NOTHING
             RETURNING id
             """;
@@ -122,6 +125,7 @@ public sealed class ZammadImportWriter : IZammadImportWriter
             ZammadTicketId = input.ZammadTicketId,
             ZammadTicketNumber = input.ZammadTicketNumber,
             PendingTillUtc = pendingTillUtc,
+            DescriptionInternal = firstArticle?.Internal ?? false,
         }, tx, cancellationToken: ct));
 
         // Edge case: another worker raced us in between our pre-flight

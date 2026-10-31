@@ -279,7 +279,8 @@ public sealed class ClaudeAssistService : IClaudeAssistService
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
 
         const string headSql = """
-            SELECT t.number AS Number, t.subject AS Subject, COALESCE(b.body_text, '') AS Body
+            SELECT t.number AS Number, t.subject AS Subject, COALESCE(b.body_text, '') AS Body,
+                   t.description_internal AS DescriptionInternal
               FROM tickets t
               LEFT JOIN ticket_bodies b ON b.ticket_id = t.id
              WHERE t.id = @id
@@ -309,7 +310,10 @@ public sealed class ClaudeAssistService : IClaudeAssistService
         {
             sb.Append("Ticket #").Append(head.Number).Append('\n');
             sb.Append("Subject: ").Append(head.Subject).Append("\n\n");
-            sb.Append("Description:\n").Append(Clamp(head.Body, 8000)).Append("\n\n");
+            // Same labelling as internal notes, so a customer-facing summary
+            // leaves an internal description out.
+            sb.Append(head.DescriptionInternal ? "Description (internal — not visible to the customer):\n" : "Description:\n")
+              .Append(Clamp(head.Body, 8000)).Append("\n\n");
         }
 
         if (events.Count > 0)
@@ -534,6 +538,7 @@ public sealed class ClaudeAssistService : IClaudeAssistService
         public long Number { get; set; }
         public string Subject { get; set; } = string.Empty;
         public string Body { get; set; } = string.Empty;
+        public bool DescriptionInternal { get; set; }
     }
 
     private sealed class StatusHeadRow

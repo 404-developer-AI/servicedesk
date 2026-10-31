@@ -874,6 +874,14 @@ export function EventBody({ event, readOnly = false }: { event: TicketEvent; rea
     }
 
     case "TicketFlagChange": {
+      if (meta.flag === "descriptionInternal") {
+        return (
+          <span className="text-sm text-muted-foreground">
+            Description set to{" "}
+            <span className="text-foreground/80">{meta.to === true ? "internal" : "visible to customer"}</span>
+          </span>
+        );
+      }
       const flag = meta.flag === "research" ? "Research" : "Call-back";
       const on = meta.to === true;
       return (

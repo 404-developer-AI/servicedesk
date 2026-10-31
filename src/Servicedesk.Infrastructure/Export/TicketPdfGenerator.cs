@@ -37,7 +37,10 @@ public sealed record TicketPdfData(
     IReadOnlyList<TicketPdfPin> PinnedEvents,
     DateTime ExportedAtUtc,
     string ExportedBy,
-    string ServerTimezoneId);
+    string ServerTimezoneId,
+    // v0.1.49 — export without internal info and the description is
+    // internal: the description card is left out entirely.
+    bool DescriptionHidden = false);
 
 public sealed record TicketPdfEvent(
     string EventType,
@@ -150,7 +153,8 @@ public static partial class TicketPdfGenerator
                     if (HasSlaData(data))
                         col.Item().Element(ComposeSlaSection(data, tz));
 
-                    col.Item().Element(ComposeDescriptionCard(data));
+                    if (!data.DescriptionHidden)
+                        col.Item().Element(ComposeDescriptionCard(data));
 
                     if (data.PinnedEvents.Count > 0)
                         col.Item().Element(ComposePinnedEvents(data, tz));

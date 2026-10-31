@@ -107,6 +107,7 @@ public static class ClaudeStatusContext
     {
         "callback" => "Call-back",
         "research" => "Research",
+        "descriptionInternal" => "Description internal",
         _ => flag,
     };
 
