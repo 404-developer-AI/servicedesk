@@ -391,21 +391,59 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           <p>{message.text}</p>
         )}
         {message.citations && message.citations.length > 0 && (
-          <div className="mt-2 space-y-1 border-t border-glass pt-2">
-            {message.citations.map((c) => (
-              <Link
-                key={c.articleId}
-                to="/kb/articles/$articleId"
-                params={{ articleId: c.articleId }}
-                className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-violet-300 transition-colors hover:bg-glass-hover hover:text-violet-200"
-              >
-                <BookOpen className="h-3 w-3 shrink-0" />
-                <span className="truncate">{c.title}</span>
-              </Link>
-            ))}
-          </div>
+          <CitationList citations={message.citations} />
         )}
       </div>
+    </div>
+  );
+}
+
+/// Article links under an answer. The server lists the articles the reply
+/// names first (`referenced`); those are the suggested answer and stand out,
+/// every other search hit follows as related reading. With no reference
+/// (e.g. "nothing found") the hits are shown as one plain list.
+function CitationList({ citations }: { citations: KbChatCitation[] }) {
+  const suggested = citations.filter((c) => c.referenced);
+  const related = citations.filter((c) => !c.referenced);
+
+  return (
+    <div className="mt-2 space-y-2 border-t border-glass pt-2">
+      {suggested.length > 0 && (
+        <div className="space-y-1">
+          <p className="px-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60">
+            {suggested.length === 1 ? "Suggested article" : "Suggested articles"}
+          </p>
+          {suggested.map((c) => (
+            <Link
+              key={c.articleId}
+              to="/kb/articles/$articleId"
+              params={{ articleId: c.articleId }}
+              className="sd-kb-chat-suggested flex items-center gap-2 rounded-lg border border-violet-400/30 bg-violet-500/10 px-2 py-1.5 text-xs font-medium text-violet-200 transition-colors hover:bg-violet-500/18"
+            >
+              <BookOpen className="h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">{c.title}</span>
+            </Link>
+          ))}
+        </div>
+      )}
+      {related.length > 0 && (
+        <div className="space-y-1">
+          <p className="px-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60">
+            {suggested.length > 0 ? "Other useful articles" : "Related articles"}
+          </p>
+          {related.map((c) => (
+            <Link
+              key={c.articleId}
+              to="/kb/articles/$articleId"
+              params={{ articleId: c.articleId }}
+              className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-violet-300 transition-colors hover:bg-glass-hover hover:text-violet-200"
+            >
+              <BookOpen className="h-3 w-3 shrink-0" />
+              <span className="truncate">{c.title}</span>
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
