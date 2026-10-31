@@ -187,6 +187,8 @@ export type Ticket = {
   /// v0.1.17 — agent-set Call-back / Research flags. Internal only.
   isCallback: boolean;
   isResearch: boolean;
+  /// v0.1.49 — description hidden from the customer portal (server-enforced).
+  descriptionInternal: boolean;
 };
 
 export type TicketBody = {
@@ -619,6 +621,7 @@ export type TicketFieldUpdate = {
   /// v0.1.17 — Call-back / Research flag toggles.
   isCallback?: boolean;
   isResearch?: boolean;
+  descriptionInternal?: boolean;
 };
 
 /// v0.0.42 — one matching status-change gate the agent must satisfy

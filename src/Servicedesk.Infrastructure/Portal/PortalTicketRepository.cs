@@ -229,8 +229,12 @@ public sealed class PortalTicketRepository : IPortalTicketRepository
                     t.updated_utc           AS UpdatedUtc,
                     t.resolved_utc          AS ResolvedUtc,
                     t.closed_utc            AS ClosedUtc,
-                    COALESCE(b.body_text, '') AS BodyText,
-                    b.body_html             AS BodyHtml,
+                    -- An internal description never leaves the server
+                    -- (v0.1.49): blanked here, not hidden client-side.
+                    CASE WHEN t.description_internal THEN ''
+                         ELSE COALESCE(b.body_text, '') END AS BodyText,
+                    CASE WHEN t.description_internal THEN NULL
+                         ELSE b.body_html END AS BodyHtml,
                     t.company_id            AS CompanyId
             FROM tickets t
             JOIN statuses   s ON s.id = t.status_id

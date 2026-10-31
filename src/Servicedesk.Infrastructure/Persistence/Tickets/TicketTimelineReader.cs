@@ -101,7 +101,8 @@ public sealed class TicketTimelineReader : ITicketTimelineReader
                project_sort_order AS ProjectSortOrder,
                project_prompt_dismissed_utc AS ProjectPromptDismissedUtc,
                is_callback AS IsCallback,
-               is_research AS IsResearch
+               is_research AS IsResearch,
+               description_internal AS DescriptionInternal
         FROM tickets WHERE id = @id AND is_deleted = FALSE
         """;
 

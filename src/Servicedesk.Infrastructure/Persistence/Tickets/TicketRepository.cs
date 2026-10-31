@@ -499,7 +499,8 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                    project_sort_order AS ProjectSortOrder,
                    project_prompt_dismissed_utc AS ProjectPromptDismissedUtc,
                    is_callback AS IsCallback,
-                   is_research AS IsResearch
+                   is_research AS IsResearch,
+                   description_internal AS DescriptionInternal
             FROM tickets WHERE id = @id AND is_deleted = FALSE
             """;
 
@@ -710,7 +711,8 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                       project_sort_order AS ProjectSortOrder,
                       project_prompt_dismissed_utc AS ProjectPromptDismissedUtc,
                       is_callback AS IsCallback,
-                      is_research AS IsResearch
+                      is_research AS IsResearch,
+                      description_internal AS DescriptionInternal
             """;
         const string insertBody = """
             INSERT INTO ticket_bodies (ticket_id, body_text, body_html)
@@ -771,7 +773,8 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             SELECT queue_id AS QueueId, status_id AS StatusId, priority_id AS PriorityId,
                    category_id AS CategoryId, assignee_user_id AS AssigneeUserId,
                    pending_till_utc AS PendingTillUtc,
-                   is_callback AS IsCallback, is_research AS IsResearch
+                   is_callback AS IsCallback, is_research AS IsResearch,
+                   description_internal AS DescriptionInternal
             FROM tickets WHERE id = @ticketId AND is_deleted = FALSE
             FOR UPDATE
             """;
@@ -892,6 +895,13 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             events.Add(("TicketFlagChange", System.Text.Json.JsonSerializer.Serialize(
                 new { flag = "research", from = current.IsResearch, to = update.IsResearch.Value })));
         }
+        // v0.1.49 — description visibility (internal ↔ visible to customer).
+        if (update.DescriptionInternal.HasValue && update.DescriptionInternal.Value != current.DescriptionInternal)
+        {
+            sets.Add("description_internal = @NewDescriptionInternal");
+            events.Add(("TicketFlagChange", System.Text.Json.JsonSerializer.Serialize(
+                new { flag = "descriptionInternal", from = current.DescriptionInternal, to = update.DescriptionInternal.Value })));
+        }
 
         bool bodyChanged = false;
         if (update.Subject is not null)
@@ -966,6 +976,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                 NewPendingTillUtc = update.PendingTillUtc,
                 NewIsCallback = update.IsCallback,
                 NewIsResearch = update.IsResearch,
+                NewDescriptionInternal = update.DescriptionInternal,
             }, tx, cancellationToken: ct));
         }
 
@@ -1406,7 +1417,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
 
     private sealed record TicketFieldSnapshot(
         Guid QueueId, Guid StatusId, Guid PriorityId, Guid? CategoryId, Guid? AssigneeUserId,
-        DateTime? PendingTillUtc, bool IsCallback, bool IsResearch);
+        DateTime? PendingTillUtc, bool IsCallback, bool IsResearch, bool DescriptionInternal);
 
     // v0.0.40 — projection used by the queue auto-flip path in
     // UpdateFieldsAsync. Sealed class (not record) per the project's
@@ -1654,7 +1665,8 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             : new[] { targetTicketId, sourceTicketId };
         const string lockSql = """
             SELECT id AS Id, number AS Number, requester_contact_id AS RequesterContactId,
-                   company_id AS CompanyId, merged_into_ticket_id AS MergedIntoTicketId
+                   company_id AS CompanyId, merged_into_ticket_id AS MergedIntoTicketId,
+                   description_internal AS DescriptionInternal
             FROM tickets WHERE id = @id AND is_deleted = FALSE
             FOR UPDATE
             """;
@@ -1780,7 +1792,9 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         // event stream. To preserve the requester's first message we project
         // it onto the target as a Comment event timestamped at the source's
         // creation. Then we replace the source body with a placeholder so the
-        // merged ticket reads cleanly.
+        // merged ticket reads cleanly. The copy keeps the description's
+        // visibility: an internal description becomes an internal comment,
+        // never a customer-visible one (v0.1.49).
         var sourceBody = await conn.QueryFirstOrDefaultAsync<(string BodyText, string? BodyHtml)>(
             new CommandDefinition(
                 "SELECT body_text AS BodyText, body_html AS BodyHtml FROM ticket_bodies WHERE ticket_id = @source",
@@ -1801,10 +1815,11 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
                 INSERT INTO ticket_events (ticket_id, event_type, author_contact_id,
                                            body_text, body_html, metadata, is_internal, created_utc)
                 VALUES (@target, 'Comment', @authorContactId, @bodyText, @bodyHtml,
-                        @metadata::jsonb, FALSE, @createdUtc)
+                        @metadata::jsonb, @isInternal, @createdUtc)
                 """, new
             {
                 target = targetTicketId,
+                isInternal = source.DescriptionInternal,
                 authorContactId = sourceRequesterId,
                 bodyText = sourceBody.BodyText ?? string.Empty,
                 bodyHtml = sourceBody.BodyHtml,
@@ -1905,6 +1920,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         public Guid RequesterContactId { get; set; }
         public Guid? CompanyId { get; set; }
         public Guid? MergedIntoTicketId { get; set; }
+        public bool DescriptionInternal { get; set; } = true;
     }
 
     public async Task<SplitResult?> SplitAsync(

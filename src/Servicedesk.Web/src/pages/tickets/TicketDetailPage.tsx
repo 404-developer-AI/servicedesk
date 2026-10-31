@@ -1320,9 +1320,26 @@ function TicketDetailBody({
             <span className="text-xs uppercase tracking-wider text-muted-foreground">
               Description
             </span>
-            <span className="rounded px-1.5 py-0.5 text-[10px] font-medium border border-glass bg-glass text-muted-foreground/60">
-              Internal
-            </span>
+            {/* v0.1.49 — per-ticket visibility: the portal blanks an
+                internal description server-side. */}
+            <button
+              type="button"
+              disabled={updateMutation.isPending}
+              onClick={() => updateMutation.mutate({ descriptionInternal: !ticket.descriptionInternal })}
+              title={
+                ticket.descriptionInternal
+                  ? "Only agents see this description. Click to make it visible to the customer in the portal."
+                  : "The customer sees this description in the portal. Click to make it internal."
+              }
+              className={cn(
+                "rounded px-1.5 py-0.5 text-[10px] font-medium border transition-colors disabled:opacity-60",
+                ticket.descriptionInternal
+                  ? "border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
+                  : "border-emerald-500/30 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25",
+              )}
+            >
+              {ticket.descriptionInternal ? "Internal" : "Visible to customer"}
+            </button>
             <div className="ml-auto flex items-center gap-3">
               {/* v0.0.105 — project marker: on the project ticket itself, and
                   as a jump-chip on tickets linked to a project. */}
