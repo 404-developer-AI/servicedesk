@@ -143,7 +143,12 @@ checkout_ref() {
     fi
     git -C "$INSTALL_DIR" checkout "$1" --quiet
     if [[ "${2:-}" == "pull" ]] && git -C "$INSTALL_DIR" symbolic-ref -q HEAD >/dev/null; then
-        git -C "$INSTALL_DIR" pull --ff-only --quiet
+        # origin is authoritative for deploys: when the branch can't be
+        # fast-forwarded (upstream history was rewritten), move to it anyway.
+        if ! git -C "$INSTALL_DIR" merge --ff-only --quiet "origin/$1" 2>/dev/null; then
+            warn "origin/$1 is not a fast-forward of the local branch (rewritten upstream history) — resetting to origin/$1."
+            git -C "$INSTALL_DIR" reset --keep --quiet "origin/$1"
+        fi
     fi
     if (( NGINX_HTTP_ONLY )); then
         cp -f "${INSTALL_DIR}/deploy/nginx/default-http-only.conf.template" "${INSTALL_DIR}/${tpl}"
@@ -155,7 +160,10 @@ checkout_ref() {
 # ===========================================================================
 fetch_and_checkout() {
     log "Fetching refs from origin …"
-    git -C "$INSTALL_DIR" fetch --tags --prune --quiet
+    # --force + --prune-tags: a tag that moved upstream (history rewrite)
+    # replaces the local copy instead of aborting the fetch, and tags deleted
+    # upstream disappear locally.
+    git -C "$INSTALL_DIR" fetch --tags --force --prune --prune-tags --quiet
 
     local target="${REPO_REF:-}"
     if [[ -z "$target" ]]; then
