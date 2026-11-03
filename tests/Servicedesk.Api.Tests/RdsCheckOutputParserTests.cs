@@ -12,7 +12,7 @@ public sealed class RdsCheckOutputParserTests
     [Fact]
     public void True_with_rdp_login_parses_status_login_and_user()
     {
-        const string stdout = "Remote Desktop server: TRUE\r\nLaatste login : 11-09-2026 09:07:19 (RDP)\r\nGebruiker     : DATAWOLK\\jdoe\r\n";
+        const string stdout = "Remote Desktop server: TRUE\r\nLaatste login : 11-09-2026 09:07:19 (RDP)\r\nGebruiker     : CONTOSO\\jdoe\r\n";
 
         var r = RdsCheckOutputParser.Parse(stdout, 0, "passing");
 
@@ -20,7 +20,7 @@ public sealed class RdsCheckOutputParserTests
         Assert.Equal(new DateTime(2026, 9, 11, 9, 7, 19), r.LastLoginLocal);
         Assert.Equal(DateTimeKind.Unspecified, r.LastLoginLocal!.Value.Kind);
         Assert.Equal("rdp", r.LastLoginKind);
-        Assert.Equal("DATAWOLK\\jdoe", r.LastLoginUser);
+        Assert.Equal("CONTOSO\\jdoe", r.LastLoginUser);
     }
 
     [Fact]

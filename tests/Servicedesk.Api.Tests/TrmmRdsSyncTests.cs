@@ -23,7 +23,7 @@ public sealed class TrmmRdsSyncTests
             "script": 7,
             "check_result": {
               "status": "passing",
-              "stdout": "Remote Desktop server: TRUE\nLaatste login : 11-09-2026 09:07:19 (RDP)\nGebruiker     : DATAWOLK\\jdoe\n",
+              "stdout": "Remote Desktop server: TRUE\nLaatste login : 11-09-2026 09:07:19 (RDP)\nGebruiker     : CONTOSO\\jdoe\n",
               "stderr": "",
               "retcode": 0,
               "last_run": "2026-09-11T07:15:02.123456Z"

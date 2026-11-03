@@ -328,7 +328,7 @@ public sealed class AdsolutCustomersWriteClientParseTests
     [Fact]
     public void Overlay_leaves_split_address_alone_when_recombination_matches_get()
     {
-        // Real reproducer: WK stored "Example Street 7" as
+        // Reproducer: WK stored "Example Street 7" as
         // streetName="Example Street 7" + streetNumber=null + boxNumber=null.
         // The SD pull joined that into a single line, then the SD push
         // re-split via the trailing-digit heuristic into
