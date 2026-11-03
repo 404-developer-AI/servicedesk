@@ -40,6 +40,18 @@ public interface ISurveyInvitationRepository
         int limit,
         CancellationToken ct);
 
+    /// Submitted responses of one survey for the results-page "Responses"
+    /// list: full history (offset-paged), sortable on the normalised score
+    /// (<c>survey_responses.score_pct</c>) or submit time, filterable on
+    /// whether the customer left a free-text comment.
+    Task<SurveyResponsePage> ListResponsesForSurveyAsync(
+        Guid surveyId,
+        SurveyResponseSort sort,
+        SurveyResponseCommentFilter commentFilter,
+        int offset,
+        int limit,
+        CancellationToken ct);
+
     Task<bool> ActiveExistsAsync(Guid surveyId, Guid ticketId, CancellationToken ct);
 
     Task<int> CountForSurveyAsync(Guid surveyId, SurveyInvitationStatus? statusFilter, CancellationToken ct);
@@ -185,6 +197,40 @@ public sealed record SurveyAggregateResults(
     /// agent). The agent leaderboard surfaces totals; this list powers the
     /// detailed per-agent question breakdown.
     IReadOnlyList<SurveyAgentQuestionAggregate> AgentQuestionAggregates);
+
+public enum SurveyResponseSort
+{
+    SubmittedDesc,
+    SubmittedAsc,
+    ScoreAsc,
+    ScoreDesc,
+}
+
+public enum SurveyResponseCommentFilter
+{
+    All,
+    WithComment,
+    WithoutComment,
+}
+
+public sealed record SurveyResponsePage(
+    int Total,
+    IReadOnlyList<SurveyResponseListRow> Items);
+
+public sealed record SurveyResponseListRow(
+    Guid InvitationId,
+    Guid TicketId,
+    long TicketNumber,
+    string TicketSubject,
+    string SentToEmail,
+    string? ContactName,
+    string? CompanyName,
+    DateTime SubmittedUtc,
+    /// Normalised 0–100; null when the response has no numeric answers.
+    decimal? ScorePct,
+    /// First characters of the customer's free-text comment (full text
+    /// lives in the response detail); null when no comment was left.
+    string? CommentPreview);
 
 public sealed record SurveyAgentLeaderboardRow(
     Guid AgentUserId,

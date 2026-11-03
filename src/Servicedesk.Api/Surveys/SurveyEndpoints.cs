@@ -217,6 +217,39 @@ public static class SurveyEndpoints
             return Results.Ok(rows.Select(MapInvitationSummaryDto));
         }).WithName("ListSurveyInvitations").WithOpenApi();
 
+        // Full, paged list of submitted responses (the "Responses" section
+        // on the results page). Unknown sort/comment values fall back to the
+        // defaults rather than 400 — they only pick fixed ORDER BY literals.
+        results.MapGet("/{id:guid}/responses", async (
+            Guid id, string? sort, string? comment, int? offset, int? limit,
+            ISurveyInvitationRepository invitations, CancellationToken ct) =>
+        {
+            var sortValue = Enum.TryParse<SurveyResponseSort>(sort, ignoreCase: true, out var s)
+                && Enum.IsDefined(s) ? s : SurveyResponseSort.SubmittedDesc;
+            var commentValue = Enum.TryParse<SurveyResponseCommentFilter>(comment, ignoreCase: true, out var c)
+                && Enum.IsDefined(c) ? c : SurveyResponseCommentFilter.All;
+            var page = await invitations.ListResponsesForSurveyAsync(
+                id, sortValue, commentValue,
+                Math.Max(offset ?? 0, 0), Math.Clamp(limit ?? 50, 1, 200), ct);
+            return Results.Ok(new
+            {
+                total = page.Total,
+                items = page.Items.Select(r => new
+                {
+                    invitationId = r.InvitationId,
+                    ticketId = r.TicketId,
+                    ticketNumber = r.TicketNumber,
+                    ticketSubject = r.TicketSubject,
+                    sentToEmail = r.SentToEmail,
+                    contactName = r.ContactName,
+                    companyName = r.CompanyName,
+                    submittedUtc = r.SubmittedUtc,
+                    scorePct = r.ScorePct,
+                    commentPreview = r.CommentPreview,
+                }),
+            });
+        }).WithName("ListSurveyResponses").WithOpenApi();
+
         results.MapGet("/invitations/{invitationId:guid}", async (
             Guid invitationId, ISurveyInvitationRepository invitations, CancellationToken ct) =>
         {

@@ -5,8 +5,12 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
   BarChart3,
+  ChevronLeft,
+  ChevronRight,
+  ListChecks,
   Loader2,
   MailQuestion,
+  MessageSquareText,
   Trophy,
   Users,
 } from "lucide-react";
@@ -19,13 +23,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
   surveyResultsApi,
   surveysApi,
   type RatingConfig,
   type ChoiceConfig,
+  type SurveyResponseCommentFilter,
   type SurveyResponseDetail,
+  type SurveyResponseSort,
   type SurveyResultsAggregate,
 } from "@/lib/surveys-api";
 
@@ -164,6 +177,11 @@ export function SurveyResultsPage({ surveyId }: { surveyId: string }) {
         />
       )}
 
+      <ResponsesSection
+        surveyId={surveyId}
+        onOpenResponse={setOpenInvitationId}
+      />
+
       <section className="rounded-lg border border-glass-strong bg-glass p-5">
         <header className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
           <MailQuestion className="h-4 w-4 text-primary" />
@@ -235,6 +253,257 @@ export function SurveyResultsPage({ surveyId }: { surveyId: string }) {
         onClose={() => setOpenInvitationId(null)}
       />
     </div>
+  );
+}
+
+// ============================================================
+// Responses — full, paged list of submitted responses
+// ============================================================
+
+const RESPONSES_PAGE_SIZE = 50;
+
+const SORT_OPTIONS: Array<{ value: SurveyResponseSort; label: string }> = [
+  { value: "SubmittedDesc", label: "Newest first" },
+  { value: "SubmittedAsc", label: "Oldest first" },
+  { value: "ScoreAsc", label: "Score: low to high" },
+  { value: "ScoreDesc", label: "Score: high to low" },
+];
+
+const COMMENT_FILTERS: Array<{
+  value: SurveyResponseCommentFilter;
+  label: string;
+}> = [
+  { value: "All", label: "All" },
+  { value: "WithComment", label: "With comment" },
+  { value: "WithoutComment", label: "Without comment" },
+];
+
+function ResponsesSection({
+  surveyId,
+  onOpenResponse,
+}: {
+  surveyId: string;
+  onOpenResponse: (invitationId: string) => void;
+}) {
+  const [sort, setSort] = useState<SurveyResponseSort>("SubmittedDesc");
+  const [comment, setComment] = useState<SurveyResponseCommentFilter>("All");
+  const [offset, setOffset] = useState(0);
+
+  const responsesQ = useQuery({
+    queryKey: [
+      "surveys",
+      "results",
+      surveyId,
+      "responses",
+      sort,
+      comment,
+      offset,
+    ],
+    queryFn: () =>
+      surveyResultsApi.responses(surveyId, {
+        sort,
+        comment,
+        offset,
+        limit: RESPONSES_PAGE_SIZE,
+      }),
+    placeholderData: (prev) => prev,
+  });
+
+  const total = responsesQ.data?.total ?? 0;
+  const items = responsesQ.data?.items ?? [];
+  const from = total === 0 ? 0 : offset + 1;
+  const to = Math.min(offset + items.length, total);
+
+  return (
+    <section className="sd-survey-responses rounded-lg border border-glass-strong bg-glass p-5">
+      <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-muted-foreground/60">
+          <ListChecks className="h-4 w-4 text-primary" />
+          Responses
+          {responsesQ.data && (
+            <span className="rounded-full bg-glass-strong px-2 py-0.5 text-[10px] normal-case tracking-normal text-muted-foreground">
+              {total}
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div
+            role="radiogroup"
+            aria-label="Filter on comment"
+            className="flex items-center rounded-md border border-glass-strong bg-glass p-0.5"
+          >
+            {COMMENT_FILTERS.map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                role="radio"
+                aria-checked={comment === f.value}
+                onClick={() => {
+                  setComment(f.value);
+                  setOffset(0);
+                }}
+                className={cn(
+                  "rounded px-2.5 py-1 text-xs transition",
+                  comment === f.value
+                    ? "bg-primary/15 font-medium text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <Select
+            value={sort}
+            onValueChange={(v) => {
+              setSort(v as SurveyResponseSort);
+              setOffset(0);
+            }}
+          >
+            <SelectTrigger
+              className="h-8 w-48 text-xs"
+              aria-label="Sort responses"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SORT_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </header>
+      <p className="mb-3 text-xs text-muted-foreground">
+        Every submitted response. The score is the average of all rating and
+        NPS answers, each scaled to 0–100% of its own range. Click a row to
+        open the full response.
+      </p>
+
+      {responsesQ.isLoading && <Skeleton className="h-24 w-full" />}
+      {responsesQ.isError && (
+        <p className="text-sm text-destructive">Could not load responses.</p>
+      )}
+      {responsesQ.data && items.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          {comment === "All"
+            ? "No responses submitted yet."
+            : "No responses match this filter."}
+        </p>
+      )}
+      {items.length > 0 && (
+        <ul
+          className={cn(
+            "flex flex-col gap-1.5 transition-opacity",
+            responsesQ.isPlaceholderData && "opacity-60",
+          )}
+        >
+          {items.map((r) => (
+            <li key={r.invitationId}>
+              <button
+                type="button"
+                onClick={() => onOpenResponse(r.invitationId)}
+                className="sd-survey-response-row flex w-full items-start gap-3 rounded-md border border-glass-strong bg-glass px-3 py-2.5 text-left transition hover:border-primary/40 hover:bg-glass-strong"
+              >
+                <ScorePill score={r.scorePct} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                    <span className="truncate text-sm font-medium text-foreground">
+                      {r.contactName ?? r.sentToEmail}
+                      {r.companyName && (
+                        <span className="font-normal text-muted-foreground">
+                          {" "}
+                          · {r.companyName}
+                        </span>
+                      )}
+                    </span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {formatDateTime(r.submittedUtc)}
+                    </span>
+                  </div>
+                  <div className="truncate text-xs text-muted-foreground">
+                    #{r.ticketNumber}{" "}
+                    <span className="text-muted-foreground/70">
+                      {r.ticketSubject}
+                    </span>
+                  </div>
+                  {r.commentPreview && (
+                    <div className="mt-1.5 flex items-start gap-1.5 text-xs text-foreground/80">
+                      <MessageSquareText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                      <span className="line-clamp-2 whitespace-pre-line">
+                        {r.commentPreview}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {total > RESPONSES_PAGE_SIZE && (
+        <footer className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+          <span>
+            {from}–{to} of {total}
+          </span>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={offset === 0 || responsesQ.isFetching}
+              onClick={() =>
+                setOffset((o) => Math.max(0, o - RESPONSES_PAGE_SIZE))
+              }
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={to >= total || responsesQ.isFetching}
+              onClick={() => setOffset((o) => o + RESPONSES_PAGE_SIZE)}
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </footer>
+      )}
+    </section>
+  );
+}
+
+function ScorePill({ score }: { score: number | null }) {
+  if (score === null) {
+    return (
+      <span
+        className="mt-0.5 w-12 shrink-0 rounded-full bg-glass-strong py-0.5 text-center text-xs text-muted-foreground"
+        title="No rating or NPS answers"
+      >
+        —
+      </span>
+    );
+  }
+  const tone =
+    score < 50
+      ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
+      : score < 75
+        ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+        : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
+  return (
+    <span
+      className={cn(
+        "mt-0.5 w-12 shrink-0 rounded-full py-0.5 text-center text-xs font-semibold tabular-nums",
+        tone,
+      )}
+      title={`Score ${score.toFixed(1)}%`}
+    >
+      {Math.round(score)}%
+    </span>
   );
 }
 

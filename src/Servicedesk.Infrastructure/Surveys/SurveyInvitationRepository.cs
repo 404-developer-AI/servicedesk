@@ -150,6 +150,103 @@ public sealed class SurveyInvitationRepository : ISurveyInvitationRepository
         LEFT JOIN companies co ON co.id = cc.company_id
         """;
 
+    public async Task<SurveyResponsePage> ListResponsesForSurveyAsync(
+        Guid surveyId,
+        SurveyResponseSort sort,
+        SurveyResponseCommentFilter commentFilter,
+        int offset,
+        int limit,
+        CancellationToken ct)
+    {
+        // ORDER BY / comment predicate come from fixed literals picked by
+        // enum — never from caller text. Score sorts keep score-less
+        // responses (no numeric answers) at the end in both directions.
+        var orderBy = sort switch
+        {
+            SurveyResponseSort.SubmittedAsc => "r.submitted_utc ASC, i.id ASC",
+            SurveyResponseSort.ScoreAsc => "r.score_pct ASC NULLS LAST, r.submitted_utc DESC, i.id DESC",
+            SurveyResponseSort.ScoreDesc => "r.score_pct DESC NULLS LAST, r.submitted_utc DESC, i.id DESC",
+            _ => "r.submitted_utc DESC, i.id DESC",
+        };
+        var commentPredicate = commentFilter switch
+        {
+            SurveyResponseCommentFilter.WithComment => " AND r.comment IS NOT NULL",
+            SurveyResponseCommentFilter.WithoutComment => " AND r.comment IS NULL",
+            _ => "",
+        };
+
+        var sql = $"""
+            SELECT i.id                                    AS InvitationId,
+                   i.ticket_id                             AS TicketId,
+                   t.number                                AS TicketNumber,
+                   t.subject                               AS TicketSubject,
+                   i.sent_to_email                         AS SentToEmail,
+                   NULLIF(TRIM(BOTH ' ' FROM
+                           COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')),
+                           '')                             AS ContactName,
+                   co.name                                 AS CompanyName,
+                   r.submitted_utc                         AS SubmittedUtc,
+                   r.score_pct                             AS ScorePct,
+                   LEFT(r.comment, 240)                    AS CommentPreview,
+                   COUNT(*) OVER ()::int                   AS Total
+            FROM survey_invitations i
+            JOIN survey_responses r ON r.invitation_id = i.id
+            JOIN tickets t ON t.id = i.ticket_id
+            LEFT JOIN contacts c ON c.id = t.requester_contact_id
+            LEFT JOIN contact_companies cc ON cc.contact_id = c.id AND cc.role = 'primary'
+            LEFT JOIN companies co ON co.id = cc.company_id
+            WHERE i.survey_id = @surveyId
+              AND i.status = 'Submitted'{commentPredicate}
+            ORDER BY {orderBy}
+            OFFSET @offset LIMIT @limit
+            """;
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        var rows = (await conn.QueryAsync<ResponseListRow>(new CommandDefinition(sql, new
+        {
+            surveyId,
+            offset = Math.Max(offset, 0),
+            limit = Math.Clamp(limit, 1, 200),
+        }, cancellationToken: ct))).ToList();
+
+        // COUNT(*) OVER () rides along on every row; an offset past the end
+        // returns no rows, so fall back to a plain count for the total.
+        int total;
+        if (rows.Count > 0)
+        {
+            total = rows[0].Total;
+        }
+        else
+        {
+            total = await conn.ExecuteScalarAsync<int>(new CommandDefinition($"""
+                SELECT count(*)::int
+                FROM survey_invitations i
+                JOIN survey_responses r ON r.invitation_id = i.id
+                WHERE i.survey_id = @surveyId
+                  AND i.status = 'Submitted'{commentPredicate}
+                """, new { surveyId }, cancellationToken: ct));
+        }
+
+        return new SurveyResponsePage(total, rows.Select(r => new SurveyResponseListRow(
+            r.InvitationId, r.TicketId, r.TicketNumber, r.TicketSubject, r.SentToEmail,
+            r.ContactName, r.CompanyName, r.SubmittedUtc, r.ScorePct, r.CommentPreview)).ToList());
+    }
+
+    private sealed class ResponseListRow
+    {
+        public Guid InvitationId { get; set; }
+        public Guid TicketId { get; set; }
+        public long TicketNumber { get; set; }
+        public string TicketSubject { get; set; } = "";
+        public string SentToEmail { get; set; } = "";
+        public string? ContactName { get; set; }
+        public string? CompanyName { get; set; }
+        public DateTime SubmittedUtc { get; set; }
+        public decimal? ScorePct { get; set; }
+        public string? CommentPreview { get; set; }
+        public int Total { get; set; }
+    }
+
     public async Task<bool> ActiveExistsAsync(Guid surveyId, Guid ticketId, CancellationToken ct)
     {
         const string sql = """
@@ -348,6 +445,16 @@ public sealed class SurveyInvitationRepository : ISurveyInvitationRepository
                 },
                 transaction: tx, cancellationToken: ct));
         }
+
+        // Normalised score for the results-page "Responses" list; same SQL
+        // function the boot-time backfill uses (DatabaseBootstrapper).
+        await conn.ExecuteAsync(new CommandDefinition("""
+            UPDATE survey_responses
+            SET score_pct = survey_response_score(id), score_computed = TRUE
+            WHERE id = @responseId
+            """,
+            new { responseId },
+            transaction: tx, cancellationToken: ct));
 
         await conn.ExecuteAsync(new CommandDefinition("""
             UPDATE survey_invitations

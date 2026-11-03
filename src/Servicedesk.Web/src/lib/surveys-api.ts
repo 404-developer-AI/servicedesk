@@ -209,6 +209,32 @@ export interface PublicSurveySubmitInput {
   }>;
 }
 
+export type SurveyResponseSort =
+  | "SubmittedDesc"
+  | "SubmittedAsc"
+  | "ScoreAsc"
+  | "ScoreDesc";
+export type SurveyResponseCommentFilter = "All" | "WithComment" | "WithoutComment";
+
+export interface SurveyResponseListItem {
+  invitationId: string;
+  ticketId: string;
+  ticketNumber: number;
+  ticketSubject: string;
+  sentToEmail: string;
+  contactName: string | null;
+  companyName: string | null;
+  submittedUtc: string;
+  /** Normalised 0–100; null when the response has no numeric answers. */
+  scorePct: number | null;
+  commentPreview: string | null;
+}
+
+export interface SurveyResponsePage {
+  total: number;
+  items: SurveyResponseListItem[];
+}
+
 export interface RatingConfig {
   points: number;
   labels?: string[];
@@ -286,6 +312,26 @@ export const surveyResultsApi = {
     return request<SurveyInvitationSummary[]>(
       "GET",
       `/api/surveys/${id}/invitations${tail ? `?${tail}` : ""}`,
+    );
+  },
+  responses: (
+    id: string,
+    params: {
+      sort: SurveyResponseSort;
+      comment: SurveyResponseCommentFilter;
+      offset: number;
+      limit: number;
+    },
+  ) => {
+    const qs = new URLSearchParams({
+      sort: params.sort,
+      comment: params.comment,
+      offset: String(params.offset),
+      limit: String(params.limit),
+    });
+    return request<SurveyResponsePage>(
+      "GET",
+      `/api/surveys/${id}/responses?${qs.toString()}`,
     );
   },
   responseDetail: (invitationId: string) =>

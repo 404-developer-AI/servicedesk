@@ -2948,6 +2948,17 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- attributes ratings via survey_answers.agent_user_id instead.
         ALTER TABLE survey_responses DROP COLUMN IF EXISTS overall_rating;
 
+        -- Normalised response score (0–100) for the "Responses" list on the
+        -- results page: average of every numeric answer (Survey- and
+        -- Agent-scope), each scaled to its own range (Rating 1..points,
+        -- Nps 0..10) using the invitation's frozen snapshot. Written at
+        -- submit time (SurveyScore.ComputeSql) so sorting never parses JSON
+        -- per row; NULL = response has no numeric answers. score_computed
+        -- marks rows the backfill already visited so the boot-time backfill
+        -- below is a no-op once caught up.
+        ALTER TABLE survey_responses ADD COLUMN IF NOT EXISTS score_pct NUMERIC(5,2) NULL;
+        ALTER TABLE survey_responses ADD COLUMN IF NOT EXISTS score_computed BOOLEAN NOT NULL DEFAULT FALSE;
+
         CREATE TABLE IF NOT EXISTS survey_answers (
             id              BIGSERIAL PRIMARY KEY,
             response_id     UUID NOT NULL REFERENCES survey_responses(id) ON DELETE CASCADE,
@@ -2984,6 +2995,48 @@ public sealed class DatabaseBootstrapper : IHostedService
         -- v0.0.38 redesign: drop the single-overall-rating-per-agent table;
         -- per-agent scores now live in survey_answers with agent_user_id.
         DROP TABLE IF EXISTS survey_agent_scores;
+
+        -- Normalised 0–100 score of one response (see score_pct above).
+        -- Each numeric answer is scaled against the question's range as
+        -- frozen in the invitation snapshot: Rating 1..points (config
+        -- points, fallback 5 like the public page), Nps 0..10. Clamped so a
+        -- malformed value can never push the score outside 0–100. Single
+        -- source of truth for both the submit path and the backfill.
+        CREATE OR REPLACE FUNCTION survey_response_score(p_response_id UUID) RETURNS NUMERIC
+            LANGUAGE sql STABLE AS $fn$
+            SELECT ROUND(AVG(LEAST(GREATEST(
+                       CASE q.qtype
+                           WHEN 'Nps' THEN a.value_numeric / 10.0
+                           ELSE (a.value_numeric - 1) / (q.points - 1)
+                       END, 0), 1)) * 100, 2)
+            FROM survey_answers a
+            JOIN survey_responses r ON r.id = a.response_id
+            JOIN survey_invitations i ON i.id = r.invitation_id
+            JOIN LATERAL (
+                SELECT e->>'type' AS qtype,
+                       GREATEST(COALESCE(
+                           (NULLIF(e->>'configJson', '')::jsonb)->>'points', '5')::numeric, 2) AS points
+                FROM jsonb_array_elements(
+                         CASE WHEN jsonb_typeof(i.survey_snapshot_json->'questions') = 'array'
+                              THEN i.survey_snapshot_json->'questions'
+                              ELSE '[]'::jsonb END) e
+                WHERE (e->>'id')::bigint = a.question_id
+                LIMIT 1
+            ) q ON q.qtype IN ('Rating', 'Nps')
+            WHERE a.response_id = p_response_id
+              AND a.value_numeric IS NOT NULL
+            $fn$;
+
+        -- Backfill responses submitted before score_pct existed. Visits each
+        -- row once (score_computed), so later boots touch nothing.
+        UPDATE survey_responses
+        SET score_pct = survey_response_score(id), score_computed = TRUE
+        WHERE NOT score_computed;
+
+        -- "Responses" list on the results page: submitted rows per survey,
+        -- newest first.
+        CREATE INDEX IF NOT EXISTS ix_survey_invitations_survey_submitted
+            ON survey_invitations (survey_id, submitted_utc DESC) WHERE status = 'Submitted';
 
         -- Compose template → survey link. When an agent sends a reply using
         -- this template, the reply endpoint dispatches the linked survey.
