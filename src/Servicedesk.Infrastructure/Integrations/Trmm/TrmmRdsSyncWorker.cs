@@ -37,7 +37,7 @@ public sealed class TrmmRdsSyncWorker : BackgroundService
             {
                 delay = await RunCycleAsync("scheduled", stoppingToken);
             }
-            catch (OperationCanceledException) { break; }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "TrmmRdsSyncWorker cycle crashed — will retry.");
@@ -92,7 +92,7 @@ public sealed class TrmmRdsSyncWorker : BackgroundService
                 run.Fail(outcome.ErrorCode ?? "sync_failed");
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             run.Fail(ex);
             throw;

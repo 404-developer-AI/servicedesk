@@ -25,14 +25,21 @@ public interface IMailFinalizer
     /// finalizes them one by one. Intended to run on a timer with a low
     /// frequency (tens of seconds).
     Task SweepAsync(CancellationToken ct);
+
+    /// Moves a mail the ingest pipeline deliberately skipped (no mail row, so
+    /// the attachment-gated finalize path never sees it) straight into the
+    /// processed folder of <paramref name="sourceId"/>'s mailbox. Honours
+    /// <c>Mail.MoveOnIngest</c> and <c>Mail.MoveSkippedOnIngest</c>. A failure
+    /// is logged and recorded as the source's mailbox-action error — never
+    /// thrown — and is not retried: the mail then stays in the inbox.
+    Task MoveSkippedAsync(Guid sourceId, string mailbox, string graphMessageId, CancellationToken ct);
 }
 
 public sealed class MailFinalizer : IMailFinalizer
 {
     // Resolving the processed folder-id is a Graph round-trip per mailbox;
     // cache across calls so a sweep touching many mails for the same mailbox
-    // doesn't re-ask. MailPollingService has its own identical cache — the
-    // two don't share so we pay the lookup once per process per mailbox.
+    // doesn't re-ask. Shared by the finalize path and the skipped-mail move.
     private static readonly ConcurrentDictionary<string, string> FolderIdCache =
         new(StringComparer.OrdinalIgnoreCase);
 
@@ -90,6 +97,37 @@ public sealed class MailFinalizer : IMailFinalizer
         }
     }
 
+    public async Task MoveSkippedAsync(Guid sourceId, string mailbox, string graphMessageId, CancellationToken ct)
+    {
+        if (!await _settings.GetAsync<bool>(SettingKeys.Mail.MoveOnIngest, ct)) return;
+        if (!await _settings.GetAsync<bool>(SettingKeys.Mail.MoveSkippedOnIngest, ct)) return;
+
+        var folder = await _settings.GetAsync<string>(SettingKeys.Mail.ProcessedFolderName, ct)
+            ?? "Servicedesk Verwerkt";
+        try
+        {
+            var folderId = await ResolveFolderIdAsync(mailbox, folder, sourceId, ct);
+            var moved = await TryMoveWithFolderRefreshAsync(
+                mailbox, graphMessageId, folder, sourceId, folderId, ct);
+            _logger.LogInformation(
+                moved
+                    ? "[MailFinalizer] skipped mail graphId={GraphId} mailbox={Mailbox} moved to processed folder"
+                    : "[MailFinalizer] skipped mail graphId={GraphId} mailbox={Mailbox} already absent in inbox",
+                graphMessageId, mailbox);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "[MailFinalizer] skipped mail graphId={GraphId} mailbox={Mailbox} move failed — left in inbox.",
+                graphMessageId, mailbox);
+            await _sources.SaveMailboxActionErrorAsync(
+                sourceId,
+                $"skipped-move: {ex.GetType().Name}: {ex.Message}",
+                DateTime.UtcNow, ct);
+        }
+    }
+
     private async Task FinalizeOneAsync(FinalizeCandidate c, string folderName, CancellationToken ct)
     {
         // Map mailbox → inbound source so we can attach the processed-folder id
@@ -115,7 +153,7 @@ public sealed class MailFinalizer : IMailFinalizer
         {
             var folderId = await ResolveFolderIdAsync(c.MailboxAddress, folderName, source.Id, ct);
             var moved = await TryMoveWithFolderRefreshAsync(
-                c, folderName, source.Id, queueSlug, folderId, ct);
+                c.MailboxAddress, c.GraphMessageId, folderName, source.Id, folderId, ct);
             await _mail.MarkMailboxMovedAsync(c.MailId, DateTime.UtcNow, ct);
             await _sources.ClearMailboxActionErrorAsync(source.Id, ct);
             _logger.LogInformation(
@@ -146,27 +184,27 @@ public sealed class MailFinalizer : IMailFinalizer
     /// actually moved, <c>false</c> when it was genuinely gone (404 persisted
     /// against a freshly-ensured, valid folder).
     private async Task<bool> TryMoveWithFolderRefreshAsync(
-        FinalizeCandidate c, string folderName, Guid sourceId, string queueSlug,
+        string mailbox, string graphMessageId, string folderName, Guid sourceId,
         string folderId, CancellationToken ct)
     {
         try
         {
-            await _graph.MoveAsync(c.MailboxAddress, c.GraphMessageId, folderId, ct);
+            await _graph.MoveAsync(mailbox, graphMessageId, folderId, ct);
             return true;
         }
         catch (Microsoft.Graph.Models.ODataErrors.ODataError ex) when (IsNotFound(ex))
         {
-            var fresh = await ForceResolveFolderIdAsync(c.MailboxAddress, folderName, sourceId, ct);
+            var fresh = await ForceResolveFolderIdAsync(mailbox, folderName, sourceId, ct);
             // Folder id unchanged -> the destination was valid all along, so the
             // 404 really is the message itself. Caller marks it moved.
             if (string.Equals(fresh, folderId, StringComparison.Ordinal))
                 return false;
 
             // The cached id was stale; the re-ensured folder is valid. Retry once.
-            await _graph.MoveAsync(c.MailboxAddress, c.GraphMessageId, fresh, ct);
+            await _graph.MoveAsync(mailbox, graphMessageId, fresh, ct);
             _logger.LogInformation(
-                "[MailFinalizer] mailId={MailId} processed-folder id was stale; refreshed and moved (queue={QueueSlug})",
-                c.MailId, queueSlug);
+                "[MailFinalizer] graphId={GraphId} mailbox={Mailbox} processed-folder id was stale; refreshed and moved",
+                graphMessageId, mailbox);
             return true;
         }
     }

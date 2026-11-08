@@ -38,7 +38,7 @@ public sealed class EolDataRefreshWorker : BackgroundService
             {
                 delay = await RunCycleAsync("scheduled", stoppingToken);
             }
-            catch (OperationCanceledException) { break; }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "EolDataRefreshWorker cycle crashed — will retry.");
@@ -70,7 +70,7 @@ public sealed class EolDataRefreshWorker : BackgroundService
             run.AddItems(outcome.WindowsRows + outcome.WindowsServerRows);
             if (!outcome.Success) run.Fail(outcome.ErrorCode ?? "refresh_failed");
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             run.Fail(ex);
             throw;

@@ -134,6 +134,57 @@ public class MailFinalizerTests
         Assert.Contains(mailId, mail.Moved);
     }
 
+    [Fact]
+    public async Task MoveSkipped_moves_into_processed_folder_without_a_mail_row()
+    {
+        const string mailbox = "skipped@example.com";
+        var mail = new FakeMailRepo();
+        var graph = new FakeGraph();
+        var repo = new FakeInboundRepo(mailbox);
+        var sourceId = (await repo.ListAllAsync(default))[0].Id;
+        var finalizer = new MailFinalizer(mail, graph, repo,
+            new FakeTaxonomy(mailbox), new FakeSettings(doMove: true),
+            NullLogger<MailFinalizer>.Instance);
+
+        await finalizer.MoveSkippedAsync(sourceId, mailbox, "graph-bulk-1", CancellationToken.None);
+
+        Assert.Equal(new[] { ("graph-bulk-1", "folder-Processed") }, graph.Moves);
+        Assert.Empty(mail.Moved);
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task MoveSkipped_honours_both_move_settings(bool doMove, bool moveSkipped)
+    {
+        var graph = new FakeGraph();
+        var repo = new FakeInboundRepo(Mailbox);
+        var sourceId = (await repo.ListAllAsync(default))[0].Id;
+        var finalizer = new MailFinalizer(new FakeMailRepo(), graph, repo,
+            new FakeTaxonomy(Mailbox), new FakeSettings(doMove, moveSkipped: moveSkipped),
+            NullLogger<MailFinalizer>.Instance);
+
+        await finalizer.MoveSkippedAsync(sourceId, Mailbox, "g", CancellationToken.None);
+
+        Assert.Empty(graph.Moves);
+    }
+
+    [Fact]
+    public async Task MoveSkipped_failure_is_recorded_not_thrown()
+    {
+        const string mailbox = "skipfail@example.com";
+        var graph = new FakeGraph { ThrowOnMove = new InvalidOperationException("graph down") };
+        var repo = new FakeInboundRepo(mailbox);
+        var sourceId = (await repo.ListAllAsync(default))[0].Id;
+        var finalizer = new MailFinalizer(new FakeMailRepo(), graph, repo,
+            new FakeTaxonomy(mailbox), new FakeSettings(doMove: true),
+            NullLogger<MailFinalizer>.Instance);
+
+        await finalizer.MoveSkippedAsync(sourceId, mailbox, "g", CancellationToken.None);
+
+        Assert.Contains("skipped-move", repo.LastMailboxActionError);
+    }
+
     // ---- stubs: only the methods MailFinalizer actually touches are ----
     // ---- meaningfully implemented; everything else throws if called. ----
 
@@ -172,9 +223,11 @@ public class MailFinalizerTests
         // When set, a Move targeting this (stale) folder id 404s; any other
         // destination succeeds — models a cached folder id that no longer exists.
         public string? StaleFolderId { get; set; }
+        public Exception? ThrowOnMove { get; set; }
 
         public Task MoveAsync(string mailbox, string id, string folderId, CancellationToken ct)
         {
+            if (ThrowOnMove is not null) throw ThrowOnMove;
             if (ThrowNotFound || (StaleFolderId is not null && folderId == StaleFolderId))
             {
                 var err = new Microsoft.Graph.Models.ODataErrors.ODataError
@@ -248,7 +301,12 @@ public class MailFinalizerTests
             if (i >= 0) _sources[i] = _sources[i] with { ProcessedFolderId = folderId };
             return Task.CompletedTask;
         }
-        public Task SaveMailboxActionErrorAsync(Guid id, string e, DateTime t, CancellationToken ct) => Task.CompletedTask;
+        public string? LastMailboxActionError { get; private set; }
+        public Task SaveMailboxActionErrorAsync(Guid id, string e, DateTime t, CancellationToken ct)
+        {
+            LastMailboxActionError = e;
+            return Task.CompletedTask;
+        }
         public Task ClearMailboxActionErrorAsync(Guid id, CancellationToken ct) => Task.CompletedTask;
     }
 
@@ -294,12 +352,16 @@ public class MailFinalizerTests
     private sealed class FakeSettings : ISettingsService
     {
         private readonly bool _doMove;
+        private readonly bool _moveSkipped;
         private readonly string _folder;
-        public FakeSettings(bool doMove, string folder = "Processed") { _doMove = doMove; _folder = folder; }
+        public FakeSettings(bool doMove, string folder = "Processed", bool moveSkipped = true)
+        { _doMove = doMove; _folder = folder; _moveSkipped = moveSkipped; }
         public Task<T> GetAsync<T>(string key, CancellationToken ct = default)
         {
             if (key == SettingKeys.Mail.MoveOnIngest && typeof(T) == typeof(bool))
                 return Task.FromResult((T)(object)_doMove);
+            if (key == SettingKeys.Mail.MoveSkippedOnIngest && typeof(T) == typeof(bool))
+                return Task.FromResult((T)(object)_moveSkipped);
             if (key == SettingKeys.Mail.ProcessedFolderName && typeof(T) == typeof(string))
                 return Task.FromResult((T)(object)_folder);
             return Task.FromResult(default(T)!);

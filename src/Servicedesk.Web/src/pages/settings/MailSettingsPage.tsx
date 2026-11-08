@@ -34,7 +34,9 @@ const SECTIONS: Section[] = [
       "Mail.PlusAddressToken",
       "Mail.MarkAsReadOnIngest",
       "Mail.MoveOnIngest",
+      "Mail.MoveSkippedOnIngest",
       "Mail.ProcessedFolderName",
+      "Mail.AutoSubmittedAllowedSenders",
     ],
   },
   {

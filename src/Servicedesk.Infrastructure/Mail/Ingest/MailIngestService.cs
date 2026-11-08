@@ -111,7 +111,11 @@ public sealed class MailIngestService : IMailIngestService
             if (existing is not null)
             {
                 return new MailIngestResult(MailIngestOutcome.Deduplicated,
-                    existing.Id, existing.TicketId, existing.TicketEventId, "Message-ID already ingested");
+                    existing.Id, existing.TicketId, existing.TicketEventId, "Message-ID already ingested")
+                {
+                    DuplicateInSameMailbox = string.Equals(
+                        existing.MailboxAddress?.Trim(), queueMailbox.Trim(), StringComparison.OrdinalIgnoreCase),
+                };
             }
         }
 
@@ -125,7 +129,11 @@ public sealed class MailIngestService : IMailIngestService
         // auto-mail (stray OOF, bounce to nowhere) must not open a ticket.
         // Same outcome as the pre-v0.0.92 blanket skip, now scoped to the
         // no-match case only.
-        if (isAutoReply && existingTicketId is null)
+        // Exception: senders on Mail.AutoSubmittedAllowedSenders (automated
+        // reports the admin explicitly wants as tickets). The ticket keeps the
+        // auto-reply flag, so no trigger mail goes back to the sender.
+        if (isAutoReply && existingTicketId is null
+            && !await AutoSubmittedSenderAllowList.IsAllowedAsync(_settings, msg.From.Address, _logger, ct))
         {
             return new MailIngestResult(MailIngestOutcome.SkippedAutoSubmitted, null, null, null,
                 $"{autoReplySignal} (no existing ticket matched)");

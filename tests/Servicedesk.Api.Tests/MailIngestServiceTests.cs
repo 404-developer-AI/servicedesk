@@ -37,6 +37,44 @@ public sealed class MailIngestServiceTests
         Assert.Empty(mailRepo.Inserts);
     }
 
+    [Theory]
+    [InlineData("noreply@reports.example")]
+    [InlineData("@reports.example")]
+    [InlineData("other@x.example, reports.example")]
+    public async Task Allowed_sender_auto_mail_opens_a_flagged_ticket(string allowList)
+    {
+        var (svc, graph, mailRepo, tickets, _) = Build(allowedAutoSenders: allowList);
+        graph.Message = NewMessage(
+            autoSubmitted: "auto-generated",
+            from: new GraphRecipient("NoReply@Reports.example", "Reports"));
+
+        var result = await svc.IngestAsync(QueueId, QueueMailbox, "gid-1", default);
+
+        Assert.Equal(MailIngestOutcome.Created, result.Outcome);
+        Assert.Single(tickets.Created);
+        // Still flagged: SendMailHandler's hard gate keeps trigger mail away
+        // from the no-reply sender.
+        Assert.True(Assert.Single(mailRepo.Inserts).IsAutoSubmitted);
+        Assert.Contains("\"auto_reply\":true", Assert.Single(tickets.AddedEvents).MetadataJson);
+    }
+
+    [Theory]
+    [InlineData("noreply@other.example")]
+    [InlineData("@sub.reports.example")]
+    [InlineData("reports.example.evil")]
+    public async Task Auto_mail_from_a_sender_not_on_the_list_is_still_skipped(string allowList)
+    {
+        var (svc, graph, _, tickets, _) = Build(allowedAutoSenders: allowList);
+        graph.Message = NewMessage(
+            autoSubmitted: "auto-generated",
+            from: new GraphRecipient("noreply@reports.example", "Reports"));
+
+        var result = await svc.IngestAsync(QueueId, QueueMailbox, "gid-1", default);
+
+        Assert.Equal(MailIngestOutcome.SkippedAutoSubmitted, result.Outcome);
+        Assert.Empty(tickets.Created);
+    }
+
     [Fact]
     public async Task Auto_submitted_mail_with_thread_match_is_ingested_and_flagged()
     {
@@ -417,7 +455,7 @@ public sealed class MailIngestServiceTests
             AutoSubmitted: autoSubmitted,
             Attachments: Array.Empty<GraphAttachmentInfo>());
 
-    private static (MailIngestService svc, StubGraph graph, StubMailRepo mail, StubTickets tickets, StubContacts contacts) Build()
+    private static (MailIngestService svc, StubGraph graph, StubMailRepo mail, StubTickets tickets, StubContacts contacts) Build(string? allowedAutoSenders = null)
     {
         var graph = new StubGraph();
         var mail = new StubMailRepo();
@@ -426,7 +464,7 @@ public sealed class MailIngestServiceTests
         var inbound = new StubInboundRepo();
         var contacts = new StubContacts();
         var blobs = new StubBlobs();
-        var settings = new StubSettings();
+        var settings = new StubSettings { AllowedAutoSenders = allowedAutoSenders };
         var svc = new MailIngestService(graph, mail, tickets, taxonomy, inbound, contacts, blobs, settings,
             new NoopSlaEngine(), new NoopTriggerService(), NullLogger<MailIngestService>.Instance);
         return (svc, graph, mail, tickets, contacts);
@@ -669,11 +707,13 @@ public sealed class MailIngestServiceTests
 
     private sealed class StubSettings : ISettingsService
     {
+        public string? AllowedAutoSenders { get; init; }
         public Task<T> GetAsync<T>(string key, CancellationToken ct)
         {
             object value = key switch
             {
                 "Mail.PlusAddressToken" => "TCK",
+                "Mail.AutoSubmittedAllowedSenders" => AllowedAutoSenders!,
                 _ => default(T)!,
             };
             return Task.FromResult((T)value!);

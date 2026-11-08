@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Servicedesk.Domain.Taxonomy;
 using Servicedesk.Infrastructure.Mail.Graph;
+using Servicedesk.Infrastructure.Mail.Ingest;
 using Servicedesk.Infrastructure.Mail.Polling;
 using Xunit;
 
@@ -85,6 +86,142 @@ public sealed class MailPollingServiceTests
 
         // Graph was never called because the service skipped.
         Assert.Equal(0, graph.CallCount);
+    }
+
+    [Fact]
+    public async Task Graph_timeout_is_recorded_as_failure_not_propagated_as_shutdown()
+    {
+        // An HttpClient timeout surfaces as TaskCanceledException (an
+        // OperationCanceledException) while the worker's own token is NOT
+        // cancelled. It used to escape and stop the polling loop for good.
+        var sourceId = Guid.NewGuid();
+        var repo = new InMemoryInboundRepo();
+        var graph = new StubGraphClient
+        {
+            Throw = new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout"),
+        };
+
+        await MailPollingService.PollSourceCoreAsync(
+            sourceId, Guid.NewGuid(), "servicedesk", "mailbox@test", "inbox", 50, repo, graph,
+            NullLogger.Instance, CancellationToken.None);
+
+        var state = await repo.GetAsync(sourceId, CancellationToken.None);
+        Assert.NotNull(state);
+        Assert.Equal(1, state!.ConsecutiveFailures);
+        Assert.Contains("TaskCanceledException", state.LastError);
+    }
+
+    [Fact]
+    public async Task Real_shutdown_still_propagates_cancellation()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var graph = new StubGraphClient { Throw = new OperationCanceledException(cts.Token) };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            MailPollingService.PollSourceCoreAsync(
+                Guid.NewGuid(), Guid.NewGuid(), "servicedesk", "mailbox@test", "inbox", 50,
+                new InMemoryInboundRepo(), graph, NullLogger.Instance, cts.Token));
+    }
+
+    [Fact]
+    public async Task Ingest_timeout_on_one_message_does_not_abort_the_cycle()
+    {
+        var sourceId = Guid.NewGuid();
+        var repo = new InMemoryInboundRepo();
+        var graph = new StubGraphClient
+        {
+            Response = new GraphDeltaPage(
+                new[] { Summary("1"), Summary("2") }, DeltaLink: "https://graph/delta?next=1"),
+        };
+        var ingest = new StubIngest(id => id == "1"
+            ? throw new TaskCanceledException("timeout")
+            : Result(MailIngestOutcome.Created));
+
+        await MailPollingService.PollSourceCoreAsync(
+            sourceId, Guid.NewGuid(), "servicedesk", "mailbox@test", "inbox", 50, repo, graph,
+            NullLogger.Instance, CancellationToken.None, ingest, markRead: false,
+            notifier: null, finalizer: null);
+
+        Assert.Equal(new[] { "1", "2" }, ingest.Calls);
+        var state = await repo.GetAsync(sourceId, CancellationToken.None);
+        Assert.Equal("https://graph/delta?next=1", state!.DeltaLink);
+        Assert.Equal(0, state.ConsecutiveFailures);
+    }
+
+    [Fact]
+    public async Task Deliberately_skipped_mail_is_handed_to_the_finalizer_for_moving()
+    {
+        var sourceId = Guid.NewGuid();
+        var graph = new StubGraphClient
+        {
+            Response = new GraphDeltaPage(
+                new[] { Summary("bulk"), Summary("nodefaults"), Summary("created") }, "https://graph/delta?n=1"),
+        };
+        var ingest = new StubIngest(id => id switch
+        {
+            "bulk" => Result(MailIngestOutcome.SkippedAutoSubmitted),
+            "nodefaults" => Result(MailIngestOutcome.SkippedNoDefaults),
+            _ => Result(MailIngestOutcome.Created),
+        });
+        var finalizer = new StubFinalizer();
+
+        await MailPollingService.PollSourceCoreAsync(
+            sourceId, Guid.NewGuid(), "servicedesk", "mailbox@test", "inbox", 50,
+            new InMemoryInboundRepo(), graph, NullLogger.Instance, CancellationToken.None,
+            ingest, markRead: false, notifier: null, finalizer: finalizer);
+
+        // Only the bulk mail: a config problem stays visible in the inbox and
+        // ingested mail goes through the attachment-gated finalize path.
+        Assert.Equal(new[] { (sourceId, "mailbox@test", "bulk") }, finalizer.Skipped);
+    }
+
+    [Theory]
+    [InlineData(MailIngestOutcome.SkippedAutoSubmitted, false, true)]
+    [InlineData(MailIngestOutcome.SkippedOwnMailbox, false, true)]
+    [InlineData(MailIngestOutcome.SkippedLoop, false, true)]
+    [InlineData(MailIngestOutcome.Deduplicated, false, true)]
+    [InlineData(MailIngestOutcome.Deduplicated, true, false)]
+    [InlineData(MailIngestOutcome.SkippedNoDefaults, false, false)]
+    [InlineData(MailIngestOutcome.SkippedNotFound, false, false)]
+    [InlineData(MailIngestOutcome.Created, false, false)]
+    [InlineData(MailIngestOutcome.Appended, false, false)]
+    public void ShouldMoveSkipped_covers_only_final_skip_decisions(
+        MailIngestOutcome outcome, bool sameMailboxDuplicate, bool expected)
+    {
+        var result = Result(outcome) with { DuplicateInSameMailbox = sameMailboxDuplicate };
+        Assert.Equal(expected, MailPollingService.ShouldMoveSkipped(result));
+    }
+
+    private static GraphMailSummary Summary(string id)
+        => new(id, $"<{id}@example>", "Subject", "from@example.com", "F", DateTimeOffset.UtcNow);
+
+    private static MailIngestResult Result(MailIngestOutcome outcome)
+        => new(outcome, null, null, null, null);
+
+    private sealed class StubIngest : IMailIngestService
+    {
+        private readonly Func<string, MailIngestResult> _handler;
+        public List<string> Calls { get; } = new();
+        public StubIngest(Func<string, MailIngestResult> handler) => _handler = handler;
+
+        public Task<MailIngestResult> IngestAsync(Guid queueId, string queueMailbox, string graphMessageId, CancellationToken ct)
+        {
+            Calls.Add(graphMessageId);
+            return Task.FromResult(_handler(graphMessageId));
+        }
+    }
+
+    private sealed class StubFinalizer : IMailFinalizer
+    {
+        public List<(Guid, string, string)> Skipped { get; } = new();
+        public Task TryFinalizeMailAsync(Guid mailId, CancellationToken ct) => Task.CompletedTask;
+        public Task SweepAsync(CancellationToken ct) => Task.CompletedTask;
+        public Task MoveSkippedAsync(Guid sourceId, string mailbox, string graphMessageId, CancellationToken ct)
+        {
+            Skipped.Add((sourceId, mailbox, graphMessageId));
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class StubGraphClient : IGraphMailClient

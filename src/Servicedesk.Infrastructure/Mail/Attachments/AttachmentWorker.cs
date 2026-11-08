@@ -74,7 +74,7 @@ public sealed class AttachmentWorker : BackgroundService
                         await RunSweepAsync(stoppingToken);
                     }
                 }
-                catch (OperationCanceledException) { break; }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
                 catch (Exception ex)
                 {
                     run.Fail(ex);
@@ -96,7 +96,7 @@ public sealed class AttachmentWorker : BackgroundService
         {
             await finalizer.SweepAsync(ct);
         }
-        catch (OperationCanceledException) { throw; }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[AttachmentWorker] finalizer sweep failed (will retry next tick).");
@@ -132,7 +132,7 @@ public sealed class AttachmentWorker : BackgroundService
             if (row is { OwnerKind: "Mail" })
             {
                 try { await finalizer.TryFinalizeMailAsync(row.OwnerId, ct); }
-                catch (OperationCanceledException) { throw; }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex,
@@ -199,7 +199,7 @@ public sealed class AttachmentWorker : BackgroundService
                 sw.ElapsedMilliseconds);
             return new ProcessOutcome(true, payload.AttachmentId);
         }
-        catch (OperationCanceledException) { throw; }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             sw.Stop();

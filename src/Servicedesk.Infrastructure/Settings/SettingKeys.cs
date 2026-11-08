@@ -198,6 +198,8 @@ public static class SettingKeys
         public const string PlusAddressToken = "Mail.PlusAddressToken";
         public const string MarkAsReadOnIngest = "Mail.MarkAsReadOnIngest";
         public const string MoveOnIngest = "Mail.MoveOnIngest";
+        public const string MoveSkippedOnIngest = "Mail.MoveSkippedOnIngest";
+        public const string AutoSubmittedAllowedSenders = "Mail.AutoSubmittedAllowedSenders";
         public const string ProcessedFolderName = "Mail.ProcessedFolderName";
         public const string AutoLinkCompanyByDomain = "Mail.AutoLinkCompanyByDomain";
         public const string AutoLinkDomainBlacklist = "Mail.AutoLinkDomainBlacklist";
@@ -2023,6 +2025,10 @@ public static class SettingDefaults
             "After a successful ticket-commit, mark the source message as read in the mailbox."),
         new SettingDefault(SettingKeys.Mail.MoveOnIngest, "true", "bool", "Mail",
             "After a successful ticket-commit, move the source message out of the inbox into the processed folder."),
+        new SettingDefault(SettingKeys.Mail.MoveSkippedOnIngest, "true", "bool", "Mail",
+            "Also move mail the servicedesk deliberately skips into the processed folder: auto-replies and bulk mail without a matching ticket, mail sent from one of our own mailboxes, and copies of a mail already ingested from another mailbox. Only applies when moving processed mail is on. Mail skipped because of a configuration problem stays in the inbox."),
+        new SettingDefault(SettingKeys.Mail.AutoSubmittedAllowedSenders, "", "string", "Mail",
+            "Senders whose automated mail (auto-generated or bulk, e.g. a daily service report from a no-reply address) may open a new ticket. Normally such mail only joins an existing ticket and is skipped otherwise. Comma-separated: a full address (noreply@example.com) or a domain (@example.com; subdomains are not included). The ticket lands in the queue of the mailbox it arrived in and keeps the auto-reply flag, so no trigger mail is sent back to the sender."),
         new SettingDefault(SettingKeys.Mail.ProcessedFolderName, "Servicedesk Verwerkt", "string", "Mail",
             "Mailbox folder name where ingested messages are moved. Auto-created at first use if missing."),
         new SettingDefault(SettingKeys.Mail.AutoLinkCompanyByDomain, "true", "bool", "Mail",

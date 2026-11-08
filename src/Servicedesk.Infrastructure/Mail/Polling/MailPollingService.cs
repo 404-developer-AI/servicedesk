@@ -44,7 +44,7 @@ public sealed class MailPollingService : BackgroundService
                 {
                     delay = await RunCycleAsync(stoppingToken);
                 }
-                catch (OperationCanceledException) { break; }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
                 catch (Exception ex)
                 {
                     run.Fail(ex);
@@ -68,6 +68,7 @@ public sealed class MailPollingService : BackgroundService
         var graph = scope.ServiceProvider.GetRequiredService<IGraphMailClient>();
         var ingest = scope.ServiceProvider.GetRequiredService<IMailIngestService>();
         var notifier = scope.ServiceProvider.GetRequiredService<ITicketListNotifier>();
+        var finalizer = scope.ServiceProvider.GetRequiredService<IMailFinalizer>();
 
         var intervalSeconds = await settings.GetAsync<int>(SettingKeys.Mail.PollingIntervalSeconds, ct);
         var batchSize = await settings.GetAsync<int>(SettingKeys.Mail.MaxBatchSize, ct);
@@ -99,7 +100,7 @@ public sealed class MailPollingService : BackgroundService
             await PollSourceCoreAsync(
                 src.Id, src.QueueId, q.Slug, src.MailboxAddress, src.FolderId!, batchSize,
                 repo, graph, _logger, ct,
-                ingest, markRead, notifier);
+                ingest, markRead, notifier, finalizer);
         }
 
         return TimeSpan.FromSeconds(intervalSeconds);
@@ -118,7 +119,7 @@ public sealed class MailPollingService : BackgroundService
         ILogger logger,
         CancellationToken ct)
         => PollSourceCoreAsync(sourceId, queueId, queueSlug, mailbox, folderId, batchSize, repo, graph, logger, ct,
-            ingest: null, markRead: false, notifier: null);
+            ingest: null, markRead: false, notifier: null, finalizer: null);
 
     internal static async Task PollSourceCoreAsync(
         Guid sourceId,
@@ -133,7 +134,8 @@ public sealed class MailPollingService : BackgroundService
         CancellationToken ct,
         IMailIngestService? ingest,
         bool markRead,
-        ITicketListNotifier? notifier)
+        ITicketListNotifier? notifier,
+        IMailFinalizer? finalizer)
     {
         var state = await repo.GetAsync(sourceId, ct);
         if (state?.ConsecutiveFailures >= MaxConsecutiveFailuresBeforeSkip)
@@ -187,8 +189,15 @@ public sealed class MailPollingService : BackgroundService
                             }
                         }
                     }
+                    else if (finalizer is not null && ShouldMoveSkipped(result))
+                    {
+                        // Deliberately skipped mail has no mail row, so the
+                        // finalize path never sees it — move it here or it sits
+                        // in the inbox forever (the delta cursor moves past it).
+                        await finalizer.MoveSkippedAsync(sourceId, mailbox, m.Id, ct);
+                    }
                 }
-                catch (OperationCanceledException) { throw; }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
                 catch (Exception ex)
                 {
                     // One poisoned message must not break the delta cycle. Log and continue.
@@ -200,7 +209,7 @@ public sealed class MailPollingService : BackgroundService
 
             await repo.SaveSuccessAsync(sourceId, page.DeltaLink ?? state?.DeltaLink, now, ct);
         }
-        catch (OperationCanceledException) { throw; }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             var msg = ex.GetType().Name + ": " + ex.Message;
@@ -210,6 +219,19 @@ public sealed class MailPollingService : BackgroundService
             await repo.SaveFailureAsync(sourceId, msg, now, ct);
         }
     }
+
+    /// Skips that are a deliberate, final decision about the mail itself. Not
+    /// SkippedNoDefaults (a configuration problem — the mail must stay visible
+    /// in the inbox), not SkippedNotFound (nothing left to move), and not a
+    /// duplicate from the same mailbox (its original mail row owns the move).
+    internal static bool ShouldMoveSkipped(MailIngestResult result) => result.Outcome switch
+    {
+        MailIngestOutcome.SkippedAutoSubmitted => true,
+        MailIngestOutcome.SkippedOwnMailbox => true,
+        MailIngestOutcome.SkippedLoop => true,
+        MailIngestOutcome.Deduplicated => !result.DuplicateInSameMailbox,
+        _ => false,
+    };
 
     // Mark-as-read is safe to run immediately (it doesn't change the Graph
     // message id). The Move step has been deferred to MailFinalizer, which
