@@ -235,11 +235,18 @@ public static class TicketEndpoints
                 ? (await timeline.ListTaggedOrdersAsync(id, ct)).Select(o => new { id = o.Id, label = o.Label }).ToList()
                 : null;
 
+            // v0.1.52 — filled forms for the side panel's Forms block (one
+            // indexed read; access is already proven by the ticket load above).
+            var formRepo = http.RequestServices.GetRequiredService<Servicedesk.Infrastructure.Forms.ITicketFormRepository>();
+            var forms = (await formRepo.ListForTicketAsync(id, ct))
+                .Select(Servicedesk.Api.Forms.TicketFormEndpoints.MapSummary).ToList();
+
             return Results.Ok(new
             {
                 ticket = detail.Ticket,
                 portalRegistration,
                 taggedOrders,
+                forms,
                 body = detail.Body,
                 events = detail.Events,
                 hasOlderEvents = first.HasOlderEvents,

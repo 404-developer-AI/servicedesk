@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { FILL_FORM_EVENT } from "@/lib/forms-api";
 import { useEditor, EditorContent, ReactRenderer } from "@tiptap/react";
 import { mergeAttributes } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
@@ -974,9 +975,10 @@ export function splitMentionIds(ids: string[]): {
 /// MentionNodeAttrs widened locally because we pass kind/bodyHtml through
 /// the command props — Tiptap's own type only knows id/label.
 type ComposeMentionProps = MentionNodeAttrs & {
-  kind?: "intake" | "template" | "order" | "kb";
+  kind?: "intake" | "template" | "order" | "kb" | "form";
   bodyHtml?: string;
   href?: string;
+  ticketId?: string;
 };
 
 /// v0.1.4 — typing pause before the `@@` / `::` pickers query the server.
@@ -1037,6 +1039,20 @@ function buildIntakeSuggestion(
           .focus()
           .insertContentAt(range, rendered)
           .run();
+        return;
+      }
+
+      if (kind === "form") {
+        // v0.1.52 — interactive form: nothing lands in the composer. Strip
+        // the `::query` and ask the ticket page to open the fill dialog; the
+        // saved form becomes its own internal note, so the agent's draft
+        // stays exactly as it was.
+        editor.chain().focus().deleteRange(range).run();
+        if (props.ticketId && id) {
+          window.dispatchEvent(
+            new CustomEvent(FILL_FORM_EVENT, { detail: { ticketId: props.ticketId, templateId: id } }),
+          );
+        }
         return;
       }
 
@@ -1123,6 +1139,7 @@ function buildIntakeSuggestion(
                   kind: item.kind,
                   bodyHtml: item.bodyHtml,
                   href: item.href,
+                  ticketId: item.ticketId,
                 } as ComposeMentionProps),
             },
             editor: props.editor,
@@ -1152,6 +1169,7 @@ function buildIntakeSuggestion(
                 kind: item.kind,
                 bodyHtml: item.bodyHtml,
                 href: item.href,
+                ticketId: item.ticketId,
               } as ComposeMentionProps),
           });
           if (!props.clientRect) return;

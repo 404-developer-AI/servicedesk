@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TemplateEditor } from "./templates/ComposeTemplateEditor";
 import { TicketTemplateEditor } from "./templates/TicketTemplateEditor";
+import { FormTemplatesPanel } from "./templates/FormTemplatesPanel";
 import {
   composeTemplatesApi,
   type ComposeTemplate,
@@ -25,10 +26,12 @@ type Mode =
   | { kind: "new" }
   | { kind: "edit"; templateId: string };
 
-type Tab = "mail" | "ticket";
+type Tab = "mail" | "ticket" | "forms";
 
 export function TemplatesSettingsPage() {
-  const [tab, setTab] = useState<Tab>("mail");
+  const [tab, setTab] = useState<Tab>(() =>
+    new URLSearchParams(window.location.search).get("tab") === "forms" ? "forms" : "mail",
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -40,7 +43,9 @@ export function TemplatesSettingsPage() {
         <p className="max-w-xl text-sm text-muted-foreground">
           {tab === "mail"
             ? "Pre-canned text blocks agents drop into an internal note, public reply, or outgoing mail by typing ::."
-            : "Pre-canned ticket field sets agents apply in one click while creating a ticket — subject, body, queue, priority, type and more."}
+            : tab === "forms"
+              ? "Interactive forms agents fill in from the Note or Call composer by typing :: — saved as an internal note and listed in the ticket's side panel."
+              : "Pre-canned ticket field sets agents apply in one click while creating a ticket — subject, body, queue, priority, type and more."}
         </p>
       </header>
 
@@ -51,9 +56,12 @@ export function TemplatesSettingsPage() {
         <TabButton active={tab === "ticket"} onClick={() => setTab("ticket")}>
           Ticket Templates
         </TabButton>
+        <TabButton active={tab === "forms"} onClick={() => setTab("forms")}>
+          Forms
+        </TabButton>
       </div>
 
-      {tab === "mail" ? <ComposeTemplatesPanel /> : <TicketTemplatesPanel />}
+      {tab === "mail" ? <ComposeTemplatesPanel /> : tab === "forms" ? <FormTemplatesPanel /> : <TicketTemplatesPanel />}
     </div>
   );
 }

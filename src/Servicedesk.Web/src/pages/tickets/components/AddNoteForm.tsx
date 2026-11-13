@@ -1,4 +1,5 @@
 import * as React from "react";
+import { ticketFormsApi } from "@/lib/forms-api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Clock, ExternalLink, FileText, ListChecks, Mail, Phone, Sparkles, StickyNote } from "lucide-react";
@@ -703,10 +704,10 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
         placeholder={
           isCall
             ? effectiveCallInternal
-              ? "Log the phone call (internal — not visible to customers). Type @@ to tag an agent, :: to insert a template..."
-              : "Log the phone call (visible to the customer). Type @@ to tag an agent, :: to insert a template..."
+              ? "Log the phone call (internal — not visible to customers). Type @@ to tag an agent, :: to insert a template or form..."
+              : "Log the phone call (visible to the customer). Type @@ to tag an agent, :: to insert a template or form..."
             : isInternal
-            ? "Add an internal note (not visible to customers). Type @@ to tag an agent, :: to insert a template..."
+            ? "Add an internal note (not visible to customers). Type @@ to tag an agent, :: to insert a template or form..."
             : "Write a reply to the customer. Type @@ to tag an agent, :: to insert a template..."
         }
         minHeight="120px"
@@ -744,11 +745,27 @@ export function AddNoteForm({ ticketId, queueId, statusId, onSubmitted, mailCont
           // v0.0.75 — replies also offer Published KB articles as public
           // links (a reply lands in the customer's mailbox, same as mail).
           // Internal notes skip the source: a public link has no audience there.
-          const [orders, kbItems] = await Promise.all([
+          // v0.1.52 — interactive forms in the Note and Call composers:
+          // picking one opens the fill dialog; saving writes its own internal
+          // note. Not offered on Reply (that composer is customer-facing).
+          const [orders, kbItems, forms] = await Promise.all([
             user?.adsolutOrdersEnabled ? orderMentionItems(q) : Promise.resolve([]),
             tab === "reply" ? kbLinkMentionItems(q) : Promise.resolve([]),
+            tab === "note" || tab === "call"
+              ? ticketFormsApi.usableCached(ticketId).catch(() => [])
+              : Promise.resolve([]),
           ]);
-          return [...templates, ...orders, ...kbItems];
+          const formItems = forms
+            .filter((f) => !needle || f.name.toLowerCase().includes(needle) || f.description.toLowerCase().includes(needle))
+            .slice(0, 8)
+            .map((f) => ({
+              id: f.id,
+              name: f.name,
+              description: f.description || `${f.fieldCount} field${f.fieldCount === 1 ? "" : "s"}`,
+              kind: "form" as const,
+              ticketId,
+            }));
+          return [...formItems, ...templates, ...orders, ...kbItems];
         }}
         onEditorReady={(editor) => {
           editorRef.current = editor as typeof editorRef.current;

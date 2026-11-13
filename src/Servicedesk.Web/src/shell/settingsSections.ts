@@ -143,7 +143,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     slug: "templates",
     label: "Templates",
     description:
-      "Pre-canned HTML snippets agents drop into a note, reply, or outgoing mail via the :: picker. Scope each template to one or more queues. Each template can optionally link a survey that fires on send.",
+      "Pre-canned HTML snippets agents drop into a note, reply, or outgoing mail via the :: picker, ticket templates, and interactive forms agents fill in from the Note or Call composer. Scope each template to one or more queues.",
     icon: FileText,
   },
   {

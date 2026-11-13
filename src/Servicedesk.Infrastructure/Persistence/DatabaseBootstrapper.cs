@@ -6623,6 +6623,70 @@ public sealed class DatabaseBootstrapper : IHostedService
                                   'ProjectLinked','ProjectUnlinked',
                                   'PortalMessage','TicketFlagChange','Call',
                                   'PendingTillChange')) NOT VALID;
+
+        -- ===================================================================
+        -- v0.1.52 — Ticket forms: admin-built interactive templates (typed
+        -- fields) that agents pick via "::" in the Note/Call composer, fill
+        -- in, and save. Every save writes a plain internal Note (no new event
+        -- type) and a version row; the side panel links the latest version.
+        -- definition = {"fields":[…]} (field ids are stable GUIDs so answers
+        -- survive template edits). The ticket keeps its own snapshot of the
+        -- definition, so later template edits never change a filled form.
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS form_templates (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            name                TEXT        NOT NULL,
+            description         TEXT        NOT NULL DEFAULT '',
+            is_active           BOOLEAN     NOT NULL DEFAULT TRUE,
+            queue_ids           UUID[]      NOT NULL DEFAULT '{}',
+            definition          JSONB       NOT NULL DEFAULT '{"fields":[]}'::jsonb,
+            field_count         INT         NOT NULL DEFAULT 0,
+            created_by_user_id  UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_form_templates_active_name
+            ON form_templates (lower(name)) WHERE is_active;
+        CREATE INDEX IF NOT EXISTS ix_form_templates_queue_ids
+            ON form_templates USING GIN (queue_ids);
+
+        -- One filled form per row. answers = {"<fieldId>": value} validated
+        -- server-side against template_snapshot. search_text = flattened
+        -- labels + answer text for the global search source.
+        CREATE TABLE IF NOT EXISTS ticket_forms (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            ticket_id           UUID        NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            template_id         UUID        NULL REFERENCES form_templates(id) ON DELETE SET NULL,
+            name                TEXT        NOT NULL,
+            template_snapshot   JSONB       NOT NULL,
+            answers             JSONB       NOT NULL DEFAULT '{}'::jsonb,
+            version             INT         NOT NULL DEFAULT 1,
+            search_text         TEXT        NOT NULL DEFAULT '',
+            created_by_user_id  UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_by_user_id  UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            deleted_utc         TIMESTAMPTZ NULL,
+            deleted_by_user_id  UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            deleted_reason      TEXT        NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS ix_ticket_forms_ticket
+            ON ticket_forms (ticket_id, created_utc) WHERE deleted_utc IS NULL;
+        CREATE INDEX IF NOT EXISTS ix_ticket_forms_search_trgm
+            ON ticket_forms USING GIN (search_text gin_trgm_ops) WHERE deleted_utc IS NULL;
+
+        -- Full answer history: one row per save, pointing at the Note it wrote.
+        CREATE TABLE IF NOT EXISTS ticket_form_versions (
+            form_id             UUID        NOT NULL REFERENCES ticket_forms(id) ON DELETE CASCADE,
+            version             INT         NOT NULL,
+            answers             JSONB       NOT NULL,
+            event_id            BIGINT      NULL,
+            saved_by_user_id    UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            saved_utc           TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (form_id, version)
+        );
+        CREATE INDEX IF NOT EXISTS ix_ticket_form_versions_event
+            ON ticket_form_versions (event_id) WHERE event_id IS NOT NULL;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

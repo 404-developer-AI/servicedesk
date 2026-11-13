@@ -614,6 +614,11 @@ public static class DependencyInjection
         services.AddSingleton<Checklists.IChecklistCloseGuard, Checklists.ChecklistCloseGuard>();
         services.AddSingleton<Checklists.IChecklistCloseBlockReporter, Checklists.ChecklistCloseBlockReporter>();
         services.AddScoped<Checklists.ITicketChecklistService, Checklists.TicketChecklistService>();
+        // v0.1.52 — ticket forms: templates, filled forms, settings reader.
+        services.AddSingleton<Forms.IFormTemplateRepository, Forms.FormTemplateRepository>();
+        services.AddSingleton<Forms.ITicketFormRepository, Forms.TicketFormRepository>();
+        services.AddSingleton<Forms.IFormSettingsReader, Forms.FormSettingsReader>();
+        services.AddScoped<Forms.ITicketFormService, Forms.TicketFormService>();
         // First-open title-review gate matcher + confirmation runner. Called
         // by the ticket detail page's open-gate probe and the confirmation
         // endpoint. Singleton for the same reason as the status-gate service.
@@ -736,6 +741,9 @@ public static class DependencyInjection
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<TicketChecklistItemSearchSource>()));
         services.AddSingleton<ChecklistTemplateSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<ChecklistTemplateSearchSource>()));
+        // v0.1.52 — filled ticket forms (queue-scoped like tickets).
+        services.AddSingleton<TicketFormSearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<TicketFormSearchSource>()));
 
         // v0.1.0 — Customer portal: accounts + one-time tokens, Turnstile
         // verification, transactional mail, scoped ticket queries and the

@@ -24,6 +24,9 @@ import { Button } from "@/components/ui/button";
 import { flagColors, useTicketFlagSettings } from "@/lib/ticketFlags";
 import { FlagToggleRow } from "@/components/TicketFlagToggle";
 import { cn } from "@/lib/utils";
+import { formatDateTime } from "@/lib/dateFormat";
+import { useServerTimeZone } from "@/hooks/useServerTime";
+import type { TicketFormSummary } from "@/lib/forms-api";
 import type {
   Ticket,
   TicketFieldUpdate,
@@ -64,6 +67,7 @@ import {
   Unlink,
   User,
   UserCog,
+  ClipboardList,
 } from "lucide-react";
 
 type TicketSidePanelProps = {
@@ -103,6 +107,9 @@ type TicketSidePanelProps = {
   /// in the Status tab; the label is the pill's own "OR3 · Customer" text
   /// used as a fallback while the mirror row loads.
   taggedOrders?: { id: string; label: string }[];
+  /// v0.1.52 — filled forms on this ticket; rows open the form dialog via
+  /// the page's TicketFormHost (`data-form-id` click).
+  ticketForms?: TicketFormSummary[];
 };
 
 type TabId = "status" | "contact" | "company";
@@ -187,6 +194,7 @@ export function TicketSidePanel({
   projectLinkedTicketCount = 0,
   contactNotLinkedWarning,
   taggedOrders,
+  ticketForms,
 }: TicketSidePanelProps) {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = React.useState<TabId>("status");
@@ -322,6 +330,7 @@ export function TicketSidePanel({
             projectLinkedTicketCount={projectLinkedTicketCount}
             contactNotLinkedWarning={contactNotLinkedWarning}
             taggedOrders={taggedOrders ?? []}
+            ticketForms={ticketForms ?? []}
             onRequestLinkProject={() => setLinkProjectOpen(true)}
             onUnlinkProject={() =>
               runProjectAction(() => ticketApiClient.unlinkProject(ticket.id), "Removed from project")
@@ -391,6 +400,7 @@ function StatusTab({
   projectLinkedTicketCount,
   contactNotLinkedWarning,
   taggedOrders,
+  ticketForms,
   onRequestLinkProject,
   onUnlinkProject,
   onRevertProject,
@@ -417,6 +427,7 @@ function StatusTab({
   projectLinkedTicketCount: number;
   contactNotLinkedWarning?: boolean;
   taggedOrders: { id: string; label: string }[];
+  ticketForms: TicketFormSummary[];
   onRequestLinkProject: () => void;
   onUnlinkProject: () => void;
   onRevertProject: () => void;
@@ -701,6 +712,8 @@ function StatusTab({
         <OrdersBlock orders={taggedOrders} />
       )}
 
+      {ticketForms.length > 0 && <FormsBlock forms={ticketForms} />}
+
       {onToggleSystemEvents && systemEventCount > 0 && (
         <div className="space-y-2 rounded-md border border-glass-strong bg-glass px-2.5 py-2">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
@@ -738,6 +751,47 @@ function StatusTab({
 
       <ZammadImportBadge ticket={ticket} />
     </>
+  );
+}
+
+/* ─── Forms block ─── */
+
+/// "Forms" strip in the Status tab: every filled form on the ticket, oldest
+/// first (the order they were filled in). Rows carry `data-form-id`, so the
+/// page's TicketFormHost capture-phase listener opens the form dialog — the
+/// same path as the "Open form" pill in the note.
+function FormsBlock({ forms }: { forms: TicketFormSummary[] }) {
+  const zone = useServerTimeZone();
+  return (
+    <div className="sd-forms-block space-y-2 rounded-md border border-glass-strong bg-glass px-2.5 py-2">
+      <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground/70">
+        <span>Forms</span>
+        <span className="tabular-nums">{forms.length}</span>
+      </div>
+      <div className="space-y-1.5">
+        {forms.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            data-form-id={f.id}
+            className="group flex w-full items-center gap-2 rounded-md border border-glass bg-glass px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-glass-hover"
+          >
+            <ClipboardList className="h-3.5 w-3.5 shrink-0 text-primary/80" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium text-foreground">{f.name}</span>
+              <span className="block truncate text-[11px] text-muted-foreground">
+                {f.updatedByName ?? f.createdByName ?? "—"} · {formatDateTime(f.updatedUtc, zone)}
+              </span>
+            </span>
+            {f.version > 1 && (
+              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium tabular-nums border border-glass bg-glass-strong text-muted-foreground/80">
+                v{f.version}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

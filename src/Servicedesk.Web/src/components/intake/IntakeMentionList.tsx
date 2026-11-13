@@ -1,5 +1,5 @@
 import * as React from "react";
-import { BookOpen, ClipboardList, FileText, ShoppingCart } from "lucide-react";
+import { BookOpen, ClipboardList, FileText, ListChecks, ShoppingCart } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /// Items shown in the `::` typeahead. The picker now mixes intake-form
@@ -16,7 +16,9 @@ export type IntakeMentionItem = {
   id: string;
   name: string;
   description?: string | null;
-  kind: "intake" | "template" | "order" | "kb";
+  kind: "intake" | "template" | "order" | "kb" | "form";
+  /// Only set for kind = "form": the ticket the fill dialog opens on.
+  ticketId?: string;
   /// Only set for kind = "template". The picker hands it through to the
   /// suggestion command so the editor can insertContent at the trigger range.
   bodyHtml?: string;
@@ -98,11 +100,13 @@ export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, Intak
             const isSelected = i === selectedIndex;
             const Icon =
               item.kind === "template" ? FileText
+                : item.kind === "form" ? ListChecks
                 : item.kind === "order" ? ShoppingCart
                 : item.kind === "kb" ? BookOpen
                 : ClipboardList;
             const kindLabel =
               item.kind === "template" ? "Template"
+                : item.kind === "form" ? "Form"
                 : item.kind === "order" ? "Order"
                 : item.kind === "kb" ? "KB article"
                 : "Intake";
@@ -129,6 +133,8 @@ export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, Intak
                     "mt-0.5 h-4 w-4 shrink-0",
                     item.kind === "template"
                       ? "text-violet-700 dark:text-violet-300"
+                      : item.kind === "form"
+                        ? "text-amber-700 dark:text-amber-300"
                       : item.kind === "kb"
                         ? "text-emerald-700 dark:text-emerald-300"
                         : "text-cyan-700 dark:text-cyan-300",
@@ -142,6 +148,8 @@ export const IntakeMentionList = React.forwardRef<IntakeMentionListHandle, Intak
                         "shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider",
                         item.kind === "template"
                           ? "border-violet-400/60 bg-violet-100 text-violet-800 dark:border-violet-400/30 dark:bg-violet-400/10 dark:text-violet-200"
+                          : item.kind === "form"
+                            ? "border-amber-400/60 bg-amber-100 text-amber-800 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200"
                           : item.kind === "kb"
                             ? "border-emerald-400/60 bg-emerald-100 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-200"
                             : "border-cyan-400/60 bg-cyan-100 text-cyan-800 dark:border-cyan-400/30 dark:bg-cyan-400/10 dark:text-cyan-200",

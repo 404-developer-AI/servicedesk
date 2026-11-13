@@ -55,6 +55,8 @@ import { ProjectCloseConfirmDialog } from "./components/projects/ProjectCloseCon
 import { buildMailContext, flattenQueueMailboxes } from "./mailContext";
 import { InTicketSearchProvider, useInTicketSearch } from "./components/InTicketSearch";
 import { stripBaseTags } from "@/lib/sanitize";
+import { TicketFormHost } from "@/components/forms/TicketFormHost";
+import type { TicketFormSummary } from "@/lib/forms-api";
 
 type TicketDetailPageProps = {
   ticketId: string;
@@ -952,6 +954,7 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
         latestMailReceived={data.latestMailReceived ?? null}
         pinnedEventsOutsidePage={data.pinnedEventsOutsidePage ?? []}
         serverTaggedOrders={data.taggedOrders ?? EMPTY_TAGGED_ORDERS}
+        ticketForms={data.forms ?? EMPTY_TICKET_FORMS}
         pinnedEvents={pinnedEvents}
         pinnedEventIds={pinnedEventIds}
         updateMutation={updateMutation}
@@ -1074,10 +1077,11 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
 // Shape of the id an order pill may carry — Adsolut mirror rows are GUIDs.
 const ORDER_GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const EMPTY_TAGGED_ORDERS: { id: string; label: string }[] = [];
+const EMPTY_TICKET_FORMS: TicketFormSummary[] = [];
 
 function TicketDetailBody({
   ticketId, ticket, body, events, timeline, eventTypeCounts, latestMailReceived, pinnedEventsOutsidePage,
-  serverTaggedOrders, pinnedEvents, pinnedEventIds, updateMutation, queryClient,
+  serverTaggedOrders, ticketForms, pinnedEvents, pinnedEventIds, updateMutation, queryClient,
   onSidePanelUpdate,
   requesterEmail,
   ownMailboxAddresses,
@@ -1119,6 +1123,7 @@ function TicketDetailBody({
   latestMailReceived: TicketEvent | null;
   pinnedEventsOutsidePage: TicketEvent[];
   serverTaggedOrders: { id: string; label: string }[];
+  ticketForms: TicketFormSummary[];
   pinnedEvents: any[];
   pinnedEventIds: Set<number>;
   updateMutation: any;
@@ -1291,6 +1296,7 @@ function TicketDetailBody({
 
   return (
     <div className="flex gap-6 pt-3 h-[calc(100vh-0.75rem)] overflow-hidden">
+      <TicketFormHost ticketId={ticketId} />
       {/* Left column — header + description static, activity scrolls, reply pinned bottom */}
       <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
         <SearchContextBar ticketId={ticketId} />
@@ -1652,6 +1658,7 @@ function TicketDetailBody({
             projectLinkedTicketCount={projectLinkedTicketCount}
             contactNotLinkedWarning={contactNotLinkedWarning}
             taggedOrders={taggedOrders}
+            ticketForms={ticketForms}
           />
         </div>
         )}

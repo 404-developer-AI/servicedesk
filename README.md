@@ -15,6 +15,7 @@ A self-hosted helpdesk for IT service teams. One install per organisation, on a 
 - Mail to your support mailbox becomes a ticket; replies thread back onto it, in both directions.
 - Note, Mail and Call buttons on every ticket — internal notes, outgoing mail and logged phone calls, each with its own templates.
 - Checklists per ticket (from admin templates) that can block closing until the required steps are done.
+- Interactive forms (text, choices, dates, agents, contacts, articles with quantities) that agents fill in from the composer; saved as an internal note, versioned, and listed in the ticket's side panel.
 - Project tickets that group related tickets, with their logged time rolled up.
 - Triggers, SLA targets, call-back and research flags, merge and split, and bulk actions on many tickets at once.
 

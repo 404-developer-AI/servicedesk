@@ -610,6 +610,36 @@
   background: hsl(160 84% 50% / 0.25);
 }
 
+/* v0.1.52 — "Open form" pill at the top of a form's internal note
+   (server-rendered, `data-form-id`). Uses the theme's primary token so it
+   reads teal in Steaan and indigo in Nebula; opens the form dialog via the
+   ticket page's TicketFormHost. Flat in both themes on purpose. */
+.sd-form-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  margin-left: 0.35em;
+  padding: 0 0.6em;
+  border-radius: 9999px;
+  background: color-mix(in oklab, var(--color-primary) 10%, transparent);
+  color: var(--color-primary);
+  border: 1px solid color-mix(in oklab, var(--color-primary) 30%, transparent);
+  font-weight: 500;
+  font-size: 0.85em;
+  line-height: 1.5;
+  white-space: nowrap;
+  vertical-align: baseline;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.sd-form-pill::after {
+  content: "→";
+  font-size: 0.9em;
+}
+.sd-form-pill:hover {
+  background: color-mix(in oklab, var(--color-primary) 18%, transparent);
+}
+
 /* v0.1.33 — placeholder for an external image in a mail / note / KB body
    (lib/remoteImages.ts swaps the <img> for it before anything is fetched).
    Keeps the image's declared size when it had one, otherwise a compact

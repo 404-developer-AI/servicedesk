@@ -166,6 +166,18 @@ public static class SettingKeys
         public const string MaxItemsPerChecklist = "Checklists.MaxItemsPerChecklist";
     }
 
+    /// v0.1.52 — ticket forms (admin-built interactive templates agents fill
+    /// in via "::"; every save writes an internal note + a version).
+    public static class Forms
+    {
+        public const string Enabled = "Forms.Enabled";
+        public const string MaxFieldsPerTemplate = "Forms.MaxFieldsPerTemplate";
+        public const string MaxArticleRows = "Forms.MaxArticleRows";
+        public const string MaxArticleQuantity = "Forms.MaxArticleQuantity";
+        public const string LongTextMaxLength = "Forms.LongTextMaxLength";
+        public const string MaxPerTicket = "Forms.MaxPerTicket";
+    }
+
     /// v0.0.105 — project tickets (a normal ticket flagged as project;
     /// other tickets link to it, with a project panel + time rollup).
     public static class Projects
@@ -1983,6 +1995,18 @@ public static class SettingDefaults
             "Maximum number of checklists that can be attached to one ticket."),
         new SettingDefault(SettingKeys.Checklists.MaxItemsPerChecklist, "300", "int", "Tickets",
             "Maximum number of items in one checklist template and on one attached checklist (template items plus items added on the ticket)."),
+        new SettingDefault(SettingKeys.Forms.Enabled, "true", "bool", "Tickets",
+            "Ticket forms: admins build forms with typed fields (Settings → Templates → Forms); agents pick one with :: in the Note or Call composer, fill it in and save it as an internal note. Filled forms are listed in the ticket's side panel. Turn off to hide the forms in the :: picker; filled forms stay readable."),
+        new SettingDefault(SettingKeys.Forms.MaxFieldsPerTemplate, "60", "int", "Tickets",
+            "Maximum number of fields (including section headers) on one form template. 1 to 200."),
+        new SettingDefault(SettingKeys.Forms.MaxArticleRows, "50", "int", "Tickets",
+            "Maximum number of article rows in one article field of a form. 1 to 500."),
+        new SettingDefault(SettingKeys.Forms.MaxArticleQuantity, "100000", "int", "Tickets",
+            "Largest quantity an agent can enter on one article row of a form."),
+        new SettingDefault(SettingKeys.Forms.LongTextMaxLength, "4000", "int", "Tickets",
+            "Maximum number of characters in a long-text field of a form. 100 to 20000."),
+        new SettingDefault(SettingKeys.Forms.MaxPerTicket, "50", "int", "Tickets",
+            "Maximum number of filled forms on one ticket."),
         new SettingDefault(SettingKeys.Projects.Enabled, "true", "bool", "Tickets",
             "Project tickets: a ticket can be created as (or converted to) a project, other tickets link to it via 'Link to project', and the project ticket shows a panel with all linked tickets plus a time rollup for after-calculation. Projects are internal — customers never see them. Turn off to hide every project surface; existing flags and links are kept."),
         new SettingDefault(SettingKeys.Projects.LinkPromptEnabled, "true", "bool", "Tickets",

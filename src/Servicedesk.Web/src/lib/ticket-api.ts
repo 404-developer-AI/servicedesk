@@ -324,6 +324,8 @@ export type TicketDetail = {
   /// "::" order pills across the whole timeline; only for users with the
   /// Orders feature (null otherwise).
   taggedOrders?: { id: string; label: string }[] | null;
+  /// v0.1.52 — filled forms on this ticket (side panel Forms block).
+  forms?: import("@/lib/forms-api").TicketFormSummary[];
 };
 
 /// v0.1.33 — what PATCH /api/tickets/{id}, /company, /requester and the
