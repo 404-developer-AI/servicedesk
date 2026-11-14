@@ -55,8 +55,10 @@ public sealed class SecurityHeadersTests : IClassFixture<SecurityBaselineFactory
         var styleDirective = ExtractDirective(csp, "style-src");
         Assert.Contains("'unsafe-inline'", styleDirective);
         Assert.DoesNotContain("'nonce-", styleDirective);
-        Assert.Contains("https://fonts.googleapis.com", styleDirective);
-        Assert.Contains("https://fonts.gstatic.com", ExtractDirective(csp, "font-src"));
+        // Fonts are self-hosted: no third-party style/font hosts at all.
+        Assert.DoesNotContain("fonts.googleapis.com", csp);
+        Assert.DoesNotContain("fonts.gstatic.com", csp);
+        Assert.Equal("font-src 'self' data:", ExtractDirective(csp, "font-src"));
     }
 
     [Theory]

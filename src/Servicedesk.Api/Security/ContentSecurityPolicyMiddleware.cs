@@ -202,11 +202,9 @@ public sealed class ContentSecurityPolicyMiddleware
         // mere presence would break the UI libs. It still lives in script-src
         // where it continues to be the primary defense against XSS.
         //
-        // fonts.googleapis.com is whitelisted because index.css @imports Inter
-        // from there; the actual .woff2 files come from fonts.gstatic.com
-        // (see font-src below).
-        const string styleHosts = "https://fonts.googleapis.com";
-        var styleSrc = $"'self' 'unsafe-inline' {styleHosts}";
+        // No third-party style or font hosts: Inter is self-hosted (bundled
+        // by Vite from src/assets/fonts), so no visitor IP reaches Google.
+        const string styleSrc = "'self' 'unsafe-inline'";
 
         var connectSrc = development
             ? "'self' ws: wss: http://localhost:* https://localhost:*"
@@ -218,7 +216,7 @@ public sealed class ContentSecurityPolicyMiddleware
             $"script-src {scriptSrc}",
             $"style-src {styleSrc}",
             "img-src 'self' data: blob:",
-            "font-src 'self' data: https://fonts.gstatic.com",
+            "font-src 'self' data:",
             $"connect-src {connectSrc}",
         };
         // frame-src is normally governed by default-src 'self'; the portal
