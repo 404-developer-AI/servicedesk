@@ -12,6 +12,7 @@ import {
   ChartColumnStacked,
   FileSignature,
   MessageSquareText,
+  ClipboardCheck,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "@/lib/roles";
@@ -127,6 +128,19 @@ export const NAV_ITEMS: readonly NavItem[] = [
     roles: ["Agent", "Admin"],
     comingIn: "",
     description: "Per-technician statistics tiles — worked hours and more, built and assigned by statistics builders.",
+    section: "main",
+  },
+  // v0.1.54 — Back office forms (work list of forms submitted for back office
+  // follow-up). Role gate Agent+Admin; the per-user `backoffice_forms_enabled`
+  // flag is checked in Sidebar.tsx and the route gate, and /api/backoffice-forms
+  // enforces it server-side.
+  {
+    label: "Back office forms",
+    to: "/backoffice-forms",
+    icon: ClipboardCheck,
+    roles: ["Agent", "Admin"],
+    comingIn: "",
+    description: "Forms technicians submitted for back office follow-up — pick one up, handle it and note what was done.",
     section: "main",
   },
   // v0.1.13 — Insights (reporting dashboard). Role gate is Agent+Admin; the

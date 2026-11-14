@@ -593,6 +593,21 @@ const statisticsRoute = createRoute({
   component: StatisticsPage,
 });
 
+// v0.1.54 — Back office forms work list. Agent + Admin role gate plus the
+// per-user `backoffice_forms_enabled` flag (via /auth/me); every
+// /api/backoffice-forms endpoint re-checks the flag. `?form=<id>` opens one.
+const backofficeFormsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/backoffice-forms",
+  beforeLoad: (args) => {
+    authGate(["Agent", "Admin"])(args);
+    if (!authedUser()?.backofficeFormsEnabled) {
+      throw redirect({ to: "/" });
+    }
+  },
+  component: lazyRouteComponent(() => import("@/pages/backoffice-forms/BackofficeFormsPage"), "BackofficeFormsPage"),
+});
+
 // v0.1.13 — Insights reporting dashboard. Agent + Admin role gate plus the
 // per-user `insights_enabled` flag (server-sourced via /auth/me); every
 // /api/insights endpoint re-checks the flag. Lazy-loaded so the chart library
@@ -1201,6 +1216,7 @@ const routeTree = rootRoute.addChildren([
   ordersRoute,
   statisticsRoute,
   insightsRoute,
+  backofficeFormsRoute,
   contractsRoute,
   contractArticlesRoute,
   contractsOverviewRoute,

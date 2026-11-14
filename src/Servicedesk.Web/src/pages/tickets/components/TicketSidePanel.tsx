@@ -69,6 +69,7 @@ import {
   UserCog,
   ClipboardList,
 } from "lucide-react";
+import { BackofficeStatusChip } from "@/pages/backoffice-forms/BackofficeStatusChip";
 
 type TicketSidePanelProps = {
   ticket: Ticket;
@@ -782,6 +783,10 @@ function FormsBlock({ forms }: { forms: TicketFormSummary[] }) {
               <span className="block truncate text-[11px] text-muted-foreground">
                 {f.updatedByName ?? f.createdByName ?? "—"} · {formatDateTime(f.updatedUtc, zone)}
               </span>
+              {f.boStatus && (
+                <BackofficeStatusChip className="mt-1"
+                  item={{ status: f.boStatus, claimedByName: f.boClaimedByName ?? null, handledByName: f.boHandledByName ?? null }} />
+              )}
             </span>
             {f.version > 1 && (
               <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium tabular-nums border border-glass bg-glass-strong text-muted-foreground/80">

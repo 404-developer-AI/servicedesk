@@ -33,6 +33,7 @@ import {
 } from "@/hooks/useServerTime";
 import { viewApi, type View } from "@/lib/ticket-api";
 import { settingsApi, preferencesApi, timesheetCommentsApi } from "@/lib/api";
+import { backofficeFormKeys, backofficeFormsApi } from "@/lib/backoffice-forms-api";
 import { openCopilotWindow } from "@/lib/copilotWindow";
 import { RecentTickets } from "@/shell/RecentTickets";
 import { NotificationsWidget } from "@/shell/NotificationsWidget";
@@ -169,6 +170,20 @@ export function Sidebar() {
     staleTime: 30_000,
   });
   const timesheetBadge = (tsCommentsUnread?.count ?? 0) > 0;
+  // v0.1.54 — open Back office forms drive a red dot on that nav entry; kept
+  // fresh by the shell-level BackofficeFormsChanged push.
+  const { data: boCounts } = useQuery({
+    queryKey: backofficeFormKeys.counts(),
+    queryFn: backofficeFormsApi.counts,
+    enabled: !!user?.backofficeFormsEnabled,
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+  });
+  const backofficeBadge = !!user?.backofficeFormsEnabled && (boCounts?.open ?? 0) > 0;
+  const badgedPaths = [
+    ...(timesheetBadge ? ["/timesheet"] : []),
+    ...(backofficeBadge ? ["/backoffice-forms"] : []),
+  ];
   const items = allItems.filter((item) => {
     if (item.to === "/tickets" && (inView || (navSettings && !navSettings.showOpenTickets))) return false;
     // v0.0.35 — Timesheet is per-user opt-in. Even with the right role,
@@ -212,6 +227,10 @@ export function Sidebar() {
     // v0.1.13 — Insights is per-user opt-in (insights_enabled). Role gates
     // Agent+Admin; the route gate and /api/insights enforce the same flag.
     if (item.to === "/insights" && !user?.insightsEnabled) {
+      return false;
+    }
+    // v0.1.54 — Back office forms is per-user opt-in (backoffice_forms_enabled).
+    if (item.to === "/backoffice-forms" && !user?.backofficeFormsEnabled) {
       return false;
     }
     // v0.1.25 — SLA switched off globally (Settings → SLA): no SLA log.
@@ -402,7 +421,7 @@ export function Sidebar() {
             item={item}
             active={pathname === item.to}
             collapsed={collapsed}
-            badge={item.to === "/timesheet" && timesheetBadge}
+            badge={badgedPaths.includes(item.to)}
           />
         ))}
         {collapseFeatures ? (
@@ -415,7 +434,7 @@ export function Sidebar() {
                 collapsed={collapsed}
                 onUnpin={() => unpinFeature(item.to)}
                 onActivate={featureActions.get(item.to)}
-                badge={item.to === "/timesheet" && timesheetBadge}
+                badge={badgedPaths.includes(item.to)}
               />
             ))}
             {flyoutFeatureItems.length > 0 && (
@@ -425,7 +444,7 @@ export function Sidebar() {
                 pathname={pathname}
                 onPin={pinFeature}
                 actions={featureActions}
-                badgedPaths={timesheetBadge ? ["/timesheet"] : []}
+                badgedPaths={badgedPaths}
               />
             )}
           </>
@@ -437,7 +456,7 @@ export function Sidebar() {
               active={pathname === item.to}
               collapsed={collapsed}
               onActivate={featureActions.get(item.to)}
-              badge={item.to === "/timesheet" && timesheetBadge}
+              badge={badgedPaths.includes(item.to)}
             />
           ))
         )}

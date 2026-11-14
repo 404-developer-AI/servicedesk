@@ -11,6 +11,7 @@ import { useSecondarySidebarStore } from "@/stores/useSecondarySidebarStore";
 import { usePresenceConnection } from "@/hooks/usePresence";
 import { useNotificationSignalR } from "@/hooks/useNotificationSignalR";
 import { useTimesheetCommentsSignalR } from "@/hooks/useTimesheetCommentsSignalR";
+import { useBackofficeFormsSignalR } from "@/hooks/useBackofficeFormsSignalR";
 import { useIntegrationsSignalR } from "@/hooks/useIntegrationsSignalR";
 import { useTelavoxCallStream } from "@/hooks/useTelavoxCallStream";
 import { useWorkspaceAutoSave } from "@/hooks/useWorkspaceAutoSave";
@@ -53,6 +54,8 @@ export function AppShell() {
 
   const secondarySidebar = useSecondarySidebarStore((s) => s.content);
   const { user } = useAuth();
+  // v0.1.54 — Back office forms work-list / red-dot refresh (flag holders only).
+  useBackofficeFormsSignalR(!!user?.backofficeFormsEnabled);
 
   // v0.1.24 — real-user performance monitoring for staff sessions. The
   // module asks the server whether (and how often) to report, so it is a

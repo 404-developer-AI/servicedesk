@@ -41,6 +41,18 @@ public static class BackofficeFormEndpoints
             return Results.Ok(new { open = c.Open, inProgress = c.InProgress });
         }).WithName("CountBackofficeForms").WithOpenApi();
 
+        // Template filter for the list: the marked templates (name only —
+        // the template editor itself stays admin-only).
+        group.MapGet("/templates", async (IFormTemplateRepository templates, CancellationToken ct) =>
+        {
+            var list = await templates.ListAsync(ct);
+            return Results.Ok(new
+            {
+                items = list.Where(t => t.SendToBackoffice)
+                    .Select(t => new { id = t.Id, name = t.Name, isActive = t.IsActive }),
+            });
+        }).WithName("ListBackofficeFormTemplates").WithOpenApi();
+
         group.MapGet("/{formId:guid}", async (Guid formId, IBackofficeFormService svc, CancellationToken ct) =>
             await Run(async () =>
             {

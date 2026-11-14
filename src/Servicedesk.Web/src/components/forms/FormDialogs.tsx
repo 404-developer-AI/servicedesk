@@ -274,7 +274,7 @@ function displayValue(f: FormField, v: FormAnswerValue | undefined, zone: string
   }
 }
 
-function AnswersView({ fields, answers }: { fields: FormField[]; answers: FormAnswers }) {
+export function FormAnswersView({ fields, answers }: { fields: FormField[]; answers: FormAnswers }) {
   const zone = useServerTimeZone();
   return (
     <dl className="sd-form-answers grid grid-cols-2 gap-x-6 gap-y-4">
@@ -428,7 +428,7 @@ export function FormViewDialog({
                     </button>
                   </div>
                 )}
-                <AnswersView fields={data.fields} answers={shownAnswers ?? {}} />
+                <FormAnswersView fields={data.fields} answers={shownAnswers ?? {}} />
               </>
             )}
           </div>

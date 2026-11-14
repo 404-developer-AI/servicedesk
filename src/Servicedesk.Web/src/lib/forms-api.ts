@@ -121,6 +121,11 @@ export interface TicketFormSummary {
   updatedByUserId: string | null;
   updatedByName: string | null;
   updatedUtc: string;
+  /** v0.1.54 — back office state (null = not a back office form). */
+  boStatus?: "Open" | "InProgress" | "Handled" | null;
+  boClaimedByName?: string | null;
+  boHandledByName?: string | null;
+  boHandledUtc?: string | null;
 }
 
 export interface TicketFormDetail extends TicketFormSummary {

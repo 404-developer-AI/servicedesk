@@ -241,15 +241,18 @@ public sealed class BackofficeFormService : IBackofficeFormService
 public sealed class BackofficeFormEventPublisher : IBackofficeFormEvents
 {
     private readonly Realtime.IBackofficeFormNotifier _notifier;
+    private readonly Realtime.ITicketListNotifier _tickets;
     private readonly IBackofficeFormTriggerRunner _triggers;
     private readonly ILogger<BackofficeFormEventPublisher> _logger;
 
     public BackofficeFormEventPublisher(
         Realtime.IBackofficeFormNotifier notifier,
+        Realtime.ITicketListNotifier tickets,
         IBackofficeFormTriggerRunner triggers,
         ILogger<BackofficeFormEventPublisher> logger)
     {
         _notifier = notifier;
+        _tickets = tickets;
         _triggers = triggers;
         _logger = logger;
     }
@@ -258,6 +261,15 @@ public sealed class BackofficeFormEventPublisher : IBackofficeFormEvents
     {
         try { await _notifier.BackofficeFormsChangedAsync(ct); }
         catch (Exception ex) { _logger.LogWarning(ex, "Back office forms push failed for form {FormId}.", evt.FormId); }
+
+        // Back-office steps don't touch the ticket itself, but the side
+        // panel shows the form's back-office status: refresh open pages.
+        if (evt.Kind is BackofficeFormEventKind.Claimed or BackofficeFormEventKind.Released
+            or BackofficeFormEventKind.Handled or BackofficeFormEventKind.Reopened)
+        {
+            try { await _tickets.NotifyUpdatedAsync(evt.TicketId, ct); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Ticket refresh push failed for ticket {TicketId}.", evt.TicketId); }
+        }
 
         if (!BackofficeFormEventKind.TriggerEvents.Contains(evt.Kind)) return;
         try { await _triggers.RunAsync(evt, ct); }
