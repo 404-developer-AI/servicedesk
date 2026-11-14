@@ -46,7 +46,9 @@ public sealed record UserNotificationPush(
     DateTime CreatedUtc,
     // v0.1.54 — lets the client word the toast ("mention" = tagged you,
     // "trigger_notice" = a trigger's notify_agent message).
-    string NotificationType = "mention");
+    string NotificationType = "mention",
+    // v0.1.54 — reply / like notifications point at a reply.
+    long? ReplyId = null);
 
 /// No-op fallback used when SignalR is not wired (unit tests, offline jobs).
 public sealed class NullUserNotifier : IUserNotifier

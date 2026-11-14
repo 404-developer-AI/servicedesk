@@ -1,14 +1,14 @@
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { Bell, X, AtSign, CheckCheck, ExternalLink, ListChecks } from "lucide-react";
+import { Bell, X, AtSign, CheckCheck, ExternalLink, ListChecks, MessageSquareReply, ThumbsUp } from "lucide-react";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { notificationApi, type UserNotification } from "@/lib/notification-api";
+import { notificationApi, notificationHash, notificationHeadline, type UserNotification } from "@/lib/notification-api";
 import { useServerOffsetMinutes, toServerLocal } from "@/hooks/useServerTime";
 
 type Props = {
@@ -141,7 +141,7 @@ function NotificationPanel({
     void navigate({
       to: "/tickets/$ticketId",
       params: { ticketId: n.ticketId },
-      hash: `event-${n.eventId}`,
+      hash: notificationHash(n),
     });
   };
 
@@ -161,6 +161,8 @@ function NotificationPanel({
           const when = toServerLocal(n.createdUtc, offsetMinutes);
           const isChecklistBlock = n.eventType === "ChecklistCloseBlocked";
           const isTriggerNotice = n.eventType === "TriggerNotice";
+          const isReply = n.notificationType === "note_reply";
+          const isLike = n.notificationType === "note_like";
           return (
             <div
               key={n.id}
@@ -175,6 +177,10 @@ function NotificationPanel({
                   <ListChecks className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300" />
                 ) : isTriggerNotice ? (
                   <Bell className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                ) : isReply ? (
+                  <MessageSquareReply className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                ) : isLike ? (
+                  <ThumbsUp className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
                 ) : (
                   <AtSign className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-300" />
                 )}
@@ -184,6 +190,8 @@ function NotificationPanel({
                       <span className="font-medium text-amber-200">Checklist blocked a trigger</span>
                     ) : isTriggerNotice ? (
                       <span className="font-medium text-foreground">Notice</span>
+                    ) : isReply || isLike ? (
+                      <span className="font-medium text-foreground">{notificationHeadline(n)}</span>
                     ) : (
                       <>
                         <span className="font-medium text-foreground">@{localPart}</span>

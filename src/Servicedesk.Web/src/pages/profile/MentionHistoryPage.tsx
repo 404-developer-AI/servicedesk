@@ -4,6 +4,8 @@ import { Link } from "@tanstack/react-router";
 import { AtSign, ArrowLeft, ExternalLink } from "lucide-react";
 import {
   notificationApi,
+  notificationHash,
+  notificationHeadline,
   type UserNotification,
   type NotificationHistoryCursor,
 } from "@/lib/notification-api";
@@ -118,14 +120,16 @@ function Row({ n, offsetMinutes }: { n: UserNotification; offsetMinutes: number 
       <td className="px-3 py-2 text-xs">
         <span className="inline-flex items-center gap-1">
           <AtSign className="h-3 w-3 text-purple-300" />
-          <span className="font-medium">@{localPart}</span>
+          <span className="font-medium">
+            {n.notificationType === "note_reply" || n.notificationType === "note_like" ? notificationHeadline(n) : `@${localPart}`}
+          </span>
         </span>
       </td>
       <td className="px-3 py-2 text-xs">
         <Link
           to="/tickets/$ticketId"
           params={{ ticketId: n.ticketId }}
-          hash={`event-${n.eventId}`}
+          hash={notificationHash(n)}
           className="inline-flex items-center gap-1 font-mono text-[11px] text-primary hover:underline"
         >
           #{n.ticketNumber}

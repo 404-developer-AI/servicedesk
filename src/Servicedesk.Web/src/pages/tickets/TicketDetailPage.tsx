@@ -1,7 +1,8 @@
 import { formatDate } from "@/lib/dateFormat";
 import * as React from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
+import { noteThreadApi, noteThreadKey } from "@/lib/note-threads-api";
 import { toast } from "sonner";
 import { Check, Copy, Download, FileDown, FolderKanban, GitBranch, ListChecks, Microscope, PanelRightClose, PanelRightOpen, Pencil, PhoneCall, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -588,6 +589,43 @@ function TicketDetailPageInner({ ticketId }: TicketDetailPageProps) {
       }, 2000);
     });
   }, [timelineEvents, ensureEventLoaded, ticketId]);
+
+  // v0.1.54 — deep-link to a reply (#reply-{id}, from a reply/like
+  // notification or search): make sure its note is loaded, then scroll to
+  // the reply once NoteThread has opened the thread.
+  const routeHash = useRouterState({ select: (s) => s.location.hash });
+  const threadsForLink = useQuery({
+    queryKey: noteThreadKey(ticketId),
+    queryFn: () => noteThreadApi.get(ticketId),
+    staleTime: 15_000,
+    enabled: /^#?reply-\d+$/.test(routeHash ?? ""),
+  });
+  const replyLinkLoadRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    const m = /^#?reply-(\d+)$/.exec(routeHash ?? "");
+    if (!m || !threadsForLink.data || !timelineEvents.length) return;
+    const replyId = Number(m[1]);
+    const reply = threadsForLink.data.replies.find((r) => r.id === replyId);
+    if (!reply) return;
+    if (!timelineEvents.some((e) => e.id === reply.rootEventId)) {
+      const key = `${ticketId}:reply:${replyId}`;
+      if (replyLinkLoadRef.current === key) return;
+      replyLinkLoadRef.current = key;
+      void ensureEventLoaded(reply.rootEventId);
+      return;
+    }
+    const tryScroll = (attempt: number) => {
+      const el = document.getElementById(`reply-${replyId}`);
+      if (!el) {
+        if (attempt < 10) setTimeout(() => tryScroll(attempt + 1), 100);
+        return;
+      }
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ring-2", "ring-primary/50");
+      setTimeout(() => el.classList.remove("ring-2", "ring-primary/50"), 2000);
+    };
+    requestAnimationFrame(() => tryScroll(0));
+  }, [routeHash, threadsForLink.data, timelineEvents, ensureEventLoaded, ticketId]);
 
   const updateMutation = useMutation({
     mutationFn: (fields: TicketFieldUpdate) => ticketApi.update(ticketId, fields),

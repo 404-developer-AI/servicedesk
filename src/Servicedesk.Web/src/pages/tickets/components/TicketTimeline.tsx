@@ -2,6 +2,9 @@ import * as React from "react";
 import DOMPurify from "dompurify";
 import { useServerOffsetMinutes, useServerTimeZone, getServerTimeSnapshot, type ServerTime, toServerLocal } from "@/hooks/useServerTime";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRouterState } from "@tanstack/react-router";
+import { groupThreads, noteThreadApi, noteThreadKey, type NoteThreadData } from "@/lib/note-threads-api";
+import { NoteThread } from "./NoteThread";
 import { toast } from "sonner";
 import {
   MessageSquarePlus,
@@ -1286,6 +1289,12 @@ function MailHeaderPanel({
 /* ─── Editable event card ─── */
 
 const EDITABLE_TYPES = new Set(["Comment", "Note", "Mail", "Call"]);
+
+/// v0.1.54 — replies and likes live on internal notes and internal calls
+/// only (same rule as the server's NoteThreadRepository.TargetPredicate).
+function isThreadable(event: TicketEvent): boolean {
+  return event.eventType === "Note" || (event.eventType === "Call" && event.isInternal);
+}
 const PINNABLE_TYPES = new Set(["Comment", "Note", "Mail", "MailReceived", "MailSent", "Call"]);
 
 function TimelineEvent({
@@ -1294,12 +1303,17 @@ function TimelineEvent({
   ticketNumber,
   isPinned,
   logged,
+  thread,
+  forceOpenReplyId,
 }: {
   event: TicketEvent;
   ticketId: string;
   ticketNumber: number;
   isPinned: boolean;
   logged?: { count: number; loggers: string[] };
+  /// v0.1.54 — replies + likes when this is an internal note / internal call.
+  thread?: NoteThreadData;
+  forceOpenReplyId?: number | null;
 }) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -1735,7 +1749,12 @@ function TimelineEvent({
               </div>
             </div>
           ) : (
-            <EventBody event={event} />
+            <>
+              <EventBody event={event} />
+              {isThreadable(event) && (
+                <NoteThread ticketId={ticketId} eventId={event.id} data={thread} forceOpenReplyId={forceOpenReplyId} />
+              )}
+            </>
           )}
         </div>
       )}
@@ -1837,6 +1856,20 @@ export function TicketTimeline({ ticketId, ticketNumber, events, pinnedEventIds 
     enabled: feedbackEnabled,
     staleTime: 30_000,
   });
+  // v0.1.54 — replies + likes of every internal note on this ticket in one
+  // call; the TicketUpdated push invalidates ["ticket", id] and so this too.
+  const threadsQuery = useQuery({
+    queryKey: noteThreadKey(ticketId),
+    queryFn: () => noteThreadApi.get(ticketId),
+    staleTime: 15_000,
+  });
+  const threads = React.useMemo(() => groupThreads(threadsQuery.data), [threadsQuery.data]);
+  const hash = useRouterState({ select: (s) => s.location.hash });
+  const hashReplyId = React.useMemo(() => {
+    const m = /^#?reply-(\d+)$/.exec(hash ?? "");
+    return m ? Number(m[1]) : null;
+  }, [hash]);
+
   const loggedByEvent = React.useMemo(() => {
     const map = new Map<number, { count: number; loggers: string[] }>();
     for (const it of loggedEventsQuery.data?.items ?? []) {
@@ -1864,6 +1897,8 @@ export function TicketTimeline({ ticketId, ticketNumber, events, pinnedEventIds 
             ticketNumber={ticketNumber}
             isPinned={pinnedEventIds.has(event.id)}
             logged={loggedByEvent.get(event.id)}
+            thread={threads.get(event.id)}
+            forceOpenReplyId={hashReplyId}
           />
         ))}
       </div>

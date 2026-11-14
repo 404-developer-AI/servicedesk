@@ -237,7 +237,8 @@ public sealed class NoteThreadService : INoteThreadService
                 {
                     await _pusher.NotifyMentionAsync(row.UserId, new UserNotificationPush(
                         row.Id, row.TicketId, row.TicketNumber, row.TicketSubject, row.SourceUserEmail,
-                        row.EventId, row.EventType, row.PreviewText, row.CreatedUtc, NotificationType: type), ct);
+                        row.EventId, row.EventType, row.PreviewText, row.CreatedUtc, NotificationType: type,
+                        ReplyId: row.ReplyId), ct);
                 }
                 catch (Exception ex)
                 {

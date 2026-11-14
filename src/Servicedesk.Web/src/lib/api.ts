@@ -3693,11 +3693,15 @@ export const preferencesApi = {
     request<PostCloseRedirectPreference>("GET", "/api/preferences/post-close-redirect"),
   setPostCloseRedirect: (target: string) =>
     request<PostCloseRedirectPreference>("PUT", "/api/preferences/post-close-redirect", { target }),
-  /// v0.1.54 — mail for @@-tags (default on; the bell entry always comes).
-  getMentionEmail: () => request<{ enabled: boolean }>("GET", "/api/preferences/mention-email"),
-  setMentionEmail: (enabled: boolean) =>
-    request<{ enabled: boolean }>("PUT", "/api/preferences/mention-email", { enabled }),
+  /// v0.1.54 — which notifications also arrive by mail (the bell entry
+  /// always comes). Defaults: tags on, replies on, likes off.
+  getNotificationMail: () =>
+    request<NotificationMailPreferences>("GET", "/api/preferences/notification-mail"),
+  setNotificationMail: (change: Partial<NotificationMailPreferences>) =>
+    request<void>("PUT", "/api/preferences/notification-mail", change),
 };
+
+export type NotificationMailPreferences = { tags: boolean; replies: boolean; likes: boolean };
 
 export type PinnedFeaturesPreference = { paths: string[] };
 export type PinnedViewsPreference = { ids: string[] };

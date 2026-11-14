@@ -9,7 +9,7 @@ import { useTheme } from "@/app/ThemeProvider";
 import { ThemePicker } from "@/components/ThemePicker";
 import { MySessionsCard } from "@/components/auth/MySessionsCard";
 import { Switch } from "@/components/ui/switch";
-import { preferencesApi } from "@/lib/api";
+import { preferencesApi, type NotificationMailPreferences } from "@/lib/api";
 import { viewApi } from "@/lib/ticket-api";
 import {
   DASHBOARD_TOKEN,
@@ -116,47 +116,59 @@ export function ProfilePage() {
 }
 
 /**
- * v0.1.54 — whether an @@-tag also arrives by mail. The bell entry and the
- * live toast always come; this only switches the mail copy (default on).
- * The app-wide switch (Settings → Notifications) still overrides it.
+ * v0.1.54 — which notifications also arrive by mail. The bell entry and the
+ * live toast always come; these only switch the mail copy. The app-wide mail
+ * switch (Settings → Notifications) still overrides them.
  */
+const MAIL_SWITCHES: { key: keyof NotificationMailPreferences; label: string; help: string }[] = [
+  { key: "tags", label: "Email me when I'm tagged", help: "When someone tags you with @@ in a note, mail or reply." },
+  { key: "replies", label: "Email me when someone replies to my note", help: "A reply to your internal note or to one of your replies." },
+  { key: "likes", label: "Email me when someone likes my note", help: "Off by default — likes are usually best left in the bell." },
+];
+
 function TagNotificationsSection() {
   const queryClient = useQueryClient();
   const { data } = useQuery({
-    queryKey: ["preferences", "mention-email"],
-    queryFn: preferencesApi.getMentionEmail,
+    queryKey: ["preferences", "notification-mail"],
+    queryFn: preferencesApi.getNotificationMail,
     staleTime: 60_000,
   });
   const save = useMutation({
-    mutationFn: (enabled: boolean) => preferencesApi.setMentionEmail(enabled),
-    onSuccess: (res) => {
-      queryClient.setQueryData(["preferences", "mention-email"], res);
-      toast.success(res.enabled ? "You'll get a mail when you're tagged" : "No more mails for tags");
+    mutationFn: (change: Partial<NotificationMailPreferences>) => preferencesApi.setNotificationMail(change),
+    onMutate: (change) => {
+      queryClient.setQueryData<NotificationMailPreferences>(["preferences", "notification-mail"],
+        (old) => (old ? { ...old, ...change } : old));
     },
-    onError: () => toast.error("Failed to save the preference"),
+    onSuccess: () => toast.success("Preference saved"),
+    onError: () => {
+      toast.error("Failed to save the preference");
+      void queryClient.invalidateQueries({ queryKey: ["preferences", "notification-mail"] });
+    },
   });
 
   return (
     <section className="glass-card space-y-3 p-6">
       <div className="flex items-baseline justify-between gap-3">
-        <div className="text-sm font-medium">Tag notifications</div>
+        <div className="text-sm font-medium">Notifications by mail</div>
         <div className="text-[11px] text-muted-foreground">Saved to your account.</div>
       </div>
-      <label className="flex items-start justify-between gap-4">
-        <span className="min-w-0 space-y-0.5">
-          <span className="block text-sm">Email me when I'm tagged</span>
-          <span className="block text-xs text-muted-foreground">
-            When someone tags you with @@ in a note or mail. You always get the bell notification; this only
-            controls the extra mail.
+      <p className="text-xs text-muted-foreground">
+        You always get the bell notification; these switches only control the extra mail.
+      </p>
+      {MAIL_SWITCHES.map((s) => (
+        <label key={s.key} className="flex items-start justify-between gap-4">
+          <span className="min-w-0 space-y-0.5">
+            <span className="block text-sm">{s.label}</span>
+            <span className="block text-xs text-muted-foreground">{s.help}</span>
           </span>
-        </span>
-        <Switch
-          checked={data?.enabled ?? true}
-          disabled={!data || save.isPending}
-          onCheckedChange={(v) => save.mutate(v)}
-          aria-label="Email me when I'm tagged"
-        />
-      </label>
+          <Switch
+            checked={data?.[s.key] ?? false}
+            disabled={!data || save.isPending}
+            onCheckedChange={(v) => save.mutate({ [s.key]: v })}
+            aria-label={s.label}
+          />
+        </label>
+      ))}
     </section>
   );
 }

@@ -55,8 +55,10 @@ type NotificationPush = {
   eventType: string;
   previewText: string;
   createdUtc: string;
-  /** "mention" (default) or "trigger_notice" (a trigger's notify_agent message). */
+  /** "mention" (default), "trigger_notice", "note_reply" or "note_like". */
   notificationType?: string;
+  /** Set when the notification points at a reply on an internal note. */
+  replyId?: number | null;
 };
 
 /// Server-push for the security-activity health subsystem. Fired only on
@@ -110,7 +112,11 @@ export function useNotificationSignalR(toastDurationMs: number) {
 
       const title = payload.notificationType === "trigger_notice"
         ? `Notice on #${payload.ticketNumber}`
-        : `@${localPart} tagged you in #${payload.ticketNumber}`;
+        : payload.notificationType === "note_reply"
+          ? `@${localPart} replied on #${payload.ticketNumber}`
+          : payload.notificationType === "note_like"
+            ? `@${localPart} liked your note on #${payload.ticketNumber}`
+            : `@${localPart} tagged you in #${payload.ticketNumber}`;
       toast.message(title, {
         description: payload.previewText || `New ${kind} on "${payload.ticketSubject}"`,
         duration: durationRef.current,
@@ -131,7 +137,7 @@ export function useNotificationSignalR(toastDurationMs: number) {
             void navigateRef.current({
               to: "/tickets/$ticketId",
               params: { ticketId: payload.ticketId },
-              hash: `event-${payload.eventId}`,
+              hash: payload.replyId ? `reply-${payload.replyId}` : `event-${payload.eventId}`,
             });
           },
         },

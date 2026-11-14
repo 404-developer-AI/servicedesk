@@ -15,7 +15,26 @@ export type UserNotification = {
   createdUtc: string;
   viewedUtc: string | null;
   ackedUtc: string | null;
+  /// v0.1.54 — "mention" | "note_reply" | "note_like" | "trigger_notice" | …
+  notificationType?: string;
+  /// Set when the notification points at a reply on an internal note.
+  replyId?: number | null;
 };
+
+/// Where a bell row / toast jumps to on its ticket.
+export function notificationHash(n: { eventId: number; replyId?: number | null }): string {
+  return n.replyId ? `reply-${n.replyId}` : `event-${n.eventId}`;
+}
+
+/// The row's headline: who did what (the ticket number follows separately).
+export function notificationHeadline(n: { notificationType?: string; sourceUserEmail: string | null }): string {
+  const who = `@${n.sourceUserEmail?.split("@")[0] ?? "agent"}`;
+  switch (n.notificationType) {
+    case "note_reply": return `${who} replied`;
+    case "note_like": return `${who} liked your note`;
+    default: return `${who} in`;
+  }
+}
 
 export type NotificationHistoryCursor = {
   createdUtc: string;

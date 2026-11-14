@@ -27,6 +27,7 @@ export type SearchKind =
   | "checklist-templates"
   | "ticket-forms"
   | "backoffice-forms"
+  | "note-replies"
   | "portal-accounts"
   | "remote-desktop-notes"
   | "ip-rules"
@@ -55,6 +56,7 @@ export const KIND_LABELS: Record<string, string> = {
   "checklist-templates": "Checklist templates",
   "ticket-forms": "Forms",
   "backoffice-forms": "Back office forms",
+  "note-replies": "Replies",
   "portal-accounts": "Portal accounts",
   "remote-desktop-notes": "Remote Desktop notes",
   "ip-rules": "IP blocking",
@@ -83,6 +85,7 @@ export const KIND_ORDER: string[] = [
   "checklist-templates",
   "ticket-forms",
   "backoffice-forms",
+  "note-replies",
   "portal-accounts",
   "remote-desktop-notes",
   "ip-rules",
@@ -150,6 +153,9 @@ export function hitHref(hit: SearchHit): string {
     case "ticket-forms":
       // A filled form lives on a ticket; open the ticket with the form shown.
       return `/tickets/${hit.entityId}?form=${hit.meta?.formId ?? ""}`;
+    case "note-replies":
+      // A reply lives under an internal note; open the ticket at the reply.
+      return `/tickets/${hit.entityId}#reply-${hit.meta?.replyId ?? ""}`;
     case "backoffice-forms":
       return `/backoffice-forms?form=${hit.entityId}`;
     case "checklist-templates":
