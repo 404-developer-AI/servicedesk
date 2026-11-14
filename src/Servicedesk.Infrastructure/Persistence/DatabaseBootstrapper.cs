@@ -6686,6 +6686,57 @@ public sealed class DatabaseBootstrapper : IHostedService
         );
         CREATE INDEX IF NOT EXISTS ix_ticket_form_versions_event
             ON ticket_form_versions (event_id) WHERE event_id IS NOT NULL;
+
+        -- ===================================================================
+        -- v0.1.54 — Back office forms. A template marked send_to_backoffice
+        -- puts every form filled from it on the back-office work list
+        -- (bo_status Open → InProgress → Handled). The marking is copied onto
+        -- the form at fill time, so toggling the template later never moves
+        -- existing forms. bo_status NULL = not a back-office form.
+        -- Access = the per-user backoffice_forms_enabled flag, regardless of
+        -- queue access (owner decision); the ticket itself stays queue-gated.
+        -- ===================================================================
+        ALTER TABLE form_templates ADD COLUMN IF NOT EXISTS send_to_backoffice BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS backoffice_forms_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+        ALTER TABLE ticket_forms ADD COLUMN IF NOT EXISTS bo_status TEXT NULL;
+        ALTER TABLE ticket_forms ADD COLUMN IF NOT EXISTS bo_claimed_by_user_id UUID NULL REFERENCES users(id) ON DELETE SET NULL;
+        ALTER TABLE ticket_forms ADD COLUMN IF NOT EXISTS bo_claimed_utc TIMESTAMPTZ NULL;
+        ALTER TABLE ticket_forms ADD COLUMN IF NOT EXISTS bo_claimed_version INT NULL;
+        ALTER TABLE ticket_forms ADD COLUMN IF NOT EXISTS bo_handled_by_user_id UUID NULL REFERENCES users(id) ON DELETE SET NULL;
+        ALTER TABLE ticket_forms ADD COLUMN IF NOT EXISTS bo_handled_utc TIMESTAMPTZ NULL;
+        ALTER TABLE ticket_forms ADD COLUMN IF NOT EXISTS bo_handled_note TEXT NOT NULL DEFAULT '';
+        ALTER TABLE ticket_forms ADD COLUMN IF NOT EXISTS bo_handled_version INT NULL;
+        ALTER TABLE ticket_forms ADD COLUMN IF NOT EXISTS bo_reopened BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE ticket_forms ADD COLUMN IF NOT EXISTS bo_submitted_utc TIMESTAMPTZ NULL;
+        ALTER TABLE ticket_forms DROP CONSTRAINT IF EXISTS chk_ticket_forms_bo_status;
+        ALTER TABLE ticket_forms ADD CONSTRAINT chk_ticket_forms_bo_status
+            CHECK (bo_status IS NULL OR bo_status IN ('Open','InProgress','Handled'));
+
+        -- Work list + badge count: only live back-office forms.
+        CREATE INDEX IF NOT EXISTS ix_ticket_forms_bo_list
+            ON ticket_forms (bo_status, bo_submitted_utc DESC, id DESC)
+            WHERE bo_status IS NOT NULL AND deleted_utc IS NULL;
+
+        -- Every back-office step on a form (who, when, note, form version).
+        CREATE TABLE IF NOT EXISTS ticket_form_backoffice_log (
+            id                  BIGSERIAL   PRIMARY KEY,
+            form_id             UUID        NOT NULL REFERENCES ticket_forms(id) ON DELETE CASCADE,
+            action              TEXT        NOT NULL,
+            user_id             UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            note                TEXT        NOT NULL DEFAULT '',
+            form_version        INT         NOT NULL,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT chk_ticket_form_backoffice_log_action
+                CHECK (action IN ('submitted','claimed','released','handled','reopened','updated'))
+        );
+        CREATE INDEX IF NOT EXISTS ix_ticket_form_backoffice_log_form
+            ON ticket_form_backoffice_log (form_id, id);
+
+        -- Bell notification sent by the notify_agent trigger action.
+        ALTER TABLE user_notifications DROP CONSTRAINT IF EXISTS chk_user_notifications_type;
+        ALTER TABLE user_notifications ADD CONSTRAINT chk_user_notifications_type
+            CHECK (notification_type IN ('mention','survey_submitted','checklist_blocked','trigger_notice')) NOT VALID;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

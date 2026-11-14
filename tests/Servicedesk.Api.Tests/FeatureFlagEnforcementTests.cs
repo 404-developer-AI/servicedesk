@@ -43,6 +43,14 @@ public sealed class FeatureFlagEnforcementTests
     [InlineData("GET", "/api/timesheet/backoffice/tickets/00000000-0000-0000-0000-000000000001/hours")]
     // timesheet_enabled
     [InlineData("GET", "/api/timesheet/entries/?date=2026-10-13")]
+    // backoffice_forms_enabled
+    [InlineData("GET", "/api/backoffice-forms/")]
+    [InlineData("GET", "/api/backoffice-forms/counts")]
+    [InlineData("GET", "/api/backoffice-forms/00000000-0000-0000-0000-000000000001")]
+    [InlineData("POST", "/api/backoffice-forms/00000000-0000-0000-0000-000000000001/claim")]
+    [InlineData("POST", "/api/backoffice-forms/00000000-0000-0000-0000-000000000001/release")]
+    [InlineData("POST", "/api/backoffice-forms/00000000-0000-0000-0000-000000000001/handle")]
+    [InlineData("POST", "/api/backoffice-forms/00000000-0000-0000-0000-000000000001/reopen")]
     public async Task Agent_without_flag_gets_403(string method, string url)
     {
         using var factory = new SecurityBaselineFactory();
@@ -119,6 +127,23 @@ public sealed class FeatureFlagEnforcementTests
         Assert.False(await FeatureFlagFilter.IsEnabledAsync(users, userId, UserFeature.AdsolutOrders, default));
         Assert.False(await FeatureFlagFilter.IsEnabledAsync(users, userId, UserFeature.AdsolutTimesheet, default));
         Assert.False(await FeatureFlagFilter.IsEnabledAsync(users, userId, UserFeature.TimesheetBackoffice, default));
+        Assert.False(await FeatureFlagFilter.IsEnabledAsync(users, userId, UserFeature.BackofficeForms, default));
+
+        users.BackofficeFormsEnabled[userId] = true;
+        Assert.True(await FeatureFlagFilter.IsEnabledAsync(users, userId, UserFeature.BackofficeForms, default));
+        Assert.False(await FeatureFlagFilter.IsEnabledAsync(users, userId, UserFeature.TimesheetBackoffice, default));
+    }
+
+    [Fact]
+    public async Task Backoffice_forms_need_their_own_flag_also_for_admins()
+    {
+        using var factory = new SecurityBaselineFactory();
+        var (client, userId) = await ClientAsync(factory, "Admin");
+        factory.Users.TimesheetBackofficeEnabled[userId] = true; // the timesheet back-office flag doesn't count
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/backoffice-forms/counts")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync(
+            "/api/backoffice-forms/00000000-0000-0000-0000-000000000001/handle", new { note = "x" })).StatusCode);
     }
 
     // ---- global search: Assets source follows the same flag -----------------

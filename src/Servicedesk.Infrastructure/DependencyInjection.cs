@@ -621,6 +621,12 @@ public static class DependencyInjection
         services.AddSingleton<Forms.ITicketFormRepository, Forms.TicketFormRepository>();
         services.AddSingleton<Forms.IFormSettingsReader, Forms.FormSettingsReader>();
         services.AddScoped<Forms.ITicketFormService, Forms.TicketFormService>();
+        // v0.1.54 — Back office forms work list.
+        services.AddSingleton<Forms.IBackofficeFormRepository, Forms.BackofficeFormRepository>();
+        services.AddScoped<Forms.IBackofficeFormService, Forms.BackofficeFormService>();
+        services.AddScoped<Forms.IBackofficeFormEvents, Forms.BackofficeFormEventPublisher>();
+        services.AddSingleton<Realtime.IBackofficeFormNotifier, Realtime.NullBackofficeFormNotifier>();
+        services.AddScoped<Forms.IBackofficeFormTriggerRunner, Forms.NullBackofficeFormTriggerRunner>();
         // First-open title-review gate matcher + confirmation runner. Called
         // by the ticket detail page's open-gate probe and the confirmation
         // endpoint. Singleton for the same reason as the status-gate service.

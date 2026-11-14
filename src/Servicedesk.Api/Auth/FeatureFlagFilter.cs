@@ -11,6 +11,7 @@ public enum UserFeature
     AdsolutOrders,
     AdsolutTimesheet,
     TimesheetBackoffice,
+    BackofficeForms,
     Timesheet,
 }
 
@@ -50,6 +51,7 @@ public static class FeatureFlagFilter
         UserFeature.AdsolutOrders => await users.GetAdsolutOrdersEnabledAsync(userId, ct),
         UserFeature.AdsolutTimesheet => await users.GetAdsolutTimesheetEnabledAsync(userId, ct),
         UserFeature.TimesheetBackoffice => await users.GetTimesheetBackofficeEnabledAsync(userId, ct),
+        UserFeature.BackofficeForms => await users.GetBackofficeFormsEnabledAsync(userId, ct),
         UserFeature.Timesheet => (await users.GetTimesheetFlagsAsync(userId, ct)).Enabled,
         _ => false,
     };

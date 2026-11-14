@@ -38,6 +38,8 @@ export type AuthUser = {
   /// v0.0.56 — per-user opt-in for the back-office Resolved + CWI
   /// timesheet tabs. Gates the two tabs in the Timesheet page.
   timesheetBackofficeEnabled: boolean;
+  /// Per-user opt-in for the back-office forms feature.
+  backofficeFormsEnabled: boolean;
   /// v0.0.59 — per-user opt-in for the Adsolut Orders feature (navbar
   /// overview under Assets, order detail, the ticket "Sync orders" button
   /// and "::" order linking). Surfaces nothing on its own without the

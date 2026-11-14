@@ -52,6 +52,7 @@ public sealed class UserAdminService : IUserAdminService
                     u.assets_enabled    AS AssetsEnabled,
                     u.adsolut_timesheet_enabled AS AdsolutTimesheetEnabled,
                     u.timesheet_backoffice_enabled AS TimesheetBackofficeEnabled,
+                    u.backoffice_forms_enabled AS BackofficeFormsEnabled,
                     u.adsolut_orders_enabled AS AdsolutOrdersEnabled,
                     u.statistics_read   AS StatisticsRead,
                     u.statistics_write  AS StatisticsWrite,
@@ -107,6 +108,7 @@ public sealed class UserAdminService : IUserAdminService
                     u.assets_enabled    AS AssetsEnabled,
                     u.adsolut_timesheet_enabled AS AdsolutTimesheetEnabled,
                     u.timesheet_backoffice_enabled AS TimesheetBackofficeEnabled,
+                    u.backoffice_forms_enabled AS BackofficeFormsEnabled,
                     u.adsolut_orders_enabled AS AdsolutOrdersEnabled,
                     u.statistics_read   AS StatisticsRead,
                     u.statistics_write  AS StatisticsWrite,
@@ -841,6 +843,7 @@ public sealed class UserAdminService : IUserAdminService
             && update.AssetsEnabled is null
             && update.AdsolutTimesheetEnabled is null
             && update.TimesheetBackofficeEnabled is null
+            && update.BackofficeFormsEnabled is null
             && update.AdsolutOrdersEnabled is null
             && update.StatisticsRead is null
             && update.StatisticsWrite is null
@@ -890,6 +893,7 @@ public sealed class UserAdminService : IUserAdminService
                 assets_enabled        = COALESCE(@assetsEnabled,        assets_enabled),
                 adsolut_timesheet_enabled = COALESCE(@adsolutTimesheetEnabled, adsolut_timesheet_enabled),
                 timesheet_backoffice_enabled = COALESCE(@timesheetBackofficeEnabled, timesheet_backoffice_enabled),
+                backoffice_forms_enabled = COALESCE(@backofficeFormsEnabled, backoffice_forms_enabled),
                 adsolut_orders_enabled = COALESCE(@adsolutOrdersEnabled, adsolut_orders_enabled),
                 statistics_read  = COALESCE(@statisticsRead,  statistics_read),
                 statistics_write = COALESCE(@statisticsWrite, statistics_write),
@@ -912,6 +916,7 @@ public sealed class UserAdminService : IUserAdminService
                 assetsEnabled = update.AssetsEnabled,
                 adsolutTimesheetEnabled = update.AdsolutTimesheetEnabled,
                 timesheetBackofficeEnabled = update.TimesheetBackofficeEnabled,
+                backofficeFormsEnabled = update.BackofficeFormsEnabled,
                 adsolutOrdersEnabled = update.AdsolutOrdersEnabled,
                 statisticsRead = update.StatisticsRead,
                 statisticsWrite = update.StatisticsWrite,

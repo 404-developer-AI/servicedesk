@@ -176,6 +176,8 @@ public static class SettingKeys
         public const string MaxArticleQuantity = "Forms.MaxArticleQuantity";
         public const string LongTextMaxLength = "Forms.LongTextMaxLength";
         public const string MaxPerTicket = "Forms.MaxPerTicket";
+        /// v0.1.54 — marking a back-office form as handled requires a note.
+        public const string BackofficeHandleNoteRequired = "Forms.BackofficeHandleNoteRequired";
     }
 
     /// v0.0.105 — project tickets (a normal ticket flagged as project;
@@ -2007,6 +2009,8 @@ public static class SettingDefaults
             "Maximum number of characters in a long-text field of a form. 100 to 20000."),
         new SettingDefault(SettingKeys.Forms.MaxPerTicket, "50", "int", "Tickets",
             "Maximum number of filled forms on one ticket."),
+        new SettingDefault(SettingKeys.Forms.BackofficeHandleNoteRequired, "true", "bool", "Tickets",
+            "Back office forms: a note is required when marking a form as handled (what was done, e.g. the contract number in the CRM). Turn off to allow handling without a note."),
         new SettingDefault(SettingKeys.Projects.Enabled, "true", "bool", "Tickets",
             "Project tickets: a ticket can be created as (or converted to) a project, other tickets link to it via 'Link to project', and the project ticket shows a panel with all linked tickets plus a time rollup for after-calculation. Projects are internal — customers never see them. Turn off to hide every project surface; existing flags and links are kept."),
         new SettingDefault(SettingKeys.Projects.LinkPromptEnabled, "true", "bool", "Tickets",

@@ -76,6 +76,8 @@ export type AuthUserPayload = {
   activityFeedEnabled: boolean;
   assetsEnabled: boolean;
   adsolutTimesheetEnabled: boolean;
+  timesheetBackofficeEnabled: boolean;
+  backofficeFormsEnabled: boolean;
   adsolutOrdersEnabled: boolean;
   statisticsRead: boolean;
   statisticsWrite: boolean;

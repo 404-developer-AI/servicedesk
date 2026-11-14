@@ -302,6 +302,9 @@ function FormTemplateList({ onNew, onEdit }: { onNew: () => void; onEdit: (id: s
                   {!t.isActive && (
                     <span className="rounded-full bg-glass-strong px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">Inactive</span>
                   )}
+                  {t.sendToBackoffice && (
+                    <span className="rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-primary">Back office</span>
+                  )}
                 </div>
                 <p className="mt-0.5 truncate text-[11px] text-muted-foreground/70">
                   {t.fieldCount} field{t.fieldCount === 1 ? "" : "s"}
@@ -350,6 +353,7 @@ function FormTemplateEditor({ templateId, onDone }: { templateId: string | null;
   const [description, setDescription] = React.useState("");
   const [isActive, setIsActive] = React.useState(true);
   const [queueIds, setQueueIds] = React.useState<string[]>([]);
+  const [sendToBackoffice, setSendToBackoffice] = React.useState(false);
   const [fields, setFields] = React.useState<FormField[]>([]);
   const [openFieldId, setOpenFieldId] = React.useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = React.useState(false);
@@ -362,13 +366,14 @@ function FormTemplateEditor({ templateId, onDone }: { templateId: string | null;
     setDescription(t.description);
     setIsActive(t.isActive);
     setQueueIds(t.queueIds);
+    setSendToBackoffice(t.sendToBackoffice);
     setFields(t.fields.map((f) => ({ ...f, options: f.options ?? null })));
     setLoaded(true);
   }, [existingQ.data, loaded]);
 
   const save = useMutation({
     mutationFn: () => {
-      const body = { name: name.trim(), description: description.trim(), isActive, queueIds, fields };
+      const body = { name: name.trim(), description: description.trim(), isActive, queueIds, fields, sendToBackoffice };
       return templateId ? formTemplatesApi.update(templateId, body) : formTemplatesApi.create(body);
     },
     onSuccess: () => {
@@ -473,6 +478,16 @@ function FormTemplateEditor({ templateId, onDone }: { templateId: string | null;
               </div>
               <p className="text-[11px] text-muted-foreground/70">Leave empty to offer the form in every queue.</p>
             </div>
+            <label className="flex items-start gap-3 border-t border-glass pt-4">
+              <Switch className="mt-0.5" checked={sendToBackoffice} onCheckedChange={setSendToBackoffice} />
+              <span className="space-y-0.5">
+                <span className="block text-sm">Send to back office</span>
+                <span className="block text-[11px] text-muted-foreground/70">
+                  Every form filled from this template appears on the Back office forms list until someone marks it as handled.
+                  Changing this later does not move forms that were already filled in.
+                </span>
+              </span>
+            </label>
           </section>
 
           <section className="glass-card p-5">

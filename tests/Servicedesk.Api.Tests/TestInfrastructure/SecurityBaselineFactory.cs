@@ -437,6 +437,11 @@ public sealed class FakeUserService : IUserService
     public Task<bool> GetTimesheetBackofficeEnabledAsync(Guid userId, CancellationToken ct = default) =>
         Task.FromResult(TimesheetBackofficeEnabled.ContainsKey(userId));
 
+    public ConcurrentDictionary<Guid, bool> BackofficeFormsEnabled { get; } = new();
+
+    public Task<bool> GetBackofficeFormsEnabledAsync(Guid userId, CancellationToken ct = default) =>
+        Task.FromResult(BackofficeFormsEnabled.ContainsKey(userId));
+
     public Task<bool> GetStatisticsReadEnabledAsync(Guid userId, CancellationToken ct = default) =>
         Task.FromResult(false);
 

@@ -112,6 +112,10 @@ public interface IUserService
     /// missing rows.
     Task<bool> GetTimesheetBackofficeEnabledAsync(Guid userId, CancellationToken ct = default);
 
+    /// Per-user opt-in for the back-office forms feature. Returns false on
+    /// missing rows.
+    Task<bool> GetBackofficeFormsEnabledAsync(Guid userId, CancellationToken ct = default);
+
     /// v0.0.69 — per-user opt-in for viewing the Statistics page (the tiles
     /// assigned to this user). Drives the sidebar nav entry. Returns false
     /// on missing rows.
@@ -168,6 +172,7 @@ public interface IUserService
             await GetAdsolutTimesheetEnabledAsync(userId, ct),
             await GetAdsolutOrdersEnabledAsync(userId, ct),
             await GetTimesheetBackofficeEnabledAsync(userId, ct),
+            await GetBackofficeFormsEnabledAsync(userId, ct),
             await GetStatisticsReadEnabledAsync(userId, ct),
             await GetStatisticsWriteEnabledAsync(userId, ct),
             await GetContractsEnabledAsync(userId, ct),
@@ -219,6 +224,7 @@ public sealed record UserFeatureFlags(
     bool AdsolutTimesheetEnabled,
     bool AdsolutOrdersEnabled,
     bool TimesheetBackofficeEnabled,
+    bool BackofficeFormsEnabled,
     bool StatisticsRead,
     bool StatisticsWrite,
     bool ContractsEnabled,
@@ -596,6 +602,15 @@ public sealed class UserService : IUserService
         return value ?? false;
     }
 
+    public async Task<bool> GetBackofficeFormsEnabledAsync(Guid userId, CancellationToken ct = default)
+    {
+        const string sql = "SELECT backoffice_forms_enabled FROM users WHERE id = @id";
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var value = await connection.QuerySingleOrDefaultAsync<bool?>(
+            new CommandDefinition(sql, new { id = userId }, cancellationToken: ct));
+        return value ?? false;
+    }
+
     public async Task<bool> GetStatisticsReadEnabledAsync(Guid userId, CancellationToken ct = default)
     {
         const string sql = "SELECT statistics_read FROM users WHERE id = @id";
@@ -655,6 +670,7 @@ public sealed class UserService : IUserService
                    COALESCE(adsolut_timesheet_enabled, FALSE)    AS AdsolutTimesheetEnabled,
                    COALESCE(adsolut_orders_enabled, FALSE)       AS AdsolutOrdersEnabled,
                    COALESCE(timesheet_backoffice_enabled, FALSE) AS TimesheetBackofficeEnabled,
+                   COALESCE(backoffice_forms_enabled, FALSE)     AS BackofficeFormsEnabled,
                    COALESCE(statistics_read, FALSE)              AS StatisticsRead,
                    COALESCE(statistics_write, FALSE)             AS StatisticsWrite,
                    COALESCE(contracts_enabled, FALSE)            AS ContractsEnabled,
@@ -670,7 +686,7 @@ public sealed class UserService : IUserService
         {
             // Same defaults as the single-flag reads: off, except search.
             return new UserFeatureFlags(TimesheetFlags.None, IsoFlags.None, false, true, false, false,
-                false, false, false, false, false, false, false, default);
+                false, false, false, false, false, false, false, false, default);
         }
         return new UserFeatureFlags(
             new TimesheetFlags(r.TimesheetEnabled, r.TimesheetManager),
@@ -682,6 +698,7 @@ public sealed class UserService : IUserService
             r.AdsolutTimesheetEnabled,
             r.AdsolutOrdersEnabled,
             r.TimesheetBackofficeEnabled,
+            r.BackofficeFormsEnabled,
             r.StatisticsRead,
             r.StatisticsWrite,
             r.ContractsEnabled,
@@ -702,6 +719,7 @@ public sealed class UserService : IUserService
         public bool AdsolutTimesheetEnabled { get; set; }
         public bool AdsolutOrdersEnabled { get; set; }
         public bool TimesheetBackofficeEnabled { get; set; }
+        public bool BackofficeFormsEnabled { get; set; }
         public bool StatisticsRead { get; set; }
         public bool StatisticsWrite { get; set; }
         public bool ContractsEnabled { get; set; }

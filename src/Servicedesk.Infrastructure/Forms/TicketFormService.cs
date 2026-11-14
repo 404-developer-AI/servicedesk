@@ -67,6 +67,8 @@ public sealed class TicketFormService : ITicketFormService
     private readonly ISettingsService _appSettings;
     private readonly ITicketHtmlSanitizer _sanitizer;
     private readonly IAuditLogger _audit;
+    private readonly IBackofficeFormEvents _backoffice;
+    private readonly IBackofficeFormRepository _backofficeRepo;
 
     public TicketFormService(
         ITicketFormRepository repo,
@@ -75,7 +77,9 @@ public sealed class TicketFormService : ITicketFormService
         IFormSettingsReader settings,
         ISettingsService appSettings,
         ITicketHtmlSanitizer sanitizer,
-        IAuditLogger audit)
+        IAuditLogger audit,
+        IBackofficeFormEvents backoffice,
+        IBackofficeFormRepository backofficeRepo)
     {
         _repo = repo;
         _templates = templates;
@@ -84,6 +88,8 @@ public sealed class TicketFormService : ITicketFormService
         _appSettings = appSettings;
         _sanitizer = sanitizer;
         _audit = audit;
+        _backoffice = backoffice;
+        _backofficeRepo = backofficeRepo;
     }
 
     private static bool IsAdmin(TicketMutationActor actor)
@@ -164,7 +170,8 @@ public sealed class TicketFormService : ITicketFormService
         var normalized = await NormalizeAnswersAsync(snapshot, answers, ticket, settings, ct);
         var searchText = FormRenderer.FlattenForSearch(snapshot, normalized);
 
-        var formId = await _repo.CreateAsync(ticketId, template.Id, template.Name, snapshot, normalized, searchText, actor.UserId, ct);
+        var formId = await _repo.CreateAsync(ticketId, template.Id, template.Name, snapshot, normalized, searchText,
+            actor.UserId, template.SendToBackoffice, ct);
 
         long eventId;
         try
@@ -181,7 +188,11 @@ public sealed class TicketFormService : ITicketFormService
         await _repo.SetVersionEventAsync(formId, 1, eventId, ct);
 
         await AuditAsync(actor, "ticket.form.created", ticketId,
-            new { formId, templateId = template.Id, template.Name, answeredFields = normalized.Count }, ct);
+            new { formId, templateId = template.Id, template.Name, answeredFields = normalized.Count,
+                  sendToBackoffice = template.SendToBackoffice }, ct);
+
+        if (template.SendToBackoffice)
+            await PublishBackofficeAsync(BackofficeFormEventKind.Submitted, formId, actor, ct);
 
         var detail = await _repo.GetAsync(formId, ct)
                      ?? throw new FormRejectedException(FormRejectCode.NotFound, "Form not found.");
@@ -212,8 +223,9 @@ public sealed class TicketFormService : ITicketFormService
             throw new FormRejectedException(FormRejectCode.Invalid, "Nothing changed.");
 
         var searchText = FormRenderer.FlattenForSearch(form.Snapshot, normalized);
-        var newVersion = await _repo.UpdateAsync(formId, expectedVersion, normalized, searchText, actor.UserId, ct)
-                         ?? throw VersionConflict();
+        var update = await _repo.UpdateAsync(formId, expectedVersion, normalized, searchText, actor.UserId, ct)
+                     ?? throw VersionConflict();
+        var newVersion = update.Version;
 
         var eventId = await WriteNoteAsync(actor, ticket.Id, formId, form.Summary.Name, newVersion,
             form.Snapshot, normalized, form.Answers, changed, ct);
@@ -221,6 +233,13 @@ public sealed class TicketFormService : ITicketFormService
 
         await AuditAsync(actor, "ticket.form.updated", ticket.Id,
             new { formId, form.Summary.Name, version = newVersion, changedFields = changed.Count }, ct);
+
+        // A handled back-office form that changes goes back to Open.
+        if (update.PreviousBoStatus is not null)
+        {
+            await PublishBackofficeAsync(update.PreviousBoStatus == BackofficeFormStatus.Handled
+                ? BackofficeFormEventKind.Reopened : BackofficeFormEventKind.Updated, formId, actor, ct);
+        }
 
         var detail = await _repo.GetAsync(formId, ct)
                      ?? throw new FormRejectedException(FormRejectCode.NotFound, "Form not found.");
@@ -250,6 +269,22 @@ public sealed class TicketFormService : ITicketFormService
 
         await AuditAsync(actor, "ticket.form.deleted", ticket.Id,
             new { formId, form.Summary.Name, form.Summary.Version, reason = why }, ct);
+
+        if (form.Summary.BoStatus is not null)
+        {
+            await _backoffice.PublishAsync(new BackofficeFormEvent(BackofficeFormEventKind.Removed, formId, ticket.Id,
+                form.TemplateId, form.Summary.Name, actor.UserId, form.Summary.CreatedByUserId,
+                form.Summary.CreatedByName, form.Summary.BoHandledByName, string.Empty), ct);
+        }
+    }
+
+    /// Back-office fan-out (work-list ping + trigger pass) from the row as
+    /// committed, so the trigger sees the post-change state.
+    private async Task PublishBackofficeAsync(string kind, Guid formId, TicketMutationActor actor, CancellationToken ct)
+    {
+        var item = await _backofficeRepo.GetItemAsync(formId, ct);
+        if (item is null) return;
+        await _backoffice.PublishAsync(BackofficeFormService.ToEvent(kind, item, actor.UserId), ct);
     }
 
     public async Task<IReadOnlyList<TicketFormArticleOption>> SearchArticlesAsync(

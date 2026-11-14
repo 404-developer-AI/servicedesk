@@ -143,6 +143,7 @@ public static class FormLimits
     public const int OptionsMax = 100;
     public const int ShortTextMax = 500;
     public const int DeleteReasonMax = 1000;
+    public const int BackofficeNoteMax = 4000;
     public const int DurationMaxMinutes = 100_000;
     public const decimal NumberAbsMax = 1_000_000_000_000m;
     public const int DecimalsMax = 6;
@@ -737,19 +738,31 @@ public static class FormRenderer
 
 public sealed record FormTemplateSummary(
     Guid Id, string Name, string Description, bool IsActive, IReadOnlyList<Guid> QueueIds,
-    int FieldCount, DateTime CreatedUtc, DateTime UpdatedUtc);
+    int FieldCount, DateTime CreatedUtc, DateTime UpdatedUtc, bool SendToBackoffice = false);
 
 public sealed record FormTemplateDetail(
     Guid Id, string Name, string Description, bool IsActive, IReadOnlyList<Guid> QueueIds,
-    FormDefinition Definition, int FieldCount, DateTime CreatedUtc, DateTime UpdatedUtc);
+    FormDefinition Definition, int FieldCount, DateTime CreatedUtc, DateTime UpdatedUtc,
+    bool SendToBackoffice = false);
 
+/// <paramref name="SendToBackoffice"/> (v0.1.54): forms filled from this
+/// template land on the Back office forms work list.
 public sealed record FormTemplateInput(
-    string Name, string Description, bool IsActive, IReadOnlyList<Guid> QueueIds, FormDefinition Definition);
+    string Name, string Description, bool IsActive, IReadOnlyList<Guid> QueueIds, FormDefinition Definition,
+    bool SendToBackoffice = false);
 
+/// <paramref name="BoStatus"/> (v0.1.54): Open / InProgress / Handled for a
+/// back-office form, null otherwise; the side panel shows it to the agent.
 public sealed record TicketFormSummary(
     Guid Id, Guid TicketId, string Name, int Version,
     Guid? CreatedByUserId, string? CreatedByName, DateTime CreatedUtc,
-    Guid? UpdatedByUserId, string? UpdatedByName, DateTime UpdatedUtc);
+    Guid? UpdatedByUserId, string? UpdatedByName, DateTime UpdatedUtc,
+    string? BoStatus = null, string? BoClaimedByName = null,
+    string? BoHandledByName = null, DateTime? BoHandledUtc = null);
+
+/// Result of an optimistic form update: the new version and the back-office
+/// status the form had before (so the service knows whether it reopened).
+public sealed record TicketFormUpdateResult(int Version, string? PreviousBoStatus);
 
 public sealed record TicketFormDetail(
     TicketFormSummary Summary, Guid? TemplateId, FormDefinition Snapshot, JsonObject Answers);

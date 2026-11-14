@@ -84,6 +84,8 @@ export interface FormTemplateSummary {
   isActive: boolean;
   queueIds: string[];
   fieldCount: number;
+  /** Forms filled from this template land on the Back office forms list. */
+  sendToBackoffice: boolean;
   createdUtc: string;
   updatedUtc: string;
 }
@@ -98,6 +100,7 @@ export interface FormTemplateUpsert {
   isActive: boolean;
   queueIds: string[];
   fields: FormField[];
+  sendToBackoffice: boolean;
 }
 
 export interface UsableFormTemplate {

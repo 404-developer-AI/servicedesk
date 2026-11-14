@@ -13,12 +13,15 @@ public interface ITicketFormRepository
     Task<IReadOnlyList<TicketFormSummary>> ListForTicketAsync(Guid ticketId, CancellationToken ct);
     Task<TicketFormDetail?> GetAsync(Guid formId, CancellationToken ct);
     Task<int> CountForTicketAsync(Guid ticketId, CancellationToken ct);
+    /// <paramref name="sendToBackoffice"/> = the template's marking at fill
+    /// time: the form starts Open on the back-office list (+ log row).
     Task<Guid> CreateAsync(Guid ticketId, Guid? templateId, string name, FormDefinition snapshot,
-        JsonObject answers, string searchText, Guid userId, CancellationToken ct);
+        JsonObject answers, string searchText, Guid userId, bool sendToBackoffice, CancellationToken ct);
     /// Optimistic update: only applies when the stored version equals
-    /// <paramref name="expectedVersion"/>. Returns the new version, or null
-    /// on a version conflict / deleted form.
-    Task<int?> UpdateAsync(Guid formId, int expectedVersion, JsonObject answers, string searchText,
+    /// <paramref name="expectedVersion"/>. Returns null on a version conflict
+    /// / deleted form. A Handled back-office form goes back to Open
+    /// (bo_reopened); an In progress one stays claimed (logged as updated).
+    Task<TicketFormUpdateResult?> UpdateAsync(Guid formId, int expectedVersion, JsonObject answers, string searchText,
         Guid userId, CancellationToken ct);
     Task SetVersionEventAsync(Guid formId, int version, long eventId, CancellationToken ct);
     Task<bool> SoftDeleteAsync(Guid formId, Guid userId, string reason, CancellationToken ct);
@@ -59,13 +62,19 @@ public sealed class TicketFormRepository : ITicketFormRepository
                f.created_utc        AS CreatedUtc,
                f.updated_by_user_id AS UpdatedByUserId,
                COALESCE(NULLIF(uu.display_name, ''), uu.email) AS UpdatedByName,
-               f.updated_utc        AS UpdatedUtc
+               f.updated_utc        AS UpdatedUtc,
+               f.bo_status          AS BoStatus,
+               COALESCE(NULLIF(clu.display_name, ''), clu.email) AS BoClaimedByName,
+               COALESCE(NULLIF(hu.display_name, ''), hu.email) AS BoHandledByName,
+               f.bo_handled_utc     AS BoHandledUtc
         """;
 
     private const string SummaryFrom = """
         FROM ticket_forms f
         LEFT JOIN users cu ON cu.id = f.created_by_user_id
         LEFT JOIN users uu ON uu.id = f.updated_by_user_id
+        LEFT JOIN users clu ON clu.id = f.bo_claimed_by_user_id
+        LEFT JOIN users hu ON hu.id = f.bo_handled_by_user_id
         """;
 
     public async Task<IReadOnlyList<TicketFormSummary>> ListForTicketAsync(Guid ticketId, CancellationToken ct)
@@ -103,7 +112,7 @@ public sealed class TicketFormRepository : ITicketFormRepository
     }
 
     public async Task<Guid> CreateAsync(Guid ticketId, Guid? templateId, string name, FormDefinition snapshot,
-        JsonObject answers, string searchText, Guid userId, CancellationToken ct)
+        JsonObject answers, string searchText, Guid userId, bool sendToBackoffice, CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
@@ -111,16 +120,25 @@ public sealed class TicketFormRepository : ITicketFormRepository
         var id = await conn.ExecuteScalarAsync<Guid>(new CommandDefinition("""
             INSERT INTO ticket_forms
                 (ticket_id, template_id, name, template_snapshot, answers, version, search_text,
-                 created_by_user_id, updated_by_user_id)
-            VALUES (@ticketId, @templateId, @name, @snapshot::jsonb, @answers::jsonb, 1, @searchText, @userId, @userId)
+                 created_by_user_id, updated_by_user_id, bo_status, bo_submitted_utc)
+            VALUES (@ticketId, @templateId, @name, @snapshot::jsonb, @answers::jsonb, 1, @searchText, @userId, @userId,
+                    CASE WHEN @sendToBackoffice THEN 'Open' END,
+                    CASE WHEN @sendToBackoffice THEN now() END)
             RETURNING id
             """, new
         {
             ticketId, templateId, name,
             snapshot = snapshot.ToJson(),
             answers = answersJson,
-            searchText, userId,
+            searchText, userId, sendToBackoffice,
         }, tx, cancellationToken: ct));
+        if (sendToBackoffice)
+        {
+            await conn.ExecuteAsync(new CommandDefinition("""
+                INSERT INTO ticket_form_backoffice_log (form_id, action, user_id, form_version)
+                VALUES (@id, 'submitted', @userId, 1)
+                """, new { id, userId }, tx, cancellationToken: ct));
+        }
         await conn.ExecuteAsync(new CommandDefinition("""
             INSERT INTO ticket_form_versions (form_id, version, answers, saved_by_user_id)
             VALUES (@id, 1, @answers::jsonb, @userId)
@@ -129,33 +147,55 @@ public sealed class TicketFormRepository : ITicketFormRepository
         return id;
     }
 
-    public async Task<int?> UpdateAsync(Guid formId, int expectedVersion, JsonObject answers, string searchText,
+    public async Task<TicketFormUpdateResult?> UpdateAsync(Guid formId, int expectedVersion, JsonObject answers, string searchText,
         Guid userId, CancellationToken ct)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
         var answersJson = answers.ToJsonString();
-        var newVersion = await conn.ExecuteScalarAsync<int?>(new CommandDefinition("""
-            UPDATE ticket_forms
+        // prev locks the row and keeps the pre-update back-office status;
+        // a Handled form goes back to Open, flagged "changed after handling".
+        var updated = await conn.QuerySingleOrDefaultAsync<UpdatedRow>(new CommandDefinition("""
+            WITH prev AS (
+                SELECT id, bo_status FROM ticket_forms
+                 WHERE id = @formId AND version = @expectedVersion AND deleted_utc IS NULL
+                 FOR UPDATE)
+            UPDATE ticket_forms f
                SET answers = @answers::jsonb,
                    search_text = @searchText,
-                   version = version + 1,
+                   version = f.version + 1,
                    updated_by_user_id = @userId,
-                   updated_utc = now()
-             WHERE id = @formId AND version = @expectedVersion AND deleted_utc IS NULL
-            RETURNING version
+                   updated_utc = now(),
+                   bo_status = CASE WHEN prev.bo_status = 'Handled' THEN 'Open' ELSE f.bo_status END,
+                   bo_reopened = CASE WHEN prev.bo_status = 'Handled' THEN TRUE ELSE f.bo_reopened END
+              FROM prev
+             WHERE f.id = prev.id
+            RETURNING f.version AS Version, prev.bo_status AS PrevStatus
             """, new { formId, expectedVersion, answers = answersJson, searchText, userId }, tx, cancellationToken: ct));
-        if (newVersion is null)
+        if (updated is null)
         {
             await tx.RollbackAsync(ct);
             return null;
+        }
+        var newVersion = updated.Version;
+        var prevStatus = updated.PrevStatus;
+        if (prevStatus is not null)
+        {
+            await conn.ExecuteAsync(new CommandDefinition("""
+                INSERT INTO ticket_form_backoffice_log (form_id, action, user_id, form_version)
+                VALUES (@formId, @action, @userId, @newVersion)
+                """, new
+            {
+                formId, userId, newVersion,
+                action = prevStatus == BackofficeFormStatus.Handled ? BackofficeFormAction.Reopened : BackofficeFormAction.Updated,
+            }, tx, cancellationToken: ct));
         }
         await conn.ExecuteAsync(new CommandDefinition("""
             INSERT INTO ticket_form_versions (form_id, version, answers, saved_by_user_id)
             VALUES (@formId, @newVersion, @answers::jsonb, @userId)
             """, new { formId, newVersion, answers = answersJson, userId }, tx, cancellationToken: ct));
         await tx.CommitAsync(ct);
-        return newVersion;
+        return new TicketFormUpdateResult(newVersion, prevStatus);
     }
 
     public async Task SetVersionEventAsync(Guid formId, int version, long eventId, CancellationToken ct)
@@ -316,7 +356,8 @@ public sealed class TicketFormRepository : ITicketFormRepository
 
     private static TicketFormSummary ToSummary(SummaryRow r) => new(
         r.Id, r.TicketId, r.Name, r.Version, r.CreatedByUserId, r.CreatedByName, r.CreatedUtc,
-        r.UpdatedByUserId, r.UpdatedByName, r.UpdatedUtc);
+        r.UpdatedByUserId, r.UpdatedByName, r.UpdatedUtc,
+        r.BoStatus, r.BoClaimedByName, r.BoHandledByName, r.BoHandledUtc);
 
     private class SummaryRow
     {
@@ -330,6 +371,16 @@ public sealed class TicketFormRepository : ITicketFormRepository
         public Guid? UpdatedByUserId { get; set; }
         public string? UpdatedByName { get; set; }
         public DateTime UpdatedUtc { get; set; }
+        public string? BoStatus { get; set; }
+        public string? BoClaimedByName { get; set; }
+        public string? BoHandledByName { get; set; }
+        public DateTime? BoHandledUtc { get; set; }
+    }
+
+    private sealed class UpdatedRow
+    {
+        public int Version { get; set; }
+        public string? PrevStatus { get; set; }
     }
 
     private sealed class DetailRow : SummaryRow

@@ -31,6 +31,7 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
                is_active     AS IsActive,
                queue_ids     AS QueueIds,
                field_count   AS FieldCount,
+               send_to_backoffice AS SendToBackoffice,
                created_utc   AS CreatedUtc,
                updated_utc   AS UpdatedUtc
         FROM form_templates
@@ -67,6 +68,7 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
                    queue_ids        AS QueueIds,
                    definition::text AS DefinitionJson,
                    field_count      AS FieldCount,
+                   send_to_backoffice AS SendToBackoffice,
                    created_utc      AS CreatedUtc,
                    updated_utc      AS UpdatedUtc
             FROM form_templates
@@ -77,7 +79,7 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
             row.Id, row.Name, row.Description, row.IsActive,
             row.QueueIds ?? Array.Empty<Guid>(),
             FormDefinition.Parse(row.DefinitionJson),
-            row.FieldCount, row.CreatedUtc, row.UpdatedUtc);
+            row.FieldCount, row.CreatedUtc, row.UpdatedUtc, row.SendToBackoffice);
     }
 
     public async Task<bool> ActiveNameTakenAsync(string name, Guid? exceptId, CancellationToken ct)
@@ -96,8 +98,8 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         return await conn.ExecuteScalarAsync<Guid>(new CommandDefinition("""
             INSERT INTO form_templates
-                (name, description, is_active, queue_ids, definition, field_count, created_by_user_id)
-            VALUES (@name, @description, @isActive, @queueIds, @definition::jsonb, @fieldCount, @createdBy)
+                (name, description, is_active, queue_ids, definition, field_count, send_to_backoffice, created_by_user_id)
+            VALUES (@name, @description, @isActive, @queueIds, @definition::jsonb, @fieldCount, @sendToBackoffice, @createdBy)
             RETURNING id
             """, new
         {
@@ -107,6 +109,7 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
             queueIds = input.QueueIds.Distinct().ToArray(),
             definition = input.Definition.ToJson(),
             fieldCount = input.Definition.InputFieldCount,
+            sendToBackoffice = input.SendToBackoffice,
             createdBy = createdByUserId,
         }, cancellationToken: ct));
     }
@@ -122,6 +125,7 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
                    queue_ids = @queueIds,
                    definition = @definition::jsonb,
                    field_count = @fieldCount,
+                   send_to_backoffice = @sendToBackoffice,
                    updated_utc = now()
              WHERE id = @id
             """, new
@@ -133,6 +137,7 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
             queueIds = input.QueueIds.Distinct().ToArray(),
             definition = input.Definition.ToJson(),
             fieldCount = input.Definition.InputFieldCount,
+            sendToBackoffice = input.SendToBackoffice,
         }, cancellationToken: ct));
         return n > 0;
     }
@@ -148,7 +153,7 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
 
     private static FormTemplateSummary ToSummary(SummaryRow r) => new(
         r.Id, r.Name, r.Description, r.IsActive, r.QueueIds ?? Array.Empty<Guid>(),
-        r.FieldCount, r.CreatedUtc, r.UpdatedUtc);
+        r.FieldCount, r.CreatedUtc, r.UpdatedUtc, r.SendToBackoffice);
 
     private class SummaryRow
     {
@@ -158,6 +163,7 @@ public sealed class FormTemplateRepository : IFormTemplateRepository
         public bool IsActive { get; set; }
         public Guid[]? QueueIds { get; set; }
         public int FieldCount { get; set; }
+        public bool SendToBackoffice { get; set; }
         public DateTime CreatedUtc { get; set; }
         public DateTime UpdatedUtc { get; set; }
     }

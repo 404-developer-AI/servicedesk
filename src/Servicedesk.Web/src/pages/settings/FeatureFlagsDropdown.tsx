@@ -4,6 +4,7 @@ import {
   Clock,
   Users as UsersIcon,
   ClipboardCheck,
+  ClipboardList,
   ShieldAlert,
   BookOpen,
   Settings2,
@@ -47,6 +48,7 @@ const FLAG_GROUPS: Group[] = [
       { key: "timesheetManager", label: "TS manager", icon: UsersIcon },
       { key: "adsolutTimesheetEnabled", label: "Adsolut Timesheet", icon: Receipt },
       { key: "timesheetBackofficeEnabled", label: "Back office (Resolved/CWI)", icon: ClipboardCheck },
+      { key: "backofficeFormsEnabled", label: "Back office forms", icon: ClipboardList },
     ],
   },
   {

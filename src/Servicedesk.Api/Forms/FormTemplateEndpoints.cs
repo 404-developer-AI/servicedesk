@@ -41,7 +41,7 @@ public static class FormTemplateEndpoints
 
             var id = await repo.CreateAsync(input, CurrentUserId(http), ct);
             await Audit(audit, http, "form_template.created", id,
-                new { input.Name, fieldCount = input.Definition.Fields.Count, queueCount = input.QueueIds.Count });
+                new { input.Name, fieldCount = input.Definition.Fields.Count, queueCount = input.QueueIds.Count, input.SendToBackoffice });
             var created = await repo.GetAsync(id, ct);
             return Results.Created($"/api/settings/form-templates/{id}", MapDetail(created!));
         }).WithName("CreateFormTemplate").WithOpenApi();
@@ -58,7 +58,7 @@ public static class FormTemplateEndpoints
 
             if (!await repo.UpdateAsync(id, input, ct)) return Results.NotFound();
             await Audit(audit, http, "form_template.updated", id,
-                new { input.Name, fieldCount = input.Definition.Fields.Count, input.IsActive, queueCount = input.QueueIds.Count });
+                new { input.Name, fieldCount = input.Definition.Fields.Count, input.IsActive, queueCount = input.QueueIds.Count, input.SendToBackoffice });
             var updated = await repo.GetAsync(id, ct);
             return Results.Ok(MapDetail(updated!));
         }).WithName("UpdateFormTemplate").WithOpenApi();
@@ -75,7 +75,7 @@ public static class FormTemplateEndpoints
             var def = FormDefinition.Parse(src.Definition.ToJson());
             foreach (var f in def.Fields) f.Id = Guid.NewGuid();
             var copyId = await repo.CreateAsync(
-                new FormTemplateInput(name, src.Description, IsActive: false, src.QueueIds, def),
+                new FormTemplateInput(name, src.Description, IsActive: false, src.QueueIds, def, src.SendToBackoffice),
                 CurrentUserId(http), ct);
             await Audit(audit, http, "form_template.duplicated", copyId, new { sourceId = id, name });
             var created = await repo.GetAsync(copyId, ct);
@@ -118,7 +118,7 @@ public static class FormTemplateEndpoints
         if (queueIds.Count > 500) return (null, "Too many queues.");
         return (new FormTemplateInput(
             req.Name!.Trim(), (req.Description ?? string.Empty).Trim(),
-            req.IsActive ?? true, queueIds, def), null);
+            req.IsActive ?? true, queueIds, def, req.SendToBackoffice ?? false), null);
     }
 
     private static object MapSummary(FormTemplateSummary t) => new
@@ -129,6 +129,7 @@ public static class FormTemplateEndpoints
         isActive = t.IsActive,
         queueIds = t.QueueIds,
         fieldCount = t.FieldCount,
+        sendToBackoffice = t.SendToBackoffice,
         createdUtc = t.CreatedUtc,
         updatedUtc = t.UpdatedUtc,
     };
@@ -141,6 +142,7 @@ public static class FormTemplateEndpoints
         isActive = t.IsActive,
         queueIds = t.QueueIds,
         fieldCount = t.FieldCount,
+        sendToBackoffice = t.SendToBackoffice,
         createdUtc = t.CreatedUtc,
         updatedUtc = t.UpdatedUtc,
         fields = t.Definition.Fields,
@@ -164,5 +166,6 @@ public static class FormTemplateEndpoints
         string? Description,
         bool? IsActive,
         IReadOnlyList<Guid>? QueueIds,
-        List<FormField>? Fields);
+        List<FormField>? Fields,
+        bool? SendToBackoffice = null);
 }

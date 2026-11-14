@@ -974,6 +974,7 @@ public sealed class OutboundMailServiceTests
         public Task<bool> GetAdsolutTimesheetEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetAdsolutOrdersEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetTimesheetBackofficeEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
+        public Task<bool> GetBackofficeFormsEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetStatisticsReadEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetStatisticsWriteEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);
         public Task<bool> GetContractsEnabledAsync(Guid userId, CancellationToken ct = default) => Task.FromResult(false);

@@ -156,6 +156,10 @@ public static class TicketFormEndpoints
         updatedByUserId = s.UpdatedByUserId,
         updatedByName = s.UpdatedByName,
         updatedUtc = s.UpdatedUtc,
+        boStatus = s.BoStatus,
+        boClaimedByName = s.BoClaimedByName,
+        boHandledByName = s.BoHandledByName,
+        boHandledUtc = s.BoHandledUtc,
     };
 
     private static object MapDetail(TicketFormDetail f, long? eventId) => new
