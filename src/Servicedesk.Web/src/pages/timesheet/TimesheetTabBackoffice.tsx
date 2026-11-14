@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Columns3,
+  ExternalLink,
   GripVertical,
   Inbox,
   MessageSquare,
@@ -54,6 +55,7 @@ import {
 import { cn } from "@/lib/utils";
 import { CommentThreadDrawer, type CommentTarget } from "@/pages/timesheet/CommentThreadDrawer";
 import { formatDuration } from "@/lib/format";
+import { openTicketInSharedWindow } from "@/lib/ticketWindow";
 
 type BoFilter = "all" | "checked" | "unchecked";
 type SortDir = "asc" | "desc";
@@ -144,6 +146,8 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
     return { year: d.getFullYear(), month: d.getMonth() + 1 };
   });
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // The ticket last opened from this list; its row stays highlighted.
+  const [openedTicketId, setOpenedTicketId] = useState<string | null>(null);
   // Anchor row for shift-click range selection (ticket id of the last
   // plain-clicked checkbox). Null until the first checkbox click.
   const [anchorId, setAnchorId] = useState<string | null>(null);
@@ -520,6 +524,11 @@ export function TimesheetTabBackoffice({ context }: { context: BackofficeContext
                       row={r}
                       columns={visibleColumns}
                       selected={selected.has(r.ticketId)}
+                      opened={openedTicketId === r.ticketId}
+                      onOpen={() => {
+                        setOpenedTicketId(r.ticketId);
+                        openTicketInSharedWindow(r.ticketId);
+                      }}
                       onSelect={(shift) => selectRow(index, shift)}
                       onSetCheck={(checked) =>
                         setChecks.mutate({ ids: [r.ticketId], checked })
@@ -568,6 +577,8 @@ function TicketRow({
   row,
   columns,
   selected,
+  opened,
+  onOpen,
   onSelect,
   onSetCheck,
   onOpenComments,
@@ -576,6 +587,9 @@ function TicketRow({
   row: BackofficeTicket;
   columns: ColMeta[];
   selected: boolean;
+  /// The row whose ticket was last opened — highlighted like the Adsolut tab.
+  opened: boolean;
+  onOpen: () => void;
   onSelect: (shift: boolean) => void;
   onSetCheck: (checked: boolean) => void;
   onOpenComments: () => void;
@@ -584,8 +598,10 @@ function TicketRow({
   return (
     <tr
       className={cn(
-        "border-b border-glass transition-colors hover:bg-glass-hover",
-        selected && "bg-glass-hover",
+        "border-b border-glass transition-colors",
+        opened
+          ? "bg-purple-500/13 hover:bg-purple-500/16"
+          : cn("hover:bg-glass-hover", selected && "bg-glass-hover"),
       )}
     >
       <td className="px-3 py-2.5">
@@ -609,7 +625,7 @@ function TicketRow({
           key={col.id}
           className={cn("px-3 py-2.5", col.align === "right" && "text-right")}
         >
-          {renderCell(col.id, row, onSetCheck, onOpenComments, busy)}
+          {renderCell(col.id, row, onOpen, onSetCheck, onOpenComments, busy)}
         </td>
       ))}
     </tr>
@@ -619,13 +635,26 @@ function TicketRow({
 function renderCell(
   id: ColId,
   row: BackofficeTicket,
+  onOpen: () => void,
   onSetCheck: (checked: boolean) => void,
   onOpenComments: () => void,
   busy: boolean,
 ) {
   switch (id) {
     case "number":
-      return <span className="font-mono text-xs text-muted-foreground">#{row.ticketNumber}</span>;
+      // Same as the Adsolut tab: opens the ticket in the one shared ticket
+      // window (reused on every click) and highlights this row.
+      return (
+        <button
+          type="button"
+          onClick={onOpen}
+          title="Open the ticket (in the shared ticket window)"
+          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-xs text-purple-200 transition-colors hover:bg-purple-500/15 hover:text-purple-100"
+        >
+          #{row.ticketNumber}
+          <ExternalLink className="h-3 w-3 opacity-50" />
+        </button>
+      );
     case "subject":
       return <span className="block max-w-md truncate text-foreground">{row.subject}</span>;
     case "customer":
