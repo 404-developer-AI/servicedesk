@@ -865,6 +865,7 @@ app.MapTicketFormEndpoints();
 app.MapBackofficeFormEndpoints();
 app.MapTagGroupEndpoints();
 app.MapNoteThreadEndpoints();
+app.MapTicketFollowEndpoints();
 app.MapTicketExportEndpoints();
 app.MapTicketMailEndpoints();
 app.MapTicketAttachmentEndpoints();

@@ -6835,6 +6835,22 @@ public sealed class DatabaseBootstrapper : IHostedService
         ALTER TABLE user_notifications ADD CONSTRAINT chk_user_notifications_type
             CHECK (notification_type IN ('mention','survey_submitted','checklist_blocked','trigger_notice',
                                          'note_reply','note_like')) NOT VALID;
+
+        -- ===================================================================
+        -- v0.1.54 — Following tickets. A personal "watch" on a ticket. No
+        -- activity is written per change: the Following list derives "has
+        -- news" at read time as GREATEST(updated_utc, latest event, latest
+        -- note reply, latest like) > last_seen_utc — so every write path
+        -- (endpoints, triggers, workers, mail polling) counts without hooks.
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS ticket_follows (
+            user_id         UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            ticket_id       UUID        NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            followed_utc    TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_seen_utc   TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (user_id, ticket_id)
+        );
+        CREATE INDEX IF NOT EXISTS ix_ticket_follows_ticket ON ticket_follows (ticket_id);
         """;
 
     private readonly NpgsqlDataSource _dataSource;

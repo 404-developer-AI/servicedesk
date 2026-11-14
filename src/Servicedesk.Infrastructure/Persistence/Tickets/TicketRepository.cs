@@ -1777,6 +1777,16 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             "UPDATE group_tags SET ticket_id = @target WHERE ticket_id = @source",
             new { source = sourceTicketId, target = targetTicketId }, tx, cancellationToken: ct));
 
+        // v0.1.54 — followers of the source keep following the surviving
+        // ticket; someone who already follows the target keeps their row.
+        await conn.ExecuteAsync(new CommandDefinition("""
+            INSERT INTO ticket_follows (user_id, ticket_id, followed_utc, last_seen_utc)
+            SELECT user_id, @target, followed_utc, last_seen_utc FROM ticket_follows WHERE ticket_id = @source
+            ON CONFLICT (user_id, ticket_id) DO NOTHING;
+            DELETE FROM ticket_follows WHERE ticket_id = @source;
+            """,
+            new { source = sourceTicketId, target = targetTicketId }, tx, cancellationToken: ct));
+
         await conn.ExecuteAsync(new CommandDefinition(
             "UPDATE intake_form_instances SET ticket_id = @target WHERE ticket_id = @source",
             new { source = sourceTicketId, target = targetTicketId }, tx, cancellationToken: ct));

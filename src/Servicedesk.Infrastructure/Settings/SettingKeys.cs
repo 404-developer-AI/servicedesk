@@ -1211,6 +1211,8 @@ public static class SettingKeys
     {
         public const string MentionEmailEnabled = "Notifications.MentionEmailEnabled";
         public const string PopupDurationSeconds = "Notifications.PopupDurationSeconds";
+        /// v0.1.54 — most tickets one agent can follow at once.
+        public const string FollowingMaxTicketsPerUser = "Notifications.FollowingMaxTicketsPerUser";
     }
 
     public static class Jobs
@@ -2376,6 +2378,8 @@ public static class SettingDefaults
             "When true, a tagged agent receives an email from the ticket's queue mailbox on top of the in-app toast + navbar entry. Turn off on installs where the in-app channel is sufficient."),
         new SettingDefault(SettingKeys.Notifications.PopupDurationSeconds, "10", "int", "Notifications",
             "How long (seconds) the mention pop-up toast stays on screen before auto-dismissing. The navbar entry and history page are unaffected."),
+        new SettingDefault(SettingKeys.Notifications.FollowingMaxTicketsPerUser, "200", "int", "Notifications",
+            "The most tickets one agent can follow at the same time (the Following block in the sidebar). Following one more is refused until the agent unfollows another. Clamped to [10, 1000]."),
 
         // Activity feed — v0.0.42. Single global retention window;
         // per-user opt-in lives on the users row, not in settings.

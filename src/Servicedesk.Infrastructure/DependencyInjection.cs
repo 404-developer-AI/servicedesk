@@ -481,6 +481,9 @@ public static class DependencyInjection
         // v0.1.54 — replies and likes on internal notes.
         services.AddSingleton<Tickets.NoteThreads.INoteThreadRepository, Tickets.NoteThreads.NoteThreadRepository>();
         services.AddScoped<Tickets.NoteThreads.INoteThreadService, Tickets.NoteThreads.NoteThreadService>();
+        // v0.1.54 — following tickets (sidebar Following block).
+        services.AddSingleton<Tickets.Following.ITicketFollowRepository, Tickets.Following.TicketFollowRepository>();
+        services.AddScoped<Tickets.Following.ITicketFollowService, Tickets.Following.TicketFollowService>();
 
         services.AddSingleton<IMailMessageRepository, MailMessageRepository>();
         services.AddSingleton<Mail.Outbound.IRecipientSuggestionRepository, Mail.Outbound.RecipientSuggestionRepository>();
