@@ -1774,6 +1774,10 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
             new { source = sourceTicketId, target = targetTicketId }, tx, cancellationToken: ct));
 
         await conn.ExecuteAsync(new CommandDefinition(
+            "UPDATE group_tags SET ticket_id = @target WHERE ticket_id = @source",
+            new { source = sourceTicketId, target = targetTicketId }, tx, cancellationToken: ct));
+
+        await conn.ExecuteAsync(new CommandDefinition(
             "UPDATE intake_form_instances SET ticket_id = @target WHERE ticket_id = @source",
             new { source = sourceTicketId, target = targetTicketId }, tx, cancellationToken: ct));
 

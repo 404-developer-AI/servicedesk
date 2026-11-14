@@ -13,6 +13,7 @@ using Servicedesk.Api.Companies;
 using Servicedesk.Api.ComposeTemplates;
 using Servicedesk.Api.TicketTemplates;
 using Servicedesk.Api.TaggingMailboxes;
+using Servicedesk.Api.TagGroups;
 using Servicedesk.Api.Signatures;
 using Servicedesk.Api.Activity;
 using Servicedesk.Api.Dashboard;
@@ -197,6 +198,9 @@ builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.ITimesheetComm
 // v0.1.54 — Back office forms: payload-less list/badge refresh ping.
 builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.IBackofficeFormNotifier,
     Servicedesk.Api.Presence.SignalRBackofficeFormNotifier>();
+// v0.1.54 — group tags: toast + shared-block refresh per member.
+builder.Services.AddSingleton<Servicedesk.Infrastructure.Realtime.IGroupTagNotifier,
+    Servicedesk.Api.Presence.SignalRGroupTagNotifier>();
 // v0.0.52 — Tactical RMM sync worker emits an AssetsChanged ping on
 // TicketPresenceHub so the Assets page invalidates after every cycle.
 builder.Services.AddSingleton<Servicedesk.Infrastructure.Integrations.Trmm.ITrmmSyncNotifier,
@@ -859,6 +863,7 @@ app.MapChecklistTemplateEndpoints();
 app.MapFormTemplateEndpoints();
 app.MapTicketFormEndpoints();
 app.MapBackofficeFormEndpoints();
+app.MapTagGroupEndpoints();
 app.MapTicketExportEndpoints();
 app.MapTicketMailEndpoints();
 app.MapTicketAttachmentEndpoints();

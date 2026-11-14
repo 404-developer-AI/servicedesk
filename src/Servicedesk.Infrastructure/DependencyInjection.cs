@@ -626,6 +626,10 @@ public static class DependencyInjection
         services.AddScoped<Forms.IBackofficeFormService, Forms.BackofficeFormService>();
         services.AddScoped<Forms.IBackofficeFormEvents, Forms.BackofficeFormEventPublisher>();
         services.AddSingleton<Realtime.IBackofficeFormNotifier, Realtime.NullBackofficeFormNotifier>();
+        // v0.1.54 — group tags (@@-taggable agent groups, one shared tag).
+        services.AddSingleton<TagGroups.ITagGroupRepository, TagGroups.TagGroupRepository>();
+        services.AddSingleton<TagGroups.IGroupTagRepository, TagGroups.GroupTagRepository>();
+        services.AddSingleton<Realtime.IGroupTagNotifier, Realtime.NullGroupTagNotifier>();
         services.AddScoped<Forms.IBackofficeFormTriggerRunner, Triggers.BackofficeFormTriggerRunner>();
         // First-open title-review gate matcher + confirmation runner. Called
         // by the ticket detail page's open-gate probe and the confirmation

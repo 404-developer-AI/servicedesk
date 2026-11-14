@@ -6733,6 +6733,51 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_ticket_form_backoffice_log_form
             ON ticket_form_backoffice_log (form_id, id);
 
+        -- ===================================================================
+        -- v0.1.54 — Group tags. Admin-defined groups of agents that can be
+        -- @@-tagged like a person. A group mention writes ONE shared
+        -- group_tags row (never a mail): every current member sees it until
+        -- one of them acknowledges it, then it is gone for all.
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS tag_groups (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            name                TEXT        NOT NULL,
+            is_active           BOOLEAN     NOT NULL DEFAULT TRUE,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_utc         TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_tag_groups_active_name
+            ON tag_groups (lower(name)) WHERE is_active;
+
+        CREATE TABLE IF NOT EXISTS tag_group_members (
+            group_id            UUID        NOT NULL REFERENCES tag_groups(id) ON DELETE CASCADE,
+            user_id             UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            added_utc           TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (group_id, user_id)
+        );
+        CREATE INDEX IF NOT EXISTS ix_tag_group_members_user ON tag_group_members (user_id);
+
+        CREATE TABLE IF NOT EXISTS group_tags (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            group_id            UUID        NOT NULL REFERENCES tag_groups(id) ON DELETE CASCADE,
+            ticket_id           UUID        NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+            ticket_number       BIGINT      NOT NULL,
+            ticket_subject      TEXT        NOT NULL DEFAULT '',
+            event_id            BIGINT      NOT NULL REFERENCES ticket_events(id) ON DELETE CASCADE,
+            event_type          TEXT        NOT NULL,
+            source_user_id      UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            preview_text        TEXT        NOT NULL DEFAULT '',
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            acked_utc           TIMESTAMPTZ NULL,
+            acked_by_user_id    UUID        NULL REFERENCES users(id) ON DELETE SET NULL
+        );
+        -- Sidebar block + red dot: open tags per group.
+        CREATE INDEX IF NOT EXISTS ix_group_tags_open
+            ON group_tags (group_id, created_utc DESC) WHERE acked_utc IS NULL;
+        -- Profile history: keyset paging per group.
+        CREATE INDEX IF NOT EXISTS ix_group_tags_history
+            ON group_tags (group_id, created_utc DESC, id DESC);
+
         -- Bell notification sent by the notify_agent trigger action.
         ALTER TABLE user_notifications DROP CONSTRAINT IF EXISTS chk_user_notifications_type;
         ALTER TABLE user_notifications ADD CONSTRAINT chk_user_notifications_type

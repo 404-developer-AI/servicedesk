@@ -81,6 +81,26 @@ public sealed class RetentionWorker : BackgroundService
                 LIMIT @BatchSize
             )
             """),
+        // v0.1.54 — group tags follow the same two windows: acknowledged ones
+        // like read notifications, open ones like unread notifications.
+        new("group_tags (acknowledged)", SettingKeys.Retention.NotificationsReadDays, """
+            DELETE FROM group_tags
+            WHERE id IN (
+                SELECT id FROM group_tags
+                WHERE acked_utc IS NOT NULL AND created_utc < @Cutoff
+                ORDER BY id
+                LIMIT @BatchSize
+            )
+            """),
+        new("group_tags (open)", SettingKeys.Retention.NotificationsUnreadDays, """
+            DELETE FROM group_tags
+            WHERE id IN (
+                SELECT id FROM group_tags
+                WHERE acked_utc IS NULL AND created_utc < @Cutoff
+                ORDER BY id
+                LIMIT @BatchSize
+            )
+            """),
         // Finished attachment jobs. DeadLettered rows are excluded on purpose:
         // they sit on the Health page until an admin requeues or cancels
         // them, and silently vanishing would clear a Critical. attempts go
