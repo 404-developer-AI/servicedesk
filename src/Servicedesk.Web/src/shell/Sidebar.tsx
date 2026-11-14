@@ -500,13 +500,14 @@ export function Sidebar() {
       */}
       {/* v0.1.54 — expanded: Tags and Group tags share one row, together as
           wide as the Following block below; collapsed: stacked icon tiles. */}
+      {/* mt-4 sets the tag blocks clearly apart from Recent tickets above. */}
       {collapsed ? (
-        <>
+        <div className="mt-4">
           <NotificationsWidget collapsed />
           <GroupTagsWidget collapsed />
-        </>
+        </div>
       ) : (
-        <div className="mx-3 mb-2 flex gap-2">
+        <div className="mx-3 mt-4 mb-2 flex gap-2">
           <NotificationsWidget collapsed={false} className="min-w-0 flex-auto" />
           <GroupTagsWidget collapsed={false} className="min-w-0 flex-auto" />
         </div>
