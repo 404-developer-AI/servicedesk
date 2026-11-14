@@ -17,7 +17,11 @@ public sealed class QueueAccessService : IQueueAccessService
 
     public async Task<IReadOnlyList<Guid>> GetAccessibleQueueIdsAsync(Guid userId, string role, CancellationToken ct = default)
     {
-        var cacheKey = $"qa:{userId}";
+        var isAdmin = string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase);
+        // The role is part of the key: an admin's "every queue" list must
+        // never be served to the same user after a demotion to Agent (the
+        // role is re-read per request, the list is cached for 2 minutes).
+        var cacheKey = CacheKey(userId, isAdmin);
 
         if (_cache.TryGetValue(cacheKey, out IReadOnlyList<Guid>? cached) && cached is not null)
             return cached;
@@ -26,7 +30,7 @@ public sealed class QueueAccessService : IQueueAccessService
 
         IEnumerable<Guid> rows;
 
-        if (string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
+        if (isAdmin)
         {
             const string sql = """
                 SELECT id FROM queues
@@ -96,6 +100,10 @@ public sealed class QueueAccessService : IQueueAccessService
 
     public void InvalidateCache(Guid userId)
     {
-        _cache.Remove($"qa:{userId}");
+        _cache.Remove(CacheKey(userId, isAdmin: true));
+        _cache.Remove(CacheKey(userId, isAdmin: false));
     }
+
+    private static string CacheKey(Guid userId, bool isAdmin) =>
+        $"qa:{userId}:{(isAdmin ? "admin" : "member")}";
 }

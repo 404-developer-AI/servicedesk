@@ -2042,23 +2042,22 @@ public sealed class DatabaseBootstrapper : IHostedService
             applied_utc TIMESTAMPTZ NOT NULL DEFAULT now()
         );
 
-        -- v0.0.27 (push prep) — eenmalige aligning van updated_utc met
-        -- adsolut_last_modified voor companies-rijen die puur door eerdere
-        -- pulls werden geraakt. Vóór v0.0.27 zette de upserter
-        -- updated_utc = now() bij elke pull-update; dat patroon
-        -- markeerde elke gepullde rij als "lokaal nieuwer" en zou de v0.0.27
-        -- push-selector valse positieven laten oppikken zodra hij live gaat.
+        -- v0.0.27 (push prep) — one-off alignment of updated_utc with
+        -- adsolut_last_modified for company rows that were only touched by
+        -- earlier pulls. Before v0.0.27 the upserter set
+        -- updated_utc = now() on every pull update; that marked every
+        -- pulled row as "locally newer" and would have made the v0.0.27
+        -- push selector pick up false positives once it went live.
         --
-        -- Conservatieve gates voorkomen dat een echte agent-edit per ongeluk
-        -- wordt platgetrokken:
-        --  1) adsolut_id IS NOT NULL   — alleen Adsolut-gelinkte rijen
+        -- Conservative gates keep a real agent edit from being flattened:
+        --  1) adsolut_id IS NOT NULL   — Adsolut-linked rows only
         --  2) adsolut_last_modified IS NOT NULL
         --  3) updated_utc > adsolut_last_modified
-        --  4) gap <= 1 minute          — agent-edits >1 min ná de pull
-        --                                blijven onaangeraakt
+        --  4) gap <= 1 minute          — agent edits more than 1 min after
+        --                                the pull stay untouched
         --
-        -- Eén keer uitvoeren via data_migrations marker; volgende restarts
-        -- zien hetzelfde marker en slaan over.
+        -- Runs once via a data_migrations marker; later restarts see the
+        -- marker and skip.
         DO $do$
         BEGIN
             IF NOT EXISTS (
@@ -2627,7 +2626,7 @@ public sealed class DatabaseBootstrapper : IHostedService
         --   requires_ticket — agent must link a ticket to the entry.
         --   is_absence      — entries on this task represent leave/sick
         --                     time and roll up separately in Tab 3 so a
-        --                     verlof-dag doesn't look like a normal 8u-day.
+        --                     day of leave doesn't look like a normal 8-hour day.
         -- A partial unique index forbids two ACTIVE tasks with the same
         -- name (case-insensitive); archived rows are excluded so a name
         -- can be reused after retirement.

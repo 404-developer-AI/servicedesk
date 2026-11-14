@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Servicedesk.Api.Auth;
+using Servicedesk.Infrastructure.Access;
 using Servicedesk.Infrastructure.Audit;
 using Servicedesk.Infrastructure.Auth;
 using Servicedesk.Infrastructure.Auth.Admin;
@@ -294,12 +295,16 @@ public static class AdminUserEndpoints
         HttpContext httpContext,
         IUserAdminService admin,
         IAuditLogger audit,
+        IQueueAccessService queueAccess,
         CancellationToken ct)
     {
         var adminId = RequireUserId(httpContext);
         if (adminId is null) return Results.Unauthorized();
 
         var result = await admin.UpdateRoleAsync(id, request.Role, adminId.Value, ct);
+        // The new role takes effect on the user's next request; drop any
+        // cached queue list so access follows it immediately.
+        if (result is UpdateRoleResult.Updated) queueAccess.InvalidateCache(id);
         return result switch
         {
             UpdateRoleResult.Updated updated =>
