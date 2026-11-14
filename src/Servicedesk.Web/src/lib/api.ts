@@ -3693,6 +3693,10 @@ export const preferencesApi = {
     request<PostCloseRedirectPreference>("GET", "/api/preferences/post-close-redirect"),
   setPostCloseRedirect: (target: string) =>
     request<PostCloseRedirectPreference>("PUT", "/api/preferences/post-close-redirect", { target }),
+  /// v0.1.54 — mail for @@-tags (default on; the bell entry always comes).
+  getMentionEmail: () => request<{ enabled: boolean }>("GET", "/api/preferences/mention-email"),
+  setMentionEmail: (enabled: boolean) =>
+    request<{ enabled: boolean }>("PUT", "/api/preferences/mention-email", { enabled }),
 };
 
 export type PinnedFeaturesPreference = { paths: string[] };

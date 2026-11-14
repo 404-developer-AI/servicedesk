@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Dapper;
 using Npgsql;
 using Servicedesk.Api.Auth;
+using Servicedesk.Infrastructure.Notifications;
 using Servicedesk.Infrastructure.Settings;
 
 namespace Servicedesk.Api.Preferences;
@@ -371,8 +372,43 @@ public static class UserPreferencesEndpoints
             return Results.Ok(new PostCloseRedirectPreference(normalized));
         }).WithName("UpdatePostCloseRedirect").WithOpenApi();
 
+        // v0.1.54 — "Email me when I'm tagged" (@@-mentions). Default on; a
+        // stored "false" makes MentionNotificationService skip the mail (the
+        // bell entry and live toast still come). Only the caller's own row.
+        group.MapGet("/mention-email", async (
+            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            await using var conn = await dataSource.OpenConnectionAsync(ct);
+            var raw = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
+                "SELECT pref_value FROM user_preferences WHERE user_id = @userId AND pref_key = @key",
+                new { userId, key = NotificationPreferenceKeys.MentionEmail }, cancellationToken: ct));
+            return Results.Ok(new MentionEmailPreference(raw != "false"));
+        }).WithName("GetMentionEmailPreference").WithOpenApi();
+
+        group.MapPut("/mention-email", async (
+            [FromBody] MentionEmailPreference req,
+            HttpContext http, [FromServices] NpgsqlDataSource dataSource, CancellationToken ct) =>
+        {
+            if (req is null) return Results.BadRequest(new { error = "enabled is required." });
+            var userId = Guid.Parse(http.User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            await using var conn = await dataSource.OpenConnectionAsync(ct);
+            await conn.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO user_preferences (user_id, pref_key, pref_value)
+                VALUES (@userId, @key, @value)
+                ON CONFLICT (user_id, pref_key) DO UPDATE
+                    SET pref_value = @value, updated_utc = now()
+                """,
+                new { userId, key = NotificationPreferenceKeys.MentionEmail, value = req.Enabled ? "true" : "false" },
+                cancellationToken: ct));
+            return Results.Ok(new MentionEmailPreference(req.Enabled));
+        }).WithName("UpdateMentionEmailPreference").WithOpenApi();
+
         return app;
     }
+
+    public sealed record MentionEmailPreference(bool Enabled);
 
     /// Validates the post-close redirect token. Accepts the literals
     /// "dashboard" / "timesheet", or "view:&lt;guid&gt;" with a parseable GUID

@@ -8,6 +8,7 @@ import { ChangePasswordSection } from "@/pages/profile/ChangePasswordSection";
 import { useTheme } from "@/app/ThemeProvider";
 import { ThemePicker } from "@/components/ThemePicker";
 import { MySessionsCard } from "@/components/auth/MySessionsCard";
+import { Switch } from "@/components/ui/switch";
 import { preferencesApi } from "@/lib/api";
 import { viewApi } from "@/lib/ticket-api";
 import {
@@ -67,6 +68,8 @@ export function ProfilePage() {
 
       {isAgent ? <PostCloseRedirectSection /> : null}
 
+      {isAgent ? <TagNotificationsSection /> : null}
+
       {isAgent ? (
         <Link
           to="/profile/mentions"
@@ -91,6 +94,52 @@ export function ProfilePage() {
 
       <TwoFactorSection />
     </div>
+  );
+}
+
+/**
+ * v0.1.54 — whether an @@-tag also arrives by mail. The bell entry and the
+ * live toast always come; this only switches the mail copy (default on).
+ * The app-wide switch (Settings → Notifications) still overrides it.
+ */
+function TagNotificationsSection() {
+  const queryClient = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ["preferences", "mention-email"],
+    queryFn: preferencesApi.getMentionEmail,
+    staleTime: 60_000,
+  });
+  const save = useMutation({
+    mutationFn: (enabled: boolean) => preferencesApi.setMentionEmail(enabled),
+    onSuccess: (res) => {
+      queryClient.setQueryData(["preferences", "mention-email"], res);
+      toast.success(res.enabled ? "You'll get a mail when you're tagged" : "No more mails for tags");
+    },
+    onError: () => toast.error("Failed to save the preference"),
+  });
+
+  return (
+    <section className="glass-card space-y-3 p-6">
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="text-sm font-medium">Tag notifications</div>
+        <div className="text-[11px] text-muted-foreground">Saved to your account.</div>
+      </div>
+      <label className="flex items-start justify-between gap-4">
+        <span className="min-w-0 space-y-0.5">
+          <span className="block text-sm">Email me when I'm tagged</span>
+          <span className="block text-xs text-muted-foreground">
+            When someone tags you with @@ in a note or mail. You always get the bell notification; this only
+            controls the extra mail.
+          </span>
+        </span>
+        <Switch
+          checked={data?.enabled ?? true}
+          disabled={!data || save.isPending}
+          onCheckedChange={(v) => save.mutate(v)}
+          aria-label="Email me when I'm tagged"
+        />
+      </label>
+    </section>
   );
 }
 

@@ -249,6 +249,19 @@ public sealed class NotificationRepository : INotificationRepository
             new CommandDefinition(sql, new { userId }, cancellationToken: ct));
     }
 
+    public async Task<IReadOnlySet<Guid>> ListMentionMailOptOutsAsync(IReadOnlyCollection<Guid> userIds, CancellationToken ct)
+    {
+        if (userIds.Count == 0) return new HashSet<Guid>();
+        const string sql = """
+            SELECT user_id FROM user_preferences
+            WHERE pref_key = @key AND pref_value = 'false' AND user_id = ANY(@ids)
+            """;
+        await using var connection = await _dataSource.OpenConnectionAsync(ct);
+        var rows = await connection.QueryAsync<Guid>(new CommandDefinition(sql,
+            new { key = NotificationPreferenceKeys.MentionEmail, ids = userIds.ToArray() }, cancellationToken: ct));
+        return rows.ToHashSet();
+    }
+
     public async Task MarkEmailSentAsync(Guid id, DateTime? sentUtc, string? error, CancellationToken ct)
     {
         const string sql = """

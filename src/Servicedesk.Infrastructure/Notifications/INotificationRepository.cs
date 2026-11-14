@@ -45,6 +45,18 @@ public interface INotificationRepository
     /// Post-send status update from the mention service. `error` is null on
     /// success.
     Task MarkEmailSentAsync(Guid id, DateTime? sentUtc, string? error, CancellationToken ct);
+
+    /// v0.1.54 — of <paramref name="userIds"/>, the users who turned off the
+    /// mail for @@-tags in their profile (default: mail on).
+    Task<IReadOnlySet<Guid>> ListMentionMailOptOutsAsync(IReadOnlyCollection<Guid> userIds, CancellationToken ct);
+}
+
+/// Per-user notification preferences stored in <c>user_preferences</c>.
+public static class NotificationPreferenceKeys
+{
+    /// "false" = no mail for @@-tags (the in-app bell still shows them).
+    /// Missing row / any other value = mail on.
+    public const string MentionEmail = "notify:mention-email";
 }
 
 public sealed record NewUserNotification(

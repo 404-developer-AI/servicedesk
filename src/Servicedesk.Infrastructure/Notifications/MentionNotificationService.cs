@@ -159,9 +159,29 @@ public sealed class MentionNotificationService : IMentionNotificationService
                 "App.PublicBaseUrl is empty; notification-mail CTA will be a relative path. Set this setting so the link survives outside the browser session.");
         }
 
+        // v0.1.54 — users who turned the tag mail off in their profile keep
+        // the bell entry only. A failed lookup falls back to mailing (the
+        // factory default) rather than silently dropping every mail.
+        IReadOnlySet<Guid> optedOut;
+        try
+        {
+            optedOut = await _repo.ListMentionMailOptOutsAsync(inserted.Select(r => r.UserId).ToList(), ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read tag-mail preferences; mailing every tagged user.");
+            optedOut = new HashSet<Guid>();
+        }
+
         // One mail per mentioned user.
         foreach (var row in inserted)
         {
+            if (optedOut.Contains(row.UserId))
+            {
+                await _repo.MarkEmailSentAsync(row.Id, null, "mail turned off in profile", ct);
+                continue;
+            }
+
             // Resolve the recipient email via the shared user-service. If the
             // user can't be resolved (race with delete) we mark the row with
             // an explicit error — the in-app row still exists so the

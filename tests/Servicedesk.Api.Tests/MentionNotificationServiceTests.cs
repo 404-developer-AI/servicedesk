@@ -54,6 +54,24 @@ public sealed class MentionNotificationServiceTests
     }
 
     [Fact]
+    public async Task Profile_mail_opt_out_keeps_the_bell_but_sends_no_mail()
+    {
+        var (svc, repo, notifier, graph, _) = Build(
+            recipientEmail: "bob@example.com",
+            mailbox: "support@desk.test");
+        repo.MailOptOuts.Add(RecipientId);
+
+        await svc.PublishAsync(MakeSource(new[] { RecipientId }), default);
+
+        Assert.Single(repo.Rows);
+        Assert.Single(notifier.Pushed);
+        Assert.Empty(graph.Sent);
+        var stamp = Assert.Single(repo.EmailStamps);
+        Assert.Null(stamp.SentUtc);
+        Assert.Equal("mail turned off in profile", stamp.Error);
+    }
+
+    [Fact]
     public async Task Mail_kill_switch_off_skips_graph_but_still_persists_and_pushes()
     {
         var (svc, repo, notifier, graph, settings) = Build(
@@ -254,6 +272,10 @@ public sealed class MentionNotificationServiceTests
             EmailStamps.Add((id, sentUtc, error));
             return Task.CompletedTask;
         }
+
+        public HashSet<Guid> MailOptOuts { get; } = new();
+        public Task<IReadOnlySet<Guid>> ListMentionMailOptOutsAsync(IReadOnlyCollection<Guid> userIds, CancellationToken ct)
+            => Task.FromResult<IReadOnlySet<Guid>>(userIds.Where(MailOptOuts.Contains).ToHashSet());
     }
 
     private sealed class StubNotifier : IUserNotifier
