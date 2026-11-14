@@ -46,9 +46,11 @@ public interface INotificationRepository
     /// success.
     Task MarkEmailSentAsync(Guid id, DateTime? sentUtc, string? error, CancellationToken ct);
 
-    /// v0.1.54 — of <paramref name="userIds"/>, the users who turned off the
-    /// mail for @@-tags in their profile (default: mail on).
-    Task<IReadOnlySet<Guid>> ListMentionMailOptOutsAsync(IReadOnlyCollection<Guid> userIds, CancellationToken ct);
+    /// v0.1.54 — of <paramref name="userIds"/>, the users who should NOT get
+    /// the mail governed by preference <paramref name="key"/>: with
+    /// <paramref name="defaultOn"/> those who stored "false", otherwise everyone
+    /// who did not store "true".
+    Task<IReadOnlySet<Guid>> ListMailOptOutsAsync(string key, bool defaultOn, IReadOnlyCollection<Guid> userIds, CancellationToken ct);
 }
 
 /// Per-user notification preferences stored in <c>user_preferences</c>.
@@ -57,6 +59,14 @@ public static class NotificationPreferenceKeys
     /// "false" = no mail for @@-tags (the in-app bell still shows them).
     /// Missing row / any other value = mail on.
     public const string MentionEmail = "notify:mention-email";
+    /// v0.1.54 — mail when someone replies to my internal note (default on).
+    public const string ReplyEmail = "notify:note-reply-email";
+    /// v0.1.54 — mail when someone likes my internal note (default off).
+    public const string LikeEmail = "notify:note-like-email";
+
+    public static readonly NotificationMailPreference MentionEmailPreference = new(MentionEmail, DefaultOn: true);
+    public static readonly NotificationMailPreference ReplyEmailPreference = new(ReplyEmail, DefaultOn: true);
+    public static readonly NotificationMailPreference LikeEmailPreference = new(LikeEmail, DefaultOn: false);
 }
 
 public sealed record NewUserNotification(
@@ -68,7 +78,9 @@ public sealed record NewUserNotification(
     string TicketSubject,
     long EventId,
     string EventType,
-    string PreviewText);
+    string PreviewText,
+    /// v0.1.54 — set for reply / like notifications that point at a reply.
+    long? ReplyId = null);
 
 public sealed record UserNotificationRow(
     Guid Id,
@@ -86,7 +98,8 @@ public sealed record UserNotificationRow(
     DateTime? ViewedUtc,
     DateTime? AckedUtc,
     DateTime? EmailSentUtc,
-    string? EmailError);
+    string? EmailError,
+    long? ReplyId = null);
 
 /// Keyset cursor for history pagination. `id` breaks ties when two rows
 /// share a `created_utc` (extremely rare but possible on fast bulk inserts).

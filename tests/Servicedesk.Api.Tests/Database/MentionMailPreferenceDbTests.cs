@@ -29,8 +29,13 @@ public sealed class MentionMailPreferenceDbTests
         }
 
         var optedOut = await new NotificationRepository(_db.DataSource)
-            .ListMentionMailOptOutsAsync(new[] { off, on, untouched }, default);
+            .ListMailOptOutsAsync(NotificationPreferenceKeys.MentionEmail, true, new[] { off, on, untouched }, default);
 
         Assert.Equal(new[] { off }, optedOut.ToArray());
+
+        // A default-off switch (likes): only users who stored "true" get mail.
+        var noLikeMail = await new NotificationRepository(_db.DataSource)
+            .ListMailOptOutsAsync(NotificationPreferenceKeys.MentionEmail, false, new[] { off, on, untouched }, default);
+        Assert.Equal(new[] { off, untouched }.OrderBy(x => x), noLikeMail.OrderBy(x => x));
     }
 }

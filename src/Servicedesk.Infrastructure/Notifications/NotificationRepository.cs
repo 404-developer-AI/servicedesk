@@ -26,22 +26,22 @@ public sealed class NotificationRepository : INotificationRepository
             WITH inserted AS (
                 INSERT INTO user_notifications (
                     user_id, source_user_id, notification_type, ticket_id,
-                    ticket_number, ticket_subject, event_id, event_type, preview_text
+                    ticket_number, ticket_subject, event_id, event_type, preview_text, reply_id
                 )
                 SELECT
                     user_id, source_user_id, notification_type, ticket_id,
-                    ticket_number, ticket_subject, event_id, event_type, preview_text
+                    ticket_number, ticket_subject, event_id, event_type, preview_text, reply_id
                 FROM UNNEST(
                     @UserIds::uuid[], @SourceUserIds::uuid[], @Types::text[], @TicketIds::uuid[],
                     @TicketNumbers::bigint[], @TicketSubjects::text[], @EventIds::bigint[],
-                    @EventTypes::text[], @PreviewTexts::text[]
+                    @EventTypes::text[], @PreviewTexts::text[], @ReplyIds::bigint[]
                 ) AS src (
                     user_id, source_user_id, notification_type, ticket_id,
-                    ticket_number, ticket_subject, event_id, event_type, preview_text
+                    ticket_number, ticket_subject, event_id, event_type, preview_text, reply_id
                 )
                 RETURNING id, user_id, source_user_id, notification_type, ticket_id,
                           ticket_number, ticket_subject, event_id, event_type, preview_text,
-                          created_utc, viewed_utc, acked_utc, email_sent_utc, email_error
+                          created_utc, viewed_utc, acked_utc, email_sent_utc, email_error, reply_id
             )
             SELECT
                 i.id AS Id,
@@ -59,7 +59,8 @@ public sealed class NotificationRepository : INotificationRepository
                 i.viewed_utc AS ViewedUtc,
                 i.acked_utc AS AckedUtc,
                 i.email_sent_utc AS EmailSentUtc,
-                i.email_error AS EmailError
+                i.email_error AS EmailError,
+                i.reply_id AS ReplyId
             FROM inserted i
             LEFT JOIN users su ON su.id = i.source_user_id
             ORDER BY i.created_utc, i.id
@@ -74,6 +75,7 @@ public sealed class NotificationRepository : INotificationRepository
         var eventIds = new long[rows.Count];
         var eventTypes = new string[rows.Count];
         var previews = new string[rows.Count];
+        var replyIds = new long?[rows.Count];
         for (var i = 0; i < rows.Count; i++)
         {
             var r = rows[i];
@@ -86,6 +88,7 @@ public sealed class NotificationRepository : INotificationRepository
             eventIds[i] = r.EventId;
             eventTypes[i] = r.EventType;
             previews[i] = r.PreviewText;
+            replyIds[i] = r.ReplyId;
         }
 
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
@@ -101,6 +104,7 @@ public sealed class NotificationRepository : INotificationRepository
                 EventIds = eventIds,
                 EventTypes = eventTypes,
                 PreviewTexts = previews,
+                ReplyIds = replyIds,
             }, cancellationToken: ct));
         return inserted.ToList();
     }
@@ -118,7 +122,8 @@ public sealed class NotificationRepository : INotificationRepository
                    n.preview_text AS PreviewText,
                    n.created_utc AS CreatedUtc, n.viewed_utc AS ViewedUtc,
                    n.acked_utc AS AckedUtc, n.email_sent_utc AS EmailSentUtc,
-                   n.email_error AS EmailError
+                   n.email_error AS EmailError,
+                   n.reply_id AS ReplyId
             FROM user_notifications n
             LEFT JOIN users su ON su.id = n.source_user_id
             WHERE n.user_id = @userId AND n.acked_utc IS NULL
@@ -148,7 +153,8 @@ public sealed class NotificationRepository : INotificationRepository
                    n.preview_text AS PreviewText,
                    n.created_utc AS CreatedUtc, n.viewed_utc AS ViewedUtc,
                    n.acked_utc AS AckedUtc, n.email_sent_utc AS EmailSentUtc,
-                   n.email_error AS EmailError
+                   n.email_error AS EmailError,
+                   n.reply_id AS ReplyId
             FROM user_notifications n
             LEFT JOIN users su ON su.id = n.source_user_id
             WHERE n.user_id = @userId
@@ -165,7 +171,8 @@ public sealed class NotificationRepository : INotificationRepository
                    n.preview_text AS PreviewText,
                    n.created_utc AS CreatedUtc, n.viewed_utc AS ViewedUtc,
                    n.acked_utc AS AckedUtc, n.email_sent_utc AS EmailSentUtc,
-                   n.email_error AS EmailError
+                   n.email_error AS EmailError,
+                   n.reply_id AS ReplyId
             FROM user_notifications n
             LEFT JOIN users su ON su.id = n.source_user_id
             WHERE n.user_id = @userId
@@ -197,7 +204,8 @@ public sealed class NotificationRepository : INotificationRepository
                    n.preview_text AS PreviewText,
                    n.created_utc AS CreatedUtc, n.viewed_utc AS ViewedUtc,
                    n.acked_utc AS AckedUtc, n.email_sent_utc AS EmailSentUtc,
-                   n.email_error AS EmailError
+                   n.email_error AS EmailError,
+                   n.reply_id AS ReplyId
             FROM user_notifications n
             LEFT JOIN users su ON su.id = n.source_user_id
             WHERE n.id = @id AND n.user_id = @userId
@@ -249,17 +257,23 @@ public sealed class NotificationRepository : INotificationRepository
             new CommandDefinition(sql, new { userId }, cancellationToken: ct));
     }
 
-    public async Task<IReadOnlySet<Guid>> ListMentionMailOptOutsAsync(IReadOnlyCollection<Guid> userIds, CancellationToken ct)
+    public async Task<IReadOnlySet<Guid>> ListMailOptOutsAsync(string key, bool defaultOn, IReadOnlyCollection<Guid> userIds, CancellationToken ct)
     {
         if (userIds.Count == 0) return new HashSet<Guid>();
-        const string sql = """
-            SELECT user_id FROM user_preferences
-            WHERE pref_key = @key AND pref_value = 'false' AND user_id = ANY(@ids)
-            """;
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
-        var rows = await connection.QueryAsync<Guid>(new CommandDefinition(sql,
-            new { key = NotificationPreferenceKeys.MentionEmail, ids = userIds.ToArray() }, cancellationToken: ct));
-        return rows.ToHashSet();
+        if (defaultOn)
+        {
+            var off = await connection.QueryAsync<Guid>(new CommandDefinition("""
+                SELECT user_id FROM user_preferences
+                WHERE pref_key = @key AND pref_value = 'false' AND user_id = ANY(@ids)
+                """, new { key, ids = userIds.ToArray() }, cancellationToken: ct));
+            return off.ToHashSet();
+        }
+        var on = (await connection.QueryAsync<Guid>(new CommandDefinition("""
+            SELECT user_id FROM user_preferences
+            WHERE pref_key = @key AND pref_value = 'true' AND user_id = ANY(@ids)
+            """, new { key, ids = userIds.ToArray() }, cancellationToken: ct))).ToHashSet();
+        return userIds.Where(u => !on.Contains(u)).ToHashSet();
     }
 
     public async Task MarkEmailSentAsync(Guid id, DateTime? sentUtc, string? error, CancellationToken ct)

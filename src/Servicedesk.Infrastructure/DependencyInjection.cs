@@ -476,7 +476,11 @@ public static class DependencyInjection
 
         // Mention notification pipeline (v0.0.12 stap 4).
         services.AddSingleton<INotificationRepository, NotificationRepository>();
+        services.AddSingleton<INotificationMailer, NotificationMailer>();
         services.AddSingleton<IMentionNotificationService, MentionNotificationService>();
+        // v0.1.54 — replies and likes on internal notes.
+        services.AddSingleton<Tickets.NoteThreads.INoteThreadRepository, Tickets.NoteThreads.NoteThreadRepository>();
+        services.AddScoped<Tickets.NoteThreads.INoteThreadService, Tickets.NoteThreads.NoteThreadService>();
 
         services.AddSingleton<IMailMessageRepository, MailMessageRepository>();
         services.AddSingleton<Mail.Outbound.IRecipientSuggestionRepository, Mail.Outbound.RecipientSuggestionRepository>();

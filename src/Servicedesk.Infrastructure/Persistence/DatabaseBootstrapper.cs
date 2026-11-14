@@ -6778,10 +6778,61 @@ public sealed class DatabaseBootstrapper : IHostedService
         CREATE INDEX IF NOT EXISTS ix_group_tags_history
             ON group_tags (group_id, created_utc DESC, id DESC);
 
-        -- Bell notification sent by the notify_agent trigger action.
+        -- ===================================================================
+        -- v0.1.54 — Replies and likes on internal notes / internal calls.
+        -- Threads are an adjacency list PLUS the root: every reply stores the
+        -- note it ultimately hangs under (root_event_id) and its direct parent
+        -- (parent_reply_id, NULL = straight under the note). One indexed read
+        -- on root_event_id returns whole trees of any depth; the tree is
+        -- assembled in memory — no recursive CTE. depth is display-only.
+        -- Deleting is soft (body cleared) so deeper replies never orphan.
+        -- Keyed to the event (not the ticket): merges need nothing, and the
+        -- portal's whitelist query layer never reads these tables.
+        -- ===================================================================
+        CREATE TABLE IF NOT EXISTS ticket_note_replies (
+            id                  BIGSERIAL   PRIMARY KEY,
+            root_event_id       BIGINT      NOT NULL REFERENCES ticket_events(id) ON DELETE CASCADE,
+            parent_reply_id     BIGINT      NULL REFERENCES ticket_note_replies(id) ON DELETE CASCADE,
+            depth               SMALLINT    NOT NULL DEFAULT 1,
+            author_user_id      UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            body_html           TEXT        NOT NULL DEFAULT '',
+            body_text           TEXT        NOT NULL DEFAULT '',
+            metadata            JSONB       NOT NULL DEFAULT '{}'::jsonb,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            edited_utc          TIMESTAMPTZ NULL,
+            deleted_utc         TIMESTAMPTZ NULL,
+            deleted_by_user_id  UUID        NULL REFERENCES users(id) ON DELETE SET NULL,
+            CONSTRAINT chk_ticket_note_replies_depth CHECK (depth >= 1)
+        );
+        CREATE INDEX IF NOT EXISTS ix_ticket_note_replies_root
+            ON ticket_note_replies (root_event_id, id);
+        CREATE INDEX IF NOT EXISTS ix_ticket_note_replies_search_trgm
+            ON ticket_note_replies USING GIN (body_text gin_trgm_ops) WHERE deleted_utc IS NULL;
+
+        -- A like targets exactly one of: the note (event) or a reply.
+        CREATE TABLE IF NOT EXISTS ticket_note_likes (
+            id                  BIGSERIAL   PRIMARY KEY,
+            event_id            BIGINT      NULL REFERENCES ticket_events(id) ON DELETE CASCADE,
+            reply_id            BIGINT      NULL REFERENCES ticket_note_replies(id) ON DELETE CASCADE,
+            user_id             UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_utc         TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT chk_ticket_note_likes_target CHECK (num_nonnulls(event_id, reply_id) = 1)
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_ticket_note_likes_event
+            ON ticket_note_likes (event_id, user_id) WHERE event_id IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_ticket_note_likes_reply
+            ON ticket_note_likes (reply_id, user_id) WHERE reply_id IS NOT NULL;
+
+        -- Bell entries for replies/likes point at the reply when there is one.
+        ALTER TABLE user_notifications ADD COLUMN IF NOT EXISTS reply_id BIGINT NULL
+            REFERENCES ticket_note_replies(id) ON DELETE CASCADE;
+
+        -- Bell notification sent by the notify_agent trigger action, and
+        -- (v0.1.54) replies / likes on internal notes.
         ALTER TABLE user_notifications DROP CONSTRAINT IF EXISTS chk_user_notifications_type;
         ALTER TABLE user_notifications ADD CONSTRAINT chk_user_notifications_type
-            CHECK (notification_type IN ('mention','survey_submitted','checklist_blocked','trigger_notice')) NOT VALID;
+            CHECK (notification_type IN ('mention','survey_submitted','checklist_blocked','trigger_notice',
+                                         'note_reply','note_like')) NOT VALID;
         """;
 
     private readonly NpgsqlDataSource _dataSource;

@@ -67,8 +67,9 @@ public sealed class MentionNotificationServiceTests
         groups.Active[groupId] = ("Back office", new List<Guid> { member, SourceUserId });
         var tags = new StubGroupTags();
         var groupPush = new RecordingGroupTagNotifier();
-        var svc = new MentionNotificationService(repo, notifier, new StubUsers("bob@example.com"),
-            new StubTaxonomy("support@desk.test"), graph, settings, new StubTaggingMailboxes(),
+        var svc = new MentionNotificationService(repo, notifier,
+            Mailer(repo, new StubUsers("bob@example.com"), new StubTaxonomy("support@desk.test"), graph, settings),
+            new StubTaggingMailboxes(),
             groups, tags, groupPush, NullLogger<MentionNotificationService>.Instance);
 
         await svc.PublishAsync(MakeSource(Array.Empty<Guid>()) with { MentionedGroupIds = new[] { groupId, Guid.NewGuid() } }, default);
@@ -180,7 +181,7 @@ public sealed class MentionNotificationServiceTests
         var mailboxId = Guid.Parse("55555555-5555-5555-5555-555555555555");
         tagging.Active.Add(new TaggingMailbox(
             mailboxId, "Accounting", "accounting@desk.test", true, DateTime.UtcNow, DateTime.UtcNow));
-        var svc = new MentionNotificationService(repo, notifier, users, taxonomy, graph, settings,
+        var svc = new MentionNotificationService(repo, notifier, Mailer(repo, users, taxonomy, graph, settings),
             tagging, new StubTagGroups(), new StubGroupTags(), new RecordingGroupTagNotifier(),
             NullLogger<MentionNotificationService>.Instance);
 
@@ -212,7 +213,7 @@ public sealed class MentionNotificationServiceTests
         // Present but inactive — ResolveActiveByIds filters it out, so no mail.
         tagging.Active.Add(new TaggingMailbox(
             mailboxId, "Old Box", "old@desk.test", false, DateTime.UtcNow, DateTime.UtcNow));
-        var svc = new MentionNotificationService(repo, notifier, users, taxonomy, graph, settings,
+        var svc = new MentionNotificationService(repo, notifier, Mailer(repo, users, taxonomy, graph, settings),
             tagging, new StubTagGroups(), new StubGroupTags(), new RecordingGroupTagNotifier(),
             NullLogger<MentionNotificationService>.Instance);
 
@@ -222,6 +223,10 @@ public sealed class MentionNotificationServiceTests
     }
 
     // ---- helpers ----
+
+    private static NotificationMailer Mailer(StubRepo repo, IUserService users, ITaxonomyRepository taxonomy,
+        StubGraph graph, StubSettings settings)
+        => new(repo, users, taxonomy, graph, settings, NullLogger<NotificationMailer>.Instance);
 
     private static MentionNotificationSource MakeSource(
         IReadOnlyList<Guid> mentioned, IReadOnlyList<Guid>? mailboxes = null) =>
@@ -253,7 +258,7 @@ public sealed class MentionNotificationServiceTests
         var graph = new StubGraph();
         var settings = new StubSettings();
         var taggingMailboxes = new StubTaggingMailboxes();
-        var svc = new MentionNotificationService(repo, notifier, users, taxonomy, graph, settings,
+        var svc = new MentionNotificationService(repo, notifier, Mailer(repo, users, taxonomy, graph, settings),
             taggingMailboxes, new StubTagGroups(), new StubGroupTags(), new RecordingGroupTagNotifier(),
             NullLogger<MentionNotificationService>.Instance);
         return (svc, repo, notifier, graph, settings);
@@ -307,7 +312,7 @@ public sealed class MentionNotificationServiceTests
         }
 
         public HashSet<Guid> MailOptOuts { get; } = new();
-        public Task<IReadOnlySet<Guid>> ListMentionMailOptOutsAsync(IReadOnlyCollection<Guid> userIds, CancellationToken ct)
+        public Task<IReadOnlySet<Guid>> ListMailOptOutsAsync(string key, bool defaultOn, IReadOnlyCollection<Guid> userIds, CancellationToken ct)
             => Task.FromResult<IReadOnlySet<Guid>>(userIds.Where(MailOptOuts.Contains).ToHashSet());
     }
 
