@@ -42,6 +42,7 @@ import {
 import { formatDateTime } from "@/lib/dateFormat";
 import { CARD_ACCENT, parseMetadata } from "./timelineMeta";
 import { cn } from "@/lib/utils";
+import { apiFieldErrors } from "@/lib/http";
 import { ticketApi, ApiError, type TicketEvent, type OutboundMailKind } from "@/lib/ticket-api";
 import { useAttachmentUploads } from "../hooks/useAttachmentUploads";
 import { useWorkspaceStore } from "@/stores/useWorkspaceStore";
@@ -1966,10 +1967,7 @@ function LogFeedbackDialog({
     },
     onError: (err) => {
       if (err instanceof ApiError && err.status === 422) {
-        const body = err.body as { errors?: { field: string; message: string }[] } | null;
-        const map: Record<string, string> = {};
-        for (const e of body?.errors ?? []) map[e.field] = e.message;
-        setFieldErrors(map);
+        setFieldErrors(apiFieldErrors(err) ?? {});
         toast.error("Please fix the validation errors.");
       } else {
         toast.error("Could not log feedback.");

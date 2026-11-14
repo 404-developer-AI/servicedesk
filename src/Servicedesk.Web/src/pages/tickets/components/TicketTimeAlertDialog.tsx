@@ -14,7 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { ApiError } from "@/lib/ticket-api";
+import { apiErrorMessage } from "@/lib/http";
 import { timesheetTicketApi, formatDuration } from "@/lib/timesheet-api";
 import { useCurrentRole } from "@/hooks/useCurrentRole";
 
@@ -135,7 +135,7 @@ export function TicketTimeAlertDialog({ ticketId, queueId, onBlockingChange }: P
     },
     onError: (e) =>
       toast.error(
-        e instanceof ApiError ? e.message : "Could not dismiss the warning.",
+        apiErrorMessage(e) ?? "Could not dismiss the warning.",
       ),
   });
 
@@ -153,7 +153,7 @@ export function TicketTimeAlertDialog({ ticketId, queueId, onBlockingChange }: P
     },
     onError: (e) =>
       toast.error(
-        e instanceof ApiError ? e.message : "Could not raise the limit.",
+        apiErrorMessage(e) ?? "Could not raise the limit.",
       ),
   });
 
@@ -169,7 +169,7 @@ export function TicketTimeAlertDialog({ ticketId, queueId, onBlockingChange }: P
     },
     onError: (e) =>
       toast.error(
-        e instanceof ApiError ? e.message : "Could not disable hour tracking.",
+        apiErrorMessage(e) ?? "Could not disable hour tracking.",
       ),
   });
 

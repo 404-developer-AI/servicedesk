@@ -1,43 +1,11 @@
 // v0.0.103 — ticket checklists: agent-side (checklists on a ticket) and
 // admin-side (templates) API surface + shared types.
 
-import { csrfHeader } from "@/lib/csrf";
-import { ApiError } from "@/lib/ticket-api";
-
-async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const isSafe = method === "GET" || method === "HEAD";
-  const res = await fetch(url, {
-    method,
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...(isSafe ? {} : csrfHeader()),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let parsedBody: unknown = null;
-    try {
-      const txt = await res.text();
-      if (txt) parsedBody = JSON.parse(txt);
-    } catch {
-      // non-JSON body
-    }
-    throw new ApiError(res.status, url, `${url} → ${res.status} ${res.statusText}`, parsedBody);
-  }
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  return (text ? JSON.parse(text) : undefined) as T;
-}
+import { ApiError, apiErrorMessage, request } from "@/lib/http";
 
 /** Reads the `{ error, code }` body the checklist endpoints return. */
 export function checklistErrorMessage(err: unknown, fallback: string): string {
-  if (err instanceof ApiError && err.body && typeof err.body === "object") {
-    const b = err.body as { error?: unknown };
-    if (typeof b.error === "string" && b.error.trim()) return b.error;
-  }
-  return fallback;
+  return apiErrorMessage(err) ?? fallback;
 }
 
 export function checklistErrorCode(err: unknown): string | null {

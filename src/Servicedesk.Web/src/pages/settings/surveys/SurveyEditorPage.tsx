@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "@/lib/http";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -317,8 +318,7 @@ export function SurveyEditorPage({ surveyId }: { surveyId: string | null }) {
       }
     },
     onError: (err) => {
-      const e = err as Error & { payload?: { error?: string } };
-      toast.error(e.payload?.error ?? "Could not save survey.");
+      toast.error(apiErrorMessage(err) ?? "Could not save survey.");
     },
   });
 

@@ -1,46 +1,8 @@
-import { csrfHeader } from "@/lib/csrf";
-import { ApiError } from "@/lib/api";
+import { ApiError, request } from "@/lib/http";
 
-// One ApiError class for the whole app: a second class here made
-// `apiErrorMessage()` (instanceof the lib/api one) drop every server
-// message thrown from this module. Re-exported for existing importers.
+// One ApiError class for the whole app (lib/http.ts). Re-exported for
+// existing importers.
 export { ApiError };
-
-async function request<T>(
-  method: string,
-  url: string,
-  body?: unknown,
-): Promise<T> {
-  const isSafe = method === "GET" || method === "HEAD";
-  const res = await fetch(url, {
-    method,
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...(isSafe ? {} : csrfHeader()),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let parsedBody: unknown = null;
-    try {
-      const txt = await res.text();
-      if (txt) parsedBody = JSON.parse(txt);
-    } catch {
-      // non-JSON body — surface as null; callers fall back to status.
-    }
-    throw new ApiError(
-      res.status,
-      url,
-      `${url} → ${res.status} ${res.statusText}`,
-      parsedBody,
-    );
-  }
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  return (text ? JSON.parse(text) : undefined) as T;
-}
 
 // ---- Ticket types ----
 
@@ -1387,23 +1349,7 @@ export const ticketApi = {
     const form = new FormData();
     form.append("file", file, file.name);
     const url = `/api/tickets/${ticketId}/attachments`;
-    const res = await fetch(url, {
-      method: "POST",
-      credentials: "include",
-      headers: csrfHeader(),
-      body: form,
-    });
-    if (!res.ok) {
-      let message = `Upload failed (${res.status})`;
-      try {
-        const body = (await res.json()) as { error?: string };
-        if (body?.error) message = body.error;
-      } catch {
-        /* ignore */
-      }
-      throw new ApiError(res.status, url, message);
-    }
-    return (await res.json()) as TicketAttachmentMeta;
+    return request<TicketAttachmentMeta>("POST", url, form);
   },
 };
 

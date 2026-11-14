@@ -1,3 +1,4 @@
+import { ApiError, apiErrorMessage } from "@/lib/http";
 import { formatDateTime } from "@/lib/dateFormat";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -57,10 +58,9 @@ export function PublicSurveyPage({ token }: { token: string }) {
   }
 
   if (viewQ.isError) {
-    const err = viewQ.error as Error & {
-      status?: number;
-      payload?: { message?: string };
-    };
+    const err = viewQ.error;
+    const status = err instanceof ApiError ? err.status : undefined;
+    const serverMessage = apiErrorMessage(err) ?? undefined;
     // Server returns the admin-supplied message body on expired/submitted,
     // so we render that instead of an English fallback. 404 is the only
     // case where we have no message (the token didn't match anything) —
@@ -68,9 +68,9 @@ export function PublicSurveyPage({ token }: { token: string }) {
     // server again to fetch the survey's notFoundMessage, but since the
     // token is unknown there's no survey to attach to. We render a
     // neutral icon-only state with no copy in that case.
-    if (err.status === 410) return <ExpiredState message={err.payload?.message} />;
-    if (err.status === 409) return <AlreadySubmittedState message={err.payload?.message} />;
-    if (err.status === 404) return <NotFoundState />;
+    if (status === 410) return <ExpiredState message={serverMessage} />;
+    if (status === 409) return <AlreadySubmittedState message={serverMessage} />;
+    if (status === 404) return <NotFoundState />;
     return (
       <PublicShell>
         <div className="flex flex-col items-start gap-2">
@@ -158,11 +158,11 @@ function PublicSurveyForm({
         message: res.message,
       });
     } catch (err) {
-      const e = err as Error & { status?: number; payload?: { error?: string } };
+      const e = err as Error & { status?: number };
       setState({
         kind: "error",
         status: e.status ?? 0,
-        message: e.payload?.error ?? "",
+        message: apiErrorMessage(err) ?? "",
       });
     }
   }

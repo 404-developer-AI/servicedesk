@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "@/lib/http";
 import { useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Save, Tag } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -134,8 +135,8 @@ export function TemplateEditor({
       qc.invalidateQueries({ queryKey: ["compose-templates"] });
       onDone();
     },
-    onError: (err: Error & { payload?: { error?: string } }) => {
-      const msg = err.payload?.error ?? "Save failed.";
+    onError: (err) => {
+      const msg = apiErrorMessage(err) ?? "Save failed.";
       toast.error(msg);
     },
   });
@@ -256,8 +257,7 @@ export function TemplateEditor({
             try {
               return await composeTemplatesApi.uploadImage(file);
             } catch (e) {
-              const err = e as Error & { payload?: { error?: string } };
-              toast.error(err.payload?.error ?? "Image upload failed.");
+              toast.error(apiErrorMessage(e) ?? "Image upload failed.");
               return null;
             }
           }}

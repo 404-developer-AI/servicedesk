@@ -1,7 +1,7 @@
 // v0.1.13 — Insights reporting dashboard. Every endpoint is gated per user
 // by `insights_enabled` and scoped to the caller's queue access server-side.
 
-import { ApiError } from "@/lib/ticket-api";
+import { apiErrorMessage, request, requestResponse } from "@/lib/http";
 
 export type InsightsPeriod = "today" | "week" | "month" | "year" | "custom";
 export type InsightsGranularity = "day" | "week" | "month" | "year";
@@ -178,26 +178,8 @@ function toQuery(p: ReportParams, queueIds?: string[]): URLSearchParams {
   return qs;
 }
 
-async function fail(res: Response, url: string): Promise<never> {
-  let body: unknown = null;
-  try {
-    const txt = await res.text();
-    if (txt) body = JSON.parse(txt);
-  } catch {
-    // non-JSON body
-  }
-  throw new ApiError(res.status, url, `${url} → ${res.status} ${res.statusText}`, body);
-}
-
-async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { credentials: "include", headers: { Accept: "application/json" } });
-  if (!res.ok) await fail(res, url);
-  return (await res.json()) as T;
-}
-
 async function downloadPdf(url: string, fallbackName: string): Promise<void> {
-  const res = await fetch(url, { credentials: "include", headers: { Accept: "application/pdf" } });
-  if (!res.ok) await fail(res, url);
+  const res = await requestResponse("GET", url, undefined, { accept: "application/pdf" });
 
   const blob = await res.blob();
   const disposition = res.headers.get("Content-Disposition") ?? "";
@@ -353,16 +335,16 @@ export type WorkflowCase = {
 export type WorkflowCasePage = { items: WorkflowCase[]; total: number };
 
 export const insightsApi = {
-  config: () => getJson<InsightsConfig>("/api/insights/config"),
+  config: () => request<InsightsConfig>("GET", "/api/insights/config"),
 
-  rewindViews: () => getJson<RewindViews>("/api/insights/rewind/views"),
+  rewindViews: () => request<RewindViews>("GET", "/api/insights/rewind/views"),
 
-  workflowConfig: () => getJson<WorkflowConfig>("/api/insights/workflow/config"),
+  workflowConfig: () => request<WorkflowConfig>("GET", "/api/insights/workflow/config"),
 
   workflow: (p: ReportParams, viewId: string | null) => {
     const qs = toQuery(p);
     if (viewId) qs.set("viewId", viewId);
-    return getJson<WorkflowReport>(`/api/insights/workflow?${qs.toString()}`);
+    return request<WorkflowReport>("GET", `/api/insights/workflow?${qs.toString()}`);
   },
 
   /** One agent's checked cases for one rule, problems first. Audited server-side. */
@@ -371,24 +353,25 @@ export const insightsApi = {
     if (viewId) qs.set("viewId", viewId);
     qs.set("agentId", agentId);
     qs.set("kpi", kpi);
-    return getJson<WorkflowCasePage>(`/api/insights/workflow/cases?${qs.toString()}`);
+    return request<WorkflowCasePage>("GET", `/api/insights/workflow/cases?${qs.toString()}`);
   },
 
   /** Slots from end − range to end; end omitted = the latest slot (server time). */
   rewindSeries: (viewId: string, range: RewindRange, endUtc?: string | null) => {
     const qs = new URLSearchParams({ range });
     if (endUtc) qs.set("end", endUtc);
-    return getJson<RewindSeries>(`/api/insights/rewind/${encodeURIComponent(viewId)}/series?${qs.toString()}`);
+    return request<RewindSeries>("GET", `/api/insights/rewind/${encodeURIComponent(viewId)}/series?${qs.toString()}`);
   },
 
   /** The view as it stood at a slot (floored to the interval by the server). */
   rewindSnapshot: (viewId: string, atUtc: string) =>
-    getJson<RewindSnapshot>(
+    request<RewindSnapshot>(
+      "GET",
       `/api/insights/rewind/${encodeURIComponent(viewId)}/snapshot?${new URLSearchParams({ at: atUtc }).toString()}`,
     ),
 
   report: (kind: InsightsReportKind, p: ReportParams) =>
-    getJson<TicketCountReport>(`/api/insights/${kind}?${toQuery(p).toString()}`),
+    request<TicketCountReport>("GET", `/api/insights/${kind}?${toQuery(p).toString()}`),
 
   /** The tickets behind a report for the ticked queues (empty = all),
    *  newest first, one page at a time. */
@@ -396,13 +379,13 @@ export const insightsApi = {
     const qs = toQuery(p, queueIds);
     qs.set("listOffset", String(offset));
     qs.set("limit", String(limit));
-    return getJson<InsightsTicketPage>(`/api/insights/${kind}/tickets?${qs.toString()}`);
+    return request<InsightsTicketPage>("GET", `/api/insights/${kind}/tickets?${qs.toString()}`);
   },
 
   agents: (p: ReportParams, agentIds: string[]) => {
     const qs = toQuery(p);
     for (const id of agentIds) qs.append("agentIds", id);
-    return getJson<AgentActivityReport>(`/api/insights/agents?${qs.toString()}`);
+    return request<AgentActivityReport>("GET", `/api/insights/agents?${qs.toString()}`);
   },
 
   /** One agent's tickets in the period, one page at a time. */
@@ -412,7 +395,7 @@ export const insightsApi = {
     qs.set("sort", sort);
     qs.set("listOffset", String(offset));
     qs.set("limit", String(limit));
-    return getJson<AgentTicketPage>(`/api/insights/agents/tickets?${qs.toString()}`);
+    return request<AgentTicketPage>("GET", `/api/insights/agents/tickets?${qs.toString()}`);
   },
 
   /** One agent's openings without action in the period, newest close first. */
@@ -421,7 +404,7 @@ export const insightsApi = {
     qs.set("agentId", agentId);
     qs.set("listOffset", String(offset));
     qs.set("limit", String(limit));
-    return getJson<OpenedNoActionPage>(`/api/insights/agents/opened?${qs.toString()}`);
+    return request<OpenedNoActionPage>("GET", `/api/insights/agents/opened?${qs.toString()}`);
   },
 
   downloadAgentsPdf(p: ReportParams, agentIds: string[], metric: AgentChartMetric, sort: AgentTicketSort) {
@@ -441,9 +424,5 @@ export const insightsApi = {
 
 /** Server-sent error message from a 400, when there is one. */
 export function insightsErrorMessage(err: unknown): string | null {
-  if (err instanceof ApiError && err.body && typeof err.body === "object" && "error" in err.body) {
-    const msg = (err.body as { error?: unknown }).error;
-    return typeof msg === "string" ? msg : null;
-  }
-  return null;
+  return apiErrorMessage(err);
 }

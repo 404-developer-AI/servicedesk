@@ -59,7 +59,7 @@ import { SafeHtml } from "@/components/SafeHtml";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { useAuth } from "@/auth/authStore";
 import type { TicketAttachmentMeta } from "@/lib/ticket-api";
-import { ApiError } from "@/lib/ticket-api";
+import { ApiError, apiErrorMessage } from "@/lib/http";
 import { htmlToText } from "@/lib/sanitize";
 
 // ---- Column definitions ---------------------------------------------------
@@ -1037,8 +1037,7 @@ function EditableRow({
         filename: meta.filename,
       };
     } catch (e) {
-      const err = e as Error & { payload?: { error?: string } };
-      toast.error(err.payload?.error ?? "Upload failed.");
+      toast.error(apiErrorMessage(e) ?? "Upload failed.");
       return null;
     }
   };

@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "@/lib/http";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -30,8 +31,7 @@ export function SurveysSettingsPage() {
       qc.invalidateQueries({ queryKey: LIST_QUERY_KEY });
     },
     onError: (err) => {
-      const e = err as Error & { payload?: { error?: string } };
-      toast.error(e.payload?.error ?? "Could not delete survey.");
+      toast.error(apiErrorMessage(err) ?? "Could not delete survey.");
     },
   });
 

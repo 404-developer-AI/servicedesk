@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "@/lib/http";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, FolderTree, Globe, PackageOpen, Settings } from "lucide-react";
@@ -306,8 +307,8 @@ function LocalesCard({
   const remove = useMutation({
     mutationFn: (code: string) => kbApi.removeLocale(code),
     onSuccess: () => { toast.success("Locale removed."); onChanged(); },
-    onError: (err: Error & { payload?: { error?: string } }) =>
-      toast.error(err.payload?.error ?? "Could not remove locale."),
+    onError: (err) =>
+      toast.error(apiErrorMessage(err) ?? "Could not remove locale."),
   });
 
   return (
@@ -404,8 +405,8 @@ function LocaleDialog({
   const save = useMutation({
     mutationFn: () => kbApi.upsertLocale({ code, displayName, isActive, sortOrder }),
     onSuccess: () => { toast.success(isNew ? "Locale added." : "Locale updated."); onSaved(); },
-    onError: (err: Error & { payload?: { error?: string } }) =>
-      toast.error(err.payload?.error ?? "Could not save locale."),
+    onError: (err) =>
+      toast.error(apiErrorMessage(err) ?? "Could not save locale."),
   });
 
   return (
@@ -476,8 +477,8 @@ function SectionsCard({
   const remove = useMutation({
     mutationFn: (id: string) => kbApi.deleteSection(id),
     onSuccess: () => { toast.success("Section removed."); onChanged(); },
-    onError: (err: Error & { payload?: { error?: string } }) =>
-      toast.error(err.payload?.error ?? "Could not remove section."),
+    onError: (err) =>
+      toast.error(apiErrorMessage(err) ?? "Could not remove section."),
   });
 
   return (
@@ -570,8 +571,8 @@ function SectionDialog({
         : kbApi.updateSection(initial!.id, body).then(() => undefined);
     },
     onSuccess: () => { toast.success(isNew ? "Section added." : "Section saved."); onSaved(); },
-    onError: (err: Error & { payload?: { error?: string } }) =>
-      toast.error(err.payload?.error ?? "Could not save section."),
+    onError: (err) =>
+      toast.error(apiErrorMessage(err) ?? "Could not save section."),
   });
 
   // Self-parent and descendants are filtered out so the parent picker can't

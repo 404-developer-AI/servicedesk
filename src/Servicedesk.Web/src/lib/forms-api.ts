@@ -1,5 +1,4 @@
-import { csrfHeader } from "@/lib/csrf";
-import { ApiError } from "@/lib/ticket-api";
+import { ApiError, request } from "@/lib/http";
 import { memoizeTtl } from "@/lib/ttlCache";
 
 /// v0.1.52 — ticket forms: admin-built interactive templates that agents
@@ -155,33 +154,6 @@ export type FormApiError = { error?: string; code?: string; fieldId?: string | n
 export function formApiError(err: unknown): FormApiError | null {
   if (err instanceof ApiError && err.body && typeof err.body === "object") return err.body as FormApiError;
   return null;
-}
-
-async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const isSafe = method === "GET" || method === "HEAD";
-  const res = await fetch(url, {
-    method,
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...(isSafe ? {} : csrfHeader()),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let parsed: unknown = null;
-    try {
-      const txt = await res.text();
-      if (txt) parsed = JSON.parse(txt);
-    } catch {
-      // non-JSON body
-    }
-    throw new ApiError(res.status, url, `${url} → ${res.status} ${res.statusText}`, parsed);
-  }
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 const enc = encodeURIComponent;

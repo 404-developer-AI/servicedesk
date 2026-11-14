@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { ApiError } from "@/lib/ticket-api";
+import { ApiError, apiFieldErrors, errorMessage } from "@/lib/http";
 import { ticketApi, type TicketPickerItem } from "@/lib/ticket-api";
 import {
   timesheetManagerApi,
@@ -38,7 +38,6 @@ import {
   type TimesheetTask,
   type TimesheetUser,
   type ManagerEntryFilter,
-  type TimesheetFieldError,
 } from "@/lib/timesheet-api";
 
 /// Position record for a portal-anchored dropdown. The dropdown is
@@ -598,7 +597,7 @@ function ManagerDisplayRow({
       toast.success("Entry removed");
       onDeleted();
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Delete failed"),
+    onError: (err) => toast.error(errorMessage(err, "Delete failed")),
   });
 
   return (
@@ -820,14 +819,15 @@ function ManagerEditableRow({
     },
     onError: (err) => {
       if (err instanceof ApiError && err.status === 422) {
-        const parsed = parseApiErrors(err.message);
+        const parsed = apiFieldErrors(err);
         if (parsed) {
           setErrors(parsed);
           return;
         }
       }
-      if (err instanceof Error && err.message !== "Some fields are invalid.") {
-        toast.error(err.message);
+      const message = errorMessage(err, "Could not save the entry.");
+      if (message !== "Some fields are invalid.") {
+        toast.error(message);
       }
     },
   });
@@ -1387,16 +1387,4 @@ function validateLocal(row: EditDraft, requiresTicket: boolean): Record<string, 
   if (requiresTicket && !row.ticket) errs.ticketId = "This task needs a ticket.";
   if (row.description.trim().length === 0) errs.description = "Describe what was done.";
   return errs;
-}
-
-function parseApiErrors(raw: string): Record<string, string> | null {
-  try {
-    const parsed = JSON.parse(raw) as { errors?: TimesheetFieldError[] };
-    if (!parsed.errors || !Array.isArray(parsed.errors)) return null;
-    const map: Record<string, string> = {};
-    for (const e of parsed.errors) map[e.field] = e.message;
-    return map;
-  } catch {
-    return null;
-  }
 }

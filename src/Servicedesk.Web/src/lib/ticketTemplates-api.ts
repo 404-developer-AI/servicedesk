@@ -5,6 +5,8 @@
 // subject/body/initial-note placeholders reuses the compose-templates
 // resolve endpoint (see composeTemplates-api.ts).
 
+import { request } from "@/lib/http";
+
 export interface TicketTemplate {
   id: string;
   name: string;
@@ -38,44 +40,6 @@ export interface TicketTemplateUpsert {
   categoryId: string | null;
   ticketTypeId: string | null;
   assigneeUserId: string | null;
-}
-
-async function request<T>(
-  method: string,
-  url: string,
-  body?: unknown,
-): Promise<T> {
-  const csrf = document.cookie
-    .split("; ")
-    .find((c) => c.startsWith("XSRF-TOKEN="))
-    ?.split("=")[1];
-  const res = await fetch(url, {
-    method,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(csrf ? { "X-XSRF-TOKEN": decodeURIComponent(csrf) } : {}),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let payload: unknown = null;
-    try {
-      payload = await res.json();
-    } catch {
-      /* ignore */
-    }
-    const err = new Error(`Request failed: ${res.status}`) as Error & {
-      status?: number;
-      payload?: unknown;
-    };
-    err.status = res.status;
-    err.payload = payload;
-    throw err;
-  }
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  return text ? (JSON.parse(text) as T) : (undefined as T);
 }
 
 export const ticketTemplatesApi = {

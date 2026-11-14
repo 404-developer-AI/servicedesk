@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "@/lib/http";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -223,8 +224,7 @@ export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
                     filename: meta.filename,
                   };
                 } catch (err) {
-                  const e = err as Error & { payload?: { error?: string } };
-                  toast.error(e.payload?.error ?? "Upload failed.");
+                  toast.error(apiErrorMessage(err) ?? "Upload failed.");
                   return null;
                 }
               }}

@@ -1,4 +1,4 @@
-import { ApiError, apiErrorMessage } from "@/lib/api";
+import { ApiError, apiErrorMessage, request } from "@/lib/http";
 
 // Re-export so callers can catch ApiError without importing from api.ts directly.
 export { ApiError, apiErrorMessage };
@@ -113,41 +113,6 @@ export type ClaudeStatusSuccess = {
 export type ClaudeStatusResult = ClaudeStatusSuccess | ClaudeProposalRefused;
 
 // ---- Helpers (shared with api.ts patterns) ----
-
-import { csrfHeader } from "@/lib/csrf";
-
-async function request<T>(
-  method: string,
-  url: string,
-  body?: unknown,
-): Promise<T> {
-  const isSafe = method === "GET" || method === "HEAD";
-  const res = await fetch(url, {
-    method,
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...(isSafe ? {} : csrfHeader()),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let parsed: unknown = null;
-    try {
-      const text = await res.text();
-      if (text.length > 0) parsed = JSON.parse(text);
-    } catch {
-      // ignore — body wasn't JSON
-    }
-    throw new ApiError(res.status, url, `${url} → ${res.status} ${res.statusText}`, parsed);
-  }
-  if (res.status === 204) {
-    return undefined as T;
-  }
-  const text = await res.text();
-  return (text ? JSON.parse(text) : undefined) as T;
-}
 
 // ---- Admin API ----
 

@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { ApiError } from "@/lib/ticket-api";
+import { ApiError, apiFieldErrors, errorMessage } from "@/lib/http";
 import { ticketApi, type TicketPickerItem } from "@/lib/ticket-api";
 import {
   timesheetEntryApi,
@@ -38,7 +38,6 @@ import {
   type TimesheetEntry,
   seedTaskId,
   validateEntryDraft,
-  parseTimesheetFieldErrors,
   DEFAULT_DAY_START_MINUTES,
   type TimesheetTask,
 } from "@/lib/timesheet-api";
@@ -124,7 +123,7 @@ export function TimesheetTab1() {
       toast.success("Default task updated.");
     },
     onError: (e) =>
-      toast.error(e instanceof ApiError ? e.message : "Could not update the default task."),
+      toast.error(errorMessage(e, "Could not update the default task.")),
   });
 
   const goRelative = (days: number) => {
@@ -397,7 +396,7 @@ function DisplayRow({
       toast.success("Entry removed");
       onDelete();
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Delete failed"),
+    onError: (err) => toast.error(errorMessage(err, "Delete failed")),
   });
 
   const startTitle =
@@ -697,14 +696,15 @@ function EditableRow({
     },
     onError: (err) => {
       if (err instanceof ApiError && err.status === 422) {
-        const parsed = parseTimesheetFieldErrors(err.message);
+        const parsed = apiFieldErrors(err);
         if (parsed) {
           setErrors(parsed);
           return;
         }
       }
-      if (err instanceof Error && err.message !== "Some fields are invalid.") {
-        toast.error(err.message);
+      const message = errorMessage(err, "Could not save the entry.");
+      if (message !== "Some fields are invalid.") {
+        toast.error(message);
       }
     },
   });

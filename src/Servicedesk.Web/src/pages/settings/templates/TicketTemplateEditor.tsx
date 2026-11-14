@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "@/lib/http";
 import { useMemo, useRef, useState } from "react";
 import { ChevronDown, Save, Tag } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -229,8 +230,8 @@ export function TicketTemplateEditor({
       qc.invalidateQueries({ queryKey: ["ticket-templates"] });
       onDone();
     },
-    onError: (err: Error & { payload?: { error?: string } }) => {
-      toast.error(err.payload?.error ?? "Save failed.");
+    onError: (err) => {
+      toast.error(apiErrorMessage(err) ?? "Save failed.");
     },
   });
 

@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "@/lib/http";
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDown,
@@ -134,8 +135,7 @@ export function TemplateEditor({
       onDone();
     },
     onError: (err) => {
-      const payload = (err as { payload?: { error?: string } }).payload;
-      toast.error(payload?.error ?? "Could not save template.");
+      toast.error(apiErrorMessage(err) ?? "Could not save template.");
     },
   });
 

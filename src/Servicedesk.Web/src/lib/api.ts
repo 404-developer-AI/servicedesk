@@ -1,4 +1,6 @@
-import { csrfHeader } from "@/lib/csrf";
+import { request } from "@/lib/http";
+
+export { ApiError, apiErrorMessage, apiFieldErrors } from "@/lib/http";
 import type { UiTheme } from "@/lib/theme";
 import type { Role } from "@/lib/roles";
 
@@ -112,78 +114,6 @@ export type TotpEnrollment = {
 };
 
 export type RecoveryCodesResponse = { recoveryCodes: string[] };
-
-export class ApiError extends Error {
-  readonly status: number;
-  readonly url: string;
-  /// Parsed JSON body of the error response, when present. Most endpoints
-  /// return `{ error, message, ... }` on non-2xx; surfacing it here lets
-  /// callers show the upstream detail without each one re-reading the
-  /// response stream (which is already consumed by the time the error is
-  /// thrown). `null` when the body was empty / not JSON.
-  readonly body: unknown;
-  constructor(status: number, url: string, message: string, body: unknown = null) {
-    super(message);
-    this.status = status;
-    this.url = url;
-    this.body = body;
-  }
-}
-
-/// Pulls a human-readable message out of an ApiError body if the server
-/// returned `{ message: "..." }` or `{ error: "..." }`. Returns `null`
-/// when neither is present — callers fall back to the generic
-/// "Operation failed (HTTP N)" string in that case.
-export function apiErrorMessage(err: unknown): string | null {
-  if (!(err instanceof ApiError) || err.body === null || typeof err.body !== "object") {
-    return null;
-  }
-  const b = err.body as Record<string, unknown>;
-  if (typeof b.message === "string" && b.message.length > 0) return b.message;
-  if (typeof b.error === "string" && b.error.length > 0) return b.error;
-  return null;
-}
-
-async function request<T>(
-  method: string,
-  url: string,
-  body?: unknown,
-  init?: RequestInit,
-): Promise<T> {
-  const isSafe = method === "GET" || method === "HEAD";
-  const res = await fetch(url, {
-    method,
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...(isSafe ? {} : csrfHeader(url)),
-      ...(init?.headers ?? {}),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    ...init,
-  });
-  if (!res.ok) {
-    // Best-effort: read the body so callers can show upstream error
-    // detail (Telavox 502 envelopes carry the actual PAPI error code +
-    // message under `{ message, upstreamErrorCode, httpStatus }`).
-    // Parse failures are silently dropped — the ApiError still carries
-    // status + url so the generic fallback path works.
-    let parsed: unknown = null;
-    try {
-      const text = await res.text();
-      if (text.length > 0) parsed = JSON.parse(text);
-    } catch {
-      // ignore — body wasn't JSON
-    }
-    throw new ApiError(res.status, url, `${url} → ${res.status} ${res.statusText}`, parsed);
-  }
-  if (res.status === 204) {
-    return undefined as T;
-  }
-  const text = await res.text();
-  return (text ? JSON.parse(text) : undefined) as T;
-}
 
 export type HealthStatus = "Ok" | "Warning" | "Critical";
 
@@ -3728,16 +3658,7 @@ export const preferencesApi = {
     ),
   /** Fire-and-forget save using keepalive — survives page unload. */
   fireAndForgetWorkspaceSave: (entries: WorkspaceEntryDto[]) => {
-    fetch("/api/preferences/workspace", {
-      method: "PUT",
-      credentials: "include",
-      keepalive: true,
-      headers: {
-        "Content-Type": "application/json",
-        ...csrfHeader("/api/preferences/workspace"),
-      },
-      body: JSON.stringify({ entries }),
-    });
+    void request("PUT", "/api/preferences/workspace", { entries }, { keepalive: true }).catch(() => {});
   },
   // v0.0.44 — user-level theme override (steaan | light | dark since
   // v0.0.108). Source = "user" when the value comes from the
@@ -4374,23 +4295,7 @@ export const feedbackApi = {
     const fd = new FormData();
     fd.append("file", file, file.name);
     const url = `/api/feedback/entries/${entryId}/attachments`;
-    const res = await fetch(url, {
-      method: "POST",
-      credentials: "include",
-      headers: csrfHeader(url),
-      body: fd,
-    });
-    if (!res.ok) {
-      let payload: unknown = null;
-      try { payload = await res.json(); } catch { /* ignore */ }
-      const err = new Error(`Upload failed: ${res.status}`) as Error & {
-        status?: number; payload?: unknown;
-      };
-      err.status = res.status;
-      err.payload = payload;
-      throw err;
-    }
-    return res.json();
+    return request<FeedbackAttachment>("POST", url, fd);
   },
 };
 

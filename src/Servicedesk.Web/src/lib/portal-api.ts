@@ -6,37 +6,7 @@
 //   portalTicketApi — scoped ticket list/detail/reply/create
 //   portalAdminApi  — agent/admin side (approvals, invitations, accounts)
 
-import { ApiError } from "@/lib/api";
-import { csrfHeader } from "@/lib/csrf";
-
-async function request<T>(method: string, url: string, body?: unknown, init?: RequestInit): Promise<T> {
-  const isSafe = method === "GET" || method === "HEAD";
-  const res = await fetch(url, {
-    method,
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...(isSafe ? {} : csrfHeader(url)),
-      ...(init?.headers ?? {}),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    ...init,
-  });
-  if (!res.ok) {
-    let parsed: unknown = null;
-    try {
-      const text = await res.text();
-      if (text.length > 0) parsed = JSON.parse(text);
-    } catch {
-      // body wasn't JSON
-    }
-    throw new ApiError(res.status, url, `${url} → ${res.status} ${res.statusText}`, parsed);
-  }
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  return (text ? JSON.parse(text) : undefined) as T;
-}
+import { request } from "@/lib/http";
 
 // ---- public ---------------------------------------------------------------
 
@@ -224,22 +194,7 @@ export const portalTicketApi = {
     const form = new FormData();
     form.append("file", file, file.name);
     const url = `/api/portal/tickets/${ticketId}/attachments?eventId=${eventId}`;
-    const res = await fetch(url, {
-      method: "POST",
-      credentials: "include",
-      headers: { Accept: "application/json", ...csrfHeader(url) },
-      body: form,
-    });
-    if (!res.ok) {
-      let parsed: unknown = null;
-      try {
-        parsed = JSON.parse(await res.text());
-      } catch {
-        // ignore
-      }
-      throw new ApiError(res.status, url, `${url} → ${res.status}`, parsed);
-    }
-    return (await res.json()) as PortalUploadResult;
+    return request<PortalUploadResult>("POST", url, form);
   },
 };
 

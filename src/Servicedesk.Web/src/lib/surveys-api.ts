@@ -3,6 +3,8 @@
 // Mirrors the intake-forms-api split: admin CRUD + agent reads + a separate
 // raw-fetch path for the public, CSRF-exempt token endpoints.
 
+import { request } from "@/lib/http";
+
 export type SurveyQuestionType =
   | "Rating"
   | "Nps"
@@ -243,40 +245,6 @@ export interface ChoiceConfig {
   options: Array<{ value: string; label: string }>;
 }
 
-async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const csrf = document.cookie
-    .split("; ")
-    .find((c) => c.startsWith("XSRF-TOKEN="))
-    ?.split("=")[1];
-  const res = await fetch(url, {
-    method,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(csrf ? { "X-XSRF-TOKEN": decodeURIComponent(csrf) } : {}),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let payload: unknown = null;
-    try {
-      payload = await res.json();
-    } catch {
-      /* ignore */
-    }
-    const err = new Error(`Request failed: ${res.status}`) as Error & {
-      status?: number;
-      payload?: unknown;
-    };
-    err.status = res.status;
-    err.payload = payload;
-    throw err;
-  }
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  return text ? (JSON.parse(text) as T) : (undefined as T);
-}
-
 export const surveysApi = {
   list: (includeInactive = true) =>
     request<SurveySummary[]>(
@@ -357,57 +325,13 @@ export const surveysAgentApi = {
     ),
 };
 
-// Public — unauthenticated. CSRF-exempt server-side; plain fetch here so
-// the token + JSON body land without an XSRF cookie present.
+// Public — unauthenticated, CSRF-exempt server-side; sent without cookies.
+const ANONYMOUS = { credentials: "omit" } as const;
+
 export const publicSurveysApi = {
-  async get(token: string): Promise<SurveyPublicView> {
-    const res = await fetch(
-      `/api/public/surveys/${encodeURIComponent(token)}`,
-      { method: "GET", credentials: "omit" },
-    );
-    if (!res.ok) {
-      const err: Error & {
-        status?: number;
-        payload?: { status?: string; message?: string };
-      } = new Error(`Survey fetch failed (${res.status}).`);
-      err.status = res.status;
-      try {
-        err.payload = await res.json();
-      } catch {
-        /* ignore */
-      }
-      throw err;
-    }
-    return (await res.json()) as SurveyPublicView;
-  },
-  async submit(
-    token: string,
-    payload: PublicSurveySubmitInput,
-  ): Promise<{ status: string; surveyName: string; message: string }> {
-    const res = await fetch(
-      `/api/public/surveys/${encodeURIComponent(token)}/submit`,
-      {
-        method: "POST",
-        credentials: "omit",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      },
-    );
-    if (!res.ok) {
-      const err: Error & { status?: number; payload?: { error?: string } } =
-        new Error(`Survey submit failed (${res.status}).`);
-      err.status = res.status;
-      try {
-        err.payload = await res.json();
-      } catch {
-        /* ignore */
-      }
-      throw err;
-    }
-    return (await res.json()) as {
-      status: string;
-      surveyName: string;
-      message: string;
-    };
-  },
+  get: (token: string) =>
+    request<SurveyPublicView>("GET", `/api/public/surveys/${encodeURIComponent(token)}`, undefined, ANONYMOUS),
+  submit: (token: string, payload: PublicSurveySubmitInput) =>
+    request<{ status: string; surveyName: string; message: string }>(
+      "POST", `/api/public/surveys/${encodeURIComponent(token)}/submit`, payload, ANONYMOUS),
 };

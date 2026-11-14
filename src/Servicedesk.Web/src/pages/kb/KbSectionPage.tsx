@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "@/lib/http";
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -71,8 +72,8 @@ function SectionContent({ sectionId }: Props) {
       }
       navigate({ to: "/kb/articles/$articleId/edit", params: { articleId: result.article.id } });
     },
-    onError: (err: Error & { payload?: { error?: string } }) =>
-      toast.error(err.payload?.error ?? "Could not import the package."),
+    onError: (err) =>
+      toast.error(apiErrorMessage(err) ?? "Could not import the package."),
   });
 
   const breadcrumb = useMemo(

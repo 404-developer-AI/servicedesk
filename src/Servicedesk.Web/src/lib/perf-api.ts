@@ -3,8 +3,7 @@
 // aggregated by the server; percentiles are computed server-side from the
 // stored histograms.
 
-import { ApiError } from "@/lib/api";
-import { csrfHeader } from "@/lib/csrf";
+import { request, requestResponse } from "@/lib/http";
 
 export type PerfLevel = "off" | "basic" | "diagnose";
 export type Severity = "info" | "warning" | "critical";
@@ -432,33 +431,6 @@ export type EdgeCheckItem = { label: string; value: string; status: "good" | "wa
 
 export type PeriodQuery = { from: string; to: string };
 
-async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const isSafe = method === "GET";
-  const res = await fetch(url, {
-    method,
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...(isSafe ? {} : csrfHeader(url)),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let parsed: unknown = null;
-    try {
-      const text = await res.text();
-      if (text.length > 0) parsed = JSON.parse(text);
-    } catch {
-      // not JSON
-    }
-    throw new ApiError(res.status, url, `${url} → ${res.status}`, parsed);
-  }
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  return (text ? JSON.parse(text) : undefined) as T;
-}
-
 const BASE = "/api/admin/performance";
 
 function qs(p: PeriodQuery, extra?: Record<string, string>): string {
@@ -467,35 +439,34 @@ function qs(p: PeriodQuery, extra?: Record<string, string>): string {
 }
 
 export const perfApi = {
-  status: () => call<PerfStatus>("GET", `${BASE}/status`),
-  overview: (p: PeriodQuery) => call<Overview>("GET", `${BASE}/overview?${qs(p)}`),
-  http: (p: PeriodQuery) => call<{ period: PeriodInfo; total: RouteRow | null; routes: RouteRow[] }>("GET", `${BASE}/http?${qs(p)}`),
+  status: () => request<PerfStatus>("GET", `${BASE}/status`),
+  overview: (p: PeriodQuery) => request<Overview>("GET", `${BASE}/overview?${qs(p)}`),
+  http: (p: PeriodQuery) => request<{ period: PeriodInfo; total: RouteRow | null; routes: RouteRow[] }>("GET", `${BASE}/http?${qs(p)}`),
   route: (p: PeriodQuery, method: string, route: string) =>
-    call<RouteDetail>("GET", `${BASE}/http/route?${qs(p, { method, route })}`),
-  queries: (p: PeriodQuery) => call<QueriesResponse>("GET", `${BASE}/db/queries?${qs(p)}`),
-  tables: (p: PeriodQuery) => call<TablesResponse>("GET", `${BASE}/db/tables?${qs(p)}`),
-  live: () => call<LiveResponse>("GET", `${BASE}/db/live`),
-  config: (p: PeriodQuery) => call<ConfigResponse>("GET", `${BASE}/db/config?${qs(p)}`),
-  plan: (source: "pgss" | "app", id: string) => call<PlanResponse>("POST", `${BASE}/db/plan`, { source, id }),
-  analyze: (table: string) => call<void>("POST", `${BASE}/db/analyze`, { table }),
-  host: (p: PeriodQuery) => call<HostResponse>("GET", `${BASE}/host?${qs(p)}`),
-  benchmark: () => call<Record<string, number | string | null>>("POST", `${BASE}/benchmark`),
-  edgeCheck: () => call<{ items: EdgeCheckItem[] }>("POST", `${BASE}/edge-check`),
-  frontend: (p: PeriodQuery) => call<FrontendResponse>("GET", `${BASE}/frontend?${qs(p)}`),
-  background: (p: PeriodQuery) => call<BackgroundResponse>("GET", `${BASE}/background?${qs(p)}`),
-  addMarker: (label: string) => call<{ id: number }>("POST", `${BASE}/markers`, { label }),
-  deleteMarker: (id: number) => call<void>("DELETE", `${BASE}/markers/${encodeURIComponent(String(id))}`),
-  settings: () => call<{ settings: PerfSetting[] }>("GET", `${BASE}/settings`),
-  saveSettings: (values: Record<string, string>) => call<void>("PUT", `${BASE}/settings`, values),
-  startDiagnose: (minutes: number) => call<{ diagnoseUntilUtc: string }>("POST", `${BASE}/diagnose`, { minutes }),
-  stopDiagnose: () => call<void>("DELETE", `${BASE}/diagnose`),
-  clearData: () => call<void>("DELETE", `${BASE}/data`),
+    request<RouteDetail>("GET", `${BASE}/http/route?${qs(p, { method, route })}`),
+  queries: (p: PeriodQuery) => request<QueriesResponse>("GET", `${BASE}/db/queries?${qs(p)}`),
+  tables: (p: PeriodQuery) => request<TablesResponse>("GET", `${BASE}/db/tables?${qs(p)}`),
+  live: () => request<LiveResponse>("GET", `${BASE}/db/live`),
+  config: (p: PeriodQuery) => request<ConfigResponse>("GET", `${BASE}/db/config?${qs(p)}`),
+  plan: (source: "pgss" | "app", id: string) => request<PlanResponse>("POST", `${BASE}/db/plan`, { source, id }),
+  analyze: (table: string) => request<void>("POST", `${BASE}/db/analyze`, { table }),
+  host: (p: PeriodQuery) => request<HostResponse>("GET", `${BASE}/host?${qs(p)}`),
+  benchmark: () => request<Record<string, number | string | null>>("POST", `${BASE}/benchmark`),
+  edgeCheck: () => request<{ items: EdgeCheckItem[] }>("POST", `${BASE}/edge-check`),
+  frontend: (p: PeriodQuery) => request<FrontendResponse>("GET", `${BASE}/frontend?${qs(p)}`),
+  background: (p: PeriodQuery) => request<BackgroundResponse>("GET", `${BASE}/background?${qs(p)}`),
+  addMarker: (label: string) => request<{ id: number }>("POST", `${BASE}/markers`, { label }),
+  deleteMarker: (id: number) => request<void>("DELETE", `${BASE}/markers/${encodeURIComponent(String(id))}`),
+  settings: () => request<{ settings: PerfSetting[] }>("GET", `${BASE}/settings`),
+  saveSettings: (values: Record<string, string>) => request<void>("PUT", `${BASE}/settings`, values),
+  startDiagnose: (minutes: number) => request<{ diagnoseUntilUtc: string }>("POST", `${BASE}/diagnose`, { minutes }),
+  stopDiagnose: () => request<void>("DELETE", `${BASE}/diagnose`),
+  clearData: () => request<void>("DELETE", `${BASE}/data`),
 
   /** Fetches the export and hands it to the browser as a download. */
   async download(p: PeriodQuery, format: "zip" | "md" | "json", compare: boolean, plans: boolean): Promise<void> {
     const url = `${BASE}/export?${qs(p, { format, compare: String(compare), plans: String(plans) })}`;
-    const res = await fetch(url, { credentials: "include" });
-    if (!res.ok) throw new ApiError(res.status, url, `${url} → ${res.status}`);
+    const res = await requestResponse("GET", url, undefined, { accept: "*/*" });
     const blob = await res.blob();
     const disposition = res.headers.get("Content-Disposition") ?? "";
     const match = /filename="?([^";]+)"?/i.exec(disposition);
@@ -512,8 +483,7 @@ export const perfApi = {
 
   async markdown(p: PeriodQuery, compare: boolean): Promise<string> {
     const url = `${BASE}/export?${qs(p, { format: "md", compare: String(compare) })}`;
-    const res = await fetch(url, { credentials: "include" });
-    if (!res.ok) throw new ApiError(res.status, url, `${url} → ${res.status}`);
+    const res = await requestResponse("GET", url, undefined, { accept: "*/*" });
     return res.text();
   },
 };

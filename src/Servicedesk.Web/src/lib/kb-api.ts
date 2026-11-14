@@ -2,6 +2,8 @@
 // one object of named functions wrapping a small `request` helper with
 // CSRF + cookie credentials.
 
+import { request } from "@/lib/http";
+
 export type KbConfig = {
   id: string;
   isActive: boolean;
@@ -153,36 +155,6 @@ export type KbArticleUpdateRequest = {
   localeCode?: string;
 };
 
-async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const csrf = document.cookie
-    .split("; ")
-    .find((c) => c.startsWith("XSRF-TOKEN="))
-    ?.split("=")[1];
-  const res = await fetch(url, {
-    method,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(csrf ? { "X-XSRF-TOKEN": decodeURIComponent(csrf) } : {}),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let payload: unknown = null;
-    try { payload = await res.json(); } catch { /* ignore */ }
-    const err = new Error(`Request failed: ${res.status}`) as Error & {
-      status?: number;
-      payload?: unknown;
-    };
-    err.status = res.status;
-    err.payload = payload;
-    throw err;
-  }
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  return text ? (JSON.parse(text) as T) : (undefined as T);
-}
-
 export const kbApi = {
   // ─── Config + Locales (Admin only) ───
   getConfig: () => request<KbConfig>("GET", "/api/kb/config"),
@@ -275,35 +247,19 @@ export const kbApi = {
   /// Upload an inline image (or any non-HTML attachment) for an article.
   /// Returned shape matches TicketAttachmentMeta so the shared
   /// RichTextEditor can route paste/drag/drop/paperclip flows through one
-  /// callback regardless of context. Multipart upload — uses raw fetch so
-  /// the server-side MIME-sniffer sees the actual bytes.
+  /// callback regardless of context. Multipart upload (FormData) so the
+  /// server-side MIME-sniffer sees the actual bytes.
   uploadAttachment: async (
     articleId: string,
     file: File,
   ): Promise<{ id: string; url: string; mimeType: string; size: number; filename: string }> => {
-    const csrf = document.cookie
-      .split("; ")
-      .find((c) => c.startsWith("XSRF-TOKEN="))
-      ?.split("=")[1];
     const fd = new FormData();
     fd.append("file", file, file.name);
-    const res = await fetch(`/api/kb/articles/${articleId}/attachments`, {
-      method: "POST",
-      credentials: "include",
-      headers: csrf ? { "X-XSRF-TOKEN": decodeURIComponent(csrf) } : undefined,
-      body: fd,
-    });
-    if (!res.ok) {
-      let payload: unknown = null;
-      try { payload = await res.json(); } catch { /* ignore */ }
-      const err = new Error(`Upload failed: ${res.status}`) as Error & {
-        status?: number; payload?: unknown;
-      };
-      err.status = res.status;
-      err.payload = payload;
-      throw err;
-    }
-    return res.json();
+    return request<{ id: string; url: string; mimeType: string; size: number; filename: string }>(
+      "POST",
+      `/api/kb/articles/${articleId}/attachments`,
+      fd,
+    );
   },
 
   /// List the article's attachments (newest first). The edit page filters out
@@ -323,30 +279,10 @@ export const kbApi = {
   /// Import an article package into a section. Always lands as a new Draft;
   /// `warnings` names body references the package did not carry.
   importArticle: async (sectionId: string, file: File): Promise<KbArticleImportResult> => {
-    const csrf = document.cookie
-      .split("; ")
-      .find((c) => c.startsWith("XSRF-TOKEN="))
-      ?.split("=")[1];
     const fd = new FormData();
     fd.append("sectionId", sectionId);
     fd.append("file", file, file.name);
-    const res = await fetch("/api/kb/articles/import", {
-      method: "POST",
-      credentials: "include",
-      headers: csrf ? { "X-XSRF-TOKEN": decodeURIComponent(csrf) } : undefined,
-      body: fd,
-    });
-    if (!res.ok) {
-      let payload: unknown = null;
-      try { payload = await res.json(); } catch { /* ignore */ }
-      const err = new Error(`Import failed: ${res.status}`) as Error & {
-        status?: number; payload?: unknown;
-      };
-      err.status = res.status;
-      err.payload = payload;
-      throw err;
-    }
-    return res.json();
+    return request<KbArticleImportResult>("POST", "/api/kb/articles/import", fd);
   },
 };
 
@@ -380,18 +316,7 @@ export type KbPublicArticle = {
 /// session and the endpoint must never depend on one. The server only
 /// serves Published articles and 404s everything else.
 export const publicKbApi = {
-  get: async (id: string): Promise<KbPublicArticle> => {
-    const res = await fetch(`/api/public/kb/articles/${encodeURIComponent(id)}`, {
-      credentials: "omit",
-      headers: { Accept: "application/json" },
-    });
-    if (!res.ok) {
-      const err = new Error(`Public article fetch failed: ${res.status}`) as Error & {
-        status?: number;
-      };
-      err.status = res.status;
-      throw err;
-    }
-    return res.json();
-  },
+  get: (id: string) =>
+    request<KbPublicArticle>("GET", `/api/public/kb/articles/${encodeURIComponent(id)}`, undefined,
+      { credentials: "omit" }),
 };

@@ -19,6 +19,7 @@ import {
   formatHHMM,
   autoFormatTimeInput,
 } from "@/lib/timesheet-api";
+import { errorMessage } from "@/lib/http";
 import { cn } from "@/lib/utils";
 
 /// Per-user Timesheet preference dialog. Each field is independently
@@ -173,7 +174,7 @@ function Body({ target, onClose }: { target: UserAdminRow; onClose: () => void }
       onClose();
     },
     onError: (err) =>
-      toast.error(err instanceof Error ? err.message : "Failed to save"),
+      toast.error(errorMessage(err, "Failed to save")),
   });
 
   const clearAll = () => {

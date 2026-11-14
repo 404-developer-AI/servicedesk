@@ -1,3 +1,4 @@
+import { request } from "@/lib/http";
 import { memoizeTtl } from "@/lib/ttlCache";
 
 /// How long the `::` picker reuses a fetched template list (v0.1.4).
@@ -73,44 +74,6 @@ export interface ComposeTemplateUpsert {
   workflowClose: boolean;
   specialistConsult: boolean;
   linkedSurveyId: string | null;
-}
-
-async function request<T>(
-  method: string,
-  url: string,
-  body?: unknown,
-): Promise<T> {
-  const csrf = document.cookie
-    .split("; ")
-    .find((c) => c.startsWith("XSRF-TOKEN="))
-    ?.split("=")[1];
-  const res = await fetch(url, {
-    method,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(csrf ? { "X-XSRF-TOKEN": decodeURIComponent(csrf) } : {}),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let payload: unknown = null;
-    try {
-      payload = await res.json();
-    } catch {
-      /* ignore */
-    }
-    const err = new Error(`Request failed: ${res.status}`) as Error & {
-      status?: number;
-      payload?: unknown;
-    };
-    err.status = res.status;
-    err.payload = payload;
-    throw err;
-  }
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  return text ? (JSON.parse(text) as T) : (undefined as T);
 }
 
 export interface ComposeTokenInfo {
@@ -209,38 +172,13 @@ export const composeTemplatesApi = {
       )}&statusId=${encodeURIComponent(statusId)}`,
     ),
 
-  /// Inline-image upload for the admin template editor (multipart, so it
-  /// bypasses the JSON `request` helper). Images only — the server sniffs
+  /// Inline-image upload for the admin template editor (multipart).
+  /// Images only — the server sniffs
   /// the real MIME type and rejects everything else.
   uploadImage: async (file: File): Promise<ComposeTemplateImageMeta> => {
-    const csrf = document.cookie
-      .split("; ")
-      .find((c) => c.startsWith("XSRF-TOKEN="))
-      ?.split("=")[1];
     const fd = new FormData();
     fd.append("file", file, file.name);
-    const res = await fetch("/api/settings/compose-templates/images", {
-      method: "POST",
-      credentials: "include",
-      headers: csrf ? { "X-XSRF-TOKEN": decodeURIComponent(csrf) } : undefined,
-      body: fd,
-    });
-    if (!res.ok) {
-      let payload: unknown = null;
-      try {
-        payload = await res.json();
-      } catch {
-        /* ignore */
-      }
-      const err = new Error(`Upload failed: ${res.status}`) as Error & {
-        status?: number;
-        payload?: unknown;
-      };
-      err.status = res.status;
-      err.payload = payload;
-      throw err;
-    }
-    return res.json();
+    return request<ComposeTemplateImageMeta>("POST", "/api/settings/compose-templates/images", fd);
   },
 
   /// Token picker metadata for the admin editor. Static list — fetched once

@@ -1,4 +1,4 @@
-import { ApiError } from "@/lib/api";
+import { request } from "@/lib/http";
 
 export type ReportTemplate = {
   id: string;
@@ -76,42 +76,6 @@ export type ReportLastSent = {
   subject: string | null;
   mailboxCount: number;
 };
-
-async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const isSafe = method === "GET" || method === "HEAD";
-  const csrf = isSafe
-    ? undefined
-    : document.cookie
-        .split("; ")
-        .find((c) => c.startsWith("XSRF-TOKEN="))
-        ?.split("=")[1];
-
-  const res = await fetch(url, {
-    method,
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...(csrf ? { "X-XSRF-TOKEN": decodeURIComponent(csrf) } : {}),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    let parsed: unknown = null;
-    try {
-      const text = await res.text();
-      if (text.length > 0) parsed = JSON.parse(text);
-    } catch {
-      // ignore
-    }
-    throw new ApiError(res.status, url, `${url} → ${res.status} ${res.statusText}`, parsed);
-  }
-
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  return (text ? JSON.parse(text) : undefined) as T;
-}
 
 const BASE = "/api/contracts/reports";
 

@@ -13,7 +13,7 @@ import {
   NotebookPen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ApiError } from "@/lib/ticket-api";
+import { ApiError, apiErrorMessage, apiFieldErrors } from "@/lib/http";
 import { cn } from "@/lib/utils";
 import {
   timesheetEntryApi,
@@ -28,7 +28,6 @@ import {
   seedTaskId,
   nextStartMinutes,
   validateEntryDraft,
-  parseTimesheetFieldErrors,
   DEFAULT_DAY_START_MINUTES,
   type TimesheetEntry,
 } from "@/lib/timesheet-api";
@@ -141,13 +140,13 @@ export function TicketLogTimeForm({
     },
     onError: (err) => {
       if (err instanceof ApiError && err.status === 422) {
-        const parsed = parseTimesheetFieldErrors(err.message);
+        const parsed = apiFieldErrors(err);
         if (parsed) {
           setErrors(parsed);
           return;
         }
       }
-      toast.error(err instanceof ApiError ? err.message : "Could not log the time.");
+      toast.error(apiErrorMessage(err) ?? "Could not log the time.");
     },
   });
 

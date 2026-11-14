@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "@/lib/http";
 import { formatDateTime, formatDate } from "@/lib/dateFormat";
 import { type ChangeEvent, useRef, useState } from "react";
 import {
@@ -153,11 +154,7 @@ function ListPanel({
       qc.invalidateQueries({ queryKey: SIGS_LIST_KEY });
     },
     onError: (err: unknown) => {
-      const message =
-        err && typeof err === "object" && "payload" in err
-          ? ((err as { payload?: { error?: string } }).payload?.error ?? null)
-          : null;
-      toast.error(message ?? "Could not import this signature file.");
+      toast.error(apiErrorMessage(err) ?? "Could not import this signature file.");
     },
   });
 

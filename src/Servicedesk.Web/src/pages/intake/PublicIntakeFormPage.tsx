@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "@/lib/http";
 import { formatDateTime } from "@/lib/dateFormat";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -144,11 +145,11 @@ function PublicIntakeContent({
         answers: res.answers,
       });
     } catch (err) {
-      const e = err as Error & { status?: number; payload?: { error?: string } };
+      const e = err as Error & { status?: number };
       setState({
         kind: "error",
         status: e.status ?? 0,
-        message: e.payload?.error ?? "Kon het formulier niet indienen.",
+        message: apiErrorMessage(err) ?? "Could not submit the form.",
       });
     }
   }

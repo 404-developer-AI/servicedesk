@@ -1,37 +1,4 @@
-import { csrfHeader } from "@/lib/csrf";
-import { ApiError } from "@/lib/ticket-api";
-
-/// Local request helper mirroring the one in ticket-api.ts. Surfaces the
-/// API error body via `error.message` (and `ApiError.status`) so the
-/// page can show field-level 422 validation problems inline.
-async function request<T>(
-  method: string,
-  url: string,
-  body?: unknown,
-): Promise<T> {
-  const isSafe = method === "GET" || method === "HEAD";
-  const res = await fetch(url, {
-    method,
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...(isSafe ? {} : csrfHeader()),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new ApiError(
-      res.status,
-      url,
-      text || `${url} → ${res.status} ${res.statusText}`,
-    );
-  }
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  return (text ? JSON.parse(text) : undefined) as T;
-}
+import { request } from "@/lib/http";
 
 /// v0.0.35 — Timesheet feature API surface.
 ///
@@ -258,18 +225,6 @@ export function validateEntryDraft(draft: {
   return errs;
 }
 
-/// A 422 body `{ errors: [{field, message}] }` → `{ field: message }`.
-export function parseTimesheetFieldErrors(raw: string): Record<string, string> | null {
-  try {
-    const parsed = JSON.parse(raw) as { errors?: TimesheetFieldError[] };
-    if (!parsed.errors || !Array.isArray(parsed.errors)) return null;
-    const map: Record<string, string> = {};
-    for (const e of parsed.errors) map[e.field] = e.message;
-    return map;
-  } catch {
-    return null;
-  }
-}
 
 // ---- Manager (Tab 2 + Tab 3) -----------------------------------------
 //

@@ -40,7 +40,7 @@ import {
   type Status,
 } from "@/lib/api";
 import { AdsolutWorkHoursDialog } from "./AdsolutWorkHoursDialog";
-import { ApiError } from "@/lib/ticket-api";
+import { ApiError, apiErrorMessage, errorMessage } from "@/lib/http";
 import {
   autoFormatTimeInput,
   formatHHMM,
@@ -455,7 +455,7 @@ function MigrationImportSection() {
       qc.invalidateQueries({ queryKey: IMPORT_STATUS_KEY });
       toast.success(enabled ? "Migration import enabled" : "Migration import disabled");
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to update"),
+    onError: (err) => toast.error(errorMessage(err, "Failed to update")),
   });
 
   const setSecret = useMutation({
@@ -466,7 +466,7 @@ function MigrationImportSection() {
       setDraft("");
       setShowInput(false);
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to save token"),
+    onError: (err) => toast.error(errorMessage(err, "Failed to save token")),
   });
 
   const deleteSecret = useMutation({
@@ -475,7 +475,7 @@ function MigrationImportSection() {
       qc.invalidateQueries({ queryKey: IMPORT_STATUS_KEY });
       toast.success("Import token cleared");
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to clear token"),
+    onError: (err) => toast.error(errorMessage(err, "Failed to clear token")),
   });
 
   const configured = status.data?.secretConfigured ?? false;
@@ -617,7 +617,7 @@ function HtmlTemplateField({
       toast.success(`${label} updated`);
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : "Failed to save");
+      toast.error(errorMessage(err, "Failed to save"));
       setDraft(entry.value);
     },
   });
@@ -774,7 +774,7 @@ function TimeOfDayField({
       toast.success(`${label} updated`);
     },
     onError: (err) =>
-      toast.error(err instanceof Error ? err.message : "Failed to save"),
+      toast.error(errorMessage(err, "Failed to save")),
   });
 
   const commit = () => {
@@ -834,7 +834,7 @@ function MinutesField({
       toast.success(`${label} updated`);
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : "Failed to save");
+      toast.error(errorMessage(err, "Failed to save"));
       setDraft(entry.value);
     },
   });
@@ -898,7 +898,7 @@ function ToggleField({
       toast.success(`${label} updated`);
     },
     onError: (err) =>
-      toast.error(err instanceof Error ? err.message : "Failed to save"),
+      toast.error(errorMessage(err, "Failed to save")),
   });
 
   return (
@@ -934,7 +934,7 @@ function TextAreaField({
       toast.success(`${label} updated`);
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : "Failed to save");
+      toast.error(errorMessage(err, "Failed to save"));
       setDraft(entry.value);
     },
   });
@@ -980,7 +980,7 @@ function HourlyRateField({ entry }: { entry: SettingEntry }) {
       toast.success("Hourly rate updated");
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : "Failed to save");
+      toast.error(errorMessage(err, "Failed to save"));
       setDraft(entry.value);
     },
   });
@@ -1062,7 +1062,7 @@ export function StatusSetField({
       qc.invalidateQueries({ queryKey });
       toast.success(`${label} updated`);
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to save"),
+    onError: (err) => toast.error(errorMessage(err, "Failed to save")),
   });
 
   const dirty = idCsvFromSet(draft) !== normaliseIdCsv(entry.value);
@@ -1183,7 +1183,7 @@ function WorkDaysField({ entry }: { entry: SettingEntry }) {
       qc.invalidateQueries({ queryKey: QUERY_KEY });
       toast.success("Work days updated");
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to save"),
+    onError: (err) => toast.error(errorMessage(err, "Failed to save")),
   });
 
   const dirty = csvFromSet(draft) !== entry.value;
@@ -1454,16 +1454,7 @@ function TaskDialog({ task, onClose }: { task: TimesheetTask | null; onClose: ()
     },
     onError: (err) => {
       if (err instanceof ApiError) {
-        try {
-          const parsed = JSON.parse(err.message) as { error?: string };
-          if (parsed.error) {
-            setError(parsed.error);
-            return;
-          }
-        } catch {
-          /* ignore */
-        }
-        setError(err.message);
+        setError(apiErrorMessage(err) ?? "Failed to save");
       } else if (err instanceof Error && err.message !== "invalid") {
         setError(err.message);
       }

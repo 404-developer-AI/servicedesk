@@ -1,3 +1,4 @@
+import { request } from "@/lib/http";
 import { memoizeTtl } from "@/lib/ttlCache";
 
 /// How long the `::` picker reuses a fetched intake-template list (v0.1.4).
@@ -138,48 +139,6 @@ export const INTAKE_TOKENS = [
 ] as const;
 export type IntakeToken = (typeof INTAKE_TOKENS)[number];
 
-// Shared authenticated request helper — same shape as api.ts
-async function request<T>(
-  method: string,
-  url: string,
-  body?: unknown,
-  init?: RequestInit,
-): Promise<T> {
-  const csrf = document.cookie
-    .split("; ")
-    .find((c) => c.startsWith("XSRF-TOKEN="))
-    ?.split("=")[1];
-  const res = await fetch(url, {
-    method,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(csrf ? { "X-XSRF-TOKEN": decodeURIComponent(csrf) } : {}),
-      ...(init?.headers ?? {}),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    ...init,
-  });
-  if (!res.ok) {
-    let payload: unknown = null;
-    try {
-      payload = await res.json();
-    } catch {
-      /* ignore */
-    }
-    const err = new Error(`Request failed: ${res.status}`) as Error & {
-      status?: number;
-      payload?: unknown;
-    };
-    err.status = res.status;
-    err.payload = payload;
-    throw err;
-  }
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  return text ? (JSON.parse(text) as T) : (undefined as T);
-}
-
 /// Standalone so the memoised picker variant can reference it without the
 /// API object referencing itself in its own initializer (TS7022).
 function fetchTemplates(includeInactive = false): Promise<IntakeTemplate[]> {
@@ -254,55 +213,17 @@ export const intakeFormsApi = {
 };
 
 // ─── Public (no auth, CSRF-exempt) ───
-// Uses plain fetch so no CSRF header is attached. Rate-limited server-side
+// Sent without cookies (so without a CSRF header). Rate-limited server-side
 // per (IP, token) via the `intake-public` policy.
+const ANONYMOUS = { credentials: "omit" } as const;
+
 export const publicIntakeApi = {
-  get: async (token: string): Promise<IntakePublicView> => {
-    const res = await fetch(`/api/intake-forms/${encodeURIComponent(token)}`, {
-      credentials: "omit",
-      headers: { Accept: "application/json" },
-    });
-    if (!res.ok) {
-      const err = new Error(`Public intake fetch failed: ${res.status}`) as Error & {
-        status?: number;
-      };
-      err.status = res.status;
-      throw err;
-    }
-    return res.json();
-  },
-  submit: async (
-    token: string,
-    answers: Record<string, unknown>,
-  ): Promise<{
-    status: string;
-    templateName: string;
-    answers: Array<{ questionId: number; answer: unknown }>;
-  }> => {
-    const res = await fetch(
-      `/api/intake-forms/${encodeURIComponent(token)}/submit`,
-      {
-        method: "POST",
-        credentials: "omit",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ answers }),
-      },
-    );
-    if (!res.ok) {
-      let payload: unknown = null;
-      try {
-        payload = await res.json();
-      } catch {
-        /* ignore */
-      }
-      const err = new Error(`Public intake submit failed: ${res.status}`) as Error & {
-        status?: number;
-        payload?: unknown;
-      };
-      err.status = res.status;
-      err.payload = payload;
-      throw err;
-    }
-    return res.json();
-  },
+  get: (token: string) =>
+    request<IntakePublicView>("GET", `/api/intake-forms/${encodeURIComponent(token)}`, undefined, ANONYMOUS),
+  submit: (token: string, answers: Record<string, unknown>) =>
+    request<{
+      status: string;
+      templateName: string;
+      answers: Array<{ questionId: number; answer: unknown }>;
+    }>("POST", `/api/intake-forms/${encodeURIComponent(token)}/submit`, { answers }, ANONYMOUS),
 };

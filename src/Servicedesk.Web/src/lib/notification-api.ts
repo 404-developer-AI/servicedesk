@@ -1,5 +1,4 @@
-import { csrfHeader } from "@/lib/csrf";
-import { ApiError } from "@/lib/ticket-api";
+import { request } from "@/lib/http";
 
 /// v0.0.12 stap 4 — client for the @@-mention notification raamwerk.
 /// Shape mirrors the backend DTO in `NotificationEndpoints.UserNotificationDto`.
@@ -27,34 +26,6 @@ export type NotificationHistoryPage = {
   items: UserNotification[];
   nextCursor: NotificationHistoryCursor | null;
 };
-
-async function request<T>(
-  method: string,
-  url: string,
-  body?: unknown,
-): Promise<T> {
-  const isSafe = method === "GET" || method === "HEAD";
-  const res = await fetch(url, {
-    method,
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...(isSafe ? {} : csrfHeader()),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!res.ok) {
-    throw new ApiError(
-      res.status,
-      url,
-      `${url} → ${res.status} ${res.statusText}`,
-    );
-  }
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  return (text ? JSON.parse(text) : undefined) as T;
-}
 
 export const notificationApi = {
   /// Unacked entries for the navbar-widget. Refetched on SignalR push +

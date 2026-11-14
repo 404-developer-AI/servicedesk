@@ -3,6 +3,8 @@
 // is authoritative for the send-time render (inline cid images); this client
 // drives the builder + a client-side live preview (asset URLs, not cid).
 
+import { request } from "@/lib/http";
+
 // ---- block-tree design (mirrors Servicedesk.Domain.Signatures) ----
 
 export type SignatureBlockType =
@@ -142,67 +144,10 @@ export interface MySignatureVariables {
   photoUrl: string | null;
 }
 
-function csrf(): Record<string, string> {
-  const token = document.cookie
-    .split("; ")
-    .find((c) => c.startsWith("XSRF-TOKEN="))
-    ?.split("=")[1];
-  return token ? { "X-XSRF-TOKEN": decodeURIComponent(token) } : {};
-}
-
-async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const res = await fetch(url, {
-    method,
-    credentials: "include",
-    headers: { "Content-Type": "application/json", ...csrf() },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let payload: unknown = null;
-    try {
-      payload = await res.json();
-    } catch {
-      /* ignore */
-    }
-    const err = new Error(`Request failed: ${res.status}`) as Error & {
-      status?: number;
-      payload?: unknown;
-    };
-    err.status = res.status;
-    err.payload = payload;
-    throw err;
-  }
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  return text ? (JSON.parse(text) as T) : (undefined as T);
-}
-
-async function upload<T>(url: string, file: File): Promise<T> {
+function upload<T>(url: string, file: File): Promise<T> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(url, {
-    method: "POST",
-    credentials: "include",
-    headers: { ...csrf() },
-    body: form,
-  });
-  if (!res.ok) {
-    let payload: unknown = null;
-    try {
-      payload = await res.json();
-    } catch {
-      /* ignore */
-    }
-    const err = new Error(`Upload failed: ${res.status}`) as Error & {
-      status?: number;
-      payload?: unknown;
-    };
-    err.status = res.status;
-    err.payload = payload;
-    throw err;
-  }
-  const text = await res.text();
-  return text ? (JSON.parse(text) as T) : (undefined as T);
+  return request<T>("POST", url, form);
 }
 
 export const signaturesApi = {
