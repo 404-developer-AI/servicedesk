@@ -31,6 +31,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 /// Admin-only Knowledge Base settings page. Three regions:
 ///   1. Config — active toggle + default locale.
@@ -302,6 +303,7 @@ function LocalesCard({
   loading: boolean;
   onChanged: () => void;
 }) {
+  const confirm = useConfirm();
   const [editing, setEditing] = useState<KbLocale | null | "new">(null);
 
   const remove = useMutation({
@@ -358,12 +360,19 @@ function LocalesCard({
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       if (l.code === defaultLocaleCode) {
                         toast.error("Cannot remove the default locale. Change the default first.");
                         return;
                       }
-                      if (!confirm(`Remove locale '${l.code}'? This is rejected if any translation still uses it.`))
+                      if (
+                        !(await confirm({
+                          title: "Remove locale",
+                          description: `Remove locale '${l.code}'? This is rejected if any translation still uses it.`,
+                          confirmLabel: "Remove",
+                          tone: "destructive",
+                        }))
+                      )
                         return;
                       remove.mutate(l.code);
                     }}
@@ -470,6 +479,7 @@ function SectionsCard({
   loading: boolean;
   onChanged: () => void;
 }) {
+  const confirm = useConfirm();
   const [editing, setEditing] = useState<KbSectionNode | null | "new">(null);
 
   const flat = useMemo(() => flattenSections(tree), [tree]);
@@ -517,8 +527,16 @@ function SectionsCard({
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (!confirm(`Remove '${row.title}'? Hard-delete only works on empty sections.`)) return;
+                  onClick={async () => {
+                    if (
+                      !(await confirm({
+                        title: "Remove section",
+                        description: `Remove '${row.title}'? Hard-delete only works on empty sections.`,
+                        confirmLabel: "Remove",
+                        tone: "destructive",
+                      }))
+                    )
+                      return;
                     remove.mutate(row.id);
                   }}
                   className="text-destructive/80 hover:text-destructive"

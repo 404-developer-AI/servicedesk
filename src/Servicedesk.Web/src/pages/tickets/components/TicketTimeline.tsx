@@ -71,6 +71,7 @@ import { IntakeSubmissionPanel } from "@/components/intake/IntakeSubmissionPanel
 import { SplitMailDialog } from "@/components/SplitMailDialog";
 import { formatDuration } from "@/lib/timesheet-api";
 import { stripBaseTags } from "@/lib/sanitize";
+import { formatBytes } from "@/lib/format";
 
 type PreviewContextValue = {
   open: (preview: AttachmentPreview) => void;
@@ -90,14 +91,6 @@ type TicketTimelineProps = {
   events: TicketEvent[];
   pinnedEventIds: Set<number>;
 };
-
-function formatBytes(n: number): string {
-  if (!Number.isFinite(n) || n < 0) return "";
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
 
 /// DOMPurify config that preserves @@-mention chips. Tiptap's Mention
 /// extension emits `<span data-type="mention" class="sd-mention"

@@ -1101,7 +1101,7 @@ function ResultTable({
                     )}
                 </td>
                 <td className="px-2 py-1.5 align-top whitespace-nowrap text-right text-muted-foreground tabular-nums">
-                  {formatRelative(t.updatedAt)}
+                  {formatOptionalDate(t.updatedAt)}
                 </td>
               </tr>
             );
@@ -1112,7 +1112,7 @@ function ResultTable({
   );
 }
 
-function formatRelative(iso: string | null): string {
+function formatOptionalDate(iso: string | null): string {
   if (!iso) return "—";
   return formatDateMedium(iso);
 }

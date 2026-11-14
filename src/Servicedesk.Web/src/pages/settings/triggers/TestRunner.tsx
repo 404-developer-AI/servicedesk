@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { triggerApi, type TriggerDryRunAction, type TriggerDryRunResult } from "@/lib/api";
 import { ticketApi, type TicketPickerItem } from "@/lib/ticket-api";
 import { cn } from "@/lib/utils";
+import { useDebounced } from "@/hooks/useDebounced";
 
 type Props = {
   triggerId: string;
@@ -268,12 +269,4 @@ function toneFor(status: TriggerDryRunAction["status"]) {
       };
   }
 }
-
-function useDebounced<T>(value: T, delay: number): T {
-  const [v, setV] = React.useState(value);
-  React.useEffect(() => {
-    const id = setTimeout(() => setV(value), delay);
-    return () => clearTimeout(id);
-  }, [value, delay]);
-  return v;
-}
+

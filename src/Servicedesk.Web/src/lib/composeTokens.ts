@@ -1,3 +1,4 @@
+import { escapeHtml } from "@/lib/format";
 /// Replace every `{{token}}` in `html` whose resolved value in `tokens` is
 /// a non-empty string. The resolved value is HTML-escaped (templates are
 /// admin-authored HTML; runtime values are user-controlled strings — they
@@ -54,13 +55,4 @@ export function substituteComposeTokensPlain(
     const value = tokens?.[`{{${name}}}`];
     return value ? value : match;
   });
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }

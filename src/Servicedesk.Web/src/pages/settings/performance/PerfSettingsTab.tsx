@@ -8,6 +8,7 @@ import { apiErrorMessage } from "@/lib/api";
 import { perfApi, type PerfStatus } from "@/lib/perf-api";
 import { Panel } from "./PerfUi";
 import { PERF_KEY } from "./usePerfQuery";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 const k = (key: string, label: string) => ({ key: `Performance.${key}`, label });
 
@@ -159,6 +160,7 @@ function BudgetsEditor() {
 }
 
 function DangerZone({ status }: { status: PerfStatus | undefined }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const clear = useMutation({
     mutationFn: () => perfApi.clearData(),
@@ -183,8 +185,16 @@ function DangerZone({ status }: { status: PerfStatus | undefined }) {
           variant="outline"
           className="border-rose-500/40 text-rose-700 hover:bg-rose-500/10 dark:text-rose-300"
           disabled={clear.isPending}
-          onClick={() => {
-            if (window.confirm("Delete all performance measurements? This cannot be undone.")) clear.mutate();
+          onClick={async () => {
+            if (
+              await confirm({
+                title: "Delete measurements",
+                description: "Delete all performance measurements? This cannot be undone.",
+                confirmLabel: "Delete",
+                tone: "destructive",
+              })
+            )
+              clear.mutate();
           }}
         >
           <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete all measurements

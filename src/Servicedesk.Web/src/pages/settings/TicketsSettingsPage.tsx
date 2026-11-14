@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { ChecklistsSettingsTab } from "./checklists/ChecklistsSettingsTab";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 type TabKey = "queues" | "priorities" | "statuses" | "categories" | "types" | "iso27001" | "warnings" | "grouping" | "checklists" | "general";
 
@@ -1035,6 +1036,7 @@ function useDeleteHandler(
 // ---------- Queues tab ----------
 
 function QueuesTab() {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const [editing, setEditing] = useState<Queue | null | "new">(null);
 
@@ -1104,8 +1106,16 @@ function QueuesTab() {
                     variant="ghost"
                     size="sm"
                     disabled={del.isPending}
-                    onClick={() => {
-                      if (confirm(`Delete queue "${q.name}"?`)) del.mutate(q.id);
+                    onClick={async () => {
+                      if (
+                        await confirm({
+                          title: "Delete queue",
+                          description: `Delete queue "${q.name}"?`,
+                          confirmLabel: "Delete",
+                          tone: "destructive",
+                        })
+                      )
+                        del.mutate(q.id);
                     }}
                   >
                     Delete
@@ -1632,6 +1642,7 @@ function QueueDialog({
 // ---------- Priorities tab ----------
 
 function PrioritiesTab() {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const [editing, setEditing] = useState<Priority | null | "new">(null);
 
@@ -1698,8 +1709,16 @@ function PrioritiesTab() {
                     variant="ghost"
                     size="sm"
                     disabled={p.isDefault || del.isPending}
-                    onClick={() => {
-                      if (confirm(`Delete priority "${p.name}"?`)) del.mutate(p.id);
+                    onClick={async () => {
+                      if (
+                        await confirm({
+                          title: "Delete priority",
+                          description: `Delete priority "${p.name}"?`,
+                          confirmLabel: "Delete",
+                          tone: "destructive",
+                        })
+                      )
+                        del.mutate(p.id);
                     }}
                   >
                     Delete
@@ -1849,6 +1868,7 @@ const STATE_CATEGORY_COLOR: Record<StatusStateCategory, string> = {
 };
 
 function StatusesTab() {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const [editing, setEditing] = useState<Status | null | "new">(null);
 
@@ -1921,8 +1941,16 @@ function StatusesTab() {
                     variant="ghost"
                     size="sm"
                     disabled={s.isSystem || del.isPending}
-                    onClick={() => {
-                      if (confirm(`Delete status "${s.name}"?`)) del.mutate(s.id);
+                    onClick={async () => {
+                      if (
+                        await confirm({
+                          title: "Delete status",
+                          description: `Delete status "${s.name}"?`,
+                          confirmLabel: "Delete",
+                          tone: "destructive",
+                        })
+                      )
+                        del.mutate(s.id);
                     }}
                   >
                     Delete
@@ -2073,6 +2101,7 @@ function StatusDialog({
 // ---------- Categories tab ----------
 
 function CategoriesTab() {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const [editing, setEditing] = useState<Category | null | "new">(null);
 
@@ -2146,8 +2175,16 @@ function CategoriesTab() {
                       variant="ghost"
                       size="sm"
                       disabled={c.isSystem || del.isPending}
-                      onClick={() => {
-                        if (confirm(`Delete category "${c.name}"?`)) del.mutate(c.id);
+                      onClick={async () => {
+                      if (
+                        await confirm({
+                          title: "Delete category",
+                          description: `Delete category "${c.name}"?`,
+                          confirmLabel: "Delete",
+                          tone: "destructive",
+                        })
+                      )
+                        del.mutate(c.id);
                       }}
                     >
                       Delete
@@ -2417,6 +2454,7 @@ function Iso27001Tab() {
 // ---------- Ticket Types tab (v0.0.39) ----------
 
 function TicketTypesTab() {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const [editing, setEditing] = useState<TicketType | null | "new">(null);
 
@@ -2499,8 +2537,16 @@ function TicketTypesTab() {
                     variant="ghost"
                     size="sm"
                     disabled={del.isPending || t.isSystem}
-                    onClick={() => {
-                      if (confirm(`Delete ticket type "${t.label}"?`)) del.mutate(t.id);
+                    onClick={async () => {
+                      if (
+                        await confirm({
+                          title: "Delete ticket type",
+                          description: `Delete ticket type "${t.label}"?`,
+                          confirmLabel: "Delete",
+                          tone: "destructive",
+                        })
+                      )
+                        del.mutate(t.id);
                     }}
                   >
                     Delete

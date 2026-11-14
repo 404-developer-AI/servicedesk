@@ -39,7 +39,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { TriggerEditorSheet } from "./triggers/TriggerEditorSheet";
 import { CollapsibleSettingsCard } from "@/components/settings/CollapsibleSettingsCard";
 import { cn } from "@/lib/utils";
-import { serverNowMs } from "@/hooks/useServerTime";
+import { formatTimeAgo } from "@/lib/format";
 
 // v0.0.100 — engine knobs (Triggers.* category) surfaced on this page; the
 // scheduler-side ones existed since v0.0.24 but had no UI until now.
@@ -736,7 +736,7 @@ function TriggerRow({
             {item.runs.lastFiredUtc && (
               <span className="flex items-center gap-1">
                 <Clock className="h-3 w-3" />
-                Last: {formatRelative(item.runs.lastFiredUtc)}
+                Last: {formatTimeAgo(item.runs.lastFiredUtc, { fallback: item.runs.lastFiredUtc })}
               </span>
             )}
           </div>
@@ -952,16 +952,4 @@ function DeleteGroupDialog({
     </Dialog>
   );
 }
-
-function formatRelative(iso: string): string {
-  const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return iso;
-  const diffMs = serverNowMs() - t;
-  const diffMin = Math.round(diffMs / 60_000);
-  if (diffMin < 1) return "just now";
-  if (diffMin < 60) return `${diffMin} min ago`;
-  const diffH = Math.round(diffMin / 60);
-  if (diffH < 24) return `${diffH} h ago`;
-  const diffD = Math.round(diffH / 24);
-  return `${diffD} d ago`;
-}
+

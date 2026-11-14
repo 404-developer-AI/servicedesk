@@ -1,4 +1,5 @@
 import { request } from "@/lib/http";
+export { formatDuration } from "@/lib/format";
 
 /// v0.0.35 — Timesheet feature API surface.
 ///
@@ -145,16 +146,6 @@ export function formatHHMM(minutes: number): string {
   const hh = Math.floor(safe / 60);
   const mm = safe % 60;
   return `${hh.toString().padStart(2, "0")}:${mm.toString().padStart(2, "0")}`;
-}
-
-/// 75 minutes → "1h 15m" — used in the row's total column and day totals.
-export function formatDuration(minutes: number): string {
-  if (minutes <= 0) return "0m";
-  const hh = Math.floor(minutes / 60);
-  const mm = minutes % 60;
-  if (hh === 0) return `${mm}m`;
-  if (mm === 0) return `${hh}h`;
-  return `${hh}h ${mm}m`;
 }
 
 /// Today as YYYY-MM-DD in the user's local timezone — the date picker

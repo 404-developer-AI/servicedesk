@@ -9,6 +9,7 @@ import type {
   SignatureDesign,
   SignatureRow,
 } from "@/lib/signatures-api";
+import { escapeHtml } from "@/lib/format";
 
 const DEFAULT_FONT = "Arial, 'Helvetica Neue', Helvetica, sans-serif";
 const PHOTO_VARIABLE = "agent.photo";
@@ -244,14 +245,6 @@ function cssValue(value: string): string {
   return value
     .trim()
     .replace(/["<>\\{}]/g, "");
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 function escapeAttr(s: string): string {

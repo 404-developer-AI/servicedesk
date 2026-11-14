@@ -13,10 +13,12 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { surveysApi, type SurveySummary } from "@/lib/surveys-api";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 const LIST_QUERY_KEY = ["surveys", "list"] as const;
 
 export function SurveysSettingsPage() {
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const listQ = useQuery({
@@ -101,7 +103,7 @@ export function SurveysSettingsPage() {
                   params: { surveyId: s.id },
                 })
               }
-              onDelete={() => {
+              onDelete={async () => {
                 if (s.responseCount > 0) {
                   toast.error(
                     "This survey has responses. Deactivate it instead of deleting.",
@@ -109,9 +111,12 @@ export function SurveysSettingsPage() {
                   return;
                 }
                 if (
-                  confirm(
-                    `Delete '${s.name}'? This cannot be undone.`,
-                  )
+                  await confirm({
+                    title: "Delete survey",
+                    description: `Delete '${s.name}'? This cannot be undone.`,
+                    confirmLabel: "Delete",
+                    tone: "destructive",
+                  })
                 ) {
                   remove.mutate(s.id);
                 }

@@ -23,6 +23,7 @@ import {
   type IntakeFormAgentView,
   type IntakeQuestion,
 } from "@/lib/intakeForms-api";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 type Props = {
   ticketId: string;
@@ -110,6 +111,7 @@ function PrefillEditor({
   onDeleted: () => void;
   onClose: () => void;
 }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const [values, setValues] = React.useState<Record<string, unknown>>(
     () => ({ ...(view.instance.prefill as Record<string, unknown>) }),
@@ -200,8 +202,15 @@ function PrefillEditor({
         {!readOnly && (
           <Button
             variant="ghost"
-            onClick={() => {
-              if (confirm("Remove this draft form from the mail?")) {
+            onClick={async () => {
+              if (
+                await confirm({
+                  title: "Remove draft form",
+                  description: "Remove this draft form from the mail?",
+                  confirmLabel: "Remove",
+                  tone: "destructive",
+                })
+              ) {
                 destroy.mutate();
               }
             }}

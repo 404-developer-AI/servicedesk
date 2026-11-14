@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/select";
 import { AssetDetailSheet } from "./AssetDetailSheet";
 import { cn } from "@/lib/utils";
-import { serverNowMs } from "@/hooks/useServerTime";
+import { formatTimeAgo } from "@/lib/format";
 
 const TYPE_OPTIONS = [
   { value: "all", label: "All" },
@@ -48,19 +48,6 @@ const SORT_OPTIONS: { value: AssetSort; label: string }[] = [
   { value: "last_seen_asc", label: "Last seen · oldest first" },
   { value: "client_asc", label: "Client · A→Z" },
 ];
-
-function relativeTime(iso: string | null): string {
-  if (!iso) return "never";
-  const diffMs = serverNowMs() - new Date(iso).getTime();
-  const sec = Math.round(diffMs / 1000);
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.round(sec / 60);
-  if (min < 60) return `${min} min ago`;
-  const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const days = Math.round(hr / 24);
-  return `${days}d ago`;
-}
 
 /// Tone for the OS-build chip. Newest builds (24H2, 23H2) get the
 /// "fresh" emerald tone; the previous wave (22H2) goes amber; anything
@@ -160,7 +147,7 @@ export function AssetsInventoryTab() {
         </p>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">
-            Last sync: <strong className="text-foreground">{relativeTime(syncState.data?.lastSyncUtc ?? null)}</strong>
+            Last sync: <strong className="text-foreground">{formatTimeAgo(syncState.data?.lastSyncUtc ?? null, { fallback: "never" })}</strong>
             {syncState.data?.lastStatus === "failed" && (
               <span className="ml-1 text-amber-400">— {syncState.data.lastError ?? "failed"}</span>
             )}
@@ -461,7 +448,7 @@ function AssetRow({ row, onClick }: { row: AssetListItem; onClick: () => void })
           {eolChipLabel(row.eolStatus)}
         </Badge>
       </td>
-      <td className="px-3 py-2 text-muted-foreground">{relativeTime(row.lastSeenUtc)}</td>
+      <td className="px-3 py-2 text-muted-foreground">{formatTimeAgo(row.lastSeenUtc, { fallback: "never" })}</td>
       <td className="px-3 py-2">
         <div className="flex flex-col">
           <span className="text-foreground">{row.clientName}</span>

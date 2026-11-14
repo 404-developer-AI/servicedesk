@@ -41,6 +41,7 @@ import {
   DEFAULT_DAY_START_MINUTES,
   type TimesheetTask,
 } from "@/lib/timesheet-api";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 /// Tab 1 — eigen registratie. Renders a day-bound grid of entries with
 /// inline add/edit. Each row mutation hits the API per-row (no batch
@@ -390,6 +391,7 @@ function DisplayRow({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const confirm = useConfirm();
   const deleteMutation = useMutation({
     mutationFn: () => timesheetEntryApi.remove(entry.id),
     onSuccess: () => {
@@ -467,8 +469,16 @@ function DisplayRow({
             variant="ghost"
             className="h-7 w-7 p-0 text-red-300/80 hover:text-red-300"
             disabled={deleteMutation.isPending}
-            onClick={() => {
-              if (window.confirm("Remove this timesheet entry?")) deleteMutation.mutate();
+            onClick={async () => {
+              if (
+                await confirm({
+                  title: "Remove timesheet entry",
+                  description: "Remove this timesheet entry?",
+                  confirmLabel: "Remove",
+                  tone: "destructive",
+                })
+              )
+                deleteMutation.mutate();
             }}
             aria-label="Delete entry"
           >

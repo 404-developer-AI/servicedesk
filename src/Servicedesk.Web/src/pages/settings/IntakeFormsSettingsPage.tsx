@@ -12,6 +12,7 @@ import {
   type IntakeTemplate,
 } from "@/lib/intakeForms-api";
 import { TemplateEditor } from "./intake-forms/TemplateEditor";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 const SETTINGS_QUERY_KEY = ["settings", "list", "IntakeForms"] as const;
 
@@ -110,6 +111,7 @@ function TemplateListPanel({
   onNew: () => void;
   onEdit: (id: string) => void;
 }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const templatesQ = useQuery({
     queryKey: ["intake-forms", "templates", { includeInactive: true }],
@@ -204,11 +206,14 @@ function TemplateListPanel({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => {
+                  onClick={async () => {
                     if (
-                      confirm(
-                        `Deactivate '${t.name}'? Past submissions stay visible; new mails can no longer use this template.`,
-                      )
+                      await confirm({
+                        title: "Deactivate template",
+                        description: `Deactivate '${t.name}'? Past submissions stay visible; new mails can no longer use this template.`,
+                        confirmLabel: "Deactivate",
+                        tone: "destructive",
+                      })
                     ) {
                       deactivate.mutate(t.id);
                     }

@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useDebounced } from "@/hooks/useDebounced";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { Eye, Layers, ShieldAlert, Ticket, X } from "lucide-react";
@@ -19,16 +20,6 @@ import { SearchHighlightContext } from "./components/searchHighlightContext";
 import { viewDisplayConfig, viewFilters, viewListQuery } from "@/lib/viewFilters";
 
 const NO_TOKENS: readonly string[] = [];
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = React.useState(value);
-  React.useEffect(() => {
-    if (delayMs <= 0) return;
-    const id = window.setTimeout(() => setDebounced(value), delayMs);
-    return () => window.clearTimeout(id);
-  }, [value, delayMs]);
-  return delayMs <= 0 ? value : debounced;
-}
 
 function readFiltersFromSearch(searchStr: string): TicketListQuery {
   const params = new URLSearchParams(searchStr);
@@ -219,7 +210,7 @@ export function TicketListPage() {
 
   const term = searchEnabled ? searchTerm.trim() : "";
   const searchActive = term.length >= minChars;
-  const debouncedTerm = useDebouncedValue(term, debounceMs);
+  const debouncedTerm = useDebounced(term, debounceMs);
   const searchCols = React.useMemo(() => searchableColumns(visibleColumns), [visibleColumns]);
   const noSearchableColumns = searchMode === "columns" && searchCols.length === 0;
   const useServerSearch = searchActive && !noSearchableColumns && (searchMode === "full" || truncated);

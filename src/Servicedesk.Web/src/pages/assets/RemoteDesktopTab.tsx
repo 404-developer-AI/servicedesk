@@ -26,24 +26,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/auth/authStore";
-import { toServerLocal, useServerOffsetMinutes, serverNowMs } from "@/hooks/useServerTime";
+import { toServerLocal, useServerOffsetMinutes } from "@/hooks/useServerTime";
 import { cn } from "@/lib/utils";
 import { ClientNotesSheet, type NotesTarget } from "./ClientNotesSheet";
+import { formatTimeAgo } from "@/lib/format";
 
 const OVERVIEW_QK = ["assets", "remote-desktop", "overview"] as const;
-
-function relativeTime(iso: string | null): string {
-  if (!iso) return "never";
-  const diffMs = serverNowMs() - new Date(iso).getTime();
-  const sec = Math.round(diffMs / 1000);
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.round(sec / 60);
-  if (min < 60) return `${min} min ago`;
-  const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const days = Math.round(hr / 24);
-  return `${days}d ago`;
-}
 
 /// The script prints the server's own clock; the value arrives unzoned
 /// ("yyyy-MM-ddTHH:mm:ss") and is shown verbatim as dd/MM/yyyy HH:mm.
@@ -166,7 +154,7 @@ export function RemoteDesktopTab({
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">
             Last check sync:{" "}
-            <strong className="text-foreground">{relativeTime(data?.lastRdsSyncUtc ?? null)}</strong>
+            <strong className="text-foreground">{formatTimeAgo(data?.lastRdsSyncUtc ?? null, { fallback: "never" })}</strong>
             {data?.lastRdsStatus === "failed" && (
               <span className="ml-1 text-amber-400">— {data.lastRdsError ?? "failed"}</span>
             )}
@@ -579,7 +567,7 @@ function ServerRow({
                 "inline-block h-1.5 w-1.5 rounded-full",
                 row.online ? "bg-emerald-400" : "bg-glass-strong",
               )}
-              title={row.online ? "Online" : `Offline · last seen ${relativeTime(row.lastSeenUtc)}`}
+              title={row.online ? "Online" : `Offline · last seen ${formatTimeAgo(row.lastSeenUtc, { fallback: "never" })}`}
             />
             {row.hostname}
           </div>
@@ -609,7 +597,7 @@ function ServerRow({
           className="px-3 py-2 text-xs text-muted-foreground"
           title={row.lastRunUtc ? toServerLocal(row.lastRunUtc, offsetMinutes, true) : undefined}
         >
-          {relativeTime(row.lastRunUtc)}
+          {formatTimeAgo(row.lastRunUtc, { fallback: "never" })}
         </td>
         <td className="px-3 py-2" />
       </tr>
@@ -649,7 +637,7 @@ function AttentionRow({
                 "inline-block h-1.5 w-1.5 rounded-full",
                 row.online ? "bg-emerald-400" : "bg-glass-strong",
               )}
-              title={row.online ? "Online" : `Offline · last seen ${relativeTime(row.lastSeenUtc)}`}
+              title={row.online ? "Online" : `Offline · last seen ${formatTimeAgo(row.lastSeenUtc, { fallback: "never" })}`}
             />
             {row.hostname}
           </div>
@@ -664,7 +652,7 @@ function AttentionRow({
           className="px-3 py-2 text-xs text-muted-foreground"
           title={row.lastRunUtc ? toServerLocal(row.lastRunUtc, offsetMinutes, true) : undefined}
         >
-          {relativeTime(row.lastRunUtc)}
+          {formatTimeAgo(row.lastRunUtc, { fallback: "never" })}
         </td>
         <td className="px-3 py-2 text-right">
           <button

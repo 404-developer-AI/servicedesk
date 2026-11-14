@@ -53,22 +53,13 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { CommentThreadDrawer, type CommentTarget } from "@/pages/timesheet/CommentThreadDrawer";
+import { formatDuration } from "@/lib/format";
 
 type BoFilter = "all" | "checked" | "unchecked";
 type SortDir = "asc" | "desc";
 type SortState = { key: ColId; dir: SortDir };
 
 // ---- formatting helpers ----------------------------------------------
-
-/// Minutes → "3u 30m" (or "45m" / "2u"). Empty marker for null/0.
-function formatMinutes(minutes: number | null | undefined): string {
-  if (minutes === null || minutes === undefined || minutes <= 0) return "—";
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (h === 0) return `${m}m`;
-  if (m === 0) return `${h}u`;
-  return `${h}u ${m}m`;
-}
 
 function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -716,7 +707,7 @@ function HoursCell({ row }: { row: BackofficeTicket }) {
           className="inline-flex items-center rounded-full border border-purple-400/30 bg-purple-500/12 px-2.5 py-0.5 text-xs tabular-nums text-purple-200 transition-colors hover:bg-purple-500/20"
           title="Show hours per task"
         >
-          {formatMinutes(row.totalMinutes)}
+          {formatDuration(row.totalMinutes, "—")}
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-64 p-0">
@@ -742,12 +733,12 @@ function HoursCell({ row }: { row: BackofficeTicket }) {
                     {t.taskName}
                     {t.isAbsence && <span className="ml-1 text-[10px] text-muted-foreground/60">(afwezig)</span>}
                   </span>
-                  <span className="shrink-0 tabular-nums text-muted-foreground">{formatMinutes(t.minutes)}</span>
+                  <span className="shrink-0 tabular-nums text-muted-foreground">{formatDuration(t.minutes, "—")}</span>
                 </li>
               ))}
               <li className="flex items-center justify-between gap-3 border-t border-glass px-1.5 pt-1.5 font-medium">
                 <span className="text-foreground">Total</span>
-                <span className="tabular-nums text-foreground">{formatMinutes(breakdown.data.totalMinutes)}</span>
+                <span className="tabular-nums text-foreground">{formatDuration(breakdown.data.totalMinutes, "—")}</span>
               </li>
             </ul>
           )}

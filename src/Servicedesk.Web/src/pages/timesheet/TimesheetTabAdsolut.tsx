@@ -61,6 +61,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { formatDuration, formatMoney } from "@/lib/format";
 
 const PAGE_SIZE = 50;
 const RECEIPTS_KEY = ["timesheet", "adsolut", "receipts"] as const;
@@ -81,25 +82,6 @@ function formatDate(iso: string | null | undefined) {
 function formatDateTime(iso: string | null | undefined) {
   if (!iso) return "—";
   return formatDateTimeMedium(iso);
-}
-
-function formatMoney(value: number | null | undefined, currency: string | null | undefined) {
-  if (value === null || value === undefined) return "—";
-  try {
-    return new Intl.NumberFormat("nl-BE", { style: "currency", currency: currency || "EUR" }).format(value);
-  } catch {
-    return value.toFixed(2);
-  }
-}
-
-/// Minutes → "3u 30m" (or "45m" / "2u"). Empty marker for null/0.
-function formatMinutes(minutes: number | null | undefined): string {
-  if (minutes === null || minutes === undefined || minutes <= 0) return "—";
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (h === 0) return `${m}m`;
-  if (m === 0) return `${h}u`;
-  return `${h}u ${m}m`;
 }
 
 /// Split a product line's name + description into a bold label and the free-text
@@ -964,7 +946,7 @@ function HoursCell({ receipt }: { receipt: AdsolutSalesReceiptHeader }) {
           className="inline-flex items-center rounded-full border border-purple-400/30 bg-purple-500/12 px-2.5 py-0.5 text-xs tabular-nums text-purple-200 transition-colors hover:bg-purple-500/20"
           title="Show hours per task"
         >
-          {formatMinutes(receipt.totalMinutes)}
+          {formatDuration(receipt.totalMinutes, "—")}
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-64 p-0">
@@ -992,12 +974,12 @@ function HoursCell({ receipt }: { receipt: AdsolutSalesReceiptHeader }) {
                     {t.taskName}
                     {t.isAbsence && <span className="ml-1 text-[10px] text-muted-foreground/60">(afwezig)</span>}
                   </span>
-                  <span className="shrink-0 tabular-nums text-muted-foreground">{formatMinutes(t.minutes)}</span>
+                  <span className="shrink-0 tabular-nums text-muted-foreground">{formatDuration(t.minutes, "—")}</span>
                 </li>
               ))}
               <li className="flex items-center justify-between gap-3 border-t border-glass px-1.5 pt-1.5 font-medium">
                 <span className="text-foreground">Total</span>
-                <span className="tabular-nums text-foreground">{formatMinutes(breakdown.data.totalMinutes)}</span>
+                <span className="tabular-nums text-foreground">{formatDuration(breakdown.data.totalMinutes, "—")}</span>
               </li>
             </ul>
           )}
@@ -1073,7 +1055,7 @@ function BrutoPriceCell({ receipt }: { receipt: AdsolutSalesReceiptHeader }) {
                 >
                   <span className={cn("truncate", t.isAbsence ? "text-muted-foreground" : "text-foreground")}>
                     {t.taskName}
-                    <span className="ml-1 text-[10px] text-muted-foreground/60">{formatMinutes(t.minutes)}</span>
+                    <span className="ml-1 text-[10px] text-muted-foreground/60">{formatDuration(t.minutes, "—")}</span>
                   </span>
                   <span className="shrink-0 tabular-nums text-emerald-200">
                     {formatMoney(t.brutoPrice, receipt.currencyIso)}

@@ -1,5 +1,6 @@
 import { formatDateMedium, formatDateTimeMedium } from "@/lib/dateFormat";
 import type { AdsolutContractDetail } from "@/lib/api";
+import { formatMoney, formatNumber } from "@/lib/format";
 
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -9,20 +10,6 @@ function formatDate(iso: string | null | undefined): string {
 function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   return formatDateTimeMedium(iso);
-}
-
-function formatMoney(value: number | null | undefined): string {
-  if (value === null || value === undefined) return "—";
-  try {
-    return new Intl.NumberFormat("nl-BE", { style: "currency", currency: "EUR" }).format(value);
-  } catch {
-    return value.toFixed(2);
-  }
-}
-
-function formatNumber(value: number | null | undefined): string {
-  if (value === null || value === undefined) return "—";
-  return Number(value).toLocaleString("nl-BE", { maximumFractionDigits: 4 });
 }
 
 /// Contract detail: header metadata + article lines. Shown in the expanded row

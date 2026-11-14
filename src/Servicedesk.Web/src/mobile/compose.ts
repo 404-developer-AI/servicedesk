@@ -1,4 +1,5 @@
 import type { MentionPickerItem } from "@/lib/ticket-api";
+import { escapeHtml } from "@/lib/format";
 
 /// Mobile composer helpers: plain text in, the same HTML the desktop editor
 /// stores out. The server sanitiser (TicketHtmlSanitizer) stays the
@@ -77,15 +78,6 @@ export function mentionFromPicker(item: MentionPickerItem): ComposeMention {
   if (item.kind === "mailbox") return { id: item.id, label: item.label ?? item.email, kind: "mailbox" };
   const at = item.email.indexOf("@");
   return { id: item.id, label: at > 0 ? item.email.slice(0, at) : item.email, kind: "agent" };
-}
-
-export function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 // Private-use code point as a placeholder while labels are replaced; it

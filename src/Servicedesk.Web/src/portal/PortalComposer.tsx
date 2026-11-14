@@ -2,7 +2,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { Paperclip, X, FileText, Image as ImageIcon, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RichTextEditor } from "@/components/RichTextEditor";
-import { formatBytes } from "@/portal/portalShared";
+import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export type PendingFile = { localId: string; file: File };

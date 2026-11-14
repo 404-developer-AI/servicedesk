@@ -57,6 +57,7 @@ import { InTicketSearchProvider, useInTicketSearch } from "./components/InTicket
 import { stripBaseTags } from "@/lib/sanitize";
 import { TicketFormHost } from "@/components/forms/TicketFormHost";
 import type { TicketFormSummary } from "@/lib/forms-api";
+import { formatBytes } from "@/lib/format";
 
 type TicketDetailPageProps = {
   ticketId: string;
@@ -1667,14 +1668,6 @@ function TicketDetailBody({
       </div>
     </div>
   );
-}
-
-function formatBytes(n: number): string {
-  if (!Number.isFinite(n) || n < 0) return "";
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
-  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
 function DescriptionAttachmentChip({

@@ -17,6 +17,7 @@ import { portalAdminApi, type PortalAccount, type PortalAccountStatus, type Port
 import { contactApi } from "@/lib/ticket-api";
 import { Eye, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 // Shared agent-side building blocks for the customer portal: the approve
 // dialog (used on the registration ticket card AND on Settings → Portal),
@@ -409,6 +410,7 @@ export function PortalAccountActions({
   onApprove?: () => void;
   onReject?: () => void;
 }) {
+  const confirm = useConfirm();
   const invalidate = usePortalAdminInvalidate();
   const run = useMutation({
     mutationFn: async (action: "deactivate" | "reactivate" | "reset-totp" | "revoke-sessions" | "resend-verification" | "delete") => {
@@ -442,8 +444,16 @@ export function PortalAccountActions({
     onError: (err) => toast.error(apiErrorMessage(err) ?? "Action failed"),
   });
   const size = compact ? "sm" : "sm";
-  const confirmThen = (q: string, action: Parameters<typeof run.mutate>[0]) => {
-    if (window.confirm(q)) run.mutate(action);
+  const confirmThen = async (q: string, action: Parameters<typeof run.mutate>[0]) => {
+    if (
+      await confirm({
+        title: "Confirm action",
+        description: q,
+        confirmLabel: "Confirm",
+        tone: action === "delete" ? "destructive" : "default",
+      })
+    )
+      run.mutate(action);
   };
   // v0.1.1 — shadow login: mints a read-only portal session for this
   // customer and opens /portal in a new tab. Admin-only; the tab's banner

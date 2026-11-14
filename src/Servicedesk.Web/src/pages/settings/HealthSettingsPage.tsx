@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CollapsibleSettingsCard } from "@/components/settings/CollapsibleSettingsCard";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 const HEALTH_QUERY_KEY = ["admin", "health"] as const;
 const INCIDENTS_QUERY_KEY = ["admin", "health", "incidents"] as const;
@@ -103,6 +104,7 @@ const SEVERITY_BADGE: Record<IncidentRow["severity"], string> = {
 };
 
 export function HealthSettingsPage() {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const query = useQuery({
     queryKey: HEALTH_QUERY_KEY,
@@ -227,13 +229,20 @@ export function HealthSettingsPage() {
               key={s.key}
               subsystem={s}
               incidents={bySubsystem.get(s.key) ?? []}
-              onAction={(endpoint, confirmMessage) => {
-                if (confirmMessage && !window.confirm(confirmMessage)) return;
+              onAction={async (endpoint, confirmMessage) => {
+                if (confirmMessage && !(await confirm({ title: "Confirm action", description: confirmMessage }))) return;
                 runAction.mutate(endpoint);
               }}
               onAckOne={(id) => ackOne.mutate(id)}
-              onAckAll={(key) => {
-                if (!window.confirm(`Acknowledge all open incidents for ${key}?`)) return;
+              onAckAll={async (key) => {
+                if (
+                  !(await confirm({
+                    title: "Acknowledge incidents",
+                    description: `Acknowledge all open incidents for ${key}?`,
+                    confirmLabel: "Acknowledge",
+                  }))
+                )
+                  return;
                 ackSubsystem.mutate(key);
               }}
               pending={runAction.isPending || ackOne.isPending || ackSubsystem.isPending}

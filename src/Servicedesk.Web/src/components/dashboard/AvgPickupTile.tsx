@@ -3,20 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 import { Clock } from "lucide-react";
 import { slaApi } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatApproxMinutes } from "@/lib/format";
 
 const RANGES = [
   { label: "1d", days: 1 },
   { label: "7d", days: 7 },
   { label: "30d", days: 30 },
 ];
-
-function formatMinutes(m: number | null): string {
-  if (m === null) return "—";
-  if (m < 60) return `${Math.round(m)}m`;
-  const h = m / 60;
-  if (h < 24) return `${h.toFixed(1)}h`;
-  return `${(h / 24).toFixed(1)}d`;
-}
 
 export function AvgPickupTile() {
   const [days, setDays] = useState(1);
@@ -67,7 +60,7 @@ export function AvgPickupTile() {
                 <td className="py-2 text-foreground">{row.queueName}</td>
                 <td className="py-2 text-right text-muted-foreground">{row.ticketCount}</td>
                 <td className="py-2 text-right font-mono text-foreground">
-                  {formatMinutes(row.avgBusinessMinutes)}
+                  {formatApproxMinutes(row.avgBusinessMinutes)}
                 </td>
               </tr>
             ))}

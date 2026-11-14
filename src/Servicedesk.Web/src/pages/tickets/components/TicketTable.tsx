@@ -15,12 +15,13 @@ import { TicketTypeBadge } from "@/components/TicketTypeBadge";
 import { ContactHoverCard } from "@/components/ContactHoverCard";
 import { ListChecks } from "lucide-react";
 import type { TicketListItem } from "@/lib/ticket-api";
-import { useServerOffsetMinutes, useServerNowMs, toServerLocal, serverNowMs } from "@/hooks/useServerTime";
+import { useServerOffsetMinutes, useServerNowMs, toServerLocal } from "@/hooks/useServerTime";
 import { colorPillStyle } from "@/lib/colorPill";
 import { flagColors, ticketRowAccentStyle, useTicketFlagSettings } from "@/lib/ticketFlags";
 import { formatDuration } from "@/lib/timesheet-api";
 import { alignClass, normalizeLayout, type ColumnAlign } from "@/lib/ticketColumns";
 import { Highlight } from "./SearchHighlight";
+import { formatTimeAgo } from "@/lib/format";
 
 /// v0.0.103 — compact checklist progress next to the subject; amber while
 /// required items are open, emerald once everything is done.
@@ -39,17 +40,6 @@ function ChecklistChip({ done, total }: { done: number; total: number }) {
       {done}/{total}
     </span>
   );
-}
-
-function relativeTime(utc: string): string {
-  const diff = serverNowMs() - new Date(utc).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
 }
 
 
@@ -234,7 +224,7 @@ export const ALL_COLUMNS = [
     id: "updatedUtc",
     header: "Updated",
     cell: (info) => (
-      <span className="text-muted-foreground text-xs">{relativeTime(info.getValue())}</span>
+      <span className="text-muted-foreground text-xs">{formatTimeAgo(info.getValue())}</span>
     ),
   }),
   columnHelper.accessor("dueUtc", {

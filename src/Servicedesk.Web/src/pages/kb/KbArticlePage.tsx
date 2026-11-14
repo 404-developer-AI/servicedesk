@@ -26,6 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { buildKbOutline } from "@/lib/kbOutline";
 import { StatusPill } from "@/pages/kb/KbHomePage";
 import { KbArticleBody, KbOutlinePanel } from "@/pages/kb/KbArticleBody";
+import { formatBytes } from "@/lib/format";
 
 /// The outline panel only earns its place on longer articles.
 const OUTLINE_MIN_HEADINGS = 3;
@@ -281,12 +282,6 @@ export function KbArticlePage({ articleId }: Props) {
       </aside>
     </div>
   );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function StatusFlipButton({

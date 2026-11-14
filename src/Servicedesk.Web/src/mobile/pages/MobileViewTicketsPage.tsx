@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useMobileHeader } from "../mobileHeader";
 import { TicketCard } from "../components/TicketCard";
+import { useDebounced } from "@/hooks/useDebounced";
 
 /// Rows per request. The desktop list single-loads up to Tickets.ListPageSize
 /// (default 1000); a phone pages instead so the first screen arrives fast on
@@ -213,12 +214,4 @@ export function MobileViewTicketsPage({ viewId }: { viewId: string }) {
 }
 
 type PageParam = { offset: number } | { cursorUpdatedUtc: string; cursorId: string } | null;
-
-function useDebounced<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = React.useState(value);
-  React.useEffect(() => {
-    const id = window.setTimeout(() => setDebounced(value), delayMs);
-    return () => window.clearTimeout(id);
-  }, [value, delayMs]);
-  return debounced;
-}
+

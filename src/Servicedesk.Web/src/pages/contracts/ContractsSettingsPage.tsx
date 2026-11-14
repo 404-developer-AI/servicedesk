@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { contractReportsApi, type ReportTemplate } from "@/lib/contractReports-api";
 import { ReportTemplateEditor } from "./reports/ReportTemplateEditor";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 const LIST_QUERY_KEY = ["contract-report-templates", "list"] as const;
 
@@ -56,6 +57,7 @@ function TemplateListPanel({
   onNew: () => void;
   onEdit: (id: string) => void;
 }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const listQ = useQuery({
     queryKey: LIST_QUERY_KEY,
@@ -107,8 +109,15 @@ function TemplateListPanel({
             key={t.id}
             template={t}
             onEdit={() => onEdit(t.id)}
-            onDelete={() => {
-              if (confirm(`Delete '${t.name}'? This cannot be undone.`)) {
+            onDelete={async () => {
+              if (
+                await confirm({
+                  title: "Delete template",
+                  description: `Delete '${t.name}'? This cannot be undone.`,
+                  confirmLabel: "Delete",
+                  tone: "destructive",
+                })
+              ) {
                 remove.mutate(t.id);
               }
             }}

@@ -41,6 +41,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { ContractDetail } from "./ContractDetail";
+import { formatMoney } from "@/lib/format";
 
 const PAGE_SIZE = 50;
 const CONTRACTS_KEY = ["contracts", "overview", "list"] as const;
@@ -116,15 +117,6 @@ function formatDate(iso: string | null | undefined): string {
 function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   return formatDateTimeMedium(iso);
-}
-
-function formatMoney(value: number | null | undefined): string {
-  if (value === null || value === undefined) return "—";
-  try {
-    return new Intl.NumberFormat("nl-BE", { style: "currency", currency: "EUR" }).format(value);
-  } catch {
-    return value.toFixed(2);
-  }
 }
 
 const ALL_COLUMNS: ColDef[] = [

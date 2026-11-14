@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { formatApproxMinutes } from "@/lib/format";
 
 // Radix Select rejects empty-string values, so each filter uses its own
 // sentinel for the "All …" row. The handler strips it back to "" so the
@@ -20,14 +21,6 @@ import {
 const ALL_QUEUES = "__all_queues__";
 const ALL_PRIORITIES = "__all_priorities__";
 const ALL_STATUSES = "__all_statuses__";
-
-function formatMinutes(m: number | null): string {
-  if (m === null) return "—";
-  if (m < 60) return `${m}m`;
-  const h = m / 60;
-  if (h < 24) return `${h.toFixed(1)}h`;
-  return `${(h / 24).toFixed(1)}d`;
-}
 
 function SlaCell({
   consumed,
@@ -50,8 +43,8 @@ function SlaCell({
     const pct = target > 0 ? Math.round((consumed / target) * 100) : 0;
     return (
       <span className={breached ? "text-red-300" : "text-emerald-300"}>
-        {formatMinutes(consumed)}
-        <span className="text-muted-foreground/60"> / {formatMinutes(target)}</span>
+        {formatApproxMinutes(consumed)}
+        <span className="text-muted-foreground/60"> / {formatApproxMinutes(target)}</span>
         <span className={`ml-1 text-[10px] ${breached ? "text-red-400/80" : "text-muted-foreground/40"}`}>
           ({pct}%)
         </span>
@@ -62,7 +55,7 @@ function SlaCell({
   return (
     <span className="text-muted-foreground/60">
       <span className="text-muted-foreground/40">target </span>
-      {formatMinutes(target)}
+      {formatApproxMinutes(target)}
       {deadlineLabel && (
         <span className="ml-1 text-[10px] text-muted-foreground/30">({deadlineLabel})</span>
       )}

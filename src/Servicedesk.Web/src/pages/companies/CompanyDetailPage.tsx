@@ -39,6 +39,7 @@ import { ContactFormDialog } from "@/components/ContactFormDialog";
 import { CompanyFormFields, companyToInput } from "@/components/CompanyFormFields";
 import { EntityTicketsList } from "@/components/EntityTicketsList";
 import { cn } from "@/lib/utils";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 const ROLE_BADGE: Record<ContactCompanyRole, { label: string; className: string }> = {
   primary: {
@@ -266,6 +267,7 @@ function ContactsTab({
   adsolutId: string | null;
   isAdmin: boolean;
 }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const contractsEnabled = authStore.get().user?.contractsEnabled ?? false;
   const [linking, setLinking] = useState(false);
@@ -547,8 +549,16 @@ function ContactsTab({
                   size="sm"
                   variant="ghost"
                   title="Unlink from this company"
-                  onClick={() => {
-                    if (confirm(`Unlink ${c.email} from this company?`)) unlink.mutate(c.id);
+                  onClick={async () => {
+                    if (
+                      await confirm({
+                        title: "Unlink contact",
+                        description: `Unlink ${c.email} from this company?`,
+                        confirmLabel: "Unlink",
+                        tone: "destructive",
+                      })
+                    )
+                      unlink.mutate(c.id);
                   }}
                   disabled={unlink.isPending}
                 >
@@ -672,6 +682,7 @@ function DomainsTab({
   companyId: string;
   domains: CompanyDomain[];
 }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const [value, setValue] = useState("");
 
@@ -735,8 +746,16 @@ function DomainsTab({
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => {
-                  if (confirm(`Remove domain "${d.domain}"?`)) remove.mutate(d.id);
+                onClick={async () => {
+                  if (
+                    await confirm({
+                      title: "Remove domain",
+                      description: `Remove domain "${d.domain}"?`,
+                      confirmLabel: "Remove",
+                      tone: "destructive",
+                    })
+                  )
+                    remove.mutate(d.id);
                 }}
                 disabled={remove.isPending}
               >

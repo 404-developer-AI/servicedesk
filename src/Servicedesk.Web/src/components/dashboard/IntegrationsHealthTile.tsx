@@ -36,6 +36,8 @@ import telavoxLogo from "@/assets/integrations/telavox.svg";
 import veeamLogo from "@/assets/integrations/veeam.svg";
 import zammadLogo from "@/assets/integrations/zammad.svg";
 import { serverNowMs } from "@/hooks/useServerTime";
+import { formatTimeFromNow } from "@/lib/format";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 const QUERY_KEY = ["admin", "integrations-health"] as const;
 
@@ -343,6 +345,7 @@ function AdsolutCoverageStrip() {
 }
 
 function TileActionButton({ action }: { action: HealthAction }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
 
   const mut = useMutation({
@@ -361,8 +364,12 @@ function TileActionButton({ action }: { action: HealthAction }) {
     },
   });
 
-  const onClick = () => {
-    if (action.confirmMessage && !window.confirm(action.confirmMessage)) return;
+  const onClick = async () => {
+    if (
+      action.confirmMessage &&
+      !(await confirm({ title: "Confirm action", description: action.confirmMessage, confirmLabel: action.label }))
+    )
+      return;
     mut.mutate();
   };
 
@@ -430,23 +437,12 @@ function NextSyncHint({ iso }: { iso: string }) {
 
   const target = new Date(iso).getTime();
   if (Number.isNaN(target)) return null;
-  const phrase = formatRelative(target - serverNowMs());
+  const phrase = formatTimeFromNow(target - serverNowMs());
   return (
     <p className="text-[11px] text-muted-foreground/70" title={formatDateTime(iso, undefined, true)}>
       Next sync {phrase}
     </p>
   );
-}
-
-function formatRelative(deltaMs: number): string {
-  const absSec = Math.abs(deltaMs) / 1000;
-  if (absSec < 60) return deltaMs <= 0 ? "due now" : "in <1 min";
-  const mins = Math.round(absSec / 60);
-  if (mins < 60) return deltaMs > 0 ? `in ${mins} min` : `${mins} min ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return deltaMs > 0 ? `in ${hours}h` : `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  return deltaMs > 0 ? `in ${days}d` : `${days}d ago`;
 }
 
 function ActionButton({
@@ -456,6 +452,7 @@ function ActionButton({
   integrationKey: string;
   action: HealthAction;
 }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
 
   const mut = useMutation({
@@ -474,8 +471,12 @@ function ActionButton({
     },
   });
 
-  const onClick = () => {
-    if (action.confirmMessage && !window.confirm(action.confirmMessage)) return;
+  const onClick = async () => {
+    if (
+      action.confirmMessage &&
+      !(await confirm({ title: "Confirm action", description: action.confirmMessage, confirmLabel: action.label }))
+    )
+      return;
     mut.mutate();
   };
 
@@ -573,7 +574,7 @@ function MirrorCard({
             className="font-medium text-foreground"
             title={lastSyncUtc ? formatDateTime(lastSyncUtc, undefined, true) : undefined}
           >
-            {lastSyncUtc ? formatRelative(new Date(lastSyncUtc).getTime() - serverNowMs()) : "never"}
+            {lastSyncUtc ? formatTimeFromNow(new Date(lastSyncUtc).getTime() - serverNowMs()) : "never"}
           </span>
         </div>
         {nextSyncUtc ? <NextSyncHint iso={nextSyncUtc} /> : null}

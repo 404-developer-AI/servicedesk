@@ -39,6 +39,7 @@ import {
   type TimesheetUser,
   type ManagerEntryFilter,
 } from "@/lib/timesheet-api";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 /// Position record for a portal-anchored dropdown. The dropdown is
 /// `position: fixed` and anchored by either `top` (drop down) or
@@ -591,6 +592,7 @@ function ManagerDisplayRow({
   onEdit: () => void;
   onDeleted: () => void;
 }) {
+  const confirm = useConfirm();
   const deleteMutation = useMutation({
     mutationFn: () => timesheetManagerApi.deleteEntry(entry.id),
     onSuccess: () => {
@@ -675,12 +677,15 @@ function ManagerDisplayRow({
             variant="ghost"
             className="h-7 w-7 p-0 text-red-300/80 hover:text-red-300"
             disabled={deleteMutation.isPending}
-            onClick={(e) => {
+            onClick={async (e) => {
               e.stopPropagation();
               if (
-                window.confirm(
-                  `Remove this entry of ${entry.userEmail || "this user"}? This is logged in the audit trail.`,
-                )
+                await confirm({
+                  title: "Remove timesheet entry",
+                  description: `Remove this entry of ${entry.userEmail || "this user"}? This is logged in the audit trail.`,
+                  confirmLabel: "Remove",
+                  tone: "destructive",
+                })
               ) {
                 deleteMutation.mutate();
               }

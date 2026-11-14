@@ -5,20 +5,9 @@ import { Activity, Phone, ChevronRight, Lock } from "lucide-react";
 import { activityApi, type ActivityEntry } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useActivityFeedSignalR } from "@/hooks/useActivityFeedSignalR";
-import { serverNowMs } from "@/hooks/useServerTime";
+import { formatTimeAgo } from "@/lib/format";
 
 const TILE_LIMIT = 12;
-
-function relativeTime(utc: string): string {
-  const diff = serverNowMs() - new Date(utc).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
 
 function localPartOf(email: string): string {
   const at = email.indexOf("@");
@@ -73,7 +62,7 @@ function ActivityRow({ entry, onTicketClick }: {
           )}
         </div>
         <div className="text-[11px] text-muted-foreground/60">
-          {relativeTime(entry.occurredUtc)}
+          {formatTimeAgo(entry.occurredUtc)}
         </div>
       </div>
     </li>

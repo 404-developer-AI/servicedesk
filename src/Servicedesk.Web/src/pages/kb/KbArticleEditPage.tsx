@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/select";
 import { useCurrentRole } from "@/hooks/useCurrentRole";
 import { RichTextEditor } from "@/components/RichTextEditor";
+import { formatBytes } from "@/lib/format";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 type Props = {
   /// `null` puts the page in create-mode; an existing id loads + updates.
@@ -37,6 +39,7 @@ type Props = {
 /// status-flip controls hide what the role can't perform; the API enforces
 /// the same gate.
 export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const role = useCurrentRole();
@@ -335,8 +338,15 @@ export function KbArticleEditPage({ articleId, initialSectionId }: Props) {
                     <AttachmentRow
                       key={a.id}
                       attachment={a}
-                      onDelete={() => {
-                        if (confirm(`Remove "${a.filename}" from this article?`)) {
+                      onDelete={async () => {
+                        if (
+                          await confirm({
+                            title: "Remove attachment",
+                            description: `Remove "${a.filename}" from this article?`,
+                            confirmLabel: "Remove",
+                            tone: "destructive",
+                          })
+                        ) {
                           deleteAttachment.mutate(a.id);
                         }
                       }}
@@ -389,12 +399,6 @@ function AttachmentRow({
       </button>
     </li>
   );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function FlipButton({

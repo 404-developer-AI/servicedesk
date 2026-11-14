@@ -1,4 +1,7 @@
 import { formatDateMedium, formatDateTimeMedium } from "@/lib/dateFormat";
+import { formatMoney, formatNumber } from "@/lib/format";
+
+export { formatMoney, formatNumber };
 
 // Shared formatting helpers for the Adsolut Orders overview + detail.
 
@@ -10,23 +13,6 @@ export function formatDate(iso: string | null | undefined): string {
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   return formatDateTimeMedium(iso);
-}
-
-export function formatMoney(value: number | null | undefined, currency: string | null | undefined): string {
-  if (value === null || value === undefined) return "—";
-  try {
-    return new Intl.NumberFormat("nl-BE", { style: "currency", currency: currency || "EUR" }).format(value);
-  } catch {
-    return value.toFixed(2);
-  }
-}
-
-/// Trim trailing zeros from an Adsolut quantity/decimal (stored at high
-/// precision) so "1.00000000" reads as "1" and "3.50000000" as "3.5".
-export function formatNumber(value: number | null | undefined): string {
-  if (value === null || value === undefined) return "—";
-  return Number(value)
-    .toLocaleString("nl-BE", { maximumFractionDigits: 4 });
 }
 
 /// Discount as a percentage label ("10%") — Adsolut stores discount1 as a

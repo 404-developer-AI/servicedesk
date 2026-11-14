@@ -1,5 +1,4 @@
-import { formatDate } from "@/lib/dateFormat";
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -47,7 +46,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { serverNowMs } from "@/hooks/useServerTime";
+import { formatTimeAgo } from "@/lib/format";
+import { useDebounced } from "@/hooks/useDebounced";
 
 type Role = "Agent" | "Admin";
 
@@ -375,7 +375,7 @@ function UserRow({
             <span className="text-emerald-400/80">2FA on</span>
           )}
           {user.lastLoginUtc && (
-            <span>last login {formatRelative(user.lastLoginUtc)}</span>
+            <span>last login {formatTimeAgo(user.lastLoginUtc, { dateAfterDays: 30 })}</span>
           )}
         </div>
       </div>
@@ -1204,29 +1204,3 @@ function AddLocalDialog({
 }
 
 // ---- utilities ---------------------------------------------------------
-
-function useDebounced<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-  const ref = useRef<number | undefined>(undefined);
-  useEffect(() => {
-    if (ref.current !== undefined) window.clearTimeout(ref.current);
-    ref.current = window.setTimeout(() => setDebounced(value), delayMs);
-    return () => {
-      if (ref.current !== undefined) window.clearTimeout(ref.current);
-    };
-  }, [value, delayMs]);
-  return debounced;
-}
-
-function formatRelative(utc: string): string {
-  const date = new Date(utc);
-  const diffMs = serverNowMs() - date.getTime();
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return formatDate(date);
-}

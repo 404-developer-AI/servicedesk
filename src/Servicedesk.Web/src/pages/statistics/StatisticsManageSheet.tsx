@@ -26,6 +26,7 @@ import {
   type StatisticTileInput,
   type AgentUser,
 } from "@/lib/ticket-api";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 const PERIODS = [
   { value: "day", label: "Day" },
@@ -276,6 +277,7 @@ function TileList({
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
+  const confirm = useConfirm();
   return (
     <div className="flex flex-col gap-2">
       <Button onClick={onCreate} className="self-start">
@@ -316,8 +318,16 @@ function TileList({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  if (window.confirm(`Delete "${t.title}"? This cannot be undone.`)) onDelete(t.id);
+                onClick={async () => {
+                  if (
+                    await confirm({
+                      title: "Delete tile",
+                      description: `Delete "${t.title}"? This cannot be undone.`,
+                      confirmLabel: "Delete",
+                      tone: "destructive",
+                    })
+                  )
+                    onDelete(t.id);
                 }}
                 className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                 aria-label="Delete"

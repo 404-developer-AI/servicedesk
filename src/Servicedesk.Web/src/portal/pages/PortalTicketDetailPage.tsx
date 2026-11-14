@@ -9,7 +9,8 @@ import { portalPreferencesApi, portalTicketApi, type PortalConversationOrder, ty
 import { cn } from "@/lib/utils";
 import { Eye } from "lucide-react";
 import { PortalComposer, htmlHasText, type PendingFile } from "@/portal/PortalComposer";
-import { PriorityDot, StatusPill, formatBytes, usePortalCompany, usePortalDates, usePortalMe } from "@/portal/portalShared";
+import { formatBytes } from "@/lib/format";
+import { PriorityDot, StatusPill, usePortalCompany, usePortalDates, usePortalMe } from "@/portal/portalShared";
 
 export function PortalTicketDetailPage({ ticketId }: { ticketId: string }) {
   const qc = useQueryClient();

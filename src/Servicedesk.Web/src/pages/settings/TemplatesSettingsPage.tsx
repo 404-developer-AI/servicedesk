@@ -17,6 +17,7 @@ import {
   type TicketTemplate,
 } from "@/lib/ticketTemplates-api";
 import { taxonomyApi } from "@/lib/api";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 const LIST_QUERY_KEY = ["compose-templates", "list"] as const;
 const TICKET_LIST_QUERY_KEY = ["ticket-templates", "list"] as const;
@@ -122,6 +123,7 @@ function ListPanel({
   onNew: () => void;
   onEdit: (id: string) => void;
 }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const listQ = useQuery({
     queryKey: LIST_QUERY_KEY,
@@ -197,11 +199,14 @@ function ListPanel({
             queueNameById={queueNameById}
             statusNameById={statusNameById}
             onEdit={() => onEdit(t.id)}
-            onDelete={() => {
+            onDelete={async () => {
               if (
-                confirm(
-                  `Delete '${t.name}'? Agents will no longer see it in the :: picker.`,
-                )
+                await confirm({
+                  title: "Delete template",
+                  description: `Delete '${t.name}'? Agents will no longer see it in the :: picker.`,
+                  confirmLabel: "Delete",
+                  tone: "destructive",
+                })
               ) {
                 remove.mutate(t.id);
               }
@@ -404,6 +409,7 @@ function TicketListPanel({
   onNew: () => void;
   onEdit: (id: string) => void;
 }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const listQ = useQuery({
     queryKey: TICKET_LIST_QUERY_KEY,
@@ -478,11 +484,14 @@ function TicketListPanel({
             queueNameById={queueNameById}
             priorityNameById={priorityNameById}
             onEdit={() => onEdit(t.id)}
-            onDelete={() => {
+            onDelete={async () => {
               if (
-                confirm(
-                  `Delete '${t.name}'? Agents will no longer see it in the New-Ticket picker.`,
-                )
+                await confirm({
+                  title: "Delete template",
+                  description: `Delete '${t.name}'? Agents will no longer see it in the New-Ticket picker.`,
+                  confirmLabel: "Delete",
+                  tone: "destructive",
+                })
               ) {
                 remove.mutate(t.id);
               }

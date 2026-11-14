@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import type { M365LinkStatus } from "@/lib/api";
-import { serverNowMs } from "@/hooks/useServerTime";
+import { formatTimeAgo } from "@/lib/format";
 
 /// Visual treatment per connection status. Mirrors the glass status pills used
 /// by the integration tiles so the matching list reads consistently.
@@ -87,15 +87,5 @@ export async function openConsentWindow(
 
 /// "synced 5m ago" style relative copy from a server timestamp.
 export function relativeFromUtc(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return null;
-  const diffMs = serverNowMs() - then;
-  const mins = Math.round(diffMs / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  return `${days}d ago`;
+  return iso ? formatTimeAgo(iso, { fallback: "" }) || null : null;
 }

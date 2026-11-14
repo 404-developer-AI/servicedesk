@@ -10,20 +10,13 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AttachmentUploadItem } from "../hooks/useAttachmentUploads";
+import { formatBytes } from "@/lib/format";
 
 type Props = {
   items: AttachmentUploadItem[];
   onRemove: (localId: string) => void;
   className?: string;
 };
-
-function formatBytes(n: number): string {
-  if (!Number.isFinite(n) || n < 0) return "";
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
 
 function iconForMime(mime?: string): React.ComponentType<{ className?: string }> {
   if (!mime) return FileIcon;

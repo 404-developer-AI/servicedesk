@@ -6,6 +6,7 @@ import { slaApi, type BusinessHoursSchema } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 const SCHEMAS_KEY = ["sla", "schemas"] as const;
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -67,6 +68,7 @@ function schemaToDraft(schema: BusinessHoursSchema | null): Draft {
 }
 
 export function BusinessHoursTab() {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const schemasQuery = useQuery({ queryKey: SCHEMAS_KEY, queryFn: () => slaApi.listSchemas() });
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -260,8 +262,16 @@ export function BusinessHoursTab() {
             {draft.id && (
               <Button
                 variant="ghost"
-                onClick={() => {
-                  if (window.confirm("Delete this schema? This cannot be undone.")) remove.mutate(draft.id!);
+                onClick={async () => {
+                  if (
+                    await confirm({
+                      title: "Delete schema",
+                      description: "Delete this schema? This cannot be undone.",
+                      confirmLabel: "Delete",
+                      tone: "destructive",
+                    })
+                  )
+                    remove.mutate(draft.id!);
                 }}
                 disabled={remove.isPending}
               >

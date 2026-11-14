@@ -4,6 +4,7 @@ import DOMPurify from "dompurify";
 import { Info, AlertTriangle, AlertCircle } from "lucide-react";
 import { systemApi, type LoginBannerType } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { escapeHtml } from "@/lib/format";
 
 const LOGIN_BANNER_QUERY_KEY = ["system", "login-banner"] as const;
 
@@ -157,15 +158,6 @@ function renderBannerMarkdown(raw: string): string {
 }
 
 const LINK_RE = /\[([^\]\n]+)\]\(([^\s)]+)\)/g;
-
-function escapeHtml(input: string): string {
-  return input
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 
 function sanitizeHref(href: string): string | null {
   // href is already HTML-escaped (we ran escapeHtml on the whole string

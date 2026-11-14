@@ -18,6 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 type EditingState = Company | null | "new";
 
@@ -165,6 +166,7 @@ function CompanyDialog({
   company: Company | null;
   onClose: () => void;
 }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const [form, setForm] = useState<CompanyInput>(() => ({
     name: company?.name ?? "",
@@ -384,8 +386,16 @@ function CompanyDialog({
           {company && (
             <Button
               variant="ghost"
-              onClick={() => {
-                if (confirm(`Deactivate company "${company.name}"?`)) remove.mutate();
+              onClick={async () => {
+                if (
+                  await confirm({
+                    title: "Deactivate company",
+                    description: `Deactivate company "${company.name}"?`,
+                    confirmLabel: "Deactivate",
+                    tone: "destructive",
+                  })
+                )
+                  remove.mutate();
               }}
               disabled={remove.isPending}
               className="text-destructive hover:text-destructive"
