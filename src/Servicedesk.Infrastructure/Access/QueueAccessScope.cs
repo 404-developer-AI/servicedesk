@@ -34,6 +34,65 @@ public sealed class QueueAccessScope
     public Guid[] ToArray() => QueueIds.Count == 0 ? Array.Empty<Guid>() : QueueIds.ToArray();
 
     public static QueueAccessScope AdminScope { get; } = new(true, Empty);
+
+    /// The scope a search principal carries: admins see every queue, any
+    /// other role exactly its granted queues (none when the list is null).
+    public static QueueAccessScope For(Servicedesk.Domain.Search.SearchPrincipal principal) =>
+        principal.IsAdmin
+            ? AdminScope
+            : new QueueAccessScope(false, (principal.AllowedQueueIds ?? Array.Empty<Guid>()).ToHashSet());
+
+    /// Repository convention: a null id list means "admin, no filter".
+    public static QueueAccessScope FromNullable(IReadOnlyCollection<Guid>? accessibleQueueIds) =>
+        accessibleQueueIds is null ? AdminScope : new QueueAccessScope(false, accessibleQueueIds.ToHashSet());
+
+    // ---- SQL ---------------------------------------------------------------
+    //
+    // The one way a query restricts rows to the caller's queues. Every read
+    // path that filters tickets (or rows hanging off a ticket) by queue
+    // access writes `scope.SqlPredicate("t.queue_id")` into its WHERE clause
+    // and binds `scope.ToArray()` as `@AccessibleQueueIds` — so the rule, the
+    // parameter name and the admin short-cut are identical everywhere.
+
+    /// Names of the bound parameters (see <see cref="AddTo"/>).
+    public const string QueueIdsParameter = "AccessibleQueueIds";
+    public const string IsAdminParameter = "AccessIsAdmin";
+
+    /// Constant form of the rule for `t.queue_id`, for SQL that must stay a
+    /// compile-time constant (e.g. per-row masking inside CASE). Prefer
+    /// <see cref="SqlPredicate"/> in WHERE clauses — it drops the OR for
+    /// admins and keeps the agent variant index-friendly.
+    public const string TicketQueueVisibleSql = "(@AccessIsAdmin OR t.queue_id = ANY(@AccessibleQueueIds))";
+
+    private static readonly System.Text.RegularExpressions.Regex SafeSqlExpression =
+        new(@"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// SQL predicate limiting <paramref name="queueIdExpression"/> (a column
+    /// such as <c>t.queue_id</c>, never user input) to this scope. Admins get
+    /// <c>TRUE</c> — no OR in the plan, so the queue index stays usable for
+    /// the agent variant. A non-admin without queues matches nothing.
+    public string SqlPredicate(string queueIdExpression)
+    {
+        if (!SafeSqlExpression.IsMatch(queueIdExpression))
+            throw new ArgumentException("Queue id expression must be a plain column reference (column or alias.column).", nameof(queueIdExpression));
+        return IsAdmin ? "TRUE" : $"{queueIdExpression} = ANY(@{QueueIdsParameter})";
+    }
+
+    /// Binds both parameters on a Dapper parameter bag.
+    public void AddTo(Dapper.DynamicParameters parameters)
+    {
+        parameters.Add(QueueIdsParameter, ToArray());
+        parameters.Add(IsAdminParameter, IsAdmin);
+    }
+
+    /// A parameter bag holding <paramref name="values"/> (an anonymous
+    /// object, may be null) plus this scope's parameters.
+    public Dapper.DynamicParameters Parameters(object? values = null)
+    {
+        var p = new Dapper.DynamicParameters(values);
+        AddTo(p);
+        return p;
+    }
 }
 
 public static class QueueAccessScopeExtensions

@@ -1,3 +1,4 @@
+using Servicedesk.Infrastructure.Access;
 using Dapper;
 using Npgsql;
 using Servicedesk.Infrastructure.Settings;
@@ -311,9 +312,7 @@ public sealed class TicketProjectRepository : ITicketProjectRepository
     public async Task<ProjectOverview?> GetOverviewAsync(
         Guid projectTicketId, IReadOnlyCollection<Guid>? accessibleQueueIds, CancellationToken ct)
     {
-        var queueFilter = accessibleQueueIds is not null
-            ? " AND t.queue_id = ANY(@AccessibleQueueIds)"
-            : string.Empty;
+        var queueFilter = " AND " + QueueAccessScope.FromNullable(accessibleQueueIds).SqlPredicate("t.queue_id");
 
         // 0: the project row itself; 1: linked tickets (queue-filtered for
         // agents); 2: total linked count (unfiltered, for hiddenTicketCount);

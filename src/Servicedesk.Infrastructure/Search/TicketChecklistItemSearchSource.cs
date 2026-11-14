@@ -1,3 +1,4 @@
+using Servicedesk.Infrastructure.Access;
 using Dapper;
 using Npgsql;
 using Servicedesk.Domain.Search;
@@ -65,7 +66,7 @@ public sealed class TicketChecklistItemSearchSource : ISearchSource
             JOIN ticket_checklists c ON c.id = i.checklist_id
             JOIN tickets t ON t.id = c.ticket_id
             WHERE t.is_deleted = FALSE
-              AND (@skipQueueFilter OR t.queue_id = ANY(@allowedQueues))
+              AND {QueueAccessScope.For(principal).SqlPredicate("t.queue_id")}
               AND (
                      lower(i.title) % (SELECT norm FROM q)
                   OR lower(i.title) LIKE '%' || (SELECT norm FROM q) || '%'
@@ -79,8 +80,7 @@ public sealed class TicketChecklistItemSearchSource : ISearchSource
         var rows = (await conn.QueryAsync<Row>(new CommandDefinition(sql, new
         {
             query = normalized,
-            skipQueueFilter = principal.IsAdmin,
-            allowedQueues = allowedQueues?.ToArray() ?? Array.Empty<Guid>(),
+            AccessibleQueueIds = allowedQueues?.ToArray() ?? Array.Empty<Guid>(),
             limit,
             offset,
         }, cancellationToken: ct))).ToList();

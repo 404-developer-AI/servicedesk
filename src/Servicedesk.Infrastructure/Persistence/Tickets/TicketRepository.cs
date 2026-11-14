@@ -1,3 +1,4 @@
+using Servicedesk.Infrastructure.Access;
 using System.Text;
 using System.Text.Json;
 using Dapper;
@@ -219,10 +220,9 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         else if (query.CallbacksOnly) sql.Append(" AND t.is_callback = TRUE");
         else if (query.ResearchOnly) sql.Append(" AND t.is_research = TRUE");
 
-        // Queue-access enforcement: restrict to only the queues the caller
-        // is allowed to see. When null (admin), no filter is applied.
-        if (query.AccessibleQueueIds is not null)
-            sql.Append(" AND t.queue_id = ANY(@AccessibleQueueIds)");
+        // Queue-access enforcement (shared rule): only the queues the caller
+        // may see; null (admin) = no filter.
+        sql.Append(" AND ").Append(QueueAccessScope.FromNullable(query.AccessibleQueueIds).SqlPredicate("t.queue_id"));
 
         var searchNumber = TryParseTicketNumber(query.Search);
         if (!string.IsNullOrWhiteSpace(query.Search))
@@ -1553,9 +1553,7 @@ public sealed class TicketRepository : ITicketRepository, ITicketNumberLookup
         var clampedLimit = Math.Clamp(limit, 1, 50);
         var hasSearch = !string.IsNullOrWhiteSpace(search);
 
-        var queueFilter = accessibleQueueIds is not null
-            ? " AND t.queue_id = ANY(@AccessibleQueueIds)"
-            : string.Empty;
+        var queueFilter = " AND " + QueueAccessScope.FromNullable(accessibleQueueIds).SqlPredicate("t.queue_id");
         var queueParam = accessibleQueueIds as IEnumerable<Guid>;
 
         await using var conn = await _dataSource.OpenConnectionAsync(ct);

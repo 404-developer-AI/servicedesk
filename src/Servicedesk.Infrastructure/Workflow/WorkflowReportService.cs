@@ -134,7 +134,8 @@ public sealed class WorkflowReportService : IWorkflowReportService
         return cases;
     }
 
-    private sealed record QueryArgs(DateTime FromUtc, DateTime ToUtc, bool IsAdmin, Guid[] QueueIds, Guid? Agent);
+    // Access parameters carry the shared names QueueAccessScope binds.
+    private sealed record QueryArgs(DateTime FromUtc, DateTime ToUtc, bool AccessIsAdmin, Guid[] AccessibleQueueIds, Guid? Agent);
 
     // ---- 1. call before mail -----------------------------------------------------
 
@@ -154,7 +155,7 @@ public sealed class WorkflowReportService : IWorkflowReportService
     /// the ticket exists. A voicemail is logged as a call, so it counts.
     private static async Task<IEnumerable<WorkflowCase>> CallBeforeMailAsync(NpgsqlConnection conn, QueryArgs p, CancellationToken ct)
     {
-        const string sql = """
+        const string sql = $$"""
             SELECT m.author_user_id AS AgentId, m.ticket_id AS TicketId, t.number AS TicketNumber, t.subject AS Subject,
                    m.created_utc AS AtUtc, li.at IS NOT NULL AS HadInbound,
                    EXISTS (SELECT 1 FROM ticket_events c
@@ -168,7 +169,7 @@ public sealed class WorkflowReportService : IWorkflowReportService
                                  AND r.created_utc < m.created_utc) li ON TRUE
             WHERE m.event_type = 'MailSent' AND m.author_user_id IS NOT NULL
               AND m.created_utc >= @FromUtc AND m.created_utc < @ToUtc
-              AND (@IsAdmin OR t.queue_id = ANY(@QueueIds))
+              AND {{QueueAccessScope.TicketQueueVisibleSql}}
               AND (@Agent::uuid IS NULL OR m.author_user_id = @Agent)
             """;
         var rows = await conn.QueryAsync<MailRow>(new CommandDefinition(sql, p, cancellationToken: ct));
@@ -203,7 +204,7 @@ public sealed class WorkflowReportService : IWorkflowReportService
     private static async Task<IEnumerable<WorkflowCase>> TemplateBeforePendingAsync(
         NpgsqlConnection conn, QueryArgs p, WorkflowLimits limits, CancellationToken ct)
     {
-        const string sql = """
+        const string sql = $$"""
             WITH moves AS (
                 SELECT s.id, s.ticket_id, s.created_utc,
                        COALESCE(s.author_user_id, (s.metadata->>'on_behalf_of')::uuid) AS agent_id,
@@ -238,11 +239,11 @@ public sealed class WorkflowReportService : IWorkflowReportService
                 LIMIT 1) la ON TRUE
             LEFT JOIN compose_templates ct ON ct.id = la.compose_template_id
             WHERE mv.agent_id IS NOT NULL
-              AND (@IsAdmin OR t.queue_id = ANY(@QueueIds))
+              AND {{QueueAccessScope.TicketQueueVisibleSql}}
               AND (@Agent::uuid IS NULL OR mv.agent_id = @Agent)
             """;
         var rows = await conn.QueryAsync<MoveRow>(new CommandDefinition(sql,
-            new { p.FromUtc, p.ToUtc, p.IsAdmin, p.QueueIds, p.Agent, Window = limits.MailAfterTemplateMinutes },
+            new { p.FromUtc, p.ToUtc, p.AccessIsAdmin, p.AccessibleQueueIds, p.Agent, Window = limits.MailAfterTemplateMinutes },
             cancellationToken: ct));
         return rows.Select(r =>
         {
@@ -296,18 +297,18 @@ public sealed class WorkflowReportService : IWorkflowReportService
     private static async Task<IEnumerable<WorkflowCase>> CherryPickingAsync(
         NpgsqlConnection conn, QueryArgs p, Guid viewId, WorkflowLimits limits, TimeZoneInfo tz, CancellationToken ct)
     {
-        const string sql = """
+        const string sql = $$"""
             SELECT w.user_id AS AgentId, w.ticket_id AS TicketId, t.number AS TicketNumber, t.subject AS Subject,
                    w.picked_utc AS AtUtc, w.group_key AS GroupKey, w.group_label AS GroupLabel,
                    w.position AS Position, w.above_ids AS AboveIds
             FROM workflow_pickups w
             JOIN tickets t ON t.id = w.ticket_id AND t.is_deleted = FALSE
             WHERE w.view_id = @ViewId AND w.picked_utc >= @FromUtc AND w.picked_utc < @ToUtc
-              AND (@IsAdmin OR t.queue_id = ANY(@QueueIds))
+              AND {{QueueAccessScope.TicketQueueVisibleSql}}
               AND (@Agent::uuid IS NULL OR w.user_id = @Agent)
             """;
         var rows = (await conn.QueryAsync<PickupRow>(new CommandDefinition(sql,
-            new { ViewId = viewId, p.FromUtc, p.ToUtc, p.IsAdmin, p.QueueIds, p.Agent }, cancellationToken: ct)))
+            new { ViewId = viewId, p.FromUtc, p.ToUtc, p.AccessIsAdmin, p.AccessibleQueueIds, p.Agent }, cancellationToken: ct)))
             .Where(r => GroupKindOf(r.GroupKey, limits) is GroupKind.Priority or GroupKind.Callback or GroupKind.Wfp)
             .ToList();
         if (rows.Count == 0) return Array.Empty<WorkflowCase>();
@@ -322,10 +323,10 @@ public sealed class WorkflowReportService : IWorkflowReportService
             """, new { aboveIds, dates }, cancellationToken: ct))).ToList();
         // Ticket numbers only for tickets the caller may see.
         var numbers = aboveIds.Length == 0 ? new Dictionary<Guid, long>() : (await conn.QueryAsync<(Guid Id, long Number)>(new CommandDefinition(
-            """
-            SELECT id, number FROM tickets
-            WHERE id = ANY(@aboveIds) AND (@IsAdmin OR queue_id = ANY(@QueueIds))
-            """, new { aboveIds, p.IsAdmin, p.QueueIds }, cancellationToken: ct))).ToDictionary(x => x.Id, x => x.Number);
+            $$"""
+            SELECT t.id, t.number FROM tickets t
+            WHERE t.id = ANY(@aboveIds) AND {{QueueAccessScope.TicketQueueVisibleSql}}
+            """, new { aboveIds, p.AccessIsAdmin, p.AccessibleQueueIds }, cancellationToken: ct))).ToDictionary(x => x.Id, x => x.Number);
 
         return rows.Select(r =>
         {
@@ -389,19 +390,19 @@ public sealed class WorkflowReportService : IWorkflowReportService
         NpgsqlConnection conn, QueryArgs p, Guid viewId, WorkflowLimits limits, InsightsRange range,
         TimeZoneInfo tz, CancellationToken ct)
     {
-        const string entriesSql = """
+        const string entriesSql = $$"""
             SELECT e.user_id AS AgentId, e.ticket_id AS TicketId, t.number AS TicketNumber, t.subject AS Subject,
                    e.entry_date AS EntryDate, e.start_minutes AS StartMinutes, e.minutes AS Minutes
             FROM timesheet_entries e
             JOIN tickets t ON t.id = e.ticket_id AND t.is_deleted = FALSE
             WHERE e.ticket_id IS NOT NULL AND e.entry_date >= @From AND e.entry_date <= @To
-              AND (@IsAdmin OR t.queue_id = ANY(@QueueIds))
+              AND {{QueueAccessScope.TicketQueueVisibleSql}}
               AND (@Agent::uuid IS NULL OR e.user_id = @Agent)
             """;
         var entries = (await conn.QueryAsync<EntryRow>(new CommandDefinition(entriesSql, new
         {
             From = range.From.ToDateTime(TimeOnly.MinValue), To = range.To.ToDateTime(TimeOnly.MinValue),
-            p.IsAdmin, p.QueueIds, p.Agent,
+            p.AccessIsAdmin, p.AccessibleQueueIds, p.Agent,
         }, cancellationToken: ct))).ToList();
         if (entries.Count == 0) return Array.Empty<WorkflowCase>();
 
@@ -522,13 +523,13 @@ public sealed class WorkflowReportService : IWorkflowReportService
               AND s.last_seen_utc + make_interval(mins => s.interval_minutes) > @FromUtc
               AND (e->>'isResearch')::boolean
               AND e->>'assigneeUserId' IS NOT NULL
-              AND (@IsAdmin OR (e->>'queueId')::uuid = ANY(@QueueIds))
+              AND (@AccessIsAdmin OR (e->>'queueId')::uuid = ANY(@AccessibleQueueIds))
               AND (@Agent::uuid IS NULL OR (e->>'assigneeUserId')::uuid = @Agent)
             GROUP BY 1, s.id, s.captured_utc, s.last_seen_utc, s.interval_minutes
             HAVING count(*) > @Max
             """;
         var rows = await conn.QueryAsync<LoadRow>(new CommandDefinition(sql,
-            new { ViewId = viewId, p.FromUtc, p.ToUtc, p.IsAdmin, p.QueueIds, p.Agent, Max = limits.MaxResearchPerAgent },
+            new { ViewId = viewId, p.FromUtc, p.ToUtc, p.AccessIsAdmin, p.AccessibleQueueIds, p.Agent, Max = limits.MaxResearchPerAgent },
             cancellationToken: ct));
         return rows.Select(r =>
         {

@@ -39,9 +39,9 @@ public sealed class ActivityFeedQuery : IActivityFeedQuery
     // Viewer-masked projection used by the list reads. A ticket the viewer
     // cannot access has its number/subject nulled, its entity_id stripped
     // (so the client cannot deep-link) and TicketRestricted set, while the
-    // event row itself stays visible. @IsAdmin short-circuits to full
-    // visibility; @Accessible is the viewer's granted queue ids.
-    private const string Visible = "(@IsAdmin OR t.queue_id = ANY(@Accessible))";
+    // event row itself stays visible. @AccessIsAdmin short-circuits to full
+    // visibility; @AccessibleQueueIds is the viewer's granted queue ids.
+    private const string Visible = QueueAccessScope.TicketQueueVisibleSql;
 
     private const string MaskedSelectColumns = $$"""
         SELECT
@@ -165,7 +165,6 @@ public sealed class ActivityFeedQuery : IActivityFeedQuery
 
     private static void AddViewerParameters(DynamicParameters parameters, QueueAccessScope viewer)
     {
-        parameters.Add("IsAdmin", viewer.IsAdmin);
-        parameters.Add("Accessible", viewer.ToArray());
+        viewer.AddTo(parameters);
     }
 }

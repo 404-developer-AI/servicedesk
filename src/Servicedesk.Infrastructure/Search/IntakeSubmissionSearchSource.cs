@@ -1,3 +1,4 @@
+using Servicedesk.Infrastructure.Access;
 using Dapper;
 using Npgsql;
 using Servicedesk.Domain.Search;
@@ -69,7 +70,7 @@ public sealed class IntakeSubmissionSearchSource : ISearchSource
                 JOIN intake_form_answers a ON a.instance_id = i.id
                 JOIN tickets tk ON tk.id = i.ticket_id
                 WHERE i.status = 'Submitted'
-                  AND (@allAllowed = TRUE OR tk.queue_id = ANY(@allowedQueues))
+                  AND {QueueAccessScope.For(principal).SqlPredicate("tk.queue_id")}
                 GROUP BY i.id, t.name
             ),
             hits AS (
@@ -103,8 +104,7 @@ public sealed class IntakeSubmissionSearchSource : ISearchSource
                 query = normalized,
                 limit,
                 offset,
-                allAllowed = principal.IsAdmin,
-                allowedQueues = filterQueues ?? Array.Empty<Guid>(),
+                AccessibleQueueIds = filterQueues ?? Array.Empty<Guid>(),
             },
             cancellationToken: ct))).ToList();
 

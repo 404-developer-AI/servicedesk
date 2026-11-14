@@ -74,15 +74,81 @@ public sealed class DbSeed
         return id;
     }
 
-    public async Task<long> EventAsync(Guid ticketId, string eventType, bool isInternal, string body = "Event body")
+    public async Task<long> EventAsync(
+        Guid ticketId, string eventType, bool isInternal, string body = "Event body", Guid? authorUserId = null)
     {
         await using var c = await _ds.OpenConnectionAsync();
         return await c.ExecuteScalarAsync<long>("""
-            INSERT INTO ticket_events (ticket_id, event_type, body_text, is_internal)
-            VALUES (@ticketId, @eventType, @body, @isInternal)
+            INSERT INTO ticket_events (ticket_id, event_type, body_text, is_internal, author_user_id)
+            VALUES (@ticketId, @eventType, @body, @isInternal, @authorUserId)
             RETURNING id
             """,
-            new { ticketId, eventType, body, isInternal });
+            new { ticketId, eventType, body, isInternal, authorUserId });
+    }
+
+    public async Task<Guid> UserAsync(string role = "Agent")
+    {
+        await using var c = await _ds.OpenConnectionAsync();
+        return await c.ExecuteScalarAsync<Guid>(
+            "INSERT INTO users (email, password_hash, role_name) VALUES (@email, 'not-a-real-hash', @role) RETURNING id",
+            new { email = $"agent.{U()}@example.test", role });
+    }
+
+    /// A closed "recent tickets" session (opened and closed in the past).
+    public async Task OpenSessionAsync(Guid userId, Guid ticketId)
+    {
+        await using var c = await _ds.OpenConnectionAsync();
+        await c.ExecuteAsync("""
+            INSERT INTO ticket_open_sessions (user_id, ticket_id, opened_utc, closed_utc, close_reason)
+            VALUES (@userId, @ticketId, now() - interval '10 minutes', now() - interval '5 minutes', 'removed')
+            """,
+            new { userId, ticketId });
+    }
+
+    public async Task LinkToProjectAsync(Guid ticketId, Guid projectTicketId)
+    {
+        await using var c = await _ds.OpenConnectionAsync();
+        await c.ExecuteAsync(
+            "UPDATE tickets SET project_ticket_id = @projectTicketId, project_linked_utc = now() WHERE id = @ticketId",
+            new { ticketId, projectTicketId });
+    }
+
+    public async Task FormAsync(Guid ticketId, string name)
+    {
+        await using var c = await _ds.OpenConnectionAsync();
+        await c.ExecuteAsync("""
+            INSERT INTO ticket_forms (ticket_id, name, template_snapshot, search_text)
+            VALUES (@ticketId, @name, '{}'::jsonb, @name)
+            """,
+            new { ticketId, name });
+    }
+
+    public async Task ChecklistItemAsync(Guid ticketId, string itemTitle)
+    {
+        await using var c = await _ds.OpenConnectionAsync();
+        var checklistId = await c.ExecuteScalarAsync<Guid>(
+            "INSERT INTO ticket_checklists (ticket_id, name) VALUES (@ticketId, 'Onboarding') RETURNING id",
+            new { ticketId });
+        await c.ExecuteAsync(
+            "INSERT INTO ticket_checklist_items (checklist_id, title) VALUES (@checklistId, @itemTitle)",
+            new { checklistId, itemTitle });
+    }
+
+    public async Task IntakeSubmissionAsync(Guid ticketId, string answerText)
+    {
+        await using var c = await _ds.OpenConnectionAsync();
+        var templateId = await c.ExecuteScalarAsync<Guid>(
+            "INSERT INTO intake_templates (name) VALUES (@name) RETURNING id",
+            new { name = $"Intake {U()}" });
+        var instanceId = await c.ExecuteScalarAsync<Guid>("""
+            INSERT INTO intake_form_instances (template_id, ticket_id, status, submitted_utc)
+            VALUES (@templateId, @ticketId, 'Submitted', now())
+            RETURNING id
+            """,
+            new { templateId, ticketId });
+        await c.ExecuteAsync(
+            "INSERT INTO intake_form_answers (instance_id, question_id, answer_json) VALUES (@instanceId, 1, to_jsonb(@answerText::text))",
+            new { instanceId, answerText });
     }
 
     /// One queue + status + priority, the minimum a ticket needs.

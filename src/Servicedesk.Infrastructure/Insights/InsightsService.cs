@@ -146,13 +146,13 @@ public sealed class InsightsService : IInsightsService
         var toUtc = InsightsCalendar.LocalMidnightUtc(range.To.AddDays(1), clock.TimeZone);
 
         // Fixed fragments only — the access list is a bound parameter, never
-        // string-built. Admins skip the filter entirely.
+        // string-built. Admins get a constant TRUE.
         var (moment, metricFilter) = Fragments(filter);
         var statusJoin = filter.Metric == InsightsMetric.New ? "" : " JOIN statuses s ON s.id = t.status_id";
-        var ticketAccess = scope.IsAdmin ? "" : " AND t.queue_id = ANY(@Accessible)";
+        var ticketAccess = " AND " + scope.SqlPredicate("t.queue_id");
         var queueAccess = scope.IsAdmin
             ? "(q.is_active OR q.id = ANY(@WithTickets))"
-            : "q.id = ANY(@Accessible)";
+            : scope.SqlPredicate("q.id");
 
         await using var connection = await _dataSource.OpenConnectionAsync(ct);
 
@@ -170,7 +170,7 @@ public sealed class InsightsService : IInsightsService
         var accessible = scope.ToArray();
         var counts = (await connection.QueryAsync<CountRow>(new CommandDefinition(
             countSql,
-            new { Bounds = bounds, FromUtc = fromUtc, ToUtc = toUtc, Accessible = accessible },
+            new { Bounds = bounds, FromUtc = fromUtc, ToUtc = toUtc, AccessibleQueueIds = accessible },
             cancellationToken: ct))).ToList();
 
         var withTickets = counts.Select(c => c.QueueId).Distinct().ToArray();
@@ -182,7 +182,7 @@ public sealed class InsightsService : IInsightsService
             """;
         var queues = (await connection.QueryAsync<QueueRow>(new CommandDefinition(
             queueSql,
-            new { Accessible = accessible, WithTickets = withTickets },
+            new { AccessibleQueueIds = accessible, WithTickets = withTickets },
             cancellationToken: ct)))
             .Select((q, i) => new InsightsQueue(q.Id, q.Name, q.IsActive, i))
             .ToList();
@@ -214,7 +214,7 @@ public sealed class InsightsService : IInsightsService
         // Fixed fragments only; both id lists are bound parameters. The access
         // filter always applies to non-admins, the page selection on top.
         var (moment, metricFilter) = Fragments(filter);
-        var access = scope.IsAdmin ? "" : " AND t.queue_id = ANY(@Accessible)";
+        var access = " AND " + scope.SqlPredicate("t.queue_id");
         var selection = queueIds is { Count: > 0 } ? " AND t.queue_id = ANY(@Selected)" : "";
         var where = $"""
 
@@ -251,7 +251,7 @@ public sealed class InsightsService : IInsightsService
             {
                 FromUtc = fromUtc,
                 ToUtc = toUtc,
-                Accessible = scope.ToArray(),
+                AccessibleQueueIds = scope.ToArray(),
                 Selected = queueIds?.ToArray() ?? Array.Empty<Guid>(),
                 Limit = limit,
                 Offset = offset,

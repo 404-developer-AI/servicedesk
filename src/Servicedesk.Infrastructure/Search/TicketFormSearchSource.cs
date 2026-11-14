@@ -1,3 +1,4 @@
+using Servicedesk.Infrastructure.Access;
 using Dapper;
 using Npgsql;
 using Servicedesk.Domain.Search;
@@ -64,7 +65,7 @@ public sealed class TicketFormSearchSource : ISearchSource
             JOIN tickets t ON t.id = f.ticket_id
             WHERE f.deleted_utc IS NULL
               AND t.is_deleted = FALSE
-              AND (@skipQueueFilter OR t.queue_id = ANY(@allowedQueues))
+              AND {QueueAccessScope.For(principal).SqlPredicate("t.queue_id")}
               AND (
                      lower(f.name) % (SELECT norm FROM q)
                   OR lower(f.name) LIKE (SELECT pat FROM q)
@@ -78,8 +79,7 @@ public sealed class TicketFormSearchSource : ISearchSource
         var rows = (await conn.QueryAsync<Row>(new CommandDefinition(sql, new
         {
             query = normalized,
-            skipQueueFilter = principal.IsAdmin,
-            allowedQueues = allowedQueues?.ToArray() ?? Array.Empty<Guid>(),
+            AccessibleQueueIds = allowedQueues?.ToArray() ?? Array.Empty<Guid>(),
             limit,
             offset,
         }, cancellationToken: ct))).ToList();

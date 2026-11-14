@@ -195,7 +195,7 @@ public sealed class AgentInsightsService : IAgentInsightsService
         var toUtc = InsightsCalendar.LocalMidnightUtc(range.To.AddDays(1), clock.TimeZone);
 
         // Fixed fragments only — the access list is a bound parameter.
-        var access = scope.IsAdmin ? "" : " AND t.queue_id = ANY(@Accessible)";
+        var access = " AND " + scope.SqlPredicate("t.queue_id");
 
         // GROUPING SETS: one row per (agent, bucket) plus one period total per
         // agent (Bucket NULL) — the distinct ticket count over the period is
@@ -268,7 +268,7 @@ public sealed class AgentInsightsService : IAgentInsightsService
                 ToUtc = toUtc,
                 FromDate = range.From.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified),
                 ToDate = range.To.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified),
-                Accessible = scope.ToArray(),
+                AccessibleQueueIds = scope.ToArray(),
                 CallEventType,
                 MinSeconds = (double)Math.Max(0, minSeconds),
             },
@@ -334,7 +334,7 @@ public sealed class AgentInsightsService : IAgentInsightsService
     {
         var fromUtc = InsightsCalendar.LocalMidnightUtc(range.From, clock.TimeZone);
         var toUtc = InsightsCalendar.LocalMidnightUtc(range.To.AddDays(1), clock.TimeZone);
-        var access = scope.IsAdmin ? "" : " AND t.queue_id = ANY(@Accessible)";
+        var access = " AND " + scope.SqlPredicate("t.queue_id");
         var orderBy = OrderBy(sort);
 
         // The same CTE heads both statements (count + page); only fixed
@@ -413,7 +413,7 @@ public sealed class AgentInsightsService : IAgentInsightsService
                 ToUtc = toUtc,
                 FromDate = range.From.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified),
                 ToDate = range.To.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified),
-                Accessible = scope.ToArray(),
+                AccessibleQueueIds = scope.ToArray(),
                 Limit = limit,
                 Offset = offset,
             },
@@ -436,7 +436,7 @@ public sealed class AgentInsightsService : IAgentInsightsService
     {
         var fromUtc = InsightsCalendar.LocalMidnightUtc(range.From, clock.TimeZone);
         var toUtc = InsightsCalendar.LocalMidnightUtc(range.To.AddDays(1), clock.TimeZone);
-        var access = scope.IsAdmin ? "" : " AND t.queue_id = ANY(@Accessible)";
+        var access = " AND " + scope.SqlPredicate("t.queue_id");
 
         // Fixed fragments only; every value is a bound parameter.
         var where = $"""
@@ -479,7 +479,7 @@ public sealed class AgentInsightsService : IAgentInsightsService
                 Agent = agentId,
                 FromUtc = fromUtc,
                 ToUtc = toUtc,
-                Accessible = scope.ToArray(),
+                AccessibleQueueIds = scope.ToArray(),
                 MinSeconds = (double)Math.Max(0, minSeconds),
                 Limit = limit,
                 Offset = offset,

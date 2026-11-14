@@ -1,3 +1,4 @@
+using Servicedesk.Infrastructure.Access;
 using Dapper;
 using Npgsql;
 using Servicedesk.Domain.Search;
@@ -78,7 +79,7 @@ public sealed class TicketSearchSource : ISearchSource
         if (string.IsNullOrEmpty(tsqueryText) && numberProbe is null && zammadNumberProbe is null)
             return new SearchGroup(Kind, Array.Empty<SearchHit>(), 0, false);
 
-        const string sql = """
+        const string sql = $$"""
             WITH q AS (
                 SELECT CASE WHEN @tsqueryText = '' THEN NULL::tsquery
                             ELSE to_tsquery('simple', @tsqueryText) END AS tsq
@@ -100,7 +101,7 @@ public sealed class TicketSearchSource : ISearchSource
                        NULL::bigint AS snip_ref
                 FROM tickets t
                 WHERE t.is_deleted = FALSE
-                  AND (@skipQueueFilter OR t.queue_id = ANY(@allowedQueues))
+                  AND {{QueueAccessScope.TicketQueueVisibleSql}}
                   AND (
                         ((SELECT tsq FROM q) IS NOT NULL AND t.search_vector @@ (SELECT tsq FROM q))
                      OR (@numberProbe IS NOT NULL AND t.number = @numberProbe)
@@ -116,7 +117,7 @@ public sealed class TicketSearchSource : ISearchSource
                 FROM ticket_event_search tes
                 JOIN tickets t ON t.id = tes.ticket_id
                 WHERE t.is_deleted = FALSE
-                  AND (@skipQueueFilter OR t.queue_id = ANY(@allowedQueues))
+                  AND {{QueueAccessScope.TicketQueueVisibleSql}}
                   AND (SELECT tsq FROM q) IS NOT NULL
                   AND tes.search_vector @@ (SELECT tsq FROM q)
                   AND tes.event_id > @recentFrom
@@ -133,7 +134,7 @@ public sealed class TicketSearchSource : ISearchSource
                 FROM ticket_bodies tb
                 JOIN tickets t ON t.id = tb.ticket_id
                 WHERE t.is_deleted = FALSE
-                  AND (@skipQueueFilter OR t.queue_id = ANY(@allowedQueues))
+                  AND {{QueueAccessScope.TicketQueueVisibleSql}}
                   AND (SELECT tsq FROM q) IS NOT NULL
                   AND tb.body_search @@ (SELECT tsq FROM q)
             ),
@@ -269,8 +270,8 @@ public sealed class TicketSearchSource : ISearchSource
             tsqueryText,
             numberProbe,
             zammadNumberProbe,
-            skipQueueFilter = principal.IsAdmin,
-            allowedQueues = allowedQueues?.ToArray() ?? Array.Empty<Guid>(),
+            AccessIsAdmin = principal.IsAdmin,
+            AccessibleQueueIds = allowedQueues?.ToArray() ?? Array.Empty<Guid>(),
             limit,
             offset,
             recentFrom,
