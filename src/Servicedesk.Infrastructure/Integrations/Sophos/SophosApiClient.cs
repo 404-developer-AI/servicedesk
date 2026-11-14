@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Integrations.Http;
 using Servicedesk.Infrastructure.Secrets;
 
 namespace Servicedesk.Infrastructure.Integrations.Sophos;
@@ -75,8 +76,7 @@ public sealed class SophosApiClient : ISophosApiClient
     private readonly IProtectedSecretStore _secrets;
     private readonly ILogger<SophosApiClient> _logger;
 
-    private readonly SemaphoreSlim _tokenLock = new(1, 1);
-    private CachedToken? _token;
+    private readonly BearerTokenCache _token = new();
 
     public SophosApiClient(
         IHttpClientFactory httpFactory,
@@ -88,7 +88,7 @@ public sealed class SophosApiClient : ISophosApiClient
         _logger = logger;
     }
 
-    public void InvalidateToken() => _token = null;
+    public void InvalidateToken() => _token.Invalidate();
 
     // ---- tenants --------------------------------------------------------
 
@@ -343,23 +343,13 @@ public sealed class SophosApiClient : ISophosApiClient
 
     // ---- token ----------------------------------------------------------
 
-    private async Task<string> GetTokenAsync(HttpClient client, string clientId, string clientSecret, CancellationToken ct)
-    {
-        var cached = _token;
-        if (cached is not null && cached.ExpiresUtc > DateTime.UtcNow) return cached.Token;
-
-        await _tokenLock.WaitAsync(ct);
-        try
-        {
-            cached = _token;
-            if (cached is not null && cached.ExpiresUtc > DateTime.UtcNow) return cached.Token;
-
-            var (token, expiresIn) = await FetchTokenWithExpiryAsync(client, clientId, clientSecret, ct);
-            _token = new CachedToken(token, DateTime.UtcNow.AddSeconds(Math.Max(60, expiresIn - 60)));
-            return token;
-        }
-        finally { _tokenLock.Release(); }
-    }
+    // The token is keyed on the credentials: a changed client id or secret
+    // never keeps using a token of the previous account.
+    private Task<string> GetTokenAsync(HttpClient client, string clientId, string clientSecret, CancellationToken ct) =>
+        _token.GetAsync(
+            BearerTokenCache.KeyFor(clientId, clientSecret),
+            c => FetchTokenWithExpiryAsync(client, clientId, clientSecret, c),
+            ct);
 
     private async Task<string> FetchTokenAsync(HttpClient client, string clientId, string clientSecret, CancellationToken ct)
     {
@@ -406,36 +396,17 @@ public sealed class SophosApiClient : ISophosApiClient
         return client;
     }
 
-    /// GET/POST with HTTP 429 handling: honour Retry-After, else 1/2/4s
-    /// exponential backoff, max 3 retries.
-    private async Task<HttpResponseMessage> SendWithRetryAsync(
+    /// GET/POST with the shared HTTP 429 handling (RateLimitRetry).
+    private Task<HttpResponseMessage> SendWithRetryAsync(
         HttpClient client, HttpMethod method, string url, string token,
-        (string Name, string Value)? extraHeader = null, CancellationToken ct = default)
-    {
-        const int maxRetries = 3;
-        for (var attempt = 0; ; attempt++)
+        (string Name, string Value)? extraHeader = null, CancellationToken ct = default) =>
+        RateLimitRetry.SendAsync(client, () =>
         {
             var req = new HttpRequestMessage(method, url);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             if (extraHeader is { } h) req.Headers.TryAddWithoutValidation(h.Name, h.Value);
-
-            var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
-            if (resp.StatusCode != HttpStatusCode.TooManyRequests || attempt >= maxRetries)
-                return resp;
-
-            var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt)); // 1, 2, 4
-            if (resp.Headers.RetryAfter?.Delta is { } d) delay = d;
-            else if (resp.Headers.RetryAfter?.Date is { } when)
-            {
-                var diff = when - DateTimeOffset.UtcNow;
-                if (diff > TimeSpan.Zero) delay = diff;
-            }
-            resp.Dispose();
-            _logger.LogWarning("Sophos 429 rate-limited; retrying in {Delay}s (attempt {Attempt}/{Max}).",
-                delay.TotalSeconds, attempt + 1, maxRetries);
-            await Task.Delay(delay, ct);
-        }
-    }
+            return req;
+        }, _logger, "Sophos", ct);
 
     private static void ThrowIfAuth(HttpResponseMessage resp)
     {
@@ -459,7 +430,6 @@ public sealed class SophosApiClient : ISophosApiClient
             ? v.GetString()
             : null;
 
-    private sealed record CachedToken(string Token, DateTime ExpiresUtc);
 
     private sealed class SophosAuthException : Exception
     {

@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Servicedesk.Infrastructure.Integrations.Http;
 
 namespace Servicedesk.Infrastructure.Integrations.Veeam;
 
@@ -45,15 +46,14 @@ public sealed class VeeamApiClient : IVeeamApiClient
 
     private readonly ILogger<VeeamApiClient> _logger;
 
-    private readonly SemaphoreSlim _tokenLock = new(1, 1);
-    private CachedToken? _token;
+    private readonly BearerTokenCache _token = new();
 
     public VeeamApiClient(ILogger<VeeamApiClient> logger)
     {
         _logger = logger;
     }
 
-    public void InvalidateToken() => _token = null;
+    public void InvalidateToken() => _token.Invalidate();
 
     // ---- companies ------------------------------------------------------
 
@@ -231,24 +231,8 @@ public sealed class VeeamApiClient : IVeeamApiClient
 
     // ---- token ----------------------------------------------------------
 
-    private async Task<string> GetTokenAsync(HttpClient client, VeeamConnection conn, CancellationToken ct)
-    {
-        var key = TokenKey(conn);
-        var cached = _token;
-        if (cached is not null && cached.Key == key && cached.ExpiresUtc > DateTime.UtcNow) return cached.Token;
-
-        await _tokenLock.WaitAsync(ct);
-        try
-        {
-            cached = _token;
-            if (cached is not null && cached.Key == key && cached.ExpiresUtc > DateTime.UtcNow) return cached.Token;
-
-            var (token, expiresIn) = await FetchTokenAsync(client, conn, ct);
-            _token = new CachedToken(key, token, DateTime.UtcNow.AddSeconds(Math.Max(60, expiresIn - 60)));
-            return token;
-        }
-        finally { _tokenLock.Release(); }
-    }
+    private Task<string> GetTokenAsync(HttpClient client, VeeamConnection conn, CancellationToken ct) =>
+        _token.GetAsync(TokenKey(conn), c => FetchTokenAsync(client, conn, c), ct);
 
     private static async Task<(string Token, int ExpiresIn)> FetchTokenAsync(
         HttpClient client, VeeamConnection conn, CancellationToken ct)
@@ -298,35 +282,16 @@ public sealed class VeeamApiClient : IVeeamApiClient
     private static HttpClient CreateClient(HttpClientHandler handler) =>
         new(handler) { Timeout = TimeSpan.FromSeconds(100) };
 
-    /// GET with HTTP 429 handling: honour Retry-After, else 1/2/4s exponential
-    /// backoff, max 3 retries.
-    private async Task<HttpResponseMessage> SendWithRetryAsync(
-        HttpClient client, string url, string token, CancellationToken ct)
-    {
-        const int maxRetries = 3;
-        for (var attempt = 0; ; attempt++)
+    /// GET with the shared HTTP 429 handling (RateLimitRetry).
+    private Task<HttpResponseMessage> SendWithRetryAsync(
+        HttpClient client, string url, string token, CancellationToken ct) =>
+        RateLimitRetry.SendAsync(client, () =>
         {
             var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-
-            var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
-            if (resp.StatusCode != HttpStatusCode.TooManyRequests || attempt >= maxRetries)
-                return resp;
-
-            var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt)); // 1, 2, 4
-            if (resp.Headers.RetryAfter?.Delta is { } d) delay = d;
-            else if (resp.Headers.RetryAfter?.Date is { } when)
-            {
-                var diff = when - DateTimeOffset.UtcNow;
-                if (diff > TimeSpan.Zero) delay = diff;
-            }
-            resp.Dispose();
-            _logger.LogWarning("Veeam VSPC 429 rate-limited; retrying in {Delay}s (attempt {Attempt}/{Max}).",
-                delay.TotalSeconds, attempt + 1, maxRetries);
-            await Task.Delay(delay, ct);
-        }
-    }
+            return req;
+        }, _logger, "Veeam VSPC", ct);
 
     private static void ThrowIfAuth(HttpResponseMessage resp)
     {
@@ -350,7 +315,6 @@ public sealed class VeeamApiClient : IVeeamApiClient
             ? v.GetString()
             : null;
 
-    private sealed record CachedToken(string Key, string Token, DateTime ExpiresUtc);
 
     private sealed class VeeamAuthException : Exception
     {
