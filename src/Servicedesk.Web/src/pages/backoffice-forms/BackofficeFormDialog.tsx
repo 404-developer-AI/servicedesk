@@ -109,7 +109,7 @@ export function BackofficeFormDialog({
   const handle = () => {
     if (!item) return;
     act.mutate(async () => {
-      const r = await backofficeFormsApi.handle(item.id, note);
+      const r = await backofficeFormsApi.handle(item.id, note, item.version);
       toast.success("Form marked as handled");
       setNote("");
       return r;

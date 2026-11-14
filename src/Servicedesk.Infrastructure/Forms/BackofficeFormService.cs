@@ -61,7 +61,7 @@ public interface IBackofficeFormService
     Task<BackofficeFormView> GetAsync(Guid formId, CancellationToken ct);
     Task<BackofficeFormListItem> ClaimAsync(TicketMutationActor actor, Guid formId, bool takeOver, CancellationToken ct);
     Task<BackofficeFormListItem> ReleaseAsync(TicketMutationActor actor, Guid formId, CancellationToken ct);
-    Task<BackofficeFormListItem> HandleAsync(TicketMutationActor actor, Guid formId, string? note, CancellationToken ct);
+    Task<BackofficeFormListItem> HandleAsync(TicketMutationActor actor, Guid formId, string? note, int expectedVersion, CancellationToken ct);
     Task<BackofficeFormListItem> ReopenAsync(TicketMutationActor actor, Guid formId, string? note, CancellationToken ct);
 }
 
@@ -152,7 +152,12 @@ public sealed class BackofficeFormService : IBackofficeFormService
         await RequireItemAsync(formId, ct);
         var result = await _repo.ReleaseAsync(formId, actor.UserId, IsAdmin(actor), ct);
         if (result is null)
-            throw new FormRejectedException(WrongState, "Only the person handling this form can release it.");
+        {
+            var now = await RequireItemAsync(formId, ct);
+            throw new FormRejectedException(WrongState, now.Status == BackofficeFormStatus.InProgress
+                ? "Only the person handling this form can release it."
+                : "Nobody is handling this form any more.");
+        }
 
         var item = await RequireItemAsync(formId, ct);
         await AuditAsync(actor, "ticket.form.backoffice.released", item, null, ct);
@@ -160,17 +165,20 @@ public sealed class BackofficeFormService : IBackofficeFormService
         return item;
     }
 
-    public async Task<BackofficeFormListItem> HandleAsync(TicketMutationActor actor, Guid formId, string? note, CancellationToken ct)
+    public async Task<BackofficeFormListItem> HandleAsync(TicketMutationActor actor, Guid formId, string? note, int expectedVersion, CancellationToken ct)
     {
         var text = await ValidateNoteAsync(note, required: await NoteRequiredAsync(ct));
         var before = await RequireItemAsync(formId, ct);
         if (before.Status == BackofficeFormStatus.Handled)
             throw new FormRejectedException(WrongState, "This form has already been handled.");
 
-        var result = await _repo.HandleAsync(formId, actor.UserId, text, IsAdmin(actor), ct);
+        var result = await _repo.HandleAsync(formId, actor.UserId, text, IsAdmin(actor), expectedVersion, ct);
         if (result is null)
         {
             var now = await RequireItemAsync(formId, ct);
+            if (now.Status != BackofficeFormStatus.Handled && now.Version != expectedVersion)
+                throw new FormRejectedException(FormRejectCode.VersionConflict,
+                    "The form was changed while you had it open. Check the latest version and handle it again.");
             throw now.Status == BackofficeFormStatus.InProgress
                 ? new FormRejectedException(AlreadyClaimed,
                     $"{now.ClaimedByName ?? "Someone else"} is handling this form. Take it over first.")

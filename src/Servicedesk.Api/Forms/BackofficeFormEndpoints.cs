@@ -87,9 +87,9 @@ public static class BackofficeFormEndpoints
         ).WithName("ReleaseBackofficeForm").WithOpenApi();
 
         group.MapPost("/{formId:guid}/handle", async (
-            Guid formId, [FromBody] NoteRequest? req, HttpContext http, IBackofficeFormService svc, CancellationToken ct) =>
+            Guid formId, [FromBody] HandleRequest? req, HttpContext http, IBackofficeFormService svc, CancellationToken ct) =>
             await Run(async () => Results.Ok(MapItem(
-                await svc.HandleAsync(TicketEndpoints.ResolveMutationActor(http), formId, req?.Note, ct))))
+                await svc.HandleAsync(TicketEndpoints.ResolveMutationActor(http), formId, req?.Note, req?.ExpectedVersion ?? 0, ct))))
         ).WithName("HandleBackofficeForm").WithOpenApi();
 
         group.MapPost("/{formId:guid}/reopen", async (
@@ -151,4 +151,6 @@ public static class BackofficeFormEndpoints
 
     public sealed record ClaimRequest(bool TakeOver);
     public sealed record NoteRequest(string? Note);
+    /// <paramref name="ExpectedVersion"/> = the form version the handler saw.
+    public sealed record HandleRequest(string? Note, int ExpectedVersion);
 }

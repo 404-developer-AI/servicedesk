@@ -106,8 +106,8 @@ export const backofficeFormsApi = {
   claim: (id: string, takeOver = false) =>
     request<BackofficeFormItem>("POST", `/api/backoffice-forms/${enc(id)}/claim`, { takeOver }),
   release: (id: string) => request<BackofficeFormItem>("POST", `/api/backoffice-forms/${enc(id)}/release`),
-  handle: (id: string, note: string) =>
-    request<BackofficeFormItem>("POST", `/api/backoffice-forms/${enc(id)}/handle`, { note }),
+  handle: (id: string, note: string, expectedVersion: number) =>
+    request<BackofficeFormItem>("POST", `/api/backoffice-forms/${enc(id)}/handle`, { note, expectedVersion }),
   reopen: (id: string, note: string) =>
     request<BackofficeFormItem>("POST", `/api/backoffice-forms/${enc(id)}/reopen`, { note }),
 };

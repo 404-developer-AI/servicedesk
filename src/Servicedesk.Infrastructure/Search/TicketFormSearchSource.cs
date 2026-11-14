@@ -48,7 +48,7 @@ public sealed class TicketFormSearchSource : ISearchSource
 
         var sql = $"""
             WITH q AS (SELECT lower(@query) AS norm,
-                              '%' || replace(replace(replace(lower(@query), '\', '\'), '%', '\%'), '_', '\_') || '%' AS pat)
+                              '%' || replace(replace(replace(lower(@query), '\', '\\'), '%', '\%'), '_', '\_') || '%' AS pat)
             SELECT f.id               AS FormId,
                    f.name             AS Name,
                    f.version          AS Version,

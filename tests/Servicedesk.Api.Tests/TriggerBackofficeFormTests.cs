@@ -51,8 +51,13 @@ public sealed class TriggerBackofficeFormTests
     }
 
     [Fact]
-    public void Form_pass_marks_the_event_field_changed_for_selective_triggers()
-        => Assert.Contains(TriggerFieldKeys.FormBackofficeEvent, TriggerChangeSet.ForForm(Form("submitted")).ChangedFields);
+    public void Form_pass_marks_the_form_fields_changed_for_selective_triggers()
+    {
+        // A Selective trigger with only a template condition must fire too.
+        var changed = TriggerChangeSet.ForForm(Form("submitted")).ChangedFields;
+        Assert.Contains(TriggerFieldKeys.FormBackofficeEvent, changed);
+        Assert.Contains(TriggerFieldKeys.FormTemplateId, changed);
+    }
 
     [Theory]
     [InlineData("handled", true)]

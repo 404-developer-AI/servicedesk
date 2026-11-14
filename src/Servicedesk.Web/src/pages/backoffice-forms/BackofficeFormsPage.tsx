@@ -1,6 +1,6 @@
 import * as React from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useRouterState } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { CheckCircle2, ClipboardList, Hand, Inbox, Layers, Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -64,6 +64,13 @@ export function BackofficeFormsPage() {
     const id = formIdFrom(searchStr);
     if (id) setOpenId(id);
   }, [searchStr]);
+  const navigate = useNavigate();
+  // Drop ?form= on close, so the same link opens the form again and a
+  // reload doesn't reopen a closed dialog.
+  const closeForm = () => {
+    setOpenId(null);
+    if (formIdFrom(window.location.search)) void navigate({ to: "/backoffice-forms", replace: true });
+  };
   const q = useDebounced(search, 250);
 
   React.useEffect(() => setPage(1), [tab, q, templateId, companyId, submittedBy]);
@@ -204,7 +211,7 @@ export function BackofficeFormsPage() {
         </div>
       )}
 
-      <BackofficeFormDialog formId={openId} onOpenChange={(o) => !o && setOpenId(null)} />
+      <BackofficeFormDialog formId={openId} onOpenChange={(o) => { if (!o) closeForm(); }} />
     </div>
   );
 }

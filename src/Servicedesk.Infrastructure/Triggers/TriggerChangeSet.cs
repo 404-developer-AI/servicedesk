@@ -33,7 +33,10 @@ public sealed record TriggerChangeSet(
         => referencedFields.Any(TriggerFieldKeys.IsFormField) == (FormEvent is not null);
 
     public static TriggerChangeSet ForForm(TriggerFormEvent evt)
-        => new(new HashSet<string>(StringComparer.OrdinalIgnoreCase) { TriggerFieldKeys.FormBackofficeEvent }, ArticleAdded: false)
+        => new(new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                TriggerFieldKeys.FormBackofficeEvent, TriggerFieldKeys.FormTemplateId,
+            }, ArticleAdded: false)
         {
             FormEvent = evt,
         };

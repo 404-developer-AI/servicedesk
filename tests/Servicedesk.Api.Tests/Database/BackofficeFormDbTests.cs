@@ -83,13 +83,13 @@ public sealed class BackofficeFormDbTests
         Assert.NotNull(await bo.ClaimAsync(form, agent, takeOver: false, default));
 
         Assert.Null(await bo.ClaimAsync(form, other, takeOver: false, default));
-        Assert.Null(await bo.HandleAsync(form, other, "done", force: false, default));
+        Assert.Null(await bo.HandleAsync(form, other, "done", force: false, 1, default));
         Assert.Null(await bo.ReleaseAsync(form, other, force: false, default));
 
         Assert.NotNull(await bo.ClaimAsync(form, other, takeOver: true, default));
         Assert.Equal(other, (await bo.GetItemAsync(form, default))!.ClaimedByUserId);
 
-        Assert.NotNull(await bo.HandleAsync(form, other, "Contract CR-1001 updated", force: false, default));
+        Assert.NotNull(await bo.HandleAsync(form, other, "Contract CR-1001 updated", force: false, 1, default));
         var handled = (await bo.GetItemAsync(form, default))!;
         Assert.Equal(BackofficeFormStatus.Handled, handled.Status);
         Assert.Equal(other, handled.HandledByUserId);
@@ -98,7 +98,7 @@ public sealed class BackofficeFormDbTests
         Assert.Null(handled.ClaimedByUserId);
 
         // A second handle on a handled form matches nothing.
-        Assert.Null(await bo.HandleAsync(form, agent, "again", force: true, default));
+        Assert.Null(await bo.HandleAsync(form, agent, "again", force: true, 1, default));
     }
 
     [PostgresFact]
@@ -107,7 +107,7 @@ public sealed class BackofficeFormDbTests
         var (ticket, agent, other) = await SeedAsync();
         var form = await FillAsync(ticket, agent, sendToBackoffice: true);
         var bo = new BackofficeFormRepository(_db.DataSource);
-        Assert.NotNull(await bo.HandleAsync(form, other, "Checked", force: false, default));
+        Assert.NotNull(await bo.HandleAsync(form, other, "Checked", force: false, 1, default));
 
         var update = await new TicketFormRepository(_db.DataSource).UpdateAsync(
             form, 1, Answers("7"), "Licences activated: 7", agent, default);
@@ -124,7 +124,7 @@ public sealed class BackofficeFormDbTests
         Assert.Equal(BackofficeFormAction.Reopened, detail.Log[0].Action);
 
         // Handling again clears the "changed after handling" flag.
-        Assert.NotNull(await bo.HandleAsync(form, other, "Rechecked", force: false, default));
+        Assert.NotNull(await bo.HandleAsync(form, other, "Rechecked", force: false, 2, default));
         Assert.False((await bo.GetItemAsync(form, default))!.Reopened);
     }
 
@@ -145,6 +145,23 @@ public sealed class BackofficeFormDbTests
         Assert.Equal(other, item.ClaimedByUserId);
         Assert.Equal(1, item.ClaimedVersion);
         Assert.Equal(2, item.Version);
+    }
+
+    [PostgresFact]
+    public async Task Handling_a_version_that_was_edited_meanwhile_is_refused()
+    {
+        var (ticket, agent, other) = await SeedAsync();
+        var form = await FillAsync(ticket, agent, sendToBackoffice: true);
+        var bo = new BackofficeFormRepository(_db.DataSource);
+        Assert.NotNull(await bo.ClaimAsync(form, other, takeOver: false, default));
+        // The technician saves v2 while the handler still looks at v1.
+        Assert.NotNull(await new TicketFormRepository(_db.DataSource).UpdateAsync(
+            form, 1, Answers("9"), "Licences activated: 9", agent, default));
+
+        Assert.Null(await bo.HandleAsync(form, other, "Done", force: false, 1, default));
+        Assert.Equal(BackofficeFormStatus.InProgress, (await bo.GetItemAsync(form, default))!.Status);
+        Assert.NotNull(await bo.HandleAsync(form, other, "Done", force: false, 2, default));
+        Assert.Equal(2, (await bo.GetItemAsync(form, default))!.HandledVersion);
     }
 
     [PostgresFact]
@@ -173,7 +190,7 @@ public sealed class BackofficeFormDbTests
         var tag = $"Sophos{Guid.NewGuid():N}"[..14];
         var a = await FillAsync(ticket, agent, true, tag);
         var b = await FillAsync(ticket, agent, true, tag);
-        await bo.HandleAsync(b, other, "ok", force: false, default);
+        await bo.HandleAsync(b, other, "ok", force: false, 1, default);
 
         var open = await bo.ListAsync(new BackofficeFormListQuery(BackofficeFormStatus.Open, null, null, null, tag, 0, 50), default);
         Assert.Equal(new[] { a }, open.Items.Select(i => i.Id));

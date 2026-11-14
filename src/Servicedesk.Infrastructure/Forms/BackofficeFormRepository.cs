@@ -73,8 +73,10 @@ public interface IBackofficeFormRepository
     /// InProgress → Open. Only the claimer, unless <paramref name="force"/> (admin).
     Task<BackofficeTransitionResult?> ReleaseAsync(Guid formId, Guid userId, bool force, CancellationToken ct);
     /// Open or InProgress → Handled. An InProgress form claimed by someone
-    /// else is only handled with <paramref name="force"/> (admin).
-    Task<BackofficeTransitionResult?> HandleAsync(Guid formId, Guid userId, string note, bool force, CancellationToken ct);
+    /// else is only handled with <paramref name="force"/> (admin). Only when
+    /// the form is still at <paramref name="expectedVersion"/> (the version
+    /// the handler looked at), so an edit made meanwhile is never marked handled.
+    Task<BackofficeTransitionResult?> HandleAsync(Guid formId, Guid userId, string note, bool force, int expectedVersion, CancellationToken ct);
     /// Handled → Open (manual reopen; not the "changed after handling" path).
     Task<BackofficeTransitionResult?> ReopenAsync(Guid formId, Guid userId, string note, CancellationToken ct);
 }
@@ -253,7 +255,7 @@ public sealed class BackofficeFormRepository : IBackofficeFormRepository
             RETURNING version
             """, force, ct);
 
-    public Task<BackofficeTransitionResult?> HandleAsync(Guid formId, Guid userId, string note, bool force, CancellationToken ct)
+    public Task<BackofficeTransitionResult?> HandleAsync(Guid formId, Guid userId, string note, bool force, int expectedVersion, CancellationToken ct)
         => TransitionAsync(formId, userId, BackofficeFormAction.Handled, note, """
             UPDATE ticket_forms
                SET bo_status = 'Handled',
@@ -265,11 +267,11 @@ public sealed class BackofficeFormRepository : IBackofficeFormRepository
                    bo_claimed_by_user_id = NULL,
                    bo_claimed_utc = NULL,
                    bo_claimed_version = NULL
-             WHERE id = @formId AND deleted_utc IS NULL
+             WHERE id = @formId AND deleted_utc IS NULL AND version = @expectedVersion
                AND (bo_status = 'Open'
                     OR (bo_status = 'InProgress' AND (@flag OR bo_claimed_by_user_id = @userId)))
             RETURNING version
-            """, force, ct);
+            """, force, ct, expectedVersion);
 
     public Task<BackofficeTransitionResult?> ReopenAsync(Guid formId, Guid userId, string note, CancellationToken ct)
         => TransitionAsync(formId, userId, BackofficeFormAction.Reopened, note, """
@@ -283,12 +285,13 @@ public sealed class BackofficeFormRepository : IBackofficeFormRepository
     /// users acting at once can never both win (the second UPDATE matches no
     /// row once the first committed).
     private async Task<BackofficeTransitionResult?> TransitionAsync(
-        Guid formId, Guid userId, string action, string note, string updateSql, bool flag, CancellationToken ct)
+        Guid formId, Guid userId, string action, string note, string updateSql, bool flag, CancellationToken ct,
+        int expectedVersion = 0)
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
         var version = await conn.ExecuteScalarAsync<int?>(new CommandDefinition(
-            updateSql, new { formId, userId, note, flag }, tx, cancellationToken: ct));
+            updateSql, new { formId, userId, note, flag, expectedVersion }, tx, cancellationToken: ct));
         if (version is null)
         {
             await tx.RollbackAsync(ct);
