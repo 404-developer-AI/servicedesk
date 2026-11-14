@@ -246,8 +246,8 @@ public sealed class MentionNotificationService : IMentionNotificationService
         }
     }
 
-    /// One shared group_tags row per active group, then a toast push to every
-    /// member except the author. Deliberately no mail path at all. Best effort
+    /// One shared group_tags row per active group, then a block refresh for every
+    /// member and a toast for every member but the author. Deliberately no mail path at all. Best effort
     /// like the rest of the fan-out: a failure is logged, never thrown.
     private async Task PublishGroupTagsAsync(
         MentionNotificationSource source, IReadOnlyList<Guid> groupIds, string bodyText, CancellationToken ct)
@@ -263,10 +263,13 @@ public sealed class MentionNotificationService : IMentionNotificationService
             var members = await _tagGroups.ListMemberIdsAsync(groups.Select(g => g.Id).ToList(), ct);
             foreach (var tag in created)
             {
-                var recipients = (members.GetValueOrDefault(tag.GroupId) ?? Array.Empty<Guid>())
-                    .Where(u => u != source.SourceUserId).ToList();
+                var all = members.GetValueOrDefault(tag.GroupId) ?? Array.Empty<Guid>();
+                var recipients = all.Where(u => u != source.SourceUserId).ToList();
                 try
                 {
+                    // Every member's block refreshes — the author's too when
+                    // they belong to the group; only the others get a toast.
+                    await _groupTagNotifier.GroupTagsChangedAsync(all, ct);
                     await _groupTagNotifier.GroupTagReceivedAsync(recipients, new GroupTagPush(
                         tag.Id, tag.GroupId, tag.GroupName, tag.TicketId, tag.TicketNumber, tag.TicketSubject,
                         tag.EventId, source.SourceUserEmail, tag.PreviewText), ct);

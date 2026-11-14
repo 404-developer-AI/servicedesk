@@ -76,7 +76,8 @@ public sealed class MentionNotificationServiceTests
         var tag = Assert.Single(tags.Created);          // unknown/inactive group dropped
         Assert.Equal(groupId, tag.GroupId);
         var push = Assert.Single(groupPush.Received);
-        Assert.Equal(new[] { member }, push.Users);     // the author is not pushed
+        Assert.Equal(new[] { member }, push.Users);     // no toast for the author…
+        Assert.Equal(new[] { member, SourceUserId }, Assert.Single(groupPush.Changed)); // …but every block refreshes
         Assert.Empty(graph.Sent);                       // never a mail
         Assert.Empty(repo.Rows);                        // no personal bell rows
         Assert.Empty(notifier.Pushed);
@@ -530,6 +531,11 @@ public sealed class MentionNotificationServiceTests
             Received.Add((userIds, payload));
             return Task.CompletedTask;
         }
-        public Task GroupTagsChangedAsync(IReadOnlyCollection<Guid> userIds, CancellationToken ct) => Task.CompletedTask;
+        public List<IReadOnlyCollection<Guid>> Changed { get; } = new();
+        public Task GroupTagsChangedAsync(IReadOnlyCollection<Guid> userIds, CancellationToken ct)
+        {
+            Changed.Add(userIds);
+            return Task.CompletedTask;
+        }
     }
 }
