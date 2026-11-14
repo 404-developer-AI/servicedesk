@@ -92,14 +92,14 @@ export function FollowingWidget({ collapsed }: { collapsed: boolean }) {
             </button>
           ) : (
             <button type="button" title={title}
-              className="flex w-full items-center gap-2 rounded-(--radius) border border-glass bg-glass px-3 py-2 text-left transition-colors hover:bg-glass-hover">
+              className="flex h-8 w-full items-center gap-1 rounded-lg border border-glass bg-glass px-2 text-left transition-colors hover:bg-glass-hover">
               <div className="relative">
-                <Eye className={cn("h-4 w-4", active > 0 ? "text-primary" : "text-muted-foreground")} />
+                <Eye className={cn("h-3.5 w-3.5", active > 0 ? "text-primary" : "text-muted-foreground")} />
                 {active > 0 ? <PulseDot count={null} /> : null}
               </div>
-              <span className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">Following</span>
+              <span className="text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">Following</span>
               <span className={cn(
-                "ml-auto rounded-full border px-2 py-0.5 text-[10px] font-medium",
+                "ml-auto rounded-full border px-1.5 py-px text-[10px] font-medium",
                 active > 0
                   ? "border-primary/30 bg-primary/12 text-primary"
                   : "border-glass bg-glass text-muted-foreground",
@@ -153,7 +153,7 @@ function FollowingPanel({ items, loading }: { items: FollowedTicket[]; loading: 
                 <span className="mt-1.5 flex h-2 w-2 shrink-0 items-center justify-center" aria-hidden>
                   {t.hasActivity ? <span className="h-2 w-2 rounded-full bg-red-500" /> : null}
                 </span>
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-auto">
                   <div className="flex items-center gap-1.5 text-xs">
                     <span className={cn("font-mono text-[11px]", t.hasActivity ? "text-foreground" : "text-muted-foreground")}>
                       #{t.ticketNumber}

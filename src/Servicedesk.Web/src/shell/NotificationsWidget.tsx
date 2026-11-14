@@ -13,13 +13,15 @@ import { PulseDot } from "@/shell/PulseDot";
 
 type Props = {
   collapsed: boolean;
+  /// Wrapper classes; defaults to the stand-alone "mx-3 mb-2" block.
+  className?: string;
 };
 
 /// v0.0.12 stap 4 — persistent sidebar widget showing pending @@-mentions.
 /// Sits above the sidebar collapse-button. Click-through marks viewed +
 /// navigates to the exact event; X-button acks without navigating; the
 /// footer lets the agent ack-all and jump to full history.
-export function NotificationsWidget({ collapsed }: Props) {
+export function NotificationsWidget({ collapsed, className }: Props) {
   const { data, isLoading } = useQuery({
     queryKey: ["notifications", "pending"],
     queryFn: () => notificationApi.listPending(),
@@ -39,7 +41,7 @@ export function NotificationsWidget({ collapsed }: Props) {
   // a label+count pill in the expanded sidebar, an icon-only tile when
   // the sidebar is collapsed.
   return (
-    <div className={cn("mx-3 mb-2", collapsed && "flex justify-center")}>
+    <div className={cn(className ?? "mx-3 mb-2", collapsed && "flex justify-center")}>
       <Popover>
         <PopoverTrigger asChild>
           {collapsed ? (
@@ -60,19 +62,19 @@ export function NotificationsWidget({ collapsed }: Props) {
               type="button"
               title={hasPending ? `${pendingCount} pending tag${pendingCount === 1 ? "" : "s"}` : "No pending tags"}
               className={cn(
-                "flex w-full items-center gap-2 rounded-(--radius) border border-glass bg-glass px-3 py-2 text-left transition-colors",
+                "flex h-8 w-full min-w-0 items-center gap-1 rounded-lg border border-glass bg-glass px-2 text-left transition-colors",
                 "hover:bg-glass-hover",
               )}
             >
-              <div className="relative">
-                <Bell className={cn("h-4 w-4", hasPending ? "text-purple-200" : "text-muted-foreground")} />
+              <div className="relative shrink-0">
+                <Bell className={cn("h-3.5 w-3.5", hasPending ? "text-purple-200" : "text-muted-foreground")} />
                 {hasPending ? <PulseDot count={null} /> : null}
               </div>
-              <span className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+              <span className="truncate text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
                 Tags
               </span>
               {hasPending ? (
-                <span className="ml-auto rounded-full border border-purple-500/30 bg-purple-500/20 px-2 py-0.5 text-[10px] font-medium text-purple-200">
+                <span className="ml-auto shrink-0 rounded-full border border-purple-500/30 bg-purple-500/20 px-1.5 py-px text-[10px] font-medium text-purple-200">
                   {pendingCount}
                 </span>
               ) : null}
@@ -169,7 +171,7 @@ function NotificationPanel({
                 ) : (
                   <AtSign className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-300" />
                 )}
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-auto">
                   <div className="flex items-center gap-1 text-xs">
                     {isChecklistBlock ? (
                       <span className="font-medium text-amber-200">Checklist blocked a trigger</span>

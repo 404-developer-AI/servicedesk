@@ -498,8 +498,19 @@ export function Sidebar() {
         collapse" per the spec. The widget itself handles its two
         presentations (expanded glass-card, collapsed icon-with-popover).
       */}
-      <NotificationsWidget collapsed={collapsed} />
-      <GroupTagsWidget collapsed={collapsed} />
+      {/* v0.1.54 — expanded: Tags and Group tags share one row, together as
+          wide as the Following block below; collapsed: stacked icon tiles. */}
+      {collapsed ? (
+        <>
+          <NotificationsWidget collapsed />
+          <GroupTagsWidget collapsed />
+        </>
+      ) : (
+        <div className="mx-3 mb-2 flex gap-2">
+          <NotificationsWidget collapsed={false} className="min-w-0 flex-auto" />
+          <GroupTagsWidget collapsed={false} className="min-w-0 flex-auto" />
+        </div>
+      )}
       <FollowingWidget collapsed={collapsed} />
 
       {/*

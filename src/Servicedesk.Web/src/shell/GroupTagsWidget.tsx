@@ -15,7 +15,7 @@ import { PulseDot } from "@/shell/PulseDot";
 /// clears it for all (the server pushes GroupTagsChanged). Clicking a tag
 /// opens the ticket but does NOT acknowledge it, and there is deliberately
 /// no "Ack all". Hidden for agents who belong to no active group.
-export function GroupTagsWidget({ collapsed }: { collapsed: boolean }) {
+export function GroupTagsWidget({ collapsed, className }: { collapsed: boolean; className?: string }) {
   const { data, isLoading } = useQuery({
     queryKey: [...GROUP_TAGS_KEY, "pending"],
     queryFn: () => groupTagApi.pending(),
@@ -29,7 +29,7 @@ export function GroupTagsWidget({ collapsed }: { collapsed: boolean }) {
   const title = hasOpen ? `${count} open group tag${count === 1 ? "" : "s"}` : "No open group tags";
 
   return (
-    <div className={cn("sd-group-tags mx-3 mb-2", collapsed && "flex justify-center")}>
+    <div className={cn("sd-group-tags", className ?? "mx-3 mb-2", collapsed && "flex justify-center")}>
       <Popover>
         <PopoverTrigger asChild>
           {collapsed ? (
@@ -44,14 +44,14 @@ export function GroupTagsWidget({ collapsed }: { collapsed: boolean }) {
             </button>
           ) : (
             <button type="button" title={title}
-              className="flex w-full items-center gap-2 rounded-(--radius) border border-glass bg-glass px-3 py-2 text-left transition-colors hover:bg-glass-hover">
-              <div className="relative">
-                <Users className={cn("h-4 w-4", hasOpen ? "text-primary" : "text-muted-foreground")} />
+              className="flex h-8 w-full min-w-0 items-center gap-1 rounded-lg border border-glass bg-glass px-2 text-left transition-colors hover:bg-glass-hover">
+              <div className="relative shrink-0">
+                <Users className={cn("h-3.5 w-3.5", hasOpen ? "text-primary" : "text-muted-foreground")} />
                 {hasOpen ? <PulseDot count={null} /> : null}
               </div>
-              <span className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">Group tags</span>
+              <span className="truncate text-[10px] font-medium uppercase tracking-[0.06em] text-muted-foreground">Group tags</span>
               {hasOpen ? (
-                <span className="ml-auto rounded-full border border-primary/30 bg-primary/12 px-2 py-0.5 text-[10px] font-medium text-primary">
+                <span className="ml-auto shrink-0 rounded-full border border-primary/30 bg-primary/12 px-1.5 py-px text-[10px] font-medium text-primary">
                   {count}
                 </span>
               ) : null}
@@ -100,7 +100,7 @@ function GroupTagPanel({ items, loading }: { items: GroupTag[]; loading: boolean
                 <button type="button" onClick={() => open(t)} className="flex min-w-0 flex-1 items-start gap-2 text-left"
                   title="Open the ticket (the tag stays until someone acknowledges it)">
                   <Users className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-auto">
                     <div className="flex items-center gap-1 text-xs">
                       <span className="truncate font-medium text-foreground">{t.groupName}</span>
                       <span className="font-mono text-[11px] text-muted-foreground">#{t.ticketNumber}</span>
