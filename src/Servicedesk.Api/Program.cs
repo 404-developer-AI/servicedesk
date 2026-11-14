@@ -864,6 +864,7 @@ app.MapFormTemplateEndpoints();
 app.MapTicketFormEndpoints();
 app.MapBackofficeFormEndpoints();
 app.MapTagGroupEndpoints();
+app.MapNoteThreadEndpoints();
 app.MapTicketExportEndpoints();
 app.MapTicketMailEndpoints();
 app.MapTicketAttachmentEndpoints();

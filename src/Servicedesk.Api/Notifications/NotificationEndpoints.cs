@@ -139,7 +139,9 @@ public static class NotificationEndpoints
         PreviewText: r.PreviewText,
         CreatedUtc: r.CreatedUtc,
         ViewedUtc: r.ViewedUtc,
-        AckedUtc: r.AckedUtc);
+        AckedUtc: r.AckedUtc,
+        NotificationType: r.NotificationType,
+        ReplyId: r.ReplyId);
 
     public sealed record UserNotificationDto(
         Guid Id,
@@ -153,7 +155,11 @@ public static class NotificationEndpoints
         string PreviewText,
         DateTime CreatedUtc,
         DateTime? ViewedUtc,
-        DateTime? AckedUtc);
+        DateTime? AckedUtc,
+        // v0.1.54 — lets the bell word the row (mention / note_reply /
+        // note_like / …) and jump to the reply when there is one.
+        string NotificationType,
+        long? ReplyId);
 
     public sealed record NotificationHistoryCursorDto(string CreatedUtc, Guid Id);
 }

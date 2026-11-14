@@ -35,6 +35,9 @@ public static class SearchSourceKind
     // v0.1.54 - the Back office forms work list (hit -> /backoffice-forms
     // with the form opened). Flag holders only, not queue-scoped.
     public const string BackofficeForms = "backoffice-forms";
+    // v0.1.54 - replies on internal notes (hit -> the ticket, reply in view).
+    // Agents/admins only, queue-scoped like tickets.
+    public const string NoteReplies = "note-replies";
     // v0.1.0 - customer-portal accounts (registrations, invited users);
     // hit -> the linked contact. Agents/admins only.
     public const string PortalAccounts = "portal-accounts";

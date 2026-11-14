@@ -6806,8 +6806,10 @@ public sealed class DatabaseBootstrapper : IHostedService
         );
         CREATE INDEX IF NOT EXISTS ix_ticket_note_replies_root
             ON ticket_note_replies (root_event_id, id);
-        CREATE INDEX IF NOT EXISTS ix_ticket_note_replies_search_trgm
-            ON ticket_note_replies USING GIN (body_text gin_trgm_ops) WHERE deleted_utc IS NULL;
+        -- Global search (NoteReplySearchSource) matches lower(body_text).
+        DROP INDEX IF EXISTS ix_ticket_note_replies_search_trgm;
+        CREATE INDEX IF NOT EXISTS ix_ticket_note_replies_text_trgm
+            ON ticket_note_replies USING GIN (lower(body_text) gin_trgm_ops) WHERE deleted_utc IS NULL;
 
         -- A like targets exactly one of: the note (event) or a reply.
         CREATE TABLE IF NOT EXISTS ticket_note_likes (

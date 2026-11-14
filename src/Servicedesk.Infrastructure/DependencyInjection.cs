@@ -763,6 +763,8 @@ public static class DependencyInjection
         services.AddSingleton<TicketFormSearchSource>();
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<TicketFormSearchSource>()));
         services.AddSingleton<BackofficeFormSearchSource>();
+        services.AddSingleton<NoteReplySearchSource>();
+        services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<NoteReplySearchSource>()));
         services.AddSingleton<ISearchSource>(sp => new ScopedSearchSource(sp.GetRequiredService<BackofficeFormSearchSource>()));
 
         // v0.1.0 — Customer portal: accounts + one-time tokens, Turnstile
