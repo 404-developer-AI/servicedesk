@@ -55,6 +55,8 @@ type NotificationPush = {
   eventType: string;
   previewText: string;
   createdUtc: string;
+  /** "mention" (default) or "trigger_notice" (a trigger's notify_agent message). */
+  notificationType?: string;
 };
 
 /// Server-push for the security-activity health subsystem. Fired only on
@@ -106,7 +108,10 @@ export function useNotificationSignalR(toastDurationMs: number) {
             ? "mail"
             : payload.eventType.toLowerCase();
 
-      toast.message(`@${localPart} tagged you in #${payload.ticketNumber}`, {
+      const title = payload.notificationType === "trigger_notice"
+        ? `Notice on #${payload.ticketNumber}`
+        : `@${localPart} tagged you in #${payload.ticketNumber}`;
+      toast.message(title, {
         description: payload.previewText || `New ${kind} on "${payload.ticketSubject}"`,
         duration: durationRef.current,
         action: {

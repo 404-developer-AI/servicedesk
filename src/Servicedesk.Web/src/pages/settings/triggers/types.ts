@@ -183,6 +183,7 @@ export type TriggerAction =
       ttl_days_override?: number | null;
       recipient_override?: string | null;
     }
+  | NotifyAgentAction
   | CreateLinkedTicketAction
   | PromptConfirmAction
   | RequireContactCompanyAction
@@ -195,6 +196,17 @@ export type TriggerAction =
   // the entry.
   | { kind: "__unknown"; original_kind: string; raw: Record<string, unknown> };
 
+/// v0.1.54 — bell notification for agents. `targets` resolve per pass
+/// (the form's submitter on a back office form trigger, the ticket owner);
+/// `user_ids` are fixed agents. `message` is a plain-text template.
+export type NotifyAgentTarget = "form_submitter" | "ticket_owner";
+export interface NotifyAgentAction {
+  kind: "notify_agent";
+  targets: NotifyAgentTarget[];
+  user_ids: string[];
+  message: string;
+}
+
 export const KNOWN_ACTION_KINDS = [
   "set_queue",
   "set_priority",
@@ -206,6 +218,7 @@ export const KNOWN_ACTION_KINDS = [
   "repost_as_public_reply",
   "send_mail",
   "send_survey",
+  "notify_agent",
   "create_linked_ticket",
   "prompt_confirm",
   "require_contact_company",
@@ -225,6 +238,7 @@ export const ACTION_KIND_LABELS: Record<KnownActionKind, string> = {
   repost_as_public_reply: "Repost as public reply",
   send_mail: "Send mail",
   send_survey: "Send survey",
+  notify_agent: "Notify agents",
   create_linked_ticket: "Create linked ticket",
   prompt_confirm: "Confirmation dialog",
   require_contact_company: "Require contact company",
@@ -250,6 +264,8 @@ export function blankActionForKind(kind: KnownActionKind): TriggerAction {
       };
     case "send_survey":
       return { kind, survey_id: "" };
+    case "notify_agent":
+      return { kind, targets: ["form_submitter"], user_ids: [], message: "" };
     case "create_linked_ticket":
       return {
         kind,
@@ -353,6 +369,16 @@ export function actionFromBackend(raw: any): TriggerAction {
   }
   if (raw.kind === "title_review") {
     return normalizeTitleReview(raw);
+  }
+  if (raw.kind === "notify_agent") {
+    return {
+      kind: "notify_agent",
+      targets: Array.isArray(raw.targets)
+        ? raw.targets.filter((t: unknown): t is NotifyAgentTarget => t === "form_submitter" || t === "ticket_owner")
+        : [],
+      user_ids: Array.isArray(raw.user_ids) ? raw.user_ids.filter((u: unknown) => typeof u === "string") : [],
+      message: typeof raw.message === "string" ? raw.message : "",
+    };
   }
   if (raw.kind !== "set_pending_till") return raw as TriggerAction;
   if (raw.clear === true) return { kind: "set_pending_till", mode: "clear" };

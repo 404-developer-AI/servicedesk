@@ -20,6 +20,24 @@ public sealed record TriggerChangeSet(
     /// creation path sets it.
     public bool IsTicketCreation { get; init; }
 
+    /// v0.1.54 — set only on a back-office form pass (a form was submitted
+    /// to, handled by or reopened on the Back office forms list). Form
+    /// triggers (those referencing a <c>form.*</c> field) run only on such a
+    /// pass, and such a pass runs only form triggers — see
+    /// <see cref="TriggerFieldKeys.IsFormField"/>.
+    public TriggerFormEvent? FormEvent { get; init; }
+
+    /// Form triggers run only on form passes and form passes run only form
+    /// triggers. <paramref name="referencedFields"/> = the trigger's condition fields.
+    public bool RunsTriggerReferencing(IReadOnlySet<string> referencedFields)
+        => referencedFields.Any(TriggerFieldKeys.IsFormField) == (FormEvent is not null);
+
+    public static TriggerChangeSet ForForm(TriggerFormEvent evt)
+        => new(new HashSet<string>(StringComparer.OrdinalIgnoreCase) { TriggerFieldKeys.FormBackofficeEvent }, ArticleAdded: false)
+        {
+            FormEvent = evt,
+        };
+
     public static readonly TriggerChangeSet Empty = new(new HashSet<string>(), false);
 
     public static TriggerChangeSet AllFieldsNew()
@@ -88,4 +106,26 @@ public static class TriggerFieldKeys
     public const string ArticleBodyText = "article.body_text";
     public const string ArticleIsInternal = "article.is_internal";
     public const string ArticleHasAttachments = "article.has_attachments";
+
+    /// v0.1.54 — back-office form events: <c>submitted</c> (a form of a
+    /// template marked "Send to back office" was filled in), <c>handled</c>,
+    /// <c>reopened</c> (by back office, or by an edit after handling).
+    public const string FormBackofficeEvent = "form.backoffice_event";
+    public const string FormTemplateId = "form.template.id";
+
+    public static bool IsFormField(string key) => key.StartsWith("form.", StringComparison.OrdinalIgnoreCase);
 }
+
+/// The back-office form step a form pass is about. <see cref="AnchorEventId"/>
+/// is the form's latest note on the ticket — what a notify_agent bell points at.
+public sealed record TriggerFormEvent(
+    string Event,
+    Guid FormId,
+    Guid? TemplateId,
+    string FormName,
+    Guid? SubmittedByUserId,
+    string? SubmittedByName,
+    Guid? ActorUserId,
+    string? HandledByName,
+    string HandledNote,
+    long? AnchorEventId);

@@ -266,14 +266,8 @@ public sealed class BackofficeFormEventPublisher : IBackofficeFormEvents
 }
 
 /// Runs the action-trigger pass for a back-office form event. Implemented
-/// by the trigger layer; the null runner keeps the forms code testable.
+/// by the trigger layer (<c>Triggers.BackofficeFormTriggerRunner</c>).
 public interface IBackofficeFormTriggerRunner
 {
     Task RunAsync(BackofficeFormEvent evt, CancellationToken ct);
-}
-
-/// Used until (and unless) the trigger layer registers its runner.
-public sealed class NullBackofficeFormTriggerRunner : IBackofficeFormTriggerRunner
-{
-    public Task RunAsync(BackofficeFormEvent evt, CancellationToken ct) => Task.CompletedTask;
 }

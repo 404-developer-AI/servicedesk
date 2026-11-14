@@ -99,6 +99,15 @@ public sealed class TriggerRenderContextFactory : ITriggerRenderContextFactory
             ["article.from_email"] = articleFrom,
             ["article.subject"] = articleSubject ?? ticket.Subject,
 
+            ["form.name"] = ctx.ChangeSet.FormEvent?.FormName,
+            ["form.event"] = ctx.ChangeSet.FormEvent?.Event,
+            ["form.submitted_by"] = ctx.ChangeSet.FormEvent?.SubmittedByName,
+            ["form.handled_by"] = ctx.ChangeSet.FormEvent?.HandledByName,
+            ["form.handled_note"] = ctx.ChangeSet.FormEvent?.HandledNote,
+            ["form.url"] = ctx.ChangeSet.FormEvent is { } fe
+                ? $"{publicBaseUrl}/backoffice-forms?form={fe.FormId}"
+                : null,
+
             ["config.app.name"] = "Servicedesk",
             ["config.app.public_base_url"] = publicBaseUrl,
         };

@@ -125,6 +125,8 @@ public sealed class TriggerConditionMatcher : ITriggerConditionMatcher
             TriggerFieldKeys.ArticleBodyText => ctx.TriggeringEvent?.BodyText,
             TriggerFieldKeys.ArticleIsInternal => ctx.TriggeringEvent?.IsInternal,
             TriggerFieldKeys.ArticleHasAttachments => false, // attachment-aware lookup deferred to a later block
+            TriggerFieldKeys.FormBackofficeEvent => ctx.ChangeSet.FormEvent?.Event,
+            TriggerFieldKeys.FormTemplateId => ctx.ChangeSet.FormEvent?.TemplateId,
             _ => null,
         };
     }

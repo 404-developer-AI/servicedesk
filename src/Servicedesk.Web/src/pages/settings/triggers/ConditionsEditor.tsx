@@ -1,4 +1,6 @@
 import * as React from "react";
+import { useQuery } from "@tanstack/react-query";
+import { formTemplatesApi } from "@/lib/forms-api";
 import { Plus, Trash2, ChevronDown, FolderTree } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -42,6 +44,13 @@ const SENDER_OPTIONS = [
   { value: "Customer", label: "Customer" },
   { value: "Agent", label: "Agent" },
   { value: "System", label: "System" },
+];
+
+/// v0.1.54 — back office form events (the `form.backoffice_event` field).
+const FORM_EVENT_OPTIONS = [
+  { value: "submitted", label: "Submitted to back office" },
+  { value: "handled", label: "Handled by back office" },
+  { value: "reopened", label: "Reopened (back on the list)" },
 ];
 
 const ARTICLE_TYPE_OPTIONS = [
@@ -346,7 +355,8 @@ function LeafRow({
   const fieldDef = fields.find((f) => f.key === leaf.field);
   const fieldType = fieldDef?.type ?? "string";
   const allowsHasChanged =
-    fieldType !== "boolean" && fieldType !== "tags";
+    fieldType !== "boolean" && fieldType !== "tags"
+    && fieldType !== "form-event" && fieldType !== "form-template";
 
   // Filter operator list to those that semantically apply to the field
   // type. The matcher is permissive (unknown operator = false), so this
@@ -505,6 +515,23 @@ function ValueInput({
       />
     );
   }
+  if (fieldType === "form-event") {
+    return (
+      <select
+        value={typeof value === "string" ? value : ""}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
+      >
+        <option value="">—</option>
+        {FORM_EVENT_OPTIONS.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+    );
+  }
+  if (fieldType === "form-template") {
+    return <FormTemplateValueInput value={typeof value === "string" ? value : ""} onChange={onChange} />;
+  }
   if (fieldType === "article-type") {
     // Dropdown keyed off the FIELD type, not the current value — the
     // previous value-match guard meant the picker only appeared after
@@ -533,6 +560,26 @@ function ValueInput({
       placeholder="value"
       className="min-w-48 rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring"
     />
+  );
+}
+
+/// Back office form template picker: only templates marked "Send to back
+/// office" ever produce a form event, so only those are offered (a saved
+/// value pointing at another template is kept and shown as such).
+function FormTemplateValueInput({ value, onChange }: { value: string; onChange: (v: ConditionLeaf["value"]) => void }) {
+  const q = useQuery({ queryKey: ["form-templates", "list"], queryFn: formTemplatesApi.list, staleTime: 60_000 });
+  const marked = (q.data ?? []).filter((t) => t.sendToBackoffice || t.id === value);
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="min-w-48 rounded-md border border-glass bg-glass px-2 py-1.5 text-xs text-foreground focus:outline-hidden focus:ring-1 focus:ring-ring [&_option]:bg-popover [&_option]:text-popover-foreground"
+    >
+      <option value="">—</option>
+      {marked.map((t) => (
+        <option key={t.id} value={t.id}>{t.name}{t.sendToBackoffice ? "" : " (not sent to back office)"}</option>
+      ))}
+    </select>
   );
 }
 

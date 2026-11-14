@@ -35,6 +35,9 @@ public static class TriggerValidator
         "add_internal_note", "add_public_note", "repost_as_public_reply",
         "send_mail",
         "send_survey",
+        // v0.1.54 — bell notification to agents (form submitter, ticket
+        // owner and/or named agents) with a rendered plain-text message.
+        "notify_agent",
         // v0.0.39 — only valid on manual triggers; the action carries the
         // full preset (subject/body templates, defaults, requester/company
         // source, optional initial note). Allowed in the whitelist here
@@ -400,6 +403,8 @@ public static class TriggerValidator
                 if (HasNonEmptyString(action, "body_html") || HasNonEmptyString(action, "body_text"))
                     return null;
                 return "requires non-empty 'body_html' or 'body_text'.";
+            case "notify_agent":
+                return NotifyAgentAction.Validate(action);
             case "repost_as_public_reply":
                 // Carries no admin-typed payload — the handler reads the
                 // triggering article's body verbatim. Surface a clean save

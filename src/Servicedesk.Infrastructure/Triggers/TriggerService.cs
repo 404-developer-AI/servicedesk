@@ -125,6 +125,12 @@ public sealed class TriggerService : ITriggerService
                 continue;
             }
 
+            // v0.1.54 — form triggers belong to back-office form passes only
+            // (and a form pass runs nothing else): a ticket pass would read
+            // form.* as null, and "is not handled" would then match on every
+            // note; a form pass would re-fire every Always trigger.
+            if (!IsRightPassKind(trigger.ConditionsJson, changeSet)) continue;
+
             // Selective short-circuit happens BEFORE any JSON parsing or
             // ticket fetch — the cheapest possible noop for triggers whose
             // referenced fields didn't change. The matcher's referenced-
@@ -243,7 +249,25 @@ public sealed class TriggerService : ITriggerService
             merged ??= new HashSet<string>(current.ChangedFields, StringComparer.OrdinalIgnoreCase);
             merged.Add(fieldKey);
         }
-        return merged is null ? current : new TriggerChangeSet(merged, current.ArticleAdded);
+        return merged is null ? current : current with { ChangedFields = merged };
+    }
+
+    /// True when the trigger's kind (form trigger or ticket trigger) matches
+    /// the pass kind. Malformed conditions fall through as "ticket trigger"
+    /// so the regular run loop records the parse failure once.
+    private bool IsRightPassKind(string conditionsJson, TriggerChangeSet changeSet)
+    {
+        IReadOnlySet<string> refs;
+        try
+        {
+            using var doc = JsonDocument.Parse(conditionsJson);
+            refs = _matcher.ReferencedFields(doc.RootElement);
+        }
+        catch (JsonException)
+        {
+            refs = new HashSet<string>();
+        }
+        return changeSet.RunsTriggerReferencing(refs);
     }
 
     /// Caps any string in the per-action summary at this many characters

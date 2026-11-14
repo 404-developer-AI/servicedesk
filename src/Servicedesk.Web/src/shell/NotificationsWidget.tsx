@@ -160,6 +160,7 @@ function NotificationPanel({
           const localPart = n.sourceUserEmail?.split("@")[0] ?? "agent";
           const when = toServerLocal(n.createdUtc, offsetMinutes);
           const isChecklistBlock = n.eventType === "ChecklistCloseBlocked";
+          const isTriggerNotice = n.eventType === "TriggerNotice";
           return (
             <div
               key={n.id}
@@ -172,6 +173,8 @@ function NotificationPanel({
               >
                 {isChecklistBlock ? (
                   <ListChecks className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300" />
+                ) : isTriggerNotice ? (
+                  <Bell className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
                 ) : (
                   <AtSign className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-300" />
                 )}
@@ -179,6 +182,8 @@ function NotificationPanel({
                   <div className="flex items-center gap-1 text-xs">
                     {isChecklistBlock ? (
                       <span className="font-medium text-amber-200">Checklist blocked a trigger</span>
+                    ) : isTriggerNotice ? (
+                      <span className="font-medium text-foreground">Notice</span>
                     ) : (
                       <>
                         <span className="font-medium text-foreground">@{localPart}</span>

@@ -626,7 +626,7 @@ public static class DependencyInjection
         services.AddScoped<Forms.IBackofficeFormService, Forms.BackofficeFormService>();
         services.AddScoped<Forms.IBackofficeFormEvents, Forms.BackofficeFormEventPublisher>();
         services.AddSingleton<Realtime.IBackofficeFormNotifier, Realtime.NullBackofficeFormNotifier>();
-        services.AddScoped<Forms.IBackofficeFormTriggerRunner, Forms.NullBackofficeFormTriggerRunner>();
+        services.AddScoped<Forms.IBackofficeFormTriggerRunner, Triggers.BackofficeFormTriggerRunner>();
         // First-open title-review gate matcher + confirmation runner. Called
         // by the ticket detail page's open-gate probe and the confirmation
         // endpoint. Singleton for the same reason as the status-gate service.
@@ -648,6 +648,7 @@ public static class DependencyInjection
         services.AddSingleton<ITriggerActionHandler, RepostAsPublicReplyHandler>();
         services.AddSingleton<ITriggerActionHandler, SendMailHandler>();
         services.AddSingleton<ITriggerActionHandler, SendSurveyHandler>();
+        services.AddSingleton<ITriggerActionHandler, NotifyAgentHandler>();
         // No-op handler so dispatching a first-open gate's full action list
         // (and the dry-run previewer) doesn't report a NoHandler gap. The
         // subject edit itself is applied by the open-gate confirm endpoint.
@@ -675,6 +676,7 @@ public static class DependencyInjection
         services.AddSingleton<ITriggerActionPreviewer, RepostAsPublicReplyPreviewer>();
         services.AddSingleton<ITriggerActionPreviewer, SendMailPreviewer>();
         services.AddSingleton<ITriggerActionPreviewer, SendSurveyPreviewer>();
+        services.AddSingleton<ITriggerActionPreviewer, NotifyAgentPreviewer>();
         services.AddSingleton<ITriggerActionPreviewer, TitleReviewPreviewer>();
 
         // Compose templates — pre-canned HTML snippets for note/reply/mail

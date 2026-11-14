@@ -33,6 +33,13 @@ public static class TriggerTemplateVariableCatalog
         // agent's email.
         new("agent.name",               "Confirming agent",   "string", "agent@example.com"),
         new("agent.email",              "Confirming agent email", "string", "agent@example.com"),
+        // Back office form triggers only (empty on other passes).
+        new("form.name",                "Back office form name",          "string", "Licence request"),
+        new("form.event",               "Back office form event",         "string", "handled"),
+        new("form.submitted_by",        "Form filled in by",              "string", "Alex Example"),
+        new("form.handled_by",          "Form handled by",                "string", "Sam Example"),
+        new("form.handled_note",        "Back office note",               "string", "Contract updated in the CRM"),
+        new("form.url",                 "Back office form deep-link",     "string", "https://servicedesk.example/backoffice-forms?form=…"),
         new("config.app.name",          "App name",           "string", "Servicedesk"),
         new("config.app.public_base_url","Public base URL",   "string", "https://servicedesk.example"),
 
